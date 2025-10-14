@@ -108,9 +108,102 @@ impl BatchRequestEntry {
     fn pop_front(&mut self) -> Option<ResponseSender> {
         self.value.take().or_else(|| self.duplicates.pop_front())
     }
+}
 
-    fn into_iter(self) -> impl Iterator<Item = ResponseSender> {
+impl IntoIterator for BatchRequestEntry {
+    type IntoIter = std::iter::Chain<
+        std::option::IntoIter<ResponseSender>,
+        std::collections::vec_deque::IntoIter<ResponseSender>,
+    >;
+    type Item = ResponseSender;
+
+    fn into_iter(self) -> Self::IntoIter {
         self.value.into_iter().chain(self.duplicates)
+    }
+}
+
+/// Data structure that assume that the node returns
+/// the responses in the expected order. If that is not
+/// the case only then will it pay the extra cost of
+/// building a hashmap for faster lookup of unsorted
+/// responses.
+enum SenderLookUp<Id> {
+    /// Variant that is used until the first response was delivered
+    /// out of order. The expectation is that the next sender that
+    /// needs to be retrieved is at the front.
+    Sorted(VecDeque<(Id, ResponseSender)>),
+    /// Variant that is used once we detect the first response that
+    /// was delivered out of order.
+    Unsorted(HashMap<Id, BatchRequestEntry>),
+}
+
+impl <Id> SenderLookUp<Id> where Id: Eq + PartialEq + std::hash::Hash {
+    fn new(senders: VecDeque<(Id, ResponseSender)>) -> Self {
+        Self::Sorted(senders)
+    }
+
+    /// Removes the next sender needed to report the response for the
+    /// passed in request_id. Note that under some conditions the same
+    /// batch might contain RPC calls with the same id. In that case
+    /// you can also `.remove()` as many response senders for the
+    /// duplicated id.
+    fn remove(&mut self, request_id: &Id) -> Option<ResponseSender> {
+        match self {
+            Self::Sorted(senders) => {
+                let (id, sender) = senders.pop_front()?;
+                if *request_id == id {
+                    // the order of returned requests still matches our expectations.
+                    return Some(sender);
+                }
+
+                // The node returned the responses in an unexpected order so
+                // we now have to build a hash table to quickly look up the
+                // senders for all the incoming out of orders responses.
+                tracing::debug!("build look up table for handling out of order batch response");
+                let mut lookup = HashMap::with_capacity(senders.len() + 1);
+                Self::insert_sender(&mut lookup, id, sender);
+
+                let senders = std::mem::take(senders);
+                for (id, sender) in senders {
+                    Self::insert_sender(&mut lookup, id, sender);
+                }
+
+                // retrieve sender from data structure that's optimized for random retrieval,
+                // convert Self to the new variant and return the sender
+                let sender = lookup.get_mut(request_id).and_then(|senders| senders.pop_front());
+                *self = Self::Unsorted(lookup);
+                sender
+            },
+            Self::Unsorted(lookup) => {
+                lookup.get_mut(request_id).and_then(|senders| senders.pop_front())
+            }
+        }
+    }
+
+    fn insert_sender(lookup: &mut HashMap<Id, BatchRequestEntry>, id: Id, sender: ResponseSender) {
+        match lookup.entry(id) {
+            std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
+                occupied_entry.get_mut().push_back(sender);
+            }
+            std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(BatchRequestEntry::new(sender));
+            }
+        };
+    }
+
+    fn for_each(self, function: impl Fn(ResponseSender)) {
+        match self {
+            SenderLookUp::Sorted(senders) => {
+                senders.into_iter().for_each(|(_id, sender)| {
+                    function(sender);
+                });
+            },
+            SenderLookUp::Unsorted(senders) => {
+                senders.into_values().flatten().for_each(|sender| {
+                    function(sender);
+                });
+            }
+        }
     }
 }
 
@@ -163,34 +256,28 @@ where
             let clone: S = inner.clone();
             let mut inner = std::mem::replace(&mut inner, clone);
 
-            // Map<Id, Senders> because even with random IDs we might get duplicates,
-            // (e.g. some ID outgrew another and now they overlap) in that case
-            // we use the Deque to enforce FIFO and hope the node didn't re-order responses
-            let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
-            let mut requests = Vec::with_capacity(batch.len());
-
             async move {
-                for (sender, request) in batch {
-                    if sender.is_canceled() {
-                        tracing::trace!(request_id = %request.id(), "canceled sender");
-                        continue;
-                    }
-
-                    match senders.entry(request.id().clone()) {
-                        std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
-                            occupied_entry.get_mut().push_back(sender);
+                // We use this weird mix of `into_iter().collect()` and `.push_back` in the
+                // `.filter()` in order to make the compiler reuse the allocation of `batch`
+                // for `requests`.
+                let mut senders = VecDeque::with_capacity(batch.len());
+                let requests: Vec<_> = batch
+                    .into_iter()
+                    .filter_map(|(sender, request)| {
+                        if sender.is_canceled() {
+                            tracing::trace!(request_id = %request.id(), "canceled sender");
+                            return None;
                         }
-                        std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-                            vacant_entry.insert(BatchRequestEntry::new(sender));
-                        }
-                    }
-                    requests.push(request);
-                }
+                        senders.push_back((request.id().clone(), sender));
+                        Some(request)
+                    })
+                    .collect();
 
                 if requests.is_empty() {
                     tracing::trace!("all callers stopped awaiting their request");
                     return;
                 }
+                let mut senders = SenderLookUp::new(senders);
 
                 let result = inner
                     .call(RequestPacket::Batch(requests))
@@ -206,27 +293,26 @@ where
                 match result {
                     Ok(responses) => {
                         for response in responses {
-                            tracing::trace!(response_id = %response.id, "attempting to remove response");
-                            let Some(entry) = senders.get_mut(&response.id) else {
-                                tracing::warn!(response_id = %response.id, "missing sender for response");
+                            let Some(sender) = senders.remove(&response.id) else {
+                                tracing::error!(id = ?response.id, "either unexpected response or no sender remaining for response");
                                 continue;
                             };
-                            let Some(sender) = entry.pop_front() else {
-                                tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
-                                continue;
-                            };
-                            tracing::debug!(response_id = %response.id, "sending response");
+                            tracing::trace!(response_id = %response.id, "sending response");
                             let _ = sender.send(Ok(response));
                         }
+
+                        // if we still have senders left over we need to report an error so
+                        // that they don't wait forever for a response that will never come
+                        let err = format!("did not receive a response for the call");
+                        senders.for_each(|sender| {
+                            let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                        });
                     }
                     Err(err) => {
                         let err = format!("batch call failed: {err:?}");
-                        senders
-                            .into_values()
-                            .flat_map(|sender| sender.into_iter())
-                            .for_each(|sender| {
-                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
-                            });
+                        senders.for_each(|sender| {
+                            let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                        });
                     }
                 }
             }
