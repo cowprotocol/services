@@ -122,59 +122,6 @@ fn main() {
             )
         // Not available on Lens
     });
-    generate_contract_with_config("BalancerV3BatchRouter", |builder| {
-        builder
-            .contract_mod_override("balancer_v3_batch_router")
-            .add_network(
-                MAINNET,
-                Network {
-                    address: addr("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(21339510)),
-                },
-            )
-            .add_network(
-                GNOSIS,
-                Network {
-                    address: addr("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(37377506)),
-                },
-            )
-            .add_network(
-                SEPOLIA,
-                Network {
-                    address: addr("0xC85b652685567C1B074e8c0D4389f83a2E458b1C"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(7219301)),
-                },
-            )
-            .add_network(
-                ARBITRUM_ONE,
-                Network {
-                    address: addr("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(297828544)),
-                },
-            )
-            .add_network(
-                BASE,
-                Network {
-                    address: addr("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(25347205)),
-                },
-            )
-            .add_network(
-                AVALANCHE,
-                Network {
-                    address: addr("0xc9b36096f5201ea332Db35d6D195774ea0D5988f"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(59965747)),
-                },
-            )
-            .add_network(
-                OPTIMISM,
-                Network {
-                    address: addr("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
-                    deployment_information: Some(DeploymentInformation::BlockNumber(133969588)),
-                },
-            )
-    });
     generate_contract("ERC20");
     generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
         builder
