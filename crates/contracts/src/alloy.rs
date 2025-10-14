@@ -316,6 +316,26 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(
+    BalancerV3BatchRouter,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x41cb8619fb92dd532eb09b0e81fd4ce1c6006a10924893f02909e36a317777f3>
+        MAINNET => (address!("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"), 21339510),
+        // <https://gnosisscan.io/tx/0xeafddbace9f445266f851ef1d92928e3d01a4622a1a6780b41ac52d5872f12ab>
+        GNOSIS => (address!("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"), 37377506),
+        // <https://sepolia.etherscan.io/tx/0x95ed8e1aaaa7bdc5881f3c8fc5a4914a66639bee52987c3a1ea88545083b0681>
+        SEPOLIA => (address!("0xC85b652685567C1B074e8c0D4389f83a2E458b1C"), 7219301),
+        // <https://arbiscan.io/tx/0xa7968c6bc0775208ffece789c6e5d09b0eea5f2c3ed2806e9bd94fb0b978ff0f>
+        ARBITRUM_ONE => (address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"), 297828544),
+        // <https://basescan.org/tx/0x47b81146714630ce50445bfa28872a36973acedf785317ca423498810ec8e76c>
+        BASE => (address!("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"), 25347205),
+        // <https://snowscan.xyz/tx/0x3bfaba7135ee2d67d98f20ee1aa4c8b7e81e47be64223376f3086bab429ac806>
+        AVALANCHE => (address!("0xc9b36096f5201ea332Db35d6D195774ea0D5988f"), 59965747),
+        // <https://optimistic.etherscan.io/tx/0xf370aab0d652f3e0f7c34e1a53e1afd98e86c487138300b0939d4e54b0088b67>
+        OPTIMISM => (address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"), 133969588),
+        // Not available on Lens, Polygon, BNB
+    }
+);
 
 // UniV2
 crate::bindings!(

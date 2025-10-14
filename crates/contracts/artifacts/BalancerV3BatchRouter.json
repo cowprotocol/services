@@ -6,17 +6,17 @@
     {
       "inputs": [
         {
-          "internalType": "contractIVault",
+          "internalType": "contract IVault",
           "name": "vault",
           "type": "address"
         },
         {
-          "internalType": "contractIWETH",
+          "internalType": "contract IWETH",
           "name": "weth",
           "type": "address"
         },
         {
-          "internalType": "contractIPermit2",
+          "internalType": "contract IPermit2",
           "name": "permit2",
           "type": "address"
         },
@@ -196,7 +196,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "structIRouterCommon.PermitApproval[]",
+          "internalType": "struct IRouterCommon.PermitApproval[]",
           "name": "permitBatch",
           "type": "tuple[]"
         },
@@ -230,7 +230,7 @@
                   "type": "uint48"
                 }
               ],
-              "internalType": "structIAllowanceTransfer.PermitDetails[]",
+              "internalType": "struct IAllowanceTransfer.PermitDetails[]",
               "name": "details",
               "type": "tuple[]"
             },
@@ -245,7 +245,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "structIAllowanceTransfer.PermitBatch",
+          "internalType": "struct IAllowanceTransfer.PermitBatch",
           "name": "permit2Batch",
           "type": "tuple"
         },
@@ -276,7 +276,7 @@
         {
           "components": [
             {
-              "internalType": "contractIERC20",
+              "internalType": "contract IERC20",
               "name": "tokenIn",
               "type": "address"
             },
@@ -288,7 +288,7 @@
                   "type": "address"
                 },
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenOut",
                   "type": "address"
                 },
@@ -298,7 +298,7 @@
                   "type": "bool"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathStep[]",
+              "internalType": "struct IBatchRouter.SwapPathStep[]",
               "name": "steps",
               "type": "tuple[]"
             },
@@ -313,7 +313,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "structIBatchRouter.SwapPathExactAmountIn[]",
+          "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
           "name": "paths",
           "type": "tuple[]"
         },
@@ -361,7 +361,7 @@
             {
               "components": [
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenIn",
                   "type": "address"
                 },
@@ -373,7 +373,7 @@
                       "type": "address"
                     },
                     {
-                      "internalType": "contractIERC20",
+                      "internalType": "contract IERC20",
                       "name": "tokenOut",
                       "type": "address"
                     },
@@ -383,7 +383,7 @@
                       "type": "bool"
                     }
                   ],
-                  "internalType": "structIBatchRouter.SwapPathStep[]",
+                  "internalType": "struct IBatchRouter.SwapPathStep[]",
                   "name": "steps",
                   "type": "tuple[]"
                 },
@@ -398,7 +398,7 @@
                   "type": "uint256"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathExactAmountIn[]",
+              "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
               "name": "paths",
               "type": "tuple[]"
             },
@@ -418,7 +418,7 @@
               "type": "bytes"
             }
           ],
-          "internalType": "structIBatchRouter.SwapExactInHookParams",
+          "internalType": "struct IBatchRouter.SwapExactInHookParams",
           "name": "params",
           "type": "tuple"
         }
@@ -449,7 +449,7 @@
         {
           "components": [
             {
-              "internalType": "contractIERC20",
+              "internalType": "contract IERC20",
               "name": "tokenIn",
               "type": "address"
             },
@@ -461,7 +461,7 @@
                   "type": "address"
                 },
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenOut",
                   "type": "address"
                 },
@@ -471,7 +471,7 @@
                   "type": "bool"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathStep[]",
+              "internalType": "struct IBatchRouter.SwapPathStep[]",
               "name": "steps",
               "type": "tuple[]"
             },
@@ -486,7 +486,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "structIBatchRouter.SwapPathExactAmountOut[]",
+          "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
           "name": "paths",
           "type": "tuple[]"
         },
@@ -534,7 +534,7 @@
             {
               "components": [
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenIn",
                   "type": "address"
                 },
@@ -546,7 +546,7 @@
                       "type": "address"
                     },
                     {
-                      "internalType": "contractIERC20",
+                      "internalType": "contract IERC20",
                       "name": "tokenOut",
                       "type": "address"
                     },
@@ -556,7 +556,7 @@
                       "type": "bool"
                     }
                   ],
-                  "internalType": "structIBatchRouter.SwapPathStep[]",
+                  "internalType": "struct IBatchRouter.SwapPathStep[]",
                   "name": "steps",
                   "type": "tuple[]"
                 },
@@ -571,7 +571,7 @@
                   "type": "uint256"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathExactAmountOut[]",
+              "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
               "name": "paths",
               "type": "tuple[]"
             },
@@ -591,7 +591,7 @@
               "type": "bytes"
             }
           ],
-          "internalType": "structIBatchRouter.SwapExactOutHookParams",
+          "internalType": "struct IBatchRouter.SwapExactOutHookParams",
           "name": "params",
           "type": "tuple"
         }
@@ -622,7 +622,7 @@
         {
           "components": [
             {
-              "internalType": "contractIERC20",
+              "internalType": "contract IERC20",
               "name": "tokenIn",
               "type": "address"
             },
@@ -634,7 +634,7 @@
                   "type": "address"
                 },
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenOut",
                   "type": "address"
                 },
@@ -644,7 +644,7 @@
                   "type": "bool"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathStep[]",
+              "internalType": "struct IBatchRouter.SwapPathStep[]",
               "name": "steps",
               "type": "tuple[]"
             },
@@ -659,7 +659,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "structIBatchRouter.SwapPathExactAmountIn[]",
+          "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
           "name": "paths",
           "type": "tuple[]"
         },
@@ -712,7 +712,7 @@
             {
               "components": [
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenIn",
                   "type": "address"
                 },
@@ -724,7 +724,7 @@
                       "type": "address"
                     },
                     {
-                      "internalType": "contractIERC20",
+                      "internalType": "contract IERC20",
                       "name": "tokenOut",
                       "type": "address"
                     },
@@ -734,7 +734,7 @@
                       "type": "bool"
                     }
                   ],
-                  "internalType": "structIBatchRouter.SwapPathStep[]",
+                  "internalType": "struct IBatchRouter.SwapPathStep[]",
                   "name": "steps",
                   "type": "tuple[]"
                 },
@@ -749,7 +749,7 @@
                   "type": "uint256"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathExactAmountIn[]",
+              "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
               "name": "paths",
               "type": "tuple[]"
             },
@@ -769,7 +769,7 @@
               "type": "bytes"
             }
           ],
-          "internalType": "structIBatchRouter.SwapExactInHookParams",
+          "internalType": "struct IBatchRouter.SwapExactInHookParams",
           "name": "params",
           "type": "tuple"
         }
@@ -800,7 +800,7 @@
         {
           "components": [
             {
-              "internalType": "contractIERC20",
+              "internalType": "contract IERC20",
               "name": "tokenIn",
               "type": "address"
             },
@@ -812,7 +812,7 @@
                   "type": "address"
                 },
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenOut",
                   "type": "address"
                 },
@@ -822,7 +822,7 @@
                   "type": "bool"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathStep[]",
+              "internalType": "struct IBatchRouter.SwapPathStep[]",
               "name": "steps",
               "type": "tuple[]"
             },
@@ -837,7 +837,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "structIBatchRouter.SwapPathExactAmountOut[]",
+          "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
           "name": "paths",
           "type": "tuple[]"
         },
@@ -890,7 +890,7 @@
             {
               "components": [
                 {
-                  "internalType": "contractIERC20",
+                  "internalType": "contract IERC20",
                   "name": "tokenIn",
                   "type": "address"
                 },
@@ -902,7 +902,7 @@
                       "type": "address"
                     },
                     {
-                      "internalType": "contractIERC20",
+                      "internalType": "contract IERC20",
                       "name": "tokenOut",
                       "type": "address"
                     },
@@ -912,7 +912,7 @@
                       "type": "bool"
                     }
                   ],
-                  "internalType": "structIBatchRouter.SwapPathStep[]",
+                  "internalType": "struct IBatchRouter.SwapPathStep[]",
                   "name": "steps",
                   "type": "tuple[]"
                 },
@@ -927,7 +927,7 @@
                   "type": "uint256"
                 }
               ],
-              "internalType": "structIBatchRouter.SwapPathExactAmountOut[]",
+              "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
               "name": "paths",
               "type": "tuple[]"
             },
@@ -947,7 +947,7 @@
               "type": "bytes"
             }
           ],
-          "internalType": "structIBatchRouter.SwapExactOutHookParams",
+          "internalType": "struct IBatchRouter.SwapExactOutHookParams",
           "name": "params",
           "type": "tuple"
         }
