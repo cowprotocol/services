@@ -57,7 +57,6 @@ include_contracts! {
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
     CowProtocolToken;
-    ERC1271SignatureValidator;
     ERC20;
     GPv2AllowListAuthentication;
     GPv2Settlement;

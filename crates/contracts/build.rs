@@ -370,7 +370,6 @@ fn main() {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
     // EIP-1271 contract - SignatureValidator
-    generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
         builder
