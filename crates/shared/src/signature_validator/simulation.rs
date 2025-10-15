@@ -82,7 +82,8 @@ impl Validator {
     }
 
     /// Simulates the signature validation setting balance overrides and
-    /// pre-interactions; returning the gas used.
+    /// pre-interactions; returning the gas used for the signature validation
+    /// only.
     ///
     /// These are required as they may interact with the signature, for example,
     /// adding composable CoW orders.
