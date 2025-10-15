@@ -82,12 +82,11 @@ impl Submitter {
         self.gas_parameters_of_last_tx = Some(gas_price);
         self.nonce_of_last_submission = Some(nonce);
 
-        let ethflow_contract = CoWSwapEthFlow::Instance::new(
-            ethflow_contract,
-            self.web3
-                .alloy
-                .with_signer(self.account.clone().try_into_alloy().await?),
-        );
+        let provider = self
+            .web3
+            .alloy
+            .with_signer(self.account.clone().try_into_alloy().await?);
+        let ethflow_contract = CoWSwapEthFlow::Instance::new(ethflow_contract, provider);
         let tx_result = ethflow_contract
             .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
             // Gas conversions are lossy but technically the should not have decimal points even though they're floats
