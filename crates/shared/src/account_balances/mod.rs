@@ -3,7 +3,7 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::sol_types::{SolType, sol_data},
+    alloy::sol_types::{SolCall, SolType, sol_data},
     contracts::alloy::support::Balances,
     ethcontract::{
         Bytes,
@@ -104,7 +104,7 @@ pub fn cached(
 #[derive(Clone)]
 pub struct BalanceSimulator {
     settlement: contracts::GPv2Settlement,
-    balances: Balances::Instance,
+    balances: H160,
     vault_relayer: H160,
     vault: H160,
     balance_overrider: Arc<dyn BalanceOverriding>,
@@ -122,7 +122,7 @@ impl BalanceSimulator {
             settlement,
             vault_relayer,
             vault: vault.unwrap_or_default(),
-            balances,
+            balances: balances.address().into_legacy(),
             balance_overrider,
         }
     }
@@ -166,17 +166,17 @@ impl BalanceSimulator {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances.balance(
-            contracts::alloy::support::Balances::Balances::Contracts {
+        let balance_call = Balances::Balances::balanceCall {
+            contracts: contracts::alloy::support::Balances::Balances::Contracts {
                 settlement: self.settlement.address().into_alloy(),
                 vaultRelayer: self.vault_relayer.into_alloy(),
                 vault: self.vault.into_alloy(),
             },
-            owner.into_alloy(),
-            token.into_alloy(),
-            amount.unwrap_or_default().into_alloy(),
-            source.as_bytes().into(),
-            interactions
+            trader: owner.into_alloy(),
+            token: token.into_alloy(),
+            amount: amount.unwrap_or_default().into_alloy(),
+            source: source.as_bytes().into(),
+            interactions: interactions
                 .iter()
                 .map(
                     |i| contracts::alloy::support::Balances::Balances::Interaction {
@@ -186,14 +186,12 @@ impl BalanceSimulator {
                     },
                 )
                 .collect(),
-        );
+        }
+        .abi_encode();
 
         let delegate_call = self
             .settlement
-            .simulate_delegatecall(
-                self.balances.address().into_legacy(),
-                Bytes(balance_call.calldata().to_vec()),
-            )
+            .simulate_delegatecall(self.balances, Bytes(balance_call))
             .from(crate::SIMULATION_ACCOUNT.clone());
 
         let delegate_call = add_access_lists(delegate_call).await;
