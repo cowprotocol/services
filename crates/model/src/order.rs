@@ -952,16 +952,18 @@ pub enum SellTokenSource {
     /// the Vault, this is done by having a specific ERC20 allowance for the
     /// Vault and relayer approval for the GPv2VaultRelayer.
     ///
-    /// Check the [CoW docs on Balancer External Balances](1) for more details.
+    /// Check the [CoW docs on Balancer External Balances](external) for more
+    /// details.
     ///
-    /// [1]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-internal-balances
+    /// [external]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-external-balances
     External,
     /// Sell tokens will be drawn from the users Vault internal balances,
     /// requires the user to approve the GPv2VaultRelayer.
     ///
-    /// Check the [CoW docs on Balancer Internal Balances](2) for more details.
+    /// Check the [CoW docs on Balancer Internal Balances](internal) for more
+    /// details.
     ///
-    /// [2]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-external-balances
+    /// [internal]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-internal-balances
     Internal,
 }
 
