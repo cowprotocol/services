@@ -5,7 +5,7 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
@@ -125,13 +125,19 @@ async fn refunder_tx(web3: Web3) {
 
     // Create the refund service and execute the refund tx
     let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
+    let refunder_signer = {
+        match refunder.account().clone().try_into_alloy().await.unwrap() {
+            ethrpc::alloy::Account::Signer(signer) => signer,
+            _ => panic!("Refunder account must be a signer"),
+        }
+    };
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
         vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
         10i64,
-        refunder.account().clone(),
+        refunder_signer,
     );
 
     assert_ne!(
