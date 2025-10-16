@@ -239,6 +239,7 @@ impl Utilities {
     }
 
     /// Fetches the tradable balance for every order owner.
+    #[tracing::instrument(skip_all)]
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
         let _timer2 =

@@ -163,6 +163,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
+    #[tracing::instrument(skip_all)]
     pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
@@ -319,6 +320,7 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
