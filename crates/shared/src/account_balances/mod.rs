@@ -188,7 +188,7 @@ impl BalanceSimulator {
                 .collect(),
         }
         .abi_encode();
-        tokio::time::sleep(std::time::Duration::from_nanos(1000)).await;
+        tokio::time::sleep(std::time::Duration::from_nanos(3000)).await;
 
         let delegate_call = self
             .settlement
