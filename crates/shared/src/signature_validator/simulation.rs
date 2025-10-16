@@ -77,7 +77,7 @@ impl Validator {
             .map(|value| hex::encode(value.0))
             .map_err(|err| match err {
                 alloy::contract::Error::TransportError(RpcError::ErrorResp(error)) => {
-                    tracing::error!(?err, "failed to call isValidSignature");
+                    tracing::error!(?error, "failed to call isValidSignature");
                     SignatureValidationError::Invalid
                 }
                 err => SignatureValidationError::Other(err.into()),
