@@ -6280,7 +6280,6 @@ dependencies = [
  "bigdecimal",
  "bytes-hex",
  "chrono",
- "const-hex",
  "hex",
  "number",
  "serde",
