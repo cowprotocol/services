@@ -82,7 +82,7 @@ struct Inner {
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
     balance_overrider: Arc<dyn BalanceOverriding>,
-    tx_gas_limit: Option<U256>,
+    tx_gas_limit: U256,
 }
 
 impl Ethereum {
@@ -97,7 +97,7 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         archive_node_url: Option<&Url>,
-        tx_gas_limit: Option<U256>,
+        tx_gas_limit: U256,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
 
@@ -193,34 +193,7 @@ impl Ethereum {
         CallRequest: From<T>,
     {
         let mut tx: CallRequest = tx.into();
-        // Specifically set high gas because some nodes don't pick a sensible value if
-        // omitted. And since we are only interested in access lists a very high
-        // value is fine.
-        tx.gas = self.inner.tx_gas_limit.or_else(|| {
-            Some(match self.inner.chain {
-                // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
-                // making it unsuitable for this use case. To address this, we use a
-                // fixed gas limit of 100,000,000, which is sufficient
-                // for all solution types, while avoiding the "insufficient funds for gas * price +
-                // value" error that could occur when a large amount of ETH is
-                // needed to simulate the transaction, due to high transaction gas limit.
-                //
-                // If a new network is added, ensure its block gas limit is checked and handled
-                // appropriately to maintain compatibility with this logic.
-                Chain::ArbitrumOne => 100_000_000.into(),
-                Chain::Mainnet => self.block_gas_limit().0,
-                Chain::Goerli => self.block_gas_limit().0,
-                Chain::Gnosis => self.block_gas_limit().0,
-                Chain::Sepolia => self.block_gas_limit().0,
-                Chain::Base => self.block_gas_limit().0,
-                Chain::Bnb => self.block_gas_limit().0,
-                Chain::Optimism => self.block_gas_limit().0,
-                Chain::Avalanche => self.block_gas_limit().0,
-                Chain::Polygon => self.block_gas_limit().0,
-                Chain::Lens => self.block_gas_limit().0,
-                Chain::Hardhat => self.block_gas_limit().0,
-            })
-        });
+        tx.gas = Some(self.inner.tx_gas_limit);
         tx.gas_price = self.simulation_gas_price().await;
 
         let json = self

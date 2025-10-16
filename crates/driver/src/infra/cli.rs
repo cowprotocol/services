@@ -51,5 +51,5 @@ pub struct Args {
     /// Transaction gas limit
     /// If not specified, uses current block's gas limit
     #[clap(long, env)]
-    pub tx_gas_limit: Option<U256>,
+    pub tx_gas_limit: U256,
 }
