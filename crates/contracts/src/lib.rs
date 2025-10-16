@@ -48,6 +48,12 @@ macro_rules! include_contracts {
     )*};
 }
 
+pub mod support {
+    include_contracts! {
+        Balances;
+    }
+}
+
 include_contracts! {
     BalancerV2Authorizer;
     BalancerV2Vault;
