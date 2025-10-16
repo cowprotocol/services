@@ -8,10 +8,15 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
+database = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 model = { workspace = true }
+observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 shared = { workspace = true }
+sqlx = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 hex = { workspace = true }
