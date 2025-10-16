@@ -4,7 +4,7 @@ on: [pull_request, push]
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: cowprotocol-ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
     steps:
