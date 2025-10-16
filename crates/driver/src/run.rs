@@ -63,7 +63,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     tracing::info!(%commit_hash, "running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let eth = ethereum(&args, &config, ethrpc).await;
+    let eth = ethereum(&config, ethrpc).await;
     let app_data_retriever = match &config.app_data_fetching {
         config::file::AppDataFetching::Enabled {
             orderbook_url,
@@ -160,7 +160,7 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(args: &cli::Args, config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
+async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
     let gas = Arc::new(
         blockchain::GasPriceEstimator::new(ethrpc.web3(), &config.gas_estimator, &config.mempools)
             .await
@@ -171,7 +171,7 @@ async fn ethereum(args: &cli::Args, config: &infra::Config, ethrpc: blockchain::
         config.contracts.clone(),
         gas,
         config.archive_node_url.as_ref(),
-        args.tx_gas_limit,
+        config.tx_gas_limit,
     )
     .await
 }

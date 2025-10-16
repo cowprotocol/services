@@ -1,5 +1,4 @@
 use {
-    ethcontract::U256,
     reqwest::Url,
     shared::arguments::TracingArguments,
     std::{net::SocketAddr, path::PathBuf},
@@ -47,9 +46,4 @@ pub struct Args {
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.
     #[clap(long, env)]
     pub config: PathBuf,
-
-    /// Transaction gas limit
-    /// If not specified, uses current block's gas limit
-    #[clap(long, env)]
-    pub tx_gas_limit: U256,
 }

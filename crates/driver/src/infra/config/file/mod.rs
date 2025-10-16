@@ -85,6 +85,8 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    tx_gas_limit: eth::U256,
 }
 
 #[serde_as]
