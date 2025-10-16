@@ -26,6 +26,7 @@ struct BalanceCache {
 
 impl BalanceCache {
     /// Retrieves cached balance and updates the `requested_at` field.
+    #[tracing::instrument(skip_all)]
     fn get_cached_balance(&mut self, query: &Query) -> Option<U256> {
         match self.data.get_mut(query) {
             Some(entry) => {
@@ -94,6 +95,7 @@ struct CacheResponse {
 }
 
 impl Balances {
+    #[tracing::instrument(skip_all)]
     fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
         let mut cache = self.balance_cache.lock().unwrap();
         let (cached, missing) = queries
@@ -132,6 +134,7 @@ impl Balances {
                         })
                         .collect_vec()
                 };
+                tracing::info!("n balances to update: {}", balances_to_update.len());
 
                 let results = inner.get_balances(&balances_to_update).await;
 
@@ -171,6 +174,11 @@ impl BalanceFetching for Balances {
 
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
         let new_balances = self.inner.get_balances(&missing_queries).await;
+        tracing::info!(
+            "n of missing queries: {}, n of cached queries: {}",
+            missing_queries.len(),
+            queries.len() - missing_queries.len()
+        );
 
         {
             let mut cache = self.balance_cache.lock().unwrap();

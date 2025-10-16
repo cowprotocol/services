@@ -131,6 +131,7 @@ impl BalanceSimulator {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all)]
     pub async fn simulate<F, Fut>(
         &self,
         owner: H160,

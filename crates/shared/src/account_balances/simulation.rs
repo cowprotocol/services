@@ -44,6 +44,7 @@ impl Balances {
         self.balance_simulator.vault
     }
 
+    #[tracing::instrument(skip_all)]
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
         let simulation = self
             .balance_simulator
@@ -64,6 +65,7 @@ impl Balances {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     async fn tradable_balance_simple(&self, query: &Query, token: &Contract) -> Result<U256> {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
