@@ -5,7 +5,7 @@ mod instrumentation;
 mod wallet;
 
 use {
-    crate::AlloyProvider,
+    crate::{AlloyProvider, Config},
     alloy::{
         network::EthereumWallet,
         providers::{Provider, ProviderBuilder},
@@ -13,6 +13,7 @@ use {
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
+    std::time::Duration,
 };
 pub use {conversions::Account, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
@@ -24,7 +25,10 @@ fn rpc(url: &str) -> RpcClient {
             label: "main".into(),
         })
         .layer(InstrumentationLayer)
-        .layer(BatchCallLayer::new(Default::default()))
+        .layer(BatchCallLayer::new(Config {
+            ethrpc_batch_delay: Duration::ZERO,
+            ..Default::default()
+        }))
         .http(url.parse().unwrap())
 }
 
