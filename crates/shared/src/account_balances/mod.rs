@@ -163,23 +163,6 @@ impl BalanceSimulator {
             None => Default::default(),
         };
 
-        let old = {
-            let start = std::time::Instant::now();
-            let call = self.balances_old.balance(
-                (self.settlement.address(), self.vault_relayer, self.vault),
-                owner,
-                token,
-                amount.unwrap_or_default(),
-                Bytes(source.as_bytes()),
-                interactions
-                    .iter()
-                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                    .collect(),
-            );
-            let bytes = Bytes(call.tx.data.unwrap_or_default().0);
-            (start.elapsed(), bytes)
-        };
-
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -213,13 +196,6 @@ impl BalanceSimulator {
             .abi_encode();
             (start.elapsed(), Bytes(bytes))
         };
-
-        tracing::debug!(
-            old_time=?old.0,
-            new_time=?new.0,
-            equal=(old.1 == new.1),
-            "computed balances call data"
-        );
 
         let delegate_call = self
             .settlement
