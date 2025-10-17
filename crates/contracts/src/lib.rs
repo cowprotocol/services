@@ -68,12 +68,6 @@ include_contracts! {
     WETH9;
 }
 
-pub mod support {
-    include_contracts! {
-        Balances;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::alloy::networks::{
