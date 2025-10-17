@@ -127,7 +127,15 @@ impl BalanceFetching for Balances {
             })
             .collect::<Vec<_>>();
 
-        future::join_all(futures).await
+        let r = future::join_all(futures).await;
+
+        r.iter()
+            .filter(|res| res.is_err())
+            .take(5)
+            .enumerate()
+            .for_each(|(idx, err)| tracing::error!(?err, "({} of 5) error fetching balances", idx));
+
+        r
     }
 
     async fn can_transfer(
