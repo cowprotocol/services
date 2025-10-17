@@ -126,24 +126,30 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
-    let cip_20_data_updated = || async {
-        onchain.mint_block().await;
-        let data = match crate::database::most_recent_cip_20_data(services.db()).await {
-            Some(data) => data,
-            None => return false,
+    let data_updated = || async {
+        let mut db = services.db().acquire().await.unwrap();
+        let Some(auction_id) = crate::database::latest_auction_id(&mut db).await.unwrap() else {
+            return false;
         };
 
+        let participants = crate::database::auction_participants(&mut db, auction_id)
+            .await
+            .unwrap();
+        let prices = crate::database::auction_prices(&mut db, auction_id)
+            .await
+            .unwrap();
+        let scores = crate::database::reference_scores(&mut db, auction_id)
+            .await
+            .unwrap();
         // sell and buy token price can be found
-        data.prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
-            && data.prices.iter().any(|p| p.token.0 == token.address().0)
+        prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
+            && prices.iter().any(|p| p.token.0 == token.address().0)
             // solver participated in the competition
-            && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
+            && participants.iter().any(|p| p.0 == solver.address().0)
             // and won the auction
-            && data.reference_scores.first().is_some_and(|score| score.solver.0 == solver.address().0)
+            && scores.first().is_some_and(|score| score.solver.0 == solver.address().0)
     };
-    wait_for_condition(TIMEOUT, cip_20_data_updated)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, data_updated).await.unwrap();
 }
 
 fn order_events_matching_fuzzy(actual: &[OrderEvent], expected: &[OrderEventLabel]) -> bool {
