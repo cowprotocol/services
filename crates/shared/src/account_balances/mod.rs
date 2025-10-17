@@ -3,7 +3,10 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::sol_types::{SolCall, SolType, sol_data},
+    alloy::{
+        primitives::address,
+        sol_types::{SolCall, SolType, sol_data},
+    },
     contracts::alloy::support::Balances,
     ethcontract::{
         Bytes,
@@ -193,7 +196,7 @@ impl BalanceSimulator {
         let delegate_call = self
             .settlement
             .simulate_delegatecall(
-                address!(0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b),
+                address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b").into_legacy(),
                 Bytes(balance_call.abi_encode()),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
