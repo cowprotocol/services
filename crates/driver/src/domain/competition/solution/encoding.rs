@@ -246,8 +246,6 @@ pub fn tx(
             wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
         }
 
-        wrapper_data.extend(contracts.settlement().address().as_bytes());
-
         (
             solution.wrappers[0].address,
             contracts::ICowWrapper::at(contracts.web3(), solution.wrappers[0].address.into())
