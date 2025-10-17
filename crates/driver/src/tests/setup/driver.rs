@@ -221,6 +221,7 @@ async fn create_config_file(
     )
     .unwrap();
     writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
     write!(
         file,
         r#"[contracts]

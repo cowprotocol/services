@@ -407,5 +407,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         archive_node_url: config.archive_node_url,
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
+        tx_gas_limit: config.tx_gas_limit,
     }
 }
