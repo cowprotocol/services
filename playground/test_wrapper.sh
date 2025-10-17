@@ -1,7 +1,7 @@
 #!/bin/bash
 set -x
 
-WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x2ca0A9c04948a4461D9DF3E1F03CE142E841488b}
+WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x2AA326f09834DE1CC3637e9e37Eb5C10c75C2a94}
 
 #appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"'${WRAPPER_CONTRACT}'\",\"data\":\"0x\"}]}}'
 #appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"${WRAPPER_CONTRACT}\",\"data\":\"0x\"}]}}"
