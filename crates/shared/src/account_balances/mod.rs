@@ -151,6 +151,7 @@ impl BalanceSimulator {
         F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
         Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
     {
+        tracing::info!("using overrides {:?}", balance_override);
         let overrides: StateOverrides = match balance_override {
             Some(overrides) => self
                 .balance_overrider
@@ -198,6 +199,11 @@ impl BalanceSimulator {
             .from(crate::SIMULATION_ACCOUNT.clone());
 
         let delegate_call = add_access_lists(delegate_call).await;
+
+        tracing::info!(
+            "balance simulation call_data: {:?}",
+            alloy::hex::encode_prefixed(delegate_call.tx.data.clone().unwrap_or_default().0)
+        );
 
         let response = delegate_call.call_with_state_overrides(&overrides).await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
