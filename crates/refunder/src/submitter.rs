@@ -13,11 +13,8 @@ use {
     anyhow::{Result, anyhow},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
-    ethcontract::{Account, U256},
-    ethrpc::alloy::{
-        ProviderSignerExt,
-        conversions::{IntoAlloy, TryIntoAlloyAsync},
-    },
+    ethcontract::U256,
+    ethrpc::alloy::conversions::IntoLegacy,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     shared::ethrpc::Web3,
     std::time::Duration,
@@ -45,7 +42,7 @@ const fn f64_to_u128(n: f64) -> u128 {
 
 pub struct Submitter {
     pub web3: Web3,
-    pub account: Account,
+    pub signer_address: Address,
     pub gas_estimator: Box<dyn GasPriceEstimating>,
     pub gas_parameters_of_last_tx: Option<GasPrice1559>,
     pub nonce_of_last_submission: Option<U256>,
@@ -57,7 +54,7 @@ impl Submitter {
         // Mempool tx are not considered.
         self.web3
             .eth()
-            .transaction_count(self.account.address(), None)
+            .transaction_count(self.signer_address.into_legacy(), None)
             .await
             .map_err(|err| anyhow!("Could not get latest nonce due to err: {err}"))
     }
@@ -82,17 +79,14 @@ impl Submitter {
         self.gas_parameters_of_last_tx = Some(gas_price);
         self.nonce_of_last_submission = Some(nonce);
 
-        let provider = self
-            .web3
-            .alloy
-            .with_signer(self.account.clone().try_into_alloy().await?);
-        let ethflow_contract = CoWSwapEthFlow::Instance::new(ethflow_contract, provider);
+        let ethflow_contract =
+            CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
         let tx_result = ethflow_contract
             .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
             // Gas conversions are lossy but technically the should not have decimal points even though they're floats
             .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
             .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
-            .from(self.account.address().into_alloy())
+            .from(self.signer_address)
             .nonce(nonce.low_u64())
             .send()
             .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
