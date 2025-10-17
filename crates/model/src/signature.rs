@@ -268,6 +268,8 @@ pub fn hashed_eip712_message(
     struct_hash: &[u8; 32],
 ) -> [u8; 32] {
     let mut message = [0u8; 66];
+    // 0x19 0x01 are the magic prefix bytes for the domain separator
+    // https://eips.ethereum.org/EIPS/eip-712#eth_signTypedData
     message[0..2].copy_from_slice(&[0x19, 0x01]);
     message[2..34].copy_from_slice(&domain_separator.0);
     message[34..66].copy_from_slice(struct_hash);
