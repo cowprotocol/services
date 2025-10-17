@@ -175,9 +175,10 @@ impl BalanceFetching for Balances {
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
         let new_balances = self.inner.get_balances(&missing_queries).await;
         tracing::info!(
-            "n of missing queries: {}, n of cached queries: {}",
+            "n of missing queries: {}, n of cached queries: {}, n of error'd queries: {}",
             missing_queries.len(),
-            queries.len() - missing_queries.len()
+            queries.len() - missing_queries.len(),
+            new_balances.iter().filter(|res| res.is_err()).count()
         );
 
         {
