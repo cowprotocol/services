@@ -193,7 +193,7 @@ impl BalanceSimulator {
         let delegate_call = self
             .settlement
             .simulate_delegatecall(
-                self.balances.address().into_legacy(),
+                address!(0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b),
                 Bytes(balance_call.abi_encode()),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
