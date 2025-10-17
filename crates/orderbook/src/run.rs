@@ -105,9 +105,10 @@ pub async fn run(args: Arguments) {
             .expect("load settlement contract"),
     };
     let balances_contract = match args.shared.balances_contract_address {
-        Some(address) => {
-            contracts::alloy::support::Balances::Instance::new(address, web3.alloy.clone())
-        }
+        Some(address) => contracts::alloy::support::Balances::Instance::new(
+            address.into_alloy(),
+            web3.alloy.clone(),
+        ),
         None => contracts::alloy::support::Balances::Instance::deployed(&web3.alloy.clone())
             .await
             .expect("load balances contract"),

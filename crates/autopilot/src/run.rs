@@ -208,10 +208,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
         weth: args.shared.native_token_address,
-        balances: args
-            .shared
-            .balances_contract_address
-            .map(IntoLegacy::into_legacy),
+        balances: args.shared.balances_contract_address,
         trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(

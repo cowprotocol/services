@@ -3,7 +3,7 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::sol_types::{SolType, sol_data},
+    alloy::sol_types::{SolCall, SolType, sol_data},
     contracts::alloy::support::Balances,
     ethcontract::{
         Bytes,
@@ -167,17 +167,17 @@ impl BalanceSimulator {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances.balance(
-            contracts::alloy::support::Balances::Balances::Contracts {
+        let balance_call = contracts::alloy::support::Balances::Balances::balanceCall {
+            contracts: contracts::alloy::support::Balances::Balances::Contracts {
                 settlement: self.settlement.address().into_alloy(),
                 vaultRelayer: self.vault_relayer.into_alloy(),
                 vault: self.vault.into_alloy(),
             },
-            owner.into_alloy(),
-            token.into_alloy(),
-            amount.unwrap_or_default().into_alloy(),
-            source.as_bytes().into(),
-            interactions
+            trader: owner.into_alloy(),
+            token: token.into_alloy(),
+            amount: amount.unwrap_or_default().into_alloy(),
+            source: source.as_bytes().into(),
+            interactions: interactions
                 .iter()
                 .map(
                     |i| contracts::alloy::support::Balances::Balances::Interaction {
@@ -187,13 +187,13 @@ impl BalanceSimulator {
                     },
                 )
                 .collect(),
-        );
+        };
 
         let delegate_call = self
             .settlement
             .simulate_delegatecall(
                 self.balances.address().into_legacy(),
-                Bytes(balance_call.calldata().to_vec()),
+                Bytes(balance_call.abi_encode()),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
 

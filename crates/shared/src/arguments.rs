@@ -253,7 +253,7 @@ pub struct Arguments {
 
     /// Override address of the Balances contract.
     #[clap(long, env)]
-    pub balances_contract_address: Option<Address>,
+    pub balances_contract_address: Option<H160>,
 
     /// Override address of the Signatures contract.
     #[clap(long, env)]

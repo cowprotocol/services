@@ -115,27 +115,15 @@ impl BalanceFetching for Balances {
     #[instrument(skip_all)]
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
-        let futures = queries
-            .iter()
-            .map(|query| async {
-                if query.interactions.is_empty() {
-                    let token = contracts::ERC20::at(&self.web3, query.token);
-                    self.tradable_balance_simple(query, &token).await
-                } else {
-                    self.tradable_balance_simulated(query).await
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let r = future::join_all(futures).await;
-
-        r.iter()
-            .filter(|res| res.is_err())
-            .take(5)
-            .enumerate()
-            .for_each(|(idx, err)| tracing::error!(?err, "({} of 5) error fetching balances", idx));
-
-        r
+        let futures = queries.iter().map(|query| async {
+            if query.interactions.is_empty() {
+                let token = contracts::ERC20::at(&self.web3, query.token);
+                self.tradable_balance_simple(query, &token).await
+            } else {
+                self.tradable_balance_simulated(query).await
+            }
+        });
+        future::join_all(futures).await
     }
 
     async fn can_transfer(
@@ -189,7 +177,7 @@ mod tests {
         let settlement =
             contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
         let balances = contracts::alloy::support::Balances::Instance::new(
-            address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             web3.alloy.clone(),
         );
         let balances = Balances::new(
