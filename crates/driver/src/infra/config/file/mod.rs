@@ -2,6 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     alloy::primitives::Address,
+    number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
@@ -85,6 +86,10 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    #[allow(dead_code)]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    tx_gas_limit: Option<eth::U256>,
 }
 
 #[serde_as]
