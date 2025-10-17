@@ -2,6 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     alloy::primitives::Address,
+    number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
