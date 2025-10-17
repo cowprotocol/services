@@ -33,4 +33,5 @@ pub struct Config {
     pub archive_node_url: Option<Url>,
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
+    pub tx_gas_limit: eth::U256,
 }
