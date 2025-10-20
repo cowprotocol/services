@@ -5,6 +5,7 @@ use {
     database::{Address, TransactionHash, byte_array::ByteArray, order_events},
     e2e::setup::Db,
     model::order::OrderUid,
+    sqlx::PgConnection,
     std::ops::DerefMut,
 };
 
@@ -41,57 +42,36 @@ pub struct AuctionTransaction {
     pub solution_uid: i64,
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub struct Cip20Data {
-    pub txs: Vec<AuctionTransaction>,
-    pub participants: Vec<database::solver_competition_v2::AuctionParticipant>,
-    pub prices: Vec<database::auction_prices::AuctionPrice>,
-    pub reference_scores: Vec<database::reference_scores::Score>,
-    pub competition: serde_json::Value,
+pub async fn auction_participants(
+    ex: &mut PgConnection,
+    auction_id: i64,
+) -> anyhow::Result<Vec<Address>> {
+    const QUERY: &str = r#"
+        SELECT DISTINCT ps.solver
+        FROM proposed_solutions ps
+        WHERE ps.auction_id = $1
+    "#;
+    Ok(sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?)
 }
 
-/// Returns `Some(data)` if the all the expected CIP-20 data has been indexed
-/// for the most recent `auction_id` from `settlements` table.
-pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
-    let mut db = db.acquire().await.unwrap();
+pub async fn auction_prices(
+    ex: &mut PgConnection,
+    auction_id: i64,
+) -> anyhow::Result<Vec<database::auction_prices::AuctionPrice>> {
+    const QUERY: &str = "SELECT * FROM auction_prices WHERE auction_id = $1";
+    Ok(sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?)
+}
 
-    const LAST_AUCTION_ID: &str = "SELECT auction_id FROM settlements WHERE auction_id IS NOT \
-                                   NULL ORDER BY auction_id DESC LIMIT 1";
-    let auction_id: i64 = sqlx::query_scalar(LAST_AUCTION_ID)
-        .fetch_optional(db.deref_mut())
-        .await
-        .unwrap()?;
+pub async fn reference_scores(
+    ex: &mut PgConnection,
+    auction_id: i64,
+) -> anyhow::Result<Vec<database::reference_scores::Score>> {
+    const QUERY: &str = "SELECT * FROM reference_scores WHERE auction_id = $1";
+    Ok(sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?)
+}
 
-    const TX_QUERY: &str = r"
-SELECT * FROM settlements WHERE auction_id = $1";
-
-    let txs: Vec<AuctionTransaction> = sqlx::query_as(TX_QUERY)
-        .bind(auction_id)
-        .fetch_all(db.deref_mut())
-        .await
-        .ok()?;
-
-    let participants =
-        database::solver_competition_v2::fetch_auction_participants(&mut db, auction_id)
-            .await
-            .unwrap();
-    let prices = database::auction_prices::fetch(&mut db, auction_id)
-        .await
-        .unwrap();
-    let reference_scores = database::reference_scores::fetch(&mut db, auction_id)
-        .await
-        .unwrap();
-    let competition = database::solver_competition::load_by_id(&mut db, auction_id)
-        .await
-        .unwrap()?
-        .json;
-
-    Some(Cip20Data {
-        txs,
-        participants,
-        prices,
-        reference_scores,
-        competition,
-    })
+pub async fn latest_auction_id(ex: &mut PgConnection) -> anyhow::Result<Option<i64>> {
+    const QUERY: &str = "SELECT auction_id FROM settlements WHERE auction_id IS NOT NULL ORDER BY \
+                         auction_id DESC LIMIT 1";
+    Ok(sqlx::query_scalar(QUERY).fetch_optional(ex).await?)
 }
