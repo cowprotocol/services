@@ -1,3 +1,6 @@
+//! This table is deprecated, since it contains duplicated data in the
+//! `competition_auctions` table. But it can't currently be removed, since the
+//! solver team is still using it.
 use {
     crate::{Address, PgTransaction, auction::AuctionId},
     bigdecimal::BigDecimal,

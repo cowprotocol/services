@@ -31,4 +31,5 @@ pub struct Config {
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
+    pub tx_gas_limit: eth::U256,
 }

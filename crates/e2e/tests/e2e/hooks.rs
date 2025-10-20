@@ -428,8 +428,7 @@ async fn partial_fills(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(3)).await;
 
-    let counter = contracts::test::Counter::builder(&web3)
-        .deploy()
+    let counter = contracts::alloy::test::Counter::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
 
@@ -437,26 +436,48 @@ async fn partial_fills(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
+    let sell_token = onchain.contracts().weth.clone();
     tx!(
         trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(2))
+        sell_token.approve(onchain.contracts().allowance, to_wei(2))
     );
-    tx_value!(
-        trader.account(),
-        to_wei(1),
-        onchain.contracts().weth.deposit()
-    );
+    tx_value!(trader.account(), to_wei(1), sell_token.deposit());
+
+    let balance_before_first_trade = sell_token
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
+    let pre_inc = counter.setCounterToBalance(
+        "pre".to_string(),
+        sell_token.address().into_alloy(),
+        trader.address().into_alloy(),
+    );
+    let pre_hook = Hook {
+        target: counter.address().into_legacy(),
+        call_data: pre_inc.calldata().to_vec(),
+        gas_limit: pre_inc.estimate_gas().await.unwrap(),
+    };
+
+    let post_inc = counter.setCounterToBalance(
+        "post".to_string(),
+        sell_token.address().into_alloy(),
+        trader.address().into_alloy(),
+    );
+    let post_hook = Hook {
+        target: counter.address().into_legacy(),
+        call_data: post_inc.calldata().to_vec(),
+        gas_limit: post_inc.estimate_gas().await.unwrap(),
+    };
+
     tracing::info!("Placing order");
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: sell_token.address(),
         sell_amount: to_wei(2),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
@@ -467,8 +488,8 @@ async fn partial_fills(web3: Web3) {
             full: json!({
                 "metadata": {
                     "hooks": {
-                        "pre": [hook_for_transaction(counter.increment_counter("pre".to_string()).tx).await],
-                        "post": [hook_for_transaction(counter.increment_counter("post".to_string()).tx).await],
+                        "pre": [pre_hook],
+                        "post": [post_hook],
                     },
                 },
             })
@@ -486,9 +507,7 @@ async fn partial_fills(web3: Web3) {
 
     tracing::info!("Waiting for first trade.");
     let trade_happened = || async {
-        onchain
-            .contracts()
-            .weth
+        sell_token
             .balance_of(trader.address())
             .call()
             .await
@@ -497,30 +516,55 @@ async fn partial_fills(web3: Web3) {
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
     assert_eq!(
-        counter.counters("pre".to_string()).call().await.unwrap(),
-        1.into()
+        counter
+            .counters("pre".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        balance_before_first_trade
     );
+    let post_balance_after_first_trade = sell_token
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
     assert_eq!(
-        counter.counters("post".to_string()).call().await.unwrap(),
-        1.into()
+        counter
+            .counters("post".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        post_balance_after_first_trade
     );
 
     tracing::info!("Fund remaining sell balance.");
-    tx_value!(
-        trader.account(),
-        to_wei(1),
-        onchain.contracts().weth.deposit()
-    );
+    tx_value!(trader.account(), to_wei(1), sell_token.deposit());
 
     tracing::info!("Waiting for second trade.");
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
     assert_eq!(
-        counter.counters("pre".to_string()).call().await.unwrap(),
-        1.into()
+        counter
+            .counters("pre".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        balance_before_first_trade
     );
     assert_eq!(
-        counter.counters("post".to_string()).call().await.unwrap(),
-        2.into()
+        counter
+            .counters("post".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        sell_token
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap()
     );
 }
 

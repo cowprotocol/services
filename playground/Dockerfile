@@ -8,9 +8,9 @@ RUN rustup component add clippy rustfmt
 RUN echo "\
 [build]\n \
 target = \"$(rustc -Vv | grep host | awk '{print $2}')\"\n \
+rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\", \"--cfg\", \"tokio_unstable\"]\n \
 [target.$(rustc -Vv | grep host | awk '{print $2}')]\n \
 linker = \"clang\"\n \
-rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\"]\n \
 " > ~/.cargo/config.toml
 
 RUN cargo install cargo-chef
@@ -30,9 +30,11 @@ CMD ["migrate"]
 
 FROM chef AS builder
 COPY --from=planner /src/recipe.json recipe.json
+COPY --from=chef /.cargo /.cargo
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 # Copy only the library crates for now
+COPY --from=chef /.cargo /.cargo
 COPY Cargo.toml Cargo.lock ./
 COPY ./crates/app-data/ ./crates/app-data
 COPY ./crates/database/ ./crates/database
@@ -57,6 +59,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get clean
 
 FROM builder AS alerter-build
+COPY --from=chef /.cargo /.cargo
 COPY ./crates/alerter/ ./crates/alerter
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package alerter
 
@@ -68,6 +71,7 @@ FROM builder AS autopilot-build
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package autopilot
 
 FROM base AS autopilot
+COPY --from=chef /.cargo /.cargo
 COPY ./crates/autopilot/ ./crates/autopilot
 COPY --from=autopilot-build /src/target/release/autopilot /usr/local/bin/autopilot
 ENTRYPOINT [ "autopilot" ]
@@ -81,6 +85,7 @@ COPY --from=driver-build /src/target/release/driver /usr/local/bin/driver
 ENTRYPOINT [ "driver" ]
 
 FROM builder AS orderbook-build
+COPY --from=chef /.cargo /.cargo
 COPY ./crates/orderbook/ ./crates/orderbook
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package orderbook
 
@@ -89,6 +94,7 @@ COPY --from=orderbook-build /src/target/release/orderbook /usr/local/bin/orderbo
 ENTRYPOINT [ "orderbook" ]
 
 FROM builder AS refunder-build
+COPY --from=chef /.cargo /.cargo
 COPY ./crates/refunder/ ./crates/refunder
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package refunder
 
@@ -97,6 +103,7 @@ COPY --from=refunder-build /src/target/release/refunder /usr/local/bin/refunder
 ENTRYPOINT [ "refunder" ]
 
 FROM builder AS solvers-build
+COPY --from=chef /.cargo /.cargo
 COPY ./crates/solvers/ ./crates/solvers
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solvers
 

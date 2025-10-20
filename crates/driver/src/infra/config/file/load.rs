@@ -402,5 +402,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         order_priority_strategies: config.order_priority_strategies,
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
+        tx_gas_limit: config.tx_gas_limit,
     }
 }

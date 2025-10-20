@@ -4,7 +4,6 @@ use {
     database::{
         Address,
         auction::AuctionId,
-        auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
         surplus_capturing_jit_order_owners,
@@ -60,21 +59,6 @@ impl super::Postgres {
         database::reference_scores::insert(&mut ex, &reference_scores)
             .await
             .context("reference_scores::insert")?;
-
-        database::auction_participants::insert(
-            &mut ex,
-            competition
-                .participants
-                .into_iter()
-                .map(|p| Participant {
-                    auction_id: competition.auction_id,
-                    participant: ByteArray(p.0),
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("auction_participants::insert")?;
 
         database::auction_prices::insert(
             &mut ex,

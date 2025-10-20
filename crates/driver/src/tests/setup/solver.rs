@@ -483,6 +483,7 @@ impl Solver {
                 ),
             },
             gas,
+            45_000_000.into(),
         )
         .await;
 
