@@ -366,9 +366,6 @@ fn main() {
                 },
             )
     });
-    generate_contract_with_config("HoneyswapRouter", |builder| {
-        builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
-    });
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
@@ -502,12 +499,6 @@ fn main() {
             .add_network_str(GNOSIS, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
             .add_network_str(SEPOLIA, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
     });
-
-    // Test Contract for incrementing arbitrary counters.
-    generate_contract("Counter");
-
-    // Test Contract for using up a specified amount of gas.
-    generate_contract("GasHog");
 
     // Contract for Uniswap's Permit2 contract.
     generate_contract_with_config("Permit2", |builder| {

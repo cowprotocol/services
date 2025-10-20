@@ -45,7 +45,7 @@ pub struct AuctionTransaction {
 #[derive(Clone, Debug)]
 pub struct Cip20Data {
     pub txs: Vec<AuctionTransaction>,
-    pub participants: Vec<database::auction_participants::Participant>,
+    pub participants: Vec<database::solver_competition_v2::AuctionParticipant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
     pub reference_scores: Vec<database::reference_scores::Score>,
     pub competition: serde_json::Value,
@@ -72,9 +72,10 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .await
         .ok()?;
 
-    let participants = database::auction_participants::fetch(&mut db, auction_id)
-        .await
-        .unwrap();
+    let participants =
+        database::solver_competition_v2::fetch_auction_participants(&mut db, auction_id)
+            .await
+            .unwrap();
     let prices = database::auction_prices::fetch(&mut db, auction_id)
         .await
         .unwrap();
