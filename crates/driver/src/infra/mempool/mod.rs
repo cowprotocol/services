@@ -79,7 +79,10 @@ impl Mempool {
     /// Fetches the pending transaction count (nonce) for the given address.
     /// This includes both mined transactions and pending transactions in the
     /// mempool.
-    async fn get_pending_nonce(&self, address: eth::Address) -> Result<eth::U256, mempools::Error> {
+    pub async fn get_pending_nonce(
+        &self,
+        address: eth::Address,
+    ) -> Result<eth::U256, mempools::Error> {
         self.transport
             .eth()
             .transaction_count(address.into(), Some(web3::types::BlockNumber::Pending))
@@ -98,16 +101,12 @@ impl Mempool {
         tx: eth::Tx,
         gas: competition::solution::settlement::Gas,
         solver: &infra::Solver,
+        nonce: eth::U256,
     ) -> Result<eth::TxId, mempools::Error> {
-        // Fetch the pending nonce to avoid race conditions between concurrent
-        // transactions (e.g., settlement tx and cancellation tx) from the same
-        // solver address.
-        let nonce = self.get_pending_nonce(solver.address()).await?;
-
         ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
             .from(solver.account().clone())
             .to(tx.to.into())
-            .nonce(nonce.saturating_add(1.into()))
+            .nonce(nonce)
             .gas_price(ethcontract::GasPrice::Eip1559 {
                 max_fee_per_gas: gas.price.max().into(),
                 max_priority_fee_per_gas: gas.price.tip().into(),
