@@ -107,7 +107,7 @@ impl Mempool {
         ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
             .from(solver.account().clone())
             .to(tx.to.into())
-            .nonce(nonce)
+            .nonce(nonce + 1)
             .gas_price(ethcontract::GasPrice::Eip1559 {
                 max_fee_per_gas: gas.price.max().into(),
                 max_priority_fee_per_gas: gas.price.tip().into(),
