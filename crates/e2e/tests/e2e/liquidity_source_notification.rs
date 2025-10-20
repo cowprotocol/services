@@ -230,8 +230,8 @@ http-timeout = "10s"
         effective_trader: onchain.contracts().gp_settlement.address().into_alloy(),
         base_token: token_usdc.address().into_alloy(),
         quote_token: token_usdt.address().into_alloy(),
-        base_token_amount: U256::from_limbs(trade_amount.0),
-        quote_token_amount: U256::from_limbs(trade_amount.0),
+        base_token_amount: trade_amount.into_alloy(),
+        quote_token_amount: trade_amount.into_alloy(),
         min_fill_amount: U256::from(1),
         quote_expiry: U256::from(Utc::now().timestamp() as u64 + 10),
         recipient: liquorice_maker.address().into_alloy(),
@@ -241,10 +241,7 @@ http-timeout = "10s"
     let liquorice_solution_calldata = {
         // Create Liquorice order signature
         let liquorice_order_signature = liquorice_order.sign(
-            &api::liquorice::onchain::DomainSeparator::new(
-                1,
-                liquorice_settlement.address().into_legacy(),
-            ),
+            &api::liquorice::onchain::DomainSeparator::new(1, *liquorice_settlement.address()),
             liquorice_order.hash(),
             &liquorice_maker,
         );
@@ -269,7 +266,7 @@ http-timeout = "10s"
                 ILiquoriceSettlement::Signature::TypedSignature {
                     signatureType: liquorice_order_signature.signature_type,
                     transferCommand: liquorice_order_signature.transfer_command,
-                    signatureBytes: Bytes::from(liquorice_order_signature.signature_bytes.0),
+                    signatureBytes: liquorice_order_signature.signature.as_bytes().into(),
                 },
                 liquorice_order.quote_token_amount,
                 // Taker signature is not used in this use case

@@ -7,13 +7,9 @@ pub mod order {
             crate::setup::TestAccount,
             alloy::{
                 primitives::{Address, B256, U256, b256, keccak256},
+                signers::{SignerSync, local::PrivateKeySigner},
                 sol,
                 sol_types::{SolType, SolValue},
-            },
-            secp256k1::SecretKey,
-            web3::{
-                signing,
-                signing::{Key, SecretKeyRef},
             },
         };
 
@@ -36,6 +32,14 @@ pub mod order {
                 uint256, // minFillAmount
                 uint256, // quoteExpiry
                 address, // recipient
+            )
+        };
+
+        pub type OrderDataEIP712Sol = sol! {
+            tuple(
+                bytes2, // '\x19\x01'
+                bytes32, // DOMAIN_SEPARATOR()
+                bytes32, // order data hash
             )
         };
 
@@ -64,29 +68,21 @@ pub mod order {
                 hash: B256,
                 signer: &TestAccount,
             ) -> Signature {
-                let hashed_signing_message = {
-                    let mut msg = [0u8; 66];
-                    msg[0..2].copy_from_slice(&[0x19, 0x01]);
-                    msg[2..34].copy_from_slice(&domain_separator.0);
-                    msg[34..66].copy_from_slice(hash.as_ref());
-                    signing::keccak256(&msg)
-                };
+                let order_data_eip712 = OrderDataEIP712Sol::abi_encode_packed(&(
+                    [0x19, 0x01],
+                    domain_separator.0,
+                    hash,
+                ));
 
-                let signature =
-                    SecretKeyRef::from(&SecretKey::from_slice(signer.private_key()).unwrap())
-                        .sign(&hashed_signing_message, None)
-                        .unwrap();
+                let hashed_signing_message = keccak256(order_data_eip712);
+
+                let signer = PrivateKeySigner::from_slice(signer.private_key()).unwrap();
+                let signature = signer.sign_hash_sync(&hashed_signing_message).unwrap();
 
                 Signature {
                     signature_type: 3,   // EIP-712
                     transfer_command: 1, // Transfer command standard
-                    signature_bytes: {
-                        let mut sig_bytes = Vec::new();
-                        sig_bytes.extend_from_slice(&signature.r.0);
-                        sig_bytes.extend_from_slice(&signature.s.0);
-                        sig_bytes.extend_from_slice(&(signature.v as u8).to_be_bytes());
-                        ethcontract::Bytes(sig_bytes)
-                    },
+                    signature,
                 }
             }
 
@@ -149,292 +145,53 @@ pub mod order {
 
     pub mod signature {
         use {
-            autopilot::domain::eth::H160,
-            ethcontract::common::abi::{Token, encode},
+            alloy::{
+                primitives::{Address, B256, U256, keccak256},
+                sol,
+                sol_types::SolType,
+            },
             std::sync::LazyLock,
-            web3::signing,
+        };
+
+        pub type DomainSeparatorSol = sol! {
+            tuple(
+                bytes32, // EIP712_DOMAIN_TYPEHASH
+                bytes32, // keccak(domain.name)
+                bytes32, // keccak(domain.version)
+                uint256, // block.chainId
+                address, // address(this)
+            )
         };
 
         #[derive(Copy, Clone, Default, Eq, PartialEq)]
-        pub struct DomainSeparator(pub [u8; 32]);
+        pub struct DomainSeparator(pub B256);
 
         impl DomainSeparator {
-            pub fn new(chain_id: u64, contract_address: H160) -> Self {
-                static DOMAIN_TYPE_HASH: LazyLock<[u8; 32]> = LazyLock::new(|| {
-                    signing::keccak256(
+            pub fn new(chain_id: u64, contract_address: Address) -> Self {
+                static DOMAIN_TYPE_HASH: LazyLock<B256> = LazyLock::new(|| {
+                    keccak256(
                         b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
                     )
                 });
 
-                static DOMAIN_NAME: LazyLock<[u8; 32]> =
-                    LazyLock::new(|| signing::keccak256(b"LiquoriceSettlement"));
+                static DOMAIN_NAME: LazyLock<B256> =
+                    LazyLock::new(|| keccak256(b"LiquoriceSettlement"));
 
-                static DOMAIN_VERSION: LazyLock<[u8; 32]> =
-                    LazyLock::new(|| signing::keccak256(b"1"));
+                static DOMAIN_VERSION: LazyLock<B256> = LazyLock::new(|| keccak256(b"1"));
 
-                let abi_encode_string = encode(&[
-                    Token::Uint((*DOMAIN_TYPE_HASH).into()),
-                    Token::Uint((*DOMAIN_NAME).into()),
-                    Token::Uint((*DOMAIN_VERSION).into()),
-                    Token::Uint(chain_id.into()),
-                    Token::Address(contract_address),
-                ]);
-
-                Self(signing::keccak256(abi_encode_string.as_slice()))
+                Self(keccak256(DomainSeparatorSol::abi_encode_sequence(&(
+                    (*DOMAIN_TYPE_HASH),
+                    (*DOMAIN_NAME),
+                    (*DOMAIN_VERSION),
+                    U256::from(chain_id),
+                    contract_address,
+                ))))
             }
         }
-        #[derive(Default)]
         pub struct Signature {
             pub signature_type: u8,
             pub transfer_command: u8,
-            pub signature_bytes: ethcontract::Bytes<Vec<u8>>,
-        }
-
-        impl Signature {
-            pub fn as_tuple(&self) -> (u8, u8, ethcontract::Bytes<Vec<u8>>) {
-                (
-                    self.signature_type,
-                    self.transfer_command,
-                    self.signature_bytes.clone(),
-                )
-            }
+            pub signature: alloy::primitives::Signature,
         }
     }
-}
-
-pub mod reference {
-    //     use std::time::Duration;
-    //
-    //     use alloy::{
-    //         primitives::{keccak256, Address, PrimitiveSignature, B256, U256},
-    //         sol,
-    //         sol_types::{SolType, SolValue},
-    //     };
-    //     use chrono::{serde::ts_seconds, DateTime, Utc};
-    //     use serde::{Deserialize, Serialize};
-    //     use serde_with::{hex::Hex, serde_as, DisplayFromStr};
-    //     use uuid::Uuid;
-    //
-    //     use crate::{
-    //         domain::eth::ChainId,
-    //         protocol::messages::maker::{
-    //             rfq::RFQMessage,
-    //             rfq_quote::eip712::{DomainSeparator, OrderDataEIP712Sol,
-    // SINGLE_ORDER_TYPED_HASH},         },
-    //         utils::serialization::{signature::SignatureHex,
-    // u256::DecimalU256},     };
-    //
-    //     #[serde_as]
-    //     #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize,
-    // Deserialize)]     #[serde(rename_all = "camelCase")]
-    //     pub struct QuoteLevelLite {
-    //         /// Date and time when the quote will expire
-    //         #[serde(with = "ts_seconds")]
-    //         pub expiry: DateTime<Utc>,
-    //         /// Address of the Liquorice Settlement Contract
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         pub settlement_contract: Address,
-    //         /// Address of baseToken recipient.
-    //         /// If absent, signer assumed to be the recipient
-    //         #[serde_as(as = "Option<DisplayFromStr>")]
-    //         pub recipient: Option<Address>,
-    //         /// Address of the RFQ signer
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         pub signer: Address,
-    //         /// Address of the EIP-1271 verifying contract
-    //         #[serde_as(as = "Option<DisplayFromStr>")]
-    //         pub eip1271_verifier: Option<Address>,
-    //         /// Base token address
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         pub base_token: Address,
-    //         /// Quote token address
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         pub quote_token: Address,
-    //         /// Base Token amount
-    //         #[serde_as(as = "DecimalU256")]
-    //         pub base_token_amount: U256,
-    //         /// Quote Token amount
-    //         #[serde_as(as = "DecimalU256")]
-    //         pub quote_token_amount: U256,
-    //         /// Minimal amount for partial fill.
-    //         /// If omitted, order can not be filled partially.
-    //         #[serde(skip_serializing_if = "Option::is_none")]
-    //         #[serde_as(as = "Option<DecimalU256>")]
-    //         pub min_quote_token_amount: Option<U256>,
-    //         /// Quote signature
-    //         #[serde_as(as = "Option<SignatureHex>")]
-    //         pub signature: Option<PrimitiveSignature>,
-    //     }
-    //
-    //     impl QuoteLevelLite {
-    //         pub fn expiration_delta(&self) -> Result<Duration, String> {
-    //             (self.expiry - Utc::now())
-    //                 .to_std()
-    //                 .map_err(|e| e.to_string())
-    //         }
-    //
-    //         pub fn hash(&self, rfq: &RFQMessage) -> B256 {
-    //             SignaturePayload::builder()
-    //                 .quote_level(self)
-    //                 .rfq_message(rfq)
-    //                 .build()
-    //                 .hash()
-    //         }
-    //     }
-    //
-    //     #[serde_as]
-    //     #[derive(Debug, Serialize)]
-    //     pub struct SignaturePayload {
-    //         chain_id: ChainId,
-    //         rfq_id: Uuid,
-    //         settlement_contract: Address,
-    //         #[serde_as(as = "Hex")]
-    //         nonce: [u8; 32],
-    //         trader: Address,
-    //         effective_trader: Address,
-    //         base_token: Address,
-    //         quote_token: Address,
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         base_token_amount: U256,
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         quote_token_amount: U256,
-    //         #[serde_as(as = "DisplayFromStr")]
-    //         min_quote_token_amount: U256,
-    //         #[serde(with = "ts_seconds")]
-    //         expiry: DateTime<Utc>,
-    //         recipient: Address,
-    //     }
-    //
-    //     pub type OrderDataPart1Sol = sol! {
-    //     tuple(
-    //         bytes32, // SINGLE_ORDER_TYPED_HASH
-    //         bytes32, // keccak256(rfq_id)
-    //         uint256, // nonce
-    //         address, // trader
-    //     )
-    // };
-    //
-    //     pub type OrderDataPart2Sol = sol! {
-    //     tuple(
-    //         address, // effectiveTrader
-    //         address, // baseToken
-    //         address, // quoteToken
-    //         uint256, // baseTokenAmount
-    //         uint256, // quoteTokenAmount
-    //         uint256, // minFillAmount
-    //         uint256, // quoteExpiry
-    //         address, // recipient
-    //     )
-    // };
-    //
-    //     #[derive(Default)]
-    //     pub struct SignaturePayloadBuilder<'a> {
-    //         rfq_message: Option<&'a RFQMessage>,
-    //         quote_level: Option<&'a QuoteLevelLite>,
-    //     }
-    //
-    //     impl SignaturePayload {
-    //         pub fn builder<'a>() -> SignaturePayloadBuilder<'a> {
-    //             SignaturePayloadBuilder::default()
-    //         }
-    //
-    //         pub fn hash(&self) -> B256 {
-    //             let domain_separator_hash =
-    // DomainSeparator::hash(self.chain_id, self.settlement_contract);
-    //
-    //             let order_part_1 = OrderDataPart1Sol::abi_encode_sequence(&(
-    //                 *SINGLE_ORDER_TYPED_HASH,
-    //                 keccak256(self.rfq_id.to_string().abi_encode()),
-    //                 U256::from_be_slice(self.nonce.as_slice()),
-    //                 self.trader,
-    //             ));
-    //
-    //             let order_part_2 = OrderDataPart2Sol::abi_encode_sequence(&(
-    //                 self.effective_trader,
-    //                 self.base_token,
-    //                 self.quote_token,
-    //                 self.base_token_amount,
-    //                 self.quote_token_amount,
-    //                 self.min_quote_token_amount,
-    //                 U256::from(self.expiry.timestamp()),
-    //                 self.recipient,
-    //             ));
-    //
-    //             let order_data_hash = keccak256([&order_part_1[..],
-    // &order_part_2[..]].concat());
-    //
-    //             let order_data_eip712 =
-    // OrderDataEIP712Sol::abi_encode_packed(&(                 [0x19,
-    // 0x01],                 domain_separator_hash,
-    //                 order_data_hash,
-    //             ));
-    //
-    //             keccak256(order_data_eip712)
-    //         }
-    //     }
-    //
-    //     impl<'a> SignaturePayloadBuilder<'a> {
-    //         pub fn rfq_message(mut self, rfq_message: &'a RFQMessage) -> Self
-    // {             self.rfq_message = Some(rfq_message);
-    //             self
-    //         }
-    //
-    //         pub fn quote_level(mut self, payload: &'a QuoteLevelLite) -> Self
-    // {             self.quote_level = Some(payload);
-    //             self
-    //         }
-    //
-    //         pub fn build(&self) -> SignaturePayload {
-    //             let rfq_message = self.rfq_message.unwrap();
-    //             let quote_level = self.quote_level.unwrap();
-    //
-    //             SignaturePayload {
-    //                 chain_id: rfq_message.chain_id,
-    //                 nonce: rfq_message.nonce,
-    //                 trader: rfq_message.trader,
-    //                 effective_trader: rfq_message.effective_trader,
-    //                 rfq_id: rfq_message.rfq_id,
-    //                 settlement_contract: quote_level.settlement_contract,
-    //                 base_token: quote_level.base_token,
-    //                 quote_token: quote_level.quote_token,
-    //                 base_token_amount: quote_level.base_token_amount,
-    //                 quote_token_amount: quote_level.quote_token_amount,
-    //                 min_quote_token_amount: quote_level
-    //                     .min_quote_token_amount
-    //                     .unwrap_or(quote_level.quote_token_amount),
-    //                 expiry: quote_level.expiry,
-    //                 recipient:
-    // quote_level.recipient.unwrap_or(quote_level.signer),             }
-    //         }
-    //     }
-    //
-    //     #[cfg(test)]
-    //     mod tests {
-    //         use crate::{
-    //
-    // protocol::messages::maker::rfq_quote::quote_level_lite::SignaturePayload,
-    //             tests::fixtures::maker_api::{rfq_message, rfq_quote_message},
-    //         };
-    //
-    //         #[test]
-    //         fn test_rfq_quote_level_signature_hash() {
-    //             let rfq = rfq_message::fixture();
-    //             let rfq_quote = rfq_quote_message::fixture();
-    //
-    //             let signature_payload = SignaturePayload::builder()
-    //                 .quote_level(rfq_quote.levels[0].as_lite())
-    //                 .rfq_message(&rfq)
-    //                 .build();
-    //
-    //             let hash = signature_payload.hash();
-    //
-    //             // Generated hash should match the expected hash
-    //             assert_eq!(
-    //                 format!("{hash}"),
-    //
-    // "0x2342c2e81befd9dda11c9e769d6d867e347d5b84a0137bf9fa31acbe7ee4f5ac"
-    //             );
-    //         }
-    //     }
-    //
 }
