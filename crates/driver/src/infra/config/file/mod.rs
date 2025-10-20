@@ -87,9 +87,8 @@ struct Config {
     #[serde(default)]
     flashloans_enabled: bool,
 
-    #[allow(dead_code)]
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    tx_gas_limit: Option<eth::U256>,
+    #[serde_as(as = "HexOrDecimalU256")]
+    tx_gas_limit: eth::U256,
 }
 
 #[serde_as]
