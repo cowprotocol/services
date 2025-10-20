@@ -488,21 +488,6 @@ fn main() {
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
-    // Support contracts used for various order simulations.
-    generate_contract_with_config("Balances", |builder| {
-        builder
-            .add_network_str(MAINNET, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(ARBITRUM_ONE, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(BASE, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(AVALANCHE, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(BNB, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(OPTIMISM, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(POLYGON, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(LENS, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(GNOSIS, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(SEPOLIA, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-    });
-
     // Contract for Uniswap's Permit2 contract.
     generate_contract_with_config("Permit2", |builder| {
         builder
