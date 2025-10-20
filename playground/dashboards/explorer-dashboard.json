@@ -1,0 +1,59 @@
+{
+  "id": null,
+  "uid": "explorer-api-dashboard",
+  "title": "Playground Explorer API",
+  "tags": ["playground", "explorer"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Explorer API Up",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "up{job=\"explorer-api\"}", "legendFormat": "up" }
+      ],
+      "gridPos": {"x":0,"y":0,"w":6,"h":4}
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU (user seconds/s)",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "rate(process_cpu_seconds_total{job=\"explorer-api\"}[1m])", "legendFormat": "cpu" }
+      ],
+      "gridPos": {"x":6,"y":0,"w":9,"h":6}
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory RSS",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "process_resident_memory_bytes{job=\"explorer-api\"}", "legendFormat": "rss" }
+      ],
+      "gridPos": {"x":15,"y":0,"w":9,"h":6}
+    },
+    {
+      "type": "timeseries",
+      "title": "Event Loop Lag p99",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "nodejs_eventloop_lag_seconds{job=\"explorer-api\",quantile=\"0.99\"}", "legendFormat": "p99" }
+      ],
+      "gridPos": {"x":0,"y":6,"w":12,"h":6}
+    },
+    {
+      "type": "timeseries",
+      "title": "Active Handles / Requests",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "nodejs_active_handles_total{job=\"explorer-api\"}", "legendFormat": "handles" },
+        { "expr": "nodejs_active_requests_total{job=\"explorer-api\"}", "legendFormat": "requests" }
+      ],
+      "gridPos": {"x":12,"y":6,"w":12,"h":6}
+    }
+  ]
+}
+

@@ -29,6 +29,11 @@ ENV CHAIN=$CHAIN
 ARG ETH_RPC_URL
 ENV ETH_RPC_URL=$ETH_RPC_URL
 
+# Set the local explorer URL
+ARG NEXT_PUBLIC_LOCAL_EXPLORER_URL=http://localhost:8083
+ENV NEXT_PUBLIC_LOCAL_EXPLORER_URL=$NEXT_PUBLIC_LOCAL_EXPLORER_URL
+ENV REACT_APP_LOCAL_EXPLORER_URL=$NEXT_PUBLIC_LOCAL_EXPLORER_URL
+
 # Set the default environment variables
 ENV REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1
 ENV REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5
@@ -54,11 +59,17 @@ RUN if [ -n "$ETH_RPC_URL" ]; then \
         NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true yarn build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
                    --env REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5 \
                    --env REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100 \
-                   --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"; \
+                   --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS" \
+                   --env REACT_APP_LOCAL_EXPLORER_URL="$NEXT_PUBLIC_LOCAL_EXPLORER_URL"; \
     fi
 
 # Stage 2: Copy the frontend to the nginx container
 FROM docker.io/nginx:1.21-alpine AS frontend
 COPY --from=node-build /usr/src/app/build/cowswap /usr/share/nginx/html
+COPY nginx.cowswap.conf /etc/nginx/conf.d/default.conf
+# Ensure rewrites are configured (sub_filter present)
+RUN grep -q "sub_filter" /etc/nginx/conf.d/default.conf
+# Ensure Etherscan rewrites exist
+RUN grep -qi "etherscan" /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

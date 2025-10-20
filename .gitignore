@@ -5,3 +5,9 @@
 /.idea
 **/testing.*.toml
 /playground/.env
+/playground/.env.fork
+/playground/.claude
+/playground/PR_CHECKLIST.md
+/playground/QUICKSTART.md
+/playground/test.sh
+/playground/verify.sh

@@ -199,8 +199,11 @@ services:
       args:
         - CHAIN=$CHAIN
         - ETH_RPC_URL=http://chain:8545
+        - NEXT_PUBLIC_LOCAL_EXPLORER_URL=http://localhost:8083
     ports:
       - 8000:80
+    depends_on:
+      - explorer-web
 
   explorer:
     build:
@@ -211,6 +214,54 @@ services:
         - ETH_RPC_URL=http://chain:8545
     ports:
       - 8001:80
+
+  explorer-api:
+    build:
+      context: ./explorer-api
+      dockerfile: Dockerfile
+    environment:
+      - JSON_RPC_URL=http://chain:8545
+      - DB_PATH=/data/explorer.sqlite
+      - NETWORK_NAME=local
+      - ENABLE_TRACE_STEPS=true
+      - SOURCIFY_API_URL=http://sourcify:5555
+      - SOURCIFY_REPO_PATH=/sourcify/repository
+      - CHAIN_ID=${CHAIN}
+      - INDEXER_INTERVAL_MS=${INDEXER_INTERVAL_MS}
+      - INDEXER_BATCH=${INDEXER_BATCH}
+      - HISTORY_LIMIT=${HISTORY_LIMIT}
+    volumes:
+      - explorer-data:/data
+      - sourcify-repo:/sourcify/repository:ro
+    ports:
+      - 8081:8081
+    depends_on:
+      chain:
+        condition: service_healthy
+
+  explorer-web:
+    build:
+      context: ./explorer-web
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://explorer-api:8081
+    ports:
+      - 8083:8080
+    depends_on:
+      - explorer-api
+
+  sourcify:
+    image: ghcr.io/sourcifyeth/sourcify:latest
+    environment:
+      - SERVER_PORT=5555
+      - REPOSITORY_PATH=/sourcify/repository
+      - IPFS_ENABLED=false
+      - ETHERSCAN_INTEGRATION=false
+      - TELEMETRY=false
+    ports:
+      - 5555:5555
+    volumes:
+      - sourcify-repo:/sourcify/repository
 
   tempo:
     image: grafana/tempo:latest
@@ -230,6 +281,8 @@ services:
       - GF_AUTH_DISABLE_LOGIN_FORM=true
     volumes:
       - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./dashboards:/var/lib/grafana/dashboards
 
 
   prometheus:
@@ -243,3 +296,5 @@ services:
 
 volumes:
   postgres:
+  explorer-data:
+  sourcify-repo:

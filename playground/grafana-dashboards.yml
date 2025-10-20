@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'Playground Dashboards'
+    orgId: 1
+    folder: 'Playground'
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true
+
