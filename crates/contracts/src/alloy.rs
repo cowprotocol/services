@@ -46,6 +46,7 @@ crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
 crate::bindings!(GnosisSafeProxy);
 crate::bindings!(GnosisSafeProxyFactory);
 
+crate::bindings!(BalancerV2Authorizer);
 crate::bindings!(BalancerV2BasePool);
 crate::bindings!(BalancerV2BasePoolFactory);
 crate::bindings!(BalancerV2WeightedPool);

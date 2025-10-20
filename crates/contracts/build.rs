@@ -32,9 +32,6 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract_with_config("BalancerV2Authorizer", |builder| {
-        builder.contract_mod_override("balancer_v2_authorizer")
-    });
     // Balancer addresses can be obtained from:
     // <https://github.com/balancer/balancer-subgraph-v2/blob/master/networks.yaml>
     generate_contract_with_config("BalancerV2Vault", |builder| {
