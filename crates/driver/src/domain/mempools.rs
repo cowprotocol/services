@@ -133,10 +133,7 @@ impl Mempools {
         // Fetch the pending nonce to avoid race conditions between concurrent
         // transactions (e.g., settlement tx and cancellation tx) from the same
         // solver address.
-        let nonce = mempool
-            .get_pending_nonce(solver.address())
-            .await?
-            .saturating_add(1.into());
+        let nonce = mempool.get_pending_nonce(solver.address()).await?;
         let hash = mempool
             .submit(tx.clone(), settlement.gas, solver, nonce)
             .await?;
