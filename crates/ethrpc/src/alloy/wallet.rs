@@ -28,7 +28,7 @@ impl MutWallet {
     /// [`register_signer`](EthereumWallet::register_signer), if no default
     /// signer has been setup (i.e. the wallet was created using
     /// [`MutWallet::default`]) it will register one.
-    pub fn register_signer<S>(&mut self, signer: S)
+    pub fn register_signer<S>(&self, signer: S)
     where
         S: TxSigner<Signature> + Send + Sync + 'static,
     {
