@@ -166,6 +166,7 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider,
+        alloy::primitives::address,
         ethrpc::Web3,
         model::order::SellTokenSource,
         std::sync::Arc,
@@ -177,9 +178,9 @@ mod tests {
         let web3 = Web3::new_from_env();
         let settlement =
             contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
-        let balances = contracts::support::Balances::at(
-            &web3,
-            addr!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+        let balances = contracts::alloy::support::Balances::Instance::new(
+            address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            web3.alloy.clone(),
         );
         let balances = Balances::new(
             &web3,

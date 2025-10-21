@@ -1,7 +1,7 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::alloy::FlashLoanRouter,
+    contracts::alloy::{FlashLoanRouter, support::Balances},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -27,7 +27,7 @@ pub struct Contracts {
     // TODO: make this non-optional when contracts are deployed
     // everywhere
     flashloan_router: Option<FlashLoanRouter::Instance>,
-    balance_helper: contracts::support::Balances,
+    balance_helper: Balances::Instance,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -66,12 +66,13 @@ impl Contracts {
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
-        let balance_helper = contracts::support::Balances::at(
-            web3,
-            address_for(
-                contracts::support::Balances::raw_contract(),
-                addresses.balances,
-            ),
+        let balance_helper = Balances::Instance::new(
+            addresses
+                .balances
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| Balances::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
         let signatures = contracts::alloy::support::Signatures::Instance::new(
             addresses
@@ -172,7 +173,7 @@ impl Contracts {
         self.flashloan_router.as_ref()
     }
 
-    pub fn balance_helper(&self) -> &contracts::support::Balances {
+    pub fn balance_helper(&self) -> &Balances::Instance {
         &self.balance_helper
     }
 }
@@ -208,12 +209,6 @@ pub trait ContractAt {
 }
 
 impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
-}
-
-impl ContractAt for contracts::support::Balances {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
         Self::at(&eth.web3, address.into())
     }
