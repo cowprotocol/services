@@ -526,7 +526,7 @@ Stores information about indexed CoW AMMs that have been discovered through bloc
  factory\_address   | bytea    | not null | Address of the factory contract associated with this AMM
  tradeable\_tokens  | bytea[]  | not null | Token addresses that can be traded through this AMM
  block\_number      | bigint   | not null | Block number in which the AMM was deployed/finalized
- tx\_hash           | bytea    | not null | Transaction hash in which the AMM was created
+ tx\_hash           | bytea    | not null | Transaction hash in which the AMM was deployed/finalized
 
 Indexes:
 - PRIMARY KEY: btree (`address`)
