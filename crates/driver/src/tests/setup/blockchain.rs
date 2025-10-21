@@ -272,19 +272,19 @@ impl Blockchain {
         .unwrap();
 
         // Set up the settlement contract and related contracts.
-        let vault_authorizer = wait_for(
-            &web3,
-            contracts::BalancerV2Authorizer::builder(&web3, main_trader_account.address())
-                .from(main_trader_account.clone())
-                .deploy(),
+        let vault_authorizer = contracts::alloy::BalancerV2Authorizer::Instance::deploy_builder(
+            web3.alloy.clone(),
+            main_trader_account.address().into_alloy(),
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
         let vault = wait_for(
             &web3,
             contracts::BalancerV2Vault::builder(
                 &web3,
-                vault_authorizer.address(),
+                vault_authorizer.into_legacy(),
                 weth.address(),
                 0.into(),
                 0.into(),
