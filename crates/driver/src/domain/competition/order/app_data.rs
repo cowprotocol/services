@@ -65,10 +65,13 @@ impl AppDataRetriever {
         let app_data = *app_data;
 
         let fut = async move {
+            let start = std::time::Instant::now();
             let url = inner
                 .base_url
                 .join(&format!("api/v1/app_data/{:?}", app_data.0))?;
             let response = inner.client.get(url).send().await?;
+            let request_time = start.elapsed();
+            let start = std::time::Instant::now();
             let validated_app_data = match response.status() {
                 StatusCode::NOT_FOUND => None,
                 _ => {
@@ -88,6 +91,13 @@ impl AppDataRetriever {
                 .cache
                 .insert(app_data, validated_app_data.clone())
                 .await;
+            let insert_time = start.elapsed();
+            tracing::debug!(
+                ?request_time,
+                ?insert_time,
+                with_value = validated_app_data.is_some(),
+                "cache appdata"
+            );
 
             Ok(validated_app_data)
         };
