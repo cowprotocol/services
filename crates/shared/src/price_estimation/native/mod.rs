@@ -77,6 +77,7 @@ impl NativePriceEstimator {
         }
     }
 
+    // TODO explain why we use BUY order type (shallow liquidity)
     fn query(&self, token: &H160, timeout: Duration) -> Query {
         Query {
             sell_token: *token,

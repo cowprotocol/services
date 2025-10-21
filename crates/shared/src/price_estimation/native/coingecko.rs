@@ -81,6 +81,8 @@ impl CoinGecko {
             Chain::Optimism => "optimistic-ethereum".to_string(),
             Chain::Bnb => "binance-smart-chain".to_string(),
             Chain::Lens => "lens".to_string(),
+            Chain::Linea => "linea".to_string(),
+            Chain::Plasma => "plasma".to_string(),
             Chain::Sepolia | Chain::Goerli | Chain::Hardhat => {
                 anyhow::bail!("unsupported network {}", chain.name())
             }
