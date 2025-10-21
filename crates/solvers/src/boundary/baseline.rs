@@ -237,6 +237,15 @@ fn to_boundary_liquidity(
                     };
                     let fee = pool.fee.0.try_into().expect("fee < (2^24)");
 
+                    let mut fee = pool.fee.0;
+                    if fee >= (1 << 24) {
+                        tracing::warn!(
+                            "pool fee overflows contract supported fee value, capping it..."
+                        );
+                        fee = (1 << 24) - 1;
+                    }
+                    let fee = Uint::<24, 1>::try_from(fee).expect("fee < (1 << 24)");
+
                     let token_pair = to_boundary_token_pair(&pool.tokens);
                     onchain_liquidity
                         .entry(token_pair)
