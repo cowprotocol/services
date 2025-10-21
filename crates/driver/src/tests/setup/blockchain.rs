@@ -223,7 +223,7 @@ impl Blockchain {
         // should be happening from the primary_account of the node, will do this
         // later
         let node = Node::new(&config.rpc_args).await;
-        let mut web3 = Web3::new_from_url(&node.url());
+        let web3 = Web3::new_from_url(&node.url());
 
         let private_key = config.main_trader_secret_key.as_ref();
         let main_trader_account = ethcontract::Account::Offline(
