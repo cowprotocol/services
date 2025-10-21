@@ -16,7 +16,13 @@ use {
         GPv2Settlement,
         IUniswapV3Factory,
         WETH9,
-        alloy::{BalancerV2Vault, ChainalysisOracle, HooksTrampoline, InstanceExt, support::Balances},
+        alloy::{
+            BalancerV2Vault,
+            ChainalysisOracle,
+            HooksTrampoline,
+            InstanceExt,
+            support::Balances,
+        },
     },
     ethcontract::errors::DeployError,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -156,9 +162,8 @@ pub async fn run(args: Arguments) {
             }
         }
     });
-    let vault = vault_address.map(|address| {
-        BalancerV2Vault::Instance::new(address, web3.alloy.clone())
-    });
+    let vault =
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),

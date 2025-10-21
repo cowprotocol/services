@@ -76,10 +76,7 @@ impl Balances {
                 std::cmp::min(balance, allowance)
             }
             SellTokenSource::External => {
-                let vault = BalancerV2Vault::new(
-                    self.vault().into_alloy(),
-                    &self.web3.alloy,
-                );
+                let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
                 // NOTE: the anyhow error conversion can be removed after migrating the token to
                 // alloy
                 let balance = token
@@ -106,10 +103,7 @@ impl Balances {
                 }
             }
             SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::new(
-                    self.vault().into_alloy(),
-                    &self.web3.alloy,
-                );
+                let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
 
                 let get_internal_balance = vault
                     .getInternalBalance(query.owner.into_alloy(), vec![query.token.into_alloy()]);

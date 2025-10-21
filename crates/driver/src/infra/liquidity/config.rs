@@ -256,9 +256,7 @@ impl BalancerV2 {
         }
 
         Some(Self {
-            vault: ContractAddress(
-                BalancerV2Vault::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            vault: ContractAddress(BalancerV2Vault::deployment_address(&chain.id())?.into_legacy()),
             weighted: address_for!(
                 chain,
                 [

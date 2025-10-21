@@ -246,9 +246,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             }
         }
     });
-    let vault = vault_address.map(|address| {
-        BalancerV2Vault::Instance::new(address, web3.alloy.clone())
-    });
+    let vault =
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
 
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3)
         .instrument(info_span!("uniswapv3_deployed"))
