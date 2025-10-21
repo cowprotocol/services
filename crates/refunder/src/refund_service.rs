@@ -52,16 +52,15 @@ impl RefundService {
     ) -> Self {
         let signer_address = signer.address();
         let gas_estimator = Box::new(web3.legacy.clone());
-        let submitter_web3 = web3.clone();
-        submitter_web3.wallet.register_signer(signer);
+        web3.wallet.register_signer(signer);
         RefundService {
             db,
-            web3,
+            web3: web3.clone(),
             ethflow_contracts,
             min_validity_duration,
             min_price_deviation: min_price_deviation_bps as f64 / 10000f64,
             submitter: Submitter {
-                web3: submitter_web3,
+                web3,
                 signer_address,
                 gas_estimator,
                 gas_parameters_of_last_tx: None,
