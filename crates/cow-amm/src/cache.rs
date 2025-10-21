@@ -132,10 +132,16 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
     ) -> anyhow::Result<()> {
         {
             let mut ex = self.0.db.acquire().await?;
-            let blocks = (*range.start()..=*range.end())
-                .map(|block| i64::try_from(block).context("block number is not u64"))
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            database::cow_amms::delete_by_blocks(&mut ex, &blocks).await?;
+            let start_block = i64::try_from(*range.start()).context("start block is not i64")?;
+            let end_block = i64::try_from(*range.end()).context("end block is not i64")?;
+            let factory_address = ByteArray(self.0.factory_address.0);
+            database::cow_amms::delete_by_block_range(
+                &mut ex,
+                &factory_address,
+                start_block,
+                end_block,
+            )
+            .await?;
         }
 
         {

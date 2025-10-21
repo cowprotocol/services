@@ -73,19 +73,27 @@ pub async fn fetch_by_factory_address(
     Ok(cow_amms)
 }
 
-/// Delete CoW AMMs by their addresses
+/// Delete CoW AMMs within a block range for a specific factory address.
 #[instrument(skip_all)]
-pub async fn delete_by_blocks(ex: &mut PgConnection, blocks: &[i64]) -> Result<(), sqlx::Error> {
-    if blocks.is_empty() {
-        return Ok(());
-    }
-
+pub async fn delete_by_block_range(
+    ex: &mut PgConnection,
+    factory_address: &Address,
+    start_block: i64,
+    end_block: i64,
+) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 DELETE FROM cow_amms
-WHERE block_number = ANY($1);
+WHERE factory_address = $1
+  AND block_number BETWEEN $2 AND $3;
     "#;
 
-    ex.execute(sqlx::query(QUERY).bind(blocks)).await?;
+    ex.execute(
+        sqlx::query(QUERY)
+            .bind(factory_address)
+            .bind(start_block)
+            .bind(end_block),
+    )
+    .await?;
     Ok(())
 }
 
@@ -132,10 +140,34 @@ mod tests {
         let fetched = fetch_by_factory_address(&mut db, &address).await.unwrap();
         assert_eq!(fetched.len(), 2);
 
-        // Test delete by addresses
-        delete_by_blocks(&mut db, &[1]).await.unwrap();
+        // Test delete by block range for a specific factory
+        delete_by_block_range(&mut db, &address, 1, 1)
+            .await
+            .unwrap();
         let fetched = fetch_by_factory_address(&mut db, &address).await.unwrap();
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0], cow_amm2);
+
+        // Test that delete only affects the specified factory
+        let another_factory = ByteArray([2u8; 20]);
+        let cow_amm3 = CowAmm {
+            address: ByteArray([5u8; 20]),
+            factory_address: another_factory,
+            block_number: 1,
+            tradeable_tokens: vec![ByteArray([4u8; 20])],
+        };
+        upsert(&mut db, std::slice::from_ref(&cow_amm3))
+            .await
+            .unwrap();
+
+        // Delete block 1 for the first factory - should not affect the second factory
+        delete_by_block_range(&mut db, &address, 1, 1)
+            .await
+            .unwrap();
+        let fetched = fetch_by_factory_address(&mut db, &another_factory)
+            .await
+            .unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0], cow_amm3);
     }
 }
