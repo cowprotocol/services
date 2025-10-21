@@ -357,6 +357,9 @@ impl Utilities {
                 (app_data_hash, fetched_app_data)
             })
             .collect();
+        if !futures.is_empty() {
+            tracing::debug!(len = futures.len(), "fetching uncached appdatas");
+        }
 
         // Only await responses for a short amount of time. Even if we don't await
         // all futures fully the remaining appdata requests will finish in background
