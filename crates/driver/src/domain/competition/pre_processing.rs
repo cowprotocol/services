@@ -359,6 +359,7 @@ impl Utilities {
             .collect();
         let futures_len = futures.len();
 
+        let start = std::time::Instant::now();
         // Only await responses for a short amount of time. Even if we don't await
         // all futures fully the remaining appdata requests will finish in background
         // tasks. That way we should have enough time to immediately fetch appdatas
@@ -376,6 +377,7 @@ impl Utilities {
 
         if futures_len != 0 {
             tracing::debug!(
+                elapsed = ?start.elapsed(),
                 requested = futures_len,
                 fetched_in_time = app_data.len(),
                 still_running_in_background = futures_len - app_data.len(),
