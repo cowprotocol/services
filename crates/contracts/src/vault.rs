@@ -2,8 +2,9 @@
 //! contract.
 
 use {
-    crate::{BalancerV2Authorizer, BalancerV2Vault},
-    ethcontract::{Bytes, H160, common::FunctionExt as _, errors::MethodError, web3::signing},
+    crate::{BalancerV2Vault, alloy::BalancerV2Authorizer},
+    alloy::primitives::Address,
+    ethcontract::{Bytes, H160, common::FunctionExt as _, web3::signing},
 };
 
 fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {
@@ -23,19 +24,21 @@ fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {
 }
 
 pub async fn grant_required_roles(
-    authorizer: &BalancerV2Authorizer,
+    authorizer: &BalancerV2Authorizer::Instance,
     vault: H160,
     vault_relayer: H160,
-) -> Result<(), MethodError> {
+) -> Result<(), alloy::contract::Error> {
     authorizer
-        .grant_roles(
+        .grantRoles(
             vec![
-                role_id(vault, "manageUserBalance"),
-                role_id(vault, "batchSwap"),
+                role_id(vault, "manageUserBalance").0.into(),
+                role_id(vault, "batchSwap").0.into(),
             ],
-            vault_relayer,
+            Address::from(vault_relayer.0),
         )
         .send()
+        .await?
+        .watch()
         .await?;
     Ok(())
 }

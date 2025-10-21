@@ -236,7 +236,7 @@ async fn create_config_file(
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address()),
-        hex_address(blockchain.balances.address()),
+        blockchain.balances.address(),
         blockchain.signatures.address(),
         hex_address(blockchain.flashloan_router.address().into_legacy()),
     )
