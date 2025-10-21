@@ -57,24 +57,35 @@ impl Storage {
             return Ok(());
         }
 
-        let mut processed_amms = Vec::new();
-        for db_amm in db_amms {
-            let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
-            let amm = Amm::new(amm_address, &self.0.helper).await?;
-            let block_number = u64::try_from(db_amm.block_number).context(format!(
-                "db stored cow amm {:?} block number is not u64",
-                db_amm.address
-            ))?;
-            processed_amms.push((block_number, Arc::new(amm)));
-        }
+        let processed_amms =
+            futures::future::try_join_all(db_amms.into_iter().map(|db_amm| async move {
+                let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
+                let amm = Amm::new(amm_address, &self.0.helper).await?;
+                let block_number = u64::try_from(db_amm.block_number).context(format!(
+                    "db stored cow amm {:?} block number is not u64",
+                    db_amm.address
+                ))?;
+
+                Ok::<(u64, Arc<Amm>), anyhow::Error>((block_number, Arc::new(amm)))
+            }))
+            .await?;
 
         if !processed_amms.is_empty() {
             let count = processed_amms.len();
+            let db_amms = processed_amms
+                .iter()
+                .map(|(_, amm)| *amm.address())
+                .collect::<Vec<_>>();
             let mut cache = self.0.cache.write().await;
             for (block_number, amm) in processed_amms {
                 cache.entry(block_number).or_default().push(amm);
             }
-            tracing::info!(count, ?factory_address, "initialized AMMs from database");
+            tracing::info!(
+                count,
+                ?factory_address,
+                ?db_amms,
+                "initialized AMMs from database"
+            );
         }
 
         Ok(())
@@ -173,8 +184,8 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 .iter()
                 .filter_map(|(block_number, amm)| {
                     amm.as_ref()
-                        .try_to_db_domain(*block_number, self.0.helper.address())
-                        .map_err(|err| {
+                        .try_to_db_type(*block_number, self.0.helper.address())
+                        .inspect_err(|err| {
                             tracing::warn!(
                                 ?err,
                                 ?amm,
@@ -182,7 +193,6 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                                 helper = ?self.0.helper.address(),
                                 "failed to convert amm to db domain"
                             );
-                            err
                         })
                         .ok()
                 })

@@ -78,7 +78,7 @@ impl Amm {
         Ok(template)
     }
 
-    pub fn try_to_db_domain(
+    pub fn try_to_db_type(
         &self,
         block_number: u64,
         helper: Address,

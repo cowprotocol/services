@@ -2180,6 +2180,7 @@ dependencies = [
  "database",
  "ethcontract",
  "ethrpc",
+ "futures",
  "hex",
  "hex-literal",
  "model",
