@@ -28,7 +28,11 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{
+        Web3,
+        alloy::conversions::IntoLegacy,
+        block_stream::block_number_to_block_number_hash,
+    },
     futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -204,7 +208,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
         weth: args.shared.native_token_address,
-        balances: args.shared.balances_contract_address,
+        balances: args
+            .shared
+            .balances_contract_address
+            .map(IntoLegacy::into_legacy),
         trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(

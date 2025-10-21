@@ -10,11 +10,11 @@ use {
         dyn_abi::SolType,
         primitives::Address,
         sol_types::{SolCall, sol_data},
+        transports::RpcError,
     },
     anyhow::{Context, Result},
     contracts::{
-        ERC1271SignatureValidator,
-        alloy::support::Signatures,
+        alloy::{ERC1271SignatureValidator::ERC1271SignatureValidator, support::Signatures},
         errors::EthcontractErrorType,
     },
     ethcontract::{Bytes, state_overrides::StateOverrides},
@@ -66,13 +66,19 @@ impl Validator {
         // change), the order's validity can be directly determined by whether
         // the signature matches the expected hash of the order data, checked
         // with isValidSignature method called on the owner's contract
-        let contract = ERC1271SignatureValidator::at(&self.web3, check.signer);
+        let contract = ERC1271SignatureValidator::new(check.signer.into_alloy(), &self.web3.alloy);
         let magic_bytes = contract
-            .methods()
-            .is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()))
+            .isValidSignature(check.hash.into(), check.signature.clone().into())
             .call()
             .await
-            .map(|value| hex::encode(value.0))?;
+            .map(|value| hex::encode(value.0))
+            .map_err(|err| match err {
+                alloy::contract::Error::TransportError(RpcError::ErrorResp(err)) => {
+                    tracing::error!(?err, "failed to call isValidSignature");
+                    SignatureValidationError::Invalid
+                }
+                err => SignatureValidationError::Other(err.into()),
+            })?;
 
         if magic_bytes != Self::IS_VALID_SIGNATURE_MAGIC_BYTES {
             return Err(SignatureValidationError::Invalid);

@@ -32,9 +32,6 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract_with_config("BalancerV2Authorizer", |builder| {
-        builder.contract_mod_override("balancer_v2_authorizer")
-    });
     // Balancer addresses can be obtained from:
     // <https://github.com/balancer/balancer-subgraph-v2/blob/master/networks.yaml>
     generate_contract_with_config("BalancerV2Vault", |builder| {
@@ -118,66 +115,6 @@ fn main() {
                     address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
                     // <https://polygonscan.com/tx/0x66f275a2ed102a5b679c0894ced62c4ebcb2a65336d086a916eb83bd1fe5c8d2>
                     deployment_information: Some(DeploymentInformation::BlockNumber(15832990)),
-                },
-            )
-        // Not available on Lens
-    });
-    generate_contract_with_config("BalancerV3BatchRouter", |builder| {
-        builder
-            .add_network(
-                MAINNET,
-                Network {
-                    address: addr("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"),
-                    // <https://etherscan.io/tx/0x41cb8619fb92dd532eb09b0e81fd4ce1c6006a10924893f02909e36a317777f3>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(21339510)),
-                },
-            )
-            .add_network(
-                GNOSIS,
-                Network {
-                    address: addr("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"),
-                    // <https://gnosisscan.io/tx/0xeafddbace9f445266f851ef1d92928e3d01a4622a1a6780b41ac52d5872f12ab>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(37377506)),
-                },
-            )
-            .add_network(
-                SEPOLIA,
-                Network {
-                    address: addr("0xC85b652685567C1B074e8c0D4389f83a2E458b1C"),
-                    // <https://sepolia.etherscan.io/tx/0x95ed8e1aaaa7bdc5881f3c8fc5a4914a66639bee52987c3a1ea88545083b0681>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(7219301)),
-                },
-            )
-            .add_network(
-                ARBITRUM_ONE,
-                Network {
-                    address: addr("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
-                    // <https://arbiscan.io/tx/0xa7968c6bc0775208ffece789c6e5d09b0eea5f2c3ed2806e9bd94fb0b978ff0f>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(297828544)),
-                },
-            )
-            .add_network(
-                BASE,
-                Network {
-                    address: addr("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
-                    // <https://basescan.org/tx/0x47b81146714630ce50445bfa28872a36973acedf785317ca423498810ec8e76c>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(25347205)),
-                },
-            )
-            .add_network(
-                AVALANCHE,
-                Network {
-                    address: addr("0xc9b36096f5201ea332Db35d6D195774ea0D5988f"),
-                    // <https://snowscan.xyz/tx/0x3bfaba7135ee2d67d98f20ee1aa4c8b7e81e47be64223376f3086bab429ac806>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(59965747)),
-                },
-            )
-            .add_network(
-                OPTIMISM,
-                Network {
-                    address: addr("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
-                    // <https://optimistic.etherscan.io/tx/0xf370aab0d652f3e0f7c34e1a53e1afd98e86c487138300b0939d4e54b0088b67>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(133969588)),
                 },
             )
         // Not available on Lens
@@ -366,8 +303,6 @@ fn main() {
                 },
             )
     });
-    // EIP-1271 contract - SignatureValidator
-    generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
         builder
@@ -484,21 +419,6 @@ fn main() {
             )
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
-
-    // Support contracts used for various order simulations.
-    generate_contract_with_config("Balances", |builder| {
-        builder
-            .add_network_str(MAINNET, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(ARBITRUM_ONE, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(BASE, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(AVALANCHE, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(BNB, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(OPTIMISM, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(POLYGON, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(LENS, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(GNOSIS, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-            .add_network_str(SEPOLIA, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
-    });
 
     // Contract for Uniswap's Permit2 contract.
     generate_contract_with_config("Permit2", |builder| {

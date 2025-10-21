@@ -8,7 +8,11 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
-    contracts::alloy::{ERC20Mintable, FlashLoanRouter, support::Signatures},
+    contracts::alloy::{
+        ERC20Mintable,
+        FlashLoanRouter,
+        support::{Balances, Signatures},
+    },
     ethcontract::PrivateKey,
     ethrpc::{
         Web3,
@@ -44,7 +48,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, ERC20Mintable::Instance>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
-    pub balances: contracts::support::Balances,
+    pub balances: Balances::Instance,
     pub signatures: Signatures::Instance,
     pub flashloan_router: FlashLoanRouter::Instance,
     pub ethflow: Option<ContractAddress>,
@@ -268,19 +272,19 @@ impl Blockchain {
         .unwrap();
 
         // Set up the settlement contract and related contracts.
-        let vault_authorizer = wait_for(
-            &web3,
-            contracts::BalancerV2Authorizer::builder(&web3, main_trader_account.address())
-                .from(main_trader_account.clone())
-                .deploy(),
+        let vault_authorizer = contracts::alloy::BalancerV2Authorizer::Instance::deploy_builder(
+            web3.alloy.clone(),
+            main_trader_account.address().into_alloy(),
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
         let vault = wait_for(
             &web3,
             contracts::BalancerV2Vault::builder(
                 &web3,
-                vault_authorizer.address(),
+                vault_authorizer.into_legacy(),
                 weth.address(),
                 0.into(),
                 0.into(),
@@ -328,18 +332,15 @@ impl Blockchain {
             settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
         }
 
-        let balances = if let Some(balances_address) = config.balances_address {
-            contracts::support::Balances::at(&web3, balances_address)
-        } else {
-            wait_for(
-                &web3,
-                contracts::support::Balances::builder(&web3)
-                    .from(main_trader_account.clone())
-                    .deploy(),
-            )
-            .await
-            .unwrap()
+        let balances_address = match config.balances_address {
+            Some(balances_address) => balances_address.into_alloy(),
+            None => Balances::Instance::deploy_builder(web3.alloy.clone())
+                .from(main_trader_account.address().into_alloy())
+                .deploy()
+                .await
+                .unwrap(),
         };
+        let balances = Balances::Instance::new(balances_address, web3.alloy.clone());
 
         wait_for(
             &web3,

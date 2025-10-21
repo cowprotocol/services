@@ -118,10 +118,11 @@ impl Cache {
         &self,
         amm_address: eth::Address,
     ) -> anyhow::Result<eth::Address> {
-        let factory_getter = contracts::alloy::cow_amm::CowAmmFactoryGetter::Instance::new(
-            amm_address.0.into_alloy(),
-            self.web3.alloy.clone(),
-        );
+        let factory_getter =
+            contracts::alloy::cow_amm::CowAmmFactoryGetter::CowAmmFactoryGetter::new(
+                amm_address.0.into_alloy(),
+                &self.web3.alloy,
+            );
         Ok(factory_getter.FACTORY().call().await?.into_legacy().into())
     }
 }

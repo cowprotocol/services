@@ -17,7 +17,7 @@ use {
         GPv2Settlement,
         IUniswapV3Factory,
         WETH9,
-        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt},
+        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt, support::Balances},
     },
     ethcontract::errors::DeployError,
     ethrpc::alloy::conversions::IntoAlloy,
@@ -105,8 +105,8 @@ pub async fn run(args: Arguments) {
             .expect("load settlement contract"),
     };
     let balances_contract = match args.shared.balances_contract_address {
-        Some(address) => contracts::support::Balances::with_deployment_info(&web3, address, None),
-        None => contracts::support::Balances::deployed(&web3)
+        Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
+        None => Balances::Instance::deployed(&web3.alloy.clone())
             .await
             .expect("load balances contract"),
     };

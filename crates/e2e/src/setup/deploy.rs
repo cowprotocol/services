@@ -1,24 +1,23 @@
 use {
     crate::deploy,
     contracts::{
-        BalancerV2Authorizer,
         BalancerV2Vault,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
         alloy::{
+            BalancerV2Authorizer,
             CoWSwapEthFlow,
             FlashLoanRouter,
             HooksTrampoline,
             InstanceExt,
             UniswapV2Factory,
             UniswapV2Router02,
-            support::Signatures,
+            support::{Balances, Signatures},
         },
-        support::Balances,
     },
     ethcontract::{Address, H256, U256},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -35,7 +34,7 @@ pub struct Contracts {
     pub gp_settlement: GPv2Settlement,
     pub signatures: Signatures::Instance,
     pub gp_authenticator: GPv2AllowListAuthentication,
-    pub balances: Balances,
+    pub balances: Balances::Instance,
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02::Instance,
     pub weth: WETH9,
@@ -58,8 +57,8 @@ impl Contracts {
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
         let balances = match deployed.balances {
-            Some(address) => Balances::at(web3, address),
-            None => Balances::deployed(web3)
+            Some(address) => Balances::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            None => Balances::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find balances contract"),
         };
@@ -127,11 +126,14 @@ impl Contracts {
 
         let weth = deploy!(web3, WETH9());
 
-        let balancer_authorizer = deploy!(web3, BalancerV2Authorizer(admin));
+        let balancer_authorizer =
+            BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin.into_alloy())
+                .await
+                .unwrap();
         let balancer_vault = deploy!(
             web3,
             BalancerV2Vault(
-                balancer_authorizer.address(),
+                balancer_authorizer.address().into_legacy(),
                 weth.address(),
                 U256::from(0),
                 U256::from(0),
@@ -160,7 +162,9 @@ impl Contracts {
             web3,
             GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
         );
-        let balances = deploy!(web3, Balances());
+        let balances = Balances::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
         let signatures = Signatures::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
