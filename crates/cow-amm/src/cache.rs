@@ -170,7 +170,9 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
             let CowAmmEvent::CowammpoolCreated(cow_amm) = event.data;
             let cow_amm = cow_amm.amm;
             match Amm::new(cow_amm, &self.0.helper).await {
-                Ok(amm) => processed_events.push((meta.block_number, Arc::new(amm))),
+                Ok(amm) => {
+                    processed_events.push((meta.block_number, meta.transaction_hash, Arc::new(amm)))
+                }
                 Err(err) if matches!(&err.inner, ExecutionError::Web3(_)) => {
                     // Abort completely to later try the entire block range again.
                     // That keeps the cache in a consistent state and avoids indexing
@@ -188,14 +190,15 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         if !processed_events.is_empty() {
             let db_amms = processed_events
                 .iter()
-                .filter_map(|(block_number, amm)| {
+                .filter_map(|(block_number, tx_hash, amm)| {
                     amm.as_ref()
-                        .try_to_db_type(*block_number, self.0.helper.address())
+                        .try_to_db_type(*block_number, self.0.helper.address(), *tx_hash)
                         .inspect_err(|err| {
                             tracing::warn!(
                                 ?err,
                                 ?amm,
                                 ?block_number,
+                                ?tx_hash,
                                 helper = ?self.0.helper.address(),
                                 "failed to convert amm to db domain"
                             );
@@ -214,7 +217,7 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
 
         // Update cache
         let cache = &mut *self.0.cache.write().await;
-        for (block, amm) in processed_events {
+        for (block, _tx_hash, amm) in processed_events {
             tracing::info!(cow_amm = ?amm.address(), "indexed new cow amm");
             cache.entry(block).or_default().push(amm);
         }

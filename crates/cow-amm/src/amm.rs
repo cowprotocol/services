@@ -82,6 +82,7 @@ impl Amm {
         &self,
         block_number: u64,
         helper: Address,
+        tx_hash: ethcontract::H256,
     ) -> Result<database::cow_amms::CowAmm> {
         Ok(database::cow_amms::CowAmm {
             address: ByteArray(self.address.0),
@@ -94,6 +95,7 @@ impl Amm {
                 .collect(),
             block_number: i64::try_from(block_number)
                 .with_context(|| format!("block number {block_number} is not i64"))?,
+            tx_hash: ByteArray(tx_hash.0),
         })
     }
 

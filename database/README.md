@@ -516,6 +516,22 @@ Indexes:
 - jit\_user\_order\_creation\_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - jit\_event\_id: btree(`block_number`, `log_index`)
 
+### cow\_amms
+
+Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated factory contract and tradeable tokens.
+
+ Column             | Type     | Nullable | Details
+--------------------|----------|----------|--------
+ address            | bytea    | not null | Address of the CoW AMM pool contract
+ factory\_address   | bytea    | not null | Address of the factory contract associated with this AMM
+ tradeable\_tokens  | bytea[]  | not null | Token addresses that can be traded through this AMM
+ block\_number      | bigint   | not null | Block number in which the AMM was deployed/finalized
+ tx\_hash           | bytea    | not null | Transaction hash in which the AMM was created
+
+Indexes:
+- PRIMARY KEY: btree (`address`)
+- cow\_amms\_factory\_block: btree (`factory_address`, `block_number`)
+
 ### Enums
 
 #### executiontime
@@ -600,18 +616,3 @@ We support different expiration times for orders with different signing schemes.
  market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
  liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
-
-
-### cow\_amms
-
-Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated helper contract and tradeable tokens.
-
-Column                        | Meaning
-------------------------------|--------
- address                      | Address of the CoW AMM pool contract
- factory\_address             | Address of the factory contract associated with this AMM
- tradeable\_tokens            | Token addresses that can be traded through this AMM
- block\_number                | Deployed block number(when the AMM is finalized)
-
-Indexes:
-- "cow\_amms\_pkey" PRIMARY KEY, btree (`address`)

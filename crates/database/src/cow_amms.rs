@@ -1,5 +1,5 @@
 use {
-    crate::{Address, PgTransaction},
+    crate::{Address, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection, QueryBuilder},
     tracing::instrument,
 };
@@ -11,6 +11,7 @@ pub struct CowAmm {
     pub factory_address: Address,
     pub tradeable_tokens: Vec<Address>,
     pub block_number: i64,
+    pub tx_hash: TransactionHash,
 }
 
 /// Insert or update multiple CoW AMMs in the database using batch insert
@@ -36,13 +37,14 @@ pub async fn upsert_batched(
 #[instrument(skip_all)]
 async fn upsert(ex: &mut PgConnection, cow_amms: &[CowAmm]) -> Result<(), sqlx::Error> {
     const QUERY: &str =
-        "INSERT INTO cow_amms (address, factory_address, tradeable_tokens, block_number) ";
+        "INSERT INTO cow_amms (address, factory_address, tradeable_tokens, block_number, tx_hash) ";
     const CONFLICT_CLAUSE: &str = r#"
 ON CONFLICT (address)
 DO UPDATE SET
     factory_address  = EXCLUDED.factory_address,
     tradeable_tokens = EXCLUDED.tradeable_tokens,
-    block_number     = EXCLUDED.block_number
+    block_number     = EXCLUDED.block_number,
+    tx_hash          = EXCLUDED.tx_hash
     "#;
 
     let mut query_builder = QueryBuilder::new(QUERY);
@@ -52,7 +54,8 @@ DO UPDATE SET
             .push_bind(cow_amm.address)
             .push_bind(cow_amm.factory_address)
             .push_bind(cow_amm.tradeable_tokens.clone())
-            .push_bind(cow_amm.block_number);
+            .push_bind(cow_amm.block_number)
+            .push_bind(cow_amm.tx_hash);
     });
     query_builder.push(CONFLICT_CLAUSE);
     query_builder.build().execute(ex).await?;
@@ -109,11 +112,13 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let address = ByteArray([1u8; 20]);
+        let tx_hash = ByteArray([0xabu8; 32]);
         let cow_amm = CowAmm {
             address,
             factory_address: address,
             block_number: 1,
             tradeable_tokens: vec![ByteArray([1u8; 20]), ByteArray([2u8; 20])],
+            tx_hash,
         };
 
         // Test upsert
@@ -127,11 +132,13 @@ mod tests {
         assert_eq!(fetched[0], cow_amm);
 
         // Test batch upsert
+        let tx_hash2 = ByteArray([0xcdu8; 32]);
         let cow_amm2 = CowAmm {
             address: ByteArray([43u8; 20]),
             factory_address: address,
             block_number: 2,
             tradeable_tokens: vec![ByteArray([3u8; 20])],
+            tx_hash: tx_hash2,
         };
         upsert_batched(&mut db, std::slice::from_ref(&cow_amm2))
             .await
@@ -150,11 +157,13 @@ mod tests {
 
         // Test that delete only affects the specified factory
         let another_factory = ByteArray([2u8; 20]);
+        let tx_hash3 = ByteArray([0xefu8; 32]);
         let cow_amm3 = CowAmm {
             address: ByteArray([5u8; 20]),
             factory_address: another_factory,
             block_number: 1,
             tradeable_tokens: vec![ByteArray([4u8; 20])],
+            tx_hash: tx_hash3,
         };
         upsert(&mut db, std::slice::from_ref(&cow_amm3))
             .await
