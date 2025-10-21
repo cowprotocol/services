@@ -1,7 +1,10 @@
 use {
     super::ethflow_order::{EthflowOrder, order_to_ethflow_data},
     crate::submitter::Submitter,
-    alloy::primitives::{Address, address},
+    alloy::{
+        network::TxSigner,
+        primitives::{Address, Signature, address},
+    },
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
     database::{
@@ -9,7 +12,7 @@ use {
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},
         orders::read_order as read_db_order,
     },
-    ethcontract::{Account, H256},
+    ethcontract::H256,
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
     sqlx::PgPool,
@@ -45,8 +48,11 @@ impl RefundService {
         ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
         min_validity_duration: i64,
         min_price_deviation_bps: i64,
-        account: Account,
+        signer: Box<dyn TxSigner<Signature> + Send + Sync + 'static>,
     ) -> Self {
+        let signer_address = signer.address();
+        let mut submitter_web3 = web3.clone();
+        submitter_web3.wallet.register_signer(signer);
         RefundService {
             db,
             web3: web3.clone(),
@@ -54,8 +60,8 @@ impl RefundService {
             min_validity_duration,
             min_price_deviation: min_price_deviation_bps as f64 / 10000f64,
             submitter: Submitter {
-                web3: web3.clone(),
-                account,
+                web3: submitter_web3,
+                signer_address,
                 gas_estimator: Box::new(web3.legacy),
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
