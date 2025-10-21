@@ -3,10 +3,8 @@ use {
     anyhow::Context,
     app_data::AppDataDocument,
     derive_more::From,
-    futures::FutureExt,
     moka::future::Cache,
     reqwest::StatusCode,
-    shared::request_sharing::BoxRequestSharing,
     std::{collections::HashMap, sync::Arc},
     thiserror::Error,
     url::Url,
@@ -30,10 +28,6 @@ pub struct AppDataRetriever(Arc<Inner>);
 struct Inner {
     client: reqwest::Client,
     base_url: Url,
-    request_sharing: BoxRequestSharing<
-        AppDataHash,
-        Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError>,
-    >,
     cache: Cache<AppDataHash, Option<Arc<app_data::ValidatedAppData>>>,
 }
 
@@ -42,7 +36,6 @@ impl AppDataRetriever {
         Self(Arc::new(Inner {
             client: reqwest::Client::new(),
             base_url: orderbook_url,
-            request_sharing: BoxRequestSharing::labelled("app_data".to_string()),
             cache: Cache::new(cache_size),
         }))
     }
@@ -57,6 +50,9 @@ impl AppDataRetriever {
     }
 
     /// Retrieves the full app-data for the given `app_data` hash, if it exists.
+    /// HTTP requests needed to fetch the data are spawned in background tasks
+    /// such that they eventually populate the cache even in case the caller
+    /// stops awaiting the returned future.
     pub async fn get_cached_or_fetch(
         &self,
         app_data: &AppDataHash,
@@ -65,47 +61,38 @@ impl AppDataRetriever {
             return Ok(app_data.clone());
         }
 
-        let app_data_fut = move |app_data: &AppDataHash| {
-            let app_data = *app_data;
-            let self_ = self.clone();
+        let inner = self.0.clone();
+        let app_data = *app_data;
 
-            async move {
-                let url = self_
-                    .0
-                    .base_url
-                    .join(&format!("api/v1/app_data/{:?}", app_data.0))?;
-                let response = self_.0.client.get(url).send().await?;
-                let validated_app_data = match response.status() {
-                    StatusCode::NOT_FOUND => None,
-                    _ => {
-                        let appdata: AppDataDocument =
-                            serde_json::from_str(&response.text().await?)
-                                .context("invalid app data document")?;
-                        match appdata.full_app_data == app_data::EMPTY {
-                            true => None, // empty app data
-                            false => Some(Arc::new(app_data::ValidatedAppData {
-                                hash: app_data::AppDataHash(app_data.0.0),
-                                protocol: app_data::parse(appdata.full_app_data.as_bytes())?,
-                                document: appdata.full_app_data,
-                            })),
-                        }
+        let fut = async move {
+            let url = inner
+                .base_url
+                .join(&format!("api/v1/app_data/{:?}", app_data.0))?;
+            let response = inner.client.get(url).send().await?;
+            let validated_app_data = match response.status() {
+                StatusCode::NOT_FOUND => None,
+                _ => {
+                    let appdata: AppDataDocument = serde_json::from_str(&response.text().await?)
+                        .context("invalid app data document")?;
+                    match appdata.full_app_data == app_data::EMPTY {
+                        true => None, // empty app data
+                        false => Some(Arc::new(app_data::ValidatedAppData {
+                            hash: app_data::AppDataHash(app_data.0.0),
+                            protocol: app_data::parse(appdata.full_app_data.as_bytes())?,
+                            document: appdata.full_app_data,
+                        })),
                     }
-                };
-                self_
-                    .0
-                    .cache
-                    .insert(app_data, validated_app_data.clone())
-                    .await;
+                }
+            };
+            inner
+                .cache
+                .insert(app_data, validated_app_data.clone())
+                .await;
 
-                Ok(validated_app_data)
-            }
-            .boxed()
+            Ok(validated_app_data)
         };
 
-        self.0
-            .request_sharing
-            .shared_or_else(*app_data, app_data_fut)
-            .await
+        tokio::task::spawn(fut).await?
     }
 }
 
@@ -182,6 +169,8 @@ pub enum FetchingError {
     InvalidAppData(#[from] anyhow::Error),
     #[error("internal error: {0}")]
     Internal(String),
+    #[error("failed to join task: {0}")]
+    TaskJoinFailed(#[from] tokio::task::JoinError),
 }
 
 impl From<reqwest::Error> for FetchingError {
@@ -193,15 +182,5 @@ impl From<reqwest::Error> for FetchingError {
 impl From<url::ParseError> for FetchingError {
     fn from(err: url::ParseError) -> Self {
         FetchingError::Internal(err.to_string())
-    }
-}
-
-impl Clone for FetchingError {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Http(message) => Self::Http(message.clone()),
-            Self::InvalidAppData(err) => Self::InvalidAppData(shared::clone_anyhow_error(err)),
-            Self::Internal(message) => Self::Internal(message.clone()),
-        }
     }
 }

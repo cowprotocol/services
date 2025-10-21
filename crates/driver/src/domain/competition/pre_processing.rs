@@ -11,10 +11,7 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    futures::{
-        FutureExt,
-        future::{BoxFuture, join_all},
-    },
+    futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
         interaction::InteractionData,
@@ -26,8 +23,7 @@ use {
         price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
-    std::{collections::HashMap, future::Future, sync::Arc},
-    tap::TapFallible,
+    std::{collections::HashMap, future::Future, sync::Arc, time::Duration},
     tokio::sync::Mutex,
     tracing::Instrument,
 };
@@ -339,36 +335,43 @@ impl Utilities {
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_app_data");
 
-        let app_data = join_all(
-            auction
-                .orders
-                .iter()
-                .flat_map(|order| match order.app_data {
-                    AppData::Full(_) => None,
-                    // only fetch appdata we don't already have in full
-                    AppData::Hash(hash) => Some(hash),
-                })
-                .unique()
-                .map(|app_data_hash| {
-                    let app_data_retriever = app_data_retriever.clone();
-                    async move {
-                        let fetched_app_data = app_data_retriever
-                            .get_cached_or_fetch(&app_data_hash)
-                            .await
-                            .tap_err(|err| {
-                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
-                            })
-                            .ok()
-                            .flatten();
+        let futures: FuturesUnordered<_> = auction
+            .orders
+            .iter()
+            .flat_map(|order| match order.app_data {
+                AppData::Full(_) => None,
+                // only fetch appdata we don't already have in full
+                AppData::Hash(hash) => Some(hash),
+            })
+            .unique()
+            .map(async move |app_data_hash| {
+                let fetched_app_data = app_data_retriever
+                    .get_cached_or_fetch(&app_data_hash)
+                    .await
+                    .inspect_err(|err| {
+                        tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
+                    })
+                    .ok()
+                    .flatten();
 
-                        (app_data_hash, fetched_app_data)
-                    }
-                }),
-        )
-        .await
-        .into_iter()
-        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
-        .collect::<HashMap<_, _>>();
+                (app_data_hash, fetched_app_data)
+            })
+            .collect();
+
+        // Only await responses for a short amount of time. Even if we don't await
+        // all futures fully the remaining appdata requests will finish in background
+        // tasks. That way we should have enough time to immediately fetch appdatas
+        // of new orders (once the cache is filled). But we also don't run the risk
+        // of stalling the driver completely until everything is fetched.
+        // In practice that means the solver will only see a few appdatas in the first
+        // auction after a restart. But on subsequent auctions everything should be
+        // available.
+        const MAX_APP_DATA_WAIT: Duration = Duration::from_millis(500);
+        let app_data: HashMap<_, _> = futures
+            .take_until(tokio::time::sleep(MAX_APP_DATA_WAIT))
+            .filter_map(async move |(hash, json)| Some((hash, json?)))
+            .collect()
+            .await;
 
         Arc::new(app_data)
     }
