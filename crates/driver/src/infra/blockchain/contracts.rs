@@ -27,6 +27,8 @@ pub struct Contracts {
     // everywhere
     flashloan_router: Option<FlashLoanRouter::Instance>,
     balance_helper: Balances::Instance,
+    /// Mapping from CoW AMM factory address to the corresponding CoW AMM
+    /// helper.
     cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
 }
 

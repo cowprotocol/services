@@ -410,12 +410,7 @@ async fn forked_node_mainnet_cow_amm_driver_support() {
         cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        // There are 2 types of CoW AMM pool creation events:
-        // 1. Initial deployment with the LOG_NEW_POOL event
-        //    with the 0x8ccec77b0cb63ac2cafd0f5de8cdfadab91ce656d262240ba8a6343bccc5f945 topic: <https://etherscan.io/tx/0xff6897c836d03eb454d96e9d76c7eb2ff7d24fff4b59b592a4bc111a389e0dd6#eventlog#16>
-        // 2. When the finalize() function is called, the COWAMMPoolCreated event is emitted: <https://etherscan.io/tx/0x99c98bd180a85dd01fcf2252d7219cc99866a46862942a178c53fbe26e808b07#eventlog#277>
-        // We only track for the second event type, so the forked block number is one block after
-        // that event.
+        // block before relevant cow amm was finalized
         20476674,
     )
     .await;
@@ -475,9 +470,10 @@ async fn cow_amm_driver_support(web3: Web3) {
         "f08d4dea369c456d26a3168ff0024b904f2d8b91"
     ));
     // send some weth to easier calculate the USDC amount needed for imbalance
+    let cow_amm_weth_amount = to_wei(10);
     tx_value!(
         solver.account(),
-        to_wei(10),
+        cow_amm_weth_amount,
         onchain.contracts().weth.deposit()
     );
     tx!(
@@ -485,13 +481,16 @@ async fn cow_amm_driver_support(web3: Web3) {
         onchain
             .contracts()
             .weth
-            .transfer(USDC_WETH_COW_AMM, to_wei(10))
+            .transfer(USDC_WETH_COW_AMM, cow_amm_weth_amount)
     );
-    // 10 WETH priced at ~$2_551.56/ETH implies ~15_097.988166 USDC in the pool.
-    // This keeps the helper's template order around 30% of the pool balance.
+    // Calculate the USDC amount required to imbalance the pool by 30%.
     // This imbalance shouldn't exceed 50%, since such an order will be rejected by
     // the SC: <https://github.com/balancer/cow-amm/blob/84750b705a02dd600766c5e6a9dd4370386cf0f1/src/contracts/BPool.sol#L250-L252>
-    let usdc_imbalance_amount = U256::from(15_097_988_166_u64);
+    let price_usdc_per_weth = 2551.56;
+    let imbalance_ratio = 0.7; // 30% imbalance
+    let usdc_imbalance_amount_f =
+        cow_amm_weth_amount.as_u128() as f64 / 1e18 * price_usdc_per_weth * imbalance_ratio;
+    let usdc_imbalance_amount = U256::from((usdc_imbalance_amount_f * 1e6) as u64); // USDC has 6 decimals
     tx!(
         usdc_whale,
         usdc.transfer(USDC_WETH_COW_AMM, usdc_imbalance_amount)
@@ -645,8 +644,6 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
 
     // all cow amms on mainnet the helper contract is aware of
     tracing::info!("Waiting for all cow amms to be indexed.");
-    let expected_cow_amms = [addr!("f08d4dea369c456d26a3168ff0024b904f2d8b91")];
-
     wait_for_condition(TIMEOUT, || async {
         let auctions = mock_solver.get_auctions();
         let found_cow_amms: HashSet<_> = auctions
@@ -654,9 +651,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             .flat_map(|a| a.surplus_capturing_jit_order_owners.clone())
             .collect();
 
-        expected_cow_amms
-            .iter()
-            .all(|amm| found_cow_amms.contains(amm))
+        found_cow_amms.contains(&USDC_WETH_COW_AMM)
     })
     .await
     .unwrap();
@@ -672,16 +667,26 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
         let auctions = mock_solver.get_auctions();
         let auction_prices: HashSet<_> = auctions
             .iter()
-            .flat_map(|a| {
-                a.tokens
+            .flat_map(|auction| {
+                auction
+                    .tokens
                     .iter()
                     .filter_map(|(token, info)| info.reference_price.map(|_| token))
             })
             .collect();
 
-        expected_prices
-            .iter()
-            .all(|token| auction_prices.contains(token))
+        let found_amm_jit_orders = auctions.iter().any(|auction| {
+            auction.orders.iter().any(|order| {
+                order.owner == USDC_WETH_COW_AMM
+                    && order.sell_token == H160(onchain.contracts().weth.address().0)
+                    && order.buy_token == usdc.address()
+            })
+        });
+
+        found_amm_jit_orders
+            && expected_prices
+                .iter()
+                .all(|token| auction_prices.contains(token))
     })
     .await
     .unwrap();
