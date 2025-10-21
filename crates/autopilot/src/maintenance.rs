@@ -19,8 +19,8 @@ use {
         IntCounterVec,
         core::{AtomicU64, GenericGauge},
     },
-    shared::maintenance::Maintaining,
-    std::{future::Future, sync::Arc},
+    shared::{event_handling::AlloyEventRetriever, maintenance::Maintaining},
+    std::{future::Future, sync::Arc, time::Instant},
     tokio::sync::Mutex,
 };
 
@@ -64,7 +64,7 @@ impl Maintenance {
             return;
         }
 
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         if let Err(err) = self.update_inner().await {
             tracing::warn!(?err, block = new_block.number, "failed to run maintenance");
             metrics().updates.with_label_values(&["error"]).inc();
@@ -82,7 +82,8 @@ impl Maintenance {
     }
 
     async fn update_inner(&self) -> Result<()> {
-        // All these can run independently of each other.
+        let _timer =
+            observe::metrics::metrics().on_auction_overhead_start("autopilot", "maintenance_total");
         tokio::try_join!(
             Self::timed_future(
                 "settlement_indexer",
@@ -118,6 +119,7 @@ impl Maintenance {
             .maintenance_stage_time
             .with_label_values(&[label])
             .start_timer();
+        let _timer2 = observe::metrics::metrics().on_auction_overhead_start("autopilot", label);
         fut.await
     }
 
@@ -153,8 +155,10 @@ impl Maintenance {
     }
 }
 
-type EthflowIndexer =
-    EventUpdater<OnchainOrderParser<EthFlowData, EthFlowDataForDb>, CoWSwapOnchainOrdersContract>;
+type EthflowIndexer = EventUpdater<
+    OnchainOrderParser<EthFlowData, EthFlowDataForDb>,
+    AlloyEventRetriever<CoWSwapOnchainOrdersContract>,
+>;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "autopilot_maintenance")]

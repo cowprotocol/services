@@ -6,6 +6,7 @@ use {
             config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
             liquidity,
             mempool,
+            notify,
             simulator,
             solver,
         },
@@ -23,6 +24,7 @@ pub struct Config {
     pub disable_gas_simulation: Option<eth::Gas>,
     pub solvers: Vec<solver::Config>,
     pub liquidity: liquidity::Config,
+    pub liquidity_sources_notifier: Option<notify::liquidity_sources::Config>,
     pub simulator: Option<simulator::Config>,
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
@@ -31,4 +33,5 @@ pub struct Config {
     pub archive_node_url: Option<Url>,
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
+    pub tx_gas_limit: eth::U256,
 }

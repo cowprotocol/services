@@ -72,6 +72,18 @@ pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auctio
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+pub async fn get_order_uids(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+) -> Result<Option<Vec<OrderUid>>, sqlx::Error> {
+    const QUERY: &str = r#"SELECT order_uids FROM competition_auctions WHERE id = $1;"#;
+    let record: Option<(Vec<OrderUid>,)> = sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .fetch_optional(ex)
+        .await?;
+    Ok(record.map(|(order_uids,)| order_uids))
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
@@ -102,7 +114,7 @@ mod tests {
             id: id_,
             block: 1,
             deadline: 2,
-            order_uids: vec![ByteArray([1u8; 56])],
+            order_uids: vec![ByteArray([1u8; 56]), ByteArray([2u8; 56])],
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(1)],
             surplus_capturing_jit_order_owners: vec![ByteArray([1u8; 20])],
@@ -110,5 +122,8 @@ mod tests {
         save(&mut db, auction.clone()).await.unwrap();
         let auction_ = fetch(&mut db, id_).await.unwrap().unwrap();
         assert_eq!(auction, auction_);
+
+        let order_uids = get_order_uids(&mut db, id_).await.unwrap().unwrap();
+        assert_eq!(auction.order_uids, order_uids);
     }
 }

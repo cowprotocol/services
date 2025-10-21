@@ -5,7 +5,7 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
@@ -39,7 +39,7 @@ async fn refunder_tx(web3: Web3) {
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
-        from: ethflow_contract.address(),
+        from: ethflow_contract.address().into_legacy(),
         sell_token: onchain.contracts().weth.address(),
         buy_token,
         receiver,
@@ -68,7 +68,7 @@ async fn refunder_tx(web3: Web3) {
     let ethflow_contract_2 = onchain.contracts().ethflows.get(1).unwrap();
 
     let quote = OrderQuoteRequest {
-        from: ethflow_contract_2.address(),
+        from: ethflow_contract_2.address().into_legacy(),
         sell_token: onchain.contracts().weth.address(),
         buy_token,
         receiver,
@@ -89,10 +89,10 @@ async fn refunder_tx(web3: Web3) {
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
 
     ethflow_order
-        .mine_order_creation(user.account(), ethflow_contract)
+        .mine_order_creation(user.address().into_alloy(), ethflow_contract)
         .await;
     ethflow_order_2
-        .mine_order_creation(user.account(), ethflow_contract_2)
+        .mine_order_creation(user.address().into_alloy(), ethflow_contract_2)
         .await;
 
     let order_id = ethflow_order
@@ -125,13 +125,19 @@ async fn refunder_tx(web3: Web3) {
 
     // Create the refund service and execute the refund tx
     let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
+    let refunder_signer = {
+        match refunder.account().clone().try_into_alloy().await.unwrap() {
+            ethrpc::alloy::Account::Signer(signer) => signer,
+            _ => panic!("Refunder account must be a signer"),
+        }
+    };
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
         vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
         10i64,
-        refunder.account().clone(),
+        refunder_signer,
     );
 
     assert_ne!(

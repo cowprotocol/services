@@ -14,6 +14,7 @@ use {
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
+    ethrpc::alloy::conversions::IntoLegacy,
     itertools::Itertools,
     serde_json::json,
     solvers_dto::auction::FlashloanHint,
@@ -469,13 +470,21 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
-                balances: Some(config.blockchain.balances.address().into()),
-                signatures: Some(config.blockchain.signatures.address().into()),
+                balances: Some(config.blockchain.balances.address().into_legacy().into()),
+                signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
                 cow_amms: vec![],
-                flashloan_router: Some(config.blockchain.flashloan_router.address().into()),
+                flashloan_router: Some(
+                    config
+                        .blockchain
+                        .flashloan_router
+                        .address()
+                        .into_legacy()
+                        .into(),
+                ),
             },
             gas,
             None,
+            45_000_000.into(),
         )
         .await;
 

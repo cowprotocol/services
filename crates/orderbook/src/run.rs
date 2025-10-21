@@ -15,12 +15,12 @@ use {
     contracts::{
         BalancerV2Vault,
         GPv2Settlement,
-        HooksTrampoline,
         IUniswapV3Factory,
         WETH9,
-        alloy::{ChainalysisOracle, InstanceExt},
+        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt, support::Balances},
     },
     ethcontract::errors::DeployError,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -73,9 +73,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(args: Arguments) {
-    // Start a new span that measures the initialization phase of the orderbook
-    let startup_span = tracing::info_span!("orderbook_startup");
-    let startup_span_guard = startup_span.enter();
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let web3 = shared::ethrpc::web3(
@@ -108,8 +105,8 @@ pub async fn run(args: Arguments) {
             .expect("load settlement contract"),
     };
     let balances_contract = match args.shared.balances_contract_address {
-        Some(address) => contracts::support::Balances::with_deployment_info(&web3, address, None),
-        None => contracts::support::Balances::deployed(&web3)
+        Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
+        None => Balances::Instance::deployed(&web3.alloy.clone())
             .await
             .expect("load balances contract"),
     };
@@ -119,8 +116,11 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
-        Some(address) => contracts::support::Signatures::with_deployment_info(&web3, address, None),
-        None => contracts::support::Signatures::deployed(&web3)
+        Some(address) => contracts::alloy::support::Signatures::Instance::new(
+            address.into_alloy(),
+            web3.alloy.clone(),
+        ),
+        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.alloy)
             .await
             .expect("load signatures contract"),
     };
@@ -159,8 +159,8 @@ pub async fn run(args: Arguments) {
     };
 
     let hooks_contract = match args.shared.hooks_contract_address {
-        Some(address) => HooksTrampoline::at(&web3, address),
-        None => HooksTrampoline::deployed(&web3)
+        Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        None => HooksTrampoline::Instance::deployed(&web3.alloy)
             .await
             .expect("load hooks trampoline contract"),
     };
@@ -171,8 +171,15 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
-    let postgres_read = Postgres::try_new(args.db_read_url.unwrap_or(args.db_write_url).as_str())
-        .expect("failed to create read replica database");
+
+    let postgres_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::try_new(db_read_url.as_str()).expect("failed to create read replica databaseR")
+    } else {
+        postgres_write.clone()
+    };
+
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(
@@ -461,7 +468,6 @@ pub async fn run(args: Arguments) {
     tracing::info!(%metrics_address, "serving metrics");
     let metrics_task = serve_metrics(orderbook, metrics_address, Default::default());
 
-    drop(startup_span_guard);
     futures::pin_mut!(serve_api);
     tokio::select! {
         result = &mut serve_api => panic!("API task exited {result:?}"),

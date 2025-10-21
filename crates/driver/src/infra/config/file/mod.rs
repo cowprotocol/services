@@ -2,6 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     alloy::primitives::Address,
+    number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
@@ -50,6 +51,9 @@ struct Config {
     /// Use Enso for transaction simulation.
     enso: Option<EnsoConfig>,
 
+    /// Liquidity sources notifier configuration.
+    liquidity_sources_notifier: Option<LiquiditySourcesNotifier>,
+
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
 
@@ -82,6 +86,9 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    #[serde_as(as = "HexOrDecimalU256")]
+    tx_gas_limit: eth::U256,
 }
 
 #[serde_as]
@@ -685,6 +692,28 @@ fn default_response_size_limit_max_bytes() -> usize {
 
 fn default_number_of_orders_per_merged_solution() -> usize {
     3
+}
+
+/// A configuration for sending notifications to liquidity sources.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LiquiditySourcesNotifier {
+    /// Configuration for Liquorice liquidity
+    pub liquorice: Option<LiquoriceConfig>,
+}
+
+/// Liquorice API configuration
+/// <https://liquorice.gitbook.io/liquorice-docs>
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LiquoriceConfig {
+    /// Liquorice API base URL
+    pub base_url: String,
+    /// API key for the Liquorice API
+    pub api_key: String,
+    /// The HTTP timeout for requests to the Liquorice API
+    #[serde(with = "humantime_serde", default = "default_http_timeout")]
+    pub http_timeout: Duration,
 }
 
 #[derive(Clone, Debug, Deserialize)]

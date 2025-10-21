@@ -378,22 +378,25 @@ impl TradeVerifier {
         );
 
         // Set up mocked solver.
-        let mut solver_override = StateOverride {
+        let solver_override = StateOverride {
             code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone().into()),
+            // Allow solver simulations to proceed even if the real account holds no ETH.
+            balance: Some(U256::exp10(18)),
             ..Default::default()
         };
 
         // If the trade requires a special tx.origin we also need to fake the
-        // authenticator and tx origin balance.
+        // authenticator.
         if trade
             .tx_origin()
             .is_some_and(|origin| origin != trade.solver())
         {
-            let (authenticator, balance) = futures::join!(
-                self.settlement.authenticator().call(),
-                self.web3.eth().balance(trade.solver(), None)
-            );
-            let authenticator = authenticator.context("could not fetch authenticator")?;
+            let authenticator = self
+                .settlement
+                .authenticator()
+                .call()
+                .await
+                .context("could not fetch authenticator")?;
             overrides.insert(
                 authenticator,
                 StateOverride {
@@ -403,8 +406,6 @@ impl TradeVerifier {
                     ..Default::default()
                 },
             );
-            let balance = balance.context("could not fetch balance")?;
-            solver_override.balance = Some(balance);
         }
         overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 

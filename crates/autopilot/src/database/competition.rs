@@ -4,7 +4,6 @@ use {
     database::{
         Address,
         auction::AuctionId,
-        auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
         surplus_capturing_jit_order_owners,
@@ -39,14 +38,6 @@ impl super::Postgres {
             .with_label_values(&["save_competition"])
             .start_timer();
 
-        let competition_orders = competition
-            .competition_table
-            .auction
-            .orders
-            .iter()
-            .map(|order| ByteArray(order.0))
-            .collect::<Vec<_>>();
-
         // offload CPU intensive work of serializing to a blocking thread so we can
         // already start with the DB queries in the mean time.
         let json = tokio::task::spawn_blocking(move || {
@@ -69,21 +60,6 @@ impl super::Postgres {
             .await
             .context("reference_scores::insert")?;
 
-        database::auction_participants::insert(
-            &mut ex,
-            competition
-                .participants
-                .into_iter()
-                .map(|p| Participant {
-                    auction_id: competition.auction_id,
-                    participant: ByteArray(p.0),
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("auction_participants::insert")?;
-
         database::auction_prices::insert(
             &mut ex,
             competition
@@ -99,10 +75,6 @@ impl super::Postgres {
         )
         .await
         .context("auction_prices::insert")?;
-
-        database::auction_orders::insert(&mut ex, competition.auction_id, &competition_orders)
-            .await
-            .context("auction_orders::insert")?;
 
         let json = json
             .await

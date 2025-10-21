@@ -1,8 +1,12 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::FlashLoanRouter,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    contracts::alloy::{FlashLoanRouter, support::Balances},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     thiserror::Error,
 };
 
@@ -11,7 +15,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
-    signatures: contracts::support::Signatures,
+    signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
 
     /// The domain separator for settlement contract used for signing orders.
@@ -22,8 +26,8 @@ pub struct Contracts {
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
-    flashloan_router: Option<FlashLoanRouter>,
-    balance_helper: contracts::support::Balances,
+    flashloan_router: Option<FlashLoanRouter::Instance>,
+    balance_helper: Balances::Instance,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -62,19 +66,21 @@ impl Contracts {
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
-        let balance_helper = contracts::support::Balances::at(
-            web3,
-            address_for(
-                contracts::support::Balances::raw_contract(),
-                addresses.balances,
-            ),
+        let balance_helper = Balances::Instance::new(
+            addresses
+                .balances
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| Balances::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let weth = contracts::WETH9::at(
@@ -110,12 +116,13 @@ impl Contracts {
         let flashloan_router = addresses
             .flashloan_router
             .or_else(|| {
-                contracts::FlashLoanRouter::raw_contract()
-                    .networks
-                    .get(&chain.id().to_string())
-                    .map(|deployment| eth::ContractAddress(deployment.address))
+                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
+                    eth::ContractAddress(deployment_address.into_legacy())
+                })
             })
-            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+            .map(|address| {
+                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
+            });
 
         Ok(Self {
             settlement,
@@ -134,7 +141,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
@@ -162,11 +169,11 @@ impl Contracts {
         &self.cow_amm_registry
     }
 
-    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+    pub fn flashloan_router(&self) -> Option<&FlashLoanRouter::Instance> {
         self.flashloan_router.as_ref()
     }
 
-    pub fn balance_helper(&self) -> &contracts::support::Balances {
+    pub fn balance_helper(&self) -> &Balances::Instance {
         &self.balance_helper
     }
 }
@@ -202,12 +209,6 @@ pub trait ContractAt {
 }
 
 impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
-}
-
-impl ContractAt for contracts::support::Balances {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
         Self::at(&eth.web3, address.into())
     }

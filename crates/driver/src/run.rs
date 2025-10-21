@@ -11,6 +11,7 @@ use {
             cli,
             config,
             liquidity,
+            notify,
             simulator::{self, Simulator},
             solver::Solver,
         },
@@ -46,10 +47,6 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
-    // Start a new span that measures the initialization phase of the driver
-    let startup_span = tracing::info_span!("driver_startup");
-    let startup_span_guard = startup_span.enter();
-
     infra::observe::init(observe::Config::new(
         &args.log,
         args.stderr_threshold,
@@ -77,6 +74,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let serve = Api {
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
+        liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
         simulator: simulator(&config, &eth),
         mempools: Mempools::try_new(
             config
@@ -105,7 +103,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         app_data_retriever,
     );
 
-    drop(startup_span_guard);
     futures::pin_mut!(serve);
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
@@ -174,6 +171,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
         config.contracts.clone(),
         gas,
         config.archive_node_url.as_ref(),
+        config.tx_gas_limit,
     )
     .await
 }
@@ -195,6 +193,18 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
     liquidity::Fetcher::try_new(eth, &config.liquidity)
         .await
         .expect("initialize liquidity fetcher")
+}
+
+fn liquidity_sources_notifier(
+    config: &config::Config,
+    eth: &Ethereum,
+) -> notify::liquidity_sources::Notifier {
+    let notifier_config = config
+        .liquidity_sources_notifier
+        .as_ref()
+        .unwrap_or(&notify::liquidity_sources::config::Config { liquorice: None });
+    notify::liquidity_sources::Notifier::try_new(notifier_config, eth.chain())
+        .expect("initialize notify sources notifier")
 }
 
 #[cfg(unix)]

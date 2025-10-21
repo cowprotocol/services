@@ -188,6 +188,26 @@ pub async fn load_by_id(
     }))
 }
 
+/// Participant of a solver competition for a given auction.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct AuctionParticipant {
+    pub auction_id: AuctionId,
+    pub participant: Address,
+}
+
+pub async fn fetch_auction_participants(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+) -> Result<Vec<AuctionParticipant>, sqlx::Error> {
+    const QUERY: &str = r#"
+        SELECT DISTINCT ps.solver AS participant, ps.auction_id
+        FROM proposed_solutions ps
+        WHERE ps.auction_id = $1
+    "#;
+
+    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+}
+
 /// Identifies solvers that have consistently failed to settle solutions in
 /// recent N auctions.
 ///
@@ -1213,5 +1233,11 @@ mod tests {
         assert_eq!(solver_competition.reference_scores.len(), 1);
         assert_eq!(solver_competition.solutions.len(), 1);
         assert_eq!(solver_competition.solutions.first().unwrap().uid, 0);
+
+        let auction_participants = fetch_auction_participants(&mut db, auction_id)
+            .await
+            .unwrap();
+        assert_eq!(auction_participants.len(), 1);
+        assert_eq!(auction_participants[0].participant, solutions[0].solver);
     }
 }

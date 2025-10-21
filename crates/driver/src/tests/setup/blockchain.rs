@@ -8,7 +8,11 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
-    contracts::alloy::ERC20Mintable,
+    contracts::alloy::{
+        ERC20Mintable,
+        FlashLoanRouter,
+        support::{Balances, Signatures},
+    },
     ethcontract::PrivateKey,
     ethrpc::{
         Web3,
@@ -44,9 +48,9 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, ERC20Mintable::Instance>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
-    pub balances: contracts::support::Balances,
-    pub signatures: contracts::support::Signatures,
-    pub flashloan_router: contracts::FlashLoanRouter,
+    pub balances: Balances::Instance,
+    pub signatures: Signatures::Instance,
+    pub flashloan_router: FlashLoanRouter::Instance,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
     pub node: Node,
@@ -328,18 +332,15 @@ impl Blockchain {
             settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
         }
 
-        let balances = if let Some(balances_address) = config.balances_address {
-            contracts::support::Balances::at(&web3, balances_address)
-        } else {
-            wait_for(
-                &web3,
-                contracts::support::Balances::builder(&web3)
-                    .from(main_trader_account.clone())
-                    .deploy(),
-            )
-            .await
-            .unwrap()
+        let balances_address = match config.balances_address {
+            Some(balances_address) => balances_address.into_alloy(),
+            None => Balances::Instance::deploy_builder(web3.alloy.clone())
+                .from(main_trader_account.address().into_alloy())
+                .deploy()
+                .await
+                .unwrap(),
         };
+        let balances = Balances::Instance::new(balances_address, web3.alloy.clone());
 
         wait_for(
             &web3,
@@ -351,27 +352,27 @@ impl Blockchain {
         .await
         .unwrap();
 
-        let signatures = if let Some(signatures_address) = config.signatures_address {
-            contracts::support::Signatures::at(&web3, signatures_address)
+        let signatures_address = if let Some(signatures_address) = config.signatures_address {
+            signatures_address.into_alloy()
         } else {
-            wait_for(
-                &web3,
-                contracts::support::Signatures::builder(&web3)
-                    .from(main_trader_account.clone())
-                    .deploy(),
-            )
-            .await
-            .unwrap()
+            Signatures::Instance::deploy_builder(web3.alloy.clone())
+                .from(main_trader_account.address().into_alloy())
+                .deploy()
+                .await
+                .unwrap()
         };
+        let signatures = Signatures::Instance::new(signatures_address, web3.alloy.clone());
 
-        let flashloan_router = wait_for(
-            &web3,
-            contracts::FlashLoanRouter::builder(&web3, settlement.address())
-                .from(main_trader_account.clone())
-                .deploy(),
+        let flashloan_router_address = FlashLoanRouter::Instance::deploy_builder(
+            web3.alloy.clone(),
+            settlement.address().into_alloy(),
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
+        let flashloan_router =
+            FlashLoanRouter::Instance::new(flashloan_router_address, web3.alloy.clone());
 
         let mut trader_accounts = Vec::new();
         for config in config.solvers {

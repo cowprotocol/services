@@ -7,6 +7,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
     itertools::Itertools,
@@ -32,10 +33,10 @@ use {
         collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
         future::Future,
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     },
     strum::VariantNames,
-    tokio::{sync::Mutex, time::Instant},
+    tokio::sync::Mutex,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -164,6 +165,9 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
+
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "update_solvabe_orders");
 
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
@@ -441,18 +445,19 @@ impl SolvableOrdersCache {
 /// users.
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
-        .banned(
-            orders
-                .iter()
-                .flat_map(|order| std::iter::once(order.metadata.owner).chain(order.data.receiver)),
-        )
+        .banned(orders.iter().flat_map(|order| {
+            std::iter::once(order.metadata.owner)
+                .chain(order.data.receiver)
+                .map(IntoAlloy::into_alloy)
+        }))
         .await;
     orders
         .iter()
         .filter_map(|order| {
-            std::iter::once(&order.metadata.owner)
-                .chain(&order.data.receiver)
-                .any(|addr| banned.contains(addr))
+            std::iter::once(order.metadata.owner)
+                .chain(order.data.receiver)
+                .map(IntoAlloy::into_alloy)
+                .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
         })
         .collect()
@@ -878,6 +883,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -1156,7 +1162,7 @@ mod tests {
 
     #[tokio::test]
     async fn filters_banned_users() {
-        let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
+        let banned_users = hashset!(Address::from([0xba; 20]), Address::from([0xbb; 20]));
         let orders = [
             H160([1; 20]),
             H160([1; 20]),

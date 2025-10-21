@@ -21,6 +21,7 @@ use {
     ethereum_types::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
+    tracing::Instrument,
 };
 
 pub struct Solver(Arc<Inner>);
@@ -121,8 +122,7 @@ impl Solver {
         let inner = self.0.clone();
         let span = tracing::Span::current();
         let background_work = async move {
-            let _entered = span.enter();
-            inner.solve(auction, sender).await;
+            inner.solve(auction, sender).instrument(span).await;
         };
 
         let mut handle = tokio::spawn(background_work);

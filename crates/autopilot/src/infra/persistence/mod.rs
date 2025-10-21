@@ -72,6 +72,8 @@ impl Persistence {
         &self,
         auction: &domain::RawAuctionData,
     ) -> Result<domain::auction::Id, DatabaseError> {
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "replace_auction_in_db");
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
             .replace_current_auction(&auction)
@@ -367,7 +369,7 @@ impl Persistence {
 
         let orders = {
             // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
+            let auction_orders = database::auction::get_order_uids(&mut ex, auction_id)
                 .await
                 .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?

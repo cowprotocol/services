@@ -1,5 +1,6 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
+    alloy::primitives::Address,
     anyhow::{Context, anyhow, ensure},
     clap::ValueEnum,
     primitive_types::{H160, U256},
@@ -42,7 +43,7 @@ pub struct Arguments {
     /// Support for multiple contract was added to support transition period for
     /// integrators when the migration of the eth-flow contract happens.
     #[clap(long, env, use_value_delimiter = true)]
-    pub ethflow_contracts: Vec<H160>,
+    pub ethflow_contracts: Vec<Address>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// If there are already events in the database for a date later than this,
@@ -111,7 +112,7 @@ pub struct Arguments {
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
-    pub banned_users: Vec<H160>,
+    pub banned_users: Vec<Address>,
 
     /// Maximum number of entries to keep in the banned users cache.
     #[clap(long, env, default_value = "10000")]

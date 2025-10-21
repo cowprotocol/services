@@ -13,6 +13,8 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
+    contracts::alloy::FlashLoanRouter::LoanRequest,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
 };
 
@@ -230,19 +232,19 @@ pub fn tx(
         let flashloans = solution
             .flashloans
             .values()
-            .map(|flashloan| {
-                (
-                    flashloan.amount.0,
-                    flashloan.protocol_adapter.0,
-                    flashloan.liquidity_provider.0,
-                    flashloan.token.0.0,
-                )
+            .map(|flashloan| LoanRequest::Data {
+                amount: flashloan.amount.0.into_alloy(),
+                borrower: flashloan.protocol_adapter.0.into_alloy(),
+                lender: flashloan.liquidity_provider.0.into_alloy(),
+                token: flashloan.token.0.0.into_alloy(),
             })
             .collect();
 
-        let call = router.flash_loan_and_settle(flashloans, ethcontract::Bytes(settle_calldata));
-        let calldata = call.tx.data.unwrap().0;
-        (router.address().into(), calldata)
+        let calldata = router
+            .flashLoanAndSettle(flashloans, settle_calldata.into())
+            .calldata()
+            .to_vec();
+        (router.address().into_legacy().into(), calldata)
     };
 
     Ok(eth::Tx {

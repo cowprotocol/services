@@ -28,7 +28,11 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{
+        Web3,
+        alloy::conversions::IntoLegacy,
+        block_stream::block_number_to_block_number_hash,
+    },
     futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -45,6 +49,7 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
+        event_handling::AlloyEventRetriever,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
@@ -153,20 +158,20 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup");
-    let startup_span_guard = startup_span.enter();
-
     let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
         .await
         .unwrap();
 
-    let db_read = Postgres::new(
-        args.db_read_url.unwrap_or(args.db_write_url).as_str(),
-        args.insert_batch_size,
-    )
-    .await
-    .unwrap();
+    let db_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::new(db_read_url.as_str(), args.insert_batch_size)
+            .await
+            .expect("failed to create read replica database")
+    } else {
+        db_write.clone()
+    };
+
     crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
@@ -203,7 +208,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
         weth: args.shared.native_token_address,
-        balances: args.shared.balances_contract_address,
+        balances: args
+            .shared
+            .balances_contract_address
+            .map(IntoLegacy::into_legacy),
         trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(
@@ -572,7 +580,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
+            AlloyEventRetriever(EthFlowRefundRetriever::new(
+                web3.clone(),
+                args.ethflow_contracts.clone(),
+            )),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -604,7 +615,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
+            AlloyEventRetriever(CoWSwapOnchainOrdersContract::new(
+                web3.clone(),
+                args.ethflow_contracts,
+            )),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -676,7 +690,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
-    drop(startup_span_guard);
     run.run_forever(shutdown_controller).await;
 }
 

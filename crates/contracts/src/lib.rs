@@ -49,48 +49,22 @@ macro_rules! include_contracts {
 }
 
 include_contracts! {
-    AaveFlashLoanSolverWrapper;
-    BalancerQueries;
     BalancerV2Authorizer;
     BalancerV2Vault;
-    BalancerV3BatchRouter;
     CowAmm;
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
-    CoWSwapEthFlow;
-    CoWSwapOnchainOrders;
     CowProtocolToken;
     ERC1271SignatureValidator;
     ERC20;
-    ERC3156FlashLoanSolverWrapper;
-    FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    HooksTrampoline;
-    IAavePool;
-    IFlashLoanSolverWrapper;
     IUniswapV3Factory;
     Permit2;
-    UniswapV3Pool;
     UniswapV3QuoterV2;
     UniswapV3SwapRouterV2;
     WETH9;
-}
-
-pub mod support {
-    include_contracts! {
-        Balances;
-        Multicall;
-        Signatures;
-    }
-}
-
-pub mod test {
-    include_contracts! {
-        Counter;
-        GasHog;
-    }
 }
 
 #[cfg(test)]
@@ -162,7 +136,6 @@ mod tests {
         for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(WETH9 for *network);
-            assert_has_deployment_address!(HooksTrampoline for *network);
             assert_has_deployment_address!(BalancerV2Vault for *network);
             assert!(
                 alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()

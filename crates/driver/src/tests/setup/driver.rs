@@ -8,6 +8,7 @@ use {
             setup::{blockchain::Trade, orderbook::Orderbook},
         },
     },
+    ethrpc::alloy::conversions::IntoLegacy,
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -220,6 +221,7 @@ async fn create_config_file(
     )
     .unwrap();
     writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
     write!(
         file,
         r#"[contracts]
@@ -234,9 +236,9 @@ async fn create_config_file(
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address()),
-        hex_address(blockchain.balances.address()),
-        hex_address(blockchain.signatures.address()),
-        hex_address(blockchain.flashloan_router.address()),
+        blockchain.balances.address(),
+        blockchain.signatures.address(),
+        hex_address(blockchain.flashloan_router.address().into_legacy()),
     )
     .unwrap();
 

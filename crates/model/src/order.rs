@@ -293,33 +293,61 @@ pub struct QuoteAmounts {
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     // These fields are the same as in `OrderData`.
+    /// The address of the token being sold.
     pub sell_token: H160,
+    /// The address of the token being bought.
     pub buy_token: H160,
+    /// The receiver of the `buy_token`. When this field is `None`, the receiver
+    /// is the same as the owner.
     #[serde(default)]
     pub receiver: Option<H160>,
+    /// The *maximum* amount of `sell_token`s that may be sold.
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
+    /// The *minimum* amount of `buy_token`s that should be bought.
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    /// The block timestamp when the order can no longer be settled (UNIX
+    /// timestamp in seconds).
     pub valid_to: u32,
     #[serde_as(as = "HexOrDecimalU256")]
+    /// (Deprecated) The fee agreed to by the user, it will be taken out in
+    /// `sell_token`.
+    ///
+    /// Deprecation note: orders with a non-zero `fee_amount` should be rejected
+    /// by the API.
     pub fee_amount: U256,
+    /// The kind of order (i.e. sell or buy).
     pub kind: OrderKind,
+    /// Whether the order can be carried out in multiple smaller trades, or it
+    /// must be carried out in a single trade (a.k.a. fill-or-kill).
     pub partially_fillable: bool,
+    /// Sell token's source — ERC20, internal vault or external vault (at the
+    /// time of writing).
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
+    /// Defines how tokens are transferred back to the user, either as an ERC-20
+    /// token transfer or internal Balancer Vault transfer.
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
-
+    /// The address of the order's owner (can be a smart contract's address).
+    ///
+    /// In the EthFlow case, it will have the address of the EthFlow smart
+    /// contract.
     pub from: Option<H160>,
+    /// The owner's signature of the order's data.
     #[serde(flatten)]
     pub signature: Signature,
+    /// The ID of the quote this order refers to.
     pub quote_id: Option<QuoteId>,
+    /// The order's AppData (can be an hash, the JSON body or both).
     #[serde(flatten)]
     pub app_data: OrderCreationAppData,
 }
 
 impl OrderCreation {
+    /// Returns the order's data — i.e. the [`OrderCreation`] without
+    /// the metadata: `signature`, `quote_id` and with the `app_data`'s hash.
     pub fn data(&self) -> OrderData {
         OrderData {
             sell_token: self.sell_token,
@@ -337,6 +365,11 @@ impl OrderCreation {
         }
     }
 
+    /// Signs the current [`OrderCreation`]'s data ([`OrderData`]) using ECDSA,
+    /// returning a signed [`OrderCreation`].
+    ///
+    /// Re-signs the order data with ECDSA and returns the updated
+    /// `OrderCreation`.
     pub fn sign(
         mut self,
         signing_scheme: EcdsaSigningScheme,
@@ -400,6 +433,7 @@ impl OrderCreation {
     }
 }
 
+/// The order's AppData (can be an hash, the JSON body or both).
 // Note that the order of the variants is important for deserialization.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
@@ -813,12 +847,23 @@ impl From<app_data::OrderUid> for OrderUid {
     }
 }
 
+/// An order's kind — sell or buy.
+///
+/// In very simple terms, when selling the owner sets the amount of tokens
+/// going out of their pocket, when buying the owner sets the amount of
+/// tokens coming in to their pocket.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
+    /// Buy orders state the owner's intent to *buy* X amount of token A in
+    /// exchange for some amount of token B (the exact amount is dependent on
+    /// token pairs, solvers, etc).
     #[default]
     Buy,
+    /// Sell orders state the owner's intent to *sell* X amount of token A in
+    /// exchange for some amount of token B (the exact amount is dependent on
+    /// token pairs, solvers, etc).
     Sell,
 }
 
@@ -889,17 +934,36 @@ impl OrderKind {
     }
 }
 
-/// Source from which the sellAmount should be drawn upon order fulfillment
+/// Source from which the `sellAmount` should be drawn upon order fulfillment.
+///
+/// It defines how tokens are transferred from the user into the settlement
+/// contract, can be an ERC-20 transfer, drawn from the user's internal
+/// Balancer Vault or through an ERC-20 transfer made through the Balancer
+/// Vault.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
-    /// Direct ERC20 allowances to the Vault relayer contract
+    /// Sell tokens will be drawn from the users regular ERC20 token allowance
+    /// to the Vault relayer contract.
     #[default]
     Erc20,
-    /// Internal balances to the Vault with GPv2 relayer approval
+    /// Sell tokens will be drawn from the users regular ERC20 tokens *through*
+    /// the Vault, this is done by having a specific ERC20 allowance for the
+    /// Vault and relayer approval for the GPv2VaultRelayer.
+    ///
+    /// Check the [CoW docs on Balancer External Balances](external) for more
+    /// details.
+    ///
+    /// [external]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-external-balances
     External,
-    /// ERC20 allowances to the Vault with GPv2 relayer approval
+    /// Sell tokens will be drawn from the users Vault internal balances,
+    /// requires the user to approve the GPv2VaultRelayer.
+    ///
+    /// Check the [CoW docs on Balancer Internal Balances](internal) for more
+    /// details.
+    ///
+    /// [internal]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-internal-balances
     Internal,
 }
 
@@ -932,8 +996,11 @@ impl SellTokenSource {
     }
 }
 
-/// Destination for which the buyAmount should be transferred to order's
-/// receiver to upon fulfillment
+/// Destination for which the buyAmount should be transferred to the order's
+/// receiver upon fulfillment.
+///
+/// It defines how tokens are transferred back to the user, either as an ERC-20
+/// token transfer or internal Balancer Vault transfer.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
