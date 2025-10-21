@@ -4673,7 +4673,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "contracts",
- "ethrpc",
  "futures",
  "moka",
  "thiserror 1.0.61",
