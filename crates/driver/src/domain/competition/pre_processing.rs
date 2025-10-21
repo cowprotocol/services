@@ -354,6 +354,7 @@ impl Utilities {
                     .ok()
                     .flatten();
 
+                tracing::debug!(with_value = fetched_app_data.is_some(), "returned appdata");
                 (app_data_hash, fetched_app_data)
             })
             .collect();
@@ -370,7 +371,7 @@ impl Utilities {
         // available.
         const MAX_APP_DATA_WAIT: Duration = Duration::from_millis(500);
         let app_data: HashMap<_, _> = futures
-            .take_until(tokio::time::sleep(MAX_APP_DATA_WAIT))
+            .take_until(tokio::time::sleep(MAX_APP_DATA_WAIT).fuse())
             .filter_map(async move |(hash, json)| Some((hash, json?)))
             .collect()
             .await;
