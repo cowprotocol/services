@@ -270,7 +270,7 @@ impl Solver {
             );
         }
 
-        let url = shared::url::join(&self.config.endpoint, "solve");
+        let url = url_utils::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,
@@ -349,7 +349,7 @@ impl Solver {
     ) {
         let body =
             serde_json::to_string(&dto::notification::new(auction_id, solution_id, kind)).unwrap();
-        let url = shared::url::join(&self.config.endpoint, "notify");
+        let url = url_utils::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body).headers(tracing_headers());
         if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {

@@ -62,6 +62,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 tracing = { workspace = true }
 url = { workspace = true }
 web3 = { workspace = true }
+url-utils = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

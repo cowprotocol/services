@@ -89,7 +89,7 @@ impl TenderlyHttpApi {
 impl TenderlyApi for TenderlyHttpApi {
     #[instrument(skip_all)]
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
-        let url = crate::url::join(&self.api, "simulate");
+        let url = url_utils::join(&self.api, "simulate");
         let body = serde_json::to_string(&simulation)?;
 
         let response = self
@@ -112,9 +112,9 @@ impl TenderlyApi for TenderlyHttpApi {
     }
 
     fn log(&self, simulation: SimulationRequest) -> Result<()> {
-        let request_url = crate::url::join(&self.api, "simulate");
+        let request_url = url_utils::join(&self.api, "simulate");
         let simulation_url =
-            crate::url::join(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
+            url_utils::join(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
         let body = serde_json::to_string(&simulation)?;
 
         #[rustfmt::skip]
@@ -131,7 +131,7 @@ impl TenderlyApi for TenderlyHttpApi {
     }
 
     fn simulation_url(&self, id: &str) -> Url {
-        crate::url::join(&self.dashboard, &format!("simulator/{id}"))
+        url_utils::join(&self.dashboard, &format!("simulator/{id}"))
     }
 }
 

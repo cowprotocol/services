@@ -100,7 +100,7 @@ impl CoinGecko {
         tokens: &HashSet<Token>,
         timeout: Duration,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
-        let mut url = crate::url::join(&self.base_url, &self.chain);
+        let mut url = url_utils::join(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
         url.query_pairs_mut()
             .append_pair(

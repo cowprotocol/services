@@ -59,7 +59,7 @@ pub struct OrdersQuery {
 impl OrdersQuery {
     /// Encodes the orders query as a url with parameters.
     fn format_url(&self, base_url: &Url) -> Url {
-        let mut url = crate::url::join(base_url, "/orderbook/v1/orders");
+        let mut url = url_utils::join(base_url, "/orderbook/v1/orders");
 
         if let Some(taker) = self.taker {
             url.query_pairs_mut().append_pair("taker", &addr2str(taker));

@@ -44,7 +44,7 @@ pub struct ExternalTradeFinder {
 impl ExternalTradeFinder {
     pub fn new(driver: Url, client: Client, block_stream: CurrentBlockWatcher) -> Self {
         Self {
-            quote_endpoint: crate::url::join(&driver, "quote"),
+            quote_endpoint: url_utils::join(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{driver}")),
             client,
             block_stream,

@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
+url-utils = { workspace = true }
 alloy = { workspace = true, features = ["sol-types"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }

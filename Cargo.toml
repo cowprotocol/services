@@ -102,6 +102,7 @@ tower-http = "0.4"
 tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
 vergen = "8"
+url-utils = { path = "crates/url-utils" }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

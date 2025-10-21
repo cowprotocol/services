@@ -52,7 +52,7 @@ impl Ipfs {
     }
 
     fn prepare_url(&self, cid: &str) -> Url {
-        let mut url = shared::url::join(&self.base, &format!("ipfs/{cid}"));
+        let mut url = url_utils::join(&self.base, &format!("ipfs/{cid}"));
         if let Some(query) = &self.query {
             url.set_query(Some(query.as_str()));
         }

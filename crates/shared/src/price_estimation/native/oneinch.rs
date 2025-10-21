@@ -114,7 +114,7 @@ async fn get_current_prices(
     chain: u64,
     token_info: &dyn TokenInfoFetching,
 ) -> Result<HashMap<Token, f64>> {
-    let url = crate::url::join(&base_url, &format!("/price/v1.1/{chain}"));
+    let url = url_utils::join(&base_url, &format!("/price/v1.1/{chain}"));
     let mut builder = client.get(url);
     if let Some(api_key) = api_key {
         builder = builder.header(AUTHORIZATION, api_key)

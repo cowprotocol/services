@@ -38,7 +38,6 @@ pub mod token_info;
 pub mod token_list;
 pub mod trace_many;
 pub mod trade_finding;
-pub mod url;
 pub mod zeroex_api;
 
 /// anyhow errors are not clonable natively. This is a workaround that creates a

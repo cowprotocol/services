@@ -64,7 +64,7 @@ impl OrderBookApi {
         struct Auction {
             orders: Vec<Order>,
         }
-        let url = shared::url::join(&self.base, "api/v1/auction");
+        let url = url_utils::join(&self.base, "api/v1/auction");
         let auction: Auction = self
             .client
             .get(url)
@@ -77,7 +77,7 @@ impl OrderBookApi {
     }
 
     pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
-        let url = shared::url::join(&self.base, &format!("api/v1/orders/{uid}"));
+        let url = url_utils::join(&self.base, &format!("api/v1/orders/{uid}"));
         self.client
             .get(url)
             .send()
@@ -117,7 +117,7 @@ impl ZeroExApi {
     }
 
     pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
-        let mut url = shared::url::join(&self.base, "swap/v1/price");
+        let mut url = url_utils::join(&self.base, "swap/v1/price");
 
         let (amount_name, amount) = match order.kind {
             OrderKind::Buy => ("buyAmount", order.buy_amount),
