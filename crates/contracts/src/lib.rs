@@ -51,7 +51,6 @@ macro_rules! include_contracts {
 include_contracts! {
     BalancerV2Authorizer;
     BalancerV2Vault;
-    BalancerV3BatchRouter;
     CowAmm;
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
@@ -66,12 +65,6 @@ include_contracts! {
     UniswapV3QuoterV2;
     UniswapV3SwapRouterV2;
     WETH9;
-}
-
-pub mod support {
-    include_contracts! {
-        Balances;
-    }
 }
 
 #[cfg(test)]

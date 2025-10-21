@@ -1,3 +1,4 @@
+tx-gas-limit = "45000000"
 [[solver]]
 name = "mysolver" # Arbitrary name given to this solver, must be unique
 endpoint = "http://0.0.0.0:7872"

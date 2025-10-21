@@ -1,9 +1,11 @@
 use {
     app_data::AppDataHash,
-    contracts::{ERC20, alloy::support::Signatures, support::Balances},
+    contracts::{
+        ERC20,
+        alloy::support::{Balances, Signatures},
+    },
     driver::domain::eth::NonZeroU256,
     e2e::{
-        deploy,
         nodes::forked_node::ForkedNodeApi,
         setup::{
             DeployedContracts,
@@ -422,12 +424,14 @@ async fn cow_amm_driver_support(web3: Web3) {
     // since changing the forked number would result in very costly ~1 year of event
     // syncing, we deploy the following SCs
     let deployed_contracts = {
-        let balances = deploy!(&web3, Balances());
+        let balances = Balances::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
         let signatures = Signatures::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
         DeployedContracts {
-            balances: Some(balances.address()),
+            balances: Some(balances.address().into_legacy()),
             signatures: Some(signatures.address().into_legacy()),
         }
     };
