@@ -355,6 +355,9 @@ impl Utilities {
                     .flatten();
 
                 tracing::debug!(with_value = fetched_app_data.is_some(), "returned appdata");
+                if fetched_app_data.is_none() {
+                    tracing::debug!(hash =? hex::encode(app_data_hash.0.0), "no JSON for appdata");
+                }
                 (app_data_hash, fetched_app_data)
             })
             .collect();
