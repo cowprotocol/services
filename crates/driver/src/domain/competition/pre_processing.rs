@@ -357,9 +357,7 @@ impl Utilities {
                 (app_data_hash, fetched_app_data)
             })
             .collect();
-        if !futures.is_empty() {
-            tracing::debug!(len = futures.len(), "fetching uncached appdatas");
-        }
+        let futures_len = futures.len();
 
         // Only await responses for a short amount of time. Even if we don't await
         // all futures fully the remaining appdata requests will finish in background
@@ -375,6 +373,15 @@ impl Utilities {
             .filter_map(async move |(hash, json)| Some((hash, json?)))
             .collect()
             .await;
+
+        if futures_len != 0 {
+            tracing::debug!(
+                requested = futures_len,
+                fetched_in_time = app_data.len(),
+                still_running_in_background = futures_len - app_data.len(),
+                "fetching uncached appdatas"
+            );
+        }
 
         Arc::new(app_data)
     }
