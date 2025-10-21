@@ -5,6 +5,7 @@ use {
         boundary,
         domain::{eth, liquidity, order, solver},
     },
+    alloy::primitives::Uint,
     ethereum_types::{H160, U256},
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
@@ -25,7 +26,7 @@ impl<'a> Solver<'a> {
         weth: &eth::WethAddress,
         base_tokens: &HashSet<eth::TokenAddress>,
         liquidity: &'a [liquidity::Liquidity],
-        uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
+        uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
@@ -157,7 +158,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
-    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
+    uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
@@ -235,6 +236,15 @@ fn to_boundary_liquidity(
                         return onchain_liquidity;
                     };
 
+                    let mut fee = pool.fee.0;
+                    if fee >= (1 << 24) {
+                        tracing::warn!(
+                            "pool fee overflows contract supported fee value, capping it..."
+                        );
+                        fee = (1 << 24) - 1;
+                    }
+                    let fee = Uint::<24, 1>::try_from(fee).expect("fee < (1 << 24)");
+
                     let token_pair = to_boundary_token_pair(&pool.tokens);
                     onchain_liquidity
                         .entry(token_pair)
@@ -247,7 +257,7 @@ fn to_boundary_liquidity(
                                     uni_v3_quoter_contract: uni_v3_quoter_v2_arc.clone(),
                                     address: liquidity.address,
                                     tokens: token_pair,
-                                    fee: pool.fee.0,
+                                    fee,
                                 },
                             ),
                         })
