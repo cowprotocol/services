@@ -178,13 +178,11 @@ impl BalanceSimulator {
             source: source.as_bytes().into(),
             interactions: interactions
                 .iter()
-                .map(
-                    |i| contracts::alloy::support::Balances::Balances::Interaction {
-                        target: i.target.into_alloy(),
-                        value: i.value.into_alloy(),
-                        callData: i.call_data.clone().into(),
-                    },
-                )
+                .map(|i| Balances::Balances::Interaction {
+                    target: i.target.into_alloy(),
+                    value: i.value.into_alloy(),
+                    callData: i.call_data.clone().into(),
+                })
                 .collect(),
         };
 

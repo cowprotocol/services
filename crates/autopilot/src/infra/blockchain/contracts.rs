@@ -1,7 +1,7 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt},
+    contracts::alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt, support::Balances},
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
     primitive_types::H160,
 };
@@ -11,7 +11,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
-    balances: contracts::alloy::support::Balances::Instance,
+    balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
     trampoline: HooksTrampoline::Instance,
 
@@ -61,11 +61,11 @@ impl Contracts {
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
         );
 
-        let balances = contracts::alloy::support::Balances::Instance::new(
+        let balances = Balances::Instance::new(
             addresses
                 .balances
                 .map(IntoAlloy::into_alloy)
-                .or_else(|| contracts::alloy::support::Balances::deployment_address(&chain.id()))
+                .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
         );
@@ -117,7 +117,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn balances(&self) -> &contracts::alloy::support::Balances::Instance {
+    pub fn balances(&self) -> &Balances::Instance {
         &self.balances
     }
 
