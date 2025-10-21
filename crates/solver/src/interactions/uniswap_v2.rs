@@ -61,8 +61,10 @@ mod tests {
         let payout_to = 9u8;
 
         let router_address = Address::from(&[1u8; 20]);
-        let settlement =
-            GPv2Settlement::at(&contracts::web3::dummy(), H160::from_low_u64_be(payout_to as u64));
+        let settlement = GPv2Settlement::at(
+            &contracts::web3::dummy(),
+            H160::from_low_u64_be(payout_to as u64),
+        );
         let interaction = UniswapInteraction {
             router: router_address,
             settlement,
