@@ -1,7 +1,7 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::alloy::{FlashLoanRouter, support::Balances},
+    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, support::Balances},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -14,7 +14,7 @@ use {
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
-    vault: contracts::BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
 
@@ -64,8 +64,10 @@ impl Contracts {
             ),
         );
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
-        let vault =
-            contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
+        let vault = BalancerV2Vault::Instance::new(
+            settlement.methods().vault().call().await?.into_alloy(),
+            web3.alloy.clone(),
+        );
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
@@ -149,7 +151,7 @@ impl Contracts {
         self.vault_relayer
     }
 
-    pub fn vault(&self) -> &contracts::BalancerV2Vault {
+    pub fn vault(&self) -> &BalancerV2Vault::Instance {
         &self.vault
     }
 

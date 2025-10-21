@@ -294,6 +294,8 @@ crate::bindings!(
     }
 );
 crate::bindings!(
+    // Balancer addresses can be obtained from:
+    // <https://github.com/balancer/balancer-subgraph-v2/blob/master/networks.yaml>
     BalancerV2Vault,
     crate::deployments! {
         // <https://etherscan.io/tx/0x28c44bb10d469cbd42accf97bd00b73eabbace138e9d44593e851231fbed1cb7>
