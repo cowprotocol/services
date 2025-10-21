@@ -56,7 +56,6 @@ include_contracts! {
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
     CowProtocolToken;
-    ERC1271SignatureValidator;
     ERC20;
     GPv2AllowListAuthentication;
     GPv2Settlement;
@@ -65,12 +64,6 @@ include_contracts! {
     UniswapV3QuoterV2;
     UniswapV3SwapRouterV2;
     WETH9;
-}
-
-pub mod support {
-    include_contracts! {
-        Balances;
-    }
 }
 
 #[cfg(test)]
