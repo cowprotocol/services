@@ -58,6 +58,7 @@ tracing-opentelemetry = "0.31.0"
 tempfile = { workspace = true }
 hex-literal = { workspace = true }
 ethcontract = { workspace = true }
+url-utils = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

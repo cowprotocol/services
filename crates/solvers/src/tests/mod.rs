@@ -68,7 +68,7 @@ impl SolverEngine {
     /// Solves a raw JSON auction.
     pub async fn solve(&self, auction: serde_json::Value) -> serde_json::Value {
         let client = reqwest::Client::new();
-        let url = shared::url::join(&self.url, "solve");
+        let url = url_utils::join(&self.url, "solve");
         let response = client.post(url).json(&auction).send().await.unwrap();
 
         if !response.status().is_success() {
