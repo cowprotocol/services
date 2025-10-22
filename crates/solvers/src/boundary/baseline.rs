@@ -5,7 +5,6 @@ use {
         boundary,
         domain::{eth, liquidity, order, solver},
     },
-    alloy::primitives::Uint,
     contracts::alloy::UniswapV3QuoterV2,
     ethereum_types::{H160, U256},
     model::TokenPair,
