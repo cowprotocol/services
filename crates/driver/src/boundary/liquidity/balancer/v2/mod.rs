@@ -53,7 +53,7 @@ fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = ethrpc::dummy::web3();
+    let web3 = contracts::web3::dummy();
     let handler = balancer_v2::SettlementHandler::new(
         pool.id.into(),
         // Note that this code assumes `receiver == sender`. This assumption is
