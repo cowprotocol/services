@@ -22,9 +22,9 @@ derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
-hyper = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
+hyper = { workspace = true }
 ethcontract = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true }
@@ -51,12 +51,9 @@ observe = { workspace = true, features = ["axum-tracing"] }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
-opentelemetry = { workspace = true }
-tracing-opentelemetry = "0.31.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }
-hex-literal = { workspace = true }
 ethcontract = { workspace = true }
 
 [build-dependencies]

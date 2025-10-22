@@ -487,7 +487,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         None,
         vec![
             format!("--drivers=solver1|http://localhost:11088/test_solver|{}|10000000000000000,solver2|http://localhost:11088/solver2|{}",
-            hex::encode(solver_a.address()), hex::encode(solver_b.address())),
+            const_hex::encode(solver_a.address()), const_hex::encode(solver_b.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             "--max-winners-per-auction=2".to_string(),
         ],

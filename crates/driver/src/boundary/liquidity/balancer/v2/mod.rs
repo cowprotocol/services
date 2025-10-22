@@ -53,14 +53,14 @@ fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = ethrpc::dummy::web3();
+    let web3 = contracts::web3::dummy();
     let handler = balancer_v2::SettlementHandler::new(
         pool.id.into(),
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
         GPv2Settlement::at(&web3, receiver.0),
-        BalancerV2Vault::Instance::new(pool.vault.0.into_alloy(), ethrpc::mock::web3().alloy),
+        pool.vault.0.into_alloy(),
         Allowances::empty(receiver.0),
     );
 
@@ -195,6 +195,6 @@ async fn init_liquidity(
         web3,
         balancer_pool_fetcher,
         eth.contracts().settlement().clone(),
-        contracts.vault,
+        *contracts.vault.address(),
     ))
 }

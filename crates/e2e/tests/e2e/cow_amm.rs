@@ -1,9 +1,12 @@
 use {
     app_data::AppDataHash,
-    contracts::{ERC20, alloy::support::Signatures, support::Balances},
+    autopilot::util::conv::U256Ext,
+    contracts::{
+        ERC20,
+        alloy::support::{Balances, Signatures},
+    },
     driver::domain::eth::NonZeroU256,
     e2e::{
-        deploy,
         nodes::forked_node::ForkedNodeApi,
         setup::{
             DeployedContracts,
@@ -183,7 +186,7 @@ async fn cow_amm_jit(web3: Web3) {
             vec![
                 format!(
                     "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
@@ -243,17 +246,23 @@ async fn cow_amm_jit(web3: Web3) {
             // enum hashes taken from
             // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol#L50-L79>
             Token::FixedBytes(
-                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
-                    .unwrap(),
+                const_hex::decode(
+                    "f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775",
+                )
+                .unwrap(),
             ), // sell order
             Token::Bool(cow_amm_order.partially_fillable),
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // sell_token_source == erc20
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // buy_token_destination == erc20
         ]),
         Token::Tuple(vec![
@@ -409,9 +418,8 @@ async fn forked_node_mainnet_cow_amm_driver_support() {
         cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        // block at which helper was deployed, this block can't be updated since it would lead to
-        // the long indexing problem and, as a result, failing tests
-        20332745,
+        // block before relevant cow amm was finalized
+        20476674,
     )
     .await;
 }
@@ -423,19 +431,21 @@ async fn cow_amm_driver_support(web3: Web3) {
     // since changing the forked number would result in very costly ~1 year of event
     // syncing, we deploy the following SCs
     let deployed_contracts = {
-        let balances = deploy!(&web3, Balances());
+        let balances = Balances::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
         let signatures = Signatures::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
         DeployedContracts {
-            balances: Some(balances.address()),
+            balances: Some(balances.address().into_legacy()),
             signatures: Some(signatures.address().into_legacy()),
         }
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [solver] = onchain.make_solvers_forked(to_wei(11)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
     // find some USDC available onchain
@@ -465,12 +475,33 @@ async fn cow_amm_driver_support(web3: Web3) {
     // Unbalance the cow amm enough that baseline is able to rebalance
     // it with the current liquidity.
     const USDC_WETH_COW_AMM: H160 = H160(hex_literal::hex!(
-        "301076c36e034948a747bb61bab9cd03f62672e3"
+        "f08d4dea369c456d26a3168ff0024b904f2d8b91"
     ));
-    tx!(
-        usdc_whale,
-        usdc.transfer(USDC_WETH_COW_AMM, to_wei_with_exp(5_000_000, 6))
+
+    let weth_balance = onchain
+        .contracts()
+        .weth
+        .balance_of(USDC_WETH_COW_AMM)
+        .call()
+        .await
+        .unwrap();
+    // Assuming that the pool is balanced, imbalance it by 30%, so the driver can
+    // crate a CoW AMM JIT order. This imbalance shouldn't exceed 50%, since
+    // such an order will be rejected by the SC: <https://github.com/balancer/cow-amm/blob/84750b705a02dd600766c5e6a9dd4370386cf0f1/src/contracts/BPool.sol#L250-L252>
+    let weth_to_send = weth_balance.checked_mul_f64(0.3).unwrap();
+    tx_value!(
+        solver.account(),
+        weth_to_send,
+        onchain.contracts().weth.deposit()
     );
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .weth
+            .transfer(USDC_WETH_COW_AMM, weth_to_send)
+    );
+
     let amm_usdc_balance_before = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
 
     // Now we create an unfillable order just so the orderbook is not empty.
@@ -516,7 +547,7 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     // spawn a mock solver so we can later assert things about the received auction
     let mock_solver = Mock::default();
-    colocation::start_driver(
+    colocation::start_driver_with_config_override(
         onchain.contracts(),
         vec![
             colocation::start_baseline_solver(
@@ -538,6 +569,13 @@ async fn cow_amm_driver_support(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        Some(
+            r#"
+[[contracts.cow-amms]]
+helper = "0x3FF0041A614A9E6Bf392cbB961C97DA214E9CB31"
+factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
+"#,
+        ),
     );
     let services = Services::new(&onchain).await;
 
@@ -545,10 +583,11 @@ async fn cow_amm_driver_support(web3: Web3) {
         .start_autopilot(
             None,
             vec![
-                format!("--drivers=test_solver|http://localhost:11088/test_solver|{},mock_solver|http://localhost:11088/mock_solver|{}", hex::encode(solver.address()), hex::encode(solver.address())),
+                format!("--drivers=test_solver|http://localhost:11088/test_solver|{},mock_solver|http://localhost:11088/mock_solver|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
-                "--cow-amm-configs=0x3705ceee5eaa561e3157cf92641ce28c45a3999c|0x3705ceee5eaa561e3157cf92641ce28c45a3999c|20332744".to_string()
+                // it uses an older helper contract that was deployed before the desired cow amm
+                "--cow-amm-configs=0xf76c421bAb7df8548604E60deCCcE50477C10462|0x3FF0041A614A9E6Bf392cbB961C97DA214E9CB31|20476672".to_string()
             ],
         )
         .await;
@@ -611,18 +650,6 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     // all cow amms on mainnet the helper contract is aware of
     tracing::info!("Waiting for all cow amms to be indexed.");
-    let expected_cow_amms = [
-        addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
-        // This AMM should be removed by the EmptyPoolRemoval due to empty liquidity pool.
-        // addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc"),
-        addr!("301076c36e034948a747bb61bab9cd03f62672e3"),
-        addr!("d7cb8cc1b56356bb7b78d02e785ead28e2158660"),
-        addr!("9941fd7db2003308e7ee17b04400012278f12ac6"),
-        // no native prices for the tokens traded by this AMM (COW token price)
-        // addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
-        addr!("c6b13d5e662fa0458f03995bcb824a1934aa895f"),
-    ];
-
     wait_for_condition(TIMEOUT, || async {
         let auctions = mock_solver.get_auctions();
         let found_cow_amms: HashSet<_> = auctions
@@ -630,9 +657,7 @@ async fn cow_amm_driver_support(web3: Web3) {
             .flat_map(|a| a.surplus_capturing_jit_order_owners.clone())
             .collect();
 
-        expected_cow_amms
-            .iter()
-            .all(|amm| found_cow_amms.contains(amm))
+        found_cow_amms.contains(&USDC_WETH_COW_AMM)
     })
     .await
     .unwrap();
@@ -640,31 +665,34 @@ async fn cow_amm_driver_support(web3: Web3) {
     // all tokens traded by the cow amms
     tracing::info!("Waiting for all relevant native prices to be indexed.");
     let expected_prices = [
-        // missing due to insufficient liquidity in e2e test (we only index univ2)
-        // addr!("808507121B80c02388fAd14726482e061B8da827"), // PENDLE
-        // addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"), // COW
         addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"), // WETH
         addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"), // USDC
-        addr!("aea46A60368A7bD060eec7DF8CBa43b7EF41Ad85"), // FET
-        addr!("8390a1DA07E376ef7aDd4Be859BA74Fb83aA02D5"), // GROK
-        addr!("514910771AF9Ca656af840dff83E8264EcF986CA"), // LINK
-        addr!("5afe3855358e112b5647b952709e6165e1c1eeee"), // SAFE
     ];
 
     wait_for_condition(TIMEOUT, || async {
         let auctions = mock_solver.get_auctions();
         let auction_prices: HashSet<_> = auctions
             .iter()
-            .flat_map(|a| {
-                a.tokens
+            .flat_map(|auction| {
+                auction
+                    .tokens
                     .iter()
                     .filter_map(|(token, info)| info.reference_price.map(|_| token))
             })
             .collect();
 
-        expected_prices
-            .iter()
-            .all(|token| auction_prices.contains(token))
+        let found_amm_jit_orders = auctions.iter().any(|auction| {
+            auction.orders.iter().any(|order| {
+                order.owner == USDC_WETH_COW_AMM
+                    && order.sell_token == H160(onchain.contracts().weth.address().0)
+                    && order.buy_token == usdc.address()
+            })
+        });
+
+        found_amm_jit_orders
+            && expected_prices
+                .iter()
+                .all(|token| auction_prices.contains(token))
     })
     .await
     .unwrap();
@@ -809,7 +837,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             vec![
                 format!(
                     "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
@@ -860,17 +888,23 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
             Token::Uint(cow_amm_order.fee_amount),
             Token::FixedBytes(
-                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
-                    .unwrap(),
+                const_hex::decode(
+                    "f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775",
+                )
+                .unwrap(),
             ), // sell order
             Token::Bool(cow_amm_order.partially_fillable),
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // sell_token_source == erc20
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // buy_token_destination == erc20
         ]),
         Token::Tuple(vec![

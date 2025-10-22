@@ -79,7 +79,7 @@ impl ZeroExLiquidity {
         }
 
         let limit_order = LimitOrder {
-            id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(hex::encode(
+            id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(const_hex::encode(
                 &record.metadata().order_hash,
             ))),
             sell_token: record.order().maker_token,

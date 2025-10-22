@@ -374,7 +374,7 @@ mod tests {
                 token,
                 0.into(),
                 Bytes(
-                    hex::decode(
+                    const_hex::decode(
                         "095ea7b3\
                          0000000000000000000000000202020202020202020202020202020202020202\
                          ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"

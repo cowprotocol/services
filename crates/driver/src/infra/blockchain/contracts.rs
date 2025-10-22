@@ -1,12 +1,12 @@
 use {
-    crate::{boundary, domain::eth, infra::blockchain::Ethereum},
+    crate::{domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::alloy::FlashLoanRouter,
+    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, support::Balances},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
     },
+    std::collections::HashMap,
     thiserror::Error,
 };
 
@@ -14,20 +14,22 @@ use {
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
-    vault: contracts::BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    cow_amm_registry: cow_amm::Registry,
 
     /// Single router that supports multiple flashloans in the
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
     flashloan_router: Option<FlashLoanRouter::Instance>,
-    balance_helper: contracts::support::Balances,
+    balance_helper: Balances::Instance,
+    /// Mapping from CoW AMM factory address to the corresponding CoW AMM
+    /// helper.
+    cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
     web3: Web3,
 }
 
@@ -37,7 +39,7 @@ pub struct Addresses {
     pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
-    pub cow_amms: Vec<CowAmmConfig>,
+    pub cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
     pub flashloan_router: Option<eth::ContractAddress>,
 }
 
@@ -46,8 +48,6 @@ impl Contracts {
         web3: &Web3,
         chain: Chain,
         addresses: Addresses,
-        block_stream: CurrentBlockWatcher,
-        archive_node: Option<super::RpcArgs>,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
@@ -65,14 +65,17 @@ impl Contracts {
             ),
         );
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
-        let vault =
-            contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
-        let balance_helper = contracts::support::Balances::at(
-            web3,
-            address_for(
-                contracts::support::Balances::raw_contract(),
-                addresses.balances,
-            ),
+        let vault = BalancerV2Vault::Instance::new(
+            settlement.methods().vault().call().await?.into_alloy(),
+            web3.alloy.clone(),
+        );
+        let balance_helper = Balances::Instance::new(
+            addresses
+                .balances
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| Balances::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
         let signatures = contracts::alloy::support::Signatures::Instance::new(
             addresses
@@ -97,21 +100,6 @@ impl Contracts {
                 .0,
         );
 
-        let archive_node_web3 = archive_node.as_ref().map_or(web3.clone(), |args| {
-            boundary::buffered_web3_client(
-                &args.url,
-                args.max_batch_size,
-                args.max_concurrent_requests,
-            )
-        });
-        let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
-        for config in addresses.cow_amms {
-            cow_amm_registry
-                .add_listener(config.index_start, config.factory, config.helper)
-                .await;
-        }
-        cow_amm_registry.spawn_maintenance_task(block_stream);
-
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
@@ -131,9 +119,9 @@ impl Contracts {
             signatures,
             weth,
             settlement_domain_separator,
-            cow_amm_registry,
             flashloan_router,
             balance_helper,
+            cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
             web3: web3.clone(),
         })
     }
@@ -150,7 +138,7 @@ impl Contracts {
         self.vault_relayer
     }
 
-    pub fn vault(&self) -> &contracts::BalancerV2Vault {
+    pub fn vault(&self) -> &BalancerV2Vault::Instance {
         &self.vault
     }
 
@@ -166,31 +154,23 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
-        &self.cow_amm_registry
-    }
-
     pub fn flashloan_router(&self) -> Option<&FlashLoanRouter::Instance> {
         self.flashloan_router.as_ref()
     }
 
-    pub fn balance_helper(&self) -> &contracts::support::Balances {
+    pub fn balance_helper(&self) -> &Balances::Instance {
         &self.balance_helper
     }
 
     pub fn web3(&self) -> &Web3 {
         &self.web3
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct CowAmmConfig {
-    /// Which contract to index for CoW AMM deployment events.
-    pub factory: eth::H160,
-    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
-    pub helper: eth::H160,
-    /// At which block indexing should start on the factory.
-    pub index_start: u64,
+    pub fn cow_amm_helper_by_factory(
+        &self,
+    ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
+        &self.cow_amm_helper_by_factory
+    }
 }
 
 /// Returns the address of a contract for the specified network, or `None` if
@@ -214,12 +194,6 @@ pub trait ContractAt {
 }
 
 impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
-}
-
-impl ContractAt for contracts::support::Balances {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
         Self::at(&eth.web3, address.into())
     }

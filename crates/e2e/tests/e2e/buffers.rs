@@ -76,7 +76,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 ),
                 format!(
                     "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),

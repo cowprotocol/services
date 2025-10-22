@@ -14,10 +14,9 @@ path = "src/lib.rs"
 alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-aws", "signer-local", "eips"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-contracts = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }

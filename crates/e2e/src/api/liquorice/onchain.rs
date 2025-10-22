@@ -165,7 +165,7 @@ pub mod order {
 
                 assert_eq!(
                     "d11023397b6e58bf8137e479bc552f06eb3b7527652528a047eae91bb391858d",
-                    hex::encode(hash)
+                    const_hex::encode(hash)
                 );
             }
         }

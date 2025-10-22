@@ -764,12 +764,12 @@ impl OrderUid {
 }
 
 impl FromStr for OrderUid {
-    type Err = hex::FromHexError;
+    type Err = const_hex::FromHexError;
 
-    fn from_str(s: &str) -> Result<OrderUid, hex::FromHexError> {
+    fn from_str(s: &str) -> Result<OrderUid, const_hex::FromHexError> {
         let mut value = [0u8; 56];
         let s_without_prefix = s.strip_prefix("0x").unwrap_or(s);
-        hex::decode_to_slice(s_without_prefix, value.as_mut())?;
+        const_hex::decode_to_slice(s_without_prefix, value.as_mut())?;
         Ok(OrderUid(value))
     }
 }
@@ -779,7 +779,7 @@ impl Display for OrderUid {
         let mut bytes = [0u8; 2 + 56 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Unwrap because the length is always correct.
-        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
+        const_hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
         // Unwrap because the string is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         f.write_str(str)
@@ -830,7 +830,7 @@ impl<'de> Deserialize<'de> for OrderUid {
                     ))
                 })?;
                 let mut value = [0u8; 56];
-                hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
+                const_hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
                     de::Error::custom(format!("failed to decode {s:?} as hex uid: {err}"))
                 })?;
                 Ok(OrderUid(value))

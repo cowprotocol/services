@@ -97,7 +97,7 @@ async fn single_limit_order_test(web3: Web3) {
             vec![
                 format!(
                     "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
