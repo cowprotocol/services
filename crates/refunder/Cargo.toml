@@ -18,7 +18,6 @@ futures = { workspace = true }
 gas-estimation = { workspace = true }
 const-hex = { workspace = true }
 humantime = { workspace = true }
-itertools = { workspace = true }
 mimalloc = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
