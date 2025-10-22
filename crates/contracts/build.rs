@@ -232,22 +232,6 @@ fn main() {
             .add_network_str(POLYGON, "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270")
             .add_network_str(LENS, "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F")
     });
-    generate_contract_with_config("IUniswapV3Factory", |builder| {
-        // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
-        builder
-            .add_network_str(MAINNET, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-            .add_network_str(GOERLI, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-            .add_network_str(SEPOLIA, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-            .add_network_str(ARBITRUM_ONE, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-            .add_network_str(BASE, "0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
-            .add_network_str(AVALANCHE, "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD")
-            .add_network_str(BNB, "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7")
-            .add_network_str(OPTIMISM, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-            .add_network_str(POLYGON, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-            // not official
-            .add_network_str(LENS, "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3")
-        // Not available on Gnosis Chain
-    });
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
             .add_network_str(MAINNET, "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")
