@@ -1,12 +1,12 @@
 #!/bin/bash
 set -x
 
-WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x2AA326f09834DE1CC3637e9e37Eb5C10c75C2a94}
+WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x751871E9cA28B441Bb6d3b7C4255cf2B5873d56a}
 
-#appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"'${WRAPPER_CONTRACT}'\",\"data\":\"0x\"}]}}'
-#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"${WRAPPER_CONTRACT}\",\"data\":\"0x\"}]}}"
-appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
-appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
+appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"'${WRAPPER_CONTRACT}'\",\"data\":\"0x\",\"isOmittable\":false}]}}'
+appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"${WRAPPER_CONTRACT}\",\"data\":\"0x\",\"isOmittable\":false}]}}"
+#appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
+#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
 
 
 appDataHash=$(cast keccak "$appDataUnescaped")
