@@ -5,6 +5,7 @@ use {
     },
     alloy::primitives::Address,
     chain::Chain,
+    contracts::alloy::BalancerV2Vault,
     derive_more::Debug,
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
@@ -255,7 +256,7 @@ impl BalancerV2 {
         }
 
         Some(Self {
-            vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), chain)?,
+            vault: ContractAddress(BalancerV2Vault::deployment_address(&chain.id())?.into_legacy()),
             weighted: address_for!(
                 chain,
                 [

@@ -3,7 +3,7 @@ use {
     crate::{boundary, domain::eth},
     chain::Chain,
     ethcontract::{U256, errors::ExecutionError},
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         price_estimation::trade_verifier::balance_overrides::{
@@ -126,7 +126,7 @@ impl Ethereum {
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             contracts.vault_relayer().0,
-            Some(contracts.vault().address()),
+            Some(contracts.vault().address().into_legacy()),
             balance_overrider.clone(),
         );
 
