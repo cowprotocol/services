@@ -152,7 +152,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Invalid character 'x' at position 0"
+            "invalid character 'x' at position 0"
         );
     }
 
@@ -160,7 +160,7 @@ mod tests {
     fn invalid_length() {
         assert_eq!(
             AppDataHash::from_str("0x00").unwrap_err().to_string(),
-            "Invalid string length"
+            "invalid string length"
         );
     }
 
