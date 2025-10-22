@@ -1,8 +1,11 @@
 use {
-    alloy::primitives::U256,
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
     contracts::{
         GPv2Settlement,
-        alloy::BalancerV2Vault::{self, IVault},
+        alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
     },
     ethcontract::{Bytes, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -16,7 +19,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct BalancerSwapGivenOutInteraction {
     pub settlement: GPv2Settlement,
-    pub vault: BalancerV2Vault::Instance,
+    pub vault: Address,
     pub pool_id: H256,
     pub asset_in_max: TokenAmount,
     pub asset_out: TokenAmount,
@@ -44,22 +47,16 @@ impl BalancerSwapGivenOutInteraction {
             recipient: self.settlement.address().into_alloy(),
             toInternalBalance: false,
         };
-        let method = self
-            .vault
-            .swap(
-                single_swap,
-                funds,
-                self.asset_in_max.amount.into_alloy(),
-                *NEVER,
-            )
-            .calldata()
-            .clone();
 
-        (
-            self.vault.address().into_legacy(),
-            0.into(),
-            Bytes(method.to_vec()),
-        )
+        let method = swapCall {
+            singleSwap: single_swap,
+            funds,
+            limit: self.asset_in_max.amount.into_alloy(),
+            deadline: *NEVER,
+        }
+        .abi_encode();
+
+        (self.vault.into_legacy(), 0.into(), Bytes(method))
     }
 }
 
@@ -75,10 +72,10 @@ mod tests {
 
     #[test]
     fn encode_unwrap_weth() {
-        let vault = BalancerV2Vault::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy);
+        let vault_address = [0x01; 20].into();
         let interaction = BalancerSwapGivenOutInteraction {
             settlement: dummy_contract!(GPv2Settlement, [0x02; 20]),
-            vault: vault.clone(),
+            vault: vault_address,
             pool_id: H256([0x03; 32]),
             asset_in_max: TokenAmount::new(H160([0x04; 20]), 1_337_000_000_000_000_000_000u128),
             asset_out: TokenAmount::new(H160([0x05; 20]), 42_000_000_000_000_000_000u128),
@@ -109,7 +106,7 @@ mod tests {
         assert_eq!(
             interaction.encode(),
             (
-                vault.address().into_legacy(),
+                vault_address.into_legacy(),
                 0.into(),
                 Bytes(
                     const_hex::decode(
