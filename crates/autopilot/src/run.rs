@@ -482,7 +482,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
     for config in &args.cow_amm_configs {
         cow_amm_registry
-            .add_listener(config.index_start, config.factory, config.helper)
+            .add_listener(
+                config.index_start,
+                config.factory,
+                config.helper,
+                db_write.pool.clone(),
+            )
             .await;
     }
 

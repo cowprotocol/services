@@ -464,6 +464,36 @@ crate::bindings!(
 crate::bindings!(IUniswapLikeRouter);
 crate::bindings!(IUniswapLikePair);
 crate::bindings!(UniswapV3Pool);
+crate::bindings!(
+    UniswapV3QuoterV2,
+    crate::deployments! {
+        // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
+        MAINNET => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        ARBITRUM_ONE => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        BASE => address!("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"),
+        AVALANCHE => address!("0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"),
+        BNB => address!("0x78D78E420Da98ad378D7799bE8f4AF69033EB077"),
+        OPTIMISM => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        POLYGON => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        LENS => address!("0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1"),
+        // Not listed on Gnosis and Sepolia chains
+    }
+);
+crate::bindings!(
+    UniswapV3SwapRouterV2,
+    crate::deployments! {
+        // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
+        ARBITRUM_ONE => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        MAINNET => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        POLYGON => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        OPTIMISM => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        BASE => address!("0x2626664c2603336E57B271c5C0b26F421741e481"),
+        AVALANCHE => address!("0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE"),
+        BNB => address!("0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2"),
+        LENS => address!("0x6ddD32cd941041D8b61df213B9f515A7D288Dc13"),
+        // Not available on Gnosis Chain
+    }
+);
 
 crate::bindings!(
     HooksTrampoline,

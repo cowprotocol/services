@@ -11,8 +11,11 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    contracts::{GPv2Settlement, UniswapV3SwapRouterV2},
-    ethrpc::block_stream::BlockRetrieving,
+    contracts::GPv2Settlement,
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::BlockRetrieving,
+    },
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
@@ -49,7 +52,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
         id,
         gas: eth::Gas(pool.pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
-            router: handler.inner.router.address().into(),
+            router: handler.inner.router.into_legacy().into(),
             address: pool.pool.address.into(),
             tokens: liquidity::TokenPair::try_new(
                 pool.pool.tokens[0].id.into(),
@@ -81,7 +84,7 @@ pub fn to_interaction(
     let web3 = contracts::web3::dummy();
 
     let handler = UniswapV3SettlementHandler::new(
-        UniswapV3SwapRouterV2::at(&web3, pool.router.0),
+        pool.router.0.into_alloy(),
         GPv2Settlement::at(&web3, receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
         pool.fee.0,
@@ -129,7 +132,6 @@ async fn init_liquidity(
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
-    let router = UniswapV3SwapRouterV2::at(&web3, config.router.0);
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
@@ -149,7 +151,7 @@ async fn init_liquidity(
     tokio::task::spawn(update_task);
 
     Ok(UniswapV3Liquidity::new(
-        router,
+        config.router.0.into_alloy(),
         eth.contracts().settlement().clone(),
         web3,
         pool_fetcher,

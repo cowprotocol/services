@@ -2,6 +2,7 @@ use {
     anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
+    database::byte_array::ByteArray,
     ethcontract::{Address, Bytes, U256, errors::MethodError},
     model::{
         DomainSeparator,
@@ -75,6 +76,27 @@ impl Amm {
             .context("invalid signature")?;
 
         Ok(template)
+    }
+
+    pub fn try_to_db_type(
+        &self,
+        block_number: u64,
+        helper: Address,
+        tx_hash: ethcontract::H256,
+    ) -> Result<database::cow_amms::CowAmm> {
+        Ok(database::cow_amms::CowAmm {
+            address: ByteArray(self.address.0),
+            factory_address: ByteArray(helper.0),
+            tradeable_tokens: self
+                .tradeable_tokens
+                .iter()
+                .cloned()
+                .map(|addr| ByteArray(addr.0))
+                .collect(),
+            block_number: i64::try_from(block_number)
+                .with_context(|| format!("block number {block_number} is not i64"))?,
+            tx_hash: ByteArray(tx_hash.0),
+        })
     }
 
     /// Converts a successful response of the CowAmmHelper into domain types.

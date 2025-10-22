@@ -2,7 +2,6 @@ use {
     super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
     crate::{
         interactions::{
-            ExactOutputSingleParams,
             UniswapV3Interaction,
             allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         },
@@ -10,11 +9,16 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
-    contracts::{GPv2Settlement, UniswapV3SwapRouterV2},
+    contracts::{
+        GPv2Settlement,
+        alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
+    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
@@ -34,7 +38,7 @@ pub struct UniswapV3Liquidity {
     settlement_allowances: Box<dyn AllowanceManaging>,
 }
 pub struct Inner {
-    pub router: UniswapV3SwapRouterV2,
+    pub router: Address,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement
     // contract
@@ -48,7 +52,7 @@ pub struct UniswapV3SettlementHandler {
 
 impl UniswapV3SettlementHandler {
     pub fn new(
-        router: UniswapV3SwapRouterV2,
+        router: Address,
         gpv2_settlement: GPv2Settlement,
         allowances: Mutex<Allowances>,
         fee: Ratio<u32>,
@@ -79,19 +83,18 @@ fn ratio_to_u32(ratio: Ratio<u32>) -> Result<u32> {
 
 impl UniswapV3Liquidity {
     pub fn new(
-        router: UniswapV3SwapRouterV2,
+        router: Address,
         gpv2_settlement: GPv2Settlement,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
-        let router_address = router.address();
         let settlement_allowances =
             Box::new(AllowanceManager::new(web3, gpv2_settlement.address()));
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router_address)),
+                allowances: Mutex::new(Allowances::empty(router.into_legacy())),
             }),
             pool_fetcher,
             settlement_allowances,
@@ -99,10 +102,10 @@ impl UniswapV3Liquidity {
     }
 
     async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
-        let router = self.inner.router.address();
+        let router = self.inner.router;
         let allowances = self
             .settlement_allowances
-            .get_allowances(tokens, router)
+            .get_allowances(tokens, router.into_legacy())
             .await?;
 
         self.inner
@@ -165,16 +168,20 @@ impl UniswapV3SettlementHandler {
             .expect("Thread holding mutex panicked")
             .approve_token_or_default(token_amount_in_max.clone());
 
+        let fee = self.fee.try_into().expect("fee < (1 << 24)");
+
         (
             approval,
             UniswapV3Interaction {
-                router: self.inner.router.clone(),
+                router: self.inner.router,
                 params: ExactOutputSingleParams {
-                    token_amount_in_max,
-                    token_amount_out,
-                    fee: self.fee,
-                    recipient: self.inner.gpv2_settlement.address(),
-                    sqrt_price_limit_x96: U256::zero(),
+                    tokenIn: token_amount_in_max.token.into_alloy(),
+                    tokenOut: token_amount_out.token.into_alloy(),
+                    fee,
+                    recipient: self.inner.gpv2_settlement.address().into_alloy(),
+                    amountOut: token_amount_out.amount.into_alloy(),
+                    amountInMaximum: token_amount_in_max.amount.into_alloy(),
+                    sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
                 },
             },
         )
@@ -203,13 +210,19 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::dummy_contract, num::rational::Ratio, std::collections::HashMap};
+    use {
+        super::*,
+        contracts::dummy_contract,
+        ethcontract::U256,
+        num::rational::Ratio,
+        std::collections::HashMap,
+    };
 
     impl UniswapV3SettlementHandler {
         fn new_dummy(allowances: HashMap<H160, U256>, fee: u32) -> Self {
             Self {
                 inner: Arc::new(Inner {
-                    router: dummy_contract!(UniswapV3SwapRouterV2, H160::zero()),
+                    router: Default::default(),
                     gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
                     allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
                 }),
