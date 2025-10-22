@@ -9,6 +9,8 @@ use {
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
     contracts::alloy::{
+        BalancerV2Authorizer,
+        BalancerV2Vault,
         ERC20Mintable,
         FlashLoanRouter,
         support::{Balances, Signatures},
@@ -272,7 +274,7 @@ impl Blockchain {
         .unwrap();
 
         // Set up the settlement contract and related contracts.
-        let vault_authorizer = contracts::alloy::BalancerV2Authorizer::Instance::deploy_builder(
+        let vault_authorizer = BalancerV2Authorizer::Instance::deploy_builder(
             web3.alloy.clone(),
             main_trader_account.address().into_alloy(),
         )
@@ -280,18 +282,15 @@ impl Blockchain {
         .deploy()
         .await
         .unwrap();
-        let vault = wait_for(
-            &web3,
-            contracts::BalancerV2Vault::builder(
-                &web3,
-                vault_authorizer.into_legacy(),
-                weth.address(),
-                0.into(),
-                0.into(),
-            )
-            .from(main_trader_account.clone())
-            .deploy(),
+        let vault = BalancerV2Vault::Instance::deploy_builder(
+            web3.alloy.clone(),
+            vault_authorizer,
+            weth.address().into_alloy(),
+            alloy::primitives::U256::ZERO,
+            alloy::primitives::U256::ZERO,
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
         let authenticator = wait_for(
@@ -304,7 +303,7 @@ impl Blockchain {
         .unwrap();
         let mut settlement = wait_for(
             &web3,
-            contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
+            contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.into_legacy())
                 .from(main_trader_account.clone())
                 .deploy(),
         )

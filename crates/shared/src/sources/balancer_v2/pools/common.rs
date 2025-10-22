@@ -376,6 +376,7 @@ mod tests {
             transports::mock::Asserter,
         },
         anyhow::bail,
+        contracts::alloy::BalancerV2Vault,
         ethcontract::U256,
         maplit::{btreemap, hashmap},
         mockall::predicate,
