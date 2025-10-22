@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Uint,
+    alloy::primitives::{Uint, aliases::U24},
     contracts::{
         alloy::UniswapV3QuoterV2::IQuoterV2::QuoteExactInputSingleParams,
         ethcontract::{H160, U256},
@@ -15,7 +15,7 @@ pub struct Pool {
     pub uni_v3_quoter_contract: Arc<contracts::alloy::UniswapV3QuoterV2::Instance>,
     pub address: H160,
     pub tokens: TokenPair,
-    pub fee: Uint<24, 1>,
+    pub fee: U24,
 }
 
 impl Pool {

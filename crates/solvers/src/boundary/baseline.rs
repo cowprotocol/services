@@ -236,7 +236,7 @@ fn to_boundary_liquidity(
                         // liquidity sources that rely on concentrated pools are disabled
                         return onchain_liquidity;
                     };
-                    let fee: Uint<24, 1> = pool.fee.0.try_into().expect("fee < (1 << 24)");
+                    let fee = pool.fee.0.try_into().expect("fee < (2^24)");
 
                     let token_pair = to_boundary_token_pair(&pool.tokens);
                     onchain_liquidity
