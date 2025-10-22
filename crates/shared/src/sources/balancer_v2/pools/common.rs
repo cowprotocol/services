@@ -19,7 +19,7 @@ use {
 };
 
 /// Trait for fetching pool data that is generic on a factory type.
-#[cfg_attr(any(test, feature="test-util"), mockall::automock)]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait PoolInfoFetching<Factory>: Send + Sync
 where

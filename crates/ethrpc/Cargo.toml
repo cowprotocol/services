@@ -40,7 +40,6 @@ mockall = { workspace = true, optional = true }
 mockall = { workspace = true }
 maplit = { workspace = true }
 testlib = { workspace = true }
-# shared = { workspace = true, features = ["test-util"] }
 
 [features]
 test-util = ["dep:mockall"]
