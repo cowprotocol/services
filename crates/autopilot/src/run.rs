@@ -235,16 +235,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
         let chain_id = chain.id();
-        match BalancerV2Vault::deployment_address(&chain_id) {
-            addr @ Some(_) => addr,
-            addr @ None => {
-                tracing::warn!(
-                    chain_id,
-                    "balancer contracts are not deployed on this network"
-                );
-                addr
-            }
+        let addr = BalancerV2Vault::deployment_address(&chain_id);
+        if addr.is_none() {
+            tracing::warn!(
+                chain_id,
+                "balancer contracts are not deployed on this network"
+            );
         }
+        addr
     });
     let vault =
         vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
