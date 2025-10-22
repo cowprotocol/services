@@ -27,7 +27,7 @@ cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
-ethrpc = { workspace = true, features = ["test-util"] } # test-util used for the mock
+ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
