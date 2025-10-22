@@ -1,6 +1,8 @@
 pub mod forked_node;
 pub mod local_node;
 
+use anyhow::Context;
+
 /// The default node URL that should be used for e2e tests.
 pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
@@ -14,10 +16,21 @@ impl Node {
     /// Spawns a new node that is forked from the given URL at `block_number` or
     /// if not set, latest.
     pub async fn forked(fork: impl reqwest::IntoUrl, block_number: Option<u64>) -> Self {
-        let mut args = ["--port", "8545", "--fork-url", fork.as_str()]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>();
+        let mut args = [
+            "--port",
+            "8545",
+            "--fork-url",
+            fork.as_str(),
+            "--retries",
+            "10",
+            "--timeout",
+            "120000",
+            "--fork-retry-backoff",
+            "2000",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
 
         if let Some(block_number) = block_number {
             args.extend(["--fork-block-number".to_string(), block_number.to_string()]);
@@ -82,10 +95,14 @@ impl Node {
             }
         });
 
-        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(20), receiver)
+        let url = tokio::time::timeout(tokio::time::Duration::from_secs(20), receiver)
             .await
             .expect("finding anvil URL timed out")
             .unwrap();
+
+        wait_until_ready(&url)
+            .await
+            .unwrap_or_else(|err| panic!("anvil at {url} failed to become ready: {err}"));
 
         Self {
             process: Some(process),
@@ -122,5 +139,48 @@ impl Drop for Node {
         if let Err(err) = process.start_kill() {
             tracing::error!(?err, "failed to kill node process");
         }
+    }
+}
+
+async fn wait_until_ready(url: &str) -> anyhow::Result<()> {
+    use std::time::Duration;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .context("building readiness client")?;
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "eth_chainId",
+        "params": [],
+        "id": "node_ready_probe"
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut attempt: u32 = 0;
+
+    loop {
+        attempt += 1;
+        match client.post(url).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                return Ok(());
+            }
+            Ok(resp) => {
+                tracing::debug!(
+                    "anvil readiness attempt {} returned status {}",
+                    attempt,
+                    resp.status()
+                );
+            }
+            Err(err) => {
+                tracing::debug!("anvil readiness attempt {} failed: {err}", attempt);
+            }
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            anyhow::bail!("anvil endpoint at {url} did not respond in time");
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
 }

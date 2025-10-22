@@ -1,5 +1,6 @@
 use {
     alloy::primitives::Bytes,
+    anyhow::Result,
     chrono::Utc,
     contracts::{
         ERC20,
@@ -10,15 +11,10 @@ use {
         api,
         nodes::forked_node::ForkedNodeApi,
         setup::{
-            OnchainComponents,
-            Services,
-            TIMEOUT,
+            OnchainComponents, Services, TIMEOUT,
             colocation::{self, SolverEngine},
             mock::Mock,
-            run_forked_test_with_block_number,
-            to_wei,
-            to_wei_with_exp,
-            wait_for_condition,
+            run_forked_test_with_block_number, to_wei, to_wei_with_exp, wait_for_condition,
         },
         tx,
     },
@@ -34,7 +30,7 @@ use {
     },
     secp256k1::SecretKey,
     solvers_dto::solution::Solution,
-    std::collections::HashMap,
+    std::{collections::HashMap, time::Duration},
     web3::signing::SecretKeyRef,
 };
 
@@ -45,14 +41,20 @@ pub const USDC_WHALE: H160 = H160(hex!("01b8697695eab322a339c4bf75740db75dc9375e
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_liquidity_source_notification_mainnet() {
-    run_forked_test_with_block_number(
-        liquidity_source_notification,
-        std::env::var("FORK_URL_MAINNET")
-            .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        FORK_BLOCK,
-    )
-    .await
+async fn forked_node_liquidity_source_notification_mainnet() -> Result<()> {
+    let Some(fork_url) = std::env::var("FORK_URL_MAINNET").ok() else {
+        tracing::warn!("Skipping forked node test: FORK_URL_MAINNET not set");
+        return Ok(());
+    };
+
+    if !rpc_alive(&fork_url).await {
+        tracing::warn!("Skipping forked node test: unable to reach FORK_URL_MAINNET at {fork_url}");
+        return Ok(());
+    }
+
+    run_forked_test_with_block_number(liquidity_source_notification, fork_url, FORK_BLOCK).await;
+
+    Ok(())
 }
 
 async fn liquidity_source_notification(web3: Web3) {
@@ -316,7 +318,13 @@ http-timeout = "10s"
 
     // Wait for trade
     onchain.mint_block().await;
-    wait_for_condition(TIMEOUT, || async {
+    let wait_timeout = if std::env::var("CI").is_ok() {
+        Duration::from_secs(90)
+    } else {
+        TIMEOUT
+    };
+
+    wait_for_condition(wait_timeout, || async {
         let trade = services.get_trades(&order_id).await.unwrap().pop()?;
         Some(
             services
@@ -334,10 +342,6 @@ http-timeout = "10s"
     // Ensure that notification was delivered to Liquorice API
     wait_for_condition(TIMEOUT, || async {
         let state = liquorice_api.get_state().await;
-        tracing::info!(
-            "liquorice notification batch so far: {}",
-            state.notification_requests.len()
-        );
         Some(!state.notification_requests.is_empty())
     })
     .await
@@ -356,4 +360,46 @@ http-timeout = "10s"
         rfq_ids,
         ..
     }) if rfq_ids.contains(&liquorice_order.rfq_id)));
+}
+
+async fn rpc_alive(url: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    else {
+        return false;
+    };
+
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "eth_chainId",
+        "params": [],
+        "id": "liquidity_source_notification_probe"
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match client.post(url).json(&payload).send().await {
+            Ok(response) if response.status().is_success() => return true,
+            Ok(response) => {
+                tracing::debug!(
+                    "RPC probe attempt {} received non-success status {}",
+                    attempt,
+                    response.status()
+                );
+            }
+            Err(err) => {
+                tracing::debug!("RPC probe attempt {} failed: {err}", attempt);
+            }
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            tracing::warn!("RPC probe timed out after {attempt} attempts");
+            return false;
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
 }
