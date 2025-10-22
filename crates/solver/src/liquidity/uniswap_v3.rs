@@ -168,12 +168,7 @@ impl UniswapV3SettlementHandler {
             .expect("Thread holding mutex panicked")
             .approve_token_or_default(token_amount_in_max.clone());
 
-        let mut fee = self.fee;
-        if fee >= (1 << 24) {
-            tracing::warn!("pool fee overflows contract supported fee value, capping it...");
-            fee = (1 << 24) - 1;
-        }
-        let fee = Uint::<24, 1>::try_from(fee).expect("fee < (1 << 24)");
+        let fee = fee.try_into().expect("fee < (1 << 24)");
 
         (
             approval,
