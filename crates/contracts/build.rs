@@ -216,19 +216,6 @@ fn main() {
                 },
             )
     });
-    generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
-        // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
-        builder
-            .add_network_str(MAINNET, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45")
-            .add_network_str(ARBITRUM_ONE, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45")
-            .add_network_str(POLYGON, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45")
-            .add_network_str(OPTIMISM, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45")
-            .add_network_str(BASE, "0x2626664c2603336E57B271c5C0b26F421741e481")
-            .add_network_str(AVALANCHE, "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE")
-            .add_network_str(BNB, "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2")
-            .add_network_str(LENS, "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13")
-        // Not available on Gnosis Chain
-    });
     generate_contract_with_config("WETH9", |builder| {
         // Note: the WETH address must be consistent with the one used by the ETH-flow
         // contract
