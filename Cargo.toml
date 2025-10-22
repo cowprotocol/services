@@ -93,7 +93,6 @@ solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
 strum_macros = "0.26.4"
-tap = "1.0.1"
 testlib = { path = "crates/testlib" }
 time = "0.3.37"
 tiny-keccak = "2.0.2"
