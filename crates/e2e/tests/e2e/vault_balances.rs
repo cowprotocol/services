@@ -1,8 +1,5 @@
 use {
-    e2e::{
-        setup::{eth, *},
-        tx,
-    },
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -36,22 +33,23 @@ async fn vault_balances(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(
-            onchain.contracts().balancer_vault.address().into_alloy(),
-            eth(10),
+        .approve(*onchain.contracts().balancer_vault.address(), eth(10))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .balancer_vault
+        .setRelayerApproval(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy(),
+            true,
         )
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
-    tx!(
-        trader.account(),
-        onchain.contracts().balancer_vault.set_relayer_approval(
-            trader.address(),
-            onchain.contracts().allowance,
-            true
-        )
-    );
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;

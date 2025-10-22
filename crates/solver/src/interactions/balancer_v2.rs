@@ -1,6 +1,9 @@
 use {
     alloy::primitives::U256,
-    contracts::{GPv2Settlement, alloy::BalancerV2Vault},
+    contracts::{
+        GPv2Settlement,
+        alloy::BalancerV2Vault::{self, IVault},
+    },
     ethcontract::{Bytes, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::{
@@ -27,7 +30,7 @@ pub static NEVER: LazyLock<U256> = LazyLock::new(|| U256::from(1) << 255);
 
 impl BalancerSwapGivenOutInteraction {
     pub fn encode_swap(&self) -> EncodedInteraction {
-        let single_swap = BalancerV2Vault::IVault::SingleSwap {
+        let single_swap = IVault::SingleSwap {
             poolId: self.pool_id.into_alloy(),
             kind: 1, // GivenOut
             assetIn: self.asset_in_max.token.into_alloy(),
@@ -35,7 +38,7 @@ impl BalancerSwapGivenOutInteraction {
             amount: self.asset_out.amount.into_alloy(),
             userData: self.user_data.clone().into_alloy(),
         };
-        let funds = BalancerV2Vault::IVault::FundManagement {
+        let funds = IVault::FundManagement {
             sender: self.settlement.address().into_alloy(),
             fromInternalBalance: false,
             recipient: self.settlement.address().into_alloy(),

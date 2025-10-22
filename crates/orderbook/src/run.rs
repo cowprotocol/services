@@ -13,14 +13,19 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{
-        BalancerV2Vault,
         GPv2Settlement,
         IUniswapV3Factory,
         WETH9,
-        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt, support::Balances},
+        alloy::{
+            BalancerV2Vault,
+            ChainalysisOracle,
+            HooksTrampoline,
+            InstanceExt,
+            support::Balances,
+        },
     },
     ethcontract::errors::DeployError,
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -144,19 +149,21 @@ pub async fn run(args: Arguments) {
         balance_overrider.clone(),
     );
 
-    let vault = match args.shared.balancer_v2_vault_address {
-        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
-            &web3, address, None,
-        )),
-        None => match BalancerV2Vault::deployed(&web3).await {
-            Ok(contract) => Some(contract),
-            Err(DeployError::NotFound(_)) => {
-                tracing::warn!("balancer contracts are not deployed on this network");
-                None
+    let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
+        let chain_id = chain.id();
+        match BalancerV2Vault::deployment_address(&chain_id) {
+            addr @ Some(_) => addr,
+            addr @ None => {
+                tracing::warn!(
+                    chain_id,
+                    "balancer contracts are not deployed on this network"
+                );
+                addr
             }
-            Err(err) => panic!("failed to get balancer vault contract: {err}"),
-        },
-    };
+        }
+    });
+    let vault =
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),
@@ -186,7 +193,7 @@ pub async fn run(args: Arguments) {
             settlement_contract.clone(),
             balances_contract.clone(),
             vault_relayer,
-            vault.as_ref().map(|contract| contract.address()),
+            vault_address.map(IntoLegacy::into_legacy),
             balance_overrider,
         ),
     );

@@ -6,10 +6,13 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::account_balances::BalanceSimulator,
     anyhow::Result,
-    contracts::{BalancerV2Vault, erc20::Contract},
+    contracts::{alloy::BalancerV2Vault::BalancerV2Vault, erc20::Contract},
     ethcontract::{H160, U256},
-    ethrpc::Web3,
-    futures::future,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
+    futures::{TryFutureExt, future},
     model::order::SellTokenSource,
     tracing::instrument,
 };
@@ -73,13 +76,25 @@ impl Balances {
                 std::cmp::min(balance, allowance)
             }
             SellTokenSource::External => {
-                let vault = BalancerV2Vault::at(&self.web3, self.vault());
-                let balance = token.balance_of(query.owner).call();
-                let approved = vault
-                    .methods()
-                    .has_approved_relayer(query.owner, self.vault_relayer())
-                    .call();
-                let allowance = token.allowance(query.owner, self.vault()).call();
+                let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
+                // NOTE: the anyhow error conversion can be removed after migrating the token to
+                // alloy
+                let balance = token
+                    .balance_of(query.owner)
+                    .call()
+                    .map_err(anyhow::Error::from);
+                let has_approved_relayer = vault.hasApprovedRelayer(
+                    query.owner.into_alloy(),
+                    self.vault_relayer().into_alloy(),
+                );
+                let approved = has_approved_relayer
+                    .call()
+                    .into_future()
+                    .map_err(anyhow::Error::from);
+                let allowance = token
+                    .allowance(query.owner, self.vault())
+                    .call()
+                    .map_err(anyhow::Error::from);
                 let (balance, approved, allowance) =
                     futures::try_join!(balance, approved, allowance)?;
                 match approved {
@@ -88,18 +103,20 @@ impl Balances {
                 }
             }
             SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::at(&self.web3, self.vault());
-                let balance = vault
-                    .methods()
-                    .get_internal_balance(query.owner, vec![query.token])
-                    .call();
-                let approved = vault
-                    .methods()
-                    .has_approved_relayer(query.owner, self.vault_relayer())
-                    .call();
+                let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
+
+                let get_internal_balance = vault
+                    .getInternalBalance(query.owner.into_alloy(), vec![query.token.into_alloy()]);
+                let balance = get_internal_balance.call().into_future();
+
+                let has_approved_relayer = vault.hasApprovedRelayer(
+                    query.owner.into_alloy(),
+                    self.vault_relayer().into_alloy(),
+                );
+                let approved = has_approved_relayer.call().into_future();
                 let (balance, approved) = futures::try_join!(balance, approved)?;
                 match approved {
-                    true => balance[0], // internal approvals are always U256::MAX
+                    true => balance[0].into_legacy(), // internal approvals are always U256::MAX
                     false => 0.into(),
                 }
             }

@@ -99,7 +99,7 @@ pub fn to_interaction(
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
         pool.router.0.into_alloy(),
-        GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
+        GPv2Settlement::at(&contracts::web3::dummy(), receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
     );
 

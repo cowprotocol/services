@@ -271,7 +271,7 @@ pub struct Arguments {
 
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
-    pub balancer_v2_vault_address: Option<H160>,
+    pub balancer_v2_vault_address: Option<Address>,
 
     /// The amount of time a classification of a token into good or
     /// bad is valid for.
