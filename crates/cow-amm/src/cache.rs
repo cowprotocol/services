@@ -227,7 +227,7 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
 
     async fn last_event_block(&self) -> anyhow::Result<u64> {
         let mut ex = self.0.db.acquire().await?;
-        database::last_indexed_blocks::fetch(&mut ex, &self.0.helper.address().to_string())
+        database::last_indexed_blocks::fetch(&mut ex, &self.0.factory_address.to_string())
             .await?
             .map(|block| block.try_into().context("last block is not u64"))
             .unwrap_or(Ok(self.0.start_of_index))
