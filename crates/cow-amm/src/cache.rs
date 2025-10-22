@@ -210,6 +210,7 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
 
             let mut ex = self.0.db.begin().await?;
             database::cow_amms::upsert_batched(&mut ex, &db_amms).await?;
+            ex.commit().await?;
         }
 
         // Update cache
