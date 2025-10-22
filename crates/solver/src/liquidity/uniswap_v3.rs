@@ -168,7 +168,7 @@ impl UniswapV3SettlementHandler {
             .expect("Thread holding mutex panicked")
             .approve_token_or_default(token_amount_in_max.clone());
 
-        let fee = fee.try_into().expect("fee < (1 << 24)");
+        let fee = self.fee.try_into().expect("fee < (1 << 24)");
 
         (
             approval,
