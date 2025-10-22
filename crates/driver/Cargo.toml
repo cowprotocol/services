@@ -27,7 +27,7 @@ cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
-ethrpc = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] } # test-util used for the mock
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
@@ -79,7 +79,7 @@ app-data = { workspace = true, features = ["test_helpers"] }
 maplit = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tempfile = { workspace = true }
-ethrpc = {workspace = true, features = ["test-util"]}
+ethrpc = { workspace = true, features = ["test-util"] }
 contracts = { workspace = true }
 
 [build-dependencies]

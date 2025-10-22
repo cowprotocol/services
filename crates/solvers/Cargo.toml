@@ -33,6 +33,7 @@ num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true }
+url = { workspace = true, features = ["serde"] } # this is used to coerce reqwest::Url to have deserialize
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

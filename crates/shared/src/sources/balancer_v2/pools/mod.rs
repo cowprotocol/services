@@ -68,10 +68,10 @@ impl PoolStatus {
 }
 
 /// A Balancer factory indexing implementation.
-#[mockall::automock(
-    type PoolInfo = weighted::PoolInfo;
-    type PoolState = weighted::PoolState;
-)]
+#[cfg_attr(any(test, feature="test-util"), mockall::automock(
+        type PoolInfo = weighted::PoolInfo;
+        type PoolState = weighted::PoolState;
+))]
 #[async_trait::async_trait]
 pub trait FactoryIndexing: Send + Sync + 'static {
     /// The permanent pool info for this factory.
