@@ -73,7 +73,7 @@ impl BalancerV2Liquidity {
         let inner = Arc::new(Inner {
             allowances,
             settlement: self.settlement.clone(),
-            vault: self.vault.clone(),
+            vault: self.vault,
         });
 
         let weighted_product_orders: Vec<_> = pools
@@ -172,7 +172,7 @@ impl SettlementHandler {
     ) -> BalancerSwapGivenOutInteraction {
         BalancerSwapGivenOutInteraction {
             settlement: self.inner.settlement.clone(),
-            vault: self.inner.vault.clone(),
+            vault: self.inner.vault,
             pool_id: self.pool_id,
             asset_in_max: input_max,
             asset_out: output,
