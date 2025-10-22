@@ -27,7 +27,7 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
                         "failed to decode {s:?} as a hex string: missing \"0x\" prefix",
                     )));
                 }
-                hex::decode(&s[2..]).map_err(|err| {
+                const_hex::decode(&s[2..]).map_err(|err| {
                     de::Error::custom(format!("failed to decode {s:?} as a hex string: {err}",))
                 })
             }
@@ -39,8 +39,7 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
 
 impl SerializeAs<Vec<u8>> for Hex {
     fn serialize_as<S: Serializer>(source: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error> {
-        let hex = hex::encode(source);
-        serializer.serialize_str(&format!("0x{hex}"))
+        serializer.serialize_str(&const_hex::encode_prefixed(source))
     }
 }
 
@@ -69,7 +68,7 @@ impl<'de, const N: usize> DeserializeAs<'de, [u8; N]> for Hex {
                         "failed to decode {s:?} as a hex string: missing \"0x\" prefix",
                     )));
                 }
-                let decoded = hex::decode(&s[2..]).map_err(|err| {
+                let decoded = const_hex::decode(&s[2..]).map_err(|err| {
                     de::Error::custom(format!("failed to decode {s:?} as a hex string: {err}",))
                 })?;
                 if decoded.len() != N {
@@ -89,7 +88,6 @@ impl<'de, const N: usize> DeserializeAs<'de, [u8; N]> for Hex {
 
 impl<const N: usize> SerializeAs<[u8; N]> for Hex {
     fn serialize_as<S: Serializer>(source: &[u8; N], serializer: S) -> Result<S::Ok, S::Error> {
-        let hex = hex::encode(source);
-        serializer.serialize_str(&format!("0x{hex}"))
+        serializer.serialize_str(&const_hex::encode_prefixed(source))
     }
 }

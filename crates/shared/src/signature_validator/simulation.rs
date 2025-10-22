@@ -71,7 +71,7 @@ impl Validator {
             .isValidSignature(check.hash.into(), check.signature.clone().into())
             .call()
             .await
-            .map(|value| hex::encode(value.0))
+            .map(|value| const_hex::encode(value.0))
             .map_err(|err| match err {
                 alloy::contract::Error::TransportError(RpcError::ErrorResp(err)) => {
                     tracing::error!(?err, "failed to call isValidSignature");
@@ -157,7 +157,7 @@ impl Validator {
             .with_context(|| {
                 format!(
                     "could not decode signature check result: {}",
-                    hex::encode(&response_bytes.0)
+                    const_hex::encode(&response_bytes.0)
                 )
             })?
             .into_legacy();

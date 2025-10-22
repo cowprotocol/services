@@ -88,7 +88,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // Configure autopilot-leader only with test_solver
     let autopilot_leader = services.start_autopilot_with_shutdown_controller(None, vec![
         format!("--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-            hex::encode(solver1.address())),
+            const_hex::encode(solver1.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         "--metrics-address=0.0.0.0:9590".to_string(),
@@ -98,7 +98,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // Configure autopilot-backup only with test_solver2
     let _autopilot_follower = services.start_autopilot(None, vec![
         format!("--drivers=test_solver2|http://localhost:11088/test_solver2|{}|requested-timeout-on-problems",
-            hex::encode(solver2.address())),
+            const_hex::encode(solver2.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         "--enable-leader-lock=true".to_string(),

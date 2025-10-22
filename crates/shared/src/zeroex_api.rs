@@ -558,11 +558,11 @@ mod tests {
                         signature: ZeroExSignature {
                             signature_type: 3,
                             r: H256::from_slice(
-                                &hex::decode("db60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237")
+                                &const_hex::decode("db60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237")
                                     .unwrap()
                             ),
                             s: H256::from_slice(
-                                &hex::decode("4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd")
+                                &const_hex::decode("4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd")
                                     .unwrap()
                             ),
                             v: 28u8,
@@ -575,7 +575,7 @@ mod tests {
                     },
                     OrderMetadata {
                         order_hash:
-                            hex::decode(
+                            const_hex::decode(
                                 "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
                             ).unwrap(),
                         remaining_fillable_taker_amount: 262467000000000000u128,

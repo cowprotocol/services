@@ -7,6 +7,6 @@ where
     T: AsRef<[u8]>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0x{}", hex::encode(&self.0))
+        write!(f, "{}", const_hex::encode_prefixed(&self.0))
     }
 }

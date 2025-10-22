@@ -371,7 +371,7 @@ pub fn test_solver() -> Solver {
         name: solver::NAME.to_owned(),
         balance: eth::U256::exp10(18),
         private_key: ethcontract::PrivateKey::from_slice(
-            hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
+            const_hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
                 .unwrap(),
         )
         .unwrap(),
@@ -924,7 +924,7 @@ impl Setup {
         // Hardcoded trader account. Don't use this account for anything else!!!
         let trader_address = eth::H160::from_str(TRADER_ADDRESS).unwrap();
         let trader_secret_key = SecretKey::from_slice(
-            &hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
+            &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
                 .unwrap(),
         )
         .unwrap();
@@ -1586,9 +1586,9 @@ impl QuoteOk<'_> {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();
             let calldata = interaction.get("callData").unwrap().as_str().unwrap();
-            assert_eq!(target, format!("0x{}", hex::encode(expected.address)));
+            assert_eq!(target, const_hex::encode_prefixed(expected.address));
             assert_eq!(value, "0");
-            assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
+            assert_eq!(calldata, const_hex::encode_prefixed(&expected.calldata));
         }
         self
     }
@@ -1614,10 +1614,7 @@ impl QuoteOk<'_> {
         let app_data = result_jit_order.get("appData").unwrap().as_str().unwrap();
         assert_eq!(
             app_data,
-            format!(
-                "0x{}",
-                hex::encode(expected.quoted_order.order.app_data.hash().0.0)
-            )
+            const_hex::encode_prefixed(expected.quoted_order.order.app_data.hash().0.0)
         );
 
         let result_pre_interactions = result
@@ -1637,9 +1634,9 @@ impl QuoteOk<'_> {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();
             let calldata = interaction.get("callData").unwrap().as_str().unwrap();
-            assert_eq!(target, format!("0x{}", hex::encode(expected.address)));
+            assert_eq!(target, const_hex::encode_prefixed(expected.address));
             assert_eq!(value, "0");
-            assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
+            assert_eq!(calldata, const_hex::encode_prefixed(&expected.calldata));
         }
         self
     }

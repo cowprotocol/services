@@ -16,7 +16,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }

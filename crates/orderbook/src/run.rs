@@ -568,7 +568,7 @@ async fn verify_deployed_contract_constants(
     chain_id: u64,
 ) -> Result<()> {
     let web3 = contract.raw_instance().web3();
-    let bytecode = hex::encode(
+    let bytecode = const_hex::encode(
         web3.eth()
             .code(contract.address(), None)
             .await
@@ -577,11 +577,11 @@ async fn verify_deployed_contract_constants(
     );
 
     let domain_separator = DomainSeparator::new(chain_id, contract.address());
-    if !bytecode.contains(&hex::encode(domain_separator.0)) {
+    if !bytecode.contains(&const_hex::encode(domain_separator.0)) {
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }
 
-    if !bytecode.contains(&hex::encode(model::order::OrderData::TYPE_HASH)) {
+    if !bytecode.contains(&const_hex::encode(model::order::OrderData::TYPE_HASH)) {
         return Err(anyhow!("Bytecode did not contain order type hash"));
     }
     Ok(())

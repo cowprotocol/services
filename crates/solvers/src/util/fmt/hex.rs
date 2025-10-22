@@ -10,10 +10,6 @@ impl Debug for Hex<'_> {
 
 impl Display for Hex<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.write_str("0x")?;
-        for byte in self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
+        f.write_str(&const_hex::encode_prefixed(self.0))
     }
 }

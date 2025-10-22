@@ -55,16 +55,16 @@ impl AppDataHash {
 
 impl Debug for AppDataHash {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0))
+        write!(f, "{}", const_hex::encode_prefixed(self.0))
     }
 }
 
 impl FromStr for AppDataHash {
-    type Err = hex::FromHexError;
+    type Err = const_hex::FromHexError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut bytes = [0u8; 32];
-        hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
+        const_hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
         Ok(Self(bytes))
     }
 }
@@ -77,7 +77,7 @@ impl Serialize for AppDataHash {
         let mut bytes = [0u8; 2 + 32 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Can only fail if the buffer size does not match but we know it is correct.
-        hex::encode_to_slice(self.0, &mut bytes[2..]).unwrap();
+        const_hex::encode_to_slice(self.0, &mut bytes[2..]).unwrap();
         // Hex encoding is always valid utf8.
         let s = std::str::from_utf8(&bytes).unwrap();
         serializer.serialize_str(s)
@@ -152,7 +152,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Invalid character 'x' at position 0"
+            "invalid character 'x' at position 0"
         );
     }
 
@@ -160,7 +160,7 @@ mod tests {
     fn invalid_length() {
         assert_eq!(
             AppDataHash::from_str("0x00").unwrap_err().to_string(),
-            "Invalid string length"
+            "invalid string length"
         );
     }
 
