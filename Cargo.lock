@@ -2939,7 +2939,6 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
- "contracts",
  "ethcontract",
  "futures",
  "hex",

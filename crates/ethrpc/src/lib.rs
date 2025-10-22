@@ -1,7 +1,6 @@
 pub mod alloy;
 pub mod block_stream;
 pub mod buffered;
-pub mod dummy;
 pub mod extensions;
 pub mod http;
 pub mod instrumented;

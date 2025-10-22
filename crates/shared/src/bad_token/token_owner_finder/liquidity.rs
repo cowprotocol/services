@@ -4,8 +4,9 @@ use {
     super::TokenOwnerProposing,
     crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
     anyhow::Result,
-    contracts::{BalancerV2Vault, IUniswapV3Factory},
+    contracts::{IUniswapV3Factory, alloy::BalancerV2Vault},
     ethcontract::{BlockNumber, H160},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
 };
 
@@ -27,12 +28,12 @@ impl TokenOwnerProposing for UniswapLikePairProviderFinder {
 }
 
 /// The balancer vault contract contains all the balances of all pools.
-pub struct BalancerVaultFinder(pub BalancerV2Vault);
+pub struct BalancerVaultFinder(pub BalancerV2Vault::Instance);
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for BalancerVaultFinder {
     async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
-        Ok(vec![self.0.address()])
+        Ok(vec![self.0.address().into_legacy()])
     }
 }
 

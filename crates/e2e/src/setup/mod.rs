@@ -214,7 +214,7 @@ async fn run<F, Fut, T>(
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let mut web3 = Web3::new_from_url(NODE_HOST);
+    let web3 = Web3::new_from_url(NODE_HOST);
     let phrase = "test test test test test test test test test test test junk";
     let signers = (0..10).map(|i| {
         MnemonicBuilder::<English>::default()

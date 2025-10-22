@@ -2,39 +2,32 @@
 //! contract.
 
 use {
-    crate::{BalancerV2Vault, alloy::BalancerV2Authorizer},
-    alloy::primitives::Address,
-    ethcontract::{Bytes, H160, common::FunctionExt as _, web3::signing},
+    crate::alloy::BalancerV2Authorizer,
+    alloy::{primitives::Address, sol_types::SolCall},
 };
 
-fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {
-    let function = match BalancerV2Vault::raw_contract()
-        .interface
-        .abi
-        .function(function_name)
-    {
-        Ok(function) => function,
-        Err(_) => return Bytes([0u8; 32]),
-    };
-
+fn role_id<Call: SolCall>(vault: Address) -> alloy::primitives::B256 {
     let mut data = [0u8; 36];
-    data[12..32].copy_from_slice(&target.0);
-    data[32..36].copy_from_slice(&function.selector());
-    Bytes(signing::keccak256(&data))
+    data[12..32].copy_from_slice(vault.as_slice());
+    data[32..36].copy_from_slice(&Call::SELECTOR);
+    alloy::primitives::keccak256(data)
 }
 
 pub async fn grant_required_roles(
     authorizer: &BalancerV2Authorizer::Instance,
-    vault: H160,
-    vault_relayer: H160,
+    vault: Address,
+    vault_relayer: Address,
 ) -> Result<(), alloy::contract::Error> {
+    use crate::alloy::BalancerV2Vault::BalancerV2Vault::batchSwapCall;
+    use crate::alloy::BalancerV2Vault::BalancerV2Vault::manageUserBalanceCall;
+
     authorizer
         .grantRoles(
             vec![
-                role_id(vault, "manageUserBalance").0.into(),
-                role_id(vault, "batchSwap").0.into(),
+                role_id::<manageUserBalanceCall>(vault).0.into(),
+                role_id::<batchSwapCall>(vault).0.into(),
             ],
-            Address::from(vault_relayer.0),
+            vault_relayer,
         )
         .send()
         .await?
@@ -45,7 +38,12 @@ pub async fn grant_required_roles(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::H256};
+    use alloy::primitives::b256;
+
+    use super::*;
+    use crate::alloy::BalancerV2Vault;
+    use crate::alloy::BalancerV2Vault::BalancerV2Vault::batchSwapCall;
+    use crate::alloy::BalancerV2Vault::BalancerV2Vault::manageUserBalanceCall;
 
     #[test]
     fn role_ids() {
@@ -53,24 +51,14 @@ mod tests {
         // `batchSwap` transactions in Tenderly and then inspecting the `role`
         // value that was passed to the authenticator contract.
 
-        let vault = BalancerV2Vault::raw_contract().networks["1"].address;
+        let vault = BalancerV2Vault::deployment_address(&1).unwrap();
         assert_eq!(
-            role_id(vault, "manageUserBalance"),
-            Bytes(
-                "0xeba777d811cd36c06d540d7ff2ed18ed042fd67bbf7c9afcf88c818c7ee6b498"
-                    .parse::<H256>()
-                    .unwrap()
-                    .0
-            )
+            role_id::<manageUserBalanceCall>(vault),
+            b256!("0xeba777d811cd36c06d540d7ff2ed18ed042fd67bbf7c9afcf88c818c7ee6b498")
         );
         assert_eq!(
-            role_id(vault, "batchSwap"),
-            Bytes(
-                "0x1282ab709b2b70070f829c46bc36f76b32ad4989fecb2fcb09a1b3ce00bbfc30"
-                    .parse::<H256>()
-                    .unwrap()
-                    .0
-            )
+            role_id::<batchSwapCall>(vault),
+            b256!("0x1282ab709b2b70070f829c46bc36f76b32ad4989fecb2fcb09a1b3ce00bbfc30")
         );
     }
 }

@@ -26,7 +26,7 @@ use {
     },
     chain::Chain,
     clap::Parser,
-    contracts::{BalancerV2Vault, IUniswapV3Factory},
+    contracts::{IUniswapV3Factory, alloy::BalancerV2Vault},
     ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
     ethrpc::{
         Web3,
@@ -232,22 +232,21 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .instrument(info_span!("vault_relayer_call"))
         .await
         .expect("Couldn't get vault relayer address");
-    let vault = match args.shared.balancer_v2_vault_address {
-        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
-            &web3, address, None,
-        )),
-        None => match BalancerV2Vault::deployed(&web3)
-            .instrument(info_span!("balancerV2vault_deployed"))
-            .await
-        {
-            Ok(contract) => Some(contract),
-            Err(DeployError::NotFound(_)) => {
-                tracing::warn!("balancer contracts are not deployed on this network");
-                None
-            }
-            Err(err) => panic!("failed to get balancer vault contract: {err}"),
-        },
-    };
+
+    let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
+        let chain_id = chain.id();
+        let addr = BalancerV2Vault::deployment_address(&chain_id);
+        if addr.is_none() {
+            tracing::warn!(
+                chain_id,
+                "balancer contracts are not deployed on this network"
+            );
+        }
+        addr
+    });
+    let vault =
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
+
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3)
         .instrument(info_span!("uniswapv3_deployed"))
         .await
@@ -275,7 +274,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault.as_ref().map(|contract| contract.address()),
+            vault_address.map(IntoLegacy::into_legacy),
             balance_overrider,
         ),
         eth.current_block().clone(),
