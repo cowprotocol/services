@@ -40,7 +40,7 @@ use {
         },
     },
     std::{borrow::Cow, sync::Arc},
-    strum_macros::Display,
+    strum::Display,
     thiserror::Error,
     tracing::instrument,
 };

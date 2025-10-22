@@ -4716,7 +4716,7 @@ dependencies = [
  "serde_with",
  "shared",
  "sqlx",
- "strum_macros",
+ "strum",
  "thiserror 1.0.61",
  "tokio",
  "tracing",
