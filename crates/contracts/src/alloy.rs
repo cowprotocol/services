@@ -556,6 +556,7 @@ crate::bindings!(
     }
 );
 
+// Only used in <github.com/gnosis/solvers>
 crate::bindings!(
     Permit2,
     crate::deployments! {
