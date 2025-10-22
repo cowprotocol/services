@@ -1,5 +1,6 @@
 use {
     app_data::AppDataHash,
+    autopilot::util::conv::U256Ext,
     contracts::{
         ERC20,
         alloy::support::{Balances, Signatures},
@@ -469,11 +470,21 @@ async fn cow_amm_driver_support(web3: Web3) {
     const USDC_WETH_COW_AMM: H160 = H160(hex_literal::hex!(
         "f08d4dea369c456d26a3168ff0024b904f2d8b91"
     ));
-    // send some weth to easier calculate the USDC amount needed for imbalance
-    let cow_amm_weth_amount = to_wei(10);
+
+    let weth_balance = onchain
+        .contracts()
+        .weth
+        .balance_of(USDC_WETH_COW_AMM)
+        .call()
+        .await
+        .unwrap();
+    // Assuming that the pool is balanced, imbalance it by 30%, so the driver can
+    // crate a CoW AMM JIT order. This imbalance shouldn't exceed 50%, since
+    // such an order will be rejected by the SC: <https://github.com/balancer/cow-amm/blob/84750b705a02dd600766c5e6a9dd4370386cf0f1/src/contracts/BPool.sol#L250-L252>
+    let weth_to_send = weth_balance.checked_mul_f64(0.3).unwrap();
     tx_value!(
         solver.account(),
-        cow_amm_weth_amount,
+        weth_to_send,
         onchain.contracts().weth.deposit()
     );
     tx!(
@@ -481,19 +492,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         onchain
             .contracts()
             .weth
-            .transfer(USDC_WETH_COW_AMM, cow_amm_weth_amount)
-    );
-    // Calculate the USDC amount required to imbalance the pool by 30%.
-    // This imbalance shouldn't exceed 50%, since such an order will be rejected by
-    // the SC: <https://github.com/balancer/cow-amm/blob/84750b705a02dd600766c5e6a9dd4370386cf0f1/src/contracts/BPool.sol#L250-L252>
-    let price_usdc_per_weth = 2551.56;
-    let imbalance_ratio = 0.7; // 30% imbalance
-    let usdc_imbalance_amount_f =
-        cow_amm_weth_amount.as_u128() as f64 / 1e18 * price_usdc_per_weth * imbalance_ratio;
-    let usdc_imbalance_amount = U256::from((usdc_imbalance_amount_f * 1e6) as u64); // USDC has 6 decimals
-    tx!(
-        usdc_whale,
-        usdc.transfer(USDC_WETH_COW_AMM, usdc_imbalance_amount)
+            .transfer(USDC_WETH_COW_AMM, weth_to_send)
     );
 
     let amm_usdc_balance_before = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
