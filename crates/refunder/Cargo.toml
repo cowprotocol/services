@@ -16,7 +16,7 @@ ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true }

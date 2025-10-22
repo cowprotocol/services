@@ -12,7 +12,7 @@ pub mod time;
 pub mod trade;
 
 use {
-    hex::{FromHex, FromHexError},
+    const_hex::{FromHex, FromHexError},
     primitive_types::H160,
     std::{fmt, sync::LazyLock},
     web3::{
@@ -107,7 +107,7 @@ impl std::fmt::Debug for DomainSeparator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut hex = [0u8; 64];
         // Unwrap because we know the length is correct.
-        hex::encode_to_slice(self.0, &mut hex).unwrap();
+        const_hex::encode_to_slice(self.0, &mut hex).unwrap();
         // Unwrap because we know it is valid utf8.
         f.write_str(std::str::from_utf8(&hex).unwrap())
     }

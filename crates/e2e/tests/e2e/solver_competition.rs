@@ -87,7 +87,7 @@ async fn solver_competition(web3: Web3) {
     services.start_autopilot(
         None,
         vec![
-            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())
+            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())
             ),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
@@ -228,7 +228,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         None,
         // Solver 1 has a wrong submission address, meaning that the solutions should be discarded from solver1
         vec![
-            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address())),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;
@@ -378,8 +378,8 @@ async fn store_filtered_solutions(web3: Web3) {
             vec![
                 format!(
                     "--drivers=good_solver|http://localhost:11088/good_solver|{},bad_solver|http://localhost:11088/bad_solver|{}",
-                    hex::encode(good_solver_account.address()),
-                    hex::encode(bad_solver_account.address()),
+                    const_hex::encode(good_solver_account.address()),
+                    const_hex::encode(bad_solver_account.address()),
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),

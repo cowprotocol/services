@@ -186,7 +186,7 @@ http-timeout = "10s"
                     .to_string(),
                 format!(
                     "--drivers=liquorice_solver|http://localhost:11088/liquorice_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
             ],
         )

@@ -1021,7 +1021,7 @@ pub async fn set_code(web3: &Web3, address: eth::H160, code: &[u8]) {
     web3.transport()
         .execute(
             "anvil_setCode",
-            vec![json!(address), json!(format!("0x{}", hex::encode(code)))],
+            vec![json!(address), json!(const_hex::encode_prefixed(code))],
         )
         .await
         .unwrap();

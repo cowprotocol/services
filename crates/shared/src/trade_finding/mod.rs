@@ -195,7 +195,7 @@ impl Trade {
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
-    #[debug("0x{}", hex::encode::<&[u8]>(data.as_ref()))]
+    #[debug("{}", const_hex::encode_prefixed::<&[u8]>(data.as_ref()))]
     pub data: Vec<u8>,
 }
 

@@ -185,7 +185,7 @@ async fn cow_amm_jit(web3: Web3) {
             vec![
                 format!(
                     "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
@@ -245,17 +245,23 @@ async fn cow_amm_jit(web3: Web3) {
             // enum hashes taken from
             // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol#L50-L79>
             Token::FixedBytes(
-                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
-                    .unwrap(),
+                const_hex::decode(
+                    "f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775",
+                )
+                .unwrap(),
             ), // sell order
             Token::Bool(cow_amm_order.partially_fillable),
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // sell_token_source == erc20
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // buy_token_destination == erc20
         ]),
         Token::Tuple(vec![
@@ -548,7 +554,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         .start_autopilot(
             None,
             vec![
-                format!("--drivers=test_solver|http://localhost:11088/test_solver|{},mock_solver|http://localhost:11088/mock_solver|{}", hex::encode(solver.address()), hex::encode(solver.address())),
+                format!("--drivers=test_solver|http://localhost:11088/test_solver|{},mock_solver|http://localhost:11088/mock_solver|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--cow-amm-configs=0x3705ceee5eaa561e3157cf92641ce28c45a3999c|0x3705ceee5eaa561e3157cf92641ce28c45a3999c|20332744".to_string()
@@ -812,7 +818,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             vec![
                 format!(
                     "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
@@ -863,17 +869,23 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
             Token::Uint(cow_amm_order.fee_amount),
             Token::FixedBytes(
-                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
-                    .unwrap(),
+                const_hex::decode(
+                    "f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775",
+                )
+                .unwrap(),
             ), // sell order
             Token::Bool(cow_amm_order.partially_fillable),
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // sell_token_source == erc20
             Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
+                const_hex::decode(
+                    "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9",
+                )
+                .unwrap(),
             ), // buy_token_destination == erc20
         ]),
         Token::Tuple(vec![

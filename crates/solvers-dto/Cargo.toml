@@ -10,7 +10,7 @@ bytes-hex = { workspace = true }
 app-data = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 number = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }

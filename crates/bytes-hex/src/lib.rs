@@ -15,7 +15,7 @@ where
     v[0] = b'0';
     v[1] = b'x';
     // Unwrap because only possible error is vector wrong size which cannot happen.
-    hex::encode_to_slice(bytes, &mut v[2..]).unwrap();
+    const_hex::encode_to_slice(bytes, &mut v[2..]).unwrap();
     // Unwrap because encoded data is always valid utf8.
     serializer.serialize_str(&String::from_utf8(v).unwrap())
 }
@@ -28,7 +28,7 @@ where
     let hex_str = prefixed_hex_str
         .strip_prefix("0x")
         .ok_or_else(|| D::Error::custom("missing '0x' prefix"))?;
-    hex::decode(hex_str).map_err(D::Error::custom)
+    const_hex::decode(hex_str).map_err(D::Error::custom)
 }
 
 pub struct BytesHex(());

@@ -155,7 +155,7 @@ fn convert_interactions(interactions: Vec<RawInteraction>) -> Vec<InteractionDat
 // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol#L50>
 
 fn convert_kind(bytes: &[u8]) -> Result<OrderKind> {
-    match hex::encode(bytes).as_str() {
+    match const_hex::encode(bytes).as_str() {
         "f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775" => Ok(OrderKind::Sell),
         "6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc" => Ok(OrderKind::Buy),
         bytes => anyhow::bail!("unknown order type: {bytes}"),
@@ -167,7 +167,7 @@ const BALANCE_INTERNAL: &str = "4ac99ace14ee0a5ef932dc609df0943ab7ac16b758363461
 const BALANCE_EXTERNAL: &str = "abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632";
 
 fn convert_sell_token_source(bytes: &[u8]) -> Result<SellTokenSource> {
-    match hex::encode(bytes).as_str() {
+    match const_hex::encode(bytes).as_str() {
         BALANCE_ERC20 => Ok(SellTokenSource::Erc20),
         BALANCE_INTERNAL => Ok(SellTokenSource::Internal),
         BALANCE_EXTERNAL => Ok(SellTokenSource::External),
@@ -176,7 +176,7 @@ fn convert_sell_token_source(bytes: &[u8]) -> Result<SellTokenSource> {
 }
 
 fn convert_buy_token_destination(bytes: &[u8]) -> Result<BuyTokenDestination> {
-    match hex::encode(bytes).as_str() {
+    match const_hex::encode(bytes).as_str() {
         BALANCE_ERC20 => Ok(BuyTokenDestination::Erc20),
         BALANCE_INTERNAL => Ok(BuyTokenDestination::Internal),
         bytes => anyhow::bail!("unknown buy token destination: {bytes}"),

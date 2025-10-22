@@ -77,7 +77,7 @@ impl Debug for Signature {
         }
 
         let scheme = format!("{:?}", self.scheme());
-        let bytes = format!("0x{}", hex::encode(self.to_bytes()));
+        let bytes = const_hex::encode_prefixed(self.to_bytes());
         f.debug_tuple(&scheme).field(&bytes).finish()
     }
 }
@@ -374,7 +374,7 @@ impl Serialize for EcdsaSignature {
         let mut bytes = [0u8; 2 + 65 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Can only fail if the buffer size does not match but we know it is correct.
-        hex::encode_to_slice(self.to_bytes(), &mut bytes[2..]).unwrap();
+        const_hex::encode_to_slice(self.to_bytes(), &mut bytes[2..]).unwrap();
         // Hex encoding is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         serializer.serialize_str(str)
@@ -409,7 +409,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
                     ))
                 })?;
                 let mut bytes = [0u8; 65];
-                hex::decode_to_slice(s, &mut bytes).map_err(|err| {
+                const_hex::decode_to_slice(s, &mut bytes).map_err(|err| {
                     de::Error::custom(format!(
                         "failed to decode {s:?} as hex ecdsa signature: {err}"
                     ))

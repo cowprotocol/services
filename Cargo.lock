@@ -774,8 +774,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes-hex",
+ "const-hex",
  "ethcontract",
- "hex",
  "hex-literal",
  "number",
  "primitive-types",
@@ -1102,6 +1102,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "cow-amm",
  "dashmap",
@@ -1110,7 +1111,6 @@ dependencies = [
  "ethcontract",
  "ethrpc",
  "futures",
- "hex",
  "hex-literal",
  "humantime",
  "indexmap 2.10.0",
@@ -1823,7 +1823,7 @@ dependencies = [
 name = "bytes-hex"
 version = "0.1.0"
 dependencies = [
- "hex",
+ "const-hex",
  "serde",
  "serde_json",
  "serde_with",
@@ -2057,15 +2057,14 @@ dependencies = [
 
 [[package]]
 name = "const-hex"
-version = "1.14.1"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83e22e0ed40b96a48d3db274f72fd365bd78f67af39b6bbd47e8a15e1c6207ff"
+checksum = "3bb320cac8a0750d7f25280aa97b09c26edfe161164238ecbbb31092b079e735"
 dependencies = [
  "cfg-if",
  "cpufeatures",
- "hex",
  "proptest",
- "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -2176,10 +2175,10 @@ dependencies = [
  "anyhow",
  "app-data",
  "async-trait",
+ "const-hex",
  "contracts",
  "ethcontract",
  "ethrpc",
- "hex",
  "hex-literal",
  "model",
  "shared",
@@ -2437,9 +2436,9 @@ version = "0.1.0"
 dependencies = [
  "bigdecimal",
  "chrono",
+ "const-hex",
  "const_format",
  "futures",
- "hex",
  "maplit",
  "serde_json",
  "sqlx",
@@ -2589,6 +2588,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "cow-amm",
  "dashmap",
@@ -2599,7 +2599,6 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
- "hex",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -2659,13 +2658,13 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "database",
  "driver",
  "ethcontract",
  "ethrpc",
  "futures",
- "hex",
  "hex-literal",
  "model",
  "number",
@@ -2933,9 +2932,9 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
+ "const-hex",
  "ethcontract",
  "futures",
- "hex",
  "hex-literal",
  "itertools 0.14.0",
  "maplit",
@@ -3479,9 +3478,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "hex-conservative"
@@ -4254,8 +4250,8 @@ dependencies = [
  "bigdecimal",
  "bytes-hex",
  "chrono",
+ "const-hex",
  "derive_more 1.0.0",
- "hex",
  "hex-literal",
  "maplit",
  "num",
@@ -4698,12 +4694,12 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "database",
  "ethcontract",
  "ethrpc",
  "futures",
- "hex",
  "hex-literal",
  "humantime",
  "hyper 0.14.29",
@@ -5333,13 +5329,13 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
+ "const-hex",
  "contracts",
  "database",
  "ethcontract",
  "ethrpc",
  "futures",
  "gas-estimation",
- "hex",
  "humantime",
  "itertools 0.14.0",
  "mimalloc",
@@ -6082,6 +6078,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "dashmap",
  "database",
@@ -6092,7 +6089,6 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
- "hex",
  "hex-literal",
  "humantime",
  "indexmap 2.10.0",
@@ -6203,12 +6199,12 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "async-trait",
+ "const-hex",
  "contracts",
  "derivative",
  "ethcontract",
  "ethrpc",
  "futures",
- "hex",
  "hex-literal",
  "itertools 0.14.0",
  "maplit",
@@ -6240,13 +6236,13 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "derive_more 1.0.0",
  "ethcontract",
  "ethereum-types",
  "ethrpc",
  "futures",
- "hex",
  "hex-literal",
  "hyper 0.14.29",
  "itertools 0.14.0",
@@ -6283,7 +6279,7 @@ dependencies = [
  "bigdecimal",
  "bytes-hex",
  "chrono",
- "hex",
+ "const-hex",
  "number",
  "serde",
  "serde_with",
