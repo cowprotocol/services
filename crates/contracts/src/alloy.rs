@@ -556,7 +556,29 @@ crate::bindings!(
     }
 );
 
-crate::bindings!(Permit2);
+crate::bindings!(
+    Permit2,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xf2f1fe96c16ee674bb7fcee166be52465a418927d124f5f1d231b36eae65d377>
+        MAINNET => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 15986406),
+        // <https://gnosisscan.io/tx/0x3ba511410edc92cafe94bd100e25adb37981499d17947a3d64c8523fbfd31864>
+        GNOSIS => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 27338672),
+        // <https://sepolia.etherscan.io/tx/0x363df5deeead44d8fd38425f3986e3e81946a6c59d8b68fe33926cc700713173>
+        SEPOLIA => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 2356287),
+        // <https://arbiscan.io/tx/0xe244dafca8211ed6fb123efaa5075b7d5813749718412ca435c872afd0e2ea82>
+        ARBITRUM_ONE => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 38692735),
+        // <https://basescan.org/tx/0x26fbdea9a47ba8e21676bc6b6a72a19dded1a0c270e96d5236886ca9c5000d3f>
+        BASE => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 1425180),
+        // <https://snowscan.xyz/tx/0x38fd76c2165d920c7e006defd67eeeb0069bf93e41741eec3bbb83d196610a56>
+        AVALANCHE => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 28844415),
+        // <https://bscscan.com/tx/0xb038ec7b72db4207e0c0d5433e1cabc41b4e4f9b9cac577173b3188fc508a6c3>
+        BNB => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 25343783),
+        // <https://optimistic.etherscan.io/tx/0xf0a51e0d0579ef8cc7965f5797bd7665ddac14d4d2141423676b8862f7668352>
+        OPTIMISM => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 38854427),
+        // <https://polygonscan.com/tx/0xe2a4d996de0d6a23108f701b37acba6c47ee34448bb51fec5c23f542a6f3ccc8>
+        POLYGON => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 35701901),
+    }
+);
 
 pub mod support {
     // Support contracts used for trade and token simulations.
