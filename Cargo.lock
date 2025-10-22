@@ -6298,6 +6298,7 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
+ "url",
  "vergen",
  "web3",
 ]
