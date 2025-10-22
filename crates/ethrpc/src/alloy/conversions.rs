@@ -16,6 +16,16 @@ pub trait IntoAlloy {
     fn into_alloy(self) -> Self::To;
 }
 
+impl IntoAlloy for ethcontract::I256 {
+    type To = alloy::primitives::I256;
+
+    fn into_alloy(self) -> Self::To {
+        let mut buf = [0u8; 32];
+        self.to_little_endian(&mut buf);
+        alloy::primitives::I256::from_le_bytes(buf)
+    }
+}
+
 impl IntoAlloy for primitive_types::U256 {
     type To = alloy::primitives::U256;
 

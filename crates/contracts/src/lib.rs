@@ -58,7 +58,6 @@ include_contracts! {
     GPv2AllowListAuthentication;
     GPv2Settlement;
     IUniswapV3Factory;
-    Permit2;
     WETH9;
 }
 
