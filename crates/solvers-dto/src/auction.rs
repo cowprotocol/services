@@ -304,4 +304,8 @@ pub struct WrapperCall {
     pub address: H160,
     #[serde(with = "bytes_hex")]
     pub data: Vec<u8>,
+    /// Declares whether this wrapper (and its data) needs to be included
+    /// unmodified in a solution containing this order.
+    #[serde(default)]
+    pub is_omittable: bool,
 }

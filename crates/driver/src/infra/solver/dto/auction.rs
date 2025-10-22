@@ -18,6 +18,8 @@ use {
     std::collections::HashMap,
 };
 
+pub type WrapperCalls = HashMap<order::Uid, Vec<(H160, Vec<u8>, bool)>>;
+
 #[allow(clippy::too_many_arguments)]
 pub fn new(
     auction: &competition::Auction,
@@ -26,7 +28,7 @@ pub fn new(
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
     flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
-    wrappers: &HashMap<order::Uid, Vec<(H160, Vec<u8>)>>,
+    wrappers: &WrapperCalls,
     deadline: chrono::DateTime<chrono::Utc>,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
@@ -160,9 +162,12 @@ pub fn new(
                     wrappers: wrappers.get(&order.uid).map(|wrapper_calls| {
                         wrapper_calls
                             .iter()
-                            .map(|(address, data)| solvers_dto::auction::WrapperCall {
-                                address: *address,
-                                data: data.clone(),
+                            .map(|(address, data, is_omittable)| {
+                                solvers_dto::auction::WrapperCall {
+                                    address: *address,
+                                    data: data.clone(),
+                                    is_omittable: *is_omittable,
+                                }
                             })
                             .collect()
                     }),

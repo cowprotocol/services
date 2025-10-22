@@ -22,7 +22,6 @@ use {
     },
     anyhow::Result,
     derive_more::{From, Into},
-    ethcontract::H160,
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
@@ -345,7 +344,7 @@ impl Solver {
             .collect()
     }
 
-    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, Vec<(H160, Vec<u8>)>> {
+    fn assemble_wrappers(&self, auction: &Auction) -> dto::auction::WrapperCalls {
         auction
             .orders()
             .iter()
@@ -356,7 +355,7 @@ impl Solver {
                 }
                 let wrapper_calls = wrappers
                     .iter()
-                    .map(|w| (w.address, w.data.clone()))
+                    .map(|w| (w.address, w.data.clone(), w.is_omittable))
                     .collect();
                 Some((order.uid, wrapper_calls))
             })

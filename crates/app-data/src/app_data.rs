@@ -73,6 +73,10 @@ pub struct WrapperCall {
     /// Additional calldata to be passed to the wrapper contract.
     #[serde_as(as = "BytesHex")]
     pub data: Vec<u8>,
+    /// Declares whether this wrapper (and its data) needs to be included
+    /// unmodified in a solution containing this order.
+    #[serde(default)]
+    pub is_omittable: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
