@@ -464,6 +464,21 @@ crate::bindings!(
 crate::bindings!(IUniswapLikeRouter);
 crate::bindings!(IUniswapLikePair);
 crate::bindings!(UniswapV3Pool);
+crate::bindings!(
+    UniswapV3QuoterV2,
+    crate::deployments! {
+        // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
+        MAINNET => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        ARBITRUM_ONE => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        BASE => address!("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"),
+        AVALANCHE => address!("0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"),
+        BNB => address!("0x78D78E420Da98ad378D7799bE8f4AF69033EB077"),
+        OPTIMISM => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        POLYGON => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        LENS => address!("0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1"),
+        // Not listed on Gnosis and Sepolia chains
+    }
+);
 
 crate::bindings!(
     HooksTrampoline,
