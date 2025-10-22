@@ -60,7 +60,7 @@ fn to_interaction(
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
         GPv2Settlement::at(&web3, receiver.0),
-        BalancerV2Vault::Instance::new(pool.vault.0.into_alloy(), ethrpc::mock::web3().alloy),
+        pool.vault.0.into_alloy(),
         Allowances::empty(receiver.0),
     );
 
@@ -195,6 +195,6 @@ async fn init_liquidity(
         web3,
         balancer_pool_fetcher,
         eth.contracts().settlement().clone(),
-        contracts.vault,
+        *contracts.vault.address(),
     ))
 }

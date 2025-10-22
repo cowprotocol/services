@@ -51,8 +51,6 @@ observe = { workspace = true, features = ["axum-tracing"] }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
-opentelemetry = { workspace = true }
-tracing-opentelemetry = "0.31.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }

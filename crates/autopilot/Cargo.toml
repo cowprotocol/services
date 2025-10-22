@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 alloy = { workspace = true }
 app-data = { workspace = true }
-bytes-hex = { workspace = true }
+bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
