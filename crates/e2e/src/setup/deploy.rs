@@ -1,7 +1,6 @@
 use {
     crate::deploy,
     contracts::{
-        CowAmmLegacyHelper,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
@@ -17,7 +16,7 @@ use {
             support::{Balances, Signatures},
         },
     },
-    ethcontract::{Address, H256, errors::DeployError},
+    ethcontract::{Address, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::DomainSeparator,
     shared::ethrpc::Web3,
@@ -43,7 +42,6 @@ pub struct Contracts {
     pub domain_separator: DomainSeparator,
     pub ethflows: Vec<CoWSwapEthFlow::Instance>,
     pub hooks: HooksTrampoline::Instance,
-    pub cow_amm_helper: Option<CowAmmLegacyHelper>,
     pub flashloan_router: Option<FlashLoanRouter::Instance>,
 }
 
@@ -58,12 +56,6 @@ impl Contracts {
         tracing::info!("connected to forked test network {}", network_id);
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
-        let cow_amm_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("failed to find deployed contract: {err:?}"),
-            Ok(contract) => Some(contract),
-        };
-
         let balances = match deployed.balances {
             Some(address) => Balances::Instance::new(address.into_alloy(), web3.alloy.clone()),
             None => Balances::Instance::deployed(&web3.alloy)
@@ -118,7 +110,6 @@ impl Contracts {
             gp_settlement,
             balances,
             signatures,
-            cow_amm_helper,
             flashloan_router,
         }
     }
@@ -254,7 +245,6 @@ impl Contracts {
             ethflows: vec![ethflow, ethflow_secondary],
             hooks,
             // Current helper contract only works in forked tests
-            cow_amm_helper: None,
             flashloan_router: Some(flashloan_router),
         }
     }
