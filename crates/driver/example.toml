@@ -44,8 +44,6 @@ flashloan-router = "0x0000000000000000000000000000000000000000"
 factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"
 # address of contract to help interfacing with the created CoW AMMs
 helper = "0x86f3df416979136cb4fdea2c0886301b911c163b"
-# at which block the driver should start indexing the factory (1 block before deployment)
-index-start = 20188649
 
 [liquidity]
 base-tokens = [

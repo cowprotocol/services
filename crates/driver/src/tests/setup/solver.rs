@@ -472,7 +472,7 @@ impl Solver {
                 weth: Some(config.blockchain.weth.address().into()),
                 balances: Some(config.blockchain.balances.address().into_legacy().into()),
                 signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
-                cow_amms: vec![],
+                cow_amm_helper_by_factory: Default::default(),
                 flashloan_router: Some(
                     config
                         .blockchain
@@ -483,7 +483,6 @@ impl Solver {
                 ),
             },
             gas,
-            None,
             45_000_000.into(),
         )
         .await;

@@ -3,6 +3,7 @@ use {
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
+            cow_amm,
             eth,
             liquidity,
         },
@@ -58,6 +59,7 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    cow_amm_cache: cow_amm::Cache,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -130,6 +132,14 @@ impl DataAggregator {
             eth.balance_overrider(),
         );
 
+        let cow_amm_helper_by_factory = eth
+            .contracts()
+            .cow_amm_helper_by_factory()
+            .iter()
+            .map(|(factory, helper)| (factory.0.into(), helper.0.into()))
+            .collect();
+        let cow_amm_cache = cow_amm::Cache::new(eth.web3().clone(), cow_amm_helper_by_factory);
+
         Self {
             utilities: Arc::new(Utilities {
                 eth,
@@ -138,6 +148,7 @@ impl DataAggregator {
                 liquidity_fetcher,
                 tokens,
                 balance_fetcher,
+                cow_amm_cache,
             }),
             control: Mutex::new(ControlBlock {
                 solve_request: Default::default(),
@@ -380,17 +391,19 @@ impl Utilities {
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
-        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
+
+        let cow_amms = self
+            .cow_amm_cache
+            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
+            .await;
+
         let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
         let validator = self.signature_validator.as_ref();
+
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
-                // Only generate orders for cow amms the auction told us about.
-                // Otherwise the solver would expect the order to get surplus but
-                // the autopilot would actually not count it.
-                .filter(|amm| auction.surplus_capturing_jit_order_owners.contains(&eth::Address(*amm.address())))
                 // Only generate orders where the auction provided the required
                 // reference prices. Otherwise there will be an error during the
                 // surplus calculation which will also result in 0 surplus for

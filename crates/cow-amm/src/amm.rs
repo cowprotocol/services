@@ -20,10 +20,7 @@ pub struct Amm {
 }
 
 impl Amm {
-    pub(crate) async fn new(
-        address: Address,
-        helper: &CowAmmLegacyHelper,
-    ) -> Result<Self, MethodError> {
+    pub async fn new(address: Address, helper: &CowAmmLegacyHelper) -> Result<Self, MethodError> {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {

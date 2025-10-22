@@ -580,6 +580,10 @@ crate::bindings!(
     }
 );
 
+pub mod cow_amm {
+    crate::bindings!(CowAmmFactoryGetter);
+}
+
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);
