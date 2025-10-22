@@ -9,7 +9,7 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    alloy::primitives::{Address, Uint},
+    alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     contracts::{
         GPv2Settlement,
@@ -173,7 +173,7 @@ impl UniswapV3SettlementHandler {
         (
             approval,
             UniswapV3Interaction {
-                address: self.inner.router,
+                router: self.inner.router,
                 params: ExactOutputSingleParams {
                     tokenIn: token_amount_in_max.token.into_alloy(),
                     tokenOut: token_amount_out.token.into_alloy(),
@@ -222,7 +222,7 @@ mod tests {
         fn new_dummy(allowances: HashMap<H160, U256>, fee: u32) -> Self {
             Self {
                 inner: Arc::new(Inner {
-                    router: Address::default(),
+                    router: Default::default(),
                     gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
                     allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
                 }),

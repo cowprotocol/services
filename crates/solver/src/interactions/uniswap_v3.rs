@@ -11,14 +11,14 @@ use {
 
 #[derive(Debug)]
 pub struct UniswapV3Interaction {
-    pub address: Address,
+    pub router: Address,
     pub params: ExactOutputSingleParams,
 }
 
 impl Interaction for UniswapV3Interaction {
     fn encode(&self) -> EncodedInteraction {
         (
-            self.address.into_legacy(),
+            self.router.into_legacy(),
             0.into(),
             Bytes(
                 exactOutputSingleCall {
