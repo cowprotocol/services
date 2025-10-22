@@ -29,7 +29,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 observe = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }

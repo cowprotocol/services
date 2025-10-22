@@ -23,7 +23,7 @@ driver = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 model = { workspace = true, features = ["e2e"] }
 number = { workspace = true }

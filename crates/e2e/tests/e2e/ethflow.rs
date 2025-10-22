@@ -126,7 +126,7 @@ async fn eth_flow_tx(web3: Web3) {
     let approve_call_data = {
         let call_builder = dai.approve(trader.address().into_alloy(), eth(10));
         let calldata = call_builder.calldata();
-        format!("0x{}", hex::encode(calldata))
+        const_hex::encode_prefixed(calldata)
     };
 
     let hash = services
@@ -164,7 +164,7 @@ async fn eth_flow_tx(web3: Web3) {
 
     let quote_request = OrderQuoteRequest {
         app_data: OrderCreationAppData::Hash {
-            hash: app_data::AppDataHash(hex::decode(&hash[2..]).unwrap().try_into().unwrap()),
+            hash: app_data::AppDataHash(const_hex::decode(&hash[2..]).unwrap().try_into().unwrap()),
         },
         ..intent.to_quote_request(trader.account().address(), &onchain.contracts().weth)
     };

@@ -110,7 +110,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             },
             "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
             "signingScheme": "eip712",
-            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
+            "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
             "quote": quote.order.quote,
         });
         if let Some(receiver) = quote.order.receiver {
@@ -329,7 +329,7 @@ async fn create_config_file(
                 .map(|abs| abs.0)
                 .unwrap_or_default(),
             solver.slippage.relative,
-            hex::encode(solver.private_key.secret_bytes()),
+            const_hex::encode(solver.private_key.secret_bytes()),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),

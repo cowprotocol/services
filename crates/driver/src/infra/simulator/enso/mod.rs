@@ -95,7 +95,7 @@ impl From<dto::Response> for Result<eth::Gas, Error> {
             return Err(Error::Revert(format!(
                 "{}: {}",
                 response.exit_reason,
-                hex::encode(&response.return_data)
+                const_hex::encode(&response.return_data)
             )));
         }
         Ok(response.gas_used.into())

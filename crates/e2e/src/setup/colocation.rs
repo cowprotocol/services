@@ -141,7 +141,7 @@ pub fn start_driver_with_config_override(
                  base_tokens: _,
                  merge_solutions,
              }| {
-                let account = hex::encode(account.private_key());
+                let account = const_hex::encode(account.private_key());
                 format!(
                     r#"
 [[solver]]

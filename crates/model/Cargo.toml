@@ -15,7 +15,7 @@ bytes-hex = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
 derive_more = { workspace = true }
-hex = { workspace = true, default-features = false }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 number = { workspace = true }
 num = { workspace = true }

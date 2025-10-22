@@ -115,7 +115,7 @@ impl RefundService {
                     .find(|contract| *contract.address() == ethflow_contract_address);
                 if ethflow_contract.is_none() {
                     tracing::warn!(
-                        uid = format!("0x{}", hex::encode(eth_order_placement.uid.0)),
+                        uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
                         ethflow = ?ethflow_contract_address,
                         "refunding orders from specific contract is not enabled",
                     );

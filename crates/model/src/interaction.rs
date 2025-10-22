@@ -22,10 +22,7 @@ impl Debug for InteractionData {
         f.debug_struct("InteractionData")
             .field("target", &self.target)
             .field("value", &self.value)
-            .field(
-                "call_data",
-                &format_args!("0x{}", hex::encode(&self.call_data)),
-            )
+            .field("call_data", &const_hex::encode_prefixed(&self.call_data))
             .finish()
     }
 }

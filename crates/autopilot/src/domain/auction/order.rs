@@ -55,7 +55,7 @@ impl Display for OrderUid {
         let mut bytes = [0u8; 2 + 56 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Unwrap because the length is always correct.
-        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
+        const_hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
         // Unwrap because the string is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         f.write_str(str)
@@ -105,7 +105,9 @@ pub enum BuyTokenDestination {
 /// json document, which associates arbitrary information with an order while
 /// being signed by the user.
 #[derive(Clone, derive_more::Debug, PartialEq)]
-pub struct AppDataHash(#[debug("0x{}", hex::encode::<&[u8]>(self.0.as_ref()))] pub [u8; 32]);
+pub struct AppDataHash(
+    #[debug("{}", const_hex::encode_prefixed::<&[u8]>(self.0.as_ref()))] pub [u8; 32],
+);
 
 /// Signature over the order data.
 /// All variants rely on the EIP-712 hash of the order data, referred to as the
@@ -161,7 +163,7 @@ impl Debug for Signature {
         }
 
         let scheme = format!("{:?}", self.scheme());
-        let bytes = format!("0x{}", hex::encode(self.to_bytes()));
+        let bytes = const_hex::encode_prefixed(self.to_bytes());
         f.debug_tuple(&scheme).field(&bytes).finish()
     }
 }

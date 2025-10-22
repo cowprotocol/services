@@ -46,11 +46,8 @@ impl std::fmt::Debug for SignatureCheck {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SignatureCheck")
             .field("signer", &self.signer)
-            .field("hash", &format_args!("0x{}", hex::encode(self.hash)))
-            .field(
-                "signature",
-                &format_args!("0x{}", hex::encode(&self.signature)),
-            )
+            .field("hash", &const_hex::encode_prefixed(self.hash))
+            .field("signature", &const_hex::encode_prefixed(&self.signature))
             .field("interactions", &self.interactions)
             .finish()
     }

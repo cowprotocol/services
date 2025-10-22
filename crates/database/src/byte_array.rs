@@ -18,7 +18,7 @@ pub struct ByteArray<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> Debug for ByteArray<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0))
+        write!(f, "{}", const_hex::encode_prefixed(self.0))
     }
 }
 
@@ -54,7 +54,7 @@ impl<const N: usize> Decode<'_, Postgres> for ByteArray<N> {
                     .as_bytes()?
                     .strip_prefix(b"\\x")
                     .ok_or("text does not start with \\x")?;
-                hex::decode_to_slice(text, &mut bytes)?
+                const_hex::decode_to_slice(text, &mut bytes)?
             }
         };
         Ok(Self(bytes))

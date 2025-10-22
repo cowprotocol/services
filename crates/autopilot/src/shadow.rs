@@ -241,7 +241,7 @@ impl RunLoop {
             }
             tracing::debug!(
                 driver = %driver.name,
-                calldata = format!("0x{}", hex::encode(calldata)),
+                calldata = const_hex::encode_prefixed(calldata),
                 "revealed calldata"
             );
         }))

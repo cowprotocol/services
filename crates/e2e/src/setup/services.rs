@@ -279,7 +279,7 @@ impl<'a> Services<'a> {
                 vec![
                     format!(
                         "--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-                        hex::encode(solver.address())
+                        const_hex::encode(solver.address())
                     ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
@@ -339,7 +339,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", hex::encode(solver.address())),
+                format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", const_hex::encode(solver.address())),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -352,7 +352,7 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 format!(
                     "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
