@@ -2178,7 +2178,6 @@ dependencies = [
  "ethcontract",
  "ethrpc",
  "futures",
- "hex",
  "hex-literal",
  "model",
  "observe",

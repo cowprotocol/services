@@ -57,36 +57,33 @@ impl Storage {
             return Ok(());
         }
 
-        let processed_amms =
-            futures::future::try_join_all(db_amms.into_iter().map(|db_amm| async move {
-                let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
-                let amm = Amm::new(amm_address, &self.0.helper).await?;
-                let block_number = u64::try_from(db_amm.block_number).context(format!(
-                    "db stored cow amm {:?} block number is not u64",
-                    db_amm.address
-                ))?;
+        let amm_process_tasks = db_amms.into_iter().map(|db_amm| async move {
+            let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
+            let amm = Amm::new(amm_address, &self.0.helper).await?;
+            let block_number = u64::try_from(db_amm.block_number).context(format!(
+                "db stored cow amm {:?} block number is not u64",
+                db_amm.address
+            ))?;
 
-                Ok::<(u64, Arc<Amm>), anyhow::Error>((block_number, Arc::new(amm)))
-            }))
-            .await?;
+            Ok::<(u64, Arc<Amm>), anyhow::Error>((block_number, Arc::new(amm)))
+        });
+        let processed_amms = futures::future::try_join_all(amm_process_tasks).await?;
 
-        if !processed_amms.is_empty() {
-            let count = processed_amms.len();
-            let db_amms = processed_amms
-                .iter()
-                .map(|(_, amm)| *amm.address())
-                .collect::<Vec<_>>();
-            let mut cache = self.0.cache.write().await;
-            for (block_number, amm) in processed_amms {
-                cache.entry(block_number).or_default().push(amm);
-            }
-            tracing::info!(
-                count,
-                ?factory_address,
-                ?db_amms,
-                "initialized AMMs from database"
-            );
+        let count = processed_amms.len();
+        let db_amms = processed_amms
+            .iter()
+            .map(|(_, amm)| *amm.address())
+            .collect::<Vec<_>>();
+        let mut cache = self.0.cache.write().await;
+        for (block_number, amm) in processed_amms {
+            cache.entry(block_number).or_default().push(amm);
         }
+        tracing::info!(
+            count,
+            ?factory_address,
+            ?db_amms,
+            "initialized AMMs from database"
+        );
 
         Ok(())
     }
@@ -238,7 +235,7 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         database::last_indexed_blocks::update(
             &mut ex,
             &self.0.factory_address.to_string(),
-            i64::try_from(latest_block).context("last block is not u64")?,
+            i64::try_from(latest_block).context("latest block is not u64")?,
         )
         .await?;
         Ok(())
