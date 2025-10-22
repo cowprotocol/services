@@ -20,7 +20,7 @@ shared = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 
 [lints]

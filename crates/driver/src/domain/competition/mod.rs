@@ -30,7 +30,6 @@ use {
         sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
-    tap::TapFallible,
     tokio::{
         sync::{mpsc, oneshot},
         task,
@@ -191,7 +190,7 @@ impl Competition {
             .solver
             .solve(auction, &liquidity)
             .await
-            .tap_err(|err| {
+            .inspect_err(|err| {
                 if err.is_timeout() {
                     notify::solver_timeout(&self.solver, auction.id());
                 }
@@ -302,7 +301,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
+                    .inspect_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
                         notify::scoring_failed(
                             &self.solver,
