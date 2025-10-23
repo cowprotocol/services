@@ -4,7 +4,11 @@ mod factory;
 mod maintainers;
 mod registry;
 
-pub use {amm::Amm, contracts::CowAmmLegacyHelper as Helper, registry::Registry};
+pub use {
+    amm::Amm,
+    contracts::alloy::cow_amm::CowAmmLegacyHelper::Instance as Helper,
+    registry::Registry,
+};
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub(crate) struct Metrics {

@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::{Bytes, FixedBytes},
     app_data::AppDataHash,
     autopilot::util::conv::U256Ext,
     contracts::{
@@ -27,8 +28,9 @@ use {
     },
     ethcontract::{BlockId, BlockNumber, H160, U256, web3::ethabi::Token},
     ethrpc::alloy::{
+        Account,
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
     },
     model::{
         order::{OrderClass, OrderCreation, OrderData, OrderKind, OrderUid},
@@ -74,23 +76,23 @@ async fn cow_amm_jit(web3: Web3) {
         .await;
 
     // set up cow_amm
-    let oracle = contracts::CowAmmUniswapV2PriceOracle::builder(&web3)
-        .deploy()
+    let oracle =
+        contracts::alloy::cow_amm::CowAmmUniswapV2PriceOracle::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
+
+    let cow_amm_factory =
+        contracts::alloy::cow_amm::CowAmmConstantProductFactory::Instance::deploy(
+            web3.alloy.clone(),
+            onchain.contracts().gp_settlement.address().into_alloy(),
+        )
         .await
         .unwrap();
-
-    let cow_amm_factory = contracts::CowAmmConstantProductFactory::builder(
-        &web3,
-        onchain.contracts().gp_settlement.address(),
-    )
-    .deploy()
-    .await
-    .unwrap();
 
     // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
 
-    dai.approve(cow_amm_factory.address().into_alloy(), eth(2_000))
+    dai.approve(*cow_amm_factory.address(), eth(2_000))
         .from(cow_amm_owner.address().into_alloy())
         .send_and_watch()
         .await
@@ -106,7 +108,7 @@ async fn cow_amm_jit(web3: Web3) {
         onchain
             .contracts()
             .weth
-            .approve(cow_amm_factory.address(), to_wei(1))
+            .approve(cow_amm_factory.address().into_legacy(), to_wei(1))
     );
 
     let pair = onchain
@@ -121,10 +123,10 @@ async fn cow_amm_jit(web3: Web3) {
         .expect("failed to get Uniswap V2 pair");
 
     let cow_amm = cow_amm_factory
-        .amm_deterministic_address(
-            cow_amm_owner.address(),
-            dai.address().into_legacy(),
-            onchain.contracts().weth.address(),
+        .ammDeterministicAddress(
+            cow_amm_owner.address().into_alloy(),
+            *dai.address(),
+            onchain.contracts().weth.address().into_alloy(),
         )
         .call()
         .await
@@ -134,22 +136,32 @@ async fn cow_amm_jit(web3: Web3) {
     let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12).chain(pair.to_vec()).collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
 
+    let Account::Signer(signer) = cow_amm_owner
+        .account()
+        .clone()
+        .try_into_alloy()
+        .await
+        .unwrap()
+    else {
+        panic!("expected offline account");
+    };
+    web3.wallet.register_signer(signer);
     cow_amm_factory
         .create(
-            dai.address().into_legacy(),
-            to_wei(2_000),
-            onchain.contracts().weth.address(),
-            to_wei(1),
-            0.into(), // min traded token
-            oracle.address(),
-            ethcontract::Bytes(oracle_data.clone()),
-            ethcontract::Bytes(APP_DATA),
+            *dai.address(),
+            to_wei(2_000).into_alloy(),
+            onchain.contracts().weth.address().into_alloy(),
+            to_wei(1).into_alloy(),
+            U256::zero().into_alloy(), // min traded token
+            *oracle.address(),
+            Bytes::copy_from_slice(&oracle_data),
+            FixedBytes(APP_DATA),
         )
-        .from(cow_amm_owner.account().clone())
-        .send()
+        .from(cow_amm_owner.account().address().into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
-    let cow_amm = contracts::CowAmm::at(&web3, cow_amm);
+    let cow_amm = contracts::alloy::cow_amm::CowAmm::Instance::new(cow_amm, web3.alloy.clone());
 
     // Start system with the regular baseline solver as a quoter but a mock solver
     // for the actual solver competition. That way we can handcraft a solution
@@ -267,7 +279,7 @@ async fn cow_amm_jit(web3: Web3) {
         ]),
         Token::Tuple(vec![
             Token::Uint(0.into()), // min_traded_token
-            Token::Address(oracle.address()),
+            Token::Address(oracle.address().into_legacy()),
             Token::Bytes(oracle_data),
             Token::FixedBytes(APP_DATA.to_vec()),
         ]),
@@ -277,6 +289,7 @@ async fn cow_amm_jit(web3: Web3) {
     // contract this signature refers to.
     let signature = cow_amm
         .address()
+        .into_legacy()
         .as_bytes()
         .iter()
         .cloned()
@@ -288,13 +301,9 @@ async fn cow_amm_jit(web3: Web3) {
     let cow_amm_commitment = {
         let order_hash = cow_amm_order.hash_struct();
         let order_hash = hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash);
-        let commitment = cow_amm
-            .commit(ethcontract::Bytes(order_hash))
-            .tx
-            .data
-            .unwrap();
+        let commitment = cow_amm.commit(FixedBytes(order_hash)).calldata().clone();
         Call {
-            target: cow_amm.address(),
+            target: cow_amm.address().into_legacy(),
             value: 0.into(),
             calldata: commitment.0.to_vec(),
         }
@@ -331,11 +340,7 @@ async fn cow_amm_jit(web3: Web3) {
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
-    let amm_balance_before = dai
-        .balanceOf(cow_amm.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let amm_balance_before = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
     let bob_balance_before = dai
         .balanceOf(bob.address().into_alloy())
         .call()
@@ -388,11 +393,7 @@ async fn cow_amm_jit(web3: Web3) {
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
-        let amm_balance = dai
-            .balanceOf(cow_amm.address().into_alloy())
-            .call()
-            .await
-            .unwrap();
+        let amm_balance = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
         let bob_balance = dai
             .balanceOf(bob.address().into_alloy())
             .call()
@@ -718,24 +719,35 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // the user order.
 
     // Set up the CoW AMM as before
-    let oracle = contracts::CowAmmUniswapV2PriceOracle::builder(&web3)
-        .deploy()
+    let oracle =
+        contracts::alloy::cow_amm::CowAmmUniswapV2PriceOracle::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
+
+    let cow_amm_factory =
+        contracts::alloy::cow_amm::CowAmmConstantProductFactory::Instance::deploy(
+            web3.alloy.clone(),
+            onchain.contracts().gp_settlement.address().into_alloy(),
+        )
         .await
         .unwrap();
-
-    let cow_amm_factory = contracts::CowAmmConstantProductFactory::builder(
-        &web3,
-        onchain.contracts().gp_settlement.address(),
-    )
-    .deploy()
-    .await
-    .unwrap();
 
     // Fund the CoW AMM owner with DAI and WETH and approve the factory to transfer
     // them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
 
-    dai.approve(cow_amm_factory.address().into_alloy(), eth(2_000))
+    let Account::Signer(signer) = cow_amm_owner
+        .account()
+        .clone()
+        .try_into_alloy()
+        .await
+        .unwrap()
+    else {
+        panic!("expected offline account");
+    };
+    web3.wallet.register_signer(signer);
+
+    dai.approve(*cow_amm_factory.address(), eth(2_000))
         .from(cow_amm_owner.address().into_alloy())
         .send_and_watch()
         .await
@@ -751,7 +763,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         onchain
             .contracts()
             .weth
-            .approve(cow_amm_factory.address(), to_wei(1))
+            .approve(cow_amm_factory.address().into_legacy(), to_wei(1))
     );
 
     tx_value!(
@@ -772,10 +784,10 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .expect("failed to get Uniswap V2 pair");
 
     let cow_amm_address = cow_amm_factory
-        .amm_deterministic_address(
-            cow_amm_owner.address(),
-            dai.address().into_legacy(),
-            onchain.contracts().weth.address(),
+        .ammDeterministicAddress(
+            cow_amm_owner.address().into_alloy(),
+            *dai.address(),
+            onchain.contracts().weth.address().into_alloy(),
         )
         .call()
         .await
@@ -785,23 +797,34 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12).chain(pair.to_vec()).collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
 
+    let Account::Signer(signer) = cow_amm_owner
+        .account()
+        .clone()
+        .try_into_alloy()
+        .await
+        .unwrap()
+    else {
+        panic!("expected offline account");
+    };
+    web3.wallet.register_signer(signer);
     // Create the CoW AMM
     cow_amm_factory
         .create(
-            dai.address().into_legacy(),
-            to_wei(2_000),
-            onchain.contracts().weth.address(),
-            to_wei(1),
-            0.into(), // min traded token
-            oracle.address(),
-            ethcontract::Bytes(oracle_data.clone()),
-            ethcontract::Bytes(APP_DATA),
+            *dai.address(),
+            to_wei(2_000).into_alloy(),
+            onchain.contracts().weth.address().into_alloy(),
+            to_wei(1).into_alloy(),
+            U256::zero().into_alloy(), // min traded token
+            *oracle.address(),
+            Bytes::copy_from_slice(&oracle_data),
+            FixedBytes(APP_DATA),
         )
-        .from(cow_amm_owner.account().clone())
-        .send()
+        .from(cow_amm_owner.account().address().into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
-    let cow_amm = contracts::CowAmm::at(&web3, cow_amm_address);
+    let cow_amm =
+        contracts::alloy::cow_amm::CowAmm::Instance::new(cow_amm_address, web3.alloy.clone());
 
     // Start system with the mocked solver. Baseline is still required for the
     // native price estimation.
@@ -908,7 +931,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         ]),
         Token::Tuple(vec![
             Token::Uint(0.into()), // min_traded_token
-            Token::Address(oracle.address()),
+            Token::Address(oracle.address().into_legacy()),
             Token::Bytes(oracle_data),
             Token::FixedBytes(APP_DATA.to_vec()),
         ]),
@@ -918,6 +941,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // which contract this signature refers to.
     let signature = cow_amm
         .address()
+        .into_legacy()
         .as_bytes()
         .iter()
         .cloned()
@@ -928,13 +952,9 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let cow_amm_commitment = {
         let order_hash = cow_amm_order.hash_struct();
         let order_hash = hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash);
-        let commitment = cow_amm
-            .commit(ethcontract::Bytes(order_hash))
-            .tx
-            .data
-            .unwrap();
+        let commitment = cow_amm.commit(FixedBytes(order_hash)).calldata().clone();
         Call {
-            target: cow_amm.address(),
+            target: cow_amm.address().into_legacy(),
             value: 0.into(),
             calldata: commitment.0.to_vec(),
         }
@@ -956,7 +976,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let amm_weth_balance_before = onchain
         .contracts()
         .weth
-        .balance_of(cow_amm.address())
+        .balance_of(cow_amm.address().into_legacy())
         .call()
         .await
         .unwrap();
@@ -1073,7 +1093,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         let amm_weth_balance_after = onchain
             .contracts()
             .weth
-            .balance_of(cow_amm.address())
+            .balance_of(cow_amm.address().into_legacy())
             .call()
             .await
             .unwrap();
