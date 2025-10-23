@@ -3,7 +3,6 @@ use {
     contracts::{
         GPv2AllowListAuthentication,
         GPv2Settlement,
-        WETH9,
         alloy::{
             BalancerV2Authorizer,
             BalancerV2Vault,
@@ -13,6 +12,7 @@ use {
             InstanceExt,
             UniswapV2Factory,
             UniswapV2Router02,
+            WETH9,
             support::{Balances, Signatures},
         },
     },
@@ -37,7 +37,7 @@ pub struct Contracts {
     pub balances: Balances::Instance,
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02::Instance,
-    pub weth: WETH9,
+    pub weth: WETH9::Instance,
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
     pub ethflows: Vec<CoWSwapEthFlow::Instance>,
@@ -85,7 +85,7 @@ impl Contracts {
             uniswap_v2_router: UniswapV2Router02::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
-            weth: WETH9::deployed(web3).await.unwrap(),
+            weth: WETH9::Instance::deployed(&web3.alloy).await.unwrap(),
             allowance: gp_settlement
                 .vault_relayer()
                 .call()
@@ -126,7 +126,7 @@ impl Contracts {
         let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
         let admin = accounts[0];
 
-        let weth = deploy!(web3, WETH9());
+        let weth = WETH9::Instance::deploy(web3.alloy.clone()).await.unwrap();
 
         let balancer_authorizer =
             BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin.into_alloy())
@@ -135,7 +135,7 @@ impl Contracts {
         let balancer_vault = BalancerV2Vault::Instance::deploy(
             web3.alloy.clone(),
             *balancer_authorizer.address(),
-            weth.address().into_alloy(),
+            *weth.address(),
             alloy::primitives::U256::ZERO,
             alloy::primitives::U256::ZERO,
         )
@@ -149,7 +149,7 @@ impl Contracts {
         let uniswap_v2_router = UniswapV2Router02::Instance::deploy(
             web3.alloy.clone(),
             *uniswap_v2_factory.address(),
-            weth.address().into_alloy(),
+            *weth.address(),
         )
         .await
         .unwrap();
@@ -204,14 +204,14 @@ impl Contracts {
         let ethflow = CoWSwapEthFlow::Instance::deploy(
             web3.alloy.clone(),
             gp_settlement.address().into_alloy(),
-            weth.address().into_alloy(),
+            *weth.address(),
         )
         .await
         .unwrap();
         let ethflow_secondary = CoWSwapEthFlow::Instance::deploy(
             web3.alloy.clone(),
             gp_settlement.address().into_alloy(),
-            weth.address().into_alloy(),
+            *weth.address(),
         )
         .await
         .unwrap();

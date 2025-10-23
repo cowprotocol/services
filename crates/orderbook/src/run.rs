@@ -14,13 +14,13 @@ use {
     clap::Parser,
     contracts::{
         GPv2Settlement,
-        WETH9,
         alloy::{
             BalancerV2Vault,
             ChainalysisOracle,
             HooksTrampoline,
             IUniswapV3Factory,
             InstanceExt,
+            WETH9,
             support::Balances,
         },
     },
@@ -129,8 +129,8 @@ pub async fn run(args: Arguments) {
             .expect("load signatures contract"),
     };
     let native_token = match args.shared.native_token_address {
-        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
-        None => WETH9::deployed(&web3)
+        Some(address) => WETH9::Instance::new(address, web3.alloy.clone()),
+        None => WETH9::Instance::deployed(&web3.alloy)
             .await
             .expect("load native token contract"),
     };
@@ -228,7 +228,7 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        native_token.address().into_legacy(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -302,7 +302,7 @@ pub async fn run(args: Arguments) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            native_token: native_token.address(),
+            native_token: native_token.address().into_legacy(),
             settlement: settlement_contract.address(),
             authenticator: settlement_contract
                 .authenticator()

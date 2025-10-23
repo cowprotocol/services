@@ -63,7 +63,7 @@ async fn solver_competition(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -72,7 +72,7 @@ async fn solver_competition(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -100,7 +100,7 @@ async fn solver_competition(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -203,7 +203,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_a.address().into_legacy()],
                 1,
                 true,
@@ -212,7 +212,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_b.address().into_legacy()],
                 1,
                 true,
@@ -242,7 +242,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     let order_a = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -260,7 +260,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     let order_b = OrderCreation {
         sell_token: token_b.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -345,7 +345,7 @@ async fn store_filtered_solutions(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 good_solver_account.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 base_tokens.clone(),
                 1,
                 true,

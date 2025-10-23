@@ -59,7 +59,7 @@ async fn order_cancellation(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver,
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -94,7 +94,7 @@ async fn order_cancellation(web3: Web3) {
         let request = OrderQuoteRequest {
             from: trader.address(),
             sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address(),
+            buy_token: onchain.contracts().weth.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
                     value: NonZeroU256::try_from(to_wei(1)).unwrap(),

@@ -235,7 +235,7 @@ async fn create_config_file(
            gas-price-cap = "1000000000000"
            "#,
         hex_address(blockchain.settlement.address()),
-        hex_address(blockchain.weth.address()),
+        blockchain.weth.address(),
         blockchain.balances.address(),
         blockchain.signatures.address(),
         hex_address(blockchain.flashloan_router.address().into_legacy()),
