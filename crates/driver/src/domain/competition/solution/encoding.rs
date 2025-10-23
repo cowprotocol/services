@@ -212,12 +212,51 @@ pub fn tx(
         post_interactions.iter().map(codec::interaction).collect(),
     ];
 
-    let (mut to, mut calldata) = if !solution.wrappers.is_empty() {
-        // sanity: cant combine flashloan and
-        if !solution.flashloans.is_empty() {
-            return Err(Error::FlashloanWrappersIncompatible);
-        }
+    let has_flashloans = !solution.flashloans.is_empty();
+    let has_wrappers = !solution.wrappers.is_empty();
 
+    // Check for incompatibility upfront
+    if has_flashloans && has_wrappers {
+        return Err(Error::FlashloanWrappersIncompatible);
+    }
+
+    let (to, calldata) = if has_flashloans {
+        // Flashloan logic
+        let tx = contracts
+            .settlement()
+            .settle(
+                tokens,
+                clearing_prices,
+                trades.iter().map(codec::trade).collect(),
+                interactions,
+            )
+            .into_inner();
+
+        let mut calldata = tx.data.unwrap().0;
+        calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+
+        let router = contracts
+            .flashloan_router()
+            .ok_or(Error::FlashloanSupportDisabled)?;
+
+        let flashloans = solution
+            .flashloans
+            .values()
+            .map(|flashloan| LoanRequest::Data {
+                amount: flashloan.amount.0.into_alloy(),
+                borrower: flashloan.protocol_adapter.0.into_alloy(),
+                lender: flashloan.liquidity_provider.0.into_alloy(),
+                token: flashloan.token.0.0.into_alloy(),
+            })
+            .collect();
+
+        let fl_calldata = router
+            .flashLoanAndSettle(flashloans, calldata.into())
+            .calldata()
+            .to_vec();
+        (router.address().into_legacy().into(), fl_calldata)
+    } else if has_wrappers {
+        // Wrapper logic
         let settle_data =
             contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].address.into())
                 .settle(
@@ -247,15 +286,17 @@ pub fn tx(
             wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
         }
 
-        (
-            solution.wrappers[0].address,
-            contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
-                settleData: settle_data.into(),
-                wrapperData: wrapper_data.into(),
-            }
-            .abi_encode(),
-        )
+        let mut calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+            settleData: settle_data.into(),
+            wrapperData: wrapper_data.into(),
+        }
+        .abi_encode();
+
+        calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+
+        (solution.wrappers[0].address, calldata)
     } else {
+        // Regular settle call
         let tx = contracts
             .settlement()
             .settle(
@@ -266,36 +307,10 @@ pub fn tx(
             )
             .into_inner();
 
-        (tx.to.unwrap().into(), tx.data.unwrap().0)
-    };
+        let mut calldata = tx.data.unwrap().0;
+        calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
-    // Encode the auction id into the calldata
-    calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
-
-    // Target and calldata depend on whether a flashloan is used
-    (to, calldata) = if solution.flashloans.is_empty() {
-        (to, calldata)
-    } else {
-        let router = contracts
-            .flashloan_router()
-            .ok_or(Error::FlashloanSupportDisabled)?;
-
-        let flashloans = solution
-            .flashloans
-            .values()
-            .map(|flashloan| LoanRequest::Data {
-                amount: flashloan.amount.0.into_alloy(),
-                borrower: flashloan.protocol_adapter.0.into_alloy(),
-                lender: flashloan.liquidity_provider.0.into_alloy(),
-                token: flashloan.token.0.0.into_alloy(),
-            })
-            .collect();
-
-        let fl_calldata = router
-            .flashLoanAndSettle(flashloans, calldata.into())
-            .calldata()
-            .to_vec();
-        (router.address().into_legacy().into(), fl_calldata)
+        (tx.to.unwrap().into(), calldata)
     };
 
     Ok(eth::Tx {
