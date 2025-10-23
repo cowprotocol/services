@@ -13,6 +13,7 @@ name = "solvers"
 path = "src/main.rs"
 
 [dependencies]
+alloy = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chain = { workspace = true }

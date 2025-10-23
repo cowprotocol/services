@@ -464,6 +464,36 @@ crate::bindings!(
 crate::bindings!(IUniswapLikeRouter);
 crate::bindings!(IUniswapLikePair);
 crate::bindings!(UniswapV3Pool);
+crate::bindings!(
+    UniswapV3QuoterV2,
+    crate::deployments! {
+        // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
+        MAINNET => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        ARBITRUM_ONE => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        BASE => address!("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"),
+        AVALANCHE => address!("0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"),
+        BNB => address!("0x78D78E420Da98ad378D7799bE8f4AF69033EB077"),
+        OPTIMISM => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        POLYGON => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+        LENS => address!("0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1"),
+        // Not listed on Gnosis and Sepolia chains
+    }
+);
+crate::bindings!(
+    UniswapV3SwapRouterV2,
+    crate::deployments! {
+        // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
+        ARBITRUM_ONE => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        MAINNET => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        POLYGON => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        OPTIMISM => address!("0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
+        BASE => address!("0x2626664c2603336E57B271c5C0b26F421741e481"),
+        AVALANCHE => address!("0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE"),
+        BNB => address!("0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2"),
+        LENS => address!("0x6ddD32cd941041D8b61df213B9f515A7D288Dc13"),
+        // Not available on Gnosis Chain
+    }
+);
 
 crate::bindings!(
     HooksTrampoline,
@@ -557,6 +587,31 @@ crate::bindings!(
 );
 
 crate::bindings!(ICowWrapper);
+
+// Only used in <github.com/gnosis/solvers>
+crate::bindings!(
+    Permit2,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xf2f1fe96c16ee674bb7fcee166be52465a418927d124f5f1d231b36eae65d377>
+        MAINNET => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 15986406),
+        // <https://gnosisscan.io/tx/0x3ba511410edc92cafe94bd100e25adb37981499d17947a3d64c8523fbfd31864>
+        GNOSIS => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 27338672),
+        // <https://sepolia.etherscan.io/tx/0x363df5deeead44d8fd38425f3986e3e81946a6c59d8b68fe33926cc700713173>
+        SEPOLIA => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 2356287),
+        // <https://arbiscan.io/tx/0xe244dafca8211ed6fb123efaa5075b7d5813749718412ca435c872afd0e2ea82>
+        ARBITRUM_ONE => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 38692735),
+        // <https://basescan.org/tx/0x26fbdea9a47ba8e21676bc6b6a72a19dded1a0c270e96d5236886ca9c5000d3f>
+        BASE => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 1425180),
+        // <https://snowscan.xyz/tx/0x38fd76c2165d920c7e006defd67eeeb0069bf93e41741eec3bbb83d196610a56>
+        AVALANCHE => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 28844415),
+        // <https://bscscan.com/tx/0xb038ec7b72db4207e0c0d5433e1cabc41b4e4f9b9cac577173b3188fc508a6c3>
+        BNB => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 25343783),
+        // <https://optimistic.etherscan.io/tx/0xf0a51e0d0579ef8cc7965f5797bd7665ddac14d4d2141423676b8862f7668352>
+        OPTIMISM => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 38854427),
+        // <https://polygonscan.com/tx/0xe2a4d996de0d6a23108f701b37acba6c47ee34448bb51fec5c23f542a6f3ccc8>
+        POLYGON => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 35701901),
+    }
+);
 
 pub mod cow_amm {
     crate::bindings!(CowAmmFactoryGetter);
