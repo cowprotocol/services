@@ -46,4 +46,8 @@ pub struct Args {
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.
     #[clap(long, env)]
     pub config: PathBuf,
+
+    /// Validate configuration and exit without starting the server.
+    #[clap(long, env)]
+    pub dry_run: bool,
 }

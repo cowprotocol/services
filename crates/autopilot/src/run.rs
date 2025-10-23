@@ -692,6 +692,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
+
+    if args.dry_run {
+        tracing::info!(
+            service = "autopilot",
+            "dry-run mode enabled, exiting after successful initialization"
+        );
+        return;
+    }
+
     run.run_forever(shutdown_controller).await;
 }
 

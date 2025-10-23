@@ -37,6 +37,12 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
+    /// Exit after successful initialization without starting the run loop.
+    /// Validates configuration, database connectivity, solver endpoints, and
+    /// RPC node access.
+    #[clap(long, env)]
+    pub dry_run: bool,
+
     /// Address of the ethflow contracts. If not specified, eth-flow orders are
     /// disabled.
     /// In general, one contract is sufficient for the service to function.
@@ -358,6 +364,7 @@ impl std::fmt::Display for Arguments {
             http_client,
             token_owner_finder,
             price_estimation,
+            dry_run,
             tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
@@ -404,6 +411,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{http_client}")?;
         write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
+        writeln!(f, "dry_run: {dry_run}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
@@ -797,8 +805,7 @@ mod test {
 
     #[test]
     fn parse_driver_with_accepts_unsettled_blocking_flag() {
-        let argument =
-            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested-timeout-on-problems";
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested-timeout-on-problems";
         let driver = Solver::from_str(argument).unwrap();
         let expected = Solver {
             name: "name1".into(),

@@ -142,6 +142,11 @@ pub struct Arguments {
     /// whether an order is actively being bid on.
     #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
+
+    /// Exit after successful initialization without starting the API server.
+    /// Validates configuration, database connectivity, and RPC node access.
+    #[clap(long, env)]
+    pub dry_run: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -173,6 +178,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
+            dry_run,
         } = self;
 
         write!(f, "{shared}")?;
@@ -226,6 +232,7 @@ impl std::fmt::Display for Arguments {
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
+        writeln!(f, "dry_run: {dry_run}")?;
 
         Ok(())
     }

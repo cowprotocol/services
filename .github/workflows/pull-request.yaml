@@ -229,6 +229,96 @@ jobs:
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: just test-driver
 
+  smoke-tests:
+    name: Smoke Tests (--dry-run)
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      # Build binaries
+      - name: Build services
+        run: cargo build --release --bin orderbook --bin autopilot --bin driver
+
+      # Start database and run migrations
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
+        with:
+          file: docker-compose.yaml
+          up-opts: -d db
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
+        with:
+          file: docker-compose.yaml
+          up-opts: migrations --abort-on-container-failure
+
+      # Start Anvil in background
+      - name: Start Anvil
+        run: |
+          anvil --host 0.0.0.0 --port 8545 > /dev/null 2>&1 &
+          sleep 3
+          echo "Anvil started successfully"
+
+      # Smoke test - Orderbook
+      - name: Smoke test - Orderbook
+        run: |
+          timeout 120s ./target/release/orderbook \
+            --node-url http://localhost:8545 \
+            --db-write-url "postgresql://$USER:@localhost/postgres?sslmode=disable" \
+            --dry-run
+
+      # Smoke test - Autopilot
+      - name: Smoke test - Autopilot
+        run: |
+          timeout 120s ./target/release/autopilot \
+            --node-url http://localhost:8545 \
+            --db-write-url "postgresql://$USER:@localhost/postgres?sslmode=disable" \
+            --dry-run
+
+      # Smoke test - Driver
+      - name: Smoke test - Driver
+        run: |
+          timeout 120s ./target/release/driver \
+            --node-url http://localhost:8545 \
+            --config configs/local/driver.toml \
+            --dry-run
+
+      # Negative test - Invalid RPC (should fail)
+      - name: Smoke test - Invalid RPC (should fail)
+        run: |
+          if timeout 60s ./target/release/orderbook \
+            --node-url http://invalid-host:9999 \
+            --db-write-url "postgresql://$USER:@localhost/postgres?sslmode=disable" \
+            --dry-run; then
+            echo "ERROR: Should have failed with invalid RPC"
+            exit 1
+          else
+            echo "Correctly failed with invalid RPC"
+            exit 0
+          fi
+
+      # Negative test - Invalid database (should fail)
+      - name: Smoke test - Invalid database (should fail)
+        run: |
+          if timeout 60s ./target/release/orderbook \
+            --node-url http://localhost:8545 \
+            --db-write-url "postgresql://invalid:invalid@localhost:9999/invalid?sslmode=disable" \
+            --dry-run; then
+            echo "ERROR: Should have failed with invalid database"
+            exit 1
+          else
+            echo "Correctly failed with invalid database"
+            exit 0
+          fi
+
   openapi:
     timeout-minutes: 60
     runs-on: ubuntu-latest
