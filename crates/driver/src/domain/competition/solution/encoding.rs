@@ -220,97 +220,28 @@ pub fn tx(
         return Err(Error::FlashloanWrappersIncompatible);
     }
 
+    // Encode the base settlement calldata
+    let settle_calldata = contracts
+        .settlement()
+        .settle(
+            tokens,
+            clearing_prices,
+            trades.iter().map(codec::trade).collect(),
+            interactions,
+        )
+        .into_inner()
+        .data
+        .unwrap()
+        .0;
+
+    let auction_id = auction.id().ok_or(Error::MissingAuctionId)?;
+
     let (to, calldata) = if has_flashloans {
-        // Flashloan logic
-        let tx = contracts
-            .settlement()
-            .settle(
-                tokens,
-                clearing_prices,
-                trades.iter().map(codec::trade).collect(),
-                interactions,
-            )
-            .into_inner();
-
-        let mut calldata = tx.data.unwrap().0;
-        calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
-
-        let router = contracts
-            .flashloan_router()
-            .ok_or(Error::FlashloanSupportDisabled)?;
-
-        let flashloans = solution
-            .flashloans
-            .values()
-            .map(|flashloan| LoanRequest::Data {
-                amount: flashloan.amount.0.into_alloy(),
-                borrower: flashloan.protocol_adapter.0.into_alloy(),
-                lender: flashloan.liquidity_provider.0.into_alloy(),
-                token: flashloan.token.0.0.into_alloy(),
-            })
-            .collect();
-
-        let fl_calldata = router
-            .flashLoanAndSettle(flashloans, calldata.into())
-            .calldata()
-            .to_vec();
-        (router.address().into_legacy().into(), fl_calldata)
+        encode_flashloan_settlement(auction_id, solution, contracts, settle_calldata)?
     } else if has_wrappers {
-        // Wrapper logic
-        let settle_data =
-            contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].address.into())
-                .settle(
-                    tokens,
-                    clearing_prices,
-                    trades.iter().map(codec::trade).collect(),
-                    interactions,
-                )
-                .into_inner()
-                .data
-                .unwrap()
-                .0;
-
-        let mut wrapper_data = Vec::new();
-
-        for (index, w) in solution.wrappers.iter().enumerate() {
-            if index != 0 {
-                wrapper_data.extend(w.address.0.as_bytes());
-            }
-
-            wrapper_data.extend(
-                w.data
-                    .as_ref()
-                    .map(|v| (v.len() as u16).to_ne_bytes().to_vec())
-                    .unwrap_or_default(),
-            );
-            wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
-        }
-
-        let mut calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
-            settleData: settle_data.into(),
-            wrapperData: wrapper_data.into(),
-        }
-        .abi_encode();
-
-        calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
-
-        (solution.wrappers[0].address, calldata)
+        encode_wrapper_settlement(auction_id, solution, settle_calldata)?
     } else {
-        // Regular settle call
-        let tx = contracts
-            .settlement()
-            .settle(
-                tokens,
-                clearing_prices,
-                trades.iter().map(codec::trade).collect(),
-                interactions,
-            )
-            .into_inner();
-
-        let mut calldata = tx.data.unwrap().0;
-        calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
-
-        (tx.to.unwrap().into(), calldata)
+        encode_regular_settlement(auction_id, contracts, settle_calldata)?
     };
 
     Ok(eth::Tx {
@@ -320,6 +251,123 @@ pub fn tx(
         value: Ether(0.into()),
         access_list: Default::default(),
     })
+}
+
+/// Encodes a settlement transaction that uses flashloans.
+///
+/// Takes the base settlement calldata and wraps it in a flashLoanAndSettle call
+/// to the flashloan router contract.
+///
+/// Returns (router_address, flashloan_calldata)
+fn encode_flashloan_settlement(
+    auction_id: competition::auction::Id,
+    solution: &super::Solution,
+    contracts: &infra::blockchain::Contracts,
+    mut settle_calldata: Vec<u8>,
+) -> Result<(eth::Address, Vec<u8>), Error> {
+    // Append auction ID to settlement calldata
+    settle_calldata.extend(auction_id.0.to_be_bytes());
+
+    // Get flashloan router contract
+    let router = contracts
+        .flashloan_router()
+        .ok_or(Error::FlashloanSupportDisabled)?;
+
+    // Convert flashloans to LoanRequest format
+    let flashloans = solution
+        .flashloans
+        .values()
+        .map(|flashloan| LoanRequest::Data {
+            amount: flashloan.amount.0.into_alloy(),
+            borrower: flashloan.protocol_adapter.0.into_alloy(),
+            lender: flashloan.liquidity_provider.0.into_alloy(),
+            token: flashloan.token.0.0.into_alloy(),
+        })
+        .collect();
+
+    // Wrap settlement in flashLoanAndSettle call
+    let calldata = router
+        .flashLoanAndSettle(flashloans, settle_calldata.into())
+        .calldata()
+        .to_vec();
+
+    Ok((router.address().into_legacy().into(), calldata))
+}
+
+/// Encodes a settlement transaction that uses wrapper contracts.
+///
+/// Takes the base settlement calldata and wraps it in a wrappedSettleCall
+/// with encoded wrapper metadata.
+///
+/// Returns (first_wrapper_address, wrapped_calldata)
+fn encode_wrapper_settlement(
+    auction_id: competition::auction::Id,
+    solution: &super::Solution,
+    settle_calldata: Vec<u8>,
+) -> Result<(eth::Address, Vec<u8>), Error> {
+    // Encode wrapper metadata
+    let wrapper_data = encode_wrapper_data(&solution.wrappers);
+
+    // Create wrappedSettleCall
+    let mut calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+        settleData: settle_calldata.into(),
+        wrapperData: wrapper_data.into(),
+    }
+    .abi_encode();
+
+    // Append auction ID
+    calldata.extend(auction_id.0.to_be_bytes());
+
+    Ok((solution.wrappers[0].address, calldata))
+}
+
+/// Encodes a regular settlement transaction without flashloans or wrappers.
+///
+/// Takes the base settlement calldata and appends the auction ID.
+///
+/// Returns (settlement_contract_address, calldata)
+fn encode_regular_settlement(
+    auction_id: competition::auction::Id,
+    contracts: &infra::blockchain::Contracts,
+    mut settle_calldata: Vec<u8>,
+) -> Result<(eth::Address, Vec<u8>), Error> {
+    // Append auction ID
+    settle_calldata.extend(auction_id.0.to_be_bytes());
+
+    Ok((contracts.settlement().address().into(), settle_calldata))
+}
+
+/// Encodes wrapper metadata for wrapper settlement calls.
+///
+/// The format is:
+/// - For wrappers after the first: 20 bytes (address)
+/// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
+///
+/// More information about wrapper encoding: 
+/// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
+///
+/// Note: The first wrapper address is omitted from the encoded data since it's
+/// already used as the transaction target.
+fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
+    let mut wrapper_data = Vec::new();
+
+    for (index, w) in wrappers.iter().enumerate() {
+        // Skip first wrapper's address (it's the transaction target)
+        if index != 0 {
+            wrapper_data.extend(w.address.0.as_bytes());
+        }
+
+        // Encode data length as u16 in native endian, then the data itself
+        wrapper_data.extend(
+            w.data
+                .as_ref()
+                .map(|v| (v.len() as u16).to_ne_bytes().to_vec())
+                .unwrap_or_default(),
+        );
+        wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
+    }
+
+    wrapper_data
 }
 
 pub fn liquidity_interaction(
