@@ -6,9 +6,13 @@ use {
         GPv2AllowListAuthentication,
         HooksTrampoline,
         InstanceExt,
+        WETH9,
         support::Balances,
     },
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
     primitive_types::H160,
 };
 
@@ -16,7 +20,7 @@ use {
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     signatures: contracts::alloy::support::Signatures::Instance,
-    weth: contracts::WETH9,
+    weth: WETH9::Instance,
     balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
     trampoline: HooksTrampoline::Instance,
@@ -62,9 +66,13 @@ impl Contracts {
             web3.alloy.clone(),
         );
 
-        let weth = contracts::WETH9::at(
-            web3,
-            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        let weth = WETH9::Instance::new(
+            addresses
+                .weth
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| WETH9::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let balances = Balances::Instance::new(
@@ -144,14 +152,14 @@ impl Contracts {
         &self.chainalysis_oracle
     }
 
-    pub fn weth(&self) -> &contracts::WETH9 {
+    pub fn weth(&self) -> &WETH9::Instance {
         &self.weth
     }
 
     /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
     /// Gnosis Chain)
     pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
-        self.weth.address().into()
+        self.weth.address().into_legacy().into()
     }
 
     pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {

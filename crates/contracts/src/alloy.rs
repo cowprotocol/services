@@ -670,6 +670,24 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(
+    WETH9,
+    crate::deployments! {
+        // Note: the WETH address must be consistent with the one used by the ETH-flow
+        // contract
+        MAINNET => address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+        GNOSIS => address!("0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
+        SEPOLIA => address!("0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"),
+        ARBITRUM_ONE => address!("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+        BASE => address!("0x4200000000000000000000000000000000000006"),
+        AVALANCHE => address!("0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7"),
+        BNB => address!("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"),
+        OPTIMISM => address!("0x4200000000000000000000000000000000000006"),
+        POLYGON => address!("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"),
+        LENS => address!("0x6bDc36E20D267Ff0dd6097799f82e78907105e2F"),
+    }
+);
+
 pub mod cow_amm {
     crate::bindings!(CowAmmFactoryGetter);
 }

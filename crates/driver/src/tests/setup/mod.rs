@@ -1168,10 +1168,11 @@ impl Test {
             "WETH",
             self.blockchain
                 .weth
-                .balance_of(self.trader_address)
+                .balanceOf(self.trader_address.into_alloy())
                 .call()
                 .await
-                .unwrap(),
+                .unwrap()
+                .into_legacy(),
         );
         balances.insert(
             "ETH",

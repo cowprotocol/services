@@ -142,24 +142,6 @@ fn main() {
                 },
             )
     });
-    generate_contract_with_config("WETH9", |builder| {
-        // Note: the WETH address must be consistent with the one used by the ETH-flow
-        // contract
-        builder
-            .add_network_str(MAINNET, "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
-            .add_network_str(GOERLI, "0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6")
-            .add_network_str(GNOSIS, "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d")
-            .add_network_str(SEPOLIA, "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14")
-            .add_network_str(ARBITRUM_ONE, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1")
-            .add_network_str(BASE, "0x4200000000000000000000000000000000000006")
-            .add_network_str(AVALANCHE, "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7")
-            .add_network_str(BNB, "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")
-            .add_network_str(OPTIMISM, "0x4200000000000000000000000000000000000006")
-            .add_network_str(POLYGON, "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270")
-            .add_network_str(LENS, "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F")
-            .add_network_str(LINEA, "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f")
-            .add_network_str(PLASMA, "0x6100E367285b01F48D07953803A2d8dCA5D19873")
-    });
     generate_contract("CowAmm");
     generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
         builder

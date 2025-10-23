@@ -1,3 +1,5 @@
+#[cfg(test)]
+use alloy::primitives::Address;
 use {
     super::{
         BalancedOrder,
@@ -10,23 +12,24 @@ use {
     },
     crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
     anyhow::{Result, ensure},
-    contracts::WETH9,
+    contracts::alloy::WETH9,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::order::{BUY_ETH_ADDRESS, Order, OrderClass},
     std::sync::Arc,
 };
 
 #[derive(Clone)]
 pub struct OrderConverter {
-    pub native_token: WETH9,
+    pub native_token: WETH9::Instance,
 }
 
 impl OrderConverter {
     /// Creates a order converter with the specified WETH9 address for unit
     /// testing purposes.
     #[cfg(test)]
-    pub fn test(native_token: ethcontract::H160) -> Self {
+    pub fn test(native_token: Address) -> Self {
         Self {
-            native_token: contracts::dummy_contract!(WETH9, native_token),
+            native_token: WETH9::Instance::new(native_token, ethrpc::mock::web3().alloy),
         }
     }
 
@@ -42,7 +45,7 @@ impl OrderConverter {
         manage_native_token_unwraps: bool,
     ) -> Result<LimitOrder> {
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
-            self.native_token.address()
+            self.native_token.address().into_legacy()
         } else {
             order.data.buy_token
         };
@@ -89,7 +92,7 @@ impl OrderConverter {
 
 struct OrderSettlementHandler {
     order: Order,
-    native_token: WETH9,
+    native_token: WETH9::Instance,
     manage_native_token_unwraps: bool,
 }
 
@@ -106,7 +109,10 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         let manage_native_token_unwraps =
             self.order.data.buy_token == BUY_ETH_ADDRESS && self.manage_native_token_unwraps;
         if manage_native_token_unwraps {
-            encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
+            encoder.add_token_equivalency(
+                self.native_token.address().into_legacy(),
+                BUY_ETH_ADDRESS,
+            )?;
         }
 
         let trade = encoder.add_trade(self.order.clone(), execution.filled, execution.fee)?;
@@ -114,7 +120,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         if manage_native_token_unwraps {
             encoder.add_unwrap(UnwrapWethInteraction {
                 weth: self.native_token.clone(),
-                amount: trade.buy_amount,
+                amount: trade.buy_amount.into_alloy(),
             });
         }
 
@@ -127,7 +133,6 @@ pub mod tests {
     use {
         super::*,
         crate::settlement::tests::assert_settlement_encoded_with,
-        contracts::dummy_contract,
         ethcontract::H160,
         maplit::hashmap,
         model::order::{OrderData, OrderKind, OrderMetadata},
@@ -136,7 +141,7 @@ pub mod tests {
 
     #[test]
     fn eth_buy_liquidity_is_assigned_to_weth() {
-        let native_token = H160([0x42; 20]);
+        let native_token = [0x42; 20].into();
         let converter = OrderConverter::test(native_token);
         let order = Order {
             data: OrderData {
@@ -153,14 +158,14 @@ pub mod tests {
                 .normalize_limit_order(BalancedOrder::full(order), true)
                 .unwrap()
                 .buy_token,
-            native_token,
+            native_token.into_legacy(),
         );
     }
 
     #[test]
     fn non_eth_buy_liquidity_stays_put() {
         let buy_token = H160([0x21; 20]);
-        let converter = OrderConverter::test(H160([0x42; 20]));
+        let converter = OrderConverter::test([0x42; 20].into());
         let order = Order {
             data: OrderData {
                 buy_token,
@@ -182,16 +187,16 @@ pub mod tests {
 
     #[test]
     fn adds_unwrap_interaction_for_sell_order_with_eth_flag() {
-        let native_token_address = H160([0x42; 20]);
+        let native_token_address = [0x42; 20].into();
         let sell_token = H160([0x21; 20]);
-        let native_token = dummy_contract!(WETH9, native_token_address);
+        let native_token = WETH9::Instance::new(native_token_address, ethrpc::mock::web3().alloy);
 
         let execution = LimitOrderExecution::new(1337.into(), 0.into());
         let executed_buy_amount = U256::from(2 * 1337);
         let fee = U256::from(1234);
 
         let prices = hashmap! {
-            native_token.address() => U256::from(100),
+            native_token.address().into_legacy() => U256::from(100),
             sell_token => U256::from(200),
         };
         let order = Order {
@@ -218,11 +223,11 @@ pub mod tests {
             execution.clone(),
             |encoder| {
                 encoder
-                    .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
+                    .add_token_equivalency(native_token.address().into_legacy(), BUY_ETH_ADDRESS)
                     .unwrap();
                 encoder.add_unwrap(UnwrapWethInteraction {
                     weth: native_token,
-                    amount: executed_buy_amount,
+                    amount: executed_buy_amount.into_alloy(),
                 });
                 assert!(encoder.add_trade(order, execution.filled, fee).is_ok());
             },
@@ -232,12 +237,13 @@ pub mod tests {
     #[test]
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
         for class in [OrderClass::Market, OrderClass::Limit, OrderClass::Liquidity] {
-            let native_token_address = H160([0x42; 20]);
+            let native_token_address = [0x42; 20].into();
             let sell_token = H160([0x21; 20]);
-            let native_token = dummy_contract!(WETH9, native_token_address);
+            let native_token =
+                WETH9::Instance::new(native_token_address, ethrpc::mock::web3().alloy);
             let execution = LimitOrderExecution::new(1337.into(), 0.into());
             let prices = hashmap! {
-                native_token.address() => U256::from(1),
+                native_token.address().into_legacy() => U256::from(1),
                 sell_token => U256::from(2),
             };
             let order = Order {
@@ -268,12 +274,15 @@ pub mod tests {
                 execution.clone(),
                 |encoder| {
                     encoder
-                        .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
+                        .add_token_equivalency(
+                            native_token.address().into_legacy(),
+                            BUY_ETH_ADDRESS,
+                        )
                         .unwrap();
                     assert!(encoder.add_trade(order, execution.filled, 0.into()).is_ok());
                     encoder.add_unwrap(UnwrapWethInteraction {
                         weth: native_token,
-                        amount: execution.filled,
+                        amount: execution.filled.into_alloy(),
                     });
                 },
             );
@@ -282,9 +291,9 @@ pub mod tests {
 
     #[test]
     fn does_not_add_unwrap_interaction_for_order_without_eth_flag() {
-        let native_token_address = H160([0x42; 20]);
+        let native_token_address = [0x42; 20].into();
         let sell_token = H160([0x21; 20]);
-        let native_token = dummy_contract!(WETH9, native_token_address);
+        let native_token = WETH9::Instance::new(native_token_address, ethrpc::mock::web3().alloy);
         let not_buy_eth_address = H160([0xff; 20]);
         assert_ne!(not_buy_eth_address, BUY_ETH_ADDRESS);
 
@@ -322,7 +331,7 @@ pub mod tests {
 
     #[test]
     fn scales_limit_order_amounts_for_partially_filled_orders() {
-        let converter = OrderConverter::test(H160::default());
+        let converter = OrderConverter::test(Default::default());
         let mut order = Order {
             data: OrderData {
                 sell_amount: 20.into(),

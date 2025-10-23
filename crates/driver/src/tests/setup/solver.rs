@@ -469,7 +469,7 @@ impl Solver {
             rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
-                weth: Some(config.blockchain.weth.address().into()),
+                weth: Some(config.blockchain.weth.address().into_legacy().into()),
                 balances: Some(config.blockchain.balances.address().into_legacy().into()),
                 signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
                 cow_amm_helper_by_factory: Default::default(),
