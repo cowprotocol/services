@@ -31,7 +31,11 @@ use {
     },
     anyhow::{Context, Result},
     chain::Chain,
-    contracts::{ERC20, IUniswapV3Factory, alloy::BalancerV2Vault, errors::EthcontractErrorType},
+    contracts::{
+        ERC20,
+        alloy::{BalancerV2Vault, IUniswapV3Factory},
+        errors::EthcontractErrorType,
+    },
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
     primitive_types::H160,
@@ -283,7 +287,7 @@ pub async fn init(
     http_factory: &HttpClientFactory,
     pair_providers: &[PairProvider],
     vault: Option<&BalancerV2Vault::Instance>,
-    uniswapv3_factory: Option<&IUniswapV3Factory>,
+    uniswapv3_factory: Option<&IUniswapV3Factory::Instance>,
     base_tokens: &BaseTokens,
     settlement_contract: H160,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {

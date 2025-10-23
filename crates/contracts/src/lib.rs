@@ -57,15 +57,12 @@ include_contracts! {
     ERC20;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    IUniswapV3Factory;
     WETH9;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::alloy::networks::{
-        ARBITRUM_ONE, AVALANCHE, BASE, BNB, GNOSIS, LENS, MAINNET, OPTIMISM, POLYGON, SEPOLIA,
-    };
+    use crate::alloy::networks::{ARBITRUM_ONE, GNOSIS, MAINNET, SEPOLIA};
     use {
         super::*,
         ethcontract::{
@@ -136,18 +133,6 @@ mod tests {
         }
         for network in &[MAINNET, GNOSIS, SEPOLIA] {
             assert_has_deployment_address!(CowProtocolToken for *network);
-        }
-        for network in &[
-            MAINNET,
-            ARBITRUM_ONE,
-            POLYGON,
-            OPTIMISM,
-            BASE,
-            AVALANCHE,
-            BNB,
-            LENS,
-        ] {
-            assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
         for network in &[MAINNET, ARBITRUM_ONE] {
             assert!(

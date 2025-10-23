@@ -26,8 +26,8 @@ use {
     },
     chain::Chain,
     clap::Parser,
-    contracts::{IUniswapV3Factory, alloy::BalancerV2Vault},
-    ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
+    contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
+    ethcontract::{BlockNumber, H160, common::DeploymentInformation},
     ethrpc::{
         Web3,
         alloy::conversions::IntoLegacy,
@@ -247,13 +247,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let vault =
         vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
 
-    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3)
+    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
         .instrument(info_span!("uniswapv3_deployed"))
         .await
-    {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
+        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
+        .ok();
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
