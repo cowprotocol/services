@@ -61,8 +61,7 @@ pub struct Flashloan {
     pub amount: U256,
 }
 
-/// Contains information about wrapper contracts that should be used
-/// to wrap/unwrap tokens for settlement.
+/// Contains information about wrapper contracts
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
