@@ -6,13 +6,14 @@ use {
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
+            eth::{self, allowance, Ether},
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
         util::Bytes,
     },
     allowance::Allowance,
+    alloy::sol_types::SolCall,
     contracts::alloy::FlashLoanRouter::LoanRequest,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
@@ -100,7 +101,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.hash().0.0.into(),
+                        app_data: trade.order().app_data.hash().0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -138,7 +139,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.0.0.into(),
+                        app_data: trade.order().app_data.0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -230,28 +231,13 @@ pub fn tx(
                 .unwrap()
                 .0;
 
-        let mut wrapper_data = Vec::with_capacity(
-            (solution.wrappers.len() - 1) * 20
-                + solution
-                    .wrappers
-                    .iter()
-                    .map(|v| v.data.as_ref().map(|v| v.len()).unwrap_or_default())
-                    .sum::<usize>(),
-        );
+        let mut wrapper_data = Vec::new();
 
-        wrapper_data.extend(
-            (solution.wrappers[0]
-                .data
-                .as_ref()
-                .map(|v| v.len())
-                .unwrap_or_default() as u16)
-                .to_ne_bytes()
-                .to_vec(),
-        );
-        wrapper_data.extend(solution.wrappers[0].data.as_ref().unwrap_or(&Vec::new()));
+        for (index, w) in solution.wrappers.iter().enumerate() {
+            if index != 0 {
+                wrapper_data.extend(w.address.0.as_bytes());
+            }
 
-        for w in &solution.wrappers[1..] {
-            wrapper_data.extend(w.address.0.as_bytes());
             wrapper_data.extend(
                 w.data
                     .as_ref()
@@ -263,15 +249,11 @@ pub fn tx(
 
         (
             solution.wrappers[0].address,
-            contracts::ICowWrapper::at(contracts.web3(), solution.wrappers[0].address.into())
-                .wrapped_settle(
-                    ethcontract::Bytes(settle_data),
-                    ethcontract::Bytes(wrapper_data),
-                )
-                .into_inner()
-                .data
-                .unwrap()
-                .0,
+            contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+                settleData: settle_data.into(),
+                wrapperData: wrapper_data.into(),
+            }
+            .abi_encode(),
         )
     } else {
         let tx = contracts
@@ -305,7 +287,7 @@ pub fn tx(
                 amount: flashloan.amount.0.into_alloy(),
                 borrower: flashloan.protocol_adapter.0.into_alloy(),
                 lender: flashloan.liquidity_provider.0.into_alloy(),
-                token: flashloan.token.0.0.into_alloy(),
+                token: flashloan.token.0 .0.into_alloy(),
             })
             .collect();
 
