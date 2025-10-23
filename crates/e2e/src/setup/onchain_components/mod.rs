@@ -220,8 +220,19 @@ impl CowToken {
     }
 
     pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
-        let domain = self.contract.DOMAIN_SEPARATOR().send_and_watch().await.unwrap();
-        let nonce = self.contract.nonces(owner.address().into_alloy()).call().await.unwrap().into_legacy();
+        let domain = self
+            .contract
+            .DOMAIN_SEPARATOR()
+            .send_and_watch()
+            .await
+            .unwrap();
+        let nonce = self
+            .contract
+            .nonces(owner.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy();
         let deadline = U256::max_value();
 
         let struct_hash = {
@@ -614,10 +625,14 @@ impl OnchainComponents {
     }
 
     pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
-        let contract =
-            CowProtocolToken::CowProtocolToken::deploy(self.web3.alloy.clone(), holder.address().into_alloy(), holder.address().into_alloy(), supply.into_alloy())
-                .await
-                .expect("CowProtocolToken deployment failed");
+        let contract = CowProtocolToken::CowProtocolToken::deploy(
+            self.web3.alloy.clone(),
+            holder.address().into_alloy(),
+            holder.address().into_alloy(),
+            supply.into_alloy(),
+        )
+        .await
+        .expect("CowProtocolToken deployment failed");
         CowToken { contract, holder }
     }
 
@@ -641,10 +656,7 @@ impl OnchainComponents {
 
         self.contracts
             .uniswap_v2_factory
-            .createPair(
-                *cow.address(),
-                self.contracts.weth.address().into_alloy(),
-            )
+            .createPair(*cow.address(), self.contracts.weth.address().into_alloy())
             .from(holder.address().into_alloy())
             .send_and_watch()
             .await
