@@ -330,7 +330,7 @@ pub struct Request {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: order::Side,
-    pub wrappers: Option<Vec<order::WrapperCall>>,
+    pub wrappers: Vec<order::WrapperCall>,
 }
 
 /// A trading route.

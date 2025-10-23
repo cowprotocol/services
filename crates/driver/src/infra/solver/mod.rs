@@ -349,7 +349,7 @@ impl Solver {
             .orders()
             .iter()
             .filter_map(|order| {
-                let wrappers = order.app_data.wrappers()?;
+                let wrappers = order.app_data.wrappers();
                 if wrappers.is_empty() {
                     return None;
                 }

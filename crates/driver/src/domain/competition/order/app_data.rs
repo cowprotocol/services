@@ -127,10 +127,10 @@ impl AppData {
         }
     }
 
-    pub fn wrappers(&self) -> Option<&[app_data::WrapperCall]> {
+    pub fn wrappers(&self) -> &[app_data::WrapperCall] {
         match self {
-            Self::Hash(_) => None,
-            Self::Full(data) => data.protocol.wrappers.as_deref(),
+            Self::Hash(_) => &[],
+            Self::Full(data) => &data.protocol.wrappers,
         }
     }
 }

@@ -69,15 +69,16 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
                         token: eth::TokenAddress(hint.token),
                         amount: hint.amount,
                     }),
-                wrappers: order.wrappers.clone().map(|wrapper_calls| {
-                    wrapper_calls
-                        .iter()
-                        .map(|w| order::WrapperCall {
-                            address: w.address,
-                            data: w.data.clone(),
-                        })
-                        .collect()
-                }),
+                wrappers: order
+                    .wrappers
+                    .clone()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|w| order::WrapperCall {
+                        address: w.address,
+                        data: w.data.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
         liquidity: auction

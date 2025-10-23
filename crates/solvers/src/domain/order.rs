@@ -17,7 +17,7 @@ pub struct Order {
     pub class: Class,
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
-    pub wrappers: Option<Vec<WrapperCall>>,
+    pub wrappers: Vec<WrapperCall>,
 }
 
 impl Order {

@@ -462,7 +462,7 @@ impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
         Self {
             hooks: value.hooks,
-            wrappers: None,
+            wrappers: Vec::new(),
             signer: None,
             replaced_order: None,
             partner_fee: PartnerFees::default(),
