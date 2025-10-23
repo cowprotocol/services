@@ -34,8 +34,8 @@ pub struct ProtocolAppData {
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wrappers: Option<Vec<WrapperCall>>,
+    #[serde(default)]
+    pub wrappers: Vec<WrapperCall>,
 }
 
 /// Contains information to hint at how a solver could make
