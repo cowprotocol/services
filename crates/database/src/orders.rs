@@ -107,16 +107,19 @@ pub async fn insert_orders_and_ignore_conflicts(
     orders: &[Order],
 ) -> Result<(), sqlx::Error> {
     for order in orders {
-        insert_order_and_ignore_conflicts(ex, order).await?;
-        insert_order_event(
-            ex,
-            &OrderEvent {
-                label: OrderEventLabel::Created,
-                timestamp: order.creation_timestamp,
-                order_uid: order.uid,
-            },
-        )
-        .await?;
+        let inserted = insert_order_and_ignore_conflicts(ex, order).await?;
+        // Only insert order_event if the order was actually inserted
+        if inserted {
+            insert_order_event(
+                ex,
+                &OrderEvent {
+                    label: OrderEventLabel::Created,
+                    timestamp: order.creation_timestamp,
+                    order_uid: order.uid,
+                },
+            )
+            .await?;
+        }
     }
     Ok(())
 }
@@ -151,13 +154,36 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
 pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     // To be used only for the ethflow contract order placement, where reorgs force
     // us to update orders
     // Since each order has a unique UID even after a reorg onchain placed orders
     // have the same data. Hence, we can disregard any conflicts.
     const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
-    insert_order_execute_sqlx(QUERY, ex, order).await
+    let result = sqlx::query(QUERY)
+        .bind(order.uid)
+        .bind(order.owner)
+        .bind(order.creation_timestamp)
+        .bind(order.sell_token)
+        .bind(order.buy_token)
+        .bind(order.receiver)
+        .bind(&order.sell_amount)
+        .bind(&order.buy_amount)
+        .bind(order.valid_to)
+        .bind(order.app_data)
+        .bind(&order.fee_amount)
+        .bind(order.kind)
+        .bind(order.partially_fillable)
+        .bind(order.signature.as_slice())
+        .bind(order.signing_scheme)
+        .bind(order.settlement_contract)
+        .bind(order.sell_token_balance)
+        .bind(order.buy_token_balance)
+        .bind(order.cancellation_timestamp)
+        .bind(order.class)
+        .execute(ex)
+        .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 async fn insert_order_execute_sqlx(
@@ -1044,9 +1070,10 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = Order::default();
-        insert_order_and_ignore_conflicts(&mut db, &order)
+        let inserted = insert_order_and_ignore_conflicts(&mut db, &order)
             .await
             .unwrap();
+        assert!(inserted); // First insert should succeed
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
     }
@@ -1326,9 +1353,10 @@ mod tests {
 
         let order = Order::default();
         insert_order(&mut db, &order).await.unwrap();
-        insert_order_and_ignore_conflicts(&mut db, &order)
+        let inserted = insert_order_and_ignore_conflicts(&mut db, &order)
             .await
             .unwrap();
+        assert!(!inserted); // Second insert should be skipped due to conflict
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
     }
@@ -1347,6 +1375,46 @@ mod tests {
         insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_and_ignore_conflicts_does_not_create_duplicate_events() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+
+        // First insert should create both order and event
+        insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
+            .await
+            .unwrap();
+
+        // Count events after first insert
+        let event_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM order_events WHERE order_uid = $1"
+        )
+        .bind(order.uid)
+        .fetch_one(&mut *db)
+        .await
+        .unwrap();
+        assert_eq!(event_count, 1, "First insert should create exactly one event");
+
+        // Second insert should be skipped (conflict) and should NOT create another event
+        insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
+            .await
+            .unwrap();
+
+        // Count events after second insert - should still be 1
+        let event_count_after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM order_events WHERE order_uid = $1"
+        )
+        .bind(order.uid)
+        .fetch_one(&mut *db)
+        .await
+        .unwrap();
+        assert_eq!(event_count_after, 1, "Second insert should NOT create a duplicate event");
     }
 
     #[tokio::test]

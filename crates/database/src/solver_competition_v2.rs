@@ -1204,7 +1204,7 @@ mod tests {
         reference_scores::insert(&mut db, &scores).await.unwrap();
 
         // orders
-        insert_order_and_ignore_conflicts(
+        let _inserted = insert_order_and_ignore_conflicts(
             &mut db,
             &crate::orders::Order {
                 uid: order_uid,
