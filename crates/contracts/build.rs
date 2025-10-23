@@ -216,9 +216,6 @@ fn main() {
                 },
             )
     });
-
-    generate_contract("ICowWrapper");
-
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
         builder
