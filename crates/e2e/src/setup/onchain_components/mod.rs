@@ -5,11 +5,10 @@ use {
     },
     ::alloy::signers::local::PrivateKeySigner,
     app_data::Hook,
-    contracts::{CowProtocolToken, alloy::ERC20Mintable},
+    contracts::alloy::{ERC20Mintable, test::CowProtocolToken},
     core::panic,
     ethcontract::{
         Account,
-        Bytes,
         H160,
         PrivateKey,
         U256,
@@ -206,18 +205,23 @@ impl Deref for MintableToken {
 
 #[derive(Debug)]
 pub struct CowToken {
-    contract: CowProtocolToken,
+    contract: CowProtocolToken::Instance,
     holder: Account,
 }
 
 impl CowToken {
     pub async fn fund(&self, to: H160, amount: U256) {
-        tx!(self.holder, self.contract.transfer(to, amount));
+        self.contract
+            .transfer(to.into_alloy(), amount.into_alloy())
+            .from(self.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
-        let domain = self.contract.domain_separator().call().await.unwrap();
-        let nonce = self.contract.nonces(owner.address()).call().await.unwrap();
+        let domain = self.contract.DOMAIN_SEPARATOR().send_and_watch().await.unwrap();
+        let nonce = self.contract.nonces(owner.address().into_alloy()).call().await.unwrap().into_legacy();
         let deadline = U256::max_value();
 
         let struct_hash = {
@@ -237,21 +241,26 @@ impl CowToken {
         let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);
 
         let permit = self.contract.permit(
-            owner.address(),
-            spender,
-            value,
-            deadline,
+            owner.address().into_alloy(),
+            spender.into_alloy(),
+            value.into_alloy(),
+            deadline.into_alloy(),
             signature.v,
-            Bytes(signature.r.0),
-            Bytes(signature.s.0),
+            signature.r.0.into(),
+            signature.s.0.into(),
         );
+        let gas_limit = permit.estimate_gas().await.unwrap();
 
-        hook_for_transaction(permit.tx).await
+        Hook {
+            target: self.contract.address().into_legacy(),
+            call_data: permit.calldata().to_vec(),
+            gas_limit,
+        }
     }
 }
 
 impl Deref for CowToken {
-    type Target = CowProtocolToken;
+    type Target = CowProtocolToken::Instance;
 
     fn deref(&self) -> &Self::Target {
         &self.contract
@@ -606,8 +615,7 @@ impl OnchainComponents {
 
     pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
         let contract =
-            CowProtocolToken::builder(&self.web3, holder.address(), holder.address(), supply)
-                .deploy()
+            CowProtocolToken::CowProtocolToken::deploy(self.web3.alloy.clone(), holder.address().into_alloy(), holder.address().into_alloy(), supply.into_alloy())
                 .await
                 .expect("CowProtocolToken deployment failed");
         CowToken { contract, holder }
@@ -634,20 +642,21 @@ impl OnchainComponents {
         self.contracts
             .uniswap_v2_factory
             .createPair(
-                cow.address().into_alloy(),
+                *cow.address(),
                 self.contracts.weth.address().into_alloy(),
             )
             .from(holder.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
-        tx!(
-            holder,
-            cow.approve(
-                self.contracts.uniswap_v2_router.address().into_legacy(),
-                cow_amount
-            )
-        );
+        cow.approve(
+            *self.contracts.uniswap_v2_router.address(),
+            cow_amount.into_alloy(),
+        )
+        .from(holder.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
         tx!(
             holder,
             self.contracts.weth.approve(
@@ -658,7 +667,7 @@ impl OnchainComponents {
         self.contracts
             .uniswap_v2_router
             .addLiquidity(
-                cow.address().into_alloy(),
+                *cow.address(),
                 self.contracts.weth.address().into_alloy(),
                 cow_amount.into_alloy(),
                 weth_amount.into_alloy(),
