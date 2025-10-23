@@ -343,7 +343,7 @@ fn encode_regular_settlement(
 /// - For wrappers after the first: 20 bytes (address)
 /// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
 ///
-/// More information about wrapper encoding: 
+/// More information about wrapper encoding:
 /// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
 ///
 /// Note: The first wrapper address is omitted from the encoded data since it's
