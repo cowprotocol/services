@@ -1,7 +1,6 @@
 use {
     crate::deploy,
     contracts::{
-        GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
         alloy::{
@@ -9,6 +8,7 @@ use {
             BalancerV2Vault,
             CoWSwapEthFlow,
             FlashLoanRouter,
+            GPv2AllowListAuthentication,
             HooksTrampoline,
             InstanceExt,
             UniswapV2Factory,
@@ -17,7 +17,10 @@ use {
         },
     },
     ethcontract::{Address, H256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -33,7 +36,7 @@ pub struct Contracts {
     pub balancer_vault: BalancerV2Vault::Instance,
     pub gp_settlement: GPv2Settlement,
     pub signatures: Signatures::Instance,
-    pub gp_authenticator: GPv2AllowListAuthentication,
+    pub gp_authenticator: GPv2AllowListAuthentication::Instance,
     pub balances: Balances::Instance,
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02::Instance,
@@ -78,7 +81,9 @@ impl Contracts {
             balancer_vault: BalancerV2Vault::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
-            gp_authenticator: GPv2AllowListAuthentication::deployed(web3).await.unwrap(),
+            gp_authenticator: GPv2AllowListAuthentication::Instance::deployed(&web3.alloy)
+                .await
+                .unwrap(),
             uniswap_v2_factory: UniswapV2Factory::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
@@ -154,16 +159,18 @@ impl Contracts {
         .await
         .unwrap();
 
-        let gp_authenticator = deploy!(web3, GPv2AllowListAuthentication);
+        let gp_authenticator = GPv2AllowListAuthentication::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
         gp_authenticator
-            .initialize_manager(admin)
-            .send()
+            .initializeManager(admin.into_alloy())
+            .send_and_watch()
             .await
             .expect("failed to initialize manager");
         let gp_settlement = deploy!(
             web3,
             GPv2Settlement(
-                gp_authenticator.address(),
+                gp_authenticator.address().into_legacy(),
                 balancer_vault.address().into_legacy(),
             )
         );

@@ -1,7 +1,13 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt, support::Balances},
+    contracts::alloy::{
+        ChainalysisOracle,
+        GPv2AllowListAuthentication,
+        HooksTrampoline,
+        InstanceExt,
+        support::Balances,
+    },
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
     primitive_types::H160,
 };
@@ -17,7 +23,7 @@ pub struct Contracts {
 
     /// The authenticator contract that decides which solver is allowed to
     /// submit settlements.
-    authenticator: contracts::GPv2AllowListAuthentication,
+    authenticator: GPv2AllowListAuthentication::Instance,
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: domain::eth::DomainSeparator,
 }
@@ -92,13 +98,14 @@ impl Contracts {
                 .0,
         );
 
-        let authenticator = contracts::GPv2AllowListAuthentication::at(
-            web3,
+        let authenticator = GPv2AllowListAuthentication::Instance::new(
             settlement
                 .authenticator()
                 .call()
                 .await
-                .expect("authenticator address"),
+                .expect("authenticator address")
+                .into_alloy(),
+            web3.alloy.clone(),
         );
 
         Self {
@@ -147,7 +154,7 @@ impl Contracts {
         self.weth.address().into()
     }
 
-    pub fn authenticator(&self) -> &contracts::GPv2AllowListAuthentication {
+    pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {
         &self.authenticator
     }
 }

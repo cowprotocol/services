@@ -1,4 +1,7 @@
-use crate::{domain::eth, infra};
+use {
+    crate::{domain::eth, infra},
+    ethrpc::alloy::conversions::IntoAlloy,
+};
 
 /// Calls Authenticator contract to check if a solver has a sufficient
 /// permission.
@@ -13,7 +16,7 @@ impl super::SolverValidator for Validator {
             .eth
             .contracts()
             .authenticator()
-            .is_solver(solver.0)
+            .isSolver(solver.0.into_alloy())
             .call()
             .await?)
     }

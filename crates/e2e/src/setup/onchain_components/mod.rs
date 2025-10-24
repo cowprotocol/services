@@ -8,7 +8,11 @@ use {
         signers::local::PrivateKeySigner,
     },
     app_data::Hook,
-    contracts::alloy::{ERC20Mintable, test::CowProtocolToken},
+    contracts::alloy::{
+        ERC20Mintable,
+        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
+        test::CowProtocolToken,
+    },
     core::panic,
     ethcontract::{
         Account,
@@ -19,6 +23,7 @@ use {
     },
     ethrpc::alloy::{
         CallBuilderExt,
+        ProviderSignerExt,
         conversions::{IntoAlloy, IntoLegacy},
     },
     hex_literal::hex,
@@ -342,8 +347,8 @@ impl OnchainComponents {
 
             self.contracts
                 .gp_authenticator
-                .add_solver(solver.address())
-                .send()
+                .addSolver(solver.address().into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
@@ -355,15 +360,15 @@ impl OnchainComponents {
         if allowed {
             self.contracts
                 .gp_authenticator
-                .add_solver(solver)
-                .send()
+                .addSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         } else {
             self.contracts
                 .gp_authenticator
-                .remove_solver(solver)
-                .send()
+                .removeSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to remove solver");
         }
@@ -375,13 +380,9 @@ impl OnchainComponents {
         &mut self,
         with_wei: U256,
     ) -> [TestAccount; N] {
-        let auth_manager = self
-            .contracts
-            .gp_authenticator
-            .manager()
-            .call()
-            .await
-            .unwrap();
+        let authenticator = &self.contracts.gp_authenticator;
+
+        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
@@ -390,29 +391,36 @@ impl OnchainComponents {
             .await
             .expect("could not set auth_manager balance");
 
-        let auth_manager = forked_node_api
-            .impersonate(&auth_manager)
-            .await
-            .expect("could not impersonate auth_manager");
+        let impersonated_authenticator = {
+            forked_node_api
+                .impersonate(&auth_manager)
+                .await
+                .expect("could not impersonate auth_manager");
+
+            // we create a new provider without a wallet so that
+            // alloy does not try to sign the tx with it and instead
+            // forwards the tx to the node for signing. This will
+            // work because we told anvil to impersonate that address.
+            let provider = authenticator.provider().clone().without_wallet();
+            GPv2AllowListAuthentication::new(*authenticator.address(), provider)
+        };
 
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            self.contracts
-                .gp_authenticator
-                .add_solver(solver.address())
-                .from(auth_manager.clone())
-                .send()
+            impersonated_authenticator
+                .addSolver(solver.address().into_alloy())
+                .from(auth_manager.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            self.contracts
-                .gp_authenticator
-                .add_solver(router.address().into_legacy())
-                .from(auth_manager.clone())
-                .send()
+            impersonated_authenticator
+                .addSolver(*router.address())
+                .from(auth_manager.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add flashloan wrapper");
         }

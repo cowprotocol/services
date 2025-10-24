@@ -209,9 +209,8 @@ async fn not_allowed_solver(web3: Web3) {
     onchain
         .contracts()
         .gp_authenticator
-        .methods()
-        .remove_solver(solver_address)
-        .send()
+        .removeSolver(solver_address.into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
 
@@ -225,9 +224,8 @@ async fn not_allowed_solver(web3: Web3) {
     onchain
         .contracts()
         .gp_authenticator
-        .methods()
-        .add_solver(solver_address)
-        .send()
+        .addSolver(solver_address.into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
 

@@ -3,7 +3,9 @@ use {
         boundary,
         domain::{self, auction::order, eth},
     },
+    contracts::alloy::GPv2AllowListAuthentication,
     ethcontract::{BlockId, common::FunctionExt},
+    ethrpc::alloy::conversions::IntoAlloy,
     std::{collections::HashSet, sync::LazyLock},
 };
 
@@ -22,7 +24,7 @@ pub trait Authenticator {
 }
 
 #[async_trait::async_trait]
-impl Authenticator for contracts::GPv2AllowListAuthentication {
+impl Authenticator for GPv2AllowListAuthentication::Instance {
     async fn is_valid_solver(
         &self,
         prospective_solver: eth::Address,
@@ -34,8 +36,8 @@ impl Authenticator for contracts::GPv2AllowListAuthentication {
         // find an eligible caller in the callstack. To avoid this case the
         // underlying call needs to happen on the same block the transaction happened.
         Ok(self
-            .is_solver(prospective_solver.into())
-            .block(block)
+            .isSolver(prospective_solver.0.into_alloy())
+            .block(block.into_alloy())
             .call()
             .await
             .map_err(Error::Authentication)?)
@@ -276,5 +278,5 @@ pub enum Error {
     #[error("failed to recover signature {0}")]
     SignatureRecover(#[source] anyhow::Error),
     #[error("failed to check authentication {0}")]
-    Authentication(#[source] ethcontract::errors::MethodError),
+    Authentication(#[source] alloy::contract::Error),
 }

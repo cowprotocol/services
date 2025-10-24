@@ -71,6 +71,13 @@ impl RpcClientRandomIdExt for RpcClient {
 pub trait ProviderSignerExt {
     /// Creates a new provider with the given signer.
     fn with_signer(&self, signer: Account) -> Self;
+
+    /// Creates a new provider without any signers.
+    /// This is only ever useful if you configured
+    /// anvil to impersonate some account and want
+    /// to avoid alloy complaining that it doesn't
+    /// have the private key for the requested signer.
+    fn without_wallet(&self) -> Self;
 }
 
 impl ProviderSignerExt for AlloyProvider {
@@ -87,6 +94,17 @@ impl ProviderSignerExt for AlloyProvider {
 
         ProviderBuilder::new()
             .wallet(wallet)
+            .with_simple_nonce_management()
+            .connect_client(client)
+            .erased()
+    }
+
+    fn without_wallet(&self) -> Self {
+        let is_local = self.client().is_local();
+        let transport = self.client().transport().clone();
+        let client = RpcClient::with_random_id(transport, is_local);
+
+        ProviderBuilder::new()
             .with_simple_nonce_management()
             .connect_client(client)
             .erased()
