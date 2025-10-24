@@ -80,7 +80,7 @@ impl UniV3SubgraphClient {
 
     // Try a simple query to verify that the liquidityNet filter is supported
     async fn set_liquidity_net_field(mut self) -> Self {
-        self.client.set_max_number_of_retries(1);
+        self.client.set_max_number_of_retries(1); // expected to fail sometimes, don't retry
         let result: Result<serde_json::Value> = self
             .client
             .query::<serde_json::Value>(CHECK_LIQUIDITYNET_FILTER, None)
@@ -210,11 +210,6 @@ impl UniV3SubgraphClient {
             .block
             .number
             .saturating_sub(MAX_REORG_BLOCK_COUNT))
-    }
-
-    pub fn with_liquidity_net_filter(mut self, use_liquidity_net_filter: bool) -> Self {
-        self.use_liquidity_net_filter = use_liquidity_net_filter;
-        self
     }
 
     fn all_pools_query(include_ticks_filter: bool) -> String {
