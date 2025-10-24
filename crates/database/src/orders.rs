@@ -168,7 +168,7 @@ async fn insert_order_execute_sqlx(
     ex: &mut PgConnection,
     order: &Order,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(query_str)
+    sqlx::query(query_str)
         .bind(order.uid)
         .bind(order.owner)
         .bind(order.creation_timestamp)
@@ -190,8 +190,8 @@ async fn insert_order_execute_sqlx(
         .bind(order.cancellation_timestamp)
         .bind(order.class)
         .execute(ex)
-        .await?;
-    Ok(result.rows_affected() > 0)
+        .await
+        .map(|result| result.rows_affected() > 0)
 }
 
 #[instrument(skip_all)]
