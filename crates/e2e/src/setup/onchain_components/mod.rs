@@ -220,12 +220,7 @@ impl CowToken {
     }
 
     pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
-        let domain = self
-            .contract
-            .DOMAIN_SEPARATOR()
-            .send_and_watch()
-            .await
-            .unwrap();
+        let domain = self.contract.DOMAIN_SEPARATOR().call().await.unwrap();
         let nonce = self
             .contract
             .nonces(owner.address().into_alloy())
@@ -260,12 +255,11 @@ impl CowToken {
             signature.r.0.into(),
             signature.s.0.into(),
         );
-        let gas_limit = permit.estimate_gas().await.unwrap();
 
         Hook {
             target: self.contract.address().into_legacy(),
             call_data: permit.calldata().to_vec(),
-            gas_limit,
+            gas_limit: permit.estimate_gas().await.unwrap(),
         }
     }
 }
