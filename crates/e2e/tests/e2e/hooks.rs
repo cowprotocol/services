@@ -76,14 +76,11 @@ async fn gas_limit(web3: Web3) {
 
     // Fund trader accounts and approve relayer
     cow.fund(trader.address(), to_wei(5)).await;
-    cow.approve(
-        onchain.contracts().allowance.into_alloy(),
-        to_wei(5).into_alloy(),
-    )
-    .from(trader.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    cow.approve(onchain.contracts().allowance.into_alloy(), eth(5))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -196,7 +193,7 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(balance, to_wei(5).into_alloy());
+    assert_eq!(balance, eth(5));
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
