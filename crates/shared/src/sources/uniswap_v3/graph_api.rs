@@ -4,7 +4,7 @@
 use {
     crate::{
         event_handling::MAX_REORG_BLOCK_COUNT,
-        subgraph::{ContainsId, SubgraphClient, MAX_NUMBER_OF_RETRIES_DEFAULT},
+        subgraph::{ContainsId, MAX_NUMBER_OF_RETRIES_DEFAULT, SubgraphClient},
     },
     anyhow::Result,
     ethcontract::{H160, U256},
@@ -12,12 +12,13 @@ use {
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::{Deserialize, Serialize},
-    serde_json::{json, Map, Value},
-    serde_with::{serde_as, DisplayFromStr},
+    serde_json::{Map, Value, json},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
 };
 
-// Some subgraphs don't have a the ticks_ filter. Use this query to check for its presence.
+// Some subgraphs don't have a the ticks_ filter. Use this query to check for
+// its presence.
 const CHECK_LIQUIDITYNET_FILTER: &str = r#"
 query CheckLiquidityNetField($block: Int) {
   pools(
@@ -28,7 +29,6 @@ query CheckLiquidityNetField($block: Int) {
   }
 }
 "#;
-
 
 const TICKS_BY_POOL_IDS_QUERY: &str = r#"
     query Ticks($block: Int, $pool_ids: [ID], $pageSize: Int, $lastId: ID) {
@@ -57,7 +57,7 @@ pub struct UniV3SubgraphClient {
     client: SubgraphClient,
     /// Some subgraphs do not support the liquidityNet filter on ticks.
     /// This flag indicates whether to use it or not in queries.
-    use_liquidity_net_filter: bool
+    use_liquidity_net_filter: bool,
 }
 
 impl UniV3SubgraphClient {
@@ -67,35 +67,40 @@ impl UniV3SubgraphClient {
         client: Client,
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
-        let subgraph_client = SubgraphClient::try_new(
-            subgraph_url.clone(),
-            client,
-            max_pools_per_tick_query,
-        )?;
-        
+        let subgraph_client =
+            SubgraphClient::try_new(subgraph_url.clone(), client, max_pools_per_tick_query)?;
+
         Ok(Self {
             client: subgraph_client,
             use_liquidity_net_filter: true,
-        }.set_liquidity_net_field().await)
+        }
+        .set_liquidity_net_field()
+        .await)
     }
 
     async fn set_liquidity_net_field(mut self) -> Self {
-        self
+        self.client.set_max_number_of_retries(1);
+        let result: Result<serde_json::Value> = self
             .client
-            .set_max_number_of_retries(1);
-        let result: Result<serde_json::Value> = self.client.query::<serde_json::Value>(CHECK_LIQUIDITYNET_FILTER, None)
+            .query::<serde_json::Value>(CHECK_LIQUIDITYNET_FILTER, None)
             .await;
 
         if result.is_err() {
-            // If the query fails, it likely means the subgraph does not support the liquidityNet filter.
+            // If the query fails, it likely means the subgraph does not support the
+            // liquidityNet filter.
             self.use_liquidity_net_filter = false;
         }
 
-        self.client.set_max_number_of_retries(MAX_NUMBER_OF_RETRIES_DEFAULT);
+        self.client
+            .set_max_number_of_retries(MAX_NUMBER_OF_RETRIES_DEFAULT);
         self
     }
 
-    async fn get_pools(&self, query: String, variables: Map<String, Value>) -> Result<Vec<PoolData>> {
+    async fn get_pools(
+        &self,
+        query: String,
+        variables: Map<String, Value>,
+    ) -> Result<Vec<PoolData>> {
         Ok(self
             .client
             .paginated_query(&query, variables)
@@ -206,10 +211,7 @@ impl UniV3SubgraphClient {
             .saturating_sub(MAX_REORG_BLOCK_COUNT))
     }
 
-    pub fn with_liquidity_net_filter(
-        mut self,
-        use_liquidity_net_filter: bool,
-    ) -> Self {
+    pub fn with_liquidity_net_filter(mut self, use_liquidity_net_filter: bool) -> Self {
         self.use_liquidity_net_filter = use_liquidity_net_filter;
         self
     }
