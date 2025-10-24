@@ -206,7 +206,7 @@ async fn not_allowed_solver(web3: Web3) {
         .unwrap();
 
     // Ban the solver
-    let _ = onchain
+    onchain
         .contracts()
         .gp_authenticator
         .removeSolver(solver_address.into_alloy())
@@ -221,7 +221,7 @@ async fn not_allowed_solver(web3: Web3) {
     );
 
     // Unban the solver
-    let _ = onchain
+    onchain
         .contracts()
         .gp_authenticator
         .addSolver(solver_address.into_alloy())

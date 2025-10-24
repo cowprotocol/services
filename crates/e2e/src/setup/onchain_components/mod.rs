@@ -345,8 +345,7 @@ impl OnchainComponents {
                 .wallet
                 .register_signer(PrivateKeySigner::from_slice(solver.private_key()).unwrap());
 
-            let _ = self
-                .contracts
+            self.contracts
                 .gp_authenticator
                 .addSolver(solver.address().into_alloy())
                 .send_and_watch()
@@ -359,16 +358,14 @@ impl OnchainComponents {
 
     pub async fn set_solver_allowed(&self, solver: H160, allowed: bool) {
         if allowed {
-            let _ = self
-                .contracts
+            self.contracts
                 .gp_authenticator
                 .addSolver(solver.into_alloy())
                 .send_and_watch()
                 .await
                 .expect("failed to add solver");
         } else {
-            let _ = self
-                .contracts
+            self.contracts
                 .gp_authenticator
                 .removeSolver(solver.into_alloy())
                 .send_and_watch()
@@ -395,7 +392,7 @@ impl OnchainComponents {
             .expect("could not set auth_manager balance");
 
         let impersonated_authenticator = {
-            let _ = forked_node_api
+            forked_node_api
                 .impersonate(&auth_manager)
                 .await
                 .expect("could not impersonate auth_manager");
@@ -411,7 +408,7 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            let _ = impersonated_authenticator
+            impersonated_authenticator
                 .addSolver(solver.address().into_alloy())
                 .from(auth_manager.into_alloy())
                 .send_and_watch()
@@ -420,7 +417,7 @@ impl OnchainComponents {
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            let _ = impersonated_authenticator
+            impersonated_authenticator
                 .addSolver(*router.address())
                 .from(auth_manager.into_alloy())
                 .send_and_watch()
