@@ -1,12 +1,15 @@
 use {
     alloy::{
         primitives::{Bytes, FixedBytes, U256},
-        sol_types::{SolStruct, SolValue},
+        sol_types::SolValue,
     },
     autopilot::util::conv::U256Ext,
     contracts::{
         ERC20,
-        alloy::support::{Balances, Signatures},
+        alloy::{
+            cow_amm::Gpv2OrderEip712,
+            support::{Balances, Signatures},
+        },
     },
     driver::domain::eth::NonZeroU256,
     e2e::{
@@ -30,9 +33,8 @@ use {
     },
     ethcontract::{BlockId, BlockNumber, H160},
     ethrpc::alloy::{
-        Account,
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+        conversions::{IntoAlloy, IntoLegacy},
     },
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
@@ -138,16 +140,6 @@ async fn cow_amm_jit(web3: Web3) {
     let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12).chain(pair.to_vec()).collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
 
-    let Account::Signer(signer) = cow_amm_owner
-        .account()
-        .clone()
-        .try_into_alloy()
-        .await
-        .unwrap()
-    else {
-        panic!("expected offline account");
-    };
-    web3.wallet.register_signer(signer);
     cow_amm_factory
         .create(
             *dai.address(),
@@ -262,7 +254,7 @@ async fn cow_amm_jit(web3: Web3) {
 
     // structure of signature copied from
     // <https://github.com/cowprotocol/cow-amm/blob/main/test/e2e/ConstantProduct.t.sol#L179>
-    let signature_data = (cow_amm_order.clone(), trading_params).abi_encode();
+    let signature_data = (cow_amm_order.clone(), trading_params).abi_encode_sequence();
 
     // Prepend CoW AMM address to the signature so settlement contract know which
     // contract this signature refers to.
@@ -278,7 +270,7 @@ async fn cow_amm_jit(web3: Web3) {
     // Creation of commitment copied from
     // <https://github.com/cowprotocol/cow-amm/blob/main/test/e2e/ConstantProduct.t.sol#L181-L188>
     let cow_amm_commitment = {
-        let order_hash = cow_amm_order.eip712_hash_struct();
+        let order_hash = cow_amm_order.eip712_hash_struct_correct();
         let order_hash =
             hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash.0);
         let commitment = cow_amm.commit(FixedBytes(order_hash)).calldata().clone();
@@ -715,17 +707,6 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
 
-    let Account::Signer(signer) = cow_amm_owner
-        .account()
-        .clone()
-        .try_into_alloy()
-        .await
-        .unwrap()
-    else {
-        panic!("expected offline account");
-    };
-    web3.wallet.register_signer(signer);
-
     dai.approve(*cow_amm_factory.address(), eth(2_000))
         .from(cow_amm_owner.address().into_alloy())
         .send_and_watch()
@@ -776,16 +757,6 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12).chain(pair.to_vec()).collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
 
-    let Account::Signer(signer) = cow_amm_owner
-        .account()
-        .clone()
-        .try_into_alloy()
-        .await
-        .unwrap()
-    else {
-        panic!("expected offline account");
-    };
-    web3.wallet.register_signer(signer);
     // Create the CoW AMM
     cow_amm_factory
         .create(
@@ -892,7 +863,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         appData: FixedBytes(APP_DATA),
     };
     // Create the signature for the CoW AMM order
-    let signature_data = (cow_amm_order.clone(), trading_params).abi_encode();
+    let signature_data = (cow_amm_order.clone(), trading_params).abi_encode_sequence();
 
     // Prepend CoW AMM address to the signature so the settlement contract knows
     // which contract this signature refers to.
@@ -906,7 +877,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Create the commitment call for the pre-interaction
     let cow_amm_commitment = {
-        let order_hash = cow_amm_order.eip712_hash_struct();
+        let order_hash = cow_amm_order.eip712_hash_struct_correct();
         let order_hash = hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash);
         let commitment = cow_amm.commit(FixedBytes(order_hash)).calldata().clone();
         Call {
