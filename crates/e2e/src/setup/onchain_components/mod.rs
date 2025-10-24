@@ -340,10 +340,11 @@ impl OnchainComponents {
                 .wallet
                 .register_signer(PrivateKeySigner::from_slice(solver.private_key()).unwrap());
 
-            self.contracts
+            let _ = self
+                .contracts
                 .gp_authenticator
-                .add_solver(solver.address())
-                .send()
+                .addSolver(solver.address().into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
@@ -353,17 +354,19 @@ impl OnchainComponents {
 
     pub async fn set_solver_allowed(&self, solver: H160, allowed: bool) {
         if allowed {
-            self.contracts
+            let _ = self
+                .contracts
                 .gp_authenticator
-                .add_solver(solver)
-                .send()
+                .addSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         } else {
-            self.contracts
+            let _ = self
+                .contracts
                 .gp_authenticator
-                .remove_solver(solver)
-                .send()
+                .removeSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to remove solver");
         }
@@ -381,7 +384,8 @@ impl OnchainComponents {
             .manager()
             .call()
             .await
-            .unwrap();
+            .unwrap()
+            .into_legacy();
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
@@ -398,21 +402,23 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            self.contracts
+            let _ = self
+                .contracts
                 .gp_authenticator
-                .add_solver(solver.address())
-                .from(auth_manager.clone())
-                .send()
+                .addSolver(solver.address().into_alloy())
+                .from(auth_manager.address().into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            self.contracts
+            let _ = self
+                .contracts
                 .gp_authenticator
-                .add_solver(router.address().into_legacy())
-                .from(auth_manager.clone())
-                .send()
+                .addSolver(*router.address())
+                .from(auth_manager.address().into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add flashloan wrapper");
         }

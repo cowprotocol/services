@@ -13,6 +13,7 @@ use {
         BalancerV2Vault,
         ERC20Mintable,
         FlashLoanRouter,
+        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         support::{Balances, Signatures},
     },
     ethcontract::PrivateKey,
@@ -295,17 +296,19 @@ impl Blockchain {
         .unwrap();
         let authenticator = wait_for(
             &web3,
-            contracts::GPv2AllowListAuthentication::builder(&web3)
-                .from(main_trader_account.clone())
-                .deploy(),
+            GPv2AllowListAuthentication::deploy(web3.alloy.clone()),
         )
         .await
         .unwrap();
         let mut settlement = wait_for(
             &web3,
-            contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.into_legacy())
-                .from(main_trader_account.clone())
-                .deploy(),
+            contracts::GPv2Settlement::builder(
+                &web3,
+                authenticator.address().into_legacy(),
+                vault.into_legacy(),
+            )
+            .from(main_trader_account.clone())
+            .deploy(),
         )
         .await
         .unwrap();
@@ -341,12 +344,12 @@ impl Blockchain {
         };
         let balances = Balances::Instance::new(balances_address, web3.alloy.clone());
 
-        wait_for(
+        let _ = wait_for(
             &web3,
             authenticator
-                .initialize_manager(main_trader_account.address())
-                .from(main_trader_account.clone())
-                .send(),
+                .initializeManager(main_trader_account.address().into_alloy())
+                .from(main_trader_account.address().into_alloy())
+                .send_and_watch(),
         )
         .await
         .unwrap();
@@ -375,12 +378,12 @@ impl Blockchain {
 
         let mut trader_accounts = Vec::new();
         for config in config.solvers {
-            wait_for(
+            let _ = wait_for(
                 &web3,
                 authenticator
-                    .add_solver(config.address())
-                    .from(main_trader_account.clone())
-                    .send(),
+                    .addSolver(config.address().into_alloy())
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch(),
             )
             .await
             .unwrap();
