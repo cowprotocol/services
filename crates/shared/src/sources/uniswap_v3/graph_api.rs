@@ -4,7 +4,7 @@
 use {
     crate::{
         event_handling::MAX_REORG_BLOCK_COUNT,
-        subgraph::{ContainsId, MAX_NUMBER_OF_RETRIES_DEFAULT, SubgraphClient},
+        subgraph::{ContainsId, SubgraphClient},
     },
     anyhow::Result,
     ethcontract::{H160, U256},
@@ -80,6 +80,7 @@ impl UniV3SubgraphClient {
 
     // Try a simple query to verify that the liquidityNet filter is supported
     async fn set_liquidity_net_field(mut self) -> Self {
+        let retries = self.client.max_number_of_retries();
         self.client.set_max_number_of_retries(1); // expected to fail sometimes, don't retry
         let result: Result<serde_json::Value> = self
             .client
@@ -92,8 +93,7 @@ impl UniV3SubgraphClient {
             self.use_liquidity_net_filter = false;
         }
 
-        self.client
-            .set_max_number_of_retries(MAX_NUMBER_OF_RETRIES_DEFAULT);
+        self.client.set_max_number_of_retries(retries);
         self
     }
 
