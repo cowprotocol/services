@@ -478,6 +478,7 @@ crate::bindings!(
         OPTIMISM => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
         POLYGON => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
         LENS => address!("0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1"),
+        LINEA => address!("0x42bE4D6527829FeFA1493e1fb9F3676d2425C3C1"),
         // Not listed on Gnosis and Sepolia chains
     }
 );
@@ -493,6 +494,7 @@ crate::bindings!(
         AVALANCHE => address!("0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE"),
         BNB => address!("0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2"),
         LENS => address!("0x6ddD32cd941041D8b61df213B9f515A7D288Dc13"),
+        LINEA => address!("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"),
         // Not available on Gnosis Chain
     }
 );
@@ -712,6 +714,9 @@ pub mod support {
             LENS => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             GNOSIS => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             SEPOLIA => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            PLASMA => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            // built with evm=London, because deployment reverts on Linea otherwise
+            LINEA => address!("0x361350f708f7c0c63c8a505226592c3e5d1faa29"),
         }
     );
 }
