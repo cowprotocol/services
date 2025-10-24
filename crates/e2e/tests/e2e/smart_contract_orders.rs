@@ -168,7 +168,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     cow.fund(trader.address().into_legacy(), to_wei(5)).await;
     trader
         .approve(
-            cow.address().into_alloy(),
+            *cow.address(),
             onchain.contracts().allowance.into_alloy(),
             eth(10),
         )
@@ -193,7 +193,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     U256::exp10(6).to_big_endian(&mut signature);
 
     let order = OrderCreation {
-        sell_token: cow.address(),
+        sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(4),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
