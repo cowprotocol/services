@@ -1,9 +1,13 @@
 use {
+    alloy::primitives::{Address, TxHash, U256},
     anyhow::{Context, Result},
     app_data::AppDataHash,
-    contracts::CowAmmLegacyHelper,
+    contracts::alloy::cow_amm::{
+        CowAmmLegacyHelper,
+        CowAmmLegacyHelper::CowAmmLegacyHelper::orderReturn,
+    },
     database::byte_array::ByteArray,
-    ethcontract::{Address, Bytes, U256, errors::MethodError},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -15,13 +19,16 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct Amm {
-    helper: contracts::CowAmmLegacyHelper,
+    helper: CowAmmLegacyHelper::Instance,
     address: Address,
     tradeable_tokens: Vec<Address>,
 }
 
 impl Amm {
-    pub async fn new(address: Address, helper: &CowAmmLegacyHelper) -> Result<Self, MethodError> {
+    pub async fn new(
+        address: Address,
+        helper: &CowAmmLegacyHelper::Instance,
+    ) -> alloy::contract::Result<Self> {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {
@@ -45,9 +52,8 @@ impl Amm {
     /// need to be supplied in the same order as `traded_tokens` returns
     /// token addresses.
     pub async fn template_order(&self, prices: Vec<U256>) -> Result<TemplateOrder> {
-        let (order, pre_interactions, post_interactions, signature) =
-            self.helper.order(self.address, prices).call().await?;
-        self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
+        let order_return = self.helper.order(self.address, prices).call().await?;
+        self.convert_orders_reponse(order_return)
     }
 
     /// Generates a template order to rebalance the AMM but also verifies that
@@ -66,7 +72,7 @@ impl Amm {
         let hash = hashed_eip712_message(domain_separator, &template.order.hash_struct());
         validator
             .validate_signature_and_get_additional_gas(SignatureCheck {
-                signer: self.address,
+                signer: self.address.into_legacy(),
                 hash,
                 signature: template.signature.to_bytes(),
                 interactions: template.pre_interactions.clone(),
@@ -82,16 +88,16 @@ impl Amm {
         &self,
         block_number: u64,
         helper: Address,
-        tx_hash: ethcontract::H256,
+        tx_hash: TxHash,
     ) -> Result<database::cow_amms::CowAmm> {
         Ok(database::cow_amms::CowAmm {
-            address: ByteArray(self.address.0),
-            factory_address: ByteArray(helper.0),
+            address: ByteArray(self.address.0.0),
+            factory_address: ByteArray(helper.0.0),
             tradeable_tokens: self
                 .tradeable_tokens
                 .iter()
                 .cloned()
-                .map(|addr| ByteArray(addr.0))
+                .map(|addr| ByteArray(addr.0.0))
                 .collect(),
             block_number: i64::try_from(block_number)
                 .with_context(|| format!("block number {block_number} is not i64"))?,
@@ -102,37 +108,33 @@ impl Amm {
     /// Converts a successful response of the CowAmmHelper into domain types.
     /// Can be used for any contract that correctly implements the CoW AMM
     /// helper interface.
-    fn convert_orders_reponse(
-        &self,
-        order: RawOrder,
-        signature: Bytes<Vec<u8>>,
-        pre_interactions: Vec<RawInteraction>,
-        post_interactions: Vec<RawInteraction>,
-    ) -> Result<TemplateOrder> {
+    fn convert_orders_reponse(&self, order_return: orderReturn) -> Result<TemplateOrder> {
         let order = OrderData {
-            sell_token: order.0,
-            buy_token: order.1,
-            receiver: Some(order.2),
-            sell_amount: order.3,
-            buy_amount: order.4,
-            valid_to: order.5,
-            app_data: AppDataHash(order.6.0),
-            fee_amount: order.7,
-            kind: convert_kind(&order.8.0)?,
-            partially_fillable: order.9,
-            sell_token_balance: convert_sell_token_source(&order.10.0)?,
-            buy_token_balance: convert_buy_token_destination(&order.11.0)?,
+            sell_token: order_return._order.sellToken.into_legacy(),
+            buy_token: order_return._order.buyToken.into_legacy(),
+            receiver: Some(order_return._order.receiver.into_legacy()),
+            sell_amount: order_return._order.sellAmount.into_legacy(),
+            buy_amount: order_return._order.buyAmount.into_legacy(),
+            valid_to: order_return._order.validTo,
+            app_data: AppDataHash(order_return._order.appData.0),
+            fee_amount: order_return._order.feeAmount.into_legacy(),
+            kind: convert_kind(&order_return._order.kind.0)?,
+            partially_fillable: order_return._order.partiallyFillable,
+            sell_token_balance: convert_sell_token_source(&order_return._order.sellTokenBalance.0)?,
+            buy_token_balance: convert_buy_token_destination(
+                &order_return._order.buyTokenBalance.0,
+            )?,
         };
 
-        let pre_interactions = convert_interactions(pre_interactions);
-        let post_interactions = convert_interactions(post_interactions);
+        let pre_interactions = convert_interactions(order_return.preInteractions);
+        let post_interactions = convert_interactions(order_return.postInteractions);
 
         // The settlement contract expects a signature composed of 2 parts: the
         // signer address and the actual signature bytes.
         // The helper contract returns exactly that format but in our code base we
         // expect the signature to not already include the signer address (the parts
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
-        let raw_signature = signature.0.into_iter().skip(20).collect();
+        let raw_signature = order_return.sig.0.into_iter().skip(20).collect();
         let signature = Signature::Eip1271(raw_signature);
 
         Ok(TemplateOrder {
@@ -159,13 +161,15 @@ pub struct TemplateOrder {
     pub post_interactions: Vec<InteractionData>,
 }
 
-fn convert_interactions(interactions: Vec<RawInteraction>) -> Vec<InteractionData> {
+fn convert_interactions(
+    interactions: Vec<CowAmmLegacyHelper::GPv2Interaction::Data>,
+) -> Vec<InteractionData> {
     interactions
         .into_iter()
         .map(|interaction| InteractionData {
-            target: interaction.0,
-            value: interaction.1,
-            call_data: interaction.2.0,
+            target: interaction.target.into_legacy(),
+            value: interaction.value.into_legacy(),
+            call_data: interaction.callData.into_legacy().0,
         })
         .collect()
 }
@@ -201,20 +205,3 @@ fn convert_buy_token_destination(bytes: &[u8]) -> Result<BuyTokenDestination> {
         bytes => anyhow::bail!("unknown buy token destination: {bytes}"),
     }
 }
-
-type RawOrder = (
-    Address,
-    Address,
-    Address,
-    U256,
-    U256,
-    u32,
-    Bytes<[u8; 32]>,
-    U256,
-    Bytes<[u8; 32]>,
-    bool,
-    Bytes<[u8; 32]>,
-    Bytes<[u8; 32]>,
-);
-
-type RawInteraction = (Address, U256, Bytes<Vec<u8>>);

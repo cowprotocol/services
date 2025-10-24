@@ -629,7 +629,57 @@ crate::bindings!(
 );
 
 pub mod cow_amm {
+    use alloy::sol_types::SolStruct;
+
+    crate::bindings!(CowAmm);
+    crate::bindings!(
+        CowAmmConstantProductFactory,
+        crate::deployments! {
+            // <https://etherscan.io/tx/0xf37fc438ddacb00c28305bd7dea3b79091cd5be3405a2b445717d9faf946fa50>
+            MAINNET => (address!("0x40664207e3375FB4b733d4743CE9b159331fd034"), 19861952),
+            // <https://gnosisscan.io/tx/0x4121efab4ad58ae7ad73b50448cccae0de92905e181648e5e08de3d6d9c66083>
+            GNOSIS => (address!("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0"), 33874317),
+            // <https://sepolia.etherscan.io/tx/0x5e6af00c670eb421b96e78fd2e3b9df573b19e6e0ea77d8003e47cdde384b048>
+            SEPOLIA => (address!("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3"), 5874562),
+        }
+    );
+    crate::bindings!(
+        CowAmmLegacyHelper,
+        crate::deployments! {
+            // <https://etherscan.io/tx/0x07f0ce50fb9cd30e69799a63ae9100869a3c653d62ea3ba49d2e5e1282f42b63>
+            MAINNET => (address!("0x3705ceee5eaa561e3157cf92641ce28c45a3999c"), 20332745),
+            // <https://gnosisscan.io/tx/0x09e56c7173ab1e1c5d02bc2832799422ebca6d9a40e5bae77f6ca908696bfebf>
+            GNOSIS => (address!("0xd9ec06b001957498ab1bc716145515d1d0e30ffb"), 35026999),
+        }
+    );
+    crate::bindings!(CowAmmUniswapV2PriceOracle);
     crate::bindings!(CowAmmFactoryGetter);
+
+    /// Extension trait to provide correct EIP-712 type hash for GPv2Order.Data.
+    ///
+    /// The contract stores `kind`, `sellTokenBalance`, and `buyTokenBalance` as bytes32,
+    /// but the EIP-712 type uses "string" types for human-readable signatures.
+    /// See: <https://github.com/cowprotocol/contracts/blob/19972cd8fb3f8663846f772190926f36af068a33/src/contracts/libraries/GPv2Order.sol#L9-L48>
+    pub trait GPv2OrderEip712 {
+        fn eip712_type_hash_correct(&self) -> alloy::primitives::B256;
+        fn eip712_hash_struct_correct(&self) -> alloy::primitives::B256;
+    }
+
+    // @todo: Migrate to GPv2Settelement::GPv2Order bindings
+    impl GPv2OrderEip712 for CowAmm::GPv2Order::Data {
+        fn eip712_type_hash_correct(&self) -> alloy::primitives::B256 {
+            const TYPE_HASH: [u8; 32] =
+                alloy::hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
+            alloy::primitives::B256::from_slice(&TYPE_HASH)
+        }
+
+        fn eip712_hash_struct_correct(&self) -> alloy::primitives::B256 {
+            let mut hasher = alloy::primitives::Keccak256::new();
+            hasher.update(self.eip712_type_hash_correct());
+            hasher.update(self.eip712_encode_data());
+            hasher.finalize()
+        }
+    }
 }
 
 pub mod support {
