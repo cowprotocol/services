@@ -230,7 +230,7 @@ jobs:
       - run: just test-driver
 
   smoke-tests:
-    name: Smoke Tests (--dry-run)
+    name: Smoke Tests (--validate-startup)
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -273,7 +273,7 @@ jobs:
           timeout 120s ./target/release/orderbook \
             --node-url http://localhost:8545 \
             --db-write-url "postgresql://$USER:@localhost/postgres?sslmode=disable" \
-            --dry-run
+            --validate-startup
 
       # Smoke test - Autopilot
       - name: Smoke test - Autopilot
@@ -281,7 +281,7 @@ jobs:
           timeout 120s ./target/release/autopilot \
             --node-url http://localhost:8545 \
             --db-write-url "postgresql://$USER:@localhost/postgres?sslmode=disable" \
-            --dry-run
+            --validate-startup
 
       # Smoke test - Driver
       - name: Smoke test - Driver
@@ -289,7 +289,7 @@ jobs:
           timeout 120s ./target/release/driver \
             --node-url http://localhost:8545 \
             --config configs/local/driver.toml \
-            --dry-run
+            --validate-startup
 
       # Negative test - Invalid RPC (should fail)
       - name: Smoke test - Invalid RPC (should fail)
@@ -297,7 +297,7 @@ jobs:
           if timeout 60s ./target/release/orderbook \
             --node-url http://invalid-host:9999 \
             --db-write-url "postgresql://$USER:@localhost/postgres?sslmode=disable" \
-            --dry-run; then
+            --validate-startup; then
             echo "ERROR: Should have failed with invalid RPC"
             exit 1
           else
@@ -311,7 +311,7 @@ jobs:
           if timeout 60s ./target/release/orderbook \
             --node-url http://localhost:8545 \
             --db-write-url "postgresql://invalid:invalid@localhost:9999/invalid?sslmode=disable" \
-            --dry-run; then
+            --validate-startup; then
             echo "ERROR: Should have failed with invalid database"
             exit 1
           else
