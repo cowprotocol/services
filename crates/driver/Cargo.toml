@@ -79,7 +79,7 @@ app-data = { workspace = true, features = ["test_helpers"] }
 maplit = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tempfile = { workspace = true }
-ethrpc = {workspace = true, features = ["test-util"]}
+ethrpc = { workspace = true, features = ["test-util"] }
 contracts = { workspace = true }
 
 [build-dependencies]

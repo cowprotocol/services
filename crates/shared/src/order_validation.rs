@@ -50,7 +50,7 @@ use {
     tracing::instrument,
 };
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderValidating: Send + Sync {
     /// Partial (aka Pre-) Validation is aimed at catching malformed order data
@@ -207,7 +207,7 @@ impl From<CalculateQuoteError> for ValidationError {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait]
 pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: H160) -> Result<u64>;

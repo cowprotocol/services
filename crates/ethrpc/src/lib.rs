@@ -4,6 +4,7 @@ pub mod buffered;
 pub mod extensions;
 pub mod http;
 pub mod instrumented;
+#[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 
 use {

@@ -215,7 +215,7 @@ pub struct OrdersResponse {
 
 /// Abstract 0x API. Provides a mockable implementation.
 #[async_trait::async_trait]
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait ZeroExApi: Send + Sync {
     /// Retrieves all current limit orders.
     async fn get_orders(

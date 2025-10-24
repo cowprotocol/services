@@ -43,7 +43,7 @@ pub fn to_normalized_price(price: f64) -> Option<U256> {
         .then_some(U256::from_f64_lossy(price_in_eth))
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait NativePriceEstimating: Send + Sync {
     /// Like `PriceEstimating::estimate`.
     ///
