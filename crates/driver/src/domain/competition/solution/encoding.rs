@@ -221,7 +221,7 @@ pub fn tx(
     }
 
     // Encode the base settlement calldata
-    let settle_calldata = contracts
+    let mut settle_calldata = contracts
         .settlement()
         .settle(
             tokens,
@@ -236,12 +236,15 @@ pub fn tx(
 
     let auction_id = auction.id().ok_or(Error::MissingAuctionId)?;
 
+    // Append auction ID to settlement calldata
+    settle_calldata.extend(auction_id.to_be_bytes());
+
     let (to, calldata) = if has_flashloans {
-        encode_flashloan_settlement(auction_id, solution, contracts, settle_calldata)?
+        encode_flashloan_settlement(solution, contracts, settle_calldata)?
     } else if has_wrappers {
-        encode_wrapper_settlement(auction_id, solution, settle_calldata)?
+        encode_wrapper_settlement(solution, settle_calldata)?
     } else {
-        encode_regular_settlement(auction_id, contracts, settle_calldata)?
+        encode_regular_settlement(contracts, settle_calldata)?
     };
 
     Ok(eth::Tx {
@@ -260,14 +263,10 @@ pub fn tx(
 ///
 /// Returns (router_address, flashloan_calldata)
 fn encode_flashloan_settlement(
-    auction_id: competition::auction::Id,
     solution: &super::Solution,
     contracts: &infra::blockchain::Contracts,
-    mut settle_calldata: Vec<u8>,
+    settle_calldata: Vec<u8>,
 ) -> Result<(eth::Address, Vec<u8>), Error> {
-    // Append auction ID to settlement calldata
-    settle_calldata.extend(auction_id.0.to_be_bytes());
-
     // Get flashloan router contract
     let router = contracts
         .flashloan_router()
@@ -301,7 +300,6 @@ fn encode_flashloan_settlement(
 ///
 /// Returns (first_wrapper_address, wrapped_calldata)
 fn encode_wrapper_settlement(
-    auction_id: competition::auction::Id,
     solution: &super::Solution,
     settle_calldata: Vec<u8>,
 ) -> Result<(eth::Address, Vec<u8>), Error> {
@@ -309,14 +307,11 @@ fn encode_wrapper_settlement(
     let wrapper_data = encode_wrapper_data(&solution.wrappers);
 
     // Create wrappedSettleCall
-    let mut calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
         settleData: settle_calldata.into(),
         wrapperData: wrapper_data.into(),
     }
     .abi_encode();
-
-    // Append auction ID
-    calldata.extend(auction_id.0.to_be_bytes());
 
     Ok((solution.wrappers[0].address, calldata))
 }
@@ -327,13 +322,9 @@ fn encode_wrapper_settlement(
 ///
 /// Returns (settlement_contract_address, calldata)
 fn encode_regular_settlement(
-    auction_id: competition::auction::Id,
     contracts: &infra::blockchain::Contracts,
-    mut settle_calldata: Vec<u8>,
+    settle_calldata: Vec<u8>,
 ) -> Result<(eth::Address, Vec<u8>), Error> {
-    // Append auction ID
-    settle_calldata.extend(auction_id.0.to_be_bytes());
-
     Ok((contracts.settlement().address().into(), settle_calldata))
 }
 
