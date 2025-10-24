@@ -9,13 +9,14 @@ use {
 };
 
 pub const QUERY_PAGE_SIZE: usize = 1000;
-const MAX_NUMBER_OF_RETRIES: usize = 10;
+pub const MAX_NUMBER_OF_RETRIES_DEFAULT: usize = 10;
 
 /// A general client for querying subgraphs.
 pub struct SubgraphClient {
     client: Client,
     subgraph_url: Url,
     max_pools_per_tick_query: usize,
+    max_number_of_retries: usize,
 }
 
 pub trait ContainsId {
@@ -39,6 +40,7 @@ impl SubgraphClient {
             client,
             subgraph_url,
             max_pools_per_tick_query,
+            max_number_of_retries: MAX_NUMBER_OF_RETRIES_DEFAULT,
         })
     }
 
@@ -50,7 +52,7 @@ impl SubgraphClient {
         // for long lasting queries subgraph call might randomly fail
         // introduced retry mechanism that should efficiently help since failures are
         // quick and we need 1 or 2 retries to succeed.
-        for _ in 0..MAX_NUMBER_OF_RETRIES {
+        for _ in 0..self.max_number_of_retries {
             match self
                 .client
                 .post(self.subgraph_url.clone())
@@ -113,6 +115,10 @@ impl SubgraphClient {
 
     pub fn max_pools_per_tick_query(&self) -> usize {
         self.max_pools_per_tick_query
+    }
+
+    pub fn set_max_number_of_retries(&mut self, retries: usize) {
+        self.max_number_of_retries = retries;
     }
 }
 
