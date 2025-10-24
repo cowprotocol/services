@@ -118,6 +118,14 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                 gas: solution.gas.map(|gas| gas.0.as_u64()),
                 // rely on driver to fill in the blanks
                 flashloans: None,
+                wrappers: solution
+                    .wrappers
+                    .iter()
+                    .map(|w| solvers_dto::solution::WrapperCall {
+                        address: w.target.0,
+                        data: w.data.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
     }

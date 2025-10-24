@@ -603,6 +603,8 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(ICowWrapper);
+
 // Only used in <github.com/gnosis/solvers>
 crate::bindings!(
     Permit2,

@@ -13,6 +13,7 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
+    alloy::sol_types::SolCall,
     contracts::alloy::FlashLoanRouter::LoanRequest,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
@@ -31,6 +32,8 @@ pub enum Error {
     // TODO: remove when contracts are deployed everywhere
     #[error("flashloan support disabled")]
     FlashloanSupportDisabled,
+    #[error("both wrappers and flashloans cannot be encoded in the same auction")]
+    FlashloanWrappersIncompatible,
 }
 
 pub fn tx(
@@ -203,48 +206,45 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let tx = contracts
+    let interactions = [
+        pre_interactions.iter().map(codec::interaction).collect(),
+        interactions.iter().map(codec::interaction).collect(),
+        post_interactions.iter().map(codec::interaction).collect(),
+    ];
+
+    let has_flashloans = !solution.flashloans.is_empty();
+    let has_wrappers = !solution.wrappers.is_empty();
+
+    // Check for incompatibility upfront
+    if has_flashloans && has_wrappers {
+        return Err(Error::FlashloanWrappersIncompatible);
+    }
+
+    // Encode the base settlement calldata
+    let mut settle_calldata = contracts
         .settlement()
         .settle(
             tokens,
             clearing_prices,
             trades.iter().map(codec::trade).collect(),
-            [
-                pre_interactions.iter().map(codec::interaction).collect(),
-                interactions.iter().map(codec::interaction).collect(),
-                post_interactions.iter().map(codec::interaction).collect(),
-            ],
+            interactions,
         )
-        .into_inner();
+        .into_inner()
+        .data
+        .unwrap()
+        .0;
 
-    // Encode the auction id into the calldata
-    let mut settle_calldata = tx.data.unwrap().0;
-    settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    let auction_id = auction.id().ok_or(Error::MissingAuctionId)?;
 
-    // Target and calldata depend on whether a flashloan is used
-    let (to, calldata) = if solution.flashloans.is_empty() {
-        (contracts.settlement().address().into(), settle_calldata)
+    // Append auction ID to settlement calldata
+    settle_calldata.extend(auction_id.to_be_bytes());
+
+    let (to, calldata) = if has_flashloans {
+        encode_flashloan_settlement(solution, contracts, settle_calldata)?
+    } else if has_wrappers {
+        encode_wrapper_settlement(solution, settle_calldata)?
     } else {
-        let router = contracts
-            .flashloan_router()
-            .ok_or(Error::FlashloanSupportDisabled)?;
-
-        let flashloans = solution
-            .flashloans
-            .values()
-            .map(|flashloan| LoanRequest::Data {
-                amount: flashloan.amount.0.into_alloy(),
-                borrower: flashloan.protocol_adapter.0.into_alloy(),
-                lender: flashloan.liquidity_provider.0.into_alloy(),
-                token: flashloan.token.0.0.into_alloy(),
-            })
-            .collect();
-
-        let calldata = router
-            .flashLoanAndSettle(flashloans, settle_calldata.into())
-            .calldata()
-            .to_vec();
-        (router.address().into_legacy().into(), calldata)
+        encode_regular_settlement(contracts, settle_calldata)?
     };
 
     Ok(eth::Tx {
@@ -254,6 +254,111 @@ pub fn tx(
         value: Ether(0.into()),
         access_list: Default::default(),
     })
+}
+
+/// Encodes a settlement transaction that uses flashloans.
+///
+/// Takes the base settlement calldata and wraps it in a flashLoanAndSettle call
+/// to the flashloan router contract.
+///
+/// Returns (router_address, flashloan_calldata)
+fn encode_flashloan_settlement(
+    solution: &super::Solution,
+    contracts: &infra::blockchain::Contracts,
+    settle_calldata: Vec<u8>,
+) -> Result<(eth::Address, Vec<u8>), Error> {
+    // Get flashloan router contract
+    let router = contracts
+        .flashloan_router()
+        .ok_or(Error::FlashloanSupportDisabled)?;
+
+    // Convert flashloans to LoanRequest format
+    let flashloans = solution
+        .flashloans
+        .values()
+        .map(|flashloan| LoanRequest::Data {
+            amount: flashloan.amount.0.into_alloy(),
+            borrower: flashloan.protocol_adapter.0.into_alloy(),
+            lender: flashloan.liquidity_provider.0.into_alloy(),
+            token: flashloan.token.0.0.into_alloy(),
+        })
+        .collect();
+
+    // Wrap settlement in flashLoanAndSettle call
+    let calldata = router
+        .flashLoanAndSettle(flashloans, settle_calldata.into())
+        .calldata()
+        .to_vec();
+
+    Ok((router.address().into_legacy().into(), calldata))
+}
+
+/// Encodes a settlement transaction that uses wrapper contracts.
+///
+/// Takes the base settlement calldata and wraps it in a wrappedSettleCall
+/// with encoded wrapper metadata.
+///
+/// Returns (first_wrapper_address, wrapped_calldata)
+fn encode_wrapper_settlement(
+    solution: &super::Solution,
+    settle_calldata: Vec<u8>,
+) -> Result<(eth::Address, Vec<u8>), Error> {
+    // Encode wrapper metadata
+    let wrapper_data = encode_wrapper_data(&solution.wrappers);
+
+    // Create wrappedSettleCall
+    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+        settleData: settle_calldata.into(),
+        wrapperData: wrapper_data.into(),
+    }
+    .abi_encode();
+
+    Ok((solution.wrappers[0].address, calldata))
+}
+
+/// Encodes a regular settlement transaction without flashloans or wrappers.
+///
+/// Takes the base settlement calldata and appends the auction ID.
+///
+/// Returns (settlement_contract_address, calldata)
+fn encode_regular_settlement(
+    contracts: &infra::blockchain::Contracts,
+    settle_calldata: Vec<u8>,
+) -> Result<(eth::Address, Vec<u8>), Error> {
+    Ok((contracts.settlement().address().into(), settle_calldata))
+}
+
+/// Encodes wrapper metadata for wrapper settlement calls.
+///
+/// The format is:
+/// - For wrappers after the first: 20 bytes (address)
+/// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
+///
+/// More information about wrapper encoding:
+/// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
+///
+/// Note: The first wrapper address is omitted from the encoded data since it's
+/// already used as the transaction target.
+fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
+    let mut wrapper_data = Vec::new();
+
+    for (index, w) in wrappers.iter().enumerate() {
+        // Skip first wrapper's address (it's the transaction target)
+        if index != 0 {
+            wrapper_data.extend(w.address.0.as_bytes());
+        }
+
+        // Encode data length as u16 in native endian, then the data itself
+        wrapper_data.extend(
+            w.data
+                .as_ref()
+                .map(|v| (v.len() as u16).to_ne_bytes().to_vec())
+                .unwrap_or_default(),
+        );
+        wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
+    }
+
+    wrapper_data
 }
 
 pub fn liquidity_interaction(

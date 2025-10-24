@@ -38,6 +38,12 @@ pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::
 
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
+#[derive(Clone)]
+pub struct WrapperCall {
+    pub address: eth::Address,
+    pub data: Option<Vec<u8>>,
+}
+
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
 /// A solution represents a set of orders which the solver has found an optimal
@@ -55,6 +61,7 @@ pub struct Solution {
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
+    wrappers: Vec<WrapperCall>,
 }
 
 impl Solution {
@@ -72,6 +79,7 @@ impl Solution {
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
+        wrappers: Vec<WrapperCall>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
@@ -128,6 +136,7 @@ impl Solution {
             weth,
             gas,
             flashloans,
+            wrappers,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -379,6 +388,7 @@ impl Solution {
                 (None, None) => None,
             },
             flashloans,
+            wrappers: self.wrappers.clone(),
         })
     }
 
