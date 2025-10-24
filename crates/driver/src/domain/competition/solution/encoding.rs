@@ -13,7 +13,7 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
-    contracts::alloy::FlashLoanRouter::LoanRequest,
+    contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
 };
@@ -308,12 +308,11 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
     }
 }
 
-fn unwrap(amount: eth::TokenAmount, weth: &contracts::WETH9) -> eth::Interaction {
-    let tx = weth.withdraw(amount.into()).into_inner();
+fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> eth::Interaction {
     eth::Interaction {
-        target: tx.to.unwrap().into(),
+        target: weth.address().into_legacy().into(),
         value: Ether(0.into()),
-        call_data: tx.data.unwrap().0.into(),
+        call_data: Bytes(weth.withdraw(amount.0.into_alloy()).calldata().to_vec()),
     }
 }
 

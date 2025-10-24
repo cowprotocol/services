@@ -1,23 +1,17 @@
 use {
     alloy::providers::Provider,
     app_data::Hook,
-    e2e::{
-        setup::{
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            eth,
-            hook_for_transaction,
-            onchain_components,
-            run_test,
-            safe::Safe,
-            to_wei,
-            wait_for_condition,
-        },
-        tx,
-        tx_value,
+    e2e::setup::{
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        eth,
+        onchain_components,
+        run_test,
+        safe::Safe,
+        to_wei,
+        wait_for_condition,
     },
-    ethcontract::U256,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -88,7 +82,7 @@ async fn gas_limit(web3: Web3) {
     let order = OrderCreation {
         sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(4),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -147,15 +141,17 @@ async fn allowance(web3: Web3) {
             gas_limit: tx.estimate_gas().await.unwrap(),
         }
     };
-    let steal_weth = hook_for_transaction(
-        onchain
-            .contracts()
-            .weth
-            .approve(trader.address(), U256::max_value())
-            .from(solver.account().clone())
-            .tx,
-    )
-    .await;
+    let steal_weth = {
+        let approve = onchain.contracts().weth.approve(
+            trader.address().into_alloy(),
+            ::alloy::primitives::U256::MAX,
+        );
+        Hook {
+            target: onchain.contracts().weth.address().into_legacy(),
+            call_data: approve.calldata().to_vec(),
+            gas_limit: approve.estimate_gas().await.unwrap(),
+        }
+    };
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -163,7 +159,7 @@ async fn allowance(web3: Web3) {
     let order = OrderCreation {
         sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(5),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -209,11 +205,11 @@ async fn allowance(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert!(balance >= order.buy_amount);
+    assert!(balance >= order.buy_amount.into_alloy());
 
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
@@ -233,13 +229,13 @@ async fn allowance(web3: Web3) {
         .contracts()
         .weth
         .allowance(
-            onchain.contracts().gp_settlement.address(),
-            trader.address(),
+            onchain.contracts().gp_settlement.address().into_alloy(),
+            trader.address().into_alloy(),
         )
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, U256::zero());
+    assert_eq!(allowance, ::alloy::primitives::U256::ZERO);
 
     // Note that the allowances were set with the `HooksTrampoline` contract!
     // This is OK since the `HooksTrampoline` contract is not used for holding
@@ -257,13 +253,13 @@ async fn allowance(web3: Web3) {
         .contracts()
         .weth
         .allowance(
-            (*onchain.contracts().hooks.address()).into_legacy(),
-            trader.address(),
+            *onchain.contracts().hooks.address(),
+            trader.address().into_alloy(),
         )
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, U256::max_value());
+    assert_eq!(allowance, ::alloy::primitives::U256::MAX);
 }
 
 async fn signature(web3: Web3) {
@@ -356,7 +352,7 @@ async fn signature(web3: Web3) {
         sell_amount: to_wei(6),
         partially_fillable: true,
         sell_token: token.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -412,11 +408,11 @@ async fn signature(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balance_of(safe.address().into_legacy())
+        .balanceOf(safe.address())
         .call()
         .await
         .unwrap();
-    assert!(balance >= order.buy_amount);
+    assert!(balance >= order.buy_amount.into_alloy());
 
     // Check Safe was deployed
     let code = web3
@@ -446,14 +442,22 @@ async fn partial_fills(web3: Web3) {
         .await;
 
     let sell_token = onchain.contracts().weth.clone();
-    tx!(
-        trader.account(),
-        sell_token.approve(onchain.contracts().allowance, to_wei(2))
-    );
-    tx_value!(trader.account(), to_wei(1), sell_token.deposit());
+    sell_token
+        .approve(onchain.contracts().allowance.into_alloy(), eth(2))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    sell_token
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(1))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let balance_before_first_trade = sell_token
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -464,7 +468,7 @@ async fn partial_fills(web3: Web3) {
 
     let pre_inc = counter.setCounterToBalance(
         "pre".to_string(),
-        sell_token.address().into_alloy(),
+        *sell_token.address(),
         trader.address().into_alloy(),
     );
     let pre_hook = Hook {
@@ -475,7 +479,7 @@ async fn partial_fills(web3: Web3) {
 
     let post_inc = counter.setCounterToBalance(
         "post".to_string(),
-        sell_token.address().into_alloy(),
+        *sell_token.address(),
         trader.address().into_alloy(),
     );
     let post_hook = Hook {
@@ -486,7 +490,7 @@ async fn partial_fills(web3: Web3) {
 
     tracing::info!("Placing order");
     let order = OrderCreation {
-        sell_token: sell_token.address(),
+        sell_token: sell_token.address().into_legacy(),
         sell_amount: to_wei(2),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
@@ -517,60 +521,46 @@ async fn partial_fills(web3: Web3) {
     tracing::info!("Waiting for first trade.");
     let trade_happened = || async {
         sell_token
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap()
-            == 0.into()
+            .is_zero()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
     assert_eq!(
-        counter
-            .counters("pre".to_string())
-            .call()
-            .await
-            .unwrap()
-            .into_legacy(),
+        counter.counters("pre".to_string()).call().await.unwrap(),
         balance_before_first_trade
     );
     let post_balance_after_first_trade = sell_token
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
     assert_eq!(
-        counter
-            .counters("post".to_string())
-            .call()
-            .await
-            .unwrap()
-            .into_legacy(),
+        counter.counters("post".to_string()).call().await.unwrap(),
         post_balance_after_first_trade
     );
 
     tracing::info!("Fund remaining sell balance.");
-    tx_value!(trader.account(), to_wei(1), sell_token.deposit());
+    sell_token
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(1))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Waiting for second trade.");
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
     assert_eq!(
-        counter
-            .counters("pre".to_string())
-            .call()
-            .await
-            .unwrap()
-            .into_legacy(),
+        counter.counters("pre".to_string()).call().await.unwrap(),
         balance_before_first_trade
     );
     assert_eq!(
-        counter
-            .counters("post".to_string())
-            .call()
-            .await
-            .unwrap()
-            .into_legacy(),
+        counter.counters("post".to_string()).call().await.unwrap(),
         sell_token
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap()
@@ -661,7 +651,7 @@ async fn quote_verification(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
             sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address(),
+            buy_token: onchain.contracts().weth.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: NonZeroU256::try_from(to_wei(5)).unwrap(),

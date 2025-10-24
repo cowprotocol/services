@@ -1,14 +1,15 @@
 use {
+    alloy::primitives::U256,
     anyhow::{Result, ensure},
-    contracts::WETH9,
+    contracts::alloy::WETH9,
     ethcontract::Bytes,
-    primitive_types::U256,
+    ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
 #[derive(Clone, Debug)]
 pub struct UnwrapWethInteraction {
-    pub weth: WETH9,
+    pub weth: WETH9::Instance,
     pub amount: U256,
 }
 
@@ -33,19 +34,21 @@ impl UnwrapWethInteraction {
 
 impl Interaction for UnwrapWethInteraction {
     fn encode(&self) -> EncodedInteraction {
-        let method = self.weth.withdraw(self.amount);
-        let calldata = method.tx.data.expect("no calldata").0;
-        (self.weth.address(), 0.into(), Bytes(calldata))
+        (
+            self.weth.address().into_legacy(),
+            0.into(),
+            Bytes(self.weth.withdraw(self.amount).calldata().to_vec()),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::dummy_contract, hex_literal::hex};
+    use {super::*, hex_literal::hex};
 
     #[test]
     fn encode_unwrap_weth() {
-        let weth = dummy_contract!(WETH9, [0x42; 20]);
+        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().alloy);
         let amount = U256::from(13_370_000_000_000_000_000u128);
         let interaction = UnwrapWethInteraction {
             weth: weth.clone(),
@@ -53,55 +56,55 @@ mod tests {
         };
         let withdraw_call = interaction.encode();
 
-        assert_eq!(withdraw_call.0, weth.address());
-        assert_eq!(withdraw_call.1, U256::from(0));
+        assert_eq!(withdraw_call.0, weth.address().into_legacy());
+        assert_eq!(withdraw_call.1, U256::ZERO.into_legacy());
         let call = &withdraw_call.2.0;
         assert_eq!(call.len(), 36);
         let withdraw_signature = hex!("2e1a7d4d");
         assert_eq!(call[0..4], withdraw_signature);
-        assert_eq!(U256::from_big_endian(&call[4..36]), amount);
+        assert_eq!(U256::from_be_slice(&call[4..36]), amount);
     }
 
     #[test]
     fn merge_same_native_token() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: 1.into(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: U256::ONE,
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: 2.into(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: U256::from(2),
         };
 
         assert!(unwrap0.merge(&unwrap1).is_ok());
-        assert_eq!(unwrap0.amount, 3.into());
+        assert_eq!(unwrap0.amount, U256::from(3));
     }
 
     #[test]
     fn merge_different_native_token() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: 1.into(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: U256::ONE,
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x02; 20]),
-            amount: 2.into(),
+            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().alloy),
+            amount: U256::from(2),
         };
 
         assert!(unwrap0.merge(&unwrap1).is_err());
-        assert_eq!(unwrap0.amount, 1.into());
+        assert_eq!(unwrap0.amount, U256::ONE);
     }
 
     #[test]
     #[should_panic]
     fn merge_u256_overflow() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: 1.into(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: U256::ONE,
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: U256::max_value(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: U256::MAX,
         };
 
         let _ = unwrap0.merge(&unwrap1);

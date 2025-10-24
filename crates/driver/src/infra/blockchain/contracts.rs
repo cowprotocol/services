@@ -1,7 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, support::Balances},
+    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, WETH9, support::Balances},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -16,7 +16,7 @@ pub struct Contracts {
     vault_relayer: eth::ContractAddress,
     vault: BalancerV2Vault::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
-    weth: contracts::WETH9,
+    weth: WETH9::Instance,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
@@ -85,9 +85,13 @@ impl Contracts {
             web3.alloy.clone(),
         );
 
-        let weth = contracts::WETH9::at(
-            web3,
-            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        let weth = WETH9::Instance::new(
+            addresses
+                .weth
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| WETH9::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let settlement_domain_separator = eth::DomainSeparator(
@@ -140,12 +144,12 @@ impl Contracts {
         &self.vault
     }
 
-    pub fn weth(&self) -> &contracts::WETH9 {
+    pub fn weth(&self) -> &WETH9::Instance {
         &self.weth
     }
 
     pub fn weth_address(&self) -> eth::WethAddress {
-        self.weth.address().into()
+        self.weth.address().into_legacy().into()
     }
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {

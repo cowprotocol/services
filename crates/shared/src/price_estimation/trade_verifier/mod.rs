@@ -22,9 +22,10 @@ use {
     bigdecimal::BigDecimal,
     contracts::{
         GPv2Settlement,
-        WETH9,
-        alloy::support::{AnyoneAuthenticator, Solver, Spardose, Trader},
-        dummy_contract,
+        alloy::{
+            WETH9,
+            support::{AnyoneAuthenticator, Solver, Spardose, Trader},
+        },
     },
     ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
     ethrpc::{
@@ -497,15 +498,16 @@ fn encode_settlement(
             OrderKind::Sell => *out_amount,
             OrderKind::Buy => query.in_amount.get(),
         };
-        let weth = dummy_contract!(WETH9, native_token);
-        let calldata = weth
-            .methods()
-            .withdraw(buy_amount)
-            .tx
-            .data
-            .expect("data gets populated by function call above")
-            .0;
-        trade_interactions.push((native_token, 0.into(), Bytes(calldata)));
+        trade_interactions.push((
+            native_token,
+            0.into(),
+            Bytes(
+                WETH9::WETH9::withdrawCall {
+                    wad: buy_amount.into_alloy(),
+                }
+                .abi_encode(),
+            ),
+        ));
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
 

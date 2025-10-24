@@ -263,7 +263,7 @@ impl<'a> Services<'a> {
                 colocation::start_baseline_solver(
                     "test_solver".into(),
                     solver.clone(),
-                    self.contracts.weth.address(),
+                    *self.contracts.weth.address(),
                     vec![],
                     1,
                     true,
@@ -328,7 +328,7 @@ impl<'a> Services<'a> {
                 colocation::start_baseline_solver(
                     "baseline_solver".into(),
                     solver.clone(),
-                    self.contracts.weth.address(),
+                    *self.contracts.weth.address(),
                     vec![],
                     1,
                     true,

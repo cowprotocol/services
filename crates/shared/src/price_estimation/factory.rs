@@ -28,8 +28,9 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
+    contracts::alloy::WETH9,
     ethcontract::H160,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -184,7 +185,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     async fn create_native_estimator(
         &mut self,
         source: &NativePriceEstimatorSource,
-        weth: &contracts::WETH9,
+        weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
             NativePriceEstimatorSource::Driver(driver) => {
@@ -227,7 +228,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.args.coin_gecko.coin_gecko_url.clone(),
                     self.args.coin_gecko.coin_gecko_api_key.clone(),
                     &self.network.chain,
-                    weth.address(),
+                    weth.address().into_legacy(),
                     self.components.tokens.clone(),
                 )
                 .await?;
@@ -340,7 +341,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
-        weth: contracts::WETH9,
+        weth: WETH9::Instance,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,

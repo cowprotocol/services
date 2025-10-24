@@ -1,7 +1,10 @@
 use {
     ::alloy::primitives::U256,
-    e2e::{setup::*, tx, tx_value},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    e2e::setup::*,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
@@ -29,18 +32,23 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(4))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(4),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(4))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(4))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -54,7 +62,7 @@ async fn test(web3: Web3) {
         .unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(4),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(3),
@@ -88,7 +96,7 @@ async fn test(web3: Web3) {
     let sell_balance = onchain
         .contracts()
         .weth
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
