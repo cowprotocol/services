@@ -385,12 +385,7 @@ impl OnchainComponents {
     ) -> [TestAccount; N] {
         let authenticator = &self.contracts.gp_authenticator;
 
-        let auth_manager = authenticator
-            .manager()
-            .call()
-            .await
-            .unwrap()
-            .into_legacy();
+        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
@@ -409,10 +404,7 @@ impl OnchainComponents {
             // alloy does not try to sign the tx with it and instead
             // forwards the tx to the node for signing. This will
             // work because we told anvil to impersonate that address.
-            let provider = authenticator
-                .provider()
-                .clone()
-                .without_wallet();
+            let provider = authenticator.provider().clone().without_wallet();
             GPv2AllowListAuthentication::new(*authenticator.address(), provider)
         };
 
