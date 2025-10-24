@@ -657,7 +657,7 @@ impl OnchainComponents {
             .weth
             .deposit()
             .value(weth_amount.into_alloy())
-            .from(holder.address().into_alloy())
+            .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
@@ -665,7 +665,7 @@ impl OnchainComponents {
         self.contracts
             .uniswap_v2_factory
             .createPair(*cow.address(), *self.contracts.weth.address())
-            .from(holder.address().into_alloy())
+            .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
@@ -683,7 +683,7 @@ impl OnchainComponents {
                 *self.contracts.uniswap_v2_router.address(),
                 weth_amount.into_alloy(),
             )
-            .from(holder.address().into_alloy())
+            .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
