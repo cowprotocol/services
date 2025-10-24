@@ -44,7 +44,7 @@ start-db:
 format-abi-files:
     #!/bin/sh
     cd ./crates/contracts/artifacts
-        for f in *.json; do
+    for f in *.json; do
         if [ -L "$f" ]; then
             echo "Skipping symlink: $f"
             continue
