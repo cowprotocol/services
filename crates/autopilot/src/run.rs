@@ -692,6 +692,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
+
+    if args.validate_startup {
+        tracing::info!(
+            service = "autopilot",
+            "startup validation successful, exiting"
+        );
+        return;
+    }
+
     run.run_forever(shutdown_controller).await;
 }
 
