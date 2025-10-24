@@ -7,7 +7,7 @@ use {
     contracts::{
         ERC20,
         alloy::{
-            cow_amm::Gpv2OrderEip712,
+            cow_amm::GPv2OrderEip712,
             support::{Balances, Signatures},
         },
     },
