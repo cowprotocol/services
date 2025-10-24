@@ -76,16 +76,17 @@ async fn gas_limit(web3: Web3) {
 
     // Fund trader accounts and approve relayer
     cow.fund(trader.address(), to_wei(5)).await;
-    tx!(
-        trader.account(),
-        cow.approve(onchain.contracts().allowance, to_wei(5))
-    );
+    cow.approve(onchain.contracts().allowance.into_alloy(), eth(5))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: cow.address(),
+        sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(4),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
@@ -136,12 +137,16 @@ async fn allowance(web3: Web3) {
         .await;
     // Setup a malicious interaction for setting approvals to steal funds from
     // the settlement contract.
-    let steal_cow = hook_for_transaction(
-        cow.approve(trader.address(), U256::max_value())
-            .from(solver.account().clone())
-            .tx,
-    )
-    .await;
+    let steal_cow = {
+        let tx = cow
+            .approve(trader.address().into_alloy(), alloy::primitives::U256::MAX)
+            .from(solver.address().into_alloy());
+        Hook {
+            target: cow.address().into_legacy(),
+            call_data: tx.calldata().to_vec(),
+            gas_limit: tx.estimate_gas().await.unwrap(),
+        }
+    };
     let steal_weth = hook_for_transaction(
         onchain
             .contracts()
@@ -156,7 +161,7 @@ async fn allowance(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: cow.address(),
+        sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(5),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
@@ -183,12 +188,16 @@ async fn allowance(web3: Web3) {
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
 
-    let balance = cow.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, to_wei(5));
+    let balance = cow
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, eth(5));
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        cow.balance_of(trader.address())
+        cow.balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap()
@@ -213,13 +222,13 @@ async fn allowance(web3: Web3) {
     // Check malicious custom interactions did not work.
     let allowance = cow
         .allowance(
-            onchain.contracts().gp_settlement.address(),
-            trader.address(),
+            onchain.contracts().gp_settlement.address().into_alloy(),
+            trader.address().into_alloy(),
         )
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, U256::zero());
+    assert_eq!(allowance, alloy::primitives::U256::ZERO);
     let allowance = onchain
         .contracts()
         .weth
@@ -237,13 +246,13 @@ async fn allowance(web3: Web3) {
     // any funds.
     let allowance = cow
         .allowance(
-            (*onchain.contracts().hooks.address()).into_legacy(),
-            trader.address(),
+            *onchain.contracts().hooks.address(),
+            trader.address().into_alloy(),
         )
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, U256::max_value());
+    assert_eq!(allowance, alloy::primitives::U256::MAX);
     let allowance = onchain
         .contracts()
         .weth

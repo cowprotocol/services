@@ -678,6 +678,17 @@ pub mod test {
     crate::bindings!(GasHog);
     // Test Contract for incrementing arbitrary counters.
     crate::bindings!(Counter);
+    // Token with support for `permit` (for pre-interaction tests)
+    crate::bindings!(
+        CowProtocolToken,
+        crate::deployments! {
+            MAINNET => address!("0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"),
+            GNOSIS => address!("0x177127622c4A00F3d409B75571e12cB3c8973d3c"),
+            SEPOLIA => address!("0x0625aFB445C3B6B7B929342a04A22599fd5dBB59"),
+            ARBITRUM_ONE => address!("0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04"),
+            BASE => address!("0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69"),
+        }
+    );
 }
 
 pub use alloy::providers::DynProvider as Provider;
