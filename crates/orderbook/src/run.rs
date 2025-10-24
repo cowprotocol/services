@@ -14,17 +14,16 @@ use {
     clap::Parser,
     contracts::{
         GPv2Settlement,
-        IUniswapV3Factory,
         WETH9,
         alloy::{
             BalancerV2Vault,
             ChainalysisOracle,
             HooksTrampoline,
+            IUniswapV3Factory,
             InstanceExt,
             support::Balances,
         },
     },
-    ethcontract::errors::DeployError,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
@@ -237,10 +236,10 @@ pub async fn run(args: Arguments) {
     allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
+    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+        .await
+        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
+        .ok();
 
     let finder = token_owner_finder::init(
         &args.token_owner_finder,

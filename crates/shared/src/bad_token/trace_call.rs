@@ -378,10 +378,7 @@ mod tests {
             sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
-        contracts::{
-            IUniswapV3Factory,
-            alloy::{BalancerV2Vault, InstanceExt},
-        },
+        contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
         ethrpc::Web3,
         hex_literal::hex,
         std::{env, time::Duration},
@@ -741,7 +738,9 @@ mod tests {
                 )),
                 Arc::new(
                     UniswapV3Finder::new(
-                        IUniswapV3Factory::deployed(&web3).await.unwrap(),
+                        IUniswapV3Factory::Instance::deployed(&web3.alloy)
+                            .await
+                            .unwrap(),
                         base_tokens.to_vec(),
                         FeeValues::Static,
                     )
@@ -779,7 +778,9 @@ mod tests {
         let web3 = Web3::new_from_env();
         let base_tokens = vec![testlib::tokens::WETH];
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
-        let factory = IUniswapV3Factory::deployed(&web3).await.unwrap();
+        let factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let univ3 = Arc::new(
             UniswapV3Finder::new(factory, base_tokens, FeeValues::Dynamic)
                 .await
