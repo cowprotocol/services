@@ -4,7 +4,10 @@ use {
         domain::{competition::order, eth},
         tests::{self, boundary, cases::EtherExt},
     },
-    alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    alloy::{
+        primitives::U256,
+        signers::local::{MnemonicBuilder, PrivateKeySigner},
+    },
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -236,7 +239,18 @@ impl Blockchain {
         );
         let signer = PrivateKeySigner::from_slice(private_key).unwrap();
         web3.wallet.register_signer(signer);
-
+        // This account is equivalent to `primary_account`, but due to the wallet
+        // initialization process and the fact that we launch anvil manually, we need to
+        // add it ourselves.
+        // It also must be added after the main_trader because otherwise this will be
+        // used as the default signing account
+        let anvil_test_account = MnemonicBuilder::english()
+            .phrase("test test test test test test test test test test test junk")
+            .index(0)
+            .unwrap()
+            .build()
+            .unwrap();
+        web3.wallet.register_signer(anvil_test_account);
         // Use the primary account to fund the trader, cow amm and the solver with ETH.
         let balance = web3
             .eth()
