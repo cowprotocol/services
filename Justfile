@@ -39,3 +39,15 @@ fmt *extra:
 # Start database for E2E tests
 start-db:
     docker compose up -d
+
+# Properly formats all ABI files that we generate bindings for to make them human readable
+format-abi-files:
+    #!/bin/sh
+    cd ./crates/contracts/artifacts
+    for f in *.json; do
+        if [ -L "$f" ]; then
+            echo "Skipping symlink: $f"
+            continue
+        fi
+        jq . "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    done
