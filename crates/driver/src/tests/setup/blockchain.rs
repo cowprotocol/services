@@ -251,17 +251,17 @@ impl Blockchain {
             .build()
             .unwrap();
         web3.wallet.register_signer(anvil_test_account);
+
+        let primary_account = primary_account(&web3).await;
+        let primary_address = primary_account.address();
+
         // Use the primary account to fund the trader, cow amm and the solver with ETH.
-        let balance = web3
-            .eth()
-            .balance(primary_address(&web3).await, None)
-            .await
-            .unwrap();
+        let balance = web3.eth().balance(primary_address, None).await.unwrap();
         wait_for(
             &web3,
             web3.eth()
                 .send_transaction(web3::types::TransactionRequest {
-                    from: primary_address(&web3).await,
+                    from: primary_address,
                     to: Some(main_trader_account.address()),
                     value: Some(balance / 5),
                     ..Default::default()
@@ -279,7 +279,7 @@ impl Blockchain {
         wait_for(
             &web3,
             ethcontract::transaction::TransactionBuilder::new(web3.legacy.clone())
-                .from(primary_account(&web3).await)
+                .from(primary_account)
                 .to(weth.address().into_legacy())
                 .value(balance / 5)
                 .send(),
@@ -392,7 +392,7 @@ impl Blockchain {
                 &web3,
                 web3.eth()
                     .send_transaction(web3::types::TransactionRequest {
-                        from: primary_address(&web3).await,
+                        from: primary_address,
                         to: Some(config.address()),
                         value: Some(config.balance),
                         ..Default::default()
@@ -483,7 +483,7 @@ impl Blockchain {
             });
             if pool.reserve_a.token == "WETH" {
                 weth.transfer(*pair.address(), pool.reserve_a.amount.into_alloy())
-                    .from(primary_account(&web3).await.address().into_alloy())
+                    .from(primary_address.into_alloy())
                     .send_and_watch()
                     .await
                     .unwrap();
@@ -491,7 +491,7 @@ impl Blockchain {
                     settlement.address().into_alloy(),
                     pool.reserve_a.amount.into_alloy(),
                 )
-                .from(primary_account(&web3).await.address().into_alloy())
+                .from(primary_address.into_alloy())
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -500,7 +500,7 @@ impl Blockchain {
                         trader_account.address().into_alloy(),
                         pool.reserve_a.amount.into_alloy(),
                     )
-                    .from(primary_account(&web3).await.address().into_alloy())
+                    .from(primary_address.into_alloy())
                     .send_and_watch()
                     .await
                     .unwrap();
@@ -556,7 +556,7 @@ impl Blockchain {
             }
             if pool.reserve_b.token == "WETH" {
                 weth.transfer(*pair.address(), pool.reserve_b.amount.into_alloy())
-                    .from(primary_account(&web3).await.address().into_alloy())
+                    .from(primary_address.into_alloy())
                     .send_and_watch()
                     .await
                     .unwrap();
@@ -564,7 +564,7 @@ impl Blockchain {
                     settlement.address().into_alloy(),
                     pool.reserve_b.amount.into_alloy(),
                 )
-                .from(primary_account(&web3).await.address().into_alloy())
+                .from(primary_address.into_alloy())
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -573,7 +573,7 @@ impl Blockchain {
                         trader_account.address().into_alloy(),
                         pool.reserve_b.amount.into_alloy(),
                     )
-                    .from(primary_account(&web3).await.address().into_alloy())
+                    .from(primary_address.into_alloy())
                     .send_and_watch()
                     .await
                     .unwrap();
@@ -888,10 +888,6 @@ impl Blockchain {
             .await
             .unwrap();
     }
-}
-
-async fn primary_address(web3: &Web3) -> ethcontract::H160 {
-    web3.eth().accounts().await.unwrap()[0]
 }
 
 async fn primary_account(web3: &Web3) -> ethcontract::Account {

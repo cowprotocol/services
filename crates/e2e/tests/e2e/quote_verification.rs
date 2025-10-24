@@ -246,24 +246,22 @@ async fn verified_quote_eth_balance(web3: Web3) {
 
     // quote where the trader has no WETH balances or approval set, but
     // sufficient ETH for the trade
-    assert_eq!(
-        (
-            weth.balanceOf(trader.address().into_alloy())
-                .call()
-                .await
-                .unwrap(),
-            weth.allowance(
-                trader.address().into_alloy(),
-                onchain.contracts().allowance.into_alloy()
-            )
+    assert!(
+        weth.balanceOf(trader.address().into_alloy())
             .call()
             .await
-            .unwrap(),
-        ),
-        (
-            ::alloy::primitives::U256::ZERO,
-            ::alloy::primitives::U256::ZERO
-        ),
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        weth.allowance(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy()
+        )
+        .call()
+        .await
+        .unwrap()
+        .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
@@ -431,31 +429,31 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     assert!(response.verified);
 
     // quote where the trader has no balances or approval set from WETH->TOKEN
-    assert_eq!(
-        (
-            onchain
-                .web3()
-                .eth()
-                .balance(trader.address(), None)
-                .await
-                .unwrap(),
-            weth.balanceOf(trader.address().into_alloy())
-                .call()
-                .await
-                .unwrap(),
-            weth.allowance(
-                trader.address().into_alloy(),
-                onchain.contracts().allowance.into_alloy()
-            )
+    assert!(
+        onchain
+            .web3()
+            .eth()
+            .balance(trader.address(), None)
+            .await
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        weth.balanceOf(trader.address().into_alloy())
             .call()
             .await
-            .unwrap(),
-        ),
-        (
-            U256::zero(),
-            ::alloy::primitives::U256::ZERO,
-            ::alloy::primitives::U256::ZERO
-        ),
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        weth.allowance(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy()
+        )
+        .call()
+        .await
+        .unwrap()
+        .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
