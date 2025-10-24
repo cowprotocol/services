@@ -142,14 +142,10 @@ async fn allowance(web3: Web3) {
         }
     };
     let steal_weth = {
-        let approve = onchain
-            .contracts()
-            .weth
-            .approve(
-                trader.address().into_alloy(),
-                ::alloy::primitives::U256::MAX,
-            )
-            .from(solver.address().into_alloy());
+        let approve = onchain.contracts().weth.approve(
+            trader.address().into_alloy(),
+            ::alloy::primitives::U256::MAX,
+        );
         Hook {
             target: onchain.contracts().weth.address().into_legacy(),
             call_data: approve.calldata().to_vec(),
@@ -529,7 +525,7 @@ async fn partial_fills(web3: Web3) {
             .call()
             .await
             .unwrap()
-            == ::alloy::primitives::U256::ZERO
+            .is_zero()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
     assert_eq!(
