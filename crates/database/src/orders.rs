@@ -160,7 +160,15 @@ pub async fn insert_order_and_ignore_conflicts(
     // Since each order has a unique UID even after a reorg onchain placed orders
     // have the same data. Hence, we can disregard any conflicts.
     const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
-    let result = sqlx::query(QUERY)
+    insert_order_execute_sqlx(QUERY, ex, order).await
+}
+
+async fn insert_order_execute_sqlx(
+    query_str: &str,
+    ex: &mut PgConnection,
+    order: &Order,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(query_str)
         .bind(order.uid)
         .bind(order.owner)
         .bind(order.creation_timestamp)
@@ -186,40 +194,10 @@ pub async fn insert_order_and_ignore_conflicts(
     Ok(result.rows_affected() > 0)
 }
 
-async fn insert_order_execute_sqlx(
-    query_str: &str,
-    ex: &mut PgConnection,
-    order: &Order,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(query_str)
-        .bind(order.uid)
-        .bind(order.owner)
-        .bind(order.creation_timestamp)
-        .bind(order.sell_token)
-        .bind(order.buy_token)
-        .bind(order.receiver)
-        .bind(&order.sell_amount)
-        .bind(&order.buy_amount)
-        .bind(order.valid_to)
-        .bind(order.app_data)
-        .bind(&order.fee_amount)
-        .bind(order.kind)
-        .bind(order.partially_fillable)
-        .bind(order.signature.as_slice())
-        .bind(order.signing_scheme)
-        .bind(order.settlement_contract)
-        .bind(order.sell_token_balance)
-        .bind(order.buy_token_balance)
-        .bind(order.cancellation_timestamp)
-        .bind(order.class)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
 #[instrument(skip_all)]
 pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
-    insert_order_execute_sqlx(INSERT_ORDER_QUERY, ex, order).await
+    insert_order_execute_sqlx(INSERT_ORDER_QUERY, ex, order).await?;
+    Ok(())
 }
 
 #[instrument(skip_all)]
