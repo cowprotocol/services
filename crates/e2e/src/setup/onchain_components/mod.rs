@@ -3,7 +3,10 @@ use {
         nodes::forked_node::ForkedNodeApi,
         setup::{DeployedContracts, deploy::Contracts},
     },
-    ::alloy::signers::local::PrivateKeySigner,
+    ::alloy::{
+        network::{Ethereum, NetworkWallet},
+        signers::local::PrivateKeySigner,
+    },
     app_data::Hook,
     contracts::alloy::{ERC20Mintable, test::CowProtocolToken},
     core::panic,
@@ -618,7 +621,9 @@ impl OnchainComponents {
         .expect("Uniswap V2 pair couldn't mint");
     }
 
-    pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
+    pub async fn deploy_cow_token(&self, supply: U256) -> CowToken {
+        let holder = NetworkWallet::<Ethereum>::default_signer_address(&self.web3().wallet);
+        let holder = Account::Local(holder.into_legacy(), None);
         let contract = CowProtocolToken::CowProtocolToken::deploy(
             self.web3.alloy.clone(),
             holder.address().into_alloy(),
@@ -636,22 +641,14 @@ impl OnchainComponents {
         cow_amount: U256,
         weth_amount: U256,
     ) -> CowToken {
-        let holder = Account::Local(
-            self.web3
-                .eth()
-                .accounts()
-                .await
-                .expect("getting accounts failed")[0],
-            None,
-        );
-        let cow = self.deploy_cow_token(holder.clone(), cow_supply).await;
+        let cow = self.deploy_cow_token(cow_supply).await;
 
-        tx_value!(holder, weth_amount, self.contracts.weth.deposit());
+        tx_value!(cow.holder, weth_amount, self.contracts.weth.deposit());
 
         self.contracts
             .uniswap_v2_factory
             .createPair(*cow.address(), self.contracts.weth.address().into_alloy())
-            .from(holder.address().into_alloy())
+            .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
@@ -659,12 +656,12 @@ impl OnchainComponents {
             *self.contracts.uniswap_v2_router.address(),
             cow_amount.into_alloy(),
         )
-        .from(holder.address().into_alloy())
+        .from(cow.holder.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
         tx!(
-            holder,
+            cow.holder,
             self.contracts.weth.approve(
                 self.contracts.uniswap_v2_router.address().into_legacy(),
                 weth_amount
@@ -679,10 +676,10 @@ impl OnchainComponents {
                 weth_amount.into_alloy(),
                 ::alloy::primitives::U256::ZERO,
                 ::alloy::primitives::U256::ZERO,
-                holder.address().into_alloy(),
+                cow.holder.address().into_alloy(),
                 ::alloy::primitives::U256::MAX,
             )
-            .from(holder.address().into_alloy())
+            .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
