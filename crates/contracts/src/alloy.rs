@@ -660,12 +660,12 @@ pub mod cow_amm {
     /// The contract stores `kind`, `sellTokenBalance`, and `buyTokenBalance` as bytes32,
     /// but the EIP-712 type uses "string" types for human-readable signatures.
     /// See: <https://github.com/cowprotocol/contracts/blob/19972cd8fb3f8663846f772190926f36af068a33/src/contracts/libraries/GPv2Order.sol#L9-L48>
-    // @todo: Migrate to GPv2Settelement::Eip712Order bindings
     pub trait Gpv2OrderEip712 {
         fn eip712_type_hash_correct(&self) -> alloy::primitives::B256;
         fn eip712_hash_struct_correct(&self) -> alloy::primitives::B256;
     }
 
+    // @todo: Migrate to GPv2Settelement::GPv2Order bindings
     impl Gpv2OrderEip712 for CowAmm::GPv2Order::Data {
         fn eip712_type_hash_correct(&self) -> alloy::primitives::B256 {
             const TYPE_HASH: [u8; 32] =
