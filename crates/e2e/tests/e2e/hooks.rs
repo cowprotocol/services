@@ -1,22 +1,17 @@
 use {
     alloy::providers::Provider,
     app_data::Hook,
-    e2e::{
-        setup::{
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            eth,
-            hook_for_transaction,
-            onchain_components,
-            run_test,
-            safe::Safe,
-            to_wei,
-            wait_for_condition,
-        },
-        tx,
+    e2e::setup::{
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        eth,
+        onchain_components,
+        run_test,
+        safe::Safe,
+        to_wei,
+        wait_for_condition,
     },
-    ethcontract::U256,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
