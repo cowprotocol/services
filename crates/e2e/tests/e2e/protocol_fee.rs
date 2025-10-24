@@ -6,6 +6,7 @@ use {
         tx,
         tx_value,
     },
+    std::time::Duration,
     ethcontract::{Address, prelude::U256},
     ethrpc::alloy::{
         CallBuilderExt,
@@ -29,6 +30,12 @@ use {
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
+
+// Extended timeout for tests that settle multiple orders concurrently.
+// The `combined_protocol_fees` test requires all 3 orders to settle, which can take
+// longer than single-order tests, especially in CI environments where the solver may
+// complete just after autopilot's deadline, causing solution rejection and retry.
+const EXTENDED_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio::test]
 #[ignore]
@@ -173,7 +180,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly four elements");
+        .expect("Expected exactly three elements");
 
     let market_price_improvement_order = OrderCreation {
         sell_amount,
@@ -267,7 +274,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .await
     .unwrap()
     .try_into()
-    .expect("Expected exactly two elements");
+    .expect("Expected exactly three elements");
 
     let [
         market_price_improvement_uid,
@@ -284,31 +291,25 @@ async fn combined_protocol_fees(web3: Web3) {
     .await
     .unwrap()
     .try_into()
-    .expect("Expected exactly four elements");
+    .expect("Expected exactly three elements");
 
     onchain.mint_block().await;
 
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
         onchain.mint_block().await;
-        futures::future::join_all(
-            [
-                &market_price_improvement_uid,
-                &limit_surplus_order_uid,
-                &partner_fee_order_uid,
-            ]
-            .map(|uid| async {
-                services
-                    .get_order(uid)
-                    .await
-                    .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
-            }),
-        )
-        .await
-        .into_iter()
-        .all(std::convert::identity)
+
+        // Check each order individually for better diagnostics
+        let market_ok = services.get_order(&market_price_improvement_uid).await
+            .is_ok_and(|o| !o.metadata.executed_fee.is_zero());
+        let limit_ok = services.get_order(&limit_surplus_order_uid).await
+            .is_ok_and(|o| !o.metadata.executed_fee.is_zero());
+        let partner_ok = services.get_order(&partner_fee_order_uid).await
+            .is_ok_and(|o| !o.metadata.executed_fee.is_zero());
+
+        market_ok && limit_ok && partner_ok
     };
-    wait_for_condition(TIMEOUT, metadata_updated)
+    wait_for_condition(EXTENDED_TIMEOUT, metadata_updated)
         .await
         .expect("Timeout waiting for the orders to trade");
 
@@ -371,7 +372,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .await
     .unwrap()
     .try_into()
-    .expect("Expected exactly four elements");
+    .expect("Expected exactly three elements");
     assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
     assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
     assert_approximately_eq!(
