@@ -688,8 +688,6 @@ crate::bindings!(
     }
 );
 
-crate::bindings!(ERC20);
-
 pub mod cow_amm {
     crate::bindings!(CowAmmFactoryGetter);
 }
