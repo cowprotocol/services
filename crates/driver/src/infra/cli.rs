@@ -49,5 +49,5 @@ pub struct Args {
 
     /// Validate configuration and exit without starting the server.
     #[clap(long, env)]
-    pub dry_run: bool,
+    pub validate_startup: bool,
 }

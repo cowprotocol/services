@@ -146,7 +146,7 @@ pub struct Arguments {
     /// Exit after successful initialization without starting the API server.
     /// Validates configuration, database connectivity, and RPC node access.
     #[clap(long, env)]
-    pub dry_run: bool,
+    pub validate_startup: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -178,7 +178,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
-            dry_run,
+            validate_startup,
         } = self;
 
         write!(f, "{shared}")?;
@@ -232,7 +232,7 @@ impl std::fmt::Display for Arguments {
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
-        writeln!(f, "dry_run: {dry_run}")?;
+        writeln!(f, "validate_startup: {validate_startup}")?;
 
         Ok(())
     }

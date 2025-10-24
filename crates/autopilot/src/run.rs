@@ -693,10 +693,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         competition_updates_sender,
     );
 
-    if args.dry_run {
+    if args.validate_startup {
         tracing::info!(
             service = "autopilot",
-            "dry-run mode enabled, exiting after successful initialization"
+            "startup validation successful, exiting"
         );
         return;
     }

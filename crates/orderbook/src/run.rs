@@ -454,11 +454,11 @@ pub async fn run(args: Arguments) {
             .with_fast_quoter(fast_quoter),
     );
 
-    if args.dry_run {
+    if args.validate_startup {
         tracing::info!(
             service = "orderbook",
             bind_address = %args.bind_address,
-            "dry-run mode enabled, exiting after successful initialization"
+            "startup validation successful, exiting"
         );
         return;
     }
