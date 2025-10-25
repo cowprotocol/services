@@ -146,35 +146,24 @@ impl Fulfillment {
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
-        let valid_execution = {
-            let fee = match order.side {
-                order::Side::Buy => order::TargetAmount::default(),
-                order::Side::Sell => order::TargetAmount(match fee {
-                    Fee::Static => eth::U256::default(),
-                    Fee::Dynamic(fee) => fee.0,
-                }),
-            };
-
-            let executed_with_fee = order::TargetAmount(
-                executed
-                    .0
-                    .checked_add(fee.0)
-                    .ok_or(error::Trade::InvalidExecutedAmount)?,
-            );
-            match order.partial {
-                order::Partial::Yes { available } => executed_with_fee <= available,
-                order::Partial::No => executed_with_fee == order.target(),
-            }
+        let fee_target_amount = match order.side {
+            order::Side::Buy => order::TargetAmount::default(),
+            order::Side::Sell => order::TargetAmount(fee.0.0),
         };
 
-        // Only accept solver-computed fees if the order requires them, otherwise the
-        // protocol pre-determines the fee and the solver must respect it.
-        let valid_fee = match &fee {
-            Fee::Static => !order.solver_determines_fee(),
-            Fee::Dynamic(_) => order.solver_determines_fee(),
+        let executed_with_fee = order::TargetAmount(
+            executed
+                .0
+                .checked_add(fee_target_amount.0)
+                .ok_or(error::Trade::InvalidExecutedAmount)?,
+        );
+
+        let valid_execution = match order.partial {
+            order::Partial::Yes { available } => executed_with_fee <= available,
+            order::Partial::No => executed_with_fee == order.target(),
         };
 
-        if valid_execution && valid_fee {
+        if valid_execution {
             Ok(Self {
                 order,
                 executed,
@@ -196,23 +185,12 @@ impl Fulfillment {
     /// Returns the effectively paid fee from the user's perspective
     /// considering their signed order and the uniform clearing prices
     pub fn fee(&self) -> order::SellAmount {
-        match self.fee {
-            Fee::Static => {
-                // Orders with static fees are no longer used, except for quoting purposes, when
-                // the static fee is set to 0. This is expected to be resolved with https://github.com/cowprotocol/services/issues/2543
-                // Once resolved, this code will be simplified as part of https://github.com/cowprotocol/services/issues/2507
-                order::SellAmount(0.into())
-            }
-            Fee::Dynamic(fee) => fee,
-        }
+        self.fee.0
     }
 
-    /// Returns the solver determined fee if it exists.
-    pub fn surplus_fee(&self) -> Option<order::SellAmount> {
-        match self.fee {
-            Fee::Static => None,
-            Fee::Dynamic(fee) => Some(fee),
-        }
+    /// Returns the solver determined fee.
+    pub fn surplus_fee(&self) -> order::SellAmount {
+        self.fee.0
     }
 
     /// The effective amount that left the user's wallet including all fees.
@@ -285,9 +263,7 @@ impl Fulfillment {
         let executed_sell_amount_with_fee = executed_sell_amount
             .checked_add(
                 // surplus_fee is always expressed in sell token
-                self.surplus_fee()
-                    .map(|fee| fee.0)
-                    .ok_or(error::Trade::ProtocolFeeOnStaticOrder)?,
+                self.surplus_fee().0,
             )
             .ok_or(Math::Overflow)?;
         let surplus = match self.order().side {
@@ -336,15 +312,10 @@ impl Fulfillment {
 }
 
 /// A fee that is charged for executing an order.
+///
+/// After CIP38, all orders have solver-determined fees.
 #[derive(Clone, Copy, Debug)]
-pub enum Fee {
-    /// A static protocol computed fee.
-    ///
-    /// That is, the fee is known upfront and is signed as part of the order
-    Static,
-    /// A dynamic solver computed surplus fee.
-    Dynamic(order::SellAmount),
-}
+pub struct Fee(pub order::SellAmount);
 
 /// Uniform clearing prices at which the trade was executed.
 #[derive(Debug, Clone, Copy)]

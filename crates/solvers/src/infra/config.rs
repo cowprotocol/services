@@ -52,6 +52,7 @@ struct Config {
 
     /// If this is configured the solver will also use the Uniswap V3 liquidity
     /// sources that rely on RPC request.
+    #[serde(default, deserialize_with = "deserialize_url")]
     uni_v3_node_url: Option<Url>,
 }
 
@@ -91,6 +92,16 @@ pub async fn load(path: &Path) -> solver::Config {
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
         uni_v3_node_url: config.uni_v3_node_url,
     }
+}
+
+/// Deserialize a URL from a string.
+fn deserialize_url<'de, D>(deserializer: D) -> Result<Option<Url>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    s.map(|url| url.parse().map_err(serde::de::Error::custom))
+        .transpose()
 }
 
 /// Unwraps result or logs a `TOML` parsing error.
