@@ -44,3 +44,21 @@ impl SerializeAs<eth::U256> for U256 {
         serializer.serialize_str(&source.to_string())
     }
 }
+
+/// Serialize a U256 value as a decimal string.
+/// This function is intended to be used with `#[serde(with = "crate::util::serialize::u256")]`.
+pub fn serialize<S>(value: &eth::U256, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    U256::serialize_as(value, serializer)
+}
+
+/// Deserialize a U256 value from a decimal string.
+/// This function is intended to be used with `#[serde(with = "crate::util::serialize::u256")]`.
+pub fn deserialize<'de, D>(deserializer: D) -> Result<eth::U256, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    U256::deserialize_as(deserializer)
+}
