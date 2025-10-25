@@ -73,8 +73,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.order.sell_amount)
         .buy_amount(test_case.order.buy_amount)
         // Expected amounts already account for network fee, so it doesn't matter for the math.
-        // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
-        // todo: can be cleaned up after https://github.com/cowprotocol/services/issues/2507
         .solver_fee(Some(solver_fee))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
