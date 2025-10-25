@@ -107,7 +107,7 @@ impl Solution {
                         quote: None,
                     },
                     jit.executed(),
-                    Fee::Dynamic(jit.fee()),
+                    Fee(jit.fee()),
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
@@ -691,8 +691,6 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Trade {
-        #[error("orders with non solver determined gas cost fees are not supported")]
-        ProtocolFeeOnStaticOrder,
         #[error("invalid executed amount")]
         InvalidExecutedAmount,
         #[error(transparent)]

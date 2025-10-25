@@ -42,9 +42,9 @@ pub fn scoring_failed(
             notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
         solution::error::Scoring::Math(_)
-        | solution::error::Scoring::CalculateCustomPrices(
-            solution::error::Trade::Math(_) | solution::error::Trade::ProtocolFeeOnStaticOrder,
-        ) => return,
+        | solution::error::Scoring::CalculateCustomPrices(solution::error::Trade::Math(_)) => {
+            return
+        }
         solution::error::Scoring::CalculateCustomPrices(
             solution::error::Trade::InvalidExecutedAmount,
         ) => notification::Kind::ScoringFailed(ScoreKind::InvalidExecutedAmount),
