@@ -2,6 +2,7 @@ use {
     crate::util::{Bytes, conv::u256::U256Ext},
     derive_more::{From, Into},
     itertools::Itertools,
+    serde::{Deserialize, Serialize},
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},
@@ -122,8 +123,12 @@ impl TokenAddress {
 /// An ERC20 token amount.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct TokenAmount(pub U256);
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TokenAmount(
+    #[serde(with = "crate::util::serialize::u256")]
+    pub U256
+);
 
 impl TokenAmount {
     /// Applies a factor to the token amount.
@@ -134,8 +139,12 @@ impl TokenAmount {
 
 /// A value denominated in an order's surplus token (buy token for
 /// sell orders and sell token for buy orders).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct SurplusTokenAmount(pub U256);
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SurplusTokenAmount(
+    #[serde(with = "crate::util::serialize::u256")]
+    pub U256
+);
 
 impl Sub<Self> for TokenAmount {
     type Output = TokenAmount;
@@ -258,8 +267,12 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into)]
-pub struct Ether(pub U256);
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, From, Into, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Ether(
+    #[serde(with = "crate::util::serialize::u256")]
+    pub U256
+);
 
 impl From<Ether> for num::BigInt {
     fn from(value: Ether) -> Self {

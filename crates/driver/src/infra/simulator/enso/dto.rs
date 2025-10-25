@@ -15,7 +15,7 @@ pub struct Request {
     pub to: eth::H160,
     #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
-    pub value: eth::U256,
+    pub value: eth::Ether,
     pub gas_limit: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_number: Option<u64>,

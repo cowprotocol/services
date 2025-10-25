@@ -15,7 +15,7 @@ pub struct Request {
     pub to: eth::H160,
     #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
-    pub value: eth::U256,
+    pub value: eth::Ether,
     pub save: bool,
     pub save_if_fails: bool,
     pub generate_access_list: bool,

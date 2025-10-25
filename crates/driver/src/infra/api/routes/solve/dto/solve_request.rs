@@ -48,11 +48,11 @@ impl SolveRequest {
                     created: order.created.into(),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
-                        amount: order.buy_amount.into(),
+                        amount: order.buy_amount,
                         token: order.buy_token.into(),
                     },
                     sell: eth::Asset {
-                        amount: order.sell_amount.into(),
+                        amount: order.sell_amount,
                         token: order.sell_token.into(),
                     },
                     side: match order.kind {
@@ -71,9 +71,9 @@ impl SolveRequest {
                         competition::order::Partial::Yes {
                             available: match order.kind {
                                 Kind::Sell => {
-                                    order.sell_amount.saturating_sub(order.executed).into()
+                                    order.sell_amount.0.saturating_sub(order.executed.0).into()
                                 }
-                                Kind::Buy => order.buy_amount.saturating_sub(order.executed).into(),
+                                Kind::Buy => order.buy_amount.0.saturating_sub(order.executed.0).into(),
                             },
                         }
                     } else {
@@ -84,7 +84,7 @@ impl SolveRequest {
                         .into_iter()
                         .map(|interaction| eth::Interaction {
                             target: interaction.target.into(),
-                            value: interaction.value.into(),
+                            value: interaction.value,
                             call_data: interaction.call_data.into(),
                         })
                         .collect(),
@@ -93,7 +93,7 @@ impl SolveRequest {
                         .into_iter()
                         .map(|interaction| eth::Interaction {
                             target: interaction.target.into(),
-                            value: interaction.value.into(),
+                            value: interaction.value,
                             call_data: interaction.call_data.into(),
                         })
                         .collect(),
@@ -231,7 +231,10 @@ impl SolveRequest {
 #[serde(rename_all = "camelCase")]
 struct Token {
     pub address: eth::H160,
+    /// Token price as a dimensionless ratio between token values.
+    /// Not a token amount - represents exchange rate (e.g., "1 ETH = 2000 USDC").
     #[serde_as(as = "Option<serialize::U256>")]
+    #[allow(clippy::disallowed_types)] // Dimensionless ratio
     pub price: Option<eth::U256>,
     pub trusted: bool,
 }
@@ -244,10 +247,8 @@ struct Order {
     uid: [u8; order::UID_LEN],
     sell_token: eth::H160,
     buy_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
+    sell_amount: eth::TokenAmount,
+    buy_amount: eth::TokenAmount,
     protocol_fees: Vec<FeePolicy>,
     created: u32,
     valid_to: u32,
@@ -256,8 +257,7 @@ struct Order {
     owner: eth::H160,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.
-    #[serde_as(as = "serialize::U256")]
-    executed: eth::U256,
+    executed: eth::TokenAmount,
     pre_interactions: Vec<Interaction>,
     post_interactions: Vec<Interaction>,
     #[serde(default)]
@@ -285,8 +285,7 @@ enum Kind {
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    value: eth::U256,
+    value: eth::Ether,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
 }
@@ -343,12 +342,9 @@ enum FeePolicy {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
-    #[serde_as(as = "serialize::U256")]
-    pub sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub fee: eth::U256,
+    pub sell_amount: eth::TokenAmount,
+    pub buy_amount: eth::TokenAmount,
+    pub fee: eth::TokenAmount,
     pub solver: eth::H160,
 }
 
@@ -356,15 +352,15 @@ impl Quote {
     fn into_domain(self, sell_token: eth::H160, buy_token: eth::H160) -> competition::order::Quote {
         competition::order::Quote {
             sell: eth::Asset {
-                amount: self.sell_amount.into(),
+                amount: self.sell_amount,
                 token: sell_token.into(),
             },
             buy: eth::Asset {
-                amount: self.buy_amount.into(),
+                amount: self.buy_amount,
                 token: buy_token.into(),
             },
             fee: eth::Asset {
-                amount: self.fee.into(),
+                amount: self.fee,
                 token: sell_token.into(),
             },
             solver: self.solver.into(),

@@ -62,7 +62,7 @@ impl Enso {
                 from: tx.from.into(),
                 to: tx.to.into(),
                 data: tx.input.into(),
-                value: tx.value.into(),
+                value: tx.value,
                 gas_limit: GAS_LIMIT,
                 block_number,
                 block_timestamp,

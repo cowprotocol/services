@@ -79,7 +79,7 @@ impl Tenderly {
                 from: tx.from.into(),
                 to: tx.to.into(),
                 input: tx.input.clone().into(),
-                value: tx.value.into(),
+                value: tx.value,
                 save: self.config.save,
                 save_if_fails: self.config.save_if_fails,
                 generate_access_list: generate_access_list == GenerateAccessList::Yes,
