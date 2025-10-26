@@ -10,7 +10,7 @@ use {
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
         order_validation::PreOrderData,
-        price_estimation::{Estimate, QuoteVerificationMode, Verification},
+        price_estimation::{Estimate, Verification},
         trade_finding::external::dto,
     },
     anyhow::{Context, Result},
@@ -412,7 +412,6 @@ pub struct OrderQuoter {
     now: Arc<dyn Now>,
     validity: Validity,
     balance_fetcher: Arc<dyn BalanceFetching>,
-    quote_verification: QuoteVerificationMode,
     default_quote_timeout: std::time::Duration,
 }
 
@@ -425,7 +424,6 @@ impl OrderQuoter {
         storage: Arc<dyn QuoteStoring>,
         validity: Validity,
         balance_fetcher: Arc<dyn BalanceFetching>,
-        quote_verification: QuoteVerificationMode,
         default_quote_timeout: std::time::Duration,
     ) -> Self {
         Self {
@@ -436,7 +434,6 @@ impl OrderQuoter {
             now: Arc::new(Utc::now),
             validity,
             balance_fetcher,
-            quote_verification,
             default_quote_timeout,
         }
     }
@@ -528,13 +525,8 @@ impl OrderQuoter {
         parameters: &QuoteParameters,
         sell_amount: U256,
     ) -> Result<(), CalculateQuoteError> {
-        if estimate.verified
-            || !matches!(
-                self.quote_verification,
-                QuoteVerificationMode::EnforceWhenPossible
-            )
-        {
-            // verification was successful or not strictly required
+        // Always prefer verified quotes - accept both verified and unverified
+        if estimate.verified {
             return Ok(());
         }
 
@@ -926,7 +918,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: super::Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1067,7 +1058,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1203,7 +1193,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1302,7 +1291,6 @@ mod tests {
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1376,7 +1364,6 @@ mod tests {
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1437,7 +1424,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1520,7 +1506,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1605,7 +1590,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1678,7 +1662,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1709,7 +1692,6 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
-            quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };

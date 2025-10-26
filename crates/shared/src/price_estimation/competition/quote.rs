@@ -154,7 +154,6 @@ mod tests {
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
                 MockPriceEstimating,
-                QuoteVerificationMode,
                 native::MockNativePriceEstimating,
             },
         },
@@ -202,7 +201,6 @@ mod tests {
         ranking: PriceRanking,
         kind: OrderKind,
         estimates: Vec<PriceEstimateResult>,
-        verification: QuoteVerificationMode,
     ) -> PriceEstimateResult {
         fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
             let mut estimator = MockPriceEstimating::new();
@@ -222,8 +220,7 @@ mod tests {
                     .collect(),
             ],
             ranking.clone(),
-        )
-        .with_verification(verification);
+        );
 
         priority
             .estimate(Arc::new(Query {
@@ -249,7 +246,6 @@ mod tests {
                 // User effectively receives `99_999` `buy_token`.
                 price(107_999, 2_000),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(104_000, 1_000));
@@ -263,7 +259,6 @@ mod tests {
                 // User effectively pays `100_002` `sell_token`.
                 price(92_002, 2_000),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(96_000, 1_000));
@@ -287,7 +282,6 @@ mod tests {
                 // gets discarded because it quotes 0 gas.
                 price(104_000, 0),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(104_000, 1_000));
@@ -304,7 +298,6 @@ mod tests {
                 // gets discarded because it quotes 0 gas.
                 price(99_000, 0),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(96_000, 1_000));
@@ -322,7 +315,6 @@ mod tests {
                 error(PriceEstimationError::RateLimited),
                 error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, error(PriceEstimationError::RateLimited));
@@ -338,7 +330,6 @@ mod tests {
                 price(1, 1_000_000),
                 error(PriceEstimationError::RateLimited),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(1, 1_000_000));
@@ -366,7 +357,6 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            QuoteVerificationMode::Prefer,
         )
         .await;
         assert_eq!(best, worse_verified_quote.clone());
@@ -378,7 +368,6 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            QuoteVerificationMode::EnforceWhenPossible,
         )
         .await;
         assert_eq!(best, worse_verified_quote.clone());
@@ -390,7 +379,6 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, better_unverified_quote);

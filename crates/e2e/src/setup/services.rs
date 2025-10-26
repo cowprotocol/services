@@ -235,7 +235,6 @@ impl<'a> Services<'a> {
         let args: Vec<_> = [
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
-            "--quote-verification=enforce-when-possible".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

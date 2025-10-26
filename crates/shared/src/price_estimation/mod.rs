@@ -225,16 +225,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1.")]
     pub quote_inaccuracy_limit: BigDecimal,
 
-    /// How strict quote verification should be.
-    #[clap(
-        long,
-        env,
-        default_value = "unverified",
-        value_enum,
-        verbatim_doc_comment
-    )]
-    pub quote_verification: QuoteVerificationMode,
-
     /// Default timeout for quote requests.
     #[clap(
         long,
@@ -357,7 +347,6 @@ impl Display for Arguments {
             one_inch_url,
             coin_gecko,
             quote_inaccuracy_limit,
-            quote_verification,
             quote_timeout,
             balance_overrides,
             native_price_approximation_tokens,
@@ -424,7 +413,6 @@ impl Display for Arguments {
             ),
         )?;
         writeln!(f, "quote_inaccuracy_limit: {quote_inaccuracy_limit}")?;
-        writeln!(f, "quote_verification: {quote_verification:?}")?;
         writeln!(f, "quote_timeout: {quote_timeout:?}")?;
         write!(f, "{balance_overrides}")?;
         writeln!(

@@ -433,9 +433,8 @@ async fn single_replace_order_test(web3: Web3) {
         .start_protocol_with_args(
             ExtraServiceArgs {
                 // To avoid race conditions we have to start the protocol
-                // with the solver being banned. To allow us to still create
-                // orders we override the quote verification to be disabled.
-                api: vec!["--quote-verification=prefer".into()],
+                // with the solver being banned.
+                api: vec![],
                 ..Default::default()
             },
             solver.clone(),

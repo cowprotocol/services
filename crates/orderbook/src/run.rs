@@ -48,7 +48,6 @@ use {
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
             PriceEstimating,
-            QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },
@@ -365,8 +364,7 @@ pub async fn run(args: Arguments) {
         max_limit: args.max_limit_order_validity_period,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
-                         verification: QuoteVerificationMode| {
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
@@ -387,16 +385,36 @@ pub async fn run(args: Arguments) {
                 .unwrap(),
             },
             balance_fetcher.clone(),
-            verification,
             args.price_estimation.quote_timeout,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator, args.price_estimation.quote_verification);
+    let optimal_quoter = create_quoter(price_estimator);
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
     // them.
-    let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
+    let fast_quoter = Arc::new(OrderQuoter::new(
+        fast_price_estimator,
+        native_price_estimator.clone(),
+        gas_price_estimator.clone(),
+        Arc::new(postgres_write.clone()),
+        order_quoting::Validity {
+            eip1271_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.eip1271_onchain_quote_validity,
+            )
+            .unwrap(),
+            presign_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.presign_onchain_quote_validity,
+            )
+            .unwrap(),
+            standard_quote: chrono::Duration::from_std(
+                args.order_quoting.standard_offchain_quote_validity,
+            )
+            .unwrap(),
+        },
+        balance_fetcher.clone(),
+        args.price_estimation.quote_timeout,
+    ));
 
     let app_data_validator = Validator::new(args.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)

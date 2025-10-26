@@ -509,7 +509,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             .unwrap(),
         },
         balance_fetcher.clone(),
-        args.price_estimation.quote_verification,
         args.price_estimation.quote_timeout,
     ));
 

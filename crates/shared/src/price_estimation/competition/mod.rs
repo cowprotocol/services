@@ -49,17 +49,7 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             stages,
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
-            verification_mode: QuoteVerificationMode::Unverified,
-        }
-    }
-
-    /// Configures if verified price estimates should be ranked higher than
-    /// unverified ones even if the price is worse.
-    /// Per default verified quotes do not get preferred.
-    pub fn with_verification(self, mode: QuoteVerificationMode) -> Self {
-        Self {
-            verification_mode: mode,
-            ..self
+            verification_mode: QuoteVerificationMode::Prefer,
         }
     }
 
@@ -585,7 +575,7 @@ mod tests {
             ],
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
-            verification_mode: QuoteVerificationMode::Unverified,
+            verification_mode: QuoteVerificationMode::Prefer,
         };
 
         racing.estimate(query).await.unwrap();
