@@ -24,7 +24,7 @@ pub mod quote;
 pub mod settle;
 pub mod solver_balance;
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 /// Example solver name.
 const SOLVER_NAME: &str = "test1";
 

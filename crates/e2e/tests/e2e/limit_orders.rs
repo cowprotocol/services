@@ -371,7 +371,6 @@ async fn two_limit_orders_test(web3: Web3) {
     .unwrap();
 }
 
-#[allow(unused)]
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 

@@ -43,7 +43,6 @@ pub struct Configuration {
 }
 
 /// Trait for fetching a batch of native price estimates.
-#[allow(dead_code)]
 #[cfg_attr(test, mockall::automock)]
 pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     /// Fetches a batch of native price estimates.
@@ -65,7 +64,7 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
 
 /// Buffered implementation that implements automatic batching of
 /// native prices requests.
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Clone)]
 pub struct BufferedRequest<Inner> {
     config: Configuration,
@@ -75,7 +74,6 @@ pub struct BufferedRequest<Inner> {
 }
 
 /// Object to map the token with its native price estimator result
-#[allow(dead_code)]
 #[derive(Clone)]
 struct NativePriceResult {
     token: H160,
@@ -132,7 +130,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 impl<Inner> BufferedRequest<Inner>
 where
     Inner: NativePriceBatchFetching + Send + Sync + NativePriceEstimating + 'static,

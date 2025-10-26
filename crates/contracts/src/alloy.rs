@@ -750,7 +750,7 @@ macro_rules! bindings {
             // Generate the main bindings in a private module. That allows
             // us to re-export all items in our own module while also adding
             // some items ourselves.
-            #[allow(non_snake_case)]
+            #[expect(non_snake_case)]
             mod [<$contract Private>] {
                 alloy::sol!(
                     #[allow(missing_docs, clippy::too_many_arguments)]
@@ -760,7 +760,7 @@ macro_rules! bindings {
                 );
             }
 
-            #[allow(non_snake_case)]
+            #[expect(non_snake_case)]
             pub mod $contract {
                 use alloy::providers::DynProvider;
 

@@ -437,7 +437,7 @@ impl Pool {
     /// Restores reserve_a value from the given reserve_b and the quote. Reverse
     /// operation for the `blockchain::Pool::out` function.
     /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn adjusted_reserve_a(self, quote: &LiquidityQuote) -> Self {
         let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
             (quote.sell_amount, quote.buy_amount)
@@ -596,7 +596,6 @@ impl Solution {
     }
 
     /// Increase the solution gas consumption by at least `units`.
-    #[allow(dead_code)]
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
         let additional_bytes = (units / 16) + 1;
@@ -1216,7 +1215,6 @@ impl Test {
         balances
     }
 
-    #[allow(dead_code)]
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
     }

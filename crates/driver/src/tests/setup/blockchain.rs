@@ -41,7 +41,7 @@ pub struct Pair {
     pool: Pool,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct Blockchain {
     pub trader_secret_key: SecretKey,

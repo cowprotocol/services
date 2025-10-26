@@ -31,7 +31,7 @@ pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value
         .unwrap()
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuctionTransaction {
     pub tx_hash: TransactionHash,

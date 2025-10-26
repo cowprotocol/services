@@ -112,7 +112,7 @@ struct Inner {
 }
 
 impl SolvableOrdersCache {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,

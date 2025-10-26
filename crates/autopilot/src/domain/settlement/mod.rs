@@ -38,7 +38,7 @@ pub use {
 /// on-chain.
 ///
 /// Referenced as a [`Settlement`] in the codebase.
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct Settlement {
     /// The gas used by the settlement transaction.

@@ -33,13 +33,11 @@ use {
 };
 
 /// Layer that buffers multiple calls into batch calls.
-#[allow(dead_code)]
 pub(crate) struct BatchCallLayer {
     config: Config,
 }
 
 impl BatchCallLayer {
-    #[allow(dead_code)]
     pub fn new(config: Config) -> Self {
         Self { config }
     }

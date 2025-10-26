@@ -135,7 +135,7 @@ impl BalanceSimulator {
         self.vault
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn simulate<F, Fut>(
         &self,
         owner: H160,

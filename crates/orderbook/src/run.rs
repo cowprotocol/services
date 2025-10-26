@@ -523,7 +523,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .expect("failed to connect to database");
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
     database_replica: Postgres,

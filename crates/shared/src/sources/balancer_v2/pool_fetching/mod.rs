@@ -367,7 +367,7 @@ impl BalancerContracts {
 }
 
 impl BalancerPoolFetcher {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn new(
         subgraph_url: &Url,
         block_retriever: Arc<dyn BlockRetrieving>,

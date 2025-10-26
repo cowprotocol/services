@@ -736,7 +736,7 @@ macro_rules! impl_event_retrieving {
         $vis struct $name($($contract_module)*::Contract);
 
         impl $name {
-            #[allow(dead_code)]
+            #[expect(dead_code)]
             pub fn new(instance: $($contract_module)*::Contract) -> Self {
                 Self(instance)
             }

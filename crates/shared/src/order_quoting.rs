@@ -417,7 +417,7 @@ pub struct OrderQuoter {
 }
 
 impl OrderQuoter {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,

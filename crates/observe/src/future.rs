@@ -36,7 +36,7 @@ enum State {
     NeverPolled,
     // We rely on the side effects of dropping the timer so it's okay that we never use it for
     // anything else.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Running(prometheus::HistogramTimer),
     Done,
 }
