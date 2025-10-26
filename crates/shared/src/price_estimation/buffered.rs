@@ -64,11 +64,9 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
 
 /// Buffered implementation that implements automatic batching of
 /// native prices requests.
-#[expect(dead_code)]
 #[derive(Clone)]
 pub struct BufferedRequest<Inner> {
-    config: Configuration,
-    inner: Arc<Inner>,
+    inner: std::marker::PhantomData<Inner>,
     requests: mpsc::UnboundedSender<H160>,
     results: broadcast::Sender<NativePriceResult>,
 }
@@ -149,10 +147,9 @@ where
         );
 
         Self {
-            inner,
+            inner: Default::default(),
             requests: requests_sender,
             results: results_sender,
-            config,
         }
     }
 

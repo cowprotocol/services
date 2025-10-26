@@ -434,36 +434,6 @@ pub struct Pool {
 }
 
 impl Pool {
-    /// Restores reserve_a value from the given reserve_b and the quote. Reverse
-    /// operation for the `blockchain::Pool::out` function.
-    /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
-    #[expect(dead_code)]
-    pub fn adjusted_reserve_a(self, quote: &LiquidityQuote) -> Self {
-        let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
-            (quote.sell_amount, quote.buy_amount)
-        } else {
-            (quote.buy_amount, quote.sell_amount)
-        };
-        let reserve_a_min = ceil_div(
-            eth::U256::from(997)
-                * quote_sell_amount
-                * (self.amount_b - quote_buy_amount - eth::U256::from(1)),
-            eth::U256::from(1000) * quote_buy_amount,
-        );
-        let reserve_a_max =
-            (eth::U256::from(997) * quote_sell_amount * (self.amount_b - quote_buy_amount))
-                / (eth::U256::from(1000) * quote_buy_amount);
-        if reserve_a_min > reserve_a_max {
-            panic!(
-                "Unexpected calculated reserves. min: {reserve_a_min:?}, max: {reserve_a_max:?}"
-            );
-        }
-        Self {
-            amount_a: reserve_a_min,
-            ..self
-        }
-    }
-
     /// Restores reserve_b value from the given reserve_a and the quote. Reverse
     /// operation for the `blockchain::Pool::out` function
     /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
