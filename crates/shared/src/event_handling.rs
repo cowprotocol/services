@@ -787,7 +787,7 @@ mod tests {
         }
 
         fn provider(&self) -> &contracts::alloy::Provider {
-            &self.provider()
+            self.provider()
         }
     }
 
