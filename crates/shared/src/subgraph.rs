@@ -9,7 +9,7 @@ use {
 };
 
 pub const QUERY_PAGE_SIZE: usize = 1000;
-pub const MAX_NUMBER_OF_ATTEMPTS_DEFAULT: usize = 10;
+const MAX_NUMBER_OF_ATTEMPTS_DEFAULT: usize = 10;
 
 /// A general client for querying subgraphs.
 pub struct SubgraphClient {

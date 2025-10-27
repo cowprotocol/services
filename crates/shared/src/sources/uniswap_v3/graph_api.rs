@@ -19,7 +19,7 @@ use {
 
 // Some subgraphs don't have a the ticks_ filter. Use this query to check for
 // its presence.
-const CHECK_LIQUIDITYNET_FILTER: &str = r#"
+const CHECK_LIQUIDITY_NET_FILTER: &str = r#"
 query CheckLiquidityNetField($block: Int) {
   pools(
     first: 1
@@ -84,7 +84,7 @@ impl UniV3SubgraphClient {
         self.client.set_max_number_of_attmpts(1); // expected to fail sometimes, don't retry
         let result: Result<serde_json::Value> = self
             .client
-            .query::<serde_json::Value>(CHECK_LIQUIDITYNET_FILTER, None)
+            .query::<serde_json::Value>(CHECK_LIQUIDITY_NET_FILTER, None)
             .await;
 
         if result.is_err() {
