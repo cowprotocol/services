@@ -2,7 +2,7 @@ use {
     crate::domain,
     chain::Chain,
     contracts::{
-        alloy::{GPv2AllowListAuthentication, HooksTrampoline, InstanceExt, support::Balances},
+        alloy::{GPv2AllowListAuthentication, HooksTrampoline, support::Balances},
         bindings::ChainalysisOracle,
     },
     ethrpc::{Web3, alloy::conversions::IntoAlloy},

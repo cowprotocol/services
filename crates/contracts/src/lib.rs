@@ -42,6 +42,7 @@ pub mod paths;
 pub mod vault;
 pub mod web3;
 
+#[rustfmt::skip]
 pub mod bindings;
 
 macro_rules! include_contracts {

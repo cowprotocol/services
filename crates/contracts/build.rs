@@ -1,4 +1,4 @@
-use contracts_generate::{Contract, Contracts};
+use contracts_generate::{Contract, Contracts, networks};
 
 use {
     ethcontract::{
@@ -23,15 +23,6 @@ const AVALANCHE: &str = "43114";
 const BNB: &str = "56";
 const OPTIMISM: &str = "10";
 const LENS: &str = "232";
-
-macro_rules! info {
-    ($addr:expr) => {
-        ($addr, None)
-    };
-    ($addr:expr, $block:expr) => {
-        ($addr, Some($block))
-    };
-}
 
 pub mod networks {
     pub const MAINNET: u64 = 1;
@@ -58,37 +49,15 @@ fn main() {
 
     std::fs::create_dir_all("src/bindings").unwrap();
     Contracts::new()
-        .add_contract(
-            Contract::new("ChainalysisOracle")
-                .with_network(
-                    networks::MAINNET,
-                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
-                )
-                .with_network(
-                    networks::ARBITRUM_ONE,
-                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
-                )
-                .with_network(
-                    networks::BASE,
-                    info!("0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B"),
-                )
-                .with_network(
-                    networks::AVALANCHE,
-                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
-                )
-                .with_network(
-                    networks::BNB,
-                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
-                )
-                .with_network(
-                    networks::OPTIMISM,
-                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
-                )
-                .with_network(
-                    networks::POLYGON,
-                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
-                ),
-        )
+        .add_contract(Contract::new("ChainalysisOracle").with_networks(networks![
+            networks::MAINNET => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
+            networks::ARBITRUM_ONE => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
+            networks::BASE => "0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B",
+            networks::AVALANCHE => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
+            networks::BNB => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
+            networks::OPTIMISM => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
+            networks::POLYGON => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
+        ]))
         .write_formatted(Path::new("artifacts"), false, Path::new("src/bindings"))
         .unwrap();
 

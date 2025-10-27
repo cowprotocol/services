@@ -66,13 +66,15 @@ impl Contract {
         }
     }
 
-    pub fn with_network<S: AsRef<str>>(
-        mut self,
-        id: u64,
-        (address, block_number): (S, Option<u64>),
-    ) -> Self {
-        self.networks
-            .insert(id, (address.as_ref().to_string(), block_number));
+    pub fn with_networks<S, I>(mut self, networks: I) -> Self
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (u64, (S, Option<u64>))>,
+    {
+        for (id, (address, block_number)) in networks.into_iter() {
+            self.networks
+                .insert(id, (address.as_ref().to_string(), block_number));
+        }
         self
     }
 
@@ -86,8 +88,8 @@ impl Contract {
         all_derives: bool,
     ) -> eyre::Result<proc_macro2::TokenStream> {
         let bindings_path = self.bindings_path(bindings_folder.as_ref());
-        let mut instance = SolMacroGen::new(bindings_path, self.name.clone());
-        generate_binding(&mut instance, all_derives)?;
+        let mut macrogen = SolMacroGen::new(bindings_path, self.name.clone());
+        generate_binding(&mut macrogen, all_derives)?;
 
         let module_name_ident = format_ident!("{}", self.name);
         let instance_name_ident = format_ident!("{}Instance", self.name);
@@ -102,71 +104,78 @@ impl Contract {
             }
         });
 
-        let extensions = quote::quote! {
-            use {
-                std::{
-                    sync::LazyLock,
-                    collections::HashMap
-                },
-                anyhow::{Result, Context},
-                alloy::{
-                    providers::{Provider, DynProvider},
-                    primitives::{address, Address},
-                },
-            };
+        let instance = quote::quote! {
+            pub type Instance = #module_name_ident :: #instance_name_ident<::alloy::providers::DynProvider>;
+        };
 
-            pub type Instance = #module_name_ident :: #instance_name_ident<DynProvider>;
-            static DEPLOYMENT_INFO: LazyLock<HashMap<u64, (Address, Option<u64>)>> = LazyLock::new(|| {
-                ::std::collections::HashMap::from([
-                    #(#network_entries),*
-                ])
-            });
+        let deployment_info = if self.networks.is_empty() {
+            proc_macro2::TokenStream::new()
+        } else {
+            quote::quote! {
+                use {
+                    std::{
+                        sync::LazyLock,
+                        collections::HashMap
+                    },
+                    anyhow::{Result, Context},
+                    alloy::{
+                        providers::{Provider, DynProvider},
+                        primitives::{address, Address},
+                    },
+                };
 
+                static DEPLOYMENT_INFO: LazyLock<HashMap<u64, (Address, Option<u64>)>> = LazyLock::new(|| {
+                    ::std::collections::HashMap::from([
+                        #(#network_entries),*
+                    ])
+                });
 
-            /// Returns the contract's deployment address (if one exists) for the given chain.
-            pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
-                DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
-            }
-
-            impl crate::alloy::InstanceExt for Instance {
-                fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
-                    async move {
-                        let chain_id = provider
-                            .get_chain_id()
-                            .await
-                            .context("could not fetch current chain id")?;
-
-                        let (address, _deployed_block) = *DEPLOYMENT_INFO
-                            .get(&chain_id)
-                            .with_context(|| format!("no deployment info for chain {chain_id:?}"))?;
-
-                        Ok(Instance::new(
-                            address,
-                            provider.clone(),
-                        ))
-                    }
+                /// Returns the contract's deployment address (if one exists) for the given chain.
+                pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
+                    DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
                 }
 
-                fn deployed_block(&self) -> impl Future<Output = Result<Option<u64>>> + Send {
-                    async move {
-                        let chain_id = self
-                            .provider()
-                            .get_chain_id()
-                            .await
-                            .context("could not fetch current chain id")?;
-                        if let Some((_address, deployed_block)) = DEPLOYMENT_INFO.get(&chain_id) {
-                            return Ok(*deployed_block);
+                impl Instance {
+                    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+                        async move {
+                            let chain_id = provider
+                                .get_chain_id()
+                                .await
+                                .context("could not fetch current chain id")?;
+
+                            let (address, _deployed_block) = *DEPLOYMENT_INFO
+                                .get(&chain_id)
+                                .with_context(|| format!("no deployment info for chain {chain_id:?}"))?;
+
+                            Ok(Instance::new(
+                                address,
+                                provider.clone(),
+                            ))
                         }
-                        Ok(None)
+                    }
+
+                    pub fn deployed_block(&self) -> impl Future<Output = Result<Option<u64>>> + Send {
+                        async move {
+                            let chain_id = self
+                                .provider()
+                                .get_chain_id()
+                                .await
+                                .context("could not fetch current chain id")?;
+                            if let Some((_address, deployed_block)) = DEPLOYMENT_INFO.get(&chain_id) {
+                                return Ok(*deployed_block);
+                            }
+                            Ok(None)
+                        }
                     }
                 }
             }
         };
 
-        let mut expansion = instance
+        let mut expansion = macrogen
             .expansion
             .expect("if the expansion failed, it should have errored earlier");
-        expansion.extend(extensions);
+        expansion.extend(instance);
+        expansion.extend(deployment_info);
 
         Ok(expansion)
     }
@@ -232,4 +241,26 @@ fn write_mod_name(contents: &mut String, name: &str) -> eyre::Result<()> {
         write!(contents, "pub mod r#{name};")?;
     }
     Ok(())
+}
+
+#[macro_export]
+macro_rules! networks {
+    // Entry point: accepts a list of entries and delegates to internal rules
+    [$(
+        $id:expr => $value:tt
+    ),* $(,)?] => {
+        [$(
+            networks!(@entry $id => $value)
+        ),*]
+    };
+
+    // Internal rule: handle entry with address and block (parenthesized)
+    (@entry $id:expr => ($addr:expr, $block:expr)) => {
+        ($id, ($addr, Some($block)))
+    };
+
+    // Internal rule: handle entry with just address
+    (@entry $id:expr => $value:expr) => {
+        ($id, ($value, None))
+    };
 }
