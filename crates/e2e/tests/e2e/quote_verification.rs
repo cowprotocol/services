@@ -1,7 +1,7 @@
 use {
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::{eth, *},
-    ethcontract::{H160, U256},
+    ethcontract::H160,
     ethrpc::{
         Web3,
         alloy::{

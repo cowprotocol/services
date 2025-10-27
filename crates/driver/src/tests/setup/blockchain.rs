@@ -449,15 +449,15 @@ impl Blockchain {
         let mut pairs = Vec::new();
         for pool in config.pools {
             // Get token addresses.
-            let token_a = *if pool.reserve_a.token == "WETH" {
-                weth.address()
+            let token_a = if pool.reserve_a.token == "WETH" {
+                *weth.address()
             } else {
-                tokens.get(pool.reserve_a.token).unwrap().address()
+                *tokens.get(pool.reserve_a.token).unwrap().address()
             };
-            let token_b = *if pool.reserve_b.token == "WETH" {
-                weth.address()
+            let token_b = if pool.reserve_b.token == "WETH" {
+                *weth.address()
             } else {
-                tokens.get(pool.reserve_b.token).unwrap().address()
+                *tokens.get(pool.reserve_b.token).unwrap().address()
             };
             // Create the pair.
             uniswap_factory
