@@ -300,7 +300,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let metadata_updated = || async {
         onchain.mint_block().await;
 
-        // Check each order individually for better diagnostics
+        // Check each order sequentially (easier to inspect in debugger)
         let market_ok = services
             .get_order(&market_price_improvement_uid)
             .await
