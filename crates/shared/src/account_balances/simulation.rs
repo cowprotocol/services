@@ -56,7 +56,7 @@ impl Balances {
                 query.source,
                 &query.interactions,
                 None,
-                |delegate_call| async move { delegate_call },
+                |_| async move { Default::default() },
                 query.balance_override.clone(),
             )
             .await?;
@@ -158,7 +158,7 @@ impl BalanceFetching for Balances {
                 query.source,
                 &query.interactions,
                 Some(amount),
-                |delegate_call| async move { delegate_call },
+                |_| async move { Default::default() },
                 query.balance_override.clone(),
             )
             .await
@@ -196,7 +196,7 @@ mod tests {
         let web3 = Web3::new_from_env();
         let settlement = GPv2Settlement::GPv2Settlement::new(
             alloy::primitives::address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
-            &web3.alloy,
+            web3.alloy.clone(),
         );
         let balances = contracts::alloy::support::Balances::Instance::new(
             address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
