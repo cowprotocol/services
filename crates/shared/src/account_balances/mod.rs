@@ -3,11 +3,7 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::{
-        contract::CallBuilder,
-        providers::DynProvider,
-        sol_types::{SolCall, SolType, sol_data},
-    },
+    alloy::sol_types::{SolCall, SolType, sol_data},
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethcontract::state_overrides::StateOverrides,
     ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
@@ -16,7 +12,7 @@ use {
         order::{Order, SellTokenSource},
     },
     primitive_types::{H160, U256},
-    std::{marker::PhantomData, sync::Arc},
+    std::sync::Arc,
     thiserror::Error,
 };
 
@@ -131,25 +127,15 @@ impl BalanceSimulator {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn simulate<F, Fut>(
+    pub async fn simulate(
         &self,
         owner: H160,
         token: H160,
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
-        compute_access_list: F,
         balance_override: Option<BalanceOverrideRequest>,
-    ) -> Result<Simulation, SimulationError>
-    where
-        F: FnOnce(
-            CallBuilder<
-                DynProvider,
-                PhantomData<GPv2Settlement::GPv2Settlement::simulateDelegatecallCall>,
-            >,
-        ) -> Fut,
-        Fut: Future<Output = alloy::rpc::types::AccessList>,
-    {
+    ) -> Result<Simulation, SimulationError> {
         let overrides: StateOverrides = match balance_override {
             Some(overrides) => self
                 .balance_overrider
@@ -186,15 +172,14 @@ impl BalanceSimulator {
                 .collect(),
         };
 
-        let delegate_call = self
+        let response = self
             .settlement
             .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
             .with_cloned_provider()
             .state(overrides.into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy());
-
-        let access_list = compute_access_list(delegate_call.clone()).await;
-        let response = delegate_call.access_list(access_list).call().await?;
+            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy())
+            .call()
+            .await?;
 
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(

@@ -56,7 +56,6 @@ impl Balances {
                 query.source,
                 &query.interactions,
                 None,
-                |_| async move { Default::default() },
                 query.balance_override.clone(),
             )
             .await?;
@@ -158,7 +157,6 @@ impl BalanceFetching for Balances {
                 query.source,
                 &query.interactions,
                 Some(amount),
-                |_| async move { Default::default() },
                 query.balance_override.clone(),
             )
             .await
