@@ -1370,29 +1370,34 @@ mod tests {
             .unwrap();
 
         // Count events after first insert
-        let event_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM order_events WHERE order_uid = $1"
-        )
-        .bind(order.uid)
-        .fetch_one(&mut *db)
-        .await
-        .unwrap();
-        assert_eq!(event_count, 1, "First insert should create exactly one event");
+        let event_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM order_events WHERE order_uid = $1")
+                .bind(order.uid)
+                .fetch_one(&mut *db)
+                .await
+                .unwrap();
+        assert_eq!(
+            event_count, 1,
+            "First insert should create exactly one event"
+        );
 
-        // Second insert should be skipped (conflict) and should NOT create another event
+        // Second insert should be skipped (conflict) and should NOT create another
+        // event
         insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
             .await
             .unwrap();
 
         // Count events after second insert - should still be 1
-        let event_count_after: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM order_events WHERE order_uid = $1"
-        )
-        .bind(order.uid)
-        .fetch_one(&mut *db)
-        .await
-        .unwrap();
-        assert_eq!(event_count_after, 1, "Second insert should NOT create a duplicate event");
+        let event_count_after: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM order_events WHERE order_uid = $1")
+                .bind(order.uid)
+                .fetch_one(&mut *db)
+                .await
+                .unwrap();
+        assert_eq!(
+            event_count_after, 1,
+            "Second insert should NOT create a duplicate event"
+        );
     }
 
     #[tokio::test]
