@@ -11,7 +11,6 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    contracts::GPv2Settlement,
     ethrpc::{
         alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::BlockRetrieving,
@@ -85,7 +84,7 @@ pub fn to_interaction(
 
     let handler = UniswapV3SettlementHandler::new(
         pool.router.0.into_alloy(),
-        GPv2Settlement::at(&web3, receiver.0),
+        receiver.0.into_alloy(),
         Mutex::new(Allowances::empty(receiver.0)),
         pool.fee.0,
     );
