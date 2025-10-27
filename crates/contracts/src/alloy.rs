@@ -836,6 +836,11 @@ macro_rules! bindings {
                     $deployment_info
                 });
 
+                /// Returns the contract's deployment block (if one exists) for the given chain.
+                pub fn deployment_block(chain_id: &u64) -> Option<u64> {
+                    DEPLOYMENT_INFO.get(chain_id).map(|(_, block)| *block).flatten()
+                }
+
                 /// Returns the contract's deployment address (if one exists) for the given chain.
                 pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
                     DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)

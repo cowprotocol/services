@@ -1,7 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, support::Balances},
+    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, GPv2Settlement, support::Balances},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -12,7 +12,7 @@ use {
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     vault_relayer: eth::ContractAddress,
     vault: BalancerV2Vault::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
@@ -56,18 +56,17 @@ impl Contracts {
                 .0
         };
 
-        let settlement = contracts::GPv2Settlement::at(
-            web3,
-            address_for(
-                contracts::GPv2Settlement::raw_contract(),
-                addresses.settlement,
-            ),
-        );
-        let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
-        let vault = BalancerV2Vault::Instance::new(
-            settlement.methods().vault().call().await?.into_alloy(),
+        let settlement = GPv2Settlement::Instance::new(
+            addresses
+                .settlement
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
+                .unwrap(),
             web3.alloy.clone(),
         );
+        let vault_relayer = settlement.vaultRelayer().call().await?;
+        let vault =
+            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.alloy.clone());
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
@@ -92,7 +91,7 @@ impl Contracts {
 
         let settlement_domain_separator = eth::DomainSeparator(
             settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("domain separator")
@@ -113,7 +112,7 @@ impl Contracts {
 
         Ok(Self {
             settlement,
-            vault_relayer,
+            vault_relayer: vault_relayer.into_legacy().into(),
             vault,
             signatures,
             weth,
@@ -124,7 +123,7 @@ impl Contracts {
         })
     }
 
-    pub fn settlement(&self) -> &contracts::GPv2Settlement {
+    pub fn settlement(&self) -> &GPv2Settlement::Instance {
         &self.settlement
     }
 
@@ -197,4 +196,6 @@ impl ContractAt for contracts::ERC20 {
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
+    #[error("method error: {0:?}")]
+    Rpc(#[from] alloy::contract::Error),
 }

@@ -16,6 +16,7 @@ use {
         },
     },
     chrono::Utc,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -273,7 +274,10 @@ impl Solution {
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
                 eth.erc20(required.0.token)
-                    .allowance(settlement_contract.address().into(), required.0.spender)
+                    .allowance(
+                        settlement_contract.address().into_legacy().into(),
+                        required.0.spender,
+                    )
                     .await
                     .map(|existing| (required, existing))
             }))

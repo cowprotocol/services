@@ -26,8 +26,8 @@ use {
     },
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
-    ethcontract::{BlockNumber, H160, common::DeploymentInformation},
+    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt},
+    ethcontract::{BlockNumber, H160},
     ethrpc::{
         Web3,
         alloy::conversions::IntoLegacy,
@@ -227,11 +227,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let vault_relayer = eth
         .contracts()
         .settlement()
-        .vault_relayer()
+        .vaultRelayer()
         .call()
-        .instrument(info_span!("vault_relayer_call"))
         .await
-        .expect("Couldn't get vault relayer address");
+        .expect("Couldn't get vault relayer address")
+        .into_legacy();
 
     let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
         let chain_id = chain.id();
@@ -327,7 +327,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
-        eth.contracts().settlement().address(),
+        eth.contracts().settlement().address().into_legacy(),
     )
     .instrument(info_span!("token_owner_finder_init"))
     .await
@@ -342,7 +342,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                     tracing_node_url,
                     "trace",
                 ),
-                eth.contracts().settlement().address(),
+                eth.contracts().settlement().address().into_legacy(),
                 finder,
             )),
             args.shared.token_quality_cache_expiry,
@@ -375,15 +375,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             simulation_web3,
             chain,
             native_token: eth.contracts().weth().address(),
-            settlement: eth.contracts().settlement().address(),
+            settlement: eth.contracts().settlement().address().into_legacy(),
             authenticator: eth
                 .contracts()
                 .settlement()
                 .authenticator()
                 .call()
-                .instrument(info_span!("authenticator_call"))
                 .await
-                .expect("failed to query solver authenticator address"),
+                .expect("failed to query solver authenticator address")
+                .into_legacy(),
             base_tokens: base_tokens.clone(),
             block_stream: eth.current_block().clone(),
         },
@@ -442,12 +442,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             .await;
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
-    let settlement_contract_start_index = match contracts::GPv2Settlement::raw_contract()
-        .networks
-        .get(&chain_id.to_string())
-        .and_then(|v| v.deployment_information)
-    {
-        Some(DeploymentInformation::BlockNumber(block)) => {
+    let settlement_contract_start_index = match GPv2Settlement::deployment_block(&chain_id) {
+        Some(block) => {
             tracing::debug!(block, "found settlement contract deployment");
             block
         }
@@ -532,7 +528,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
-        eth.contracts().settlement().address(),
+        eth.contracts().settlement().address().into_legacy(),
         args.disable_order_filtering,
     );
 
@@ -600,8 +596,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
-            eth.contracts().settlement().address(),
+            DomainSeparator::new(
+                chain_id,
+                eth.contracts().settlement().address().into_legacy(),
+            ),
+            eth.contracts().settlement().address().into_legacy(),
             eth.contracts().trampoline().clone(),
         );
 

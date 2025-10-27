@@ -80,8 +80,6 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = contracts::web3::dummy();
-
     let handler = UniswapV3SettlementHandler::new(
         pool.router.0.into_alloy(),
         receiver.0.into_alloy(),
@@ -151,7 +149,7 @@ async fn init_liquidity(
 
     Ok(UniswapV3Liquidity::new(
         config.router.0.into_alloy(),
-        eth.contracts().settlement().clone(),
+        *eth.contracts().settlement().address(),
         web3,
         pool_fetcher,
     ))

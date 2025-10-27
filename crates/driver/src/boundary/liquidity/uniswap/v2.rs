@@ -161,7 +161,7 @@ where
 
     Ok(Box::new(UniswapLikeLiquidity::with_allowances(
         *router.address(),
-        settlement,
+        *settlement.address(),
         Box::new(NoAllowanceManaging),
         pool_fetcher,
     )))

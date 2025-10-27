@@ -21,6 +21,7 @@ use {
         },
         util::{Bytes, math},
     },
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
@@ -135,6 +136,7 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
+        let settlement = settlement_contract.into_legacy();
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
@@ -142,7 +144,7 @@ impl Competition {
                 auction,
                 solver_address,
                 order_sorting_strategies,
-                settlement_contract,
+                settlement,
             )
         });
 
@@ -159,7 +161,7 @@ impl Competition {
                 balances,
                 app_data,
                 cow_amm_orders,
-                &eth::Address(settlement_contract),
+                &eth::Address(settlement),
             )
         })
         .await;

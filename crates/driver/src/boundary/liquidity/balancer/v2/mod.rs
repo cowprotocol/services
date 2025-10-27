@@ -190,7 +190,7 @@ async fn init_liquidity(
     Ok(BalancerV2Liquidity::new(
         web3,
         balancer_pool_fetcher,
-        eth.contracts().settlement().clone(),
+        *eth.contracts().settlement().address(),
         *contracts.vault.address(),
     ))
 }
