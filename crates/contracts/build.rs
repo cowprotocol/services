@@ -129,8 +129,8 @@ fn main() {
                 LINEA,
                 Network {
                     address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
-                    // <https://explorer.lens.xyz/tx/0x01584b767dda7b115394b93dbcfecadfe589862ae3f7957846a2db82f2f5c703>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(2621745)),
+                    // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(24333100)),
                 },
             )
             .add_network(
@@ -221,7 +221,6 @@ fn generate_contract_with_config(
     let path = paths::contract_artifacts_dir()
         .join(name)
         .with_extension("json");
-    println!("Generating contract bindings for {name} from {path:?}");
     let contract = TruffleLoader::new()
         .name(name)
         .load_contract_from_file(&path)
