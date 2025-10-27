@@ -302,7 +302,7 @@ fn encode_flashloan_settlement(
 fn encode_wrapper_settlement(
     solution: &super::Solution,
     settle_calldata: Vec<u8>,
-) -> Result<(eth::Address, Vec<u8>), Error> {
+) -> (eth::Address, Vec<u8>) {
     // Encode wrapper metadata
     let wrapper_data = encode_wrapper_data(&solution.wrappers);
 
