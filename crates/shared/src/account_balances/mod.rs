@@ -75,7 +75,7 @@ pub trait BalanceFetching: Send + Sync {
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not
     // given the allowance to the allowance manager or if the token does not
-    // allow freely transferring amounts around for for example if it is paused
+    // allow freely transferring amounts around for example if it is paused
     // or takes a fee on transfer. If the node supports the trace_callMany we
     // can perform more extensive tests.
     async fn can_transfer(

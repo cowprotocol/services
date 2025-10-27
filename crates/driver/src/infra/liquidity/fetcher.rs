@@ -26,7 +26,7 @@ pub enum AtBlock {
     /// computed anyway. At worse, we might provide a slightly sub-optimal
     /// route in some cases, but this is an acceptable trade-off.
     Recent,
-    /// Fetches liquidity liquidity for the latest state of the blockchain.
+    /// Fetches liquidity for the latest state of the blockchain.
     Latest,
     /// Useful for chains that can't fetch liquidity on non-finalized
     /// blocks(e.g. Avalanche).
