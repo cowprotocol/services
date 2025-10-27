@@ -5,7 +5,8 @@ use {
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
-        encoded_settlement::encode_trade,
+        encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
+        interaction::EncodedInteraction,
         tenderly_api::TenderlyCodeSimulator,
         trade_finding::{
             Interaction,
@@ -20,14 +21,12 @@ use {
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::{
+        GPv2Settlement,
         WETH9,
-        alloy::{
-            GPv2Settlement,
-            support::{AnyoneAuthenticator, Solver, Spardose, Trader},
-        },
+        alloy::support::{AnyoneAuthenticator, Solver, Spardose, Trader},
         dummy_contract,
     },
-    ethcontract::{H160, U256, state_overrides::StateOverride},
+    ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -71,7 +70,7 @@ pub struct TradeVerifier {
     code_fetcher: Arc<dyn CodeFetching>,
     balance_overrides: Arc<dyn BalanceOverriding>,
     block_stream: CurrentBlockWatcher,
-    settlement: GPv2Settlement::Instance,
+    settlement: GPv2Settlement,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
     domain_separator: DomainSeparator,
@@ -95,10 +94,9 @@ impl TradeVerifier {
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<H160>,
     ) -> Result<Self> {
-        let settlement_contract =
-            GPv2Settlement::GPv2Settlement::new(settlement.into_alloy(), web3.alloy.clone());
+        let settlement_contract = GPv2Settlement::at(&web3, settlement);
         let domain_separator =
-            DomainSeparator(settlement_contract.domainSeparator().call().await?.0);
+            DomainSeparator(settlement_contract.domain_separator().call().await?.0);
         Ok(Self {
             simulator,
             code_fetcher,
@@ -155,7 +153,7 @@ impl TradeVerifier {
             out_amount,
             self.native_token,
             &self.domain_separator,
-            self.settlement.address().into_legacy(),
+            self.settlement.address(),
         )?;
 
         let settlement = add_balance_queries(
@@ -164,15 +162,26 @@ impl TradeVerifier {
             &verification,
             solver_address.into_alloy(),
         );
-        let settle_call = settlement.abi_encode();
+
+        let settlement = self
+            .settlement
+            .methods()
+            .settle(
+                settlement.tokens,
+                settlement.clearing_prices,
+                settlement.trades,
+                settlement.interactions,
+            )
+            .tx;
+
         let block = *self.block_stream.borrow();
 
         let solver = Solver::Instance::new(solver_address.into_alloy(), self.web3.alloy.clone());
         let swap_simulation = solver.swap(
-            *self.settlement.address(),
+            self.settlement.address().into_alloy(),
             tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
             verification.receiver.into_alloy(),
-            settle_call.into(),
+            alloy::primitives::Bytes::from(settlement.data.unwrap().0),
         )
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
         .from(solver_address.into_alloy())
@@ -241,7 +250,7 @@ impl TradeVerifier {
 
             // It looks like the contract lost a lot of sell tokens but only because it was
             // the trader and had to pay for the trade. Adjust tokens lost downward.
-            if verification.from.as_bytes() == self.settlement.address().as_slice() {
+            if verification.from == self.settlement.address() {
                 summary
                     .tokens_lost
                     .entry(query.sell_token)
@@ -250,7 +259,7 @@ impl TradeVerifier {
             // It looks like the contract gained a lot of buy tokens (negative loss) but
             // only because it was the receiver and got the payout. Adjust the tokens lost
             // upward.
-            if verification.receiver.as_bytes() == self.settlement.address().as_slice() {
+            if verification.receiver == self.settlement.address() {
                 summary
                     .tokens_lost
                     .entry(query.buy_token)
@@ -389,7 +398,7 @@ impl TradeVerifier {
                 .await
                 .context("could not fetch authenticator")?;
             overrides.insert(
-                authenticator.into_legacy(),
+                authenticator,
                 StateOverride {
                     code: Some(web3::types::Bytes::from(
                         AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.to_vec(),
@@ -462,15 +471,8 @@ impl TradeVerifying for TradeVerifier {
     }
 }
 
-fn encode_interactions(interactions: &[Interaction]) -> Vec<GPv2Settlement::GPv2Interaction::Data> {
-    interactions
-        .iter()
-        .map(|i| GPv2Settlement::GPv2Interaction::Data {
-            target: i.target.into_alloy(),
-            value: i.value.into_alloy(),
-            callData: i.data.clone().into(),
-        })
-        .collect()
+fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> {
+    interactions.iter().map(|i| i.encode()).collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -484,7 +486,7 @@ fn encode_settlement(
     native_token: H160,
     domain_separator: &DomainSeparator,
     settlement: H160,
-) -> Result<GPv2Settlement::GPv2Settlement::settleCall> {
+) -> Result<EncodedSettlement> {
     let mut trade_interactions = encode_interactions(&trade.interactions());
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
@@ -503,11 +505,7 @@ fn encode_settlement(
             .data
             .expect("data gets populated by function call above")
             .0;
-        trade_interactions.push(GPv2Settlement::GPv2Interaction::Data {
-            target: native_token.into_alloy(),
-            value: Default::default(),
-            callData: calldata.into(),
-        });
+        trade_interactions.push((native_token, 0.into(), Bytes(calldata)));
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
 
@@ -554,9 +552,9 @@ fn encode_settlement(
         .chain([trade_setup_interaction])
         .collect();
 
-    Ok(GPv2Settlement::GPv2Settlement::settleCall {
-        tokens: tokens.iter().map(|t| t.into_alloy()).collect(),
-        clearingPrices: clearing_prices.iter().map(|p| p.into_alloy()).collect(),
+    Ok(EncodedSettlement {
+        tokens: tokens.to_vec(),
+        clearing_prices: clearing_prices.to_vec(),
         trades,
         interactions: [
             encode_interactions(&pre_interactions),
@@ -571,7 +569,7 @@ fn encode_fake_trade(
     verification: &Verification,
     out_amount: &U256,
     tokens: &[H160],
-) -> Result<GPv2Settlement::GPv2Trade::Data, Error> {
+) -> Result<EncodedTrade, Error> {
     // Configure the most disadvantageous trade possible (while taking possible
     // overflows into account). Should the trader not receive the amount promised by
     // the [`Trade`] the simulation will still work and we can compute the actual
@@ -622,7 +620,7 @@ fn encode_jit_orders(
     jit_orders: &[dto::JitOrder],
     tokens: &[H160],
     domain_separator: &DomainSeparator,
-) -> Result<Vec<GPv2Settlement::GPv2Trade::Data>, Error> {
+) -> Result<Vec<EncodedTrade>, Error> {
     jit_orders
         .iter()
         .map(|jit_order| {
@@ -662,7 +660,7 @@ fn encode_jit_orders(
                 &jit_order.executed_amount,
             ))
         })
-        .collect()
+        .collect::<Result<Vec<EncodedTrade>, Error>>()
 }
 
 /// Recovers the owner and signature from a `JitOrder`.
@@ -699,11 +697,11 @@ fn recover_jit_order_owner(
 /// throughout the simulation.
 /// These balances will get used to compute an accurate price for the trade.
 fn add_balance_queries(
-    mut settlement: GPv2Settlement::GPv2Settlement::settleCall,
+    mut settlement: EncodedSettlement,
     query: &PriceQuery,
     verification: &Verification,
     solver_address: Address,
-) -> GPv2Settlement::GPv2Settlement::settleCall {
+) -> EncodedSettlement {
     let (token, owner) = match query.kind {
         // track how much `buy_token` the `receiver` actually got
         OrderKind::Sell => {
@@ -725,11 +723,11 @@ fn add_balance_queries(
     }
     .abi_encode();
 
-    let interaction = GPv2Settlement::GPv2Interaction::Data {
-        target: solver_address,
-        value: Default::default(),
-        callData: query_balance_call.into(),
-    };
+    let interaction = (
+        solver_address.into_legacy(),
+        0.into(),
+        Bytes(query_balance_call),
+    );
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
