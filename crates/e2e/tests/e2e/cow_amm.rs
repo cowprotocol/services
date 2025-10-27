@@ -1,15 +1,9 @@
 use {
-    alloy::{
-        primitives::{Bytes, FixedBytes, U256},
-        sol_types::SolValue,
-    },
+    alloy::primitives::{Bytes, FixedBytes, U256},
     autopilot::util::conv::U256Ext,
     contracts::{
         ERC20,
-        alloy::{
-            cow_amm::GPv2OrderEip712,
-            support::{Balances, Signatures},
-        },
+        alloy::support::{Balances, Signatures},
     },
     driver::domain::eth::NonZeroU256,
     e2e::{
@@ -39,7 +33,7 @@ use {
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
-        signature::{EcdsaSigningScheme, hashed_eip712_message},
+        signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
     shared::{addr, ethrpc::Web3},
@@ -252,33 +246,23 @@ async fn cow_amm_jit(web3: Web3) {
         appData: FixedBytes(APP_DATA),
     };
 
-    // structure of signature copied from
-    // <https://github.com/cowprotocol/cow-amm/blob/main/test/e2e/ConstantProduct.t.sol#L179>
-    let signature_data = (cow_amm_order.clone(), trading_params).abi_encode_sequence();
+    // Generate EIP-1271 signature for the CoW AMM order
+    let signature = cow_amm::signing::gpv2_order::generate_eip1271_signature(
+        &cow_amm_order,
+        &trading_params,
+        *cow_amm.address(),
+    );
 
-    // Prepend CoW AMM address to the signature so settlement contract know which
-    // contract this signature refers to.
-    let signature = cow_amm
-        .address()
-        .into_legacy()
-        .as_bytes()
-        .iter()
-        .cloned()
-        .chain(signature_data)
-        .collect();
-
-    // Creation of commitment copied from
-    // <https://github.com/cowprotocol/cow-amm/blob/main/test/e2e/ConstantProduct.t.sol#L181-L188>
-    let cow_amm_commitment = {
-        let order_hash = cow_amm_order.eip712_hash_struct_correct();
-        let order_hash =
-            hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash.0);
-        let commitment = cow_amm.commit(FixedBytes(order_hash)).calldata().clone();
-        Call {
-            target: cow_amm.address().into_legacy(),
-            value: 0.into(),
-            calldata: commitment.0.to_vec(),
-        }
+    // Generate commit interaction for the pre-interaction
+    let cow_amm_commitment_data = cow_amm::signing::gpv2_order::generate_commit_interaction(
+        &cow_amm_order,
+        &cow_amm,
+        &onchain.contracts().domain_separator,
+    );
+    let cow_amm_commitment = Call {
+        target: cow_amm_commitment_data.target,
+        value: cow_amm_commitment_data.value,
+        calldata: cow_amm_commitment_data.call_data,
     };
 
     // fund trader "bob" and approve vault relayer
@@ -862,29 +846,23 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         priceOracleData: Bytes::copy_from_slice(&oracle_data),
         appData: FixedBytes(APP_DATA),
     };
-    // Create the signature for the CoW AMM order
-    let signature_data = (cow_amm_order.clone(), trading_params).abi_encode_sequence();
+    // Generate EIP-1271 signature for the CoW AMM order
+    let signature = cow_amm::signing::gpv2_order::generate_eip1271_signature(
+        &cow_amm_order,
+        &trading_params,
+        *cow_amm.address(),
+    );
 
-    // Prepend CoW AMM address to the signature so the settlement contract knows
-    // which contract this signature refers to.
-    let signature = cow_amm
-        .address()
-        .0
-        .iter()
-        .cloned()
-        .chain(signature_data)
-        .collect::<Vec<_>>();
-
-    // Create the commitment call for the pre-interaction
-    let cow_amm_commitment = {
-        let order_hash = cow_amm_order.eip712_hash_struct_correct();
-        let order_hash = hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash);
-        let commitment = cow_amm.commit(FixedBytes(order_hash)).calldata().clone();
-        Call {
-            target: cow_amm.address().into_legacy(),
-            value: 0.into(),
-            calldata: commitment.0.to_vec(),
-        }
+    // Generate commit interaction for the pre-interaction
+    let cow_amm_commitment_data = cow_amm::signing::gpv2_order::generate_commit_interaction(
+        &cow_amm_order,
+        &cow_amm,
+        &onchain.contracts().domain_separator,
+    );
+    let cow_amm_commitment = Call {
+        target: cow_amm_commitment_data.target,
+        value: cow_amm_commitment_data.value,
+        calldata: cow_amm_commitment_data.call_data,
     };
 
     // Fund trader "bob" with DAI and approve allowance

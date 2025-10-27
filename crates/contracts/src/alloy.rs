@@ -629,8 +629,6 @@ crate::bindings!(
 );
 
 pub mod cow_amm {
-    use alloy::sol_types::SolStruct;
-
     crate::bindings!(CowAmm);
     crate::bindings!(
         CowAmmConstantProductFactory,
@@ -654,32 +652,6 @@ pub mod cow_amm {
     );
     crate::bindings!(CowAmmUniswapV2PriceOracle);
     crate::bindings!(CowAmmFactoryGetter);
-
-    /// Extension trait to provide correct EIP-712 type hash for GPv2Order.Data.
-    ///
-    /// The contract stores `kind`, `sellTokenBalance`, and `buyTokenBalance` as bytes32,
-    /// but the EIP-712 type uses "string" types for human-readable signatures.
-    /// See: <https://github.com/cowprotocol/contracts/blob/19972cd8fb3f8663846f772190926f36af068a33/src/contracts/libraries/GPv2Order.sol#L9-L48>
-    pub trait GPv2OrderEip712 {
-        fn eip712_type_hash_correct(&self) -> alloy::primitives::B256;
-        fn eip712_hash_struct_correct(&self) -> alloy::primitives::B256;
-    }
-
-    // @todo: Migrate to GPv2Settelement::GPv2Order bindings
-    impl GPv2OrderEip712 for CowAmm::GPv2Order::Data {
-        fn eip712_type_hash_correct(&self) -> alloy::primitives::B256 {
-            const TYPE_HASH: [u8; 32] =
-                alloy::hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
-            alloy::primitives::B256::from_slice(&TYPE_HASH)
-        }
-
-        fn eip712_hash_struct_correct(&self) -> alloy::primitives::B256 {
-            let mut hasher = alloy::primitives::Keccak256::new();
-            hasher.update(self.eip712_type_hash_correct());
-            hasher.update(self.eip712_encode_data());
-            hasher.finalize()
-        }
-    }
 }
 
 pub mod support {

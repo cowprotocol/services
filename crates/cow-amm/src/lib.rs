@@ -3,6 +3,7 @@ mod cache;
 mod factory;
 mod maintainers;
 mod registry;
+pub mod signing;
 
 pub use {
     amm::Amm,

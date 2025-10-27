@@ -2659,6 +2659,7 @@ dependencies = [
  "clap",
  "const-hex",
  "contracts",
+ "cow-amm",
  "database",
  "driver",
  "ethcontract",
