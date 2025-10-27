@@ -318,8 +318,6 @@ fn encode_wrapper_settlement(
 
 /// Encodes a regular settlement transaction without flashloans or wrappers.
 ///
-/// Takes the base settlement calldata and appends the auction ID.
-///
 /// Returns (settlement_contract_address, calldata)
 fn encode_regular_settlement(
     contracts: &infra::blockchain::Contracts,
