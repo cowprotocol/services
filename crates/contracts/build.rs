@@ -232,16 +232,6 @@ fn main() {
             .add_network_str(POLYGON, "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270")
             .add_network_str(LENS, "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F")
     });
-    generate_contract_with_config("CowProtocolToken", |builder| {
-        builder
-            .add_network_str(MAINNET, "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")
-            .add_network_str(GOERLI, "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
-            .add_network_str(GNOSIS, "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
-            .add_network_str(SEPOLIA, "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59")
-            .add_network_str(ARBITRUM_ONE, "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04")
-            .add_network_str(BASE, "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69")
-        // Not available on Lens
-    });
     generate_contract("CowAmm");
     generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
         builder
