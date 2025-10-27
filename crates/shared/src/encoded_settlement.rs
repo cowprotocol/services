@@ -1,6 +1,6 @@
 use {
-    crate::interaction::EncodedInteraction,
-    ethcontract::Bytes,
+    contracts::alloy::GPv2Settlement,
+    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, SigningScheme},
@@ -9,17 +9,17 @@ use {
 };
 
 pub type EncodedTrade = (
-    U256,            // sellTokenIndex
-    U256,            // buyTokenIndex
-    H160,            // receiver
-    U256,            // sellAmount
-    U256,            // buyAmount
-    u32,             // validTo
-    Bytes<[u8; 32]>, // appData
-    U256,            // feeAmount
-    U256,            // flags
-    U256,            // executedAmount
-    Bytes<Vec<u8>>,  // signature
+    alloy::primitives::U256,    // sellTokenIndex
+    alloy::primitives::U256,    // buyTokenIndex
+    alloy::primitives::Address, // receiver
+    alloy::primitives::U256,    // sellAmount
+    alloy::primitives::U256,    // buyAmount
+    u32,                        // validTo
+    alloy::primitives::Bytes,   // appData
+    alloy::primitives::U256,    // feeAmount
+    alloy::primitives::U256,    // flags
+    alloy::primitives::U256,    // executedAmount
+    alloy::primitives::Bytes,   // signature
 );
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
@@ -30,20 +30,20 @@ pub fn encode_trade(
     sell_token_index: usize,
     buy_token_index: usize,
     executed_amount: &U256,
-) -> EncodedTrade {
-    (
-        sell_token_index.into(),
-        buy_token_index.into(),
-        order.receiver.unwrap_or_else(H160::zero),
-        order.sell_amount,
-        order.buy_amount,
-        order.valid_to,
-        Bytes(order.app_data.0),
-        order.fee_amount,
-        order_flags(order, signature),
-        *executed_amount,
-        Bytes(signature.encode_for_settlement(owner).to_vec()),
-    )
+) -> GPv2Settlement::GPv2Trade::Data {
+    GPv2Settlement::GPv2Trade::Data {
+        sellTokenIndex: alloy::primitives::U256::from(sell_token_index),
+        buyTokenIndex: alloy::primitives::U256::from(buy_token_index),
+        receiver: order.receiver.unwrap_or_else(H160::zero).into_alloy(),
+        sellAmount: order.sell_amount.into_alloy(),
+        buyAmount: order.buy_amount.into_alloy(),
+        validTo: order.valid_to,
+        appData: order.app_data.0.into(),
+        feeAmount: order.fee_amount.into_alloy(),
+        flags: order_flags(order, signature).into_alloy(),
+        executedAmount: executed_amount.into_alloy(),
+        signature: signature.encode_for_settlement(owner).to_vec().into(),
+    }
 }
 
 fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
@@ -78,10 +78,10 @@ fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncodedSettlement {
-    pub tokens: Vec<H160>,
-    pub clearing_prices: Vec<U256>,
-    pub trades: Vec<EncodedTrade>,
-    pub interactions: [Vec<EncodedInteraction>; 3],
+    pub tokens: Vec<alloy::primitives::Address>,
+    pub clearing_prices: Vec<alloy::primitives::U256>,
+    pub trades: Vec<GPv2Settlement::GPv2Trade::Data>,
+    pub interactions: [Vec<GPv2Settlement::GPv2Interaction::Data>; 3],
 }
 
 #[cfg(test)]
@@ -202,14 +202,15 @@ mod tests {
             ),
             (Signature::PreSign, vec![1; 20]),
         ] {
-            let (.., encoded_signature) = encode_trade(
+            let encoded_signature = encode_trade(
                 &Default::default(),
                 &signature,
                 owner,
                 Default::default(),
                 Default::default(),
                 &Default::default(),
-            );
+            )
+            .signature;
             assert_eq!(encoded_signature.0, bytes);
         }
     }
