@@ -322,8 +322,8 @@ fn encode_wrapper_settlement(
 fn encode_regular_settlement(
     contracts: &infra::blockchain::Contracts,
     settle_calldata: Vec<u8>,
-) -> Result<(eth::Address, Vec<u8>), Error> {
-    Ok((contracts.settlement().address().into(), settle_calldata))
+) -> (eth::Address, Vec<u8>) {
+    (contracts.settlement().address().into(), settle_calldata)
 }
 
 /// Encodes wrapper metadata for wrapper settlement calls.
