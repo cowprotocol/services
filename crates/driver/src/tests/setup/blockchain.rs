@@ -13,6 +13,7 @@ use {
         BalancerV2Vault,
         ERC20Mintable,
         FlashLoanRouter,
+        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         support::{Balances, Signatures},
     },
     ethcontract::PrivateKey,
@@ -293,20 +294,16 @@ impl Blockchain {
         .deploy()
         .await
         .unwrap();
-        let authenticator = wait_for(
+        let authenticator = GPv2AllowListAuthentication::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
+        let mut settlement = contracts::GPv2Settlement::builder(
             &web3,
-            contracts::GPv2AllowListAuthentication::builder(&web3)
-                .from(main_trader_account.clone())
-                .deploy(),
+            authenticator.address().into_legacy(),
+            vault.into_legacy(),
         )
-        .await
-        .unwrap();
-        let mut settlement = wait_for(
-            &web3,
-            contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.into_legacy())
-                .from(main_trader_account.clone())
-                .deploy(),
-        )
+        .from(main_trader_account.clone())
+        .deploy()
         .await
         .unwrap();
         if let Some(settlement_address) = config.settlement_address {
@@ -341,15 +338,12 @@ impl Blockchain {
         };
         let balances = Balances::Instance::new(balances_address, web3.alloy.clone());
 
-        wait_for(
-            &web3,
-            authenticator
-                .initialize_manager(main_trader_account.address())
-                .from(main_trader_account.clone())
-                .send(),
-        )
-        .await
-        .unwrap();
+        authenticator
+            .initializeManager(main_trader_account.address().into_alloy())
+            .from(main_trader_account.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
 
         let signatures_address = if let Some(signatures_address) = config.signatures_address {
             signatures_address.into_alloy()
@@ -375,15 +369,12 @@ impl Blockchain {
 
         let mut trader_accounts = Vec::new();
         for config in config.solvers {
-            wait_for(
-                &web3,
-                authenticator
-                    .add_solver(config.address())
-                    .from(main_trader_account.clone())
-                    .send(),
-            )
-            .await
-            .unwrap();
+            authenticator
+                .addSolver(config.address().into_alloy())
+                .from(main_trader_account.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
             wait_for(
                 &web3,
                 web3.eth()
