@@ -377,7 +377,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
             .await
             .last_handled_block()
             .unwrap_or_default()
-            .0;
+            .number;
         if block_number > last_handled_block {
             tracing::debug!(
                 "can't get liquidity for block {} since the last handled block is {}",

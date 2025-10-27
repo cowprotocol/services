@@ -50,7 +50,7 @@ use {
         InstanceExt,
     },
     ethcontract::{BlockId, H160, H256},
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
     std::{
@@ -458,13 +458,13 @@ async fn create_aggregate_pool_fetcher(
 ) -> Result<Aggregate> {
     let registered_pools = pool_initializer.initialize_pools().await?;
     let fetched_block_number = registered_pools.fetched_block_number;
-    let fetched_block_hash = web3
+    let fetched_block = web3
         .eth()
         .block(BlockId::Number(fetched_block_number.into()))
         .await?
-        .context("failed to get block by block number")?
-        .hash
-        .context("missing hash from block")?;
+        .context("failed to get block by block number")?;
+    let fetched_block_hash = fetched_block.hash.context("missing hash from block")?;
+    let fetched_block_tx_count = fetched_block.transactions.len();
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
@@ -481,6 +481,7 @@ async fn create_aggregate_pool_fetcher(
                     .remove(&(*$instance.address()).into_legacy())
                     .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
                 fetched_block_hash,
+                fetched_block_tx_count,
             )?
         }};
     }
@@ -550,6 +551,7 @@ async fn create_aggregate_pool_fetcher(
 
 /// Helper method for creating a boxed `InternalPoolFetching` instance for the
 /// specified factory and parameters.
+#[allow(clippy::too_many_arguments)]
 fn create_internal_pool_fetcher<Factory>(
     vault: BalancerV2Vault::Instance,
     factory: Factory,
@@ -558,6 +560,7 @@ fn create_internal_pool_fetcher<Factory>(
     factory_instance: &BalancerFactoryInstance,
     registered_pools: RegisteredPools,
     fetched_block_hash: H256,
+    fetched_block_tx_count: usize,
 ) -> Result<Box<dyn InternalPoolFetching>>
 where
     Factory: FactoryIndexing,
@@ -567,7 +570,11 @@ where
         .iter()
         .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number))
         .collect::<Result<_>>()?;
-    let start_sync_at_block = Some((registered_pools.fetched_block_number, fetched_block_hash));
+    let start_sync_at_block = Some(BlockNumberHash::new(
+        registered_pools.fetched_block_number,
+        fetched_block_hash,
+        fetched_block_tx_count,
+    ));
 
     Ok(Box::new(Registry::new(
         block_retriever,

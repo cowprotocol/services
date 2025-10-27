@@ -306,7 +306,7 @@ where
             block_retriever,
             contract,
             store,
-            if last_handled_block >= skip_blocks_before.0 {
+            if last_handled_block >= skip_blocks_before.number {
                 None
             } else {
                 Some(skip_blocks_before)
@@ -343,13 +343,15 @@ where
         let current_block = self.block_retriever.current_block().await?;
         let current_block_number = current_block.number;
         let current_block_hash = current_block.hash;
-        let (last_handled_block_number, last_handled_block_hash) = *handled_blocks.last().unwrap();
+        let last_handled_block = handled_blocks.last().unwrap();
+        let last_handled_block_number = last_handled_block.number;
+        let last_handled_block_hash = last_handled_block.hash;
         tracing::debug!(
             "current block: {} - {:?}, handled_blocks: ({:?} - {:?})",
             current_block_number,
             current_block_hash,
-            handled_blocks.first().map(|b| b.0),
-            handled_blocks.last().map(|b| b.0),
+            handled_blocks.first().map(|b| b.number),
+            handled_blocks.last().map(|b| b.number),
         );
 
         // handle special case which happens most of the time (no reorg, just one new
@@ -357,7 +359,7 @@ where
         if current_block.parent_hash == last_handled_block_hash {
             return Ok(EventRange {
                 history_range: None,
-                latest_blocks: vec![(current_block_number, current_block_hash)],
+                latest_blocks: vec![BlockNumberHash::from(&current_block)],
                 is_reorg: false,
             });
         }
@@ -383,7 +385,7 @@ where
             && block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT
         {
             let mut new_blocks = self.block_retriever.blocks(block_range).await?;
-            if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
+            if new_blocks.first().map(|b| b.hash) == Some(last_handled_block_hash) {
                 // first block is not actually new and was only fetched to detect a reorg
                 new_blocks.remove(0);
                 tracing::debug!(
@@ -456,7 +458,7 @@ where
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
                 .await?;
             self.store_mut()
-                .persist_last_indexed_block(last_block.0)
+                .persist_last_indexed_block(last_block.number)
                 .await?;
         }
         Ok(())
@@ -550,7 +552,10 @@ where
         }
 
         // update storage regardless if it's a full update or partial update
-        let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
+        let range = RangeInclusive::try_new(
+            blocks.first().unwrap().number,
+            blocks.last().unwrap().number,
+        )?;
         if is_reorg {
             self.store.replace_events(events, range.clone()).await?;
         } else {
@@ -572,30 +577,105 @@ where
         &self,
         blocks: &[BlockNumberHash],
     ) -> (Vec<BlockNumberHash>, Vec<E>) {
+        const MAX_LOG_FETCH_RETRIES: u32 = 3;
+        const LOG_FETCH_RETRY_DELAY_SECS: u64 = 2;
+
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
         for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
             for (i, result) in future::join_all(
                 chunk
                     .iter()
-                    .map(|block| self.contract.get_events_by_block_hash(block.1)),
+                    .map(|block| self.contract.get_events_by_block_hash(block.hash)),
             )
             .await
             .into_iter()
             .enumerate()
             {
+                let block = &chunk[i];
+
+                if block.tx_count == 0 {
+                    tracing::trace!("skipping block {:?} with 0 transactions", block);
+                    blocks_filtered.push(*block);
+                    continue;
+                }
+
                 match result {
-                    Ok(e) => {
-                        if !e.is_empty() {
-                            tracing::debug!(
-                                "events fetched for block: {:?}, events: {}",
-                                blocks[i],
-                                e.len(),
-                            );
-                        }
-                        blocks_filtered.push(blocks[i]);
+                    Ok(e) if !e.is_empty() => {
+                        tracing::debug!(
+                            "events fetched for block: {:?}, events: {}",
+                            block,
+                            e.len(),
+                        );
+                        blocks_filtered.push(*block);
                         events.extend(e);
                     }
-                    Err(_) => return (blocks_filtered, events),
+                    Ok(_) => {
+                        // Block has transactions but no events returned
+                        // This might be a log indexing lag - retry
+                        tracing::debug!(
+                            "block {:?} has {} txs but 0 events, retrying...",
+                            block,
+                            block.tx_count
+                        );
+
+                        let mut retry_success = false;
+                        for attempt in 1..=MAX_LOG_FETCH_RETRIES {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(
+                                LOG_FETCH_RETRY_DELAY_SECS,
+                            ))
+                            .await;
+
+                            match self.contract.get_events_by_block_hash(block.hash).await {
+                                Ok(retry_events) if !retry_events.is_empty() => {
+                                    tracing::info!(
+                                        "retry {}/{} succeeded for block {:?}, found {} events",
+                                        attempt,
+                                        MAX_LOG_FETCH_RETRIES,
+                                        block,
+                                        retry_events.len()
+                                    );
+                                    blocks_filtered.push(*block);
+                                    events.extend(retry_events);
+                                    retry_success = true;
+                                    break;
+                                }
+                                Ok(_) => {
+                                    // tracing::debug!(
+                                    //     "retry {}/{} for block {:?} still
+                                    // returned 0 events",
+                                    //     attempt,
+                                    //     MAX_LOG_FETCH_RETRIES,
+                                    //     block
+                                    // );
+                                }
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "retry {}/{} failed for block {:?}: {:?}",
+                                        attempt,
+                                        MAX_LOG_FETCH_RETRIES,
+                                        block,
+                                        err
+                                    );
+                                }
+                            }
+                        }
+
+                        if !retry_success {
+                            // After all retries, still no events - this is likely legitimate
+                            tracing::debug!(
+                                "block {:?} has {} txs but 0 events after {} retries, accepting \
+                                 as no events",
+                                block,
+                                block.tx_count,
+                                MAX_LOG_FETCH_RETRIES
+                            );
+                            blocks_filtered.push(*block);
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!("failed to fetch events for block {:?}: {:?}", block, err);
+                        return (blocks_filtered, events);
+                    }
                 }
             }
         }
@@ -624,7 +704,7 @@ where
         }
         // delete forked blocks
         self.last_handled_blocks
-            .retain(|block| block.0 < blocks.first().unwrap().0);
+            .retain(|block| block.number < blocks.first().unwrap().number);
         // append new canonical blocks
         self.last_handled_blocks.extend(blocks.iter());
         // cap number of blocks to MAX_REORG_BLOCK_COUNT
@@ -834,7 +914,7 @@ mod tests {
     #[test]
     fn detect_reorg_path_test_handled_blocks_empty() {
         let handled_blocks = vec![];
-        let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
+        let latest_blocks = vec![BlockNumberHash::new(1, H256::from_low_u64_be(1), 0)];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks);
         assert!(!is_reorg);
@@ -843,8 +923,8 @@ mod tests {
     #[test]
     fn detect_reorg_path_test_both_same() {
         // if the list are same, we return the common ancestor
-        let handled_blocks = vec![(1, H256::from_low_u64_be(1))];
-        let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
+        let handled_blocks = vec![BlockNumberHash::new(1, H256::from_low_u64_be(1), 0)];
+        let latest_blocks = vec![BlockNumberHash::new(1, H256::from_low_u64_be(1), 0)];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert!(replacement_blocks.is_empty());
         assert!(!is_reorg);
@@ -852,12 +932,15 @@ mod tests {
 
     #[test]
     fn detect_reorg_path_test_common_case() {
-        let handled_blocks = vec![(1, H256::from_low_u64_be(1)), (2, H256::from_low_u64_be(2))];
+        let handled_blocks = vec![
+            BlockNumberHash::new(1, H256::from_low_u64_be(1), 0),
+            BlockNumberHash::new(2, H256::from_low_u64_be(2), 0),
+        ];
         let latest_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(3)),
-            (4, H256::from_low_u64_be(4)),
+            BlockNumberHash::new(1, H256::from_low_u64_be(1), 0),
+            BlockNumberHash::new(2, H256::from_low_u64_be(2), 0),
+            BlockNumberHash::new(3, H256::from_low_u64_be(3), 0),
+            BlockNumberHash::new(4, H256::from_low_u64_be(4), 0),
         ];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks[2..].to_vec());
@@ -867,14 +950,14 @@ mod tests {
     #[test]
     fn detect_reorg_path_test_reorg_1() {
         let handled_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(3)),
+            BlockNumberHash::new(1, H256::from_low_u64_be(1), 0),
+            BlockNumberHash::new(2, H256::from_low_u64_be(2), 0),
+            BlockNumberHash::new(3, H256::from_low_u64_be(3), 0),
         ];
         let latest_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(4)),
+            BlockNumberHash::new(1, H256::from_low_u64_be(1), 0),
+            BlockNumberHash::new(2, H256::from_low_u64_be(2), 0),
+            BlockNumberHash::new(3, H256::from_low_u64_be(4), 0),
         ];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks[2..].to_vec());
@@ -883,11 +966,11 @@ mod tests {
 
     #[test]
     fn detect_reorg_path_test_reorg_no_common_ancestor() {
-        let handled_blocks = vec![(2, H256::from_low_u64_be(20))];
+        let handled_blocks = vec![BlockNumberHash::new(2, H256::from_low_u64_be(20), 0)];
         let latest_blocks = vec![
-            (1, H256::from_low_u64_be(11)),
-            (2, H256::from_low_u64_be(21)),
-            (3, H256::from_low_u64_be(31)),
+            BlockNumberHash::new(1, H256::from_low_u64_be(11), 0),
+            BlockNumberHash::new(2, H256::from_low_u64_be(21), 0),
+            BlockNumberHash::new(3, H256::from_low_u64_be(31), 0),
         ];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks);
@@ -933,33 +1016,37 @@ mod tests {
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let storage = EventStorage { events: vec![] };
         let blocks = vec![
-            (
+            BlockNumberHash::new(
                 15575559,
                 H256::from_str(
                     "0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118",
                 )
                     .unwrap(),
+                0,
             ),
-            (
+            BlockNumberHash::new(
                 15575560,
                 H256::from_str(
                     "0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4",
                 )
                     .unwrap(),
+                0,
             ),
-            (
+            BlockNumberHash::new(
                 15575561,
                 H256::from_str(
                     "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75", //WRONG HASH!
                 )
                     .unwrap(),
+                0,
             ),
-            (
+            BlockNumberHash::new(
                 15575562,
                 H256::from_str(
                     "0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937",
                 )
                     .unwrap(),
+                0,
             ),
         ];
         let event_handler = EventHandler::new(
@@ -991,7 +1078,11 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let block = BlockNumberHash::new(
+            block.number.unwrap().as_u64(),
+            block.hash.unwrap(),
+            block.transactions.len(),
+        );
         let mut event_handler = EventHandler::new(
             Arc::new(web3),
             GPv2SettlementContract(contract),
@@ -1022,7 +1113,11 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let block = BlockNumberHash::new(
+            block.number.unwrap().as_u64(),
+            block.hash.unwrap(),
+            block.transactions.len(),
+        );
         let mut event_handler = EventHandler::new(
             Arc::new(web3),
             GPv2SettlementContract(contract),

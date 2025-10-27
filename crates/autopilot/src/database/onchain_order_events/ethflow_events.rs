@@ -238,7 +238,7 @@ pub async fn determine_ethflow_refund_indexing_start(
     ]
     .into_iter()
     .flatten()
-    .max_by_key(|(block_number, _)| *block_number)
+    .max_by_key(|block| block.number)
     .expect("Should be able to find a valid start block")
 }
 

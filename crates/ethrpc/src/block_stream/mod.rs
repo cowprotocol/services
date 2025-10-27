@@ -20,7 +20,25 @@ use {
     },
 };
 
-pub type BlockNumberHash = (u64, H256);
+/// Block number, hash, and transaction count.
+/// Transaction count is used to determine if a block might contain events
+/// without making an additional RPC call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BlockNumberHash {
+    pub number: u64,
+    pub hash: H256,
+    pub tx_count: usize,
+}
+
+impl BlockNumberHash {
+    pub fn new(number: u64, hash: H256, tx_count: usize) -> Self {
+        Self {
+            number,
+            hash,
+            tx_count,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeInclusive<T: Ord> {
@@ -56,6 +74,10 @@ pub struct BlockInfo {
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
+    /// Number of transactions in this block.
+    /// Used to determine if a block could potentially have events before
+    /// querying logs.
+    pub tx_count: usize,
     /// When the system noticed the new block.
     pub observed_at: Instant,
 }
@@ -69,6 +91,7 @@ impl Default for BlockInfo {
             timestamp: Default::default(),
             gas_limit: Default::default(),
             gas_price: Default::default(),
+            tx_count: 0,
             observed_at: Instant::now(),
         }
     }
@@ -85,6 +108,16 @@ impl PartialEq<Self> for BlockInfo {
     }
 }
 
+impl From<&BlockInfo> for BlockNumberHash {
+    fn from(block: &BlockInfo) -> Self {
+        Self {
+            number: block.number,
+            hash: block.hash,
+            tx_count: block.tx_count,
+        }
+    }
+}
+
 impl TryFrom<Block<H256>> for BlockInfo {
     type Error = anyhow::Error;
 
@@ -96,6 +129,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
             timestamp: value.timestamp.as_u64(),
             gas_limit: value.gas_limit,
             gas_price: value.base_fee_per_gas.context("no gas price")?,
+            tx_count: value.transactions.len(),
             observed_at: Instant::now(),
         })
     }
@@ -261,9 +295,10 @@ impl BlockRetrieving for crate::Web3 {
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
         let block = get_block_at_id(self, U64::from(number).into()).await?;
-        Ok((
+        Ok(BlockNumberHash::new(
             block.number.context("missing block_number")?.as_u64(),
             block.hash.context("missing block_hash")?,
+            block.transactions.len(),
         ))
     }
 
@@ -297,6 +332,7 @@ impl BlockRetrieving for crate::Web3 {
                         .and_then(|response| {
                             let current_hash = response.hash.context("missing hash")?;
                             let current_block = response.number.context("missing number")?.as_u64();
+                            let tx_count = response.transactions.len();
                             if prev_hash.is_some_and(|prev| prev != response.parent_hash) {
                                 tracing::debug!(
                                     ?range,
@@ -308,7 +344,7 @@ impl BlockRetrieving for crate::Web3 {
                             }
                             prev_hash = Some(current_hash);
 
-                            Ok((current_block, current_hash))
+                            Ok(BlockNumberHash::new(current_block, current_hash, tx_count))
                         })
                 }
                 Err(err) => Err(anyhow!("web3 error: {}", err)),
@@ -350,9 +386,10 @@ pub async fn block_number_to_block_number_hash(
         .block(BlockId::Number(block_number))
         .await?
         .context("block should exists")?;
-    Ok((
+    Ok(BlockNumberHash::new(
         block.number.expect("number must exist").as_u64(),
         block.hash.expect("hash must exist"),
+        block.transactions.len(),
     ))
 }
 
@@ -447,14 +484,14 @@ mod tests {
         let range = RangeInclusive::try_new(5, 5).unwrap();
         let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks.last().unwrap().0, 5);
+        assert_eq!(blocks.last().unwrap().number, 5);
 
         // multiple blocks
         let range = RangeInclusive::try_new(5, 8).unwrap();
         let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 4);
-        assert_eq!(blocks.last().unwrap().0, 8);
-        assert_eq!(blocks.first().unwrap().0, 5);
+        assert_eq!(blocks.last().unwrap().number, 8);
+        assert_eq!(blocks.first().unwrap().number, 5);
 
         // shortened blocks
         let current_block_number = 5u64;
@@ -466,8 +503,8 @@ mod tests {
         .unwrap();
         let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 6);
-        assert_eq!(blocks.last().unwrap().0, 5);
-        assert_eq!(blocks.first().unwrap().0, 0);
+        assert_eq!(blocks.last().unwrap().number, 5);
+        assert_eq!(blocks.first().unwrap().number, 0);
     }
 
     // Tests that a throttled block stream indeed skips the configured
