@@ -224,6 +224,7 @@ pub struct Flashloan {
 #[serde(rename_all = "camelCase")]
 pub struct WrapperCall {
     pub address: H160,
-    #[serde_as(as = "Option<serialize::Hex>")]
-    pub data: Option<Vec<u8>>,
+    #[serde_as(as = "serialize::Hex")]
+    #[serde(default)]
+    pub data: Vec<u8>,
 }

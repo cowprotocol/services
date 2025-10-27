@@ -194,7 +194,7 @@ impl Single {
                 .iter()
                 .map(|w| WrapperCall {
                     target: eth::Address(w.address),
-                    data: Some(w.data.clone()),
+                    data: w.data.clone(),
                 })
                 .collect(),
         })

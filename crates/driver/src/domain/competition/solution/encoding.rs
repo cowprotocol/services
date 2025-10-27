@@ -215,11 +215,6 @@ pub fn tx(
     let has_flashloans = !solution.flashloans.is_empty();
     let has_wrappers = !solution.wrappers.is_empty();
 
-    // Check for incompatibility upfront
-    if has_flashloans && has_wrappers {
-        return Err(Error::FlashloanWrappersIncompatible);
-    }
-
     // Encode the base settlement calldata
     let mut settle_calldata = contracts
         .settlement()
@@ -239,12 +234,14 @@ pub fn tx(
     // Append auction ID to settlement calldata
     settle_calldata.extend(auction_id.to_be_bytes());
 
-    let (to, calldata) = if has_flashloans {
+    let (to, calldata) = if has_flashloans && has_wrappers {
+        return Err(Error::FlashloanWrappersIncompatible);
+    } else if has_flashloans {
         encode_flashloan_settlement(solution, contracts, settle_calldata)?
     } else if has_wrappers {
-        encode_wrapper_settlement(solution, settle_calldata)?
+        encode_wrapper_settlement(solution, settle_calldata)
     } else {
-        encode_regular_settlement(contracts, settle_calldata)?
+        (contracts.settlement().address().into(), settle_calldata)
     };
 
     Ok(eth::Tx {
@@ -313,17 +310,7 @@ fn encode_wrapper_settlement(
     }
     .abi_encode();
 
-    Ok((solution.wrappers[0].address, calldata))
-}
-
-/// Encodes a regular settlement transaction without flashloans or wrappers.
-///
-/// Returns (settlement_contract_address, calldata)
-fn encode_regular_settlement(
-    contracts: &infra::blockchain::Contracts,
-    settle_calldata: Vec<u8>,
-) -> (eth::Address, Vec<u8>) {
-    (contracts.settlement().address().into(), settle_calldata)
+    (solution.wrappers[0].address, calldata)
 }
 
 /// Encodes wrapper metadata for wrapper settlement calls.
@@ -347,13 +334,8 @@ fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
         }
 
         // Encode data length as u16 in native endian, then the data itself
-        wrapper_data.extend(
-            w.data
-                .as_ref()
-                .map(|v| (v.len() as u16).to_ne_bytes().to_vec())
-                .unwrap_or_default(),
-        );
-        wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
+        wrapper_data.extend((w.data.len() as u16).to_ne_bytes().to_vec());
+        wrapper_data.extend(w.data.clone());
     }
 
     wrapper_data

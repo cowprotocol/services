@@ -56,8 +56,8 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wrappers: Option<Vec<WrapperCall>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub wrappers: Vec<WrapperCall>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     pub signature: Vec<u8>,

@@ -159,18 +159,18 @@ pub fn new(
                     ),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
                     flashloan_hint: flashloan_hints.get(&order.uid).map(Into::into),
-                    wrappers: wrappers.get(&order.uid).map(|wrapper_calls| {
-                        wrapper_calls
-                            .iter()
-                            .map(|(address, data, is_omittable)| {
-                                solvers_dto::auction::WrapperCall {
-                                    address: *address,
-                                    data: data.clone(),
-                                    is_omittable: *is_omittable,
-                                }
-                            })
-                            .collect()
-                    }),
+                    wrappers: wrappers
+                        .get(&order.uid)
+                        .into_iter()
+                        .flatten()
+                        .map(
+                            |(address, data, is_omittable)| solvers_dto::auction::WrapperCall {
+                                address: *address,
+                                data: data.clone(),
+                                is_omittable: *is_omittable,
+                            },
+                        )
+                        .collect(),
                     signature: order.signature.data.clone().into(),
                     signing_scheme: match order.signature.scheme {
                         Scheme::Eip712 => solvers_dto::auction::SigningScheme::Eip712,

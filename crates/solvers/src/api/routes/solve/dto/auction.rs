@@ -72,7 +72,6 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
                 wrappers: order
                     .wrappers
                     .clone()
-                    .unwrap_or_default()
                     .iter()
                     .map(|w| order::WrapperCall {
                         address: w.address,
