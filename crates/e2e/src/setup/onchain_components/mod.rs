@@ -614,7 +614,7 @@ impl OnchainComponents {
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
         token.mint(pair.address().into_legacy(), amount + 1).await;
-        let (out0, out1) = if self.contracts.weth.address() == token.address() {
+        let (out0, out1) = if self.contracts.weth.address() < token.address() {
             (1, 0)
         } else {
             (0, 1)
