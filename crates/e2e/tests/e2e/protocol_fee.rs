@@ -6,7 +6,6 @@ use {
         tx,
         tx_value,
     },
-    std::time::Duration,
     ethcontract::{Address, prelude::U256},
     ethrpc::alloy::{
         CallBuilderExt,
@@ -28,13 +27,15 @@ use {
     secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
+    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
 // Extended timeout for tests that settle multiple orders concurrently.
-// The `combined_protocol_fees` test requires all 3 orders to settle, which can take
-// longer than single-order tests, especially in CI environments where the solver may
-// complete just after autopilot's deadline, causing solution rejection and retry.
+// The `combined_protocol_fees` test requires all 3 orders to settle, which can
+// take longer than single-order tests, especially in CI environments where the
+// solver may complete just after autopilot's deadline, causing solution
+// rejection and retry.
 const EXTENDED_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio::test]
@@ -300,11 +301,17 @@ async fn combined_protocol_fees(web3: Web3) {
         onchain.mint_block().await;
 
         // Check each order individually for better diagnostics
-        let market_ok = services.get_order(&market_price_improvement_uid).await
+        let market_ok = services
+            .get_order(&market_price_improvement_uid)
+            .await
             .is_ok_and(|o| !o.metadata.executed_fee.is_zero());
-        let limit_ok = services.get_order(&limit_surplus_order_uid).await
+        let limit_ok = services
+            .get_order(&limit_surplus_order_uid)
+            .await
             .is_ok_and(|o| !o.metadata.executed_fee.is_zero());
-        let partner_ok = services.get_order(&partner_fee_order_uid).await
+        let partner_ok = services
+            .get_order(&partner_fee_order_uid)
+            .await
             .is_ok_and(|o| !o.metadata.executed_fee.is_zero());
 
         market_ok && limit_ok && partner_ok
