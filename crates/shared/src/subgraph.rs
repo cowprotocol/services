@@ -52,6 +52,7 @@ impl SubgraphClient {
         // for long lasting queries subgraph call might randomly fail
         // introduced retry mechanism that should efficiently help since failures are
         // quick and we need 1 or 2 retries to succeed.
+        let mut error: Option<anyhow::Error> = None;
         for _ in 0..self.max_number_of_attempts {
             match self
                 .client
@@ -67,10 +68,13 @@ impl SubgraphClient {
                 .into_result()
             {
                 Ok(result) => return Ok(result),
-                Err(err) => tracing::warn!("failed to query subgraph: {}", err),
+                Err(err) => {
+                    tracing::warn!("failed to query subgraph: {}", err);
+                    error = Some(err);
+                }
             }
         }
-        Err(anyhow::anyhow!("failed to execute query on subgraph"))
+        Err(anyhow::anyhow!(format!("failed to execute query on subgraph: {}", error.unwrap())))
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
