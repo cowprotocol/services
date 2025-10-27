@@ -20,7 +20,7 @@ use {
 
 pub type WrapperCalls = HashMap<order::Uid, Vec<(H160, Vec<u8>, bool)>>;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn new(
     auction: &competition::Auction,
     liquidity: &[liquidity::Liquidity],
