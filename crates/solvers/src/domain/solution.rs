@@ -10,7 +10,7 @@ pub struct Id(pub u64);
 #[derive(Debug, Default)]
 pub struct WrapperCall {
     pub target: eth::Address,
-    pub data: Option<Vec<u8>>,
+    pub data: Vec<u8>,
 }
 
 /// A solution to an auction.
