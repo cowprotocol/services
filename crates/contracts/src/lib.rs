@@ -54,7 +54,6 @@ include_contracts! {
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
     ERC20;
-    GPv2Settlement;
     WETH9;
 }
 
@@ -64,7 +63,6 @@ mod tests {
     use {
         super::*,
         ethcontract::{
-            common::DeploymentInformation,
             futures::future::{self, FutureExt as _, Ready},
             json::json,
             jsonrpc::{Call, Id, MethodCall, Params, Value},
@@ -123,7 +121,6 @@ mod tests {
         }
 
         for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(WETH9 for *network);
             assert!(
                 alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
@@ -148,20 +145,6 @@ mod tests {
 
     #[test]
     fn deployment_information() {
-        macro_rules! assert_has_deployment_information {
-            ($contract:ident for $network:expr_2021) => {{
-                let web3 = Web3::new(ChainIdTransport($network));
-                let instance = $contract::deployed(&web3).now_or_never().unwrap().unwrap();
-                assert!(matches!(
-                    instance.deployment_information(),
-                    Some(DeploymentInformation::BlockNumber(_)),
-                ));
-            }};
-        }
-
-        for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_information!(GPv2Settlement for *network);
-        }
         assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
         for network in &[MAINNET, ARBITRUM_ONE] {
             assert!(
