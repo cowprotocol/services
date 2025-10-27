@@ -87,7 +87,9 @@ impl UniV3SubgraphClient {
             .query::<serde_json::Value>(CHECK_LIQUIDITY_NET_FILTER, None)
             .await;
 
-        if let Err(err) = &result && err.to_string().contains("liquidityNet_not") {
+        if let Err(err) = &result
+            && err.to_string().contains("liquidityNet_not")
+        {
             // If the query fails, it likely means the subgraph does not support the
             // liquidityNet filter.
             self.use_liquidity_net_filter = false;

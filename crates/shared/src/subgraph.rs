@@ -74,7 +74,10 @@ impl SubgraphClient {
                 }
             }
         }
-        Err(anyhow::anyhow!(format!("failed to execute query on subgraph: {}", error.unwrap())))
+        Err(anyhow::anyhow!(format!(
+            "failed to execute query on subgraph: {}",
+            error.unwrap()
+        )))
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
