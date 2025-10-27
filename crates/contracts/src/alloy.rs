@@ -630,6 +630,32 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(
+    GPv2AllowListAuthentication,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xb84bf720364f94c749f1ec1cdf0d4c44c70411b716459aaccfd24fc677013375>
+        MAINNET => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 12593263),
+        // <https://gnosisscan.io/tx/0x1a2d87a05a94bc6680a4faee31bbafbd74e9ddb63dd3941c717b5c609c08b957>
+        GNOSIS => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 16465099),
+        // <https://sepolia.etherscan.io/tx/0x73c54c75b3f382304f3adf33e3876c8999fb10df786d4a902733369251033cd1>
+        SEPOLIA => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 4717469),
+        // <https://arbiscan.io/tx/0xe994adff141a2e72bd9dab3eb7b3480637013bdfb1aa42c62d9d6c90de091237>
+        ARBITRUM_ONE => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 204702129),
+        // <https://basescan.org/tx/0x5497004d2a37c9eafd0bd1e5861a67d3a209c5b845724166e3dbca9527ee05ec>
+        BASE => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 21407137),
+        // <https://snowscan.xyz/tx/0xa58fc76846917779d7bcbb7d34f4a2a44aab2b702ef983594e34e6972a0c626b>
+        AVALANCHE => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 59891351),
+        // <https://bscscan.com/tx/0x8da639c62eb4a810573c178ed245184944d66c834122e3f88994ebf679b50e34>
+        BNB => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 48173639),
+        // <https://optimistic.etherscan.io/tx/0x5b6403b485e369ce524d04234807df782e6639e55a7c1d859f0a67925d9a5f49>
+        OPTIMISM => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 134254466),
+        // <https://polygonscan.com/tx/0x686e4bbcfd6ebae91f0fcc667407c831953629877ec622457916729de3d461c3>
+        POLYGON => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 45854728),
+        // <https://explorer.lens.xyz/tx/0x0730c21885153dcc9a25ab7abdc38309ec7c7a8db15b763fbbaf574d1e7ec498>
+        LENS => (address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"), 2612937),
+    }
+);
+
 pub mod cow_amm {
     crate::bindings!(CowAmmFactoryGetter);
 }
