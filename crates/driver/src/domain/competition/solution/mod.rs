@@ -41,7 +41,7 @@ type Prices = HashMap<eth::TokenAddress, eth::U256>;
 #[derive(Clone)]
 pub struct WrapperCall {
     pub address: eth::Address,
-    pub data: Option<Vec<u8>>,
+    pub data: Vec<u8>,
 }
 
 // TODO Add a constructor and ensure that the clearing prices are included for
