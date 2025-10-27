@@ -378,8 +378,8 @@ mod tests {
             sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
-        contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
-        ethrpc::Web3,
+        contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt},
+        ethrpc::{Web3, alloy::conversions::IntoLegacy},
         hex_literal::hex,
         std::{env, time::Duration},
         web3::types::{
@@ -702,10 +702,12 @@ mod tests {
         //   the callback that I didn't follow in the SC code.
         // - 0x4f9254c83eb525f9fcf346490bbb3ed28a81c667 Not sure why deny listed.
 
-        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: settlement.address(),
+            settlement_contract: settlement.address().into_legacy(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
@@ -756,7 +758,7 @@ mod tests {
                 ),
             ],
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
+        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
         println!("testing good tokens");
         for &token in base_tokens {
@@ -777,7 +779,9 @@ mod tests {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
         let web3 = Web3::new_from_env();
         let base_tokens = vec![testlib::tokens::WETH];
-        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
@@ -788,10 +792,10 @@ mod tests {
         );
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: settlement.address(),
+            settlement_contract: settlement.address().into_legacy(),
             proposers: vec![univ3],
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
+        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
         let result = token_cache.detect(testlib::tokens::USDC).await;
         dbg!(&result);
@@ -906,13 +910,15 @@ mod tests {
 
         let web3 = Web3::new_from_env();
 
-        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
             proposers: vec![solver_token_finder],
-            settlement_contract: settlement.address(),
+            settlement_contract: settlement.address().into_legacy(),
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
+        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
         for token in tokens {
             let result = token_cache.detect(token).await;
