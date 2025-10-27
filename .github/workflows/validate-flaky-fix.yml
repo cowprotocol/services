@@ -65,7 +65,6 @@ jobs:
           echo "Running test attempt ${{ matrix.run_number }} of 30"
           cargo nextest run \
             -p e2e \
-            --test protocol_fee \
             local_node_combined_protocol_fees \
             --test-threads 1 \
             --run-ignored ignored-only \
