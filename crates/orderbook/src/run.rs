@@ -17,12 +17,12 @@ use {
         WETH9,
         alloy::{
             BalancerV2Vault,
-            ChainalysisOracle,
             HooksTrampoline,
             IUniswapV3Factory,
             InstanceExt,
             support::Balances,
         },
+        bindings::ChainalysisOracle,
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},

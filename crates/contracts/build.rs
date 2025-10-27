@@ -1,3 +1,5 @@
+use contracts_generate::{Contract, Contracts};
+
 use {
     ethcontract::{
         Address,
@@ -22,6 +24,28 @@ const BNB: &str = "56";
 const OPTIMISM: &str = "10";
 const LENS: &str = "232";
 
+macro_rules! info {
+    ($addr:expr) => {
+        ($addr, None)
+    };
+    ($addr:expr, $block:expr) => {
+        ($addr, Some($block))
+    };
+}
+
+pub mod networks {
+    pub const MAINNET: u64 = 1;
+    pub const GNOSIS: u64 = 100;
+    pub const SEPOLIA: u64 = 11155111;
+    pub const ARBITRUM_ONE: u64 = 42161;
+    pub const BASE: u64 = 8453;
+    pub const POLYGON: u64 = 137;
+    pub const AVALANCHE: u64 = 43114;
+    pub const BNB: u64 = 56;
+    pub const OPTIMISM: u64 = 10;
+    pub const LENS: u64 = 232;
+}
+
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
     // non-existent files cause the crate's build unit to get flagged for a
@@ -31,6 +55,42 @@ fn main() {
     // - https://github.com/rust-lang/cargo/issues/6003
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
+
+    std::fs::create_dir_all("src/bindings").unwrap();
+    Contracts::new()
+        .add_contract(
+            Contract::new("ChainalysisOracle")
+                .with_network(
+                    networks::MAINNET,
+                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+                )
+                .with_network(
+                    networks::ARBITRUM_ONE,
+                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+                )
+                .with_network(
+                    networks::BASE,
+                    info!("0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B"),
+                )
+                .with_network(
+                    networks::AVALANCHE,
+                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+                )
+                .with_network(
+                    networks::BNB,
+                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+                )
+                .with_network(
+                    networks::OPTIMISM,
+                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+                )
+                .with_network(
+                    networks::POLYGON,
+                    info!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+                ),
+        )
+        .write_formatted(Path::new("artifacts"), false, Path::new("src/bindings"))
+        .unwrap();
 
     generate_contract("ERC20");
     generate_contract_with_config("GPv2Settlement", |builder| {

@@ -42,6 +42,8 @@ pub mod paths;
 pub mod vault;
 pub mod web3;
 
+pub mod bindings;
+
 macro_rules! include_contracts {
     ($($name:ident;)*) => {$(
         include!(concat!(env!("OUT_DIR"), "/", stringify!($name), ".rs"));

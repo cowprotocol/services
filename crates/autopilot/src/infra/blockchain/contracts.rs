@@ -1,12 +1,9 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::alloy::{
-        ChainalysisOracle,
-        GPv2AllowListAuthentication,
-        HooksTrampoline,
-        InstanceExt,
-        support::Balances,
+    contracts::{
+        alloy::{GPv2AllowListAuthentication, HooksTrampoline, InstanceExt, support::Balances},
+        bindings::ChainalysisOracle,
     },
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
     primitive_types::H160,
