@@ -1,0 +1,91 @@
+name: Validate Flaky Test Fix (Temporary)
+
+# TEMPORARY WORKFLOW FOR PR #3820
+# Purpose: Run protocol_fee test 30 times to validate timeout fix
+# Delete this workflow after PR is merged and validated
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - fix-flaky-protocol-fee-test-3540
+
+jobs:
+  validate-protocol-fee-fix:
+    # Only run on the specific PR branch
+    if: github.head_ref == 'fix-flaky-protocol-fee-test-3540' || github.ref == 'refs/heads/fix-flaky-protocol-fee-test-3540'
+
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Run the test 30 times to validate fix
+        run_number: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
+      TOML_TRACE_ERROR: 1
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - run: rustup toolchain install stable --profile minimal
+
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          # Add matrix run number to cache key for isolation
+          shared-key: "validate-flaky-${{ matrix.run_number }}"
+
+      - run: cargo build -p e2e --tests &
+
+      - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
+
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
+        with:
+          file: docker-compose.yaml
+          up-opts: -d db
+
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
+        with:
+          file: docker-compose.yaml
+          up-opts: migrations --abort-on-container-failure
+
+      - name: Run protocol_fee test (attempt ${{ matrix.run_number }}/30)
+        run: |
+          echo "Running test attempt ${{ matrix.run_number }} of 30"
+          cargo nextest run \
+            -p e2e \
+            --test protocol_fee \
+            local_node_combined_protocol_fees \
+            --test-threads 1 \
+            --run-ignored ignored-only \
+            --no-fail-fast
+
+      - name: Report result
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Test attempt ${{ matrix.run_number }}/30 PASSED"
+          else
+            echo "❌ Test attempt ${{ matrix.run_number }}/30 FAILED"
+          fi
+
+  validation-summary:
+    needs: validate-protocol-fee-fix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check validation results
+        run: |
+          echo "Validation complete. Check individual job results above."
+          echo "Target: >95% pass rate (at least 29/30 passes)"
