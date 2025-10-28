@@ -53,7 +53,7 @@ impl Solutions {
                                     order,
                                     fulfillment.executed_amount.into(),
                                     competition::solution::trade::Fee(
-                                        competition::order::SellAmount(fulfillment.fee.unwrap_or_default()),
+                                        competition::order::SellAmount(fulfillment.fee),
                                     ),
                                 )
                                 .map(competition::solution::Trade::Fulfillment)
@@ -107,7 +107,7 @@ impl Solutions {
                                         )?,
                                     },
                                     jit.executed_amount.into(),
-                                    jit.fee.unwrap_or_default().into(),
+                                    jit.fee.into(),
                                 )
                                 .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
                             ))},

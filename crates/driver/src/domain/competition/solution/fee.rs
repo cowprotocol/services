@@ -57,7 +57,12 @@ impl Fulfillment {
         let protocol_fee = self.protocol_fee_in_sell_token(prices, protocol_fee)?;
 
         // Increase the fee by the protocol fee
-        let fee = Fee((self.surplus_fee().0.checked_add(protocol_fee.0).ok_or(Math::Overflow)?).into());
+        let fee = Fee((self
+            .fee()
+            .0
+            .checked_add(protocol_fee.0)
+            .ok_or(Math::Overflow)?)
+        .into());
 
         // Reduce the executed amount by the protocol fee. This is because solvers are
         // unaware of the protocol fee that driver introduces and they only account
@@ -120,7 +125,7 @@ impl Fulfillment {
                     uid = ?self.order().uid,
                     ?fee_from_volume,
                     executed = ?self.executed(),
-                    surplus_fee = ?self.surplus_fee(),
+                    surplus_fee = ?self.fee(),
                     "calculated protocol fee"
                 );
                 Ok(fee_from_volume)
@@ -150,7 +155,7 @@ impl Fulfillment {
             ?fee_from_volume,
             ?protocol_fee,
             executed = ?self.executed(),
-            surplus_fee = ?self.surplus_fee(),
+            surplus_fee = ?self.fee(),
             "calculated protocol fee"
         );
         Ok(protocol_fee)

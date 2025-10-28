@@ -285,7 +285,7 @@ http-timeout = "10s"
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: trade_amount,
-                fee: Some(0.into()),
+                fee: 0.into(),
                 order: solvers_dto::solution::OrderUid(order_id.0),
             },
         )],

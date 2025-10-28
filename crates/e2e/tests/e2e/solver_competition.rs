@@ -452,7 +452,7 @@ async fn store_filtered_solutions(web3: Web3) {
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: order_ab.sell_amount,
-                fee: Some(0.into()),
+                fee: 0.into(),
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             },
         )],
@@ -477,12 +477,12 @@ async fn store_filtered_solutions(web3: Web3) {
         trades: vec![
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_ab.sell_amount,
-                fee: Some(0.into()),
+                fee: 0.into(),
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_ac.sell_amount,
-                fee: Some(0.into()),
+                fee: 0.into(),
                 order: solvers_dto::solution::OrderUid(order_ac_id.0),
             }),
         ],

@@ -52,9 +52,8 @@ pub struct Fulfillment {
     pub order: OrderUid,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub fee: Option<U256>,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
 }
 
 #[serde_as]
@@ -64,9 +63,8 @@ pub struct JitTrade {
     pub order: JitOrder,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub fee: Option<U256>,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
 }
 
 #[serde_as]

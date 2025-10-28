@@ -43,7 +43,7 @@ pub fn scoring_failed(
         }
         solution::error::Scoring::Math(_)
         | solution::error::Scoring::CalculateCustomPrices(solution::error::Trade::Math(_)) => {
-            return
+            return;
         }
         solution::error::Scoring::CalculateCustomPrices(
             solution::error::Trade::InvalidExecutedAmount,

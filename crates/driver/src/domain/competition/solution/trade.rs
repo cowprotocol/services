@@ -182,14 +182,8 @@ impl Fulfillment {
         self.executed
     }
 
-    /// Returns the effectively paid fee from the user's perspective
-    /// considering their signed order and the uniform clearing prices
-    pub fn fee(&self) -> order::SellAmount {
-        self.fee.0
-    }
-
     /// Returns the solver determined fee.
-    pub fn surplus_fee(&self) -> order::SellAmount {
+    pub fn fee(&self) -> order::SellAmount {
         self.fee.0
     }
 
@@ -263,7 +257,7 @@ impl Fulfillment {
         let executed_sell_amount_with_fee = executed_sell_amount
             .checked_add(
                 // surplus_fee is always expressed in sell token
-                self.surplus_fee().0,
+                self.fee().0,
             )
             .ok_or(Math::Overflow)?;
         let surplus = match self.order().side {
@@ -402,7 +396,7 @@ impl Jit {
             Side::Sell => (self
                 .executed()
                 .0
-                .checked_add(self.fee().0)
+                .checked_add(self.fee.0)
                 .ok_or(Math::Overflow)?)
             .checked_mul(self.order.buy.amount.0)
             .ok_or(Math::Overflow)?
@@ -425,7 +419,7 @@ impl Jit {
             Side::Sell => self
                 .executed()
                 .0
-                .checked_add(self.fee().0)
+                .checked_add(self.fee.0)
                 .ok_or(Math::Overflow)?
                 .into(),
         })
