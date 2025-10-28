@@ -1,7 +1,14 @@
 use {
-    crate::{Web3, Web3Transport, http::HttpTransport, instrumented::instrument_with_label},
+    crate::{
+        Web3,
+        Web3Transport,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        http::HttpTransport,
+        instrumented::instrument_with_label,
+    },
+    alloy::providers::Provider,
     anyhow::{Context as _, Result, anyhow, ensure},
-    futures::StreamExt,
+    futures::{StreamExt, future},
     primitive_types::{H256, U256},
     std::{
         fmt::Debug,
@@ -12,12 +19,7 @@ use {
     tokio_stream::wrappers::WatchStream,
     tracing::{Instrument, instrument},
     url::Url,
-    web3::{
-        BatchTransport,
-        Transport,
-        helpers,
-        types::{Block, BlockId, BlockNumber, U64},
-    },
+    web3::types::{Block, BlockId, BlockNumber, U64},
 };
 
 pub type BlockNumberHash = (u64, H256);
@@ -101,6 +103,26 @@ impl TryFrom<Block<H256>> for BlockInfo {
     }
 }
 
+impl TryFrom<alloy::rpc::types::Block> for BlockInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: alloy::rpc::types::Block) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            number: value.header.number,
+            hash: value.header.hash.into_legacy(),
+            parent_hash: value.header.parent_hash.into_legacy(),
+            timestamp: value.header.timestamp,
+            gas_limit: primitive_types::U256::from(value.header.gas_limit),
+            gas_price: value
+                .header
+                .base_fee_per_gas
+                .map(primitive_types::U256::from)
+                .context("no gas price")?,
+            observed_at: Instant::now(),
+        })
+    }
+}
+
 /// Creates a cloneable stream that yields the current block whenever it
 /// changes.
 ///
@@ -125,10 +147,10 @@ pub async fn current_block_stream(
         url.clone(),
         "block_stream".into(),
     )));
-    let (alloy, wallet) = crate::alloy::provider(url.as_str());
+    let alloy = crate::alloy::unbuffered_provider(url.as_str(), "block_stream");
+    let wallet = crate::alloy::MutWallet::default();
     let web3 = crate::Web3 {
         legacy: web3,
-        // TODO: replace this with an unbuffered alloy provider
         alloy,
         wallet,
     };
@@ -261,68 +283,68 @@ impl BlockRetrieving for crate::Web3 {
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
         let block = get_block_at_id(self, U64::from(number).into()).await?;
-        Ok((
-            block.number.context("missing block_number")?.as_u64(),
-            block.hash.context("missing block_hash")?,
-        ))
+        Ok((block.header.number, block.header.hash.into_legacy()))
     }
 
     /// Gets all blocks requested in the range. For successful results it's
     /// enforced that all the blocks are present, in the correct order and that
     /// there are not reorgs in the block range.
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
-        let include_txs = helpers::serialize(&false);
         let (start, end) = range.clone().into_inner();
-        let mut batch_request = Vec::with_capacity((end - start + 1) as usize);
-        for i in start..=end {
-            let num = helpers::serialize(&BlockNumber::Number(i.into()));
-            let request = self
-                .transport()
-                .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
-            batch_request.push(request);
-        }
+
+        let alloy = self.alloy.clone();
+        let block_futures: Vec<_> = (start..=end)
+            .map(|block_num| {
+                let block_id = alloy::eips::BlockNumberOrTag::Number(block_num).into();
+                let alloy = alloy.clone();
+                async move {
+                    alloy
+                        .get_block(block_id)
+                        .await
+                        .with_context(|| format!("failed to fetch block {block_num}"))
+                }
+            })
+            .collect();
+
+        let blocks: Vec<_> = future::try_join_all(block_futures).await?;
 
         let mut prev_hash = None;
+        let mut result = Vec::with_capacity(blocks.len());
 
-        // send_batch guarantees the size and order of the responses to match the
-        // requests
-        self.transport()
-            .send_batch(batch_request.iter().cloned())
-            .await?
-            .into_iter()
-            .map(|response| match response {
-                Ok(response) => {
-                    serde_json::from_value::<web3::types::Block<H256>>(response.clone())
-                        .with_context(|| format!("unexpected response format: {response:?}"))
-                        .and_then(|response| {
-                            let current_hash = response.hash.context("missing hash")?;
-                            let current_block = response.number.context("missing number")?.as_u64();
-                            if prev_hash.is_some_and(|prev| prev != response.parent_hash) {
-                                tracing::debug!(
-                                    ?range,
-                                    ?prev_hash,
-                                    parent_hash = ?response.parent_hash,
-                                    "inconsistent parent in block range"
-                                );
-                                return Err(anyhow!("inconsistent block range"));
-                            }
-                            prev_hash = Some(current_hash);
+        for (block_num, block_opt) in (start..=end).zip(blocks) {
+            let block = block_opt.with_context(|| format!("missing block {block_num}"))?;
 
-                            Ok((current_block, current_hash))
-                        })
-                }
-                Err(err) => Err(anyhow!("web3 error: {}", err)),
-            })
-            .collect()
+            let current_hash: H256 = block.header.hash.into_legacy();
+            let current_block = block.header.number;
+
+            if prev_hash.is_some_and(|prev| prev != block.header.parent_hash.into_legacy()) {
+                tracing::debug!(
+                    ?range,
+                    ?prev_hash,
+                    parent_hash = ?block.header.parent_hash,
+                    "inconsistent parent in block range"
+                );
+                return Err(anyhow!("inconsistent block range"));
+            }
+            prev_hash = Some(current_hash);
+
+            result.push((current_block, current_hash));
+        }
+
+        Ok(result)
     }
 }
 
-async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<Block<H256>> {
-    web3.eth()
-        .block(id)
+async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<alloy::rpc::types::Block> {
+    let block_id: alloy::eips::BlockId = id.into_alloy();
+    let block = web3
+        .alloy
+        .get_block(block_id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
-        .with_context(|| format!("no block for {id:?}"))
+        .with_context(|| format!("no block for {id:?}"))?;
+
+    Ok(block)
 }
 
 pub async fn timestamp_of_block_in_seconds(web3: &Web3, block_number: BlockNumber) -> Result<u32> {
@@ -331,7 +353,7 @@ pub async fn timestamp_of_block_in_seconds(web3: &Web3, block_number: BlockNumbe
         .block(block_number.into())
         .await
         .context("failed to get latest block")?
-        .context("block should exists")?
+        .context("block should exist")?
         .timestamp
         .as_u32())
 }

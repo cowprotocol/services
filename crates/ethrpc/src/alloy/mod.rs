@@ -32,6 +32,30 @@ fn rpc(url: &str) -> RpcClient {
         .http(url.parse().unwrap())
 }
 
+/// Creates an unbuffered [`RpcClient`] from the given URL with
+/// [`LabelingLayer`] and [`InstrumentationLayer`] but WITHOUT
+/// [`BatchCallLayer`].
+///
+/// This is useful for components that need to avoid batching (e.g., block
+/// stream polling on high-frequency chains).
+fn unbuffered_rpc(url: &str, label: &str) -> RpcClient {
+    ClientBuilder::default()
+        .layer(LabelingLayer {
+            label: label.into(),
+        })
+        .layer(InstrumentationLayer)
+        .http(url.parse().unwrap())
+}
+
+/// Creates an unbuffered provider for the given URL and label.
+///
+/// Unlike [`provider()`], this does not include batching and does not create a
+/// wallet. Useful for read-only operations like block polling.
+pub fn unbuffered_provider(url: &str, label: &str) -> AlloyProvider {
+    let rpc = unbuffered_rpc(url, label);
+    ProviderBuilder::new().connect_client(rpc).erased()
+}
+
 /// Creates a provider with the provided URL and an empty [`MutWallet`].
 ///
 /// Returns a copy of the [`MutWallet`] so the caller can modify it later.
