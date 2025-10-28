@@ -162,60 +162,63 @@ impl TraceCallDetectorRaw {
 
     fn create_trace_request(&self, token: H160, amount: U256, take_from: H160) -> Vec<CallRequest> {
         let mut requests = Vec::new();
+        let recipient = Self::arbitrary_recipient().into_alloy();
+        let settlement_contract = self.settlement_contract.into_alloy();
 
         // 0
-        let tx = ERC20::ERC20::balanceOfCall {
-            account: self.settlement_contract.into_alloy(),
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
         }
         .abi_encode();
-        requests.push(call_request(None, token, tx));
+        requests.push(call_request(None, token, calldata));
         // 1
-        let tx = ERC20::ERC20::transferCall {
-            recipient: self.settlement_contract.into_alloy(),
+        let calldata = ERC20::ERC20::transferCall {
+            recipient: settlement_contract,
             amount: amount.into_alloy(),
         }
         .abi_encode();
-        requests.push(call_request(Some(take_from), token, tx));
+        requests.push(call_request(Some(take_from), token, calldata));
         // 2
-        let tx = ERC20::ERC20::balanceOfCall {
-            account: self.settlement_contract.into_alloy(),
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
         }
         .abi_encode();
-        requests.push(call_request(None, token, tx));
+        requests.push(call_request(None, token, calldata));
         // 3
-        let recipient = Self::arbitrary_recipient();
-        let tx = ERC20::ERC20::balanceOfCall {
-            account: recipient.into_alloy(),
-        }
-        .abi_encode();
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall { account: recipient }.abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 4
-        let tx = ERC20::ERC20::transferCall {
-            recipient: recipient.into_alloy(),
+        let calldata = ERC20::ERC20::transferCall {
+            recipient,
             amount: amount.into_alloy(),
         }
         .abi_encode();
-        requests.push(call_request(Some(self.settlement_contract), token, tx));
+        requests.push(call_request(
+            Some(self.settlement_contract),
+            token,
+            calldata,
+        ));
         // 5
-        let tx = ERC20::ERC20::balanceOfCall {
-            account: self.settlement_contract.into_alloy(),
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
         }
         .abi_encode();
-        requests.push(call_request(None, token, tx));
+        requests.push(call_request(None, token, calldata));
         // 6
-        let tx = ERC20::ERC20::balanceOfCall {
-            account: recipient.into_alloy(),
-        }
-        .abi_encode();
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall { account: recipient }.abi_encode();
+        requests.push(call_request(None, token, calldata));
 
         // 7
-        let tx = ERC20::ERC20::approveCall {
-            spender: recipient.into_alloy(),
+        let calldata = ERC20::ERC20::approveCall {
+            spender: recipient,
             amount: alloy::primitives::U256::MAX,
         }
         .abi_encode();
-        requests.push(call_request(Some(self.settlement_contract), token, tx));
+        requests.push(call_request(
+            Some(self.settlement_contract),
+            token,
+            calldata,
+        ));
 
         requests
     }
@@ -338,11 +341,11 @@ impl TraceCallDetectorRaw {
     }
 }
 
-fn call_request(from: Option<H160>, to: H160, transaction: Vec<u8>) -> CallRequest {
+fn call_request(from: Option<H160>, to: H160, calldata: Vec<u8>) -> CallRequest {
     CallRequest {
         from,
         to: Some(to),
-        data: Some(transaction.into()),
+        data: Some(calldata.into()),
         ..Default::default()
     }
 }

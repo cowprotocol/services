@@ -37,8 +37,8 @@ use {
             },
         },
     },
+    alloy::primitives::Address,
     bigdecimal::{BigDecimal, FromPrimitive},
-    const_hex::ToHexExt,
     ethcontract::dyns::DynTransport,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::join_all,
@@ -47,6 +47,7 @@ use {
     number::serialization::HexOrDecimalU256,
     primitive_types::H160,
     secp256k1::SecretKey,
+    serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
     std::{
@@ -1307,23 +1308,15 @@ impl SolveOk<'_> {
     fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
         let u256 =
             |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
-        let sell_token = trade.get("sellToken").unwrap().to_string();
-        let sell_token = sell_token.trim_matches('"');
-        let buy_token = trade.get("buyToken").unwrap().to_string();
-        let buy_token = buy_token.trim_matches('"');
+        let sell_token =
+            Address::deserialize(trade.get("sellToken").unwrap().into_deserializer()).unwrap();
+        let buy_token =
+            Address::deserialize(trade.get("buyToken").unwrap().into_deserializer()).unwrap();
         let sell_amount = u256(trade.get("executedSell").unwrap());
         let buy_amount = u256(trade.get("executedBuy").unwrap());
 
-        sell_token
-            == self
-                .blockchain
-                .get_token(expected.order.sell_token)
-                .encode_hex_with_prefix()
-            && buy_token
-                == self
-                    .blockchain
-                    .get_token(expected.order.buy_token)
-                    .encode_hex_with_prefix()
+        sell_token == self.blockchain.get_token(expected.order.sell_token)
+            && buy_token == self.blockchain.get_token(expected.order.buy_token)
             && expected.order.expected_amounts.clone().unwrap().sell == sell_amount
             && expected.order.expected_amounts.clone().unwrap().buy == buy_amount
     }
