@@ -685,6 +685,8 @@ crate::bindings!(
         OPTIMISM => address!("0x4200000000000000000000000000000000000006"),
         POLYGON => address!("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"),
         LENS => address!("0x6bDc36E20D267Ff0dd6097799f82e78907105e2F"),
+        LINEA => address!("0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f"),
+        PLASMA => address!("0x6100E367285b01F48D07953803A2d8dCA5D19873"),
     }
 );
 
