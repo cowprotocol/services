@@ -244,7 +244,7 @@ async fn eth_flow_tx(web3: Web3) {
     // able to set an allowance on behalf of the settlement contract.
     let settlement = onchain.contracts().gp_settlement.address();
     let allowance = dai
-        .allowance(settlement.into_alloy(), trader.address().into_alloy())
+        .allowance(*settlement, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -253,7 +253,7 @@ async fn eth_flow_tx(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(settlement.into_alloy(), trader.address().into_alloy())
+        .allowance(*settlement, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -774,7 +774,7 @@ impl ExtendedEthFlowOrder {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("Couldn't query domain separator")
@@ -797,7 +797,7 @@ impl ExtendedEthFlowOrder {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("Couldn't query domain separator")

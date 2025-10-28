@@ -362,7 +362,7 @@ async fn combined_protocol_fees(web3: Web3) {
         ]
         .map(|token| async {
             token
-                .balanceOf(onchain.contracts().gp_settlement.address().into_alloy())
+                .balanceOf(*onchain.contracts().gp_settlement.address())
                 .call()
                 .await
                 .map(IntoLegacy::into_legacy)
@@ -746,7 +746,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     // Check settlement contract balance
     let balance_after = token_gno
-        .balanceOf(onchain.contracts().gp_settlement.address().into_alloy())
+        .balanceOf(*onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap()

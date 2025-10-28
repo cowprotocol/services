@@ -3,13 +3,12 @@ use {
     crate::database::events::log_to_event_index,
     alloy::rpc::types::Log,
     anyhow::{Context, Result, anyhow},
-    contracts::{
-        GPv2Settlement,
-        alloy::CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
+    contracts::alloy::{
+        CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
             CoWSwapOnchainOrdersEvents as ContractEvent,
             OrderPlacement as ContractOrderPlacement,
         },
-        deployment_block,
+        GPv2Settlement,
     },
     database::{
         PgTransaction,
@@ -150,7 +149,8 @@ async fn settlement_deployment_block_number_hash(
     web3: &Web3,
     chain_id: u64,
 ) -> Result<BlockNumberHash> {
-    let block_number = deployment_block(GPv2Settlement::raw_contract(), chain_id)?;
+    let block_number =
+        GPv2Settlement::deployment_block(&chain_id).context("no deployment block configured")?;
     block_number_to_block_number_hash(web3, U64::from(block_number).into())
         .await
         .context("Deployment block not found")

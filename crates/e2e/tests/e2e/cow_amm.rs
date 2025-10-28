@@ -68,8 +68,11 @@ async fn cow_amm_jit(web3: Web3) {
     // Fund the buffers with a lot of buy tokens so we can pay out the required
     // tokens for 2 orders in the same direction without having to worry about
     // getting the liquidity on-chain.
-    dai.mint(onchain.contracts().gp_settlement.address(), to_wei(100_000))
-        .await;
+    dai.mint(
+        onchain.contracts().gp_settlement.address().into_legacy(),
+        to_wei(100_000),
+    )
+    .await;
 
     // set up cow_amm
     let oracle =
@@ -80,7 +83,7 @@ async fn cow_amm_jit(web3: Web3) {
     let cow_amm_factory =
         contracts::alloy::cow_amm::CowAmmConstantProductFactory::Instance::deploy(
             web3.alloy.clone(),
-            onchain.contracts().gp_settlement.address().into_alloy(),
+            *onchain.contracts().gp_settlement.address(),
         )
         .await
         .unwrap();
@@ -700,7 +703,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let cow_amm_factory =
         contracts::alloy::cow_amm::CowAmmConstantProductFactory::Instance::deploy(
             web3.alloy.clone(),
-            onchain.contracts().gp_settlement.address().into_alloy(),
+            *onchain.contracts().gp_settlement.address(),
         )
         .await
         .unwrap();

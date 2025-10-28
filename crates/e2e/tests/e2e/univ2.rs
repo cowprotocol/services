@@ -1,10 +1,8 @@
 use {
     ::alloy::primitives::U256,
+    contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{
-        setup::{eth, *},
-        tx,
-    },
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -81,23 +79,27 @@ async fn test(web3: Web3) {
 
     // Mine a trivial settlement (not encoding auction ID). This mimics fee
     // withdrawals and asserts we can handle these gracefully.
-    tx!(
-        solver.account(),
-        onchain.contracts().gp_settlement.settle(
+    onchain
+        .contracts()
+        .gp_settlement
+        .settle(
             Default::default(),
             Default::default(),
             Default::default(),
             [
-                vec![(
-                    trader.address(),
-                    U256::ZERO.into_legacy(),
-                    Default::default()
-                )],
+                vec![GPv2Settlement::GPv2Interaction::Data {
+                    target: trader.address().into_alloy(),
+                    value: U256::ZERO,
+                    callData: Default::default(),
+                }],
                 Default::default(),
-                Default::default()
+                Default::default(),
             ],
         )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {

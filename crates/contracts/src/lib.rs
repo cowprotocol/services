@@ -50,7 +50,6 @@ macro_rules! include_contracts {
 
 include_contracts! {
     ERC20;
-    GPv2Settlement;
 }
 
 #[cfg(test)]
