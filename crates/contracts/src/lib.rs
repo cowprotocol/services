@@ -53,9 +53,7 @@ include_contracts! {
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
-    CowProtocolToken;
     ERC20;
-    GPv2AllowListAuthentication;
     GPv2Settlement;
     WETH9;
 }
@@ -130,9 +128,6 @@ mod tests {
             assert!(
                 alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
             )
-        }
-        for network in &[MAINNET, GNOSIS, SEPOLIA] {
-            assert_has_deployment_address!(CowProtocolToken for *network);
         }
         for network in &[MAINNET, ARBITRUM_ONE] {
             assert!(
