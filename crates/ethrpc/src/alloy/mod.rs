@@ -38,10 +38,10 @@ fn rpc(url: &str) -> RpcClient {
 ///
 /// This is useful for components that need to avoid batching (e.g., block
 /// stream polling on high-frequency chains).
-fn unbuffered_rpc(url: &str, label: &str) -> RpcClient {
+fn unbuffered_rpc(url: &str) -> RpcClient {
     ClientBuilder::default()
         .layer(LabelingLayer {
-            label: label.into(),
+            label: "main_unbuffered".into(),
         })
         .layer(InstrumentationLayer)
         .http(url.parse().unwrap())
@@ -53,8 +53,8 @@ fn unbuffered_rpc(url: &str, label: &str) -> RpcClient {
 /// Useful for read-only operations like block polling.
 ///
 /// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn unbuffered_provider(url: &str, label: &str) -> (AlloyProvider, MutWallet) {
-    let rpc = unbuffered_rpc(url, label);
+pub fn unbuffered_provider(url: &str) -> (AlloyProvider, MutWallet) {
+    let rpc = unbuffered_rpc(url);
     let wallet = MutWallet::default();
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
