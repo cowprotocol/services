@@ -7,7 +7,7 @@ pub struct Pool {
     pub fee: Fee,
 }
 
-/// Amount of fees accrued when using using this pool.
+/// Amount of fees accrued when using this pool.
 /// Uniswap v3 was launched with 3 fee tiers (5, 30, 100 bps) but more could be
 /// added by the uniswap DAO.
 #[derive(Clone, Debug)]
