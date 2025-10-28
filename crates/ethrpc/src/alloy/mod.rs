@@ -49,11 +49,20 @@ fn unbuffered_rpc(url: &str, label: &str) -> RpcClient {
 
 /// Creates an unbuffered provider for the given URL and label.
 ///
-/// Unlike [`provider()`], this does not include batching and does not create a
-/// wallet. Useful for read-only operations like block polling.
-pub fn unbuffered_provider(url: &str, label: &str) -> AlloyProvider {
+/// Unlike [`provider()`], this does not include batching.
+/// Useful for read-only operations like block polling.
+///
+/// Returns a copy of the [`MutWallet`] so the caller can modify it later.
+pub fn unbuffered_provider(url: &str, label: &str) -> (AlloyProvider, MutWallet) {
     let rpc = unbuffered_rpc(url, label);
-    ProviderBuilder::new().connect_client(rpc).erased()
+    let wallet = MutWallet::default();
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        .with_simple_nonce_management()
+        .connect_client(rpc)
+        .erased();
+
+    (provider, wallet)
 }
 
 /// Creates a provider with the provided URL and an empty [`MutWallet`].
