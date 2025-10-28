@@ -1,23 +1,24 @@
 use {
-    alloy::primitives::address,
+    alloy::{
+        network::TransactionBuilder,
+        primitives::address,
+        providers::ext::{AnvilApi, ImpersonateConfig},
+        rpc::types::TransactionRequest,
+        sol_types::SolCall,
+    },
     contracts::alloy::ERC20,
-    e2e::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{
-            OnchainComponents,
-            Services,
-            run_forked_test_with_block_number,
-            to_wei,
-            to_wei_with_exp,
-        },
+    e2e::setup::{
+        OnchainComponents,
+        Services,
+        eth,
+        run_forked_test_with_block_number,
+        to_wei,
+        to_wei_with_exp,
     },
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::conversions::{IntoAlloy, IntoLegacy},
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     reqwest::StatusCode,
@@ -48,7 +49,6 @@ const BANNED_USER: H160 = H160(hex_literal::hex!(
 async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let token_dai = ERC20::Instance::new(
         address!("6b175474e89094c44da98b954eedeac495271d0f"),
@@ -60,31 +60,50 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
         web3.alloy.clone(),
     );
 
-    let banned_user = forked_node_api.impersonate(&BANNED_USER).await.unwrap();
-
-    // Give trader some DAI
-    let dai_whale = forked_node_api
-        .impersonate(&DAI_WHALE_MAINNET)
-        .await
-        .unwrap();
-    token_dai
-        .transfer(
-            banned_user.address().into_alloy(),
-            to_wei_with_exp(1000, 18).into_alloy(),
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            TransactionRequest::default()
+                .with_from(DAI_WHALE_MAINNET.into_alloy())
+                .with_to(*token_dai.address())
+                .with_input(
+                    ERC20::ERC20::transferCall {
+                        recipient: BANNED_USER.into_alloy(),
+                        amount: to_wei_with_exp(1000, 18).into_alloy(),
+                    }
+                    .abi_encode(),
+                ),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
         )
-        .from(dai_whale.address().into_alloy())
-        .send_and_watch()
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
 
     // Approve GPv2 for trading
-    token_dai
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei_with_exp(1000, 18).into_alloy(),
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            TransactionRequest::default()
+                .with_from(BANNED_USER.into_alloy())
+                .with_to(*token_dai.address())
+                .with_input(
+                    ERC20::ERC20::approveCall {
+                        spender: onchain.contracts().allowance.into_alloy(),
+                        amount: to_wei_with_exp(1000, 18).into_alloy(),
+                    }
+                    .abi_encode(),
+                ),
+            ImpersonateConfig {
+                fund_amount: Some(eth(1)), // gas money
+                stop_impersonate: true,
+            },
         )
-        .from(banned_user.address().into_alloy())
-        .send_and_watch()
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
 
@@ -101,7 +120,7 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
                     value: to_wei_with_exp(1000, 18).try_into().unwrap(),
                 },
             },
-            from: banned_user.address(),
+            from: BANNED_USER,
             ..Default::default()
         })
         .await;

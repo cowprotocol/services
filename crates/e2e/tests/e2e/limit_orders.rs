@@ -1,14 +1,17 @@
 use {
     crate::database::AuctionTransaction,
-    ::alloy::primitives::{U256, address},
+    ::alloy::{
+        network::TransactionBuilder,
+        primitives::{U256, address},
+        providers::ext::{AnvilApi, ImpersonateConfig},
+        rpc::types::TransactionRequest,
+        sol_types::SolCall,
+    },
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
-    e2e::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{eth, *},
-    },
+    e2e::setup::{eth, *},
     ethcontract::H160,
     ethrpc::alloy::{
         CallBuilderExt,
@@ -827,7 +830,6 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
 async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
@@ -844,17 +846,26 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     );
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_MAINNET)
-        .await
-        .unwrap();
-    token_usdc
-        .transfer(
-            trader.address().into_alloy(),
-            to_wei_with_exp(1000, 6).into_alloy(),
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            TransactionRequest::default()
+                .with_from(USDC_WHALE_MAINNET.into_alloy())
+                .with_to(*token_usdc.address())
+                .with_input(
+                    ERC20::ERC20::transferCall {
+                        recipient: trader.address().into_alloy(),
+                        amount: to_wei_with_exp(1000, 6).into_alloy(),
+                    }
+                    .abi_encode(),
+                ),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
         )
-        .from(usdc_whale.address().into_alloy())
-        .send_and_watch()
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
 
@@ -945,7 +956,6 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
 async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
@@ -962,17 +972,26 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     );
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_GNOSIS)
-        .await
-        .unwrap();
-    token_usdc
-        .transfer(
-            trader.address().into_alloy(),
-            to_wei_with_exp(1000, 6).into_alloy(),
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            TransactionRequest::default()
+                .with_from(USDC_WHALE_GNOSIS.into_alloy())
+                .with_to(*token_usdc.address())
+                .with_input(
+                    ERC20::ERC20::transferCall {
+                        recipient: trader.address().into_alloy(),
+                        amount: to_wei_with_exp(1000, 6).into_alloy(),
+                    }
+                    .abi_encode(),
+                ),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
         )
-        .from(usdc_whale.address().into_alloy())
-        .send_and_watch()
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
 

@@ -1,26 +1,29 @@
 use {
-    alloy::primitives::{Bytes, FixedBytes, U256, address},
+    alloy::{
+        network::TransactionBuilder,
+        primitives::{Bytes, FixedBytes, U256, address},
+        providers::ext::{AnvilApi, ImpersonateConfig},
+        rpc::types::TransactionRequest,
+        sol_types::SolCall,
+    },
     contracts::alloy::{
         ERC20,
         support::{Balances, Signatures},
     },
     driver::domain::eth::NonZeroU256,
-    e2e::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{
-            DeployedContracts,
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            colocation::{self, SolverEngine},
-            eth,
-            mock::Mock,
-            run_forked_test_with_block_number,
-            run_test,
-            to_wei,
-            to_wei_with_exp,
-            wait_for_condition,
-        },
+    e2e::setup::{
+        DeployedContracts,
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        colocation::{self, SolverEngine},
+        eth,
+        mock::Mock,
+        run_forked_test_with_block_number,
+        run_test,
+        to_wei,
+        to_wei_with_exp,
+        wait_for_condition,
     },
     ethcontract::{BlockId, BlockNumber, H160},
     ethrpc::alloy::{
@@ -411,7 +414,6 @@ async fn cow_amm_driver_support(web3: Web3) {
         }
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(11)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
@@ -420,10 +422,6 @@ async fn cow_amm_driver_support(web3: Web3) {
     const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
         "28c6c06298d514db089934071355e5743bf21d60"
     ));
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_MAINNET)
-        .await
-        .unwrap();
 
     // create necessary token instances
     let usdc = ERC20::Instance::new(
@@ -484,14 +482,28 @@ async fn cow_amm_driver_support(web3: Web3) {
     // settle.
 
     // Give trader some USDC
-    usdc.transfer(
-        trader.address().into_alloy(),
-        to_wei_with_exp(1000, 6).into_alloy(),
-    )
-    .from(usdc_whale.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            TransactionRequest::default()
+                .with_from(USDC_WHALE_MAINNET.into_alloy())
+                .with_to(*usdc.address())
+                .with_input(
+                    ERC20::ERC20::transferCall {
+                        recipient: trader.address().into_alloy(),
+                        amount: to_wei_with_exp(1000, 6).into_alloy(),
+                    }
+                    .abi_encode(),
+                ),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .get_receipt()
+        .await
+        .unwrap();
 
     // Approve GPv2 for trading
     usdc.approve(
@@ -505,10 +517,6 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     // Empty liquidity of one of the AMMs to test EmptyPoolRemoval maintenance job.
     let zero_balance_amm = addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc");
-    let zero_balance_amm_account = forked_node_api
-        .impersonate(&zero_balance_amm)
-        .await
-        .unwrap();
     let pendle_token = ERC20::Instance::new(
         address!("808507121b80c02388fad14726482e061b8da827"),
         web3.alloy.clone(),
@@ -518,13 +526,26 @@ async fn cow_amm_driver_support(web3: Web3) {
         .call()
         .await
         .unwrap();
-    pendle_token
-        .transfer(
-            address!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
-            balance,
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            TransactionRequest::default()
+                .with_from(zero_balance_amm.into_alloy())
+                .with_to(*pendle_token.address())
+                .with_input(
+                    ERC20::ERC20::transferCall {
+                        recipient: address!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
+                        amount: balance,
+                    }
+                    .abi_encode(),
+                ),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
         )
-        .from(zero_balance_amm_account.address().into_alloy())
-        .send_and_watch()
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
 
