@@ -150,7 +150,7 @@ impl FetchedBalancerPools {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalancerPoolFetching: Send + Sync {
     async fn fetch(
@@ -367,7 +367,7 @@ impl BalancerContracts {
 }
 
 impl BalancerPoolFetcher {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn new(
         subgraph_url: &Url,
         block_retriever: Arc<dyn BlockRetrieving>,

@@ -53,7 +53,7 @@ async fn smart_contract_orders(web3: Web3) {
         kind: OrderKind::Sell,
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(5),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
@@ -141,12 +141,12 @@ async fn smart_contract_orders(web3: Web3) {
         let weth_balance = onchain
             .contracts()
             .weth
-            .balance_of(safe.address().into_legacy())
+            .balanceOf(safe.address())
             .call()
             .await
             .expect("Couldn't fetch native token balance");
 
-        token_balance.is_zero() && weth_balance > to_wei(6)
+        token_balance.is_zero() && weth_balance > eth(6)
     })
     .await
     .unwrap();
@@ -195,7 +195,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     let order = OrderCreation {
         sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(4),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,

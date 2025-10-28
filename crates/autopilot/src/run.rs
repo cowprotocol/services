@@ -26,11 +26,11 @@ use {
     },
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt},
+    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt, WETH9},
     ethcontract::{BlockNumber, H160},
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::block_number_to_block_number_hash,
     },
     futures::StreamExt,
@@ -207,7 +207,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
-        weth: args.shared.native_token_address,
+        weth: args
+            .shared
+            .native_token_address
+            .map(IntoLegacy::into_legacy),
         balances: args
             .shared
             .balances_contract_address
@@ -310,7 +313,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        eth.contracts().weth().address(),
+        eth.contracts().weth().address().into_legacy(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -374,8 +377,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            native_token: eth.contracts().weth().address(),
             settlement: eth.contracts().settlement().address().into_legacy(),
+            native_token: eth.contracts().weth().address().into_legacy(),
             authenticator: eth
                 .contracts()
                 .settlement()
@@ -479,8 +482,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         cow_amm_registry
             .add_listener(
                 config.index_start,
-                config.factory,
-                config.helper,
+                config.factory.into_alloy(),
+                config.helper.into_alloy(),
                 db_write.pool.clone(),
             )
             .await;
@@ -522,7 +525,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         bad_token_detector.clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        eth.contracts().weth().address(),
+        eth.contracts().weth().address().into_legacy(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -739,7 +742,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         &args.shared.node_url,
         "base",
     );
-    let weth = contracts::WETH9::deployed(&web3)
+    let weth = WETH9::Instance::deployed(&web3.alloy)
         .await
         .expect("couldn't find deployed WETH contract");
 
@@ -785,7 +788,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         liveness.clone(),
         current_block,
         args.max_winners_per_auction,
-        weth.address().into(),
+        weth.address().into_legacy().into(),
     );
     shadow.run_forever().await;
 }

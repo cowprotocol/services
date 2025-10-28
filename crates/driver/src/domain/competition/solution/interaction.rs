@@ -9,7 +9,7 @@ use {
 /// Interaction with a smart contract which is needed to execute this solution
 /// on the blockchain.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum Interaction {
     Custom(Custom),
     Liquidity(Liquidity),

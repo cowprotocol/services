@@ -6,10 +6,10 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 app-data = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
-chrono = { workspace = true }
+bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
+chrono = { workspace = true, features = ["serde"] }
 const-hex = { workspace = true }
 number = { workspace = true }
 serde = { workspace = true }

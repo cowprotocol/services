@@ -13,17 +13,15 @@ use {
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::{
+    contracts::alloy::{
+        BalancerV2Vault,
+        ChainalysisOracle,
+        GPv2Settlement,
+        HooksTrampoline,
+        IUniswapV3Factory,
+        InstanceExt,
         WETH9,
-        alloy::{
-            BalancerV2Vault,
-            ChainalysisOracle,
-            GPv2Settlement,
-            HooksTrampoline,
-            IUniswapV3Factory,
-            InstanceExt,
-            support::Balances,
-        },
+        support::Balances,
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
@@ -130,8 +128,8 @@ pub async fn run(args: Arguments) {
             .expect("load signatures contract"),
     };
     let native_token = match args.shared.native_token_address {
-        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
-        None => WETH9::deployed(&web3)
+        Some(address) => WETH9::Instance::new(address, web3.alloy.clone()),
+        None => WETH9::Instance::deployed(&web3.alloy)
             .await
             .expect("load native token contract"),
     };
@@ -230,7 +228,7 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        native_token.address().into_legacy(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -304,8 +302,8 @@ pub async fn run(args: Arguments) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            native_token: native_token.address(),
             settlement: settlement_contract.address().into_legacy(),
+            native_token: native_token.address().into_legacy(),
             authenticator: settlement_contract
                 .authenticator()
                 .call()
@@ -526,7 +524,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .expect("failed to connect to database");
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
     database_replica: Postgres,

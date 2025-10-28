@@ -27,7 +27,6 @@ use {
 };
 
 /// Layer that attaches a label to each request that passes through.
-#[allow(dead_code)]
 pub(crate) struct LabelingLayer {
     pub label: String,
 }
@@ -87,7 +86,6 @@ where
 
 /// Layer that logs and collects metrics based on the
 /// [`ProviderLabel`] metadata attached to each request.
-#[allow(dead_code)]
 pub(crate) struct InstrumentationLayer;
 
 impl<S> Layer<S> for InstrumentationLayer {

@@ -87,7 +87,7 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Config,
         eth: infra::Ethereum,
@@ -722,7 +722,7 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,

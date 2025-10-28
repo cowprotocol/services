@@ -91,7 +91,7 @@ pub fn all_tables() -> impl Iterator<Item = &'static str> {
 }
 
 /// Delete all data in the database. Only used by tests.
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
     for table in all_tables() {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
@@ -100,7 +100,7 @@ pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
 }
 
 /// Like above but more ergonomic for some tests that use a pool.
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub async fn clear_DANGER(pool: &PgPool) -> sqlx::Result<()> {
     let mut transaction = pool.begin().await?;
     clear_DANGER_(&mut transaction).await?;

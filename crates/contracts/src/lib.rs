@@ -49,80 +49,20 @@ macro_rules! include_contracts {
 }
 
 include_contracts! {
-    CowAmm;
-    CowAmmConstantProductFactory;
-    CowAmmLegacyHelper;
-    CowAmmUniswapV2PriceOracle;
     ERC20;
     GPv2Settlement;
-    WETH9;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::alloy::networks::{ARBITRUM_ONE, GNOSIS, MAINNET, SEPOLIA};
     use {
         super::*,
-        ethcontract::{
-            futures::future::{self, FutureExt as _, Ready},
-            json::json,
-            jsonrpc::{Call, Id, MethodCall, Params, Value},
-            web3::{BatchTransport, RequestId, Transport, Web3, error::Result as Web3Result},
-        },
+        crate::alloy::networks::{ARBITRUM_ONE, GNOSIS, MAINNET, SEPOLIA},
     };
-
-    #[derive(Debug, Clone)]
-    struct ChainIdTransport(u64);
-
-    impl Transport for ChainIdTransport {
-        type Out = Ready<Web3Result<Value>>;
-
-        fn prepare(&self, method: &str, params: Vec<Value>) -> (RequestId, Call) {
-            assert_eq!(method, "eth_chainId");
-            assert_eq!(params.len(), 0);
-            (
-                0,
-                MethodCall {
-                    jsonrpc: None,
-                    method: method.to_string(),
-                    params: Params::Array(params),
-                    id: Id::Num(0),
-                }
-                .into(),
-            )
-        }
-
-        fn send(&self, _id: RequestId, _request: Call) -> Self::Out {
-            future::ready(Ok(json!(format!("{:x}", self.0))))
-        }
-    }
-
-    impl BatchTransport for ChainIdTransport {
-        type Batch = Ready<Web3Result<Vec<Web3Result<Value>>>>;
-
-        fn send_batch<T>(&self, requests: T) -> Self::Batch
-        where
-            T: IntoIterator<Item = (RequestId, Call)>,
-        {
-            future::ready(Ok(requests
-                .into_iter()
-                .map(|_| Ok(json!(format!("{:x}", self.0))))
-                .collect()))
-        }
-    }
 
     #[test]
     fn deployment_addresses() {
-        macro_rules! assert_has_deployment_address {
-            ($contract:ident for $network:expr_2021) => {{
-                let web3 = Web3::new(ChainIdTransport($network));
-                let deployed = $contract::deployed(&web3).now_or_never().unwrap();
-                assert!(deployed.is_ok());
-            }};
-        }
-
         for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_address!(WETH9 for *network);
             assert!(
                 alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
             )

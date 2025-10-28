@@ -74,7 +74,7 @@ pub struct Competition {
 }
 
 impl Competition {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         solver: Solver,
         eth: Ethereum,

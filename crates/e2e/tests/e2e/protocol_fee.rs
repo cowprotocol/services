@@ -3,8 +3,6 @@ use {
     e2e::{
         assert_approximately_eq,
         setup::{eth, fee::*, *},
-        tx,
-        tx_value,
     },
     ethcontract::{Address, prelude::U256},
     ethrpc::alloy::{
@@ -110,29 +108,31 @@ async fn combined_protocol_fees(web3: Web3) {
             .unwrap();
     }
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(100))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(100),
-        onchain.contracts().weth.deposit()
-    );
-    tx!(
-        solver.account(),
-        onchain.contracts().weth.approve(
-            onchain
-                .contracts()
-                .uniswap_v2_router
-                .address()
-                .into_legacy(),
-            to_wei(200)
-        )
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(100))
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(200))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let autopilot_config = vec![
         ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
@@ -162,7 +162,7 @@ async fn combined_protocol_fees(web3: Web3) {
             .map(|token| {
                 get_quote(
                     &services,
-                    onchain.contracts().weth.address(),
+                    onchain.contracts().weth.address().into_legacy(),
                     token.address().into_legacy(),
                     OrderKind::Sell,
                     sell_amount,
@@ -227,7 +227,7 @@ async fn combined_protocol_fees(web3: Web3) {
         onchain.mint_block().await;
         let new_market_order_quote = get_quote(
             &services,
-            onchain.contracts().weth.address(),
+            onchain.contracts().weth.address().into_legacy(),
             market_order_token.address().into_legacy(),
             OrderKind::Sell,
             sell_amount,
@@ -256,7 +256,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .map(|token| {
             get_quote(
                 &services,
-                onchain.contracts().weth.address(),
+                onchain.contracts().weth.address().into_legacy(),
                 token.address().into_legacy(),
                 OrderKind::Sell,
                 sell_amount,
@@ -442,29 +442,31 @@ async fn surplus_partner_fee(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(100))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(100),
-        onchain.contracts().weth.deposit()
-    );
-    tx!(
-        solver.account(),
-        onchain.contracts().weth.approve(
-            onchain
-                .contracts()
-                .uniswap_v2_router
-                .address()
-                .into_legacy(),
-            to_wei(200)
-        )
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(100))
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(200))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services
@@ -481,7 +483,7 @@ async fn surplus_partner_fee(web3: Web3) {
 
     let order = OrderCreation {
         sell_amount: to_wei(10),
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         // just set any low amount since it doesn't matter for this test
         buy_amount: to_wei(1),
         buy_token: token.address().into_legacy(),

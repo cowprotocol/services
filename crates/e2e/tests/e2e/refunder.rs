@@ -40,7 +40,7 @@ async fn refunder_tx(web3: Web3) {
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
         from: ethflow_contract.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -69,7 +69,7 @@ async fn refunder_tx(web3: Web3) {
 
     let quote = OrderQuoteRequest {
         from: ethflow_contract_2.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token,
         receiver,
         validity: Validity::For(3600),

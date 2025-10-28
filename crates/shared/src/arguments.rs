@@ -261,7 +261,7 @@ pub struct Arguments {
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
-    pub native_token_address: Option<H160>,
+    pub native_token_address: Option<Address>,
 
     /// Override the address of the `HooksTrampoline` contract used for
     /// trampolining custom order interactions. If not specified, the default

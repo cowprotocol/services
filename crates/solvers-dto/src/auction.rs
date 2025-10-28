@@ -158,7 +158,6 @@ pub struct Token {
     pub trusted: bool,
 }
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Liquidity {
