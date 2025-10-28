@@ -253,7 +253,7 @@ async fn eth_flow_tx(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(settlement, trader.address().into_alloy())
+        .allowance(*settlement, trader.address().into_alloy())
         .call()
         .await
         .unwrap();

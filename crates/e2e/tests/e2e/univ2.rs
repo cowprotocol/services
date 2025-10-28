@@ -2,10 +2,7 @@ use {
     ::alloy::primitives::U256,
     contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{
-        setup::{eth, *},
-        tx,
-    },
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},

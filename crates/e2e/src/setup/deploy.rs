@@ -1,5 +1,4 @@
 use {
-    crate::deploy,
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,

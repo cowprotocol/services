@@ -1,28 +1,10 @@
 use {
-    ethcontract::{
-        Address,
-        common::{DeploymentInformation, contract::Network},
-    },
     ethcontract_generate::{ContractBuilder, loaders::TruffleLoader},
     std::{env, path::Path},
 };
 
 #[path = "src/paths.rs"]
 mod paths;
-
-const MAINNET: &str = "1";
-const GOERLI: &str = "5";
-const GNOSIS: &str = "100";
-const SEPOLIA: &str = "11155111";
-const ARBITRUM_ONE: &str = "42161";
-const BASE: &str = "8453";
-const POLYGON: &str = "137";
-const AVALANCHE: &str = "43114";
-const BNB: &str = "56";
-const OPTIMISM: &str = "10";
-const LENS: &str = "232";
-const LINEA: &str = "59144";
-const PLASMA: &str = "9745";
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
@@ -61,8 +43,4 @@ fn generate_contract_with_config(
         .unwrap()
         .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
         .unwrap();
-}
-
-fn addr(s: &str) -> Address {
-    s.parse().unwrap()
 }
