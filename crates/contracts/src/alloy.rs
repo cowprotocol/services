@@ -818,11 +818,6 @@ pub trait InstanceExt: Sized {
     fn deployed(
         provider: &Provider,
     ) -> impl std::future::Future<Output = anyhow::Result<Self>> + Send;
-
-    /// Returns the block number at which the contract was deployed, if known.
-    fn deployed_block(
-        &self,
-    ) -> impl std::future::Future<Output = anyhow::Result<Option<u64>>> + Send;
 }
 
 /// Build a `HashMap<u64, (Address, Option<u64>)>` from entries like:
@@ -928,20 +923,6 @@ macro_rules! bindings {
                                 address,
                                 provider.clone(),
                             ))
-                        }
-                    }
-
-                    fn deployed_block(&self) -> impl Future<Output = Result<Option<u64>>> + Send {
-                        async move {
-                            let chain_id = self
-                                .provider()
-                                .get_chain_id()
-                                .await
-                                .context("could not fetch current chain id")?;
-                            if let Some((_address, deployed_block)) = DEPLOYMENT_INFO.get(&chain_id) {
-                                return Ok(*deployed_block);
-                            }
-                            Ok(None)
                         }
                     }
                 }
