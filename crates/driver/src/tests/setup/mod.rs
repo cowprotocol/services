@@ -31,7 +31,6 @@ use {
                 EtherExt,
                 is_approximately_equal,
             },
-            hex_address,
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
                 orderbook::Orderbook,
@@ -39,6 +38,7 @@ use {
         },
     },
     bigdecimal::{BigDecimal, FromPrimitive},
+    const_hex::ToHexExt,
     ethcontract::dyns::DynTransport,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::join_all,
@@ -1314,8 +1314,16 @@ impl SolveOk<'_> {
         let sell_amount = u256(trade.get("executedSell").unwrap());
         let buy_amount = u256(trade.get("executedBuy").unwrap());
 
-        sell_token == hex_address(self.blockchain.get_token(expected.order.sell_token))
-            && buy_token == hex_address(self.blockchain.get_token(expected.order.buy_token))
+        sell_token
+            == self
+                .blockchain
+                .get_token(expected.order.sell_token)
+                .encode_hex_with_prefix()
+            && buy_token
+                == self
+                    .blockchain
+                    .get_token(expected.order.buy_token)
+                    .encode_hex_with_prefix()
             && expected.order.expected_amounts.clone().unwrap().sell == sell_amount
             && expected.order.expected_amounts.clone().unwrap().buy == buy_amount
     }
@@ -1517,8 +1525,8 @@ impl QuoteOk<'_> {
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
         };
 
         let expected = match quoted_order.order.side {

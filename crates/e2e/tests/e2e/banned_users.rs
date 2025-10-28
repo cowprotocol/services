@@ -1,5 +1,6 @@
 use {
-    contracts::ERC20,
+    alloy::primitives::address,
+    contracts::alloy::ERC20,
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
@@ -9,10 +10,15 @@ use {
             to_wei,
             to_wei_with_exp,
         },
-        tx,
     },
     ethcontract::H160,
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
+    },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     reqwest::StatusCode,
 };
@@ -44,18 +50,14 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
-    let token_dai = ERC20::at(
-        &web3,
-        "0x6b175474e89094c44da98b954eedeac495271d0f"
-            .parse()
-            .unwrap(),
+    let token_dai = ERC20::Instance::new(
+        address!("6b175474e89094c44da98b954eedeac495271d0f"),
+        web3.alloy.clone(),
     );
 
-    let token_usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
+    let token_usdt = ERC20::Instance::new(
+        address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+        web3.alloy.clone(),
     );
 
     let banned_user = forked_node_api.impersonate(&BANNED_USER).await.unwrap();
@@ -65,16 +67,26 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
         .impersonate(&DAI_WHALE_MAINNET)
         .await
         .unwrap();
-    tx!(
-        dai_whale,
-        token_dai.transfer(banned_user.address(), to_wei_with_exp(1000, 18))
-    );
+    token_dai
+        .transfer(
+            banned_user.address().into_alloy(),
+            to_wei_with_exp(1000, 18).into_alloy(),
+        )
+        .from(dai_whale.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Approve GPv2 for trading
-    tx!(
-        banned_user,
-        token_dai.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 18))
-    );
+    token_dai
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei_with_exp(1000, 18).into_alloy(),
+        )
+        .from(banned_user.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Order
     let services = Services::new(&onchain).await;
@@ -82,8 +94,8 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
 
     let result = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_dai.address(),
-            buy_token: token_usdt.address(),
+            sell_token: token_dai.address().into_legacy(),
+            buy_token: token_usdt.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 18).try_into().unwrap(),

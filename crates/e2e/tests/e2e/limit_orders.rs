@@ -1,14 +1,13 @@
 use {
     crate::database::AuctionTransaction,
-    ::alloy::primitives::U256,
+    ::alloy::primitives::{U256, address},
     bigdecimal::BigDecimal,
-    contracts::ERC20,
+    contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{eth, *},
-        tx,
     },
     ethcontract::H160,
     ethrpc::alloy::{
@@ -834,18 +833,14 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let token_usdc = ERC20::at(
-        &web3,
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-            .parse()
-            .unwrap(),
+    let token_usdc = ERC20::Instance::new(
+        address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        web3.alloy.clone(),
     );
 
-    let token_usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
+    let token_usdt = ERC20::Instance::new(
+        address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+        web3.alloy.clone(),
     );
 
     // Give trader some USDC
@@ -853,16 +848,26 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .impersonate(&USDC_WHALE_MAINNET)
         .await
         .unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
-    );
+    token_usdc
+        .transfer(
+            trader.address().into_alloy(),
+            to_wei_with_exp(1000, 6).into_alloy(),
+        )
+        .from(usdc_whale.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
-    );
+    token_usdc
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei_with_exp(1000, 6).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -871,9 +876,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     onchain.mint_block().await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address(),
+        sell_token: token_usdc.address().into_legacy(),
         sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_usdt.address(),
+        buy_token: token_usdt.address().into_legacy(),
         buy_amount: to_wei_with_exp(500, 6),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -889,8 +894,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_usdc.address(),
-            buy_token: token_usdt.address(),
+            sell_token: token_usdc.address().into_legacy(),
+            buy_token: token_usdt.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -901,12 +906,12 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .await;
 
     let sell_token_balance_before = token_usdc
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_usdt
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -920,18 +925,19 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
         let sell_token_balance_after = token_usdc
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
         let buy_token_balance_after = token_usdt
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6))
+            && (buy_token_balance_after
+                >= buy_token_balance_before + to_wei_with_exp(500, 6).into_alloy())
     })
     .await
     .unwrap();
@@ -945,18 +951,14 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let token_usdc = ERC20::at(
-        &web3,
-        "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83"
-            .parse()
-            .unwrap(),
+    let token_usdc = ERC20::Instance::new(
+        address!("ddafbb505ad214d7b80b1f830fccc89b60fb7a83"),
+        web3.alloy.clone(),
     );
 
-    let token_wxdai = ERC20::at(
-        &web3,
-        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d"
-            .parse()
-            .unwrap(),
+    let token_wxdai = ERC20::Instance::new(
+        address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
+        web3.alloy.clone(),
     );
 
     // Give trader some USDC
@@ -964,25 +966,35 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .impersonate(&USDC_WHALE_GNOSIS)
         .await
         .unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
-    );
+    token_usdc
+        .transfer(
+            trader.address().into_alloy(),
+            to_wei_with_exp(1000, 6).into_alloy(),
+        )
+        .from(usdc_whale.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
-    );
+    token_usdc
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei_with_exp(1000, 6).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address(),
+        sell_token: token_usdc.address().into_legacy(),
         sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_wxdai.address(),
+        buy_token: token_wxdai.address().into_legacy(),
         buy_amount: to_wei(500),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -994,12 +1006,12 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let sell_token_balance_before = token_usdc
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_wxdai
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -1012,18 +1024,18 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let sell_token_balance_after = token_usdc
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
         let buy_token_balance_after = token_wxdai
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after >= buy_token_balance_before + to_wei(500))
+            && (buy_token_balance_after >= buy_token_balance_before + eth(500))
     })
     .await
     .unwrap();

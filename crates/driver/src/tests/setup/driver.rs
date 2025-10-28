@@ -8,6 +8,7 @@ use {
             setup::{blockchain::Trade, orderbook::Orderbook},
         },
     },
+    const_hex::ToHexExt,
     ethrpc::alloy::conversions::IntoLegacy,
     rand::seq::SliceRandom,
     serde_json::json,
@@ -74,8 +75,8 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     for quote in quotes.iter() {
         let mut order = json!({
             "uid": quote.order_uid(&test.blockchain),
-            "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
-            "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
+            "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
+            "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
             "protocolFees": match quote.order.kind {
@@ -122,24 +123,24 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         match trade {
             Trade::Fulfillment(fulfillment) => {
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.sell_token)),
+                    "address": test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.sell_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(fulfillment.quoted_order.order.sell_token),
                 }));
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.buy_token)),
+                    "address": test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.buy_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(fulfillment.quoted_order.order.buy_token),
                 }));
             }
             Trade::Jit(jit) => {
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(jit.quoted_order.order.sell_token)),
+                    "address": test.blockchain.get_token_wrapped(jit.quoted_order.order.sell_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(jit.quoted_order.order.sell_token),
                 }));
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(jit.quoted_order.order.buy_token)),
+                    "address": test.blockchain.get_token_wrapped(jit.quoted_order.order.buy_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(jit.quoted_order.order.buy_token),
                 }));
@@ -184,8 +185,8 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
 
     let quote = test.quoted_orders.first().unwrap();
     json!({
-        "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
-        "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
+        "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
+        "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "amount": match quote.order.side {
             order::Side::Buy => quote.buy_amount().to_string(),
             order::Side::Sell => quote.sell_amount().to_string(),
