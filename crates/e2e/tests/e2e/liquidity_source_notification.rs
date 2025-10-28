@@ -334,11 +334,7 @@ http-timeout = "10s"
     // Ensure that notification was delivered to Liquorice API
     wait_for_condition(TIMEOUT, || async {
         let state = liquorice_api.get_state().await;
-        tracing::info!(
-            "liquorice notification batch so far: {}",
-            state.notification_requests.len()
-        );
-        Some(!state.notification_requests.is_empty())
+        !state.notification_requests.is_empty()
     })
     .await
     .unwrap();
