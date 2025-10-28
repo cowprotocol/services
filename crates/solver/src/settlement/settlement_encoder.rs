@@ -1,7 +1,7 @@
 use {
     super::{Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
-    anyhow::{Context as _, Result, bail, ensure},
+    anyhow::{Context as _, Result, ensure},
     itertools::Either,
     model::{
         interaction::InteractionData,
@@ -362,6 +362,7 @@ impl SettlementEncoder {
         self.execution_plan.push((interaction, internalizable));
     }
 
+    #[cfg(test)]
     pub(crate) fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
         for existing_unwrap in self.unwraps.iter_mut() {
             if existing_unwrap.merge(&unwrap).is_ok() {
@@ -374,6 +375,7 @@ impl SettlementEncoder {
         self.unwraps.push(unwrap);
     }
 
+    #[cfg(test)]
     pub(crate) fn add_token_equivalency(&mut self, token_a: H160, token_b: H160) -> Result<()> {
         let (new_token, existing_price) = match (
             self.clearing_prices.get(&token_a),
@@ -388,7 +390,7 @@ impl SettlementEncoder {
                 // have the same price (i.e. are equivalent).
                 return Ok(());
             }
-            (None, None) => bail!("tokens not part of solution for equivalency"),
+            (None, None) => anyhow::bail!("tokens not part of solution for equivalency"),
             (Some(price_a), None) => (token_b, *price_a),
             (None, Some(price_b)) => (token_a, *price_b),
         };

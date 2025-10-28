@@ -1,5 +1,4 @@
 pub mod balancer_v2;
-pub mod order_converter;
 pub mod slippage;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
@@ -189,15 +188,6 @@ impl Settleable for LimitOrder {
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
-    }
-}
-
-#[cfg(test)]
-impl From<Order> for LimitOrder {
-    fn from(order: Order) -> Self {
-        order_converter::OrderConverter::test([0x42; 20].into())
-            .normalize_limit_order(BalancedOrder::full(order), true)
-            .unwrap()
     }
 }
 
