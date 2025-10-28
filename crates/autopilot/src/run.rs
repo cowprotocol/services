@@ -30,7 +30,7 @@ use {
     ethcontract::{BlockNumber, H160, common::DeploymentInformation},
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::block_number_to_block_number_hash,
     },
     futures::StreamExt,
@@ -485,8 +485,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         cow_amm_registry
             .add_listener(
                 config.index_start,
-                config.factory,
-                config.helper,
+                config.factory.into_alloy(),
+                config.helper.into_alloy(),
                 db_write.pool.clone(),
             )
             .await;

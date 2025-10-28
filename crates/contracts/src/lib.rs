@@ -49,10 +49,6 @@ macro_rules! include_contracts {
 }
 
 include_contracts! {
-    CowAmm;
-    CowAmmConstantProductFactory;
-    CowAmmLegacyHelper;
-    CowAmmUniswapV2PriceOracle;
     ERC20;
     GPv2Settlement;
 }

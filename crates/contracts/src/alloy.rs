@@ -689,6 +689,28 @@ crate::bindings!(
 );
 
 pub mod cow_amm {
+    crate::bindings!(CowAmm);
+    crate::bindings!(
+        CowAmmConstantProductFactory,
+        crate::deployments! {
+            // <https://etherscan.io/tx/0xf37fc438ddacb00c28305bd7dea3b79091cd5be3405a2b445717d9faf946fa50>
+            MAINNET => (address!("0x40664207e3375FB4b733d4743CE9b159331fd034"), 19861952),
+            // <https://gnosisscan.io/tx/0x4121efab4ad58ae7ad73b50448cccae0de92905e181648e5e08de3d6d9c66083>
+            GNOSIS => (address!("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0"), 33874317),
+            // <https://sepolia.etherscan.io/tx/0x5e6af00c670eb421b96e78fd2e3b9df573b19e6e0ea77d8003e47cdde384b048>
+            SEPOLIA => (address!("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3"), 5874562),
+        }
+    );
+    crate::bindings!(
+        CowAmmLegacyHelper,
+        crate::deployments! {
+            // <https://etherscan.io/tx/0x07f0ce50fb9cd30e69799a63ae9100869a3c653d62ea3ba49d2e5e1282f42b63>
+            MAINNET => (address!("0x3705ceee5eaa561e3157cf92641ce28c45a3999c"), 20332745),
+            // <https://gnosisscan.io/tx/0x09e56c7173ab1e1c5d02bc2832799422ebca6d9a40e5bae77f6ca908696bfebf>
+            GNOSIS => (address!("0xd9ec06b001957498ab1bc716145515d1d0e30ffb"), 35026999),
+        }
+    );
+    crate::bindings!(CowAmmUniswapV2PriceOracle);
     crate::bindings!(CowAmmFactoryGetter);
 }
 
