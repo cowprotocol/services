@@ -973,8 +973,12 @@ mod tests {
                     .unwrap(),
             ),
         ];
-        let event_handler =
-            EventHandler::new(Arc::new(web3.alloy.clone()), AlloyEventRetriever(contract), storage, None);
+        let event_handler = EventHandler::new(
+            Arc::new(web3.alloy.clone()),
+            AlloyEventRetriever(contract),
+            storage,
+            None,
+        );
         let (replacement_blocks, _) = event_handler.past_events_by_block_hashes(&blocks).await;
         assert_eq!(replacement_blocks, blocks[..2]);
     }

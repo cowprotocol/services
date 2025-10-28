@@ -28,7 +28,7 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt, WETH9},
-    ethcontract::{BlockNumber, H160},
+    ethcontract::H160,
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
