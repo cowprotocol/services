@@ -4,6 +4,7 @@ use {
     contracts::alloy::{
         ChainalysisOracle,
         GPv2AllowListAuthentication,
+        GPv2Settlement,
         HooksTrampoline,
         InstanceExt,
         WETH9,
@@ -18,7 +19,7 @@ use {
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
     weth: WETH9::Instance,
     balances: Balances::Instance,
@@ -43,18 +44,13 @@ pub struct Addresses {
 
 impl Contracts {
     pub async fn new(web3: &Web3, chain: &Chain, addresses: Addresses) -> Self {
-        let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
-            address
-                .or_else(|| deployment_address(contract, chain))
-                .unwrap()
-        };
-
-        let settlement = contracts::GPv2Settlement::at(
-            web3,
-            address_for(
-                contracts::GPv2Settlement::raw_contract(),
-                addresses.settlement,
-            ),
+        let settlement = GPv2Settlement::Instance::new(
+            addresses
+                .settlement
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let signatures = contracts::alloy::support::Signatures::Instance::new(
@@ -99,7 +95,7 @@ impl Contracts {
 
         let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("domain separator")
@@ -111,8 +107,7 @@ impl Contracts {
                 .authenticator()
                 .call()
                 .await
-                .expect("authenticator address")
-                .into_alloy(),
+                .expect("authenticator address"),
             web3.alloy.clone(),
         );
 
@@ -128,7 +123,7 @@ impl Contracts {
         }
     }
 
-    pub fn settlement(&self) -> &contracts::GPv2Settlement {
+    pub fn settlement(&self) -> &GPv2Settlement::Instance {
         &self.settlement
     }
 

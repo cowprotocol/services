@@ -4,6 +4,7 @@ use {
         BalanceOverriding,
     },
     alloy::primitives::FixedBytes,
+    contracts::alloy::GPv2Settlement,
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
     hex_literal::hex,
     model::interaction::InteractionData,
@@ -94,7 +95,7 @@ pub fn check_erc1271_result(result: FixedBytes<4>) -> Result<(), SignatureValida
 
 /// Contracts required for signature verification simulation.
 pub struct Contracts {
-    pub settlement: contracts::GPv2Settlement,
+    pub settlement: GPv2Settlement::Instance,
     pub signatures: contracts::alloy::support::Signatures::Instance,
     pub vault_relayer: H160,
 }

@@ -4,18 +4,9 @@ use {
         BalanceOverriding,
     },
     alloy::sol_types::{SolCall, SolType, sol_data},
-    contracts::alloy::support::Balances,
-    ethcontract::{
-        Bytes,
-        contract::MethodBuilder,
-        dyns::DynTransport,
-        state_overrides::StateOverrides,
-    },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    contracts::alloy::{GPv2Settlement, support::Balances},
+    ethcontract::state_overrides::StateOverrides,
+    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -103,7 +94,7 @@ pub fn cached(
 
 #[derive(Clone)]
 pub struct BalanceSimulator {
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     balances: Balances::Instance,
     vault_relayer: H160,
     vault: H160,
@@ -112,7 +103,7 @@ pub struct BalanceSimulator {
 
 impl BalanceSimulator {
     pub fn new(
-        settlement: contracts::GPv2Settlement,
+        settlement: GPv2Settlement::Instance,
         balances: Balances::Instance,
         vault_relayer: H160,
         vault: Option<H160>,
@@ -135,21 +126,15 @@ impl BalanceSimulator {
         self.vault
     }
 
-    #[expect(clippy::too_many_arguments)]
-    pub async fn simulate<F, Fut>(
+    pub async fn simulate(
         &self,
         owner: H160,
         token: H160,
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
-        add_access_lists: F,
         balance_override: Option<BalanceOverrideRequest>,
-    ) -> Result<Simulation, SimulationError>
-    where
-        F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
-        Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
-    {
+    ) -> Result<Simulation, SimulationError> {
         let overrides: StateOverrides = match balance_override {
             Some(overrides) => self
                 .balance_overrider
@@ -168,7 +153,7 @@ impl BalanceSimulator {
         // This allows us to end up with very accurate balance simulations.
         let balance_call = Balances::Balances::balanceCall {
             contracts: Balances::Balances::Contracts {
-                settlement: self.settlement.address().into_alloy(),
+                settlement: *self.settlement.address(),
                 vaultRelayer: self.vault_relayer.into_alloy(),
                 vault: self.vault.into_alloy(),
             },
@@ -186,17 +171,15 @@ impl BalanceSimulator {
                 .collect(),
         };
 
-        let delegate_call = self
+        let response = self
             .settlement
-            .simulate_delegatecall(
-                self.balances.address().into_legacy(),
-                Bytes(balance_call.abi_encode()),
-            )
-            .from(crate::SIMULATION_ACCOUNT.clone());
+            .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
+            .with_cloned_provider()
+            .state(overrides.into_alloy())
+            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy())
+            .call()
+            .await?;
 
-        let delegate_call = add_access_lists(delegate_call).await;
-
-        let response = delegate_call.call_with_state_overrides(&overrides).await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(
                 sol_data::Uint<256>,
@@ -240,7 +223,7 @@ pub struct Simulation {
 #[derive(Debug, Error)]
 pub enum SimulationError {
     #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
+    Method(#[from] alloy::contract::Error),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
 }

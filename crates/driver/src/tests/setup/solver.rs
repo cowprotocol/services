@@ -410,7 +410,7 @@ impl Solver {
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
                     let contract = contracts::ERC20::at(&config.blockchain.web3, token);
-                    let settlement = config.blockchain.settlement.address();
+                    let settlement = config.blockchain.settlement.address().into_legacy();
                     (
                         hex_address(token),
                         json!({
@@ -468,7 +468,7 @@ impl Solver {
         let eth = Ethereum::new(
             rpc,
             Addresses {
-                settlement: Some(config.blockchain.settlement.address().into()),
+                settlement: Some(config.blockchain.settlement.address().into_legacy().into()),
                 weth: Some(config.blockchain.weth.address().into_legacy().into()),
                 balances: Some(config.blockchain.balances.address().into_legacy().into()),
                 signatures: Some(config.blockchain.signatures.address().into_legacy().into()),

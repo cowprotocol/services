@@ -310,6 +310,8 @@ impl fmt::Debug for Ethereum {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
+    Rpc(#[from] alloy::contract::Error),
+    #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
@@ -332,6 +334,7 @@ impl Error {
             }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
+            Error::Rpc(_) => true,
         }
     }
 }
@@ -340,6 +343,7 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
+            contracts::Error::Rpc(err) => Self::Rpc(err),
         }
     }
 }
@@ -347,7 +351,7 @@ impl From<contracts::Error> for Error {
 impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
-            SimulationError::Method(err) => Self::Method(err),
+            SimulationError::Method(err) => Self::Rpc(err),
             SimulationError::Web3(err) => Self::Web3(err),
         }
     }
