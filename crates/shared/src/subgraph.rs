@@ -54,30 +54,47 @@ impl SubgraphClient {
         // quick and we need 1 or 2 retries to succeed.
         let mut error: Option<anyhow::Error> = None;
         for _ in 0..self.max_number_of_attempts {
-            match self
-                .client
-                .post(self.subgraph_url.clone())
-                .json(&Query {
-                    query,
-                    variables: variables.clone(),
-                })
-                .send()
-                .await?
-                .json::<QueryResponse<T>>()
-                .await?
-                .into_result()
-            {
+            match self.query_without_retry(query, &variables).await {
                 Ok(result) => return Ok(result),
-                Err(err) => {
-                    tracing::warn!("failed to query subgraph: {}", err);
-                    error = Some(err);
-                }
+                Err(err) => error = Some(err),
             }
         }
         Err(anyhow::anyhow!(format!(
             "failed to execute query on subgraph: {}",
             error.unwrap()
         )))
+    }
+
+    pub async fn query_without_retry<T>(
+        &self,
+        query: &str,
+        variables: &Option<Map<String, Value>>,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        match self
+            .client
+            .post(self.subgraph_url.clone())
+            .json(&Query {
+                query,
+                variables: variables.clone(),
+            })
+            .send()
+            .await?
+            .json::<QueryResponse<T>>()
+            .await?
+            .into_result()
+        {
+            Ok(result) => Ok(result),
+            Err(err) => {
+                tracing::warn!("failed to query subgraph: {}", err);
+                Err(anyhow::anyhow!(format!(
+                    "failed to execute query on subgraph: {}",
+                    err
+                )))
+            }
+        }
     }
 
     /// Performs the specified GraphQL query on the current subgraph.

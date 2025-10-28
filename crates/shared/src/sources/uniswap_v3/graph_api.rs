@@ -80,11 +80,9 @@ impl UniV3SubgraphClient {
 
     // Try a simple query to verify that the liquidityNet filter is supported
     async fn set_liquidity_net_filter(mut self) -> Self {
-        let attempts = self.client.max_number_of_attempts();
-        self.client.set_max_number_of_attmpts(1); // expected to fail sometimes, don't retry
         let result: Result<serde_json::Value> = self
             .client
-            .query::<serde_json::Value>(CHECK_LIQUIDITY_NET_FILTER, None)
+            .query_without_retry::<serde_json::Value>(CHECK_LIQUIDITY_NET_FILTER, &None)
             .await;
 
         if let Err(err) = &result
@@ -95,7 +93,6 @@ impl UniV3SubgraphClient {
             self.use_liquidity_net_filter = false;
         }
 
-        self.client.set_max_number_of_attmpts(attempts);
         self
     }
 
