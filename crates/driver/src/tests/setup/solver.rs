@@ -465,7 +465,15 @@ impl Solver {
             .await
             .unwrap(),
         );
-        let current_block_args = shared::current_block::Arguments { node_ws_url: None };
+        let current_block_args = shared::current_block::Arguments {
+            node_ws_url: Some(
+                config
+                    .blockchain
+                    .web3_ws_url
+                    .parse()
+                    .expect("valid websocket URL"),
+            ),
+        };
         let eth = Ethereum::new(
             rpc,
             Addresses {
