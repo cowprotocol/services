@@ -54,6 +54,7 @@ include_contracts! {
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
     ERC20;
+    GPv2Settlement;
     WETH9;
 }
 
