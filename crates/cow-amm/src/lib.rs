@@ -25,10 +25,9 @@ impl Metrics {
 
 /// GPv2Order-specific signing utilities.
 ///
-/// CoW Protocol uses GPv2Order structs for order representation. The EIP-712
-/// signing has a mismatch between on-chain storage (using `bytes32` for certain
-/// fields) and the type string used for signing (using `string` for
-/// human-readable wallet displays).
+/// CoW Protocol uses GPv2Order structs for order representation. For EIP-712
+/// signing, certain fields use `string` types in the type hash function (for
+/// better UX) but the same fields are stored on-chain as `bytes32`.
 ///
 /// See: <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L26-L48>
 pub mod gpv2_order {

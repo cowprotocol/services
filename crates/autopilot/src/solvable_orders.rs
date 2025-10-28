@@ -212,7 +212,6 @@ impl SolvableOrdersCache {
                     .traded_tokens()
                     .iter()
                     .map(|t| t.into_legacy())
-                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
