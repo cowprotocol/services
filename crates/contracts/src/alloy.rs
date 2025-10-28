@@ -106,7 +106,7 @@ crate::bindings!(
         // <https://optimistic.etherscan.io/tx/0xad915050179db368e43703f3ee1ec55ff5e5e5e0268c15f8839c9f360caf7b0b>
         OPTIMISM => (address!("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"), 82737545),
         // <https://polygonscan.com/tx/0x65e6b13231c2c5656357005a9e419ad6697178ae74eda1ea7522ecdafcf77136>
-        OPTIMISM => (address!("0xFc8a407Bba312ac761D8BFe04CE1201904842B76"), 40611103),
+        POLYGON => (address!("0xFc8a407Bba312ac761D8BFe04CE1201904842B76"), 40611103),
         // <https://bscscan.com/tx/0xc7fada60761e3240332c4cbd169633f1828b2a15de23f0148db9d121afebbb4b>
         BNB => (address!("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"), 26665331),
         // Not available on Base and Lens
