@@ -65,7 +65,7 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner
@@ -75,7 +75,7 @@ pub trait BalanceFetching: Send + Sync {
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not
     // given the allowance to the allowance manager or if the token does not
-    // allow freely transferring amounts around for for example if it is paused
+    // allow freely transferring amounts around for example if it is paused
     // or takes a fee on transfer. If the node supports the trace_callMany we
     // can perform more extensive tests.
     async fn can_transfer(
@@ -135,7 +135,7 @@ impl BalanceSimulator {
         self.vault
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn simulate<F, Fut>(
         &self,
         owner: H160,

@@ -17,65 +17,17 @@ use {
     std::collections::HashMap,
 };
 
-const ALL_POOLS_QUERY: &str = r#"
-    query Pools($block: Int, $pageSize: Int, $lastId: ID) {
-        pools(
-            block: { number: $block }
-            first: $pageSize
-            where: {
-                id_gt: $lastId
-                tick_not: null
-                ticks_: { liquidityNet_not: "0" }
-            }
-        ) {
-            id
-            token0 {
-                symbol
-                id
-                decimals
-            }
-            token1 {
-                symbol
-                id
-                decimals
-            }
-            feeTier
-            liquidity
-            sqrtPrice
-            tick
-        }
-    }
-"#;
-
-const POOLS_BY_IDS_QUERY: &str = r#"
-    query Pools($block: Int, $pool_ids: [ID], $pageSize: Int, $lastId: ID) {
-        pools(
-            block: { number: $block }
-            first: $pageSize
-            where: {
-                id_in: $pool_ids
-                id_gt: $lastId
-                tick_not: null
-                ticks_: { liquidityNet_not: "0" }
-            }
-        ) {
-            id
-            token0 {
-                symbol
-                id
-                decimals
-            }
-            token1 {
-                symbol
-                id
-                decimals
-            }
-            feeTier
-            liquidity
-            sqrtPrice
-            tick
-        }
-    }
+// Some subgraphs don't have a the ticks_ filter. Use this query to check for
+// its presence.
+const CHECK_LIQUIDITY_NET_FILTER: &str = r#"
+query CheckLiquidityNetField($block: Int) {
+  pools(
+    first: 1
+    where: { ticks_: { liquidityNet_not: "0" } }
+  ) {
+    id
+  }
+}
 "#;
 
 const TICKS_BY_POOL_IDS_QUERY: &str = r#"
@@ -101,26 +53,57 @@ const TICKS_BY_POOL_IDS_QUERY: &str = r#"
 ///
 /// This client is not implemented to allow general GraphQL queries, but instead
 /// implements high-level methods that perform GraphQL queries under the hood.
-pub struct UniV3SubgraphClient(SubgraphClient);
+pub struct UniV3SubgraphClient {
+    client: SubgraphClient,
+    /// Some subgraphs do not support the liquidityNet filter on ticks.
+    /// This flag indicates whether to use it or not in queries.
+    use_liquidity_net_filter: bool,
+}
 
 impl UniV3SubgraphClient {
     /// Creates a new Uniswap V3 subgraph client from the specified URL.
-    pub fn from_subgraph_url(
+    pub async fn from_subgraph_url(
         subgraph_url: &Url,
         client: Client,
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
-        Ok(Self(SubgraphClient::try_new(
-            subgraph_url.clone(),
-            client,
-            max_pools_per_tick_query,
-        )?))
+        let subgraph_client =
+            SubgraphClient::try_new(subgraph_url.clone(), client, max_pools_per_tick_query)?;
+
+        Ok(Self {
+            client: subgraph_client,
+            use_liquidity_net_filter: true,
+        }
+        .set_liquidity_net_filter()
+        .await)
     }
 
-    async fn get_pools(&self, query: &str, variables: Map<String, Value>) -> Result<Vec<PoolData>> {
+    // Try a simple query to verify that the liquidityNet filter is supported
+    async fn set_liquidity_net_filter(mut self) -> Self {
+        let result: Result<serde_json::Value> = self
+            .client
+            .query_without_retry::<serde_json::Value>(CHECK_LIQUIDITY_NET_FILTER, &None)
+            .await;
+
+        if let Err(err) = &result
+            && err.to_string().contains("liquidityNet_not")
+        {
+            // If the query fails, it likely means the subgraph does not support the
+            // liquidityNet filter.
+            self.use_liquidity_net_filter = false;
+        }
+
+        self
+    }
+
+    async fn get_pools(
+        &self,
+        query: String,
+        variables: Map<String, Value>,
+    ) -> Result<Vec<PoolData>> {
         Ok(self
-            .0
-            .paginated_query(query, variables)
+            .client
+            .paginated_query(&query, variables)
             .await?
             .into_iter()
             .filter(|pool: &PoolData| pool.liquidity > U256::zero())
@@ -133,7 +116,8 @@ impl UniV3SubgraphClient {
         let variables = json_map! {
             "block" => block_number,
         };
-        let pools = self.get_pools(ALL_POOLS_QUERY, variables).await?;
+        let query = Self::all_pools_query(self.use_liquidity_net_filter);
+        let pools = self.get_pools(query, variables).await?;
         Ok(RegisteredPools {
             fetched_block_number: block_number,
             pools,
@@ -149,7 +133,8 @@ impl UniV3SubgraphClient {
             "block" => block_number,
             "pool_ids" => json!(pool_ids)
         };
-        let pools = self.get_pools(POOLS_BY_IDS_QUERY, variables).await?;
+        let query = Self::pools_by_ids_query(self.use_liquidity_net_filter);
+        let pools = self.get_pools(query, variables).await?;
         Ok(pools)
     }
 
@@ -163,13 +148,13 @@ impl UniV3SubgraphClient {
 
         // Default chunk size is usize::MAX - all pool ids in one `where`. We want to
         // run requests sequentially to avoid overwhelming the node.
-        for chunk in pool_ids.chunks(self.0.max_pools_per_tick_query()) {
+        for chunk in pool_ids.chunks(self.client.max_pools_per_tick_query()) {
             let variables = json_map! {
                 "block" => block_number,
                 "pool_ids" => json!(chunk)
             };
             let mut batch = self
-                .0
+                .client
                 .paginated_query(TICKS_BY_POOL_IDS_QUERY, variables)
                 .await?;
             all.append(&mut batch);
@@ -217,13 +202,78 @@ impl UniV3SubgraphClient {
         // retrieve historic block hashes just from the subgraph (it always
         // returns `null`).
         Ok(self
-            .0
+            .client
             .query::<block_number_query::Data>(block_number_query::QUERY, None)
             .await?
             .meta
             .block
             .number
             .saturating_sub(MAX_REORG_BLOCK_COUNT))
+    }
+
+    fn all_pools_query(include_ticks_filter: bool) -> String {
+        let tick_filter = if include_ticks_filter {
+            r#"ticks_: { liquidityNet_not: "0" }"#
+        } else {
+            ""
+        };
+
+        format!(
+            r#"
+            query Pools($block: Int, $pageSize: Int, $lastId: ID) {{
+                pools(
+                    block: {{ number: $block }}
+                    first: $pageSize
+                    where: {{
+                        id_gt: $lastId
+                        tick_not: null
+                        {tick_filter}
+                    }}
+                ) {{
+                    id
+                    token0 {{ symbol id decimals }}
+                    token1 {{ symbol id decimals }}
+                    feeTier
+                    liquidity
+                    sqrtPrice
+                    tick
+                }}
+            }}
+            "#
+        )
+    }
+
+    fn pools_by_ids_query(include_ticks_filter: bool) -> String {
+        let tick_filter = if include_ticks_filter {
+            r#"ticks_: { liquidityNet_not: "0" }"#
+        } else {
+            "liquidity_not: 0"
+        };
+
+        format!(
+            r#"
+            query Pools($block: Int, $pool_ids: [ID], $pageSize: Int, $lastId: ID) {{
+                pools(
+                    block: {{ number: $block }}
+                    first: $pageSize
+                    where: {{
+                        id_in: $pool_ids
+                        id_gt: $lastId
+                        tick_not: null
+                        {tick_filter}
+                    }}
+                ) {{
+                    id
+                    token0 {{ symbol id decimals }}
+                    token1 {{ symbol id decimals }}
+                    feeTier
+                    liquidity
+                    sqrtPrice
+                    tick
+                }}
+            }}
+            "#
+        )
     }
 }
 

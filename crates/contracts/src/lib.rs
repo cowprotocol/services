@@ -50,9 +50,7 @@ macro_rules! include_contracts {
 
 include_contracts! {
     ERC20;
-    GPv2AllowListAuthentication;
     GPv2Settlement;
-    WETH9;
 }
 
 #[cfg(test)]
@@ -121,7 +119,6 @@ mod tests {
 
         for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_address!(GPv2Settlement for *network);
-            assert_has_deployment_address!(WETH9 for *network);
             assert!(
                 alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
             )

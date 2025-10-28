@@ -34,9 +34,11 @@ pin_project! {
 #[derive(Debug)]
 enum State {
     NeverPolled,
-    // We rely on the side effects of dropping the timer so it's okay that we never use it for
-    // anything else.
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "we rely on the side effects of dropping the timer so it's okay that we never \
+                  use it for anything else"
+    )]
     Running(prometheus::HistogramTimer),
     Done,
 }

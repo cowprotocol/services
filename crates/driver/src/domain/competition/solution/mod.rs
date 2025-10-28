@@ -58,7 +58,7 @@ pub struct Solution {
 }
 
 impl Solution {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
         mut trades: Vec<Trade>,

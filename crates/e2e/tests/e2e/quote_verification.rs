@@ -1,7 +1,7 @@
 use {
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::{eth, *},
-    ethcontract::{H160, U256},
+    ethcontract::H160,
     ethrpc::{
         Web3,
         alloy::{
@@ -110,7 +110,7 @@ async fn standard_verified_quote(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
             sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address(),
+            buy_token: onchain.contracts().weth.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -148,7 +148,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         Arc::new(BalanceOverrides::default()),
         block_stream,
         onchain.contracts().gp_settlement.address(),
-        onchain.contracts().weth.address(),
+        onchain.contracts().weth.address().into_legacy(),
         BigDecimal::zero(),
         Default::default(),
     )
@@ -246,20 +246,27 @@ async fn verified_quote_eth_balance(web3: Web3) {
 
     // quote where the trader has no WETH balances or approval set, but
     // sufficient ETH for the trade
-    assert_eq!(
-        (
-            weth.balance_of(trader.address()).call().await.unwrap(),
-            weth.allowance(trader.address(), onchain.contracts().allowance)
-                .call()
-                .await
-                .unwrap(),
-        ),
-        (U256::zero(), U256::zero()),
+    assert!(
+        weth.balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        weth.allowance(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy()
+        )
+        .call()
+        .await
+        .unwrap()
+        .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            sell_token: weth.address(),
+            sell_token: weth.address().into_legacy(),
             buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
@@ -296,7 +303,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     let request = OrderQuoteRequest {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token: token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
@@ -409,7 +416,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
             sell_token: token.address().into_legacy(),
-            buy_token: weth.address(),
+            buy_token: weth.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -422,26 +429,36 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     assert!(response.verified);
 
     // quote where the trader has no balances or approval set from WETH->TOKEN
-    assert_eq!(
-        (
-            onchain
-                .web3()
-                .eth()
-                .balance(trader.address(), None)
-                .await
-                .unwrap(),
-            weth.balance_of(trader.address()).call().await.unwrap(),
-            weth.allowance(trader.address(), onchain.contracts().allowance)
-                .call()
-                .await
-                .unwrap(),
-        ),
-        (U256::zero(), U256::zero(), U256::zero()),
+    assert!(
+        onchain
+            .web3()
+            .eth()
+            .balance(trader.address(), None)
+            .await
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        weth.balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        weth.allowance(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy()
+        )
+        .call()
+        .await
+        .unwrap()
+        .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            sell_token: weth.address(),
+            sell_token: weth.address().into_legacy(),
             buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
@@ -459,7 +476,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: H160::zero(),
-            sell_token: weth.address(),
+            sell_token: weth.address().into_legacy(),
             buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
@@ -477,7 +494,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: H160::zero(),
-            sell_token: weth.address(),
+            sell_token: weth.address().into_legacy(),
             buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {

@@ -109,9 +109,8 @@ pub struct Simulation {
 
 // We want the string to be printed together with a simulation so we
 // don't care that it's not used for anything else.
-#[allow(dead_code)]
 #[derive(Debug)]
-pub struct SimulationId(String);
+pub struct SimulationId(#[allow(dead_code, reason = "intended for Debug implementation")] String);
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum GenerateAccessList {

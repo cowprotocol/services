@@ -1,5 +1,6 @@
 use {
     crate::setup::*,
+    ::alloy::primitives::Address,
     ethcontract::H160,
     reqwest::Url,
     std::collections::HashSet,
@@ -19,7 +20,7 @@ pub struct SolverEngine {
 pub async fn start_baseline_solver(
     name: String,
     account: TestAccount,
-    weth: H160,
+    weth: Address,
     base_tokens: Vec<H160>,
     max_hops: usize,
     merge_solutions: bool,

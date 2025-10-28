@@ -1,4 +1,9 @@
-use {crate::domain::eth, chain::Chain};
+use {
+    crate::domain::eth,
+    chain::Chain,
+    contracts::alloy::WETH9,
+    ethrpc::alloy::conversions::IntoLegacy,
+};
 
 #[derive(Clone, Debug)]
 pub struct Contracts {
@@ -7,17 +12,12 @@ pub struct Contracts {
 
 impl Contracts {
     pub fn for_chain(chain: Chain) -> Self {
-        let a = |contract: &contracts::ethcontract::Contract| {
-            eth::ContractAddress(
-                contract
-                    .networks
-                    .get(&chain.id().to_string())
-                    .expect("contract address for all supported chains")
-                    .address,
-            )
-        };
         Self {
-            weth: eth::WethAddress(a(contracts::WETH9::raw_contract()).0),
+            weth: eth::WethAddress(
+                WETH9::deployment_address(&chain.id())
+                    .expect("there should be a contract address for all supported chains")
+                    .into_legacy(),
+            ),
         }
     }
 }

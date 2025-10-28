@@ -264,7 +264,6 @@ pub(crate) mod dto {
     #[serde(untagged)]
     pub enum QuoteKind {
         Legacy(LegacyQuote),
-        #[allow(unused)]
         Regular(Quote),
     }
 
@@ -284,7 +283,6 @@ pub(crate) mod dto {
     #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
-    #[allow(unused)]
     pub struct Quote {
         #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub clearing_prices: HashMap<H160, U256>,
@@ -313,7 +311,6 @@ pub(crate) mod dto {
     #[serde_as]
     #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
-    #[allow(unused)]
     pub struct JitOrder {
         pub buy_token: H160,
         pub sell_token: H160,

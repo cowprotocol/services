@@ -8,7 +8,11 @@ use {
         signers::local::PrivateKeySigner,
     },
     app_data::Hook,
-    contracts::alloy::{ERC20Mintable, test::CowProtocolToken},
+    contracts::alloy::{
+        ERC20Mintable,
+        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
+        test::CowProtocolToken,
+    },
     core::panic,
     ethcontract::{
         Account,
@@ -19,12 +23,12 @@ use {
     },
     ethrpc::alloy::{
         CallBuilderExt,
+        ProviderSignerExt,
         conversions::{IntoAlloy, IntoLegacy},
     },
     hex_literal::hex,
     model::{
         DomainSeparator,
-        TokenPair,
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     secp256k1::SecretKey,
@@ -342,8 +346,8 @@ impl OnchainComponents {
 
             self.contracts
                 .gp_authenticator
-                .add_solver(solver.address())
-                .send()
+                .addSolver(solver.address().into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
@@ -355,15 +359,15 @@ impl OnchainComponents {
         if allowed {
             self.contracts
                 .gp_authenticator
-                .add_solver(solver)
-                .send()
+                .addSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         } else {
             self.contracts
                 .gp_authenticator
-                .remove_solver(solver)
-                .send()
+                .removeSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to remove solver");
         }
@@ -375,13 +379,9 @@ impl OnchainComponents {
         &mut self,
         with_wei: U256,
     ) -> [TestAccount; N] {
-        let auth_manager = self
-            .contracts
-            .gp_authenticator
-            .manager()
-            .call()
-            .await
-            .unwrap();
+        let authenticator = &self.contracts.gp_authenticator;
+
+        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
@@ -390,29 +390,36 @@ impl OnchainComponents {
             .await
             .expect("could not set auth_manager balance");
 
-        let auth_manager = forked_node_api
-            .impersonate(&auth_manager)
-            .await
-            .expect("could not impersonate auth_manager");
+        let impersonated_authenticator = {
+            forked_node_api
+                .impersonate(&auth_manager)
+                .await
+                .expect("could not impersonate auth_manager");
+
+            // we create a new provider without a wallet so that
+            // alloy does not try to sign the tx with it and instead
+            // forwards the tx to the node for signing. This will
+            // work because we told anvil to impersonate that address.
+            let provider = authenticator.provider().clone().without_wallet();
+            GPv2AllowListAuthentication::new(*authenticator.address(), provider)
+        };
 
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            self.contracts
-                .gp_authenticator
-                .add_solver(solver.address())
-                .from(auth_manager.clone())
-                .send()
+            impersonated_authenticator
+                .addSolver(solver.address().into_alloy())
+                .from(auth_manager.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            self.contracts
-                .gp_authenticator
-                .add_solver(router.address().into_legacy())
-                .from(auth_manager.clone())
-                .send()
+            impersonated_authenticator
+                .addSolver(*router.address())
+                .from(auth_manager.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add flashloan wrapper");
         }
@@ -475,14 +482,19 @@ impl OnchainComponents {
                 .send_and_watch()
                 .await
                 .unwrap();
-            tx_value!(minter, weth_amount, self.contracts.weth.deposit());
+
+            self.contracts
+                .weth
+                .deposit()
+                .value(weth_amount.into_alloy())
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
 
             self.contracts
                 .uniswap_v2_factory
-                .createPair(
-                    *contract.address(),
-                    self.contracts.weth.address().into_alloy(),
-                )
+                .createPair(*contract.address(), *self.contracts.weth.address())
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await
@@ -498,18 +510,22 @@ impl OnchainComponents {
                 .await
                 .unwrap();
 
-            tx!(
-                minter,
-                self.contracts.weth.approve(
-                    self.contracts.uniswap_v2_router.address().into_legacy(),
-                    weth_amount
+            self.contracts
+                .weth
+                .approve(
+                    *self.contracts.uniswap_v2_router.address(),
+                    weth_amount.into_alloy(),
                 )
-            );
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
+
             self.contracts
                 .uniswap_v2_router
                 .addLiquidity(
                     *contract.address(),
-                    self.contracts.weth.address().into_alloy(),
+                    *self.contracts.weth.address(),
                     token_amount.into_alloy(),
                     weth_amount.into_alloy(),
                     ::alloy::primitives::U256::ZERO,
@@ -587,7 +603,7 @@ impl OnchainComponents {
         let pair = contracts::alloy::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
-                .getPair(self.contracts.weth.address().into_alloy(), *token.address())
+                .getPair(*self.contracts.weth.address(), *token.address())
                 .call()
                 .await
                 .expect("failed to get Uniswap V2 pair"),
@@ -598,17 +614,11 @@ impl OnchainComponents {
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
         token.mint(pair.address().into_legacy(), amount + 1).await;
-        let (out0, out1) =
-            if TokenPair::new(self.contracts.weth.address(), token.address().into_legacy())
-                .unwrap()
-                .get()
-                .0
-                == token.address().into_legacy()
-            {
-                (1, 0)
-            } else {
-                (0, 1)
-            };
+        let (out0, out1) = if self.contracts.weth.address() < token.address() {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
         pair.swap(
             ::alloy::primitives::U256::from(out0),
             ::alloy::primitives::U256::from(out1),
@@ -643,11 +653,18 @@ impl OnchainComponents {
     ) -> CowToken {
         let cow = self.deploy_cow_token(cow_supply).await;
 
-        tx_value!(cow.holder, weth_amount, self.contracts.weth.deposit());
+        self.contracts
+            .weth
+            .deposit()
+            .value(weth_amount.into_alloy())
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
 
         self.contracts
             .uniswap_v2_factory
-            .createPair(*cow.address(), self.contracts.weth.address().into_alloy())
+            .createPair(*cow.address(), *self.contracts.weth.address())
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
@@ -660,18 +677,21 @@ impl OnchainComponents {
         .send_and_watch()
         .await
         .unwrap();
-        tx!(
-            cow.holder,
-            self.contracts.weth.approve(
-                self.contracts.uniswap_v2_router.address().into_legacy(),
-                weth_amount
+        self.contracts
+            .weth
+            .approve(
+                *self.contracts.uniswap_v2_router.address(),
+                weth_amount.into_alloy(),
             )
-        );
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
         self.contracts
             .uniswap_v2_router
             .addLiquidity(
                 *cow.address(),
-                self.contracts.weth.address().into_alloy(),
+                *self.contracts.weth.address(),
                 cow_amount.into_alloy(),
                 weth_amount.into_alloy(),
                 ::alloy::primitives::U256::ZERO,

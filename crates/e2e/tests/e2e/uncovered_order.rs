@@ -1,6 +1,9 @@
 use {
-    e2e::{setup::*, tx, tx_value},
-    ethrpc::alloy::conversions::IntoLegacy,
+    e2e::setup::*,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -30,10 +33,11 @@ async fn test(web3: Web3) {
         .await;
     let weth = &onchain.contracts().weth;
 
-    tx!(
-        trader.account(),
-        weth.approve(onchain.contracts().allowance, to_wei(3))
-    );
+    weth.approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -41,7 +45,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Placing order with 0 sell tokens");
     let order = OrderCreation {
-        sell_token: weth.address(),
+        sell_token: weth.address().into_legacy(),
         sell_amount: to_wei(2),
         fee_amount: 0.into(),
         buy_token: token.address().into_legacy(),
@@ -61,17 +65,31 @@ async fn test(web3: Web3) {
     services.create_order(&order).await.unwrap_err();
 
     tracing::info!("Placing order with 1 wei of sell_tokens");
-    tx_value!(trader.account(), 1.into(), weth.deposit());
+    weth.deposit()
+        .from(trader.address().into_alloy())
+        .value(::alloy::primitives::U256::ONE)
+        .send_and_watch()
+        .await
+        .unwrap();
     // Now that the trader has some funds they are able to create
     // an order (even if it exceeds their current balance).
     services.create_order(&order).await.unwrap();
 
     tracing::info!("Deposit ETH to make order executable");
-    tx_value!(trader.account(), to_wei(2), weth.deposit());
+    weth.deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(2))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = weth.balance_of(trader.address()).call().await.unwrap();
+        let balance_after = weth
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
         !balance_after.is_zero()
     })
     .await

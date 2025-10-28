@@ -64,7 +64,7 @@ pub enum SignatureValidationError {
     Other(#[from] anyhow::Error),
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 /// <https://eips.ethereum.org/EIPS/eip-1271>
 pub trait SignatureValidating: Send + Sync {
