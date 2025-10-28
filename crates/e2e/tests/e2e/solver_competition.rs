@@ -63,7 +63,7 @@ async fn solver_competition(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -72,7 +72,7 @@ async fn solver_competition(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -87,7 +87,7 @@ async fn solver_competition(web3: Web3) {
     services.start_autopilot(
         None,
         vec![
-            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())
+            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())
             ),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
@@ -100,7 +100,7 @@ async fn solver_competition(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -203,7 +203,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_a.address().into_legacy()],
                 1,
                 true,
@@ -212,7 +212,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_b.address().into_legacy()],
                 1,
                 true,
@@ -228,7 +228,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         None,
         // Solver 1 has a wrong submission address, meaning that the solutions should be discarded from solver1
         vec![
-            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address())),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;
@@ -242,7 +242,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     let order_a = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -260,7 +260,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     let order_b = OrderCreation {
         sell_token: token_b.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -312,10 +312,16 @@ async fn store_filtered_solutions(web3: Web3) {
     // give the settlement contract a ton of the traded tokens so that the mocked
     // solver solutions can simply give money away to make the trade execute
     token_b
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(50))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(50),
+        )
         .await;
     token_c
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(50))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(50),
+        )
         .await;
 
     // set up trader for their order
@@ -345,7 +351,7 @@ async fn store_filtered_solutions(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 good_solver_account.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 base_tokens.clone(),
                 1,
                 true,
@@ -378,8 +384,8 @@ async fn store_filtered_solutions(web3: Web3) {
             vec![
                 format!(
                     "--drivers=good_solver|http://localhost:11088/good_solver|{},bad_solver|http://localhost:11088/bad_solver|{}",
-                    hex::encode(good_solver_account.address()),
-                    hex::encode(bad_solver_account.address()),
+                    const_hex::encode(good_solver_account.address()),
+                    const_hex::encode(bad_solver_account.address()),
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),

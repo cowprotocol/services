@@ -31,7 +31,11 @@ use {
     },
     anyhow::{Context, Result},
     chain::Chain,
-    contracts::{BalancerV2Vault, ERC20, IUniswapV3Factory, errors::EthcontractErrorType},
+    contracts::{
+        ERC20,
+        alloy::{BalancerV2Vault, IUniswapV3Factory},
+        errors::EthcontractErrorType,
+    },
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
     primitive_types::H160,
@@ -202,6 +206,8 @@ impl TokenOwnerFindingStrategy {
             | Chain::Optimism
             | Chain::Avalanche
             | Chain::Polygon
+            | Chain::Linea
+            | Chain::Plasma
             | Chain::Lens => &[Self::Liquidity],
             Chain::Hardhat => panic!("unsupported chain for token owner finding"),
         }
@@ -275,15 +281,15 @@ impl Display for Arguments {
 }
 
 /// Initializes a set of token owner finders.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn init(
     args: &Arguments,
     web3: Web3,
     chain: &Chain,
     http_factory: &HttpClientFactory,
     pair_providers: &[PairProvider],
-    vault: Option<&BalancerV2Vault>,
-    uniswapv3_factory: Option<&IUniswapV3Factory>,
+    vault: Option<&BalancerV2Vault::Instance>,
+    uniswapv3_factory: Option<&IUniswapV3Factory::Instance>,
     base_tokens: &BaseTokens,
     settlement_contract: H160,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {

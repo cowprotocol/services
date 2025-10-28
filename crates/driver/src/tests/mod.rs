@@ -5,5 +5,5 @@ mod setup;
 pub use setup::setup;
 
 fn hex_address(value: ethcontract::H160) -> String {
-    format!("0x{}", hex::encode(value.as_bytes()))
+    const_hex::encode_prefixed(value.as_bytes())
 }

@@ -7,7 +7,7 @@ use {
     crate::arguments::Arguments,
     clap::Parser,
     contracts::alloy::CoWSwapEthFlow,
-    ethcontract::{Account, PrivateKey},
+    ethcontract::PrivateKey,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
@@ -69,7 +69,14 @@ pub async fn run(args: arguments::Arguments) {
         .iter()
         .map(|contract| CoWSwapEthFlow::Instance::new(*contract, web3.alloy.clone()))
         .collect();
-    let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);
+    let refunder_pk = args
+        .refunder_pk
+        .parse::<PrivateKey>()
+        .expect("couldn't parse refunder private key");
+    let refunder_account = Box::new(
+        alloy::signers::local::PrivateKeySigner::from_slice(&refunder_pk.secret_bytes())
+            .expect("invalid refunder private key bytes"),
+    );
     let mut refunder = RefundService::new(
         pg_pool,
         web3,

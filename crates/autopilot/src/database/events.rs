@@ -1,51 +1,86 @@
 use {
     alloy::rpc::types::Log,
-    anyhow::{Context, Result, anyhow},
-    contracts::gpv2_settlement::{
-        Event as ContractEvent,
-        event_data::{
-            OrderInvalidated as ContractInvalidation,
-            PreSignature as ContractPreSignature,
-            Settlement as ContractSettlement,
-            Trade as ContractTrade,
-        },
-    },
+    anyhow::{Context, Result},
+    contracts::alloy::GPv2Settlement::GPv2Settlement::{self, GPv2SettlementEvents},
     database::{
         OrderUid,
         PgTransaction,
+        TransactionHash,
         byte_array::ByteArray,
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
     },
-    ethcontract::{Event as EthContractEvent, EventMetadata},
+    ethcontract::EventMetadata,
+    ethrpc::alloy::conversions::IntoLegacy,
     number::conversions::u256_to_big_decimal,
     std::convert::TryInto,
 };
 
 pub fn contract_to_db_events(
-    contract_events: Vec<EthContractEvent<ContractEvent>>,
+    contract_events: Vec<(GPv2SettlementEvents, Log)>,
 ) -> Result<Vec<(EventIndex, Event)>> {
     contract_events
         .into_iter()
-        .filter_map(|EthContractEvent { data, meta }| {
-            let meta = match meta {
-                Some(meta) => meta,
-                None => return Some(Err(anyhow!("event without metadata"))),
-            };
-            match data {
-                ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)),
-                ContractEvent::Settlement(event) => Some(Ok(convert_settlement(&event, &meta))),
-                ContractEvent::OrderInvalidated(event) => Some(convert_invalidation(&event, &meta)),
-                ContractEvent::PreSignature(event) => Some(convert_presignature(&event, &meta)),
+        .filter_map(|(event, log)| {
+            let log = ValidatedLog::try_from(log).ok()?;
+            match event {
+                GPv2SettlementEvents::Trade(event) => Some(convert_trade(&event, log)),
+                GPv2SettlementEvents::Settlement(event) => {
+                    Some(Ok(convert_settlement(&event, log)))
+                }
+                GPv2SettlementEvents::OrderInvalidated(event) => {
+                    Some(convert_invalidation(&event, log))
+                }
+                GPv2SettlementEvents::PreSignature(event) => {
+                    Some(convert_presignature(&event, log))
+                }
                 // TODO: handle new events
-                ContractEvent::Interaction(_) => None,
+                GPv2SettlementEvents::Interaction(_) => None,
             }
         })
         .collect::<Result<Vec<_>>>()
 }
 
+struct ValidatedLog {
+    block: i64,
+    tx_hash: TransactionHash,
+    log_index: i64,
+}
+
+impl TryFrom<Log> for ValidatedLog {
+    type Error = anyhow::Error;
+
+    fn try_from(log: Log) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            block: log
+                .block_number
+                .context("missing block_number")?
+                .try_into()
+                .context("could not convert block number to i64")?,
+            tx_hash: log
+                .transaction_hash
+                .map(|hash| ByteArray(hash.0))
+                .context("missing transaction_hash")?,
+            log_index: log
+                .log_index
+                .context("missing log_index")?
+                .try_into()
+                .context("could not convert log index to i64")?,
+        })
+    }
+}
+
+impl From<ValidatedLog> for EventIndex {
+    fn from(value: ValidatedLog) -> Self {
+        Self {
+            block_number: value.block,
+            log_index: value.log_index,
+        }
+    }
+}
+
 pub async fn append_events(
     transaction: &mut PgTransaction<'_>,
-    events: Vec<EthContractEvent<ContractEvent>>,
+    events: Vec<(GPv2SettlementEvents, Log)>,
 ) -> Result<()> {
     let _timer = super::Metrics::get()
         .database_queries
@@ -61,7 +96,7 @@ pub async fn append_events(
 
 pub async fn replace_events(
     transaction: &mut PgTransaction<'_>,
-    events: Vec<EthContractEvent<ContractEvent>>,
+    events: Vec<(GPv2SettlementEvents, Log)>,
     from_block: u64,
 ) -> Result<()> {
     let _timer = super::Metrics::get()
@@ -100,52 +135,45 @@ pub fn bytes_to_order_uid(bytes: &[u8]) -> Result<OrderUid> {
         .map(ByteArray)
 }
 
-fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(EventIndex, Event)> {
+fn convert_trade(trade: &GPv2Settlement::Trade, log: ValidatedLog) -> Result<(EventIndex, Event)> {
     let event = Trade {
-        order_uid: bytes_to_order_uid(&trade.order_uid.0)?,
-        sell_amount_including_fee: u256_to_big_decimal(&trade.sell_amount),
-        buy_amount: u256_to_big_decimal(&trade.buy_amount),
-        fee_amount: u256_to_big_decimal(&trade.fee_amount),
+        order_uid: bytes_to_order_uid(&trade.orderUid.0)?,
+        sell_amount_including_fee: u256_to_big_decimal(&trade.sellAmount.into_legacy()),
+        buy_amount: u256_to_big_decimal(&trade.buyAmount.into_legacy()),
+        fee_amount: u256_to_big_decimal(&trade.feeAmount.into_legacy()),
     };
-    Ok((meta_to_event_index(meta), Event::Trade(event)))
+    Ok((log.into(), Event::Trade(event)))
 }
 
 fn convert_settlement(
-    settlement: &ContractSettlement,
-    meta: &EventMetadata,
+    settlement: &GPv2Settlement::Settlement,
+    log: ValidatedLog,
 ) -> (EventIndex, Event) {
     let event = Settlement {
-        solver: ByteArray(settlement.solver.0),
-        transaction_hash: ByteArray(meta.transaction_hash.0),
+        solver: ByteArray(settlement.solver.into()),
+        transaction_hash: log.tx_hash,
     };
-    (meta_to_event_index(meta), Event::Settlement(event))
+    (log.into(), Event::Settlement(event))
 }
 
 fn convert_invalidation(
-    invalidation: &ContractInvalidation,
-    meta: &EventMetadata,
+    invalidation: &GPv2Settlement::OrderInvalidated,
+    log: ValidatedLog,
 ) -> Result<(EventIndex, Event)> {
     let event = Invalidation {
-        order_uid: bytes_to_order_uid(&invalidation.order_uid.0)?,
+        order_uid: bytes_to_order_uid(invalidation.orderUid.as_ref())?,
     };
-    Ok((meta_to_event_index(meta), Event::Invalidation(event)))
+    Ok((log.into(), Event::Invalidation(event)))
 }
 
 fn convert_presignature(
-    presignature: &ContractPreSignature,
-    meta: &EventMetadata,
+    presignature: &GPv2Settlement::PreSignature,
+    log: ValidatedLog,
 ) -> Result<(EventIndex, Event)> {
     let event = PreSignature {
-        owner: ByteArray(presignature.owner.0),
-        order_uid: ByteArray(
-            presignature
-                .order_uid
-                .0
-                .as_slice()
-                .try_into()
-                .context("trade event order_uid has wrong number of bytes")?,
-        ),
+        owner: ByteArray(presignature.owner.into()),
+        order_uid: bytes_to_order_uid(presignature.orderUid.as_ref())?,
         signed: presignature.signed,
     };
-    Ok((meta_to_event_index(meta), Event::PreSignature(event)))
+    Ok((log.into(), Event::PreSignature(event)))
 }

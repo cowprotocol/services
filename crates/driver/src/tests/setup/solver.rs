@@ -145,7 +145,7 @@ impl Solver {
                     order::Kind::Limit => "limit",
                 },
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
-                "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
+                "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
             if let Some(receiver) = quote.order.receiver {
@@ -195,7 +195,7 @@ impl Solver {
                                     "internalize": interaction.internalize,
                                     "target": hex_address(interaction.address),
                                     "value": "0",
-                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "callData": const_hex::encode_prefixed(&interaction.calldata),
                                     "allowances": [],
                                     "inputs": interaction.inputs.iter().map(|input| {
                                         json!({
@@ -275,7 +275,7 @@ impl Solver {
                                     "internalize": interaction.internalize,
                                     "target": hex_address(interaction.address),
                                     "value": "0",
-                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "callData": const_hex::encode_prefixed(&interaction.calldata),
                                     "allowances": [],
                                     "inputs": interaction.inputs.iter().map(|input| {
                                         json!({
@@ -298,7 +298,7 @@ impl Solver {
                                 "internalize": interaction.internalize,
                                 "target": hex_address(interaction.address),
                                 "value": "0",
-                                "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                "callData": const_hex::encode_prefixed(&interaction.calldata),
                                 "allowances": [],
                                 "inputs": interaction.inputs.iter().map(|input| {
                                     json!({
@@ -365,7 +365,7 @@ impl Solver {
                                 },
                                 "sellTokenBalance": jit.quoted_order.order.sell_token_source,
                                 "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
-                                "signature": format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))),
+                                "signature": const_hex::encode_prefixed(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key)),
                                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
                             });
                             trades_json.push(json!({
@@ -410,7 +410,7 @@ impl Solver {
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
                     let contract = contracts::ERC20::at(&config.blockchain.web3, token);
-                    let settlement = config.blockchain.settlement.address();
+                    let settlement = config.blockchain.settlement.address().into_legacy();
                     (
                         hex_address(token),
                         json!({
@@ -468,11 +468,11 @@ impl Solver {
         let eth = Ethereum::new(
             rpc,
             Addresses {
-                settlement: Some(config.blockchain.settlement.address().into()),
-                weth: Some(config.blockchain.weth.address().into()),
-                balances: Some(config.blockchain.balances.address().into()),
+                settlement: Some(config.blockchain.settlement.address().into_legacy().into()),
+                weth: Some(config.blockchain.weth.address().into_legacy().into()),
+                balances: Some(config.blockchain.balances.address().into_legacy().into()),
                 signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
-                cow_amms: vec![],
+                cow_amm_helper_by_factory: Default::default(),
                 flashloan_router: Some(
                     config
                         .blockchain
@@ -483,7 +483,7 @@ impl Solver {
                 ),
             },
             gas,
-            None,
+            45_000_000.into(),
         )
         .await;
 

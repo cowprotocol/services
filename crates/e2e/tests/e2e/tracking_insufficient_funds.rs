@@ -1,7 +1,10 @@
 use {
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{setup::*, tx, tx_value},
-    ethrpc::alloy::conversions::IntoLegacy,
+    e2e::setup::*,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -27,30 +30,40 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader_a.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader_a.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
-    tx!(
-        trader_b.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader_b.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader_a.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader_b.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -58,7 +71,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Placing order");
     let order_a = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(2),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
@@ -72,7 +85,7 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_b = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(2),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
@@ -89,14 +102,22 @@ async fn test(web3: Web3) {
     let uid_b = services.create_order(&order_b).await.unwrap();
 
     tracing::info!("Withdrawing WETH to render the order invalid due to insufficient funds");
-    tx!(
-        trader_a.account(),
-        onchain.contracts().weth.withdraw(to_wei(3))
-    );
-    tx!(
-        trader_b.account(),
-        onchain.contracts().weth.withdraw(to_wei(3))
-    );
+    onchain
+        .contracts()
+        .weth
+        .withdraw(eth(3))
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .withdraw(eth(3))
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let orders_are_invalid = || async {
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
@@ -114,11 +135,15 @@ async fn test(web3: Web3) {
     // Make sure that the next update is happened and no new Invalid event is
     // received for the `order_b`. `order_a` is required to track if the next update
     // is happened.
-    tx_value!(
-        trader_a.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader_a.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
     onchain.mint_block().await;
     let orders_updated = || async {
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
@@ -132,11 +157,15 @@ async fn test(web3: Web3) {
     wait_for_condition(TIMEOUT, orders_updated).await.unwrap();
 
     // Another update should proceed with the order_b.
-    tx_value!(
-        trader_b.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader_b.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
     onchain.mint_block().await;
     let orders_updated = || async {
         let events_a = crate::database::events_of_order(services.db(), &uid_b).await;

@@ -62,7 +62,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver1.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -71,7 +71,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver2".into(),
                 solver2.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -88,7 +88,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // Configure autopilot-leader only with test_solver
     let autopilot_leader = services.start_autopilot_with_shutdown_controller(None, vec![
         format!("--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-            hex::encode(solver1.address())),
+            const_hex::encode(solver1.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         "--metrics-address=0.0.0.0:9590".to_string(),
@@ -98,7 +98,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // Configure autopilot-backup only with test_solver2
     let _autopilot_follower = services.start_autopilot(None, vec![
         format!("--drivers=test_solver2|http://localhost:11088/test_solver2|{}|requested-timeout-on-problems",
-            hex::encode(solver2.address())),
+            const_hex::encode(solver2.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         "--enable-leader-lock=true".to_string(),
@@ -114,7 +114,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         OrderCreation {
             sell_token: token_a.address().into_legacy(),
             sell_amount: to_wei(10),
-            buy_token: onchain.contracts().weth.address(),
+            buy_token: onchain.contracts().weth.address().into_legacy(),
             buy_amount: to_wei(5),
             valid_to: model::time::now_in_epoch_seconds() + 300,
             kind: OrderKind::Sell,

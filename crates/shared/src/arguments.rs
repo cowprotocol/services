@@ -11,6 +11,7 @@ use {
         },
         tenderly_api,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
@@ -252,7 +253,7 @@ pub struct Arguments {
 
     /// Override address of the Balances contract.
     #[clap(long, env)]
-    pub balances_contract_address: Option<H160>,
+    pub balances_contract_address: Option<Address>,
 
     /// Override address of the Signatures contract.
     #[clap(long, env)]
@@ -260,7 +261,7 @@ pub struct Arguments {
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
-    pub native_token_address: Option<H160>,
+    pub native_token_address: Option<Address>,
 
     /// Override the address of the `HooksTrampoline` contract used for
     /// trampolining custom order interactions. If not specified, the default
@@ -270,7 +271,7 @@ pub struct Arguments {
 
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
-    pub balancer_v2_vault_address: Option<H160>,
+    pub balancer_v2_vault_address: Option<Address>,
 
     /// The amount of time a classification of a token into good or
     /// bad is valid for.

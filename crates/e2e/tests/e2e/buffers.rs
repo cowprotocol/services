@@ -32,7 +32,10 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     // Fund trader, settlement accounts, and pool creation
     token_a.mint(trader.address(), to_wei(100)).await;
     token_b
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(5))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(5),
+        )
         .await;
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
@@ -53,7 +56,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -76,7 +79,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 ),
                 format!(
                     "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
@@ -120,7 +123,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     // Check that settlement buffers were traded.
     let settlement_contract_balance = token_b
-        .balanceOf(onchain.contracts().gp_settlement.address().into_alloy())
+        .balanceOf(*onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();

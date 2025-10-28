@@ -1,6 +1,7 @@
 use {
     crate::setup::*,
-    ethcontract::{H160, common::DeploymentInformation},
+    ::alloy::primitives::Address,
+    ethcontract::H160,
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,
@@ -19,7 +20,7 @@ pub struct SolverEngine {
 pub async fn start_baseline_solver(
     name: String,
     account: TestAccount,
-    weth: H160,
+    weth: Address,
     base_tokens: Vec<H160>,
     max_hops: usize,
     merge_solutions: bool,
@@ -141,7 +142,7 @@ pub fn start_driver_with_config_override(
                  base_tokens: _,
                  merge_solutions,
              }| {
-                let account = hex::encode(account.private_key());
+                let account = const_hex::encode(account.private_key());
                 format!(
                     r#"
 [[solver]]
@@ -164,31 +165,6 @@ solving-share-of-deadline = 1.0
     let liquidity = liquidity.to_string(contracts);
 
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
-
-    let cow_amms = contracts
-        .cow_amm_helper
-        .iter()
-        .map(|contract| {
-            let Some(DeploymentInformation::BlockNumber(block)) = contract.deployment_information()
-            else {
-                panic!("unknown deployment block for cow amm contract");
-            };
-
-            format!(
-                r#"
-[[contracts.cow-amms]]
-index-start = {}
-helper = "{:?}"
-factory = "{:?}"
-"#,
-                block - 1, // start indexing 1 block before the contract was deployed
-                contract.address(),
-                contract.address(),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let flashloan_router_config = contracts
         .flashloan_router
         .as_ref()
@@ -200,6 +176,7 @@ factory = "{:?}"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
 flashloans-enabled = true
+tx-gas-limit = "45000000"
 
 [gas-estimator]
 estimator = "web3"
@@ -210,8 +187,6 @@ weth = "{:?}"
 balances = "{:?}"
 signatures = "{:?}"
 {flashloan_router_config}
-
-{cow_amms}
 
 {solvers}
 

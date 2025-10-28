@@ -1,12 +1,13 @@
 use {
     crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
-    contracts::CowAmmLegacyHelper,
-    ethcontract::Address,
+    alloy::primitives::Address,
+    contracts::alloy::cow_amm::CowAmmLegacyHelper,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
-        event_handling::EventHandler,
+        event_handling::{AlloyEventRetriever, EventHandler},
         maintenance::{Maintaining, ServiceMaintenance},
     },
+    sqlx::PgPool,
     std::sync::Arc,
     tokio::sync::{Mutex, RwLock},
     tracing::instrument,
@@ -39,18 +40,28 @@ impl Registry {
         deployment_block: u64,
         factory: Address,
         helper_contract: Address,
+        db: PgPool,
     ) {
         let storage = Storage::new(
             deployment_block,
-            CowAmmLegacyHelper::at(&self.web3, helper_contract),
-        );
+            CowAmmLegacyHelper::Instance::new(helper_contract, self.web3.alloy.clone()),
+            factory,
+            db,
+        )
+        .await;
+
         self.storage.write().await.push(storage.clone());
 
         let indexer = Factory {
             web3: self.web3.clone(),
             address: factory,
         };
-        let event_handler = EventHandler::new(Arc::new(self.web3.clone()), indexer, storage, None);
+        let event_handler = EventHandler::new(
+            Arc::new(self.web3.clone()),
+            AlloyEventRetriever(indexer),
+            storage,
+            None,
+        );
         let token_balance_maintainer =
             EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
 

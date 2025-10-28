@@ -8,19 +8,22 @@ use {
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
+    alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::{
+    contracts::alloy::{
         BalancerV2Vault,
+        ChainalysisOracle,
         GPv2Settlement,
+        HooksTrampoline,
         IUniswapV3Factory,
+        InstanceExt,
         WETH9,
-        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt},
+        support::Balances,
     },
-    ethcontract::errors::DeployError,
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -99,19 +102,19 @@ pub async fn run(args: Arguments) {
     }
 
     let settlement_contract = match args.shared.settlement_contract_address {
-        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
-        None => contracts::GPv2Settlement::deployed(&web3)
+        Some(address) => GPv2Settlement::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        None => GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .expect("load settlement contract"),
     };
     let balances_contract = match args.shared.balances_contract_address {
-        Some(address) => contracts::support::Balances::with_deployment_info(&web3, address, None),
-        None => contracts::support::Balances::deployed(&web3)
+        Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
+        None => Balances::Instance::deployed(&web3.alloy.clone())
             .await
             .expect("load balances contract"),
     };
     let vault_relayer = settlement_contract
-        .vault_relayer()
+        .vaultRelayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
@@ -125,8 +128,8 @@ pub async fn run(args: Arguments) {
             .expect("load signatures contract"),
     };
     let native_token = match args.shared.native_token_address {
-        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
-        None => WETH9::deployed(&web3)
+        Some(address) => WETH9::Instance::new(address, web3.alloy.clone()),
+        None => WETH9::Instance::deployed(&web3.alloy)
             .await
             .expect("load native token contract"),
     };
@@ -139,24 +142,26 @@ pub async fn run(args: Arguments) {
         signature_validator::Contracts {
             settlement: settlement_contract.clone(),
             signatures: signatures_contract,
-            vault_relayer,
+            vault_relayer: vault_relayer.into_legacy(),
         },
         balance_overrider.clone(),
     );
 
-    let vault = match args.shared.balancer_v2_vault_address {
-        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
-            &web3, address, None,
-        )),
-        None => match BalancerV2Vault::deployed(&web3).await {
-            Ok(contract) => Some(contract),
-            Err(DeployError::NotFound(_)) => {
-                tracing::warn!("balancer contracts are not deployed on this network");
-                None
+    let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
+        let chain_id = chain.id();
+        match BalancerV2Vault::deployment_address(&chain_id) {
+            addr @ Some(_) => addr,
+            addr @ None => {
+                tracing::warn!(
+                    chain_id,
+                    "balancer contracts are not deployed on this network"
+                );
+                addr
             }
-            Err(err) => panic!("failed to get balancer vault contract: {err}"),
-        },
-    };
+        }
+    });
+    let vault =
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),
@@ -168,7 +173,8 @@ pub async fn run(args: Arguments) {
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
-    let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+    let domain_separator =
+        DomainSeparator::new(chain_id, settlement_contract.address().into_legacy());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
 
@@ -185,8 +191,8 @@ pub async fn run(args: Arguments) {
         BalanceSimulator::new(
             settlement_contract.clone(),
             balances_contract.clone(),
-            vault_relayer,
-            vault.as_ref().map(|contract| contract.address()),
+            vault_relayer.into_legacy(),
+            vault_address.map(IntoLegacy::into_legacy),
             balance_overrider,
         ),
     );
@@ -222,7 +228,7 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        native_token.address().into_legacy(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -230,10 +236,10 @@ pub async fn run(args: Arguments) {
     allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
+    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+        .await
+        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
+        .ok();
 
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
@@ -244,7 +250,7 @@ pub async fn run(args: Arguments) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
-        settlement_contract.address(),
+        settlement_contract.address().into_legacy(),
     )
     .await
     .expect("failed to initialize token owner finders");
@@ -258,7 +264,7 @@ pub async fn run(args: Arguments) {
                     tracing_node_url,
                     "trace",
                 ),
-                settlement_contract.address(),
+                settlement_contract.address().into_legacy(),
                 finder,
             )),
             args.shared.token_quality_cache_expiry,
@@ -296,13 +302,14 @@ pub async fn run(args: Arguments) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            native_token: native_token.address(),
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.address().into_legacy(),
+            native_token: native_token.address().into_legacy(),
             authenticator: settlement_contract
                 .authenticator()
                 .call()
                 .await
-                .expect("failed to query solver authenticator address"),
+                .expect("failed to query solver authenticator address")
+                .into_legacy(),
             base_tokens: base_tokens.clone(),
             block_stream: current_block_stream.clone(),
         },
@@ -434,7 +441,7 @@ pub async fn run(args: Arguments) {
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        settlement_contract.address(),
+        settlement_contract.address().into_legacy(),
         postgres_write.clone(),
         postgres_read.clone(),
         order_validator.clone(),
@@ -517,7 +524,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .expect("failed to connect to database");
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
     database_replica: Postgres,
@@ -557,24 +564,24 @@ fn serve_api(
 /// contract instance. Signature inconsistencies due to a mismatch of these
 /// constants are hard to debug.
 async fn verify_deployed_contract_constants(
-    contract: &GPv2Settlement,
+    contract: &GPv2Settlement::Instance,
     chain_id: u64,
 ) -> Result<()> {
-    let web3 = contract.raw_instance().web3();
-    let bytecode = hex::encode(
-        web3.eth()
-            .code(contract.address(), None)
+    let provider = contract.provider();
+    let bytecode = const_hex::encode(
+        provider
+            .get_code_at(*contract.address())
             .await
             .context("Could not load deployed bytecode")?
             .0,
     );
 
-    let domain_separator = DomainSeparator::new(chain_id, contract.address());
-    if !bytecode.contains(&hex::encode(domain_separator.0)) {
+    let domain_separator = DomainSeparator::new(chain_id, contract.address().into_legacy());
+    if !bytecode.contains(&const_hex::encode(domain_separator.0)) {
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }
 
-    if !bytecode.contains(&hex::encode(model::order::OrderData::TYPE_HASH)) {
+    if !bytecode.contains(&const_hex::encode(model::order::OrderData::TYPE_HASH)) {
         return Err(anyhow!("Bytecode did not contain order type hash"));
     }
     Ok(())

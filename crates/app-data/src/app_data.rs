@@ -206,6 +206,7 @@ impl serde::Serialize for FeePolicy {
 
 #[derive(Clone)]
 pub struct Validator {
+    /// App data size limit (in bytes).
     size_limit: usize,
 }
 
@@ -217,14 +218,22 @@ impl Default for Validator {
 }
 
 impl Validator {
+    /// Creates a new app data [`Validator`] with the provided app data
+    /// `size_limit` (in bytes).
     pub fn new(size_limit: usize) -> Self {
         Self { size_limit }
     }
 
+    /// Returns the app data size limit (in bytes).
     pub fn size_limit(&self) -> usize {
         self.size_limit
     }
 
+    /// Parses and validates the provided app data bytes, returns the validated
+    ///
+    /// Valid app data is considered to be:
+    /// 1. Below or equal to [`Validator::size_limit`] in size.
+    /// 2. A valid JSON & app data object.
     pub fn validate(&self, full_app_data: &[u8]) -> Result<ValidatedAppData> {
         if full_app_data.len() > self.size_limit {
             return Err(anyhow!(
@@ -323,7 +332,7 @@ impl Display for OrderUid {
         let mut bytes = [0u8; 2 + 56 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Unwrap because the length is always correct.
-        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
+        const_hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
         // Unwrap because the string is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         f.write_str(str)
@@ -374,7 +383,7 @@ impl<'de> Deserialize<'de> for OrderUid {
                     ))
                 })?;
                 let mut value = [0u8; 56];
-                hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
+                const_hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
                     de::Error::custom(format!("failed to decode {s:?} as hex uid: {err}"))
                 })?;
                 Ok(OrderUid(value))

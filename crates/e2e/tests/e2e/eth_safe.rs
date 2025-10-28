@@ -62,11 +62,11 @@ async fn test(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balance_of(safe.address().into_legacy())
+        .balanceOf(safe.address())
         .call()
         .await
         .unwrap();
-    assert_eq!(balance, 0.into());
+    assert_eq!(balance, ::alloy::primitives::U256::ZERO);
     let mut order = OrderCreation {
         from: Some(safe.address().into_legacy()),
         sell_token: token.address().into_legacy(),

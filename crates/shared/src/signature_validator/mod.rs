@@ -4,6 +4,7 @@ use {
         BalanceOverriding,
     },
     alloy::primitives::FixedBytes,
+    contracts::alloy::GPv2Settlement,
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
     hex_literal::hex,
     model::interaction::InteractionData,
@@ -46,11 +47,8 @@ impl std::fmt::Debug for SignatureCheck {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SignatureCheck")
             .field("signer", &self.signer)
-            .field("hash", &format_args!("0x{}", hex::encode(self.hash)))
-            .field(
-                "signature",
-                &format_args!("0x{}", hex::encode(&self.signature)),
-            )
+            .field("hash", &const_hex::encode_prefixed(self.hash))
+            .field("signature", &const_hex::encode_prefixed(&self.signature))
             .field("interactions", &self.interactions)
             .finish()
     }
@@ -67,7 +65,7 @@ pub enum SignatureValidationError {
     Other(#[from] anyhow::Error),
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 /// <https://eips.ethereum.org/EIPS/eip-1271>
 pub trait SignatureValidating: Send + Sync {
@@ -97,7 +95,7 @@ pub fn check_erc1271_result(result: FixedBytes<4>) -> Result<(), SignatureValida
 
 /// Contracts required for signature verification simulation.
 pub struct Contracts {
-    pub settlement: contracts::GPv2Settlement,
+    pub settlement: GPv2Settlement::Instance,
     pub signatures: contracts::alloy::support::Signatures::Instance,
     pub vault_relayer: H160,
 }

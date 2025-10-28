@@ -1,10 +1,8 @@
 use {
-    crate::{
-        domain::eth::{self, ContractAddress},
-        infra::blockchain::contracts::deployment_address,
-    },
+    crate::domain::eth::{self, ContractAddress},
     alloy::primitives::Address,
     chain::Chain,
+    contracts::alloy::BalancerV2Vault,
     derive_more::Debug,
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
@@ -62,7 +60,7 @@ pub struct UniswapV2 {
 
 impl UniswapV2 {
     /// Returns the liquidity configuration for Uniswap V2.
-    #[allow(clippy::self_named_constructors)]
+    #[expect(clippy::self_named_constructors)]
     pub fn uniswap_v2(chain: Chain) -> Option<Self> {
         Some(Self {
             router: ContractAddress::from(
@@ -151,7 +149,7 @@ pub struct Swapr {
 
 impl Swapr {
     /// Returns the liquidity configuration for Swapr.
-    #[allow(clippy::self_named_constructors)]
+    #[expect(clippy::self_named_constructors)]
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
             router: ContractAddress::from(
@@ -187,14 +185,16 @@ pub struct UniswapV3 {
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
-    #[allow(clippy::self_named_constructors)]
+    #[expect(clippy::self_named_constructors)]
     pub fn uniswap_v3(
         graph_url: &Url,
         chain: Chain,
         max_pools_per_tick_query: usize,
     ) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::UniswapV3SwapRouterV2::raw_contract(), chain)?,
+            router: contracts::alloy::UniswapV3SwapRouterV2::deployment_address(&chain.id())?
+                .into_legacy()
+                .into(),
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
             reinit_interval: None,
@@ -241,7 +241,7 @@ pub struct BalancerV2 {
 
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
-    #[allow(clippy::self_named_constructors)]
+    #[expect(clippy::self_named_constructors)]
     pub fn balancer_v2(graph_url: &Url, chain: Chain) -> Option<Self> {
         macro_rules! address_for {
             ( $chain:expr, [ $( $($p:ident)::+ ),* $(,)? ] ) => {{
@@ -255,7 +255,7 @@ impl BalancerV2 {
         }
 
         Some(Self {
-            vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), chain)?,
+            vault: ContractAddress(BalancerV2Vault::deployment_address(&chain.id())?.into_legacy()),
             weighted: address_for!(
                 chain,
                 [

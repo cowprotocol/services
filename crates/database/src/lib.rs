@@ -1,8 +1,8 @@
 pub mod app_data;
 pub mod auction;
-pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
+pub mod cow_amms;
 pub mod ethflow_orders;
 pub mod events;
 pub mod fee_policies;
@@ -53,6 +53,7 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 pub const TABLES: &[&str] = &[
     "app_data",
     "auctions",
+    "cow_amms",
     "ethflow_orders",
     "ethflow_refunds",
     "interactions",
@@ -75,7 +76,6 @@ pub const TABLES: &[&str] = &[
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &[
     "auction_prices",
-    "auction_participants",
     "competition_auctions",
     "fee_policies",
     "orders",
@@ -91,7 +91,7 @@ pub fn all_tables() -> impl Iterator<Item = &'static str> {
 }
 
 /// Delete all data in the database. Only used by tests.
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
     for table in all_tables() {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
@@ -100,7 +100,7 @@ pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
 }
 
 /// Like above but more ergonomic for some tests that use a pool.
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub async fn clear_DANGER(pool: &PgPool) -> sqlx::Result<()> {
     let mut transaction = pool.begin().await?;
     clear_DANGER_(&mut transaction).await?;

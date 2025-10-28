@@ -145,7 +145,8 @@ impl PoolsCheckpointHandler {
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
         let graph_api =
-            UniV3SubgraphClient::from_subgraph_url(subgraph_url, client, max_pools_per_tick_query)?;
+            UniV3SubgraphClient::from_subgraph_url(subgraph_url, client, max_pools_per_tick_query)
+                .await?;
         let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),

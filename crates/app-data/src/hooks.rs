@@ -44,10 +44,7 @@ impl Debug for Hook {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Hook")
             .field("target", &self.target)
-            .field(
-                "call_data",
-                &format_args!("0x{}", hex::encode(&self.call_data)),
-            )
+            .field("call_data", &const_hex::encode_prefixed(&self.call_data))
             .field("gas_limit", &self.gas_limit)
             .finish()
     }

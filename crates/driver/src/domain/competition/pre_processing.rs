@@ -3,6 +3,7 @@ use {
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
+            cow_amm,
             eth,
             liquidity,
         },
@@ -11,10 +12,8 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    futures::{
-        FutureExt,
-        future::{BoxFuture, join_all},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
         interaction::InteractionData,
@@ -26,8 +25,7 @@ use {
         price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
-    std::{collections::HashMap, future::Future, sync::Arc},
-    tap::TapFallible,
+    std::{collections::HashMap, future::Future, sync::Arc, time::Duration},
     tokio::sync::Mutex,
     tracing::Instrument,
 };
@@ -62,6 +60,7 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    cow_amm_cache: cow_amm::Cache,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -134,6 +133,15 @@ impl DataAggregator {
             eth.balance_overrider(),
         );
 
+        let cow_amm_helper_by_factory = eth
+            .contracts()
+            .cow_amm_helper_by_factory()
+            .iter()
+            .map(|(factory, helper)| (factory.0.into_alloy(), helper.0.into_alloy()))
+            .collect();
+        let cow_amm_cache =
+            cow_amm::Cache::new(eth.web3().alloy.clone(), cow_amm_helper_by_factory);
+
         Self {
             utilities: Arc::new(Utilities {
                 eth,
@@ -142,6 +150,7 @@ impl DataAggregator {
                 liquidity_fetcher,
                 tokens,
                 balance_fetcher,
+                cow_amm_cache,
             }),
             control: Mutex::new(ControlBlock {
                 solve_request: Default::default(),
@@ -339,36 +348,43 @@ impl Utilities {
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_app_data");
 
-        let app_data = join_all(
-            auction
-                .orders
-                .iter()
-                .flat_map(|order| match order.app_data {
-                    AppData::Full(_) => None,
-                    // only fetch appdata we don't already have in full
-                    AppData::Hash(hash) => Some(hash),
-                })
-                .unique()
-                .map(|app_data_hash| {
-                    let app_data_retriever = app_data_retriever.clone();
-                    async move {
-                        let fetched_app_data = app_data_retriever
-                            .get_cached_or_fetch(&app_data_hash)
-                            .await
-                            .tap_err(|err| {
-                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
-                            })
-                            .ok()
-                            .flatten();
+        let futures: FuturesUnordered<_> = auction
+            .orders
+            .iter()
+            .flat_map(|order| match order.app_data {
+                AppData::Full(_) => None,
+                // only fetch appdata we don't already have in full
+                AppData::Hash(hash) => Some(hash),
+            })
+            .unique()
+            .map(async move |app_data_hash| {
+                let fetched_app_data = app_data_retriever
+                    .get_cached_or_fetch(&app_data_hash)
+                    .await
+                    .inspect_err(|err| {
+                        tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
+                    })
+                    .ok()
+                    .flatten();
 
-                        (app_data_hash, fetched_app_data)
-                    }
-                }),
-        )
-        .await
-        .into_iter()
-        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
-        .collect::<HashMap<_, _>>();
+                (app_data_hash, fetched_app_data)
+            })
+            .collect();
+
+        // Only await responses for a short amount of time. Even if we don't await
+        // all futures fully the remaining appdata requests will finish in background
+        // tasks. That way we should have enough time to immediately fetch appdatas
+        // of new orders (once the cache is filled). But we also don't run the risk
+        // of stalling the driver completely until everything is fetched.
+        // In practice that means the solver will only see a few appdatas in the first
+        // auction after a restart. But on subsequent auctions everything should be
+        // available.
+        const MAX_APP_DATA_WAIT: Duration = Duration::from_millis(500);
+        let app_data: HashMap<_, _> = futures
+            .take_until(tokio::time::sleep(MAX_APP_DATA_WAIT))
+            .filter_map(async move |(hash, json)| Some((hash, json?)))
+            .collect()
+            .await;
 
         Arc::new(app_data)
     }
@@ -377,17 +393,19 @@ impl Utilities {
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
-        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
+
+        let cow_amms = self
+            .cow_amm_cache
+            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
+            .await;
+
         let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
         let validator = self.signature_validator.as_ref();
+
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
-                // Only generate orders for cow amms the auction told us about.
-                // Otherwise the solver would expect the order to get surplus but
-                // the autopilot would actually not count it.
-                .filter(|amm| auction.surplus_capturing_jit_order_owners.contains(&eth::Address(*amm.address())))
                 // Only generate orders where the auction provided the required
                 // reference prices. Otherwise there will be an error during the
                 // surplus calculation which will also result in 0 surplus for
@@ -398,9 +416,9 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
+                                .get(&eth::TokenAddress(eth::ContractAddress(t.into_legacy())))
                                 .and_then(|token| token.price)
-                                .map(|price| price.0.0)
+                                .map(|price| price.0.0.into_alloy())
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
@@ -422,7 +440,11 @@ impl Utilities {
             .into_iter()
             .filter_map(|(amm, result)| match result {
                 Ok(template) => Some(Order {
-                    uid: template.order.uid(&domain_separator, &amm).0.into(),
+                    uid: template
+                        .order
+                        .uid(&domain_separator, &amm.into_legacy())
+                        .0
+                        .into(),
                     receiver: template.order.receiver.map(|addr| addr.into()),
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
@@ -464,7 +486,7 @@ impl Utilities {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
                             data: Bytes(bytes),
-                            signer: amm.into(),
+                            signer: amm.into_legacy().into(),
                         },
                         _ => {
                             tracing::warn!(

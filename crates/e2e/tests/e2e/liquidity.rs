@@ -134,7 +134,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         zeroex_maker.clone(),
         zeroex.address().into_legacy(),
         chain_id,
-        onchain.contracts().weth.address(),
+        onchain.contracts().weth.address().into_legacy(),
     );
     let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
@@ -146,7 +146,7 @@ async fn zero_ex_liquidity(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -166,7 +166,7 @@ async fn zero_ex_liquidity(web3: Web3) {
                     .to_string(),
                 format!(
                     "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
             ],
         )

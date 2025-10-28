@@ -2,6 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     alloy::primitives::Address,
+    number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
@@ -67,9 +68,6 @@ struct Config {
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 
-    /// Archive node URL used to index CoW AMM
-    archive_node_url: Option<Url>,
-
     /// How long should the token quality computed by the simulation
     /// based logic be cached.
     #[serde(
@@ -85,6 +83,9 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    #[serde_as(as = "HexOrDecimalU256")]
+    tx_gas_limit: eth::U256,
 }
 
 #[serde_as]
@@ -376,8 +377,7 @@ struct ContractsConfig {
     /// Override the default address of the Signatures contract.
     signatures: Option<eth::H160>,
 
-    /// List of all cow amm factories the driver should generate
-    /// rebalancing orders for.
+    /// List of all cow amm factories with the corresponding helper contract.
     #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
 
@@ -389,12 +389,10 @@ struct ContractsConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CowAmmConfig {
-    /// Which contract to index for CoW AMM deployment events.
+    /// CoW AMM factory address.
     pub factory: eth::H160,
-    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    /// Which helper contract to use for interfacing with CoW AMMs.
     pub helper: eth::H160,
-    /// At which block indexing should start on the factory.
-    pub index_start: u64,
 }
 
 #[derive(Debug, Deserialize)]

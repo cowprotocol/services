@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 alloy = { workspace = true }
 app-data = { workspace = true }
-bytes-hex = { workspace = true }
+bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
@@ -33,7 +33,7 @@ ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
@@ -66,6 +66,7 @@ web3 = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+shared = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }

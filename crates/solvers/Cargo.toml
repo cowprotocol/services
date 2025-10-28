@@ -13,6 +13,7 @@ name = "solvers"
 path = "src/main.rs"
 
 [dependencies]
+alloy = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chain = { workspace = true }
@@ -22,9 +23,9 @@ derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
-hyper = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
+hyper = { workspace = true }
 ethcontract = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true }
@@ -32,6 +33,7 @@ num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -51,12 +53,9 @@ observe = { workspace = true, features = ["axum-tracing"] }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
-opentelemetry = { workspace = true }
-tracing-opentelemetry = "0.31.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }
-hex-literal = { workspace = true }
 ethcontract = { workspace = true }
 
 [build-dependencies]

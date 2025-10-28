@@ -21,6 +21,7 @@ use {
         },
         util::{Bytes, math},
     },
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
@@ -30,7 +31,6 @@ use {
         sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
-    tap::TapFallible,
     tokio::{
         sync::{mpsc, oneshot},
         task,
@@ -74,7 +74,7 @@ pub struct Competition {
 }
 
 impl Competition {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         solver: Solver,
         eth: Ethereum,
@@ -136,6 +136,7 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
+        let settlement = settlement_contract.into_legacy();
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
@@ -143,7 +144,7 @@ impl Competition {
                 auction,
                 solver_address,
                 order_sorting_strategies,
-                settlement_contract,
+                settlement,
             )
         });
 
@@ -160,7 +161,7 @@ impl Competition {
                 balances,
                 app_data,
                 cow_amm_orders,
-                &eth::Address(settlement_contract),
+                &eth::Address(settlement),
             )
         })
         .await;
@@ -191,7 +192,7 @@ impl Competition {
             .solver
             .solve(auction, &liquidity)
             .await
-            .tap_err(|err| {
+            .inspect_err(|err| {
                 if err.is_timeout() {
                     notify::solver_timeout(&self.solver, auction.id());
                 }
@@ -302,7 +303,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
+                    .inspect_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
                         notify::scoring_failed(
                             &self.solver,

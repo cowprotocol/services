@@ -44,7 +44,7 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<Arc<infra::Driver>>,
@@ -241,7 +241,7 @@ impl RunLoop {
             }
             tracing::debug!(
                 driver = %driver.name,
-                calldata = format!("0x{}", hex::encode(calldata)),
+                calldata = const_hex::encode_prefixed(calldata),
                 "revealed calldata"
             );
         }))

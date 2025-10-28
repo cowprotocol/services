@@ -162,11 +162,11 @@ fn set_tracing_subscriber(config: &Config) {
         .with(tracing_layer);
 
     if cfg!(tokio_unstable) && enable_tokio_console {
-        tracing::info!("started program with support for tokio-console");
         subscriber.with(console_subscriber::spawn()).init();
+        tracing::info!("started program with support for tokio-console");
     } else {
-        tracing::info!("started program without support for tokio-console");
         subscriber.init();
+        tracing::info!("started program without support for tokio-console");
     }
     if cfg!(unix) {
         spawn_reload_handler(initial_filter, reload_handle);

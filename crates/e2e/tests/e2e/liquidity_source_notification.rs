@@ -151,7 +151,7 @@ async fn liquidity_source_notification(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -186,7 +186,7 @@ http-timeout = "10s"
                     .to_string(),
                 format!(
                     "--drivers=liquorice_solver|http://localhost:11088/liquorice_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
             ],
         )
@@ -222,8 +222,8 @@ http-timeout = "10s"
     let liquorice_order = api::liquorice::onchain::order::Single {
         rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
         nonce: U256::from(0),
-        trader: onchain.contracts().gp_settlement.address(),
-        effective_trader: onchain.contracts().gp_settlement.address(),
+        trader: onchain.contracts().gp_settlement.address().into_legacy(),
+        effective_trader: onchain.contracts().gp_settlement.address().into_legacy(),
         base_token: token_usdc.address(),
         quote_token: token_usdt.address(),
         base_token_amount: trade_amount,

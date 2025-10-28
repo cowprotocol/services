@@ -12,8 +12,8 @@ tiny-keccak = { workspace = true, features = ["keccak"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-primitive-types = { workspace = true }
-hex = { workspace = true }
+primitive-types = { workspace = true, features = ["serde"] }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 number = { path = "../number" }
 

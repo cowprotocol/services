@@ -340,7 +340,7 @@ mod tests {
             .execute(
                 async {
                     unreachable!("don't evaluate closure when rate limited");
-                    #[allow(unreachable_code)] // to help the type checker
+                    #[expect(unreachable_code)] // to help the type checker
                     3
                 },
                 |_| unreachable!("don't evaluate closure when rate limited"),
