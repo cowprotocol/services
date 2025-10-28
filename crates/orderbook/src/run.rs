@@ -15,14 +15,13 @@ use {
     contracts::{
         GPv2Settlement,
         WETH9,
-        alloy::{
+        bindings::{
             BalancerV2Vault,
+            Balances,
+            ChainalysisOracle,
             HooksTrampoline,
             IUniswapV3Factory,
-            InstanceExt,
-            support::Balances,
         },
-        bindings::ChainalysisOracle,
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},

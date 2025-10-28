@@ -26,7 +26,7 @@ use {
     },
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
+    contracts::bindings::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{BlockNumber, H160, common::DeploymentInformation},
     ethrpc::{
         Web3,

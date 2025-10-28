@@ -293,6 +293,292 @@ fn main() {
             networks::OPTIMISM => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
             networks::POLYGON => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
         ]))
+        // UniV2 Routers
+        .add_contract(Contract::new("BaoswapRouter").with_networks(networks![
+            networks::GNOSIS => "0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE"
+        ]))
+        .add_contract(Contract::new("HoneyswapRouter").with_networks(networks![
+            networks::GNOSIS => "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"
+        ]))
+        .add_contract(Contract::new("PancakeRouter").with_networks(networks![
+            // <https://etherscan.io/tx/0x6e441248a9835ca10a3c29a19f2e1ed61d2e35f3ecb3a5b9e4ee170d62a22d16>
+            networks::MAINNET => "0xEfF92A263d31888d860bD50809A8D171709b7b1c",
+            // <https://arbiscan.io/tx/0x4a2da73cbfcaafb0347e4525307a095e38bf7532435cb0327d1f5ee2ee15a011>
+            networks::ARBITRUM_ONE => "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb",
+            // <https://basescan.org/tx/0xda322aef5776698ac6da56be1ffaa0f9994a983cdeb9f2aeaba47437809ae6ef>
+            networks::BASE => "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb",
+            // <https://bscscan.com/tx/0x1bfbff8411ed44e609d911476b0d35a28284545b690902806ea0a7ff0453e931>
+            networks::BNB => "0x10ED43C718714eb63d5aA57B78B54704E256024E"
+        ]))
+        .add_contract(Contract::new("SushiSwapRouter").with_networks(networks![
+            // <https://docs.sushi.com/contracts/cpamm>
+            // <https://etherscan.io/tx/0x4ff39eceee7ba9a63736eae38be69b10347975ff5fa4d9b85743a51e1c384094>
+            networks::MAINNET => "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f",
+            // <https://gnosisscan.io/tx/0x8b45ccbc2afd0132ef8b636064e0e745ff93b53942a56e320bb930666dd0fb18>
+            networks::GNOSIS => "0x1b02da8cb0d097eb8d57a175b88c7d8b47997506",
+            // <https://arbiscan.io/tx/0x40b22402bcac46330149ac9848f8bddd02b0a1e79d4a71934655a634051be1a1>
+            networks::ARBITRUM_ONE => "0x1b02da8cb0d097eb8d57a175b88c7d8b47997506",
+            // <https://basescan.org/tx/0xbb673c483292e03d202e95a023048b8bda459bf12402e7688f7e10be8b4dc67d>
+            networks::BASE => "0x6bded42c6da8fbf0d2ba55b2fa120c5e0c8d7891",
+            // <https://snowtrace.io/tx/0x8185bcd3cc8544f8767e5270c4d7eb1e9b170fc0532fc4f0d7e7a1018e1f13ba>
+            networks::AVALANCHE => "0x1b02da8cb0d097eb8d57a175b88c7d8b47997506",
+            // <https://bscscan.com/tx/0xf22f827ae797390f6e478b0a11aa6e92d6da527f47130ef70d313ff0e0b2a83f>
+            networks::BNB => "0x1b02da8cb0d097eb8d57a175b88c7d8b47997506",
+            // <https://optimistic.etherscan.io/tx/0x88be6cc83f5bfccb8196db351866bac5c99ab8f7b451ea9975319ba05c3bf8f7>
+            networks::OPTIMISM => "0x2abf469074dc0b54d793850807e6eb5faf2625b1",
+            // <https://polygonscan.com/tx/0x3dcf8fc780ae6fbe40b1ae57927a8fb405f54cbe89d0021a781a100d2086e5ba>
+            networks::POLYGON => "0x1b02da8cb0d097eb8d57a175b88c7d8b47997506",
+        ]))
+        .add_contract(Contract::new("SwaprRouter").with_networks(networks![
+            // <https://swapr.gitbook.io/swapr/contracts>
+            // <https://etherscan.io/tx/0x3f4ccc676637906db24caf043c89dafce959321c02266c6a4ab706fcec79a5f7>
+            networks::MAINNET => "0xb9960d9bca016e9748be75dd52f02188b9d0829f",
+            // <https://gnosisscan.io/tx/0x0406e774caced468b8f84d7c7ed9b6e9c324601af38f44e385aecf7a7d01feb4>
+            networks::GNOSIS => "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0",
+            // <https://arbiscan.io/tx/0x09771774fc138775472910f6bb0f2e03ff74e1e32a658e9c3e4d8f59f6431ba8>
+            networks::ARBITRUM_ONE => "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E",
+        ]))
+        .add_contract(Contract::new("ISwaprPair"))
+        .add_contract(Contract::new("TestnetUniswapV2Router02").with_networks(networks![
+            // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
+            networks::SEPOLIA => "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98",
+        ]))
+        .add_contract(Contract::new("UniswapV2Factory").with_networks(networks![
+            // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
+            // <https://etherscan.io/tx/0xc31d7e7e85cab1d38ce1b8ac17e821ccd47dbde00f9d57f2bd8613bff9428396>
+            networks::MAINNET => "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+            // <https://gnosisscan.io/tx/0x446de52c460bed3f49a4342eab247bb4b2fe2993962c284fb9bc14a983c7a3d4>
+            networks::GNOSIS => "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7",
+            // <https://arbiscan.io/tx/0x83b597d54496c0b64d66a3b9a65c312e406262511c908f702ef06755d13ab2f3>
+            networks::ARBITRUM_ONE => "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9",
+            // <https://basescan.org/tx/0x3c94031f81d9afe3beeb8fbcf4dcf1bd5b5688b86081d94e3d0231514dc00d31>
+            networks::BASE => "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
+            // <https://sepolia.etherscan.io/tx/0x0a5e26b22f6b470857957a1d5a92ad4a7d3c5e7cf254ddd80edfe23df70eae71>
+            networks::SEPOLIA => "0xF62c03E08ada871A0bEb309762E260a7a6a880E6",
+            // <https://snowtrace.io/tx/0xd06a069b11fc0c998b404c5736957cc16c71cf1f7dbf8a7d4244c84036ea6edd>
+            networks::AVALANCHE => "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C",
+            // <https://bscscan.com/tx/0x7305a4bddc54eee158f245a09526969697ac1a9f56d090b124ebfc85ff71a5cf>
+            networks::BNB => "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
+            // <https://optimistic.etherscan.io/tx/0xf7227dcbbfa4ea2bb2634f2a1f364a64b028f9e9e393974fea8d435cd097c72e>
+            networks::OPTIMISM => "0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf",
+            // <https://polygonscan.com/tx/0x712ac56155a301fca4b7a761e232233f41a104865a74b1a59293835da355292a>
+            networks::POLYGON => "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C",
+        ]))
+        .add_contract(Contract::new("UniswapV2Router02").with_networks(networks![
+            // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
+            // <https://etherscan.io/tx/0x4fc1580e7f66c58b7c26881cce0aab9c3509afe6e507527f30566fbf8039bcd0>
+            networks::MAINNET => "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+            // <https://gnosisscan.io/tx/0xfcc495cdb313b48bbb0cd0a25cb2e8fd512eb8fb0b15f75947a9d5668e47a918>
+            networks::GNOSIS => "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77",
+            // <https://arbiscan.io/tx/0x630cd9d56a85e1bac7795d254fef861304a6838e28869badef19f19defb48ba6>
+            networks::ARBITRUM_ONE => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
+            // <https://basescan.org/tx/0x039224ce16ebe5574f51da761acbdfbd21099d6230c39fcd8ff566bbfd6a50a9>
+            networks::BASE => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
+            // <https://sepolia.etherscan.io/tx/0x92674b51681d2e99e71e03bd387bc0f0e79f2412302b49ed5626d1fa2311bab9>
+            networks::SEPOLIA => "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
+            // <https://snowtrace.io/tx/0x7372f1eedf9d32fb4185d486911f44542723dae766eea04bc3f14724bae9552e>
+            networks::AVALANCHE => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
+            // <https://bscscan.com/tx/0x9e940f846abea7dcc1f0bd5c261f405c104628c855346f8cac966f52905ee0fa>
+            networks::BNB => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
+            // <https://optimistic.etherscan.io/tx/0x2dcb9a76100e5be49e89085b87bd447b1966a9d823d5985e1a8197834c60e6bd>
+            networks::OPTIMISM => "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
+            // <https://polygonscan.com/tx/0x66186e0cacd2f6b3ad2eae586bd331daafd0572eb80bf71be694181858198025>
+            networks::POLYGON => "0xedf6066a2b290C185783862C7F4776A2C8077AD1",
+        ]))
+        .add_contract(Contract::new("IUniswapLikeRouter"))
+        .add_contract(Contract::new("IUniswapLikePair"))
+        // UniV3
+        .add_contract(Contract::new("UniswapV3Pool"))
+        .add_contract(Contract::new("UniswapV3QuoterV2").with_networks(networks![
+            // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
+            networks::MAINNET => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+            networks::ARBITRUM_ONE => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+            networks::BASE => "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+            networks::AVALANCHE => "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
+            networks::BNB => "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
+            networks::OPTIMISM => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+            networks::POLYGON => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+            networks::LENS => "0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1",
+        ]))
+        .add_contract(Contract::new("UniswapV3SwapRouterV2").with_networks(networks![
+            // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
+            networks::ARBITRUM_ONE => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+            networks::MAINNET => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+            networks::POLYGON => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+            networks::OPTIMISM => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+            networks::BASE => "0x2626664c2603336E57B271c5C0b26F421741e481",
+            networks::AVALANCHE => "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
+            networks::BNB => "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2",
+            networks::LENS => "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13",
+        ]))
+        .add_contract(Contract::new("IUniswapV3Factory").with_networks(networks![
+            // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
+            networks::MAINNET => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            networks::SEPOLIA => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            networks::ARBITRUM_ONE => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            networks::BASE => "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+            networks::AVALANCHE => "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD",
+            networks::BNB => "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",
+            networks::OPTIMISM => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            networks::POLYGON => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            networks::LENS => "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3",
+        ]))
+        // CoW Protocol
+        .add_contract(Contract::new("HooksTrampoline").with_networks(networks![
+            // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
+            networks::MAINNET => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            // Gnosis is using the old instance of the hook trampoline since it's hardcoded in gnosis pay rebalance integration.
+            networks::GNOSIS => "0x01DcB88678aedD0C4cC9552B20F4718550250574",
+            networks::SEPOLIA => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::ARBITRUM_ONE => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::BASE => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::AVALANCHE => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::BNB => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::OPTIMISM => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::POLYGON => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            networks::LENS => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+        ]))
+        .add_contract(Contract::new("CoWSwapEthFlow").with_networks(networks![
+            // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
+            networks::MAINNET => ("0x40a50cf069e992aa4536211b23f286ef88752187", 16169866),
+            // <https://gnosisscan.io/tx/0x6280e079f454fbb5de3c52beddd64ca2b5be0a4b3ec74edfd5f47e118347d4fb>
+            networks::GNOSIS => ("0x40a50cf069e992aa4536211b23f286ef88752187", 25414331),
+            // <https://github.com/cowprotocol/ethflowcontract/blob/v1.1.0-artifacts/networks.prod.json#L11-L14>
+            // <https://sepolia.etherscan.io/tx/0x558a7608a770b5c4f68fffa9b02e7908a40f61b557b435ea768a4c62cb79ae25>
+            networks::SEPOLIA => ("0x0b7795E18767259CC253a2dF471db34c72B49516", 4718739),
+            // <https://arbiscan.io/tx/0xa4066ca77bbe1f21776b4c26315ead3b1c054b35814b49e0c35afcbff23e1b8d>
+            networks::ARBITRUM_ONE => ("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB", 204747458),
+            // <https://basescan.org/tx/0xc3555c4b065867cbf34382438e1bbaf8ee39eaf10fb0c70940c8955962e76e2c>
+            networks::BASE => ("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3", 21490258),
+            // <https://snowscan.xyz/tx/0x71a2ed9754247210786effa3269bc6eb68b7521b5052ac9f205af7ac364f608f>
+            networks::AVALANCHE => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 60496408),
+            // <https://bscscan.com/tx/0x959a60a42d36e0efd247b3cf19ed9d6da503d01bce6f87ed31e5e5921111222e>
+            networks::BNB => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 48411237),
+            // <https://optimistic.etherscan.io/tx/0x0644f10f7ae5448240fc592ad21abf4dabac473a9d80904af5f7865f2d6509e2>
+            networks::OPTIMISM => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 134607215),
+            // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
+            networks::POLYGON => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 71296258),
+            // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
+            networks::LENS => ("0xFb337f8a725A142f65fb9ff4902d41cc901de222", 3007173),
+        ]))
+        .add_contract(Contract::new("CoWSwapOnchainOrders"))
+        .add_contract(Contract::new("ERC1271SignatureValidator"))
+        .add_contract(Contract::new("GPv2AllowListAuthentication").with_networks(networks![
+            // <https://etherscan.io/tx/0xb84bf720364f94c749f1ec1cdf0d4c44c70411b716459aaccfd24fc677013375>
+            networks::MAINNET => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 12593263),
+            // <https://gnosisscan.io/tx/0x1a2d87a05a94bc6680a4faee31bbafbd74e9ddb63dd3941c717b5c609c08b957>
+            networks::GNOSIS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 16465099),
+            // <https://sepolia.etherscan.io/tx/0x73c54c75b3f382304f3adf33e3876c8999fb10df786d4a902733369251033cd1>
+            networks::SEPOLIA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 4717469),
+            // <https://arbiscan.io/tx/0xe994adff141a2e72bd9dab3eb7b3480637013bdfb1aa42c62d9d6c90de091237>
+            networks::ARBITRUM_ONE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 204702129),
+            // <https://basescan.org/tx/0x5497004d2a37c9eafd0bd1e5861a67d3a209c5b845724166e3dbca9527ee05ec>
+            networks::BASE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 21407137),
+            // <https://snowscan.xyz/tx/0xa58fc76846917779d7bcbb7d34f4a2a44aab2b702ef983594e34e6972a0c626b>
+            networks::AVALANCHE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 59891351),
+            // <https://bscscan.com/tx/0x8da639c62eb4a810573c178ed245184944d66c834122e3f88994ebf679b50e34>
+            networks::BNB => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 48173639),
+            // <https://optimistic.etherscan.io/tx/0x5b6403b485e369ce524d04234807df782e6639e55a7c1d859f0a67925d9a5f49>
+            networks::OPTIMISM => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 134254466),
+            // <https://polygonscan.com/tx/0x686e4bbcfd6ebae91f0fcc667407c831953629877ec622457916729de3d461c3>
+            networks::POLYGON => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 45854728),
+            // <https://explorer.lens.xyz/tx/0x0730c21885153dcc9a25ab7abdc38309ec7c7a8db15b763fbbaf574d1e7ec498>
+            networks::LENS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 2612937),
+        ]))
+        // DeFi Infrastructure
+        .add_contract(Contract::new("BalancerQueries").with_networks(networks![
+            // Used in the gnosis/solvers repo for the balancer solver
+            // <https://etherscan.io/tx/0x30799534f3a0ab8c7fa492b88b56e9354152ffaddad15415184a3926c0dd9b09>
+            networks::MAINNET => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 15188261),
+            // <https://arbiscan.io/tx/0x710d93aab52b6c10197eab20f9d6db1af3931f9890233d8832268291ef2f54b3>
+            networks::ARBITRUM_ONE => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 18238624),
+            // <https://optimistic.etherscan.io/tx/0xf3b2aaf3e12c7de0987dc99a26242b227b9bc055342dda2e013dab0657d6f9f1>
+            networks::OPTIMISM => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 15288107),
+            // <https://basescan.org/tx/0x425d04ee79511c17d06cd96fe1df9e0727f7e7d46b31f36ecaa044ada6a0d29a>
+            networks::BASE => ("0x300Ab2038EAc391f26D9F895dc61F8F66a548833", 1205869),
+            // <https://gnosisscan.io/tx/0x5beb3051d393aac24cb236dc850c644f345af65c4927030bd1033403e2f2e503>
+            networks::GNOSIS => ("0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e", 24821845),
+            // <https://polygonscan.com/tx/0x0b74f5c230f9b7df8c7a7f0d1ebd5e6c3fab51a67a9bcc8f05c350180041682e>
+            networks::POLYGON => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 30988035),
+            // <https://snowtrace.io/tx/0xf484e1efde47209bad5f72642bcb8d8e2a4092a5036434724ffa2d039e93a1bf?chainid=43114>
+            networks::AVALANCHE => ("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD", 26387068),
+        ]))
+        .add_contract(Contract::new("ILiquoriceSettlement").with_networks(networks![
+            // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
+            networks::MAINNET => "0x0448633eb8B0A42EfED924C42069E0DcF08fb552",
+            networks::ARBITRUM_ONE => "0x0448633eb8B0A42EfED924C42069E0DcF08fb552",
+        ]))
+        .add_contract(Contract::new("FlashLoanRouter").with_networks(networks![
+            networks::MAINNET => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            networks::GNOSIS => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            networks::SEPOLIA => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            networks::ARBITRUM_ONE => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            networks::BASE => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            networks::POLYGON => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            networks::AVALANCHE => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+        ]))
+        .add_contract(Contract::new("Permit2").with_networks(networks![
+            // Only used in <github.com/gnosis/solvers>
+            // <https://etherscan.io/tx/0xf2f1fe96c16ee674bb7fcee166be52465a418927d124f5f1d231b36eae65d377>
+            networks::MAINNET => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 15986406),
+            // <https://gnosisscan.io/tx/0x3ba511410edc92cafe94bd100e25adb37981499d17947a3d64c8523fbfd31864>
+            networks::GNOSIS => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 27338672),
+            // <https://sepolia.etherscan.io/tx/0x363df5deeead44d8fd38425f3986e3e81946a6c59d8b68fe33926cc700713173>
+            networks::SEPOLIA => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 2356287),
+            // <https://arbiscan.io/tx/0xe244dafca8211ed6fb123efaa5075b7d5813749718412ca435c872afd0e2ea82>
+            networks::ARBITRUM_ONE => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 38692735),
+            // <https://basescan.org/tx/0x26fbdea9a47ba8e21676bc6b6a72a19dded1a0c270e96d5236886ca9c5000d3f>
+            networks::BASE => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 1425180),
+            // <https://snowscan.xyz/tx/0x38fd76c2165d920c7e006defd67eeeb0069bf93e41741eec3bbb83d196610a56>
+            networks::AVALANCHE => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 28844415),
+            // <https://bscscan.com/tx/0xb038ec7b72db4207e0c0d5433e1cabc41b4e4f9b9cac577173b3188fc508a6c3>
+            networks::BNB => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 25343783),
+            // <https://optimistic.etherscan.io/tx/0xf0a51e0d0579ef8cc7965f5797bd7665ddac14d4d2141423676b8862f7668352>
+            networks::OPTIMISM => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 38854427),
+            // <https://polygonscan.com/tx/0xe2a4d996de0d6a23108f701b37acba6c47ee34448bb51fec5c23f542a6f3ccc8>
+            networks::POLYGON => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 35701901),
+        ]))
+        // Support contracts
+        .add_contract(Contract::new("CowAmmFactoryGetter"))
+        .add_contract(Contract::new("AnyoneAuthenticator"))
+        .add_contract(Contract::new("Solver"))
+        .add_contract(Contract::new("Spardose"))
+        .add_contract(Contract::new("Trader"))
+        .add_contract(Contract::new("Swapper"))
+        .add_contract(Contract::new("Signatures").with_networks(networks![
+            networks::MAINNET => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::ARBITRUM_ONE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::BASE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::AVALANCHE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::BNB => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::OPTIMISM => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::POLYGON => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::LENS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::GNOSIS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+            networks::SEPOLIA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+        ]))
+        .add_contract(Contract::new("Balances").with_networks(networks![
+            networks::MAINNET => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::ARBITRUM_ONE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::BASE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::AVALANCHE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::BNB => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::OPTIMISM => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::POLYGON => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::LENS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::GNOSIS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+            networks::SEPOLIA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+        ]))
+        // Test contracts
+        .add_contract(Contract::new("GasHog"))
+        .add_contract(Contract::new("Counter"))
+        .add_contract(Contract::new("CowProtocolToken").with_networks(networks![
+            networks::MAINNET => "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
+            networks::GNOSIS => "0x177127622c4A00F3d409B75571e12cB3c8973d3c",
+            networks::SEPOLIA => "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59",
+            networks::ARBITRUM_ONE => "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04",
+            networks::BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
+        ]))
         .write_formatted(Path::new("artifacts"), false, Path::new("src/bindings"))
         .unwrap();
 

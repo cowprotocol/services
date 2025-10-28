@@ -7,7 +7,7 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow,
+    contracts::bindings::CoWSwapEthFlow::CoWSwapEthFlow,
     shared::{ethrpc::Web3, event_handling::AlloyEventRetrieving},
 };
 
