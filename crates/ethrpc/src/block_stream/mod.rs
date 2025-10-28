@@ -87,22 +87,6 @@ impl PartialEq<Self> for BlockInfo {
     }
 }
 
-impl TryFrom<Block<H256>> for BlockInfo {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Block<H256>) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            number: value.number.context("block missing number")?.as_u64(),
-            hash: value.hash.context("block missing hash")?,
-            parent_hash: value.parent_hash,
-            timestamp: value.timestamp.as_u64(),
-            gas_limit: value.gas_limit,
-            gas_price: value.base_fee_per_gas.context("no gas price")?,
-            observed_at: Instant::now(),
-        })
-    }
-}
-
 impl TryFrom<alloy::rpc::types::Block> for BlockInfo {
     type Error = anyhow::Error;
 
