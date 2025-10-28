@@ -1,7 +1,10 @@
 //! Module continaing ERC20 token interaction implementations.
 
 use {
-    alloy::primitives::{Address, U256},
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
     contracts::alloy::ERC20,
     ethcontract::Bytes,
     ethrpc::alloy::conversions::IntoLegacy,
@@ -10,7 +13,7 @@ use {
 
 #[derive(Debug)]
 pub struct Erc20ApproveInteraction {
-    pub token: ERC20::Instance,
+    pub token: Address,
     pub spender: Address,
     pub amount: U256,
 }
@@ -18,13 +21,14 @@ pub struct Erc20ApproveInteraction {
 impl Erc20ApproveInteraction {
     pub fn as_encoded(&self) -> EncodedInteraction {
         (
-            self.token.address().into_legacy(),
+            self.token.into_legacy(),
             0.into(),
             Bytes(
-                self.token
-                    .approve(self.spender, self.amount)
-                    .calldata()
-                    .to_vec(),
+                ERC20::ERC20::approveCall {
+                    spender: self.spender,
+                    amount: self.amount,
+                }
+                .abi_encode(),
             ),
         )
     }
@@ -43,13 +47,13 @@ mod tests {
     #[test]
     fn encode_erc20_approve() {
         let approve = Erc20ApproveInteraction {
-            token: ERC20::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            token: [0x01; 20].into(),
             spender: [0x02; 20].into(),
             amount: U256::from_be_bytes([0x03; 32]),
         };
 
         let (target, value, calldata) = approve.as_encoded();
-        assert_eq!(target, approve.token.address().into_legacy());
+        assert_eq!(target, approve.token.into_legacy());
         assert_eq!(value, 0.into());
         assert_eq!(
             calldata.0,

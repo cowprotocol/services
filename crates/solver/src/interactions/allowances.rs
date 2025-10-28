@@ -116,16 +116,8 @@ pub struct Approval {
 
 impl Interaction for Approval {
     fn encode(&self) -> EncodedInteraction {
-        // Use a "dummy" contract - unfortunately `ethcontract` doesn't
-        // allow you use the generated contract intances to encode
-        // transaction data without a `Web3` instance. Hopefully, this
-        // limitation will be lifted soon to clean up stuff like this.
-        let token = contracts::alloy::ERC20::Instance::new(
-            self.token.into_alloy(),
-            ethrpc::mock::web3().alloy,
-        );
         let approve = Erc20ApproveInteraction {
-            token,
+            token: self.token.into_alloy(),
             spender: self.spender.into_alloy(),
             amount: alloy::primitives::U256::MAX,
         };
