@@ -806,7 +806,7 @@ mod tests {
             range: RangeInclusive<u64>,
         ) -> Result<()> {
             self.events
-                .retain(|event| event.1.block_number.unwrap() < *range.start());
+                .retain(|(_, log)| log.block_number.unwrap() < *range.start());
             self.append_events(events).await?;
             Ok(())
         }
@@ -820,7 +820,7 @@ mod tests {
             Ok(self
                 .events
                 .last()
-                .map(|event| event.1.block_number.unwrap())
+                .map(|(_, log)| log.block_number.unwrap())
                 .unwrap_or_default())
         }
 
@@ -1062,9 +1062,9 @@ mod tests {
             alloy::rpc::types::Log,
         )>| {
             v.into_iter()
-                .filter(|e| {
+                .filter(|(_, log)| {
                     // We make the test robust against reorgs by removing events that are too new
-                    e.1.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT).as_u64()
+                    log.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT).as_u64()
                 })
                 .collect::<Vec<_>>()
         };
