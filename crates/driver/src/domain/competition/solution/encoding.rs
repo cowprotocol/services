@@ -58,8 +58,8 @@ pub fn tx(
         .into_iter()
         .sorted_by_cached_key(|(token, _amount)| *token)
     {
-        tokens.push(token.into());
-        clearing_prices.push(amount);
+        tokens.push(token.0.0.into_alloy());
+        clearing_prices.push(amount.into_alloy());
     }
 
     // Encode trades with custom clearing prices
@@ -155,10 +155,10 @@ pub fn tx(
                 )
             }
         };
-        tokens.push(price.sell_token);
-        tokens.push(price.buy_token);
-        clearing_prices.push(price.sell_price);
-        clearing_prices.push(price.buy_price);
+        tokens.push(price.sell_token.into_alloy());
+        tokens.push(price.buy_token.into_alloy());
+        clearing_prices.push(price.sell_price.into_alloy());
+        clearing_prices.push(price.buy_price.into_alloy());
 
         trade.sell_token_index = (tokens.len() - 2).into();
         trade.buy_token_index = (tokens.len() - 1).into();
@@ -206,7 +206,7 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let tx = contracts
+    let mut settle_calldata = contracts
         .settlement()
         .settle(
             tokens,
@@ -218,15 +218,18 @@ pub fn tx(
                 post_interactions.iter().map(codec::interaction).collect(),
             ],
         )
-        .into_inner();
+        .calldata()
+        .to_vec();
 
     // Encode the auction id into the calldata
-    let mut settle_calldata = tx.data.unwrap().0;
     settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     // Target and calldata depend on whether a flashloan is used
     let (to, calldata) = if solution.flashloans.is_empty() {
-        (contracts.settlement().address().into(), settle_calldata)
+        (
+            contracts.settlement().address().into_legacy().into(),
+            settle_calldata,
+        )
     } else {
         let router = contracts
             .flashloan_router()
@@ -344,37 +347,26 @@ struct Flags {
 }
 
 pub mod codec {
-    use crate::domain::{competition::order, eth};
+    use {
+        crate::domain::{competition::order, eth},
+        contracts::alloy::GPv2Settlement,
+        ethrpc::alloy::conversions::IntoAlloy,
+    };
 
-    // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L16
-    type Trade = (
-        eth::U256,                    // sellTokenIndex
-        eth::U256,                    // buyTokenIndex
-        eth::H160,                    // receiver
-        eth::U256,                    // sellAmount
-        eth::U256,                    // buyAmount
-        u32,                          // validTo
-        ethcontract::Bytes<[u8; 32]>, // appData
-        eth::U256,                    // feeAmount
-        eth::U256,                    // flags
-        eth::U256,                    // executedAmount
-        ethcontract::Bytes<Vec<u8>>,  // signature
-    );
-
-    pub(super) fn trade(trade: &super::Trade) -> Trade {
-        (
-            trade.sell_token_index,
-            trade.buy_token_index,
-            trade.receiver,
-            trade.sell_amount,
-            trade.buy_amount,
-            trade.valid_to,
-            ethcontract::Bytes(trade.app_data.into()),
-            trade.fee_amount,
-            flags(&trade.flags),
-            trade.executed_amount,
-            ethcontract::Bytes(trade.signature.0.clone()),
-        )
+    pub(super) fn trade(trade: &super::Trade) -> GPv2Settlement::GPv2Trade::Data {
+        GPv2Settlement::GPv2Trade::Data {
+            sellTokenIndex: trade.sell_token_index.into_alloy(),
+            buyTokenIndex: trade.buy_token_index.into_alloy(),
+            receiver: trade.receiver.into_alloy(),
+            sellAmount: trade.sell_amount.into_alloy(),
+            buyAmount: trade.buy_amount.into_alloy(),
+            validTo: trade.valid_to,
+            appData: trade.app_data.0.into(),
+            feeAmount: trade.fee_amount.into_alloy(),
+            flags: flags(&trade.flags).into_alloy(),
+            executedAmount: trade.executed_amount.into_alloy(),
+            signature: trade.signature.0.clone().into(),
+        }
     }
 
     // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L58
@@ -408,19 +400,14 @@ pub mod codec {
         result.into()
     }
 
-    // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Interaction.sol#L9
-    type Interaction = (
-        eth::H160,                   // target
-        eth::U256,                   // value
-        ethcontract::Bytes<Vec<u8>>, // signature
-    );
-
-    pub(super) fn interaction(interaction: &eth::Interaction) -> Interaction {
-        (
-            interaction.target.0,
-            interaction.value.0,
-            ethcontract::Bytes(interaction.call_data.0.clone()),
-        )
+    pub(super) fn interaction(
+        interaction: &eth::Interaction,
+    ) -> GPv2Settlement::GPv2Interaction::Data {
+        GPv2Settlement::GPv2Interaction::Data {
+            target: interaction.target.0.into_alloy(),
+            value: interaction.value.0.into_alloy(),
+            callData: interaction.call_data.0.clone().into(),
+        }
     }
 
     pub fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
