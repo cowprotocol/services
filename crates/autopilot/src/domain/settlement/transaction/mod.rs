@@ -117,7 +117,7 @@ impl Transaction {
                     tokens,
                     clearingPrices: clearing_prices,
                     ..
-                } = GPv2Settlement::GPv2Settlement::settleCall::abi_decode(&data)?;
+                } = GPv2Settlement::GPv2Settlement::settleCall::abi_decode(data)?;
 
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
@@ -155,23 +155,19 @@ impl Transaction {
                         partially_fillable: flags.partially_fillable(),
                         signature: (boundary::Signature::from_bytes(
                             flags.signing_scheme(),
-                            &trade.signature.0.to_vec(),
+                            trade.signature.as_ref(),
                         )
                         .map_err(Error::SignatureRecover)?)
                         .into(),
                         executed: trade.executedAmount.into_legacy().into(),
                         prices: Prices {
                             uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index]
-                                    .into_legacy()
-                                    .into(),
-                                buy: clearing_prices[uniform_buy_token_index]
-                                    .into_legacy()
-                                    .into(),
+                                sell: clearing_prices[uniform_sell_token_index].into_legacy(),
+                                buy: clearing_prices[uniform_buy_token_index].into_legacy(),
                             },
                             custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index].into_legacy().into(),
-                                buy: clearing_prices[buy_token_index].into_legacy().into(),
+                                sell: clearing_prices[sell_token_index].into_legacy(),
+                                buy: clearing_prices[buy_token_index].into_legacy(),
                             },
                         },
                     })

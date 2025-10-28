@@ -5,26 +5,9 @@ use {
     },
     app_data::AppDataHash,
     contracts::alloy::GPv2Settlement,
-    ethcontract::{Address, Bytes, U256},
+    ethcontract::U256,
     ethrpc::alloy::conversions::IntoLegacy,
 };
-
-type Token = Address;
-type Trade = (
-    U256,            // sellTokenIndex
-    U256,            // buyTokenIndex
-    Address,         // receiver
-    U256,            // sellAmount
-    U256,            // buyAmount
-    u32,             // validTo
-    Bytes<[u8; 32]>, // appData
-    U256,            // feeAmount
-    U256,            // flags
-    U256,            // executedAmount
-    Bytes<Vec<u8>>,  // signature
-);
-type Interaction = (Address, U256, Bytes<Vec<u8>>);
-type Solution = (Vec<Address>, Vec<U256>, Vec<Trade>, [Vec<Interaction>; 3]);
 
 /// Recover order uid from order data and signature
 pub fn order_uid(
@@ -130,15 +113,5 @@ pub mod error {
         Signature(anyhow::Error),
         #[error("recover owner {0}")]
         RecoverOwner(anyhow::Error),
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Decoding {
-        #[error("transaction calldata is not a settlement")]
-        InvalidSelector,
-        #[error("unable to decode settlement calldata: {0}")]
-        Ethabi(web3::ethabi::Error),
-        #[error("unable to tokenize calldata into expected format: {0}")]
-        Tokenizing(ethcontract::tokens::Error),
     }
 }

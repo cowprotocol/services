@@ -460,9 +460,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         }
     };
     let settlement_event_indexer = EventUpdater::new(
-        boundary::events::settlement::GPv2SettlementContract::new(contracts::GPv2Settlement::at(
-            &web3.legacy,
-            eth.contracts().settlement().address().into_legacy(),
+        AlloyEventRetriever(boundary::events::settlement::GPv2SettlementContract::new(
+            web3.alloy.clone(),
+            *eth.contracts().settlement().address(),
         )),
         boundary::events::settlement::Indexer::new(
             db_write.clone(),
