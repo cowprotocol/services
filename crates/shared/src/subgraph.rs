@@ -140,14 +140,6 @@ impl SubgraphClient {
     pub fn max_pools_per_tick_query(&self) -> usize {
         self.max_pools_per_tick_query
     }
-
-    pub fn set_max_number_of_attmpts(&mut self, retries: usize) {
-        self.max_number_of_attempts = retries;
-    }
-
-    pub fn max_number_of_attempts(&self) -> usize {
-        self.max_number_of_attempts
-    }
 }
 
 /// A GraphQL query.
