@@ -10,7 +10,7 @@ use {
     web3::types::{Bytes, H160},
 };
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait CodeFetching: Send + Sync + 'static {
     /// Fetches the code for the specified address.

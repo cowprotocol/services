@@ -1,24 +1,36 @@
 //! Module continaing ERC20 token interaction implementations.
 
 use {
-    contracts::ERC20,
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
+    contracts::alloy::ERC20,
     ethcontract::Bytes,
-    primitive_types::{H160, U256},
+    ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
 #[derive(Debug)]
 pub struct Erc20ApproveInteraction {
-    pub token: ERC20,
-    pub spender: H160,
+    pub token: Address,
+    pub spender: Address,
     pub amount: U256,
 }
 
 impl Erc20ApproveInteraction {
     pub fn as_encoded(&self) -> EncodedInteraction {
-        let method = self.token.approve(self.spender, self.amount);
-        let calldata = method.tx.data.expect("no calldata").0;
-        (self.token.address(), 0.into(), Bytes(calldata))
+        (
+            self.token.into_legacy(),
+            0.into(),
+            Bytes(
+                ERC20::ERC20::approveCall {
+                    spender: self.spender,
+                    amount: self.amount,
+                }
+                .abi_encode(),
+            ),
+        )
     }
 }
 
@@ -30,18 +42,18 @@ impl Interaction for Erc20ApproveInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::dummy_contract, hex_literal::hex};
+    use {super::*, ethrpc::alloy::conversions::IntoLegacy, hex_literal::hex};
 
     #[test]
     fn encode_erc20_approve() {
         let approve = Erc20ApproveInteraction {
-            token: dummy_contract!(ERC20, [0x01; 20]),
-            spender: H160([0x02; 20]),
-            amount: U256::from_big_endian(&[0x03; 32]),
+            token: [0x01; 20].into(),
+            spender: [0x02; 20].into(),
+            amount: U256::from_be_bytes([0x03; 32]),
         };
 
         let (target, value, calldata) = approve.as_encoded();
-        assert_eq!(target, approve.token.address());
+        assert_eq!(target, approve.token.into_legacy());
         assert_eq!(value, 0.into());
         assert_eq!(
             calldata.0,

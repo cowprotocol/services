@@ -3,10 +3,7 @@ use {
         primitives::{Address, U256},
         sol_types::SolCall,
     },
-    contracts::{
-        GPv2Settlement,
-        alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
-    },
+    contracts::alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
     ethcontract::{Bytes, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::{
@@ -18,7 +15,7 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct BalancerSwapGivenOutInteraction {
-    pub settlement: GPv2Settlement,
+    pub settlement: Address,
     pub vault: Address,
     pub pool_id: H256,
     pub asset_in_max: TokenAmount,
@@ -42,9 +39,9 @@ impl BalancerSwapGivenOutInteraction {
             userData: self.user_data.clone().into_alloy(),
         };
         let funds = IVault::FundManagement {
-            sender: self.settlement.address().into_alloy(),
+            sender: self.settlement,
             fromInternalBalance: false,
-            recipient: self.settlement.address().into_alloy(),
+            recipient: self.settlement,
             toInternalBalance: false,
         };
 
@@ -68,13 +65,13 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::dummy_contract, primitive_types::H160};
+    use {super::*, primitive_types::H160};
 
     #[test]
     fn encode_unwrap_weth() {
         let vault_address = [0x01; 20].into();
         let interaction = BalancerSwapGivenOutInteraction {
-            settlement: dummy_contract!(GPv2Settlement, [0x02; 20]),
+            settlement: Address::from_slice(&[0x02; 20]),
             vault: vault_address,
             pool_id: H256([0x03; 32]),
             asset_in_max: TokenAmount::new(H160([0x04; 20]), 1_337_000_000_000_000_000_000u128),

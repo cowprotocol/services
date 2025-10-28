@@ -421,7 +421,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver_a.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_a.address().into_legacy()],
                 2,
                 false,
@@ -430,7 +430,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver_b.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_b.address().into_legacy()],
                 2,
                 false,
@@ -640,7 +640,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver,
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -660,7 +660,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -678,7 +678,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -722,7 +722,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver,
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -742,7 +742,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: token.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(5)).unwrap(),
@@ -756,7 +756,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: quote.quote.sell_amount,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4)),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -773,7 +773,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -792,7 +792,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: quote.quote.sell_amount,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2)),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -809,7 +809,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -1085,7 +1085,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let mut order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -1115,7 +1115,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let balance_before = onchain
         .contracts()
         .weth
-        .balance_of(trader_a.address())
+        .balanceOf(trader_a.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -1153,15 +1153,15 @@ async fn no_liquidity_limit_order(web3: Web3) {
             max_volume_factor: 0.01
         }
     );
-    assert_eq!(fee.token, onchain.contracts().weth.address());
+    assert_eq!(fee.token, onchain.contracts().weth.address().into_legacy());
     assert!(fee.amount > 0.into());
 
     let balance_after = onchain
         .contracts()
         .weth
-        .balance_of(trader_a.address())
+        .balanceOf(trader_a.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= eth(5));
 }

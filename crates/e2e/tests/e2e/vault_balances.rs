@@ -60,7 +60,7 @@ async fn vault_balances(web3: Web3) {
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(10),
         sell_token_balance: SellTokenSource::External,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(8),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
@@ -75,7 +75,7 @@ async fn vault_balances(web3: Web3) {
     let balance_before = onchain
         .contracts()
         .weth
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -92,12 +92,12 @@ async fn vault_balances(web3: Web3) {
         let weth_balance_after = onchain
             .contracts()
             .weth
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
 
-        token_balance.is_zero() && weth_balance_after.saturating_sub(balance_before) >= to_wei(8)
+        token_balance.is_zero() && weth_balance_after.saturating_sub(balance_before) >= eth(8)
     })
     .await
     .unwrap();
