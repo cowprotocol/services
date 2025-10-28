@@ -772,7 +772,6 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
-        alloy::rpc::types::FilterSet,
         contracts::alloy::{GPv2Settlement, InstanceExt},
         ethcontract::{BlockNumber, H256},
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
@@ -783,7 +782,7 @@ mod tests {
         type Event = GPv2Settlement::GPv2Settlement::GPv2SettlementEvents;
 
         fn filter(&self) -> alloy::rpc::types::Filter {
-            Filter::new().event_signature(FilterSet::from_iter([]))
+            Filter::new().address(*self.address())
         }
 
         fn provider(&self) -> &contracts::alloy::Provider {
