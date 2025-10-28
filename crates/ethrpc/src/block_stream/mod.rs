@@ -1,8 +1,5 @@
 use {
-    crate::{
-        AlloyProvider,
-        alloy::{ProviderLabelingExt, conversions::IntoAlloy, conversions::IntoLegacy},
-    },
+    crate::{AlloyProvider, alloy::conversions::IntoLegacy},
     alloy::{
         eips::{BlockId, BlockNumberOrTag},
         providers::{Provider, ProviderBuilder},
@@ -148,8 +145,7 @@ pub async fn current_block_stream(ws_url: Url) -> Result<CurrentBlockWatcher> {
     let provider = ProviderBuilder::new()
         .connect_ws(ws_connect)
         .await
-        .context("failed to connect to websocket")?
-        .labeled("base_currentBlockStream".into());
+        .context("failed to connect to websocket")?;
 
     let mut stream = provider
         .subscribe_blocks()

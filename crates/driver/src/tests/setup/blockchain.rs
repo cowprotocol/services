@@ -952,7 +952,11 @@ impl Node {
 
         let ws_url = url.replace("http://", "ws://");
 
-        Self { process, url, ws_url }
+        Self {
+            process,
+            url,
+            ws_url,
+        }
     }
 
     fn url(&self) -> String {
