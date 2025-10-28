@@ -281,7 +281,7 @@ impl Display for Arguments {
 }
 
 /// Initializes a set of token owner finders.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn init(
     args: &Arguments,
     web3: Web3,

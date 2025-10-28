@@ -444,7 +444,7 @@ impl From<&solvers_dto::solution::Flashloan> for Flashloan {
     }
 }
 
-#[allow(clippy::from_over_into)]
+#[expect(clippy::from_over_into)]
 impl Into<FlashloanHint> for &Flashloan {
     fn into(self) -> FlashloanHint {
         FlashloanHint {

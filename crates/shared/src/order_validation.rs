@@ -287,7 +287,7 @@ pub struct OrderAppData {
 }
 
 impl OrderValidator {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         native_token: WETH9,
         banned_users: Arc<order_validation::banned::Users>,

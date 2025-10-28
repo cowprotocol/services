@@ -1,10 +1,7 @@
 use {
     super::{Asset, Order, Partial},
     crate::{
-        domain::{
-            competition::order,
-            eth::{self, ContractAddress},
-        },
+        domain::{competition::order, eth},
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
@@ -42,7 +39,6 @@ pub struct Pair {
     pool: Pool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Blockchain {
     pub trader_secret_key: SecretKey,
@@ -54,8 +50,12 @@ pub struct Blockchain {
     pub balances: Balances::Instance,
     pub signatures: Signatures::Instance,
     pub flashloan_router: FlashLoanRouter::Instance,
-    pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
+    #[allow(
+        dead_code,
+        reason = "we need to keep the node alive to run the `Drop` implementation at the \
+                  appropriate time"
+    )]
     pub node: Node,
     pub pairs: Vec<Pair>,
 }
@@ -655,7 +655,6 @@ impl Blockchain {
             signatures,
             domain_separator,
             weth,
-            ethflow: None,
             web3,
             web3_url: node.url(),
             node,

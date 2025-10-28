@@ -2,7 +2,7 @@
 //! during a test.
 
 use {
-    database::{Address, TransactionHash, byte_array::ByteArray, order_events},
+    database::{Address, byte_array::ByteArray, order_events},
     e2e::setup::Db,
     model::order::OrderUid,
     sqlx::PgConnection,
@@ -31,14 +31,9 @@ pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value
         .unwrap()
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuctionTransaction {
-    pub tx_hash: TransactionHash,
-    pub block_number: i64,
     pub solver: Address,
-    // index of the `Settlement` event
-    pub log_index: i64,
     pub solution_uid: i64,
 }
 
