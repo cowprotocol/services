@@ -4,7 +4,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     futures::future,
     model::TokenPair,
     shared::{
@@ -103,7 +103,7 @@ impl Fetcher {
         .await?;
 
         let base_tokens = BaseTokens::new(
-            eth.contracts().weth().address(),
+            eth.contracts().weth().address().into_legacy(),
             &config
                 .base_tokens
                 .iter()

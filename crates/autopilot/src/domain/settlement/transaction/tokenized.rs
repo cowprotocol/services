@@ -4,79 +4,35 @@ use {
         domain::{self, auction::order, eth},
     },
     app_data::AppDataHash,
-    ethcontract::{Address, Bytes, U256, common::FunctionExt, tokens::Tokenize},
+    contracts::alloy::GPv2Settlement,
+    ethcontract::U256,
+    ethrpc::alloy::conversions::IntoLegacy,
 };
-
-// Original type for input of `GPv2Settlement.settle` function.
-pub(super) struct Tokenized {
-    pub tokens: Vec<Address>,
-    pub clearing_prices: Vec<eth::TokenAmount>,
-    pub trades: Vec<Trade>,
-    pub interactions: [Vec<Interaction>; 3],
-}
-
-impl Tokenized {
-    pub fn try_new(calldata: &eth::Calldata) -> Result<Self, error::Decoding> {
-        let function = contracts::GPv2Settlement::raw_contract()
-            .interface
-            .abi
-            .function("settle")
-            .unwrap();
-        let data = calldata
-            .0
-            .strip_prefix(&function.selector())
-            .ok_or(error::Decoding::InvalidSelector)?;
-        let tokenized = function
-            .decode_input(data)
-            .map_err(error::Decoding::Ethabi)?;
-        let (tokens, clearing_prices, trades, interactions) =
-            <Solution>::from_token(web3::ethabi::Token::Tuple(tokenized))
-                .map_err(error::Decoding::Tokenizing)?;
-        Ok(Self {
-            tokens,
-            clearing_prices: clearing_prices.into_iter().map(Into::into).collect(),
-            trades,
-            interactions,
-        })
-    }
-}
-
-type Token = Address;
-type Trade = (
-    U256,            // sellTokenIndex
-    U256,            // buyTokenIndex
-    Address,         // receiver
-    U256,            // sellAmount
-    U256,            // buyAmount
-    u32,             // validTo
-    Bytes<[u8; 32]>, // appData
-    U256,            // feeAmount
-    U256,            // flags
-    U256,            // executedAmount
-    Bytes<Vec<u8>>,  // signature
-);
-type Interaction = (Address, U256, Bytes<Vec<u8>>);
-type Solution = (Vec<Address>, Vec<U256>, Vec<Trade>, [Vec<Interaction>; 3]);
 
 /// Recover order uid from order data and signature
 pub fn order_uid(
-    trade: &Trade,
-    tokens: &[Token],
+    trade: &GPv2Settlement::GPv2Trade::Data,
+    tokens: &[alloy::primitives::Address],
     domain_separator: &eth::DomainSeparator,
 ) -> Result<domain::OrderUid, error::Uid> {
-    let flags = TradeFlags(trade.8);
-    let signature = crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10.0)
-        .map_err(error::Uid::Signature)?;
+    let flags = TradeFlags(trade.flags.into_legacy());
+    let signature =
+        crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.signature.0)
+            .map_err(error::Uid::Signature)?;
 
     let order = model::order::OrderData {
-        sell_token: tokens[trade.0.as_u64() as usize],
-        buy_token: tokens[trade.1.as_u64() as usize],
-        receiver: Some(trade.2),
-        sell_amount: trade.3,
-        buy_amount: trade.4,
-        valid_to: trade.5,
-        app_data: AppDataHash(trade.6.0),
-        fee_amount: trade.7,
+        sell_token: tokens
+            [usize::try_from(trade.sellTokenIndex).expect("SC was able to look up this index")]
+        .into_legacy(),
+        buy_token: tokens
+            [usize::try_from(trade.buyTokenIndex).expect("SC was able to look up this index")]
+        .into_legacy(),
+        receiver: Some(trade.receiver.into_legacy()),
+        sell_amount: trade.sellAmount.into_legacy(),
+        buy_amount: trade.buyAmount.into_legacy(),
+        valid_to: trade.validTo,
+        app_data: AppDataHash(trade.appData.0),
+        fee_amount: trade.feeAmount.into_legacy(),
         kind: match flags.side() {
             domain::auction::order::Side::Buy => model::order::OrderKind::Buy,
             domain::auction::order::Side::Sell => model::order::OrderKind::Sell,
@@ -87,7 +43,7 @@ pub fn order_uid(
     };
     let domain_separator = crate::boundary::DomainSeparator(domain_separator.0);
     let owner = signature
-        .recover_owner(&trade.10.0, &domain_separator, &order.hash_struct())
+        .recover_owner(&trade.signature.0, &domain_separator, &order.hash_struct())
         .map_err(error::Uid::RecoverOwner)?;
     Ok(order.uid(&domain_separator, &owner).into())
 }
@@ -157,15 +113,5 @@ pub mod error {
         Signature(anyhow::Error),
         #[error("recover owner {0}")]
         RecoverOwner(anyhow::Error),
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Decoding {
-        #[error("transaction calldata is not a settlement")]
-        InvalidSelector,
-        #[error("unable to decode settlement calldata: {0}")]
-        Ethabi(web3::ethabi::Error),
-        #[error("unable to tokenize calldata into expected format: {0}")]
-        Tokenizing(ethcontract::tokens::Error),
     }
 }

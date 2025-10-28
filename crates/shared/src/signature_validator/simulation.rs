@@ -13,11 +13,12 @@ use {
         transports::RpcError,
     },
     anyhow::{Context, Result},
-    contracts::{
-        alloy::{ERC1271SignatureValidator::ERC1271SignatureValidator, support::Signatures},
-        errors::EthcontractErrorType,
+    contracts::alloy::{
+        ERC1271SignatureValidator::ERC1271SignatureValidator,
+        GPv2Settlement,
+        support::Signatures,
     },
-    ethcontract::{Bytes, state_overrides::StateOverrides},
+    ethcontract::state_overrides::StateOverrides,
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -29,7 +30,7 @@ use {
 
 pub struct Validator {
     signatures_address: Address,
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     vault_relayer: Address,
     web3: Web3,
     balance_overrider: Arc<dyn BalanceOverriding>,
@@ -41,7 +42,7 @@ impl Validator {
 
     pub fn new(
         web3: &Web3,
-        settlement: contracts::GPv2Settlement,
+        settlement: GPv2Settlement::Instance,
         signatures_address: Address,
         vault_relayer: Address,
         balance_overrider: Arc<dyn BalanceOverriding>,
@@ -114,7 +115,7 @@ impl Validator {
         //    a settlement
         let validate_call = Signatures::Signatures::validateCall {
             contracts: Signatures::Signatures::Contracts {
-                settlement: self.settlement.address().into_alloy(),
+                settlement: *self.settlement.address(),
                 vaultRelayer: self.vault_relayer,
             },
             signer: check.signer.into_alloy(),
@@ -132,26 +133,23 @@ impl Validator {
         };
         let simulation = self
             .settlement
-            .simulate_delegatecall(
-                self.signatures_address.into_legacy(),
-                Bytes(validate_call.abi_encode()),
-            )
-            .from(crate::SIMULATION_ACCOUNT.clone());
+            .simulateDelegatecall(self.signatures_address, validate_call.abi_encode().into())
+            .state(overrides.clone().into_alloy())
+            .from(crate::SIMULATION_ACCOUNT.address().into_alloy());
 
-        let result = simulation
-            .clone()
-            .call_with_state_overrides(&overrides)
-            .await;
+        let result = simulation.clone().call().await;
 
-        let response_bytes = result.inspect_err(|err| {
-            tracing::debug!(
-                ?simulation,
-                ?check,
-                ?overrides,
-                ?err,
-                "signature verification failed"
-            )
-        })?;
+        let response_bytes = result
+            .inspect_err(|err| {
+                tracing::debug!(
+                    ?simulation,
+                    ?check,
+                    ?overrides,
+                    ?err,
+                    "signature verification failed"
+                )
+            })
+            .map_err(|_| SignatureValidationError::Invalid)?;
 
         let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
             .with_context(|| {
@@ -197,13 +195,4 @@ impl SignatureValidating for Validator {
 #[derive(Debug)]
 struct Simulation {
     gas_used: U256,
-}
-
-impl From<ethcontract::errors::MethodError> for SignatureValidationError {
-    fn from(err: ethcontract::errors::MethodError) -> Self {
-        match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Contract => Self::Invalid,
-            _ => Self::Other(err.into()),
-        }
-    }
 }

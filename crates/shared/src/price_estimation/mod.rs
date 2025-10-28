@@ -558,7 +558,7 @@ impl Estimate {
 
 pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait PriceEstimating: Send + Sync + 'static {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
 }

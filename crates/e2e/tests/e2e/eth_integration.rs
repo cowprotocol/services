@@ -83,7 +83,10 @@ async fn eth_integration(web3: Web3) {
     assert_eq!(status, 400, "{body}");
 
     // Place Orders
-    assert_ne!(onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
+    assert_ne!(
+        onchain.contracts().weth.address().into_legacy(),
+        BUY_ETH_ADDRESS
+    );
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
         sell_token: token.address().into_legacy(),

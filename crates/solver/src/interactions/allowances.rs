@@ -5,9 +5,9 @@
 use {
     crate::interactions::Erc20ApproveInteraction,
     anyhow::{Context as _, Result, anyhow, ensure},
-    contracts::{ERC20, dummy_contract},
+    contracts::ERC20,
     ethcontract::{H160, U256},
-    ethrpc::Web3,
+    ethrpc::{Web3, alloy::conversions::IntoAlloy},
     maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
@@ -116,15 +116,10 @@ pub struct Approval {
 
 impl Interaction for Approval {
     fn encode(&self) -> EncodedInteraction {
-        // Use a "dummy" contract - unfortunately `ethcontract` doesn't
-        // allow you use the generated contract intances to encode
-        // transaction data without a `Web3` instance. Hopefully, this
-        // limitation will be lifted soon to clean up stuff like this.
-        let token = dummy_contract!(ERC20, self.token);
         let approve = Erc20ApproveInteraction {
-            token,
-            spender: self.spender,
-            amount: U256::max_value(),
+            token: self.token.into_alloy(),
+            spender: self.spender.into_alloy(),
+            amount: alloy::primitives::U256::MAX,
         };
 
         approve.encode()
@@ -243,6 +238,7 @@ where
 mod tests {
     use {
         super::*,
+        alloy::sol_types::SolCall,
         ethcontract::{
             Bytes,
             common::abi::{self, Token},
@@ -386,8 +382,12 @@ mod tests {
     }
 
     fn allowance_call_data(owner: H160, spender: H160) -> web3::types::Bytes {
-        let token = dummy_contract!(ERC20, H160::zero());
-        token.allowance(owner, spender).m.tx.data.unwrap()
+        contracts::alloy::ERC20::ERC20::allowanceCall {
+            owner: owner.into_alloy(),
+            spender: spender.into_alloy(),
+        }
+        .abi_encode()
+        .into()
     }
 
     fn allowance_return_data(value: U256) -> Value {

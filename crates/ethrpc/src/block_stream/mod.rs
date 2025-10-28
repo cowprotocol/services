@@ -1,10 +1,12 @@
 use {
     crate::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        AlloyProvider,
+        alloy::{ProviderLabelingExt, conversions::IntoAlloy, conversions::IntoLegacy},
     },
     alloy::{
+        eips::{BlockId, BlockNumberOrTag},
         providers::{Provider, ProviderBuilder},
+        rpc::types::Block,
         transports::ws::WsConnect,
     },
     anyhow::{Context as _, Result, anyhow, ensure},
@@ -19,7 +21,6 @@ use {
     tokio_stream::wrappers::WatchStream,
     tracing::{Instrument, instrument},
     url::Url,
-    web3::types::{Block, BlockId, BlockNumber, U64},
 };
 
 pub type BlockNumberHash = (u64, H256);
@@ -87,10 +88,10 @@ impl PartialEq<Self> for BlockInfo {
     }
 }
 
-impl TryFrom<alloy::rpc::types::Block> for BlockInfo {
+impl TryFrom<Block> for BlockInfo {
     type Error = anyhow::Error;
 
-    fn try_from(value: alloy::rpc::types::Block) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: Block) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             number: value.header.number,
             hash: value.header.hash.into_legacy(),
@@ -147,7 +148,8 @@ pub async fn current_block_stream(ws_url: Url) -> Result<CurrentBlockWatcher> {
     let provider = ProviderBuilder::new()
         .connect_ws(ws_connect)
         .await
-        .context("failed to connect to websocket")?;
+        .context("failed to connect to websocket")?
+        .labeled("base_currentBlockStream".into());
 
     let mut stream = provider
         .subscribe_blocks()
@@ -285,15 +287,13 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 }
 
 #[async_trait::async_trait]
-impl BlockRetrieving for crate::Web3 {
+impl BlockRetrieving for AlloyProvider {
     async fn current_block(&self) -> Result<BlockInfo> {
-        get_block_at_id(self, BlockNumber::Latest.into())
-            .await?
-            .try_into()
+        get_block_at_id(self, BlockId::latest()).await?.try_into()
     }
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
-        let block = get_block_at_id(self, U64::from(number).into()).await?;
+        let block = get_block_at_id(self, BlockId::number(number)).await?;
         Ok((block.header.number, block.header.hash.into_legacy()))
     }
 
@@ -303,13 +303,12 @@ impl BlockRetrieving for crate::Web3 {
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let (start, end) = range.clone().into_inner();
 
-        let alloy = self.alloy.clone();
         let block_futures: Vec<_> = (start..=end)
             .map(|block_num| {
-                let block_id = alloy::eips::BlockNumberOrTag::Number(block_num).into();
-                let alloy = alloy.clone();
+                let block_id = BlockNumberOrTag::Number(block_num).into();
+                let provider = self.clone();
                 async move {
-                    alloy
+                    provider
                         .get_block(block_id)
                         .await
                         .with_context(|| format!("failed to fetch block {block_num}"))
@@ -346,11 +345,9 @@ impl BlockRetrieving for crate::Web3 {
     }
 }
 
-async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<alloy::rpc::types::Block> {
-    let block_id: alloy::eips::BlockId = id.into_alloy();
-    let block = web3
-        .alloy
-        .get_block(block_id)
+async fn get_block_at_id(provider: &AlloyProvider, id: BlockId) -> Result<Block> {
+    let block = provider
+        .get_block(id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
         .with_context(|| format!("no block for {id:?}"))?;
@@ -358,43 +355,36 @@ async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<alloy::rpc::types::
     Ok(block)
 }
 
-pub async fn timestamp_of_block_in_seconds(web3: &Web3, block_number: BlockNumber) -> Result<u32> {
-    Ok(web3
-        .eth()
-        .block(block_number.into())
-        .await
-        .context("failed to get latest block")?
-        .context("block should exist")?
-        .timestamp
-        .as_u32())
+pub async fn timestamp_of_block_in_seconds(
+    provider: &AlloyProvider,
+    block_number: BlockNumberOrTag,
+) -> Result<u32> {
+    u32::try_from(
+        provider
+            .get_block_by_number(block_number)
+            .await
+            .with_context(|| format!("failed to get block {block_number:?}"))?
+            .with_context(|| format!("no block for {block_number:?}"))?
+            .header
+            .timestamp,
+    )
+    .with_context(|| format!("block {block_number:?} timestamp is not u32"))
 }
 
-pub async fn timestamp_of_current_block_in_seconds(web3: &Web3) -> Result<u32> {
-    timestamp_of_block_in_seconds(web3, BlockNumber::Latest).await
+pub async fn timestamp_of_current_block_in_seconds(provider: &AlloyProvider) -> Result<u32> {
+    timestamp_of_block_in_seconds(provider, BlockNumberOrTag::Latest).await
 }
 
 #[instrument(skip_all)]
 pub async fn block_number_to_block_number_hash(
-    web3: &Web3,
-    block_number: BlockNumber,
+    provider: &AlloyProvider,
+    block_number: BlockNumberOrTag,
 ) -> Result<BlockNumberHash> {
-    let block = web3
-        .eth()
-        .block(BlockId::Number(block_number))
+    let block = provider
+        .get_block_by_number(block_number)
         .await?
         .context("block should exists")?;
-    Ok((
-        block.number.expect("number must exist").as_u64(),
-        block.hash.expect("hash must exist"),
-    ))
-}
-
-pub async fn block_by_number(web3: &Web3, block_number: BlockNumber) -> Option<Block<H256>> {
-    web3.eth()
-        .block(BlockId::Number(block_number))
-        .await
-        .ok()
-        .flatten()
+    Ok((block.header.number, block.header.hash.into_legacy()))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -444,6 +434,7 @@ pub async fn next_block(current_block: &CurrentBlockWatcher) -> BlockInfo {
 mod tests {
     use {
         super::*,
+        crate::Web3,
         futures::StreamExt,
         tokio::time::{Duration, timeout},
     };
@@ -476,13 +467,13 @@ mod tests {
 
         // single block
         let range = RangeInclusive::try_new(5, 5).unwrap();
-        let blocks = web3.blocks(range).await.unwrap();
+        let blocks = web3.alloy.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks.last().unwrap().0, 5);
 
         // multiple blocks
         let range = RangeInclusive::try_new(5, 8).unwrap();
-        let blocks = web3.blocks(range).await.unwrap();
+        let blocks = web3.alloy.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 4);
         assert_eq!(blocks.last().unwrap().0, 8);
         assert_eq!(blocks.first().unwrap().0, 5);
@@ -495,7 +486,7 @@ mod tests {
             current_block_number,
         )
         .unwrap();
-        let blocks = web3.blocks(range).await.unwrap();
+        let blocks = web3.alloy.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);

@@ -40,7 +40,7 @@ async fn refunder_tx(web3: Web3) {
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
         from: ethflow_contract.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -58,7 +58,10 @@ async fn refunder_tx(web3: Web3) {
     let quote_response = services.submit_quote(&quote).await.unwrap();
 
     let validity_duration = 600;
-    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + validity_duration;
     // Accounting for slippage is necessary for the order to be picked up by the
     // refunder
     let ethflow_order =
@@ -69,7 +72,7 @@ async fn refunder_tx(web3: Web3) {
 
     let quote = OrderQuoteRequest {
         from: ethflow_contract_2.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token,
         receiver,
         validity: Validity::For(3600),

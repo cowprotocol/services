@@ -5,10 +5,7 @@ use {
     },
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-    contracts::{
-        WETH9,
-        alloy::{CoWSwapEthFlow, ERC20Mintable},
-    },
+    contracts::alloy::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,
     e2e::{
         nodes::local_node::TestNodeApi,
@@ -172,7 +169,9 @@ async fn eth_flow_tx(web3: Web3) {
     let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
@@ -226,9 +225,9 @@ async fn eth_flow_tx(web3: Web3) {
     // Pre and post interactions provided in the appdata got executed.
     // Note that the allowance was set for the trampoline contract
     // which proofs that the interactions were correctly sandboxed.
-    let trampoline = onchain.contracts().hooks.address();
+    let trampoline = *onchain.contracts().hooks.address();
     let allowance = dai
-        .allowance(*trampoline, trader.address().into_alloy())
+        .allowance(trampoline, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -237,17 +236,17 @@ async fn eth_flow_tx(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(trampoline.into_legacy(), trader.address())
+        .allowance(trampoline, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, to_wei(10));
+    assert_eq!(allowance, eth(10));
 
     // Just to be super sure we assert that we indeed were not
     // able to set an allowance on behalf of the settlement contract.
     let settlement = onchain.contracts().gp_settlement.address();
     let allowance = dai
-        .allowance(settlement.into_alloy(), trader.address().into_alloy())
+        .allowance(*settlement, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -256,11 +255,11 @@ async fn eth_flow_tx(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(settlement, trader.address())
+        .allowance(*settlement, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, 0.into());
+    assert_eq!(allowance, alloy::primitives::U256::ZERO);
 }
 
 async fn eth_flow_without_quote(web3: Web3) {
@@ -278,7 +277,9 @@ async fn eth_flow_without_quote(web3: Web3) {
     services.start_protocol(solver).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
         buy_token: dai.address().into_legacy(),
@@ -327,7 +328,10 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.
-    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
             &services,
@@ -364,7 +368,9 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 60;
     let ethflow_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
@@ -588,7 +594,10 @@ async fn test_trade_query(
 
     // Expected values from actual EIP1271 order instead of eth-flow order
     assert_eq!(response[0].owner, ethflow_contract.address().into_legacy());
-    assert_eq!(response[0].sell_token, contracts.weth.address());
+    assert_eq!(
+        response[0].sell_token,
+        contracts.weth.address().into_legacy()
+    );
 }
 
 async fn test_order_parameters(
@@ -604,7 +613,10 @@ async fn test_order_parameters(
         response.metadata.owner,
         ethflow_contract.address().into_legacy()
     );
-    assert_eq!(response.data.sell_token, contracts.weth.address());
+    assert_eq!(
+        response.data.sell_token,
+        contracts.weth.address().into_legacy()
+    );
 
     // Specific parameters return the missing values
     assert_eq!(
@@ -659,13 +671,13 @@ impl ExtendedEthFlowOrder {
     fn to_cow_swap_order(
         &self,
         ethflow_contract: &CoWSwapEthFlow::Instance,
-        weth: &WETH9,
+        weth: &WETH9::Instance,
     ) -> Order {
         // Each ethflow user order has an order that is representing
         // it as EIP1271 order with a different owner and valid_to
         OrderBuilder::default()
             .with_kind(OrderKind::Sell)
-            .with_sell_token(weth.address())
+            .with_sell_token(weth.address().into_legacy())
             .with_sell_amount(self.0.sell_amount)
             .with_fee_amount(self.0.fee_amount)
             .with_receiver(Some(self.0.receiver))
@@ -771,7 +783,7 @@ impl ExtendedEthFlowOrder {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("Couldn't query domain separator")
@@ -794,7 +806,7 @@ impl ExtendedEthFlowOrder {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("Couldn't query domain separator")
@@ -831,11 +843,11 @@ pub struct EthFlowTradeIntent {
 
 impl EthFlowTradeIntent {
     // How a user trade intent is converted into a quote request by the frontend
-    pub fn to_quote_request(&self, from: H160, weth: &WETH9) -> OrderQuoteRequest {
+    pub fn to_quote_request(&self, from: H160, weth: &WETH9::Instance) -> OrderQuoteRequest {
         OrderQuoteRequest {
             from,
             // Even if the user sells ETH, we request a quote for WETH
-            sell_token: weth.address(),
+            sell_token: weth.address().into_legacy(),
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
             validity: Validity::For(3600),
@@ -873,7 +885,9 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
     let place_order = async |trader: TestAccount, buy_amount: u64| {
         let valid_to = chrono::offset::Utc::now().timestamp() as u32
-            + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+            + timestamp_of_current_block_in_seconds(&web3.alloy)
+                .await
+                .unwrap()
             + 3600;
         let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
             buy_token: dai.address().into_legacy(),

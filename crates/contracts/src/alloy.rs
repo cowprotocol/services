@@ -106,7 +106,7 @@ crate::bindings!(
         // <https://optimistic.etherscan.io/tx/0xad915050179db368e43703f3ee1ec55ff5e5e5e0268c15f8839c9f360caf7b0b>
         OPTIMISM => (address!("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"), 82737545),
         // <https://polygonscan.com/tx/0x65e6b13231c2c5656357005a9e419ad6697178ae74eda1ea7522ecdafcf77136>
-        OPTIMISM => (address!("0xFc8a407Bba312ac761D8BFe04CE1201904842B76"), 40611103),
+        POLYGON => (address!("0xFc8a407Bba312ac761D8BFe04CE1201904842B76"), 40611103),
         // <https://bscscan.com/tx/0xc7fada60761e3240332c4cbd169633f1828b2a15de23f0148db9d121afebbb4b>
         BNB => (address!("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"), 26665331),
         // Not available on Base and Lens
@@ -670,7 +670,77 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(
+    GPv2Settlement,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xf49f90aa5a268c40001d1227b76bb4dd8247f18361fcad9fffd4a7a44f1320d3>
+        MAINNET => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 12593265),
+        // <https://blockscout.com/xdai/mainnet/tx/0x9ddc538f89cd8433f4a19bc4de0de27e7c68a1d04a14b327185e4bba9af87133>
+        GNOSIS => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 16465100),
+        // <https://sepolia.etherscan.io/tx/0x6bba22a00ffcff6bca79aced546e18d2a5a4f4e484a4e4dbafab13daf42f718d>
+        SEPOLIA => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 4717488),
+        // <https://arbiscan.io/tx/0x240486f35ebf42ea69b2b3f1569d587c18c87f98c0ec997bef7d18182ca4c38c>
+        ARBITRUM_ONE => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 204704802),
+        // <https://basescan.org/tx/0x00a3c4e2dc4241465208beeba27e90a9ce3159ad4f41581c4c3a1ef02d6e37cb>
+        BASE => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 21407238),
+        // <https://snowscan.xyz/tx/0x374b84f0ea6bc554abc3ffdc3fbce4374fefc76f2bd25e324ce95a62cafcc142>
+        AVALANCHE => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 59891356),
+        // <https://bscscan.com/tx/0x9e0c16a655ceadcb95ba2de3bf59d2b3a3d10cce7bdf52aa5520164b58ffd969>
+        BNB => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 48173641),
+        // <https://optimistic.etherscan.io/tx/0xd1bbd68ee6b0eecf6f883e148284fc4fb4c960299b75004dfddd5135246cd5eb>
+        OPTIMISM => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 134254624),
+        // <https://polygonscan.com/tx/0x0e24d3a2a8530eaad5ae62e54e64d57665a77ce3970227d20c1b77da315cbbf6>
+        POLYGON => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 45859743),
+        // <https://explorer.lens.xyz/tx/0x01584b767dda7b115394b93dbcfecadfe589862ae3f7957846a2db82f2f5c703>
+        LENS => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 2621745),
+    }
+);
+
+crate::bindings!(
+    WETH9,
+    crate::deployments! {
+        // Note: the WETH address must be consistent with the one used by the ETH-flow
+        // contract
+        MAINNET => address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+        GNOSIS => address!("0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
+        SEPOLIA => address!("0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"),
+        ARBITRUM_ONE => address!("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+        BASE => address!("0x4200000000000000000000000000000000000006"),
+        AVALANCHE => address!("0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7"),
+        BNB => address!("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"),
+        OPTIMISM => address!("0x4200000000000000000000000000000000000006"),
+        POLYGON => address!("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"),
+        LENS => address!("0x6bDc36E20D267Ff0dd6097799f82e78907105e2F"),
+        LINEA => address!("0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f"),
+        PLASMA => address!("0x6100E367285b01F48D07953803A2d8dCA5D19873"),
+    }
+);
+
+crate::bindings!(ERC20);
+
 pub mod cow_amm {
+    crate::bindings!(CowAmm);
+    crate::bindings!(
+        CowAmmConstantProductFactory,
+        crate::deployments! {
+            // <https://etherscan.io/tx/0xf37fc438ddacb00c28305bd7dea3b79091cd5be3405a2b445717d9faf946fa50>
+            MAINNET => (address!("0x40664207e3375FB4b733d4743CE9b159331fd034"), 19861952),
+            // <https://gnosisscan.io/tx/0x4121efab4ad58ae7ad73b50448cccae0de92905e181648e5e08de3d6d9c66083>
+            GNOSIS => (address!("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0"), 33874317),
+            // <https://sepolia.etherscan.io/tx/0x5e6af00c670eb421b96e78fd2e3b9df573b19e6e0ea77d8003e47cdde384b048>
+            SEPOLIA => (address!("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3"), 5874562),
+        }
+    );
+    crate::bindings!(
+        CowAmmLegacyHelper,
+        crate::deployments! {
+            // <https://etherscan.io/tx/0x07f0ce50fb9cd30e69799a63ae9100869a3c653d62ea3ba49d2e5e1282f42b63>
+            MAINNET => (address!("0x3705ceee5eaa561e3157cf92641ce28c45a3999c"), 20332745),
+            // <https://gnosisscan.io/tx/0x09e56c7173ab1e1c5d02bc2832799422ebca6d9a40e5bae77f6ca908696bfebf>
+            GNOSIS => (address!("0xd9ec06b001957498ab1bc716145515d1d0e30ffb"), 35026999),
+        }
+    );
+    crate::bindings!(CowAmmUniswapV2PriceOracle);
     crate::bindings!(CowAmmFactoryGetter);
 }
 
@@ -748,11 +818,6 @@ pub trait InstanceExt: Sized {
     fn deployed(
         provider: &Provider,
     ) -> impl std::future::Future<Output = anyhow::Result<Self>> + Send;
-
-    /// Returns the block number at which the contract was deployed, if known.
-    fn deployed_block(
-        &self,
-    ) -> impl std::future::Future<Output = anyhow::Result<Option<u64>>> + Send;
 }
 
 /// Build a `HashMap<u64, (Address, Option<u64>)>` from entries like:
@@ -832,6 +897,11 @@ macro_rules! bindings {
                     $deployment_info
                 });
 
+                /// Returns the contract's deployment block (if one exists) for the given chain.
+                pub fn deployment_block(chain_id: &u64) -> Option<u64> {
+                    DEPLOYMENT_INFO.get(chain_id).map(|(_, block)| *block).flatten()
+                }
+
                 /// Returns the contract's deployment address (if one exists) for the given chain.
                 pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
                     DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
@@ -853,20 +923,6 @@ macro_rules! bindings {
                                 address,
                                 provider.clone(),
                             ))
-                        }
-                    }
-
-                    fn deployed_block(&self) -> impl Future<Output = Result<Option<u64>>> + Send {
-                        async move {
-                            let chain_id = self
-                                .provider()
-                                .get_chain_id()
-                                .await
-                                .context("could not fetch current chain id")?;
-                            if let Some((_address, deployed_block)) = DEPLOYMENT_INFO.get(&chain_id) {
-                                return Ok(*deployed_block);
-                            }
-                            Ok(None)
                         }
                     }
                 }
