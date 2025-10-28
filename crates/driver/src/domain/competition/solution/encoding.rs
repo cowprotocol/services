@@ -265,7 +265,7 @@ pub fn tx(
 pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
-    settlement: H160,
+    settlement_contract: H160,
 ) -> Result<eth::Interaction, Error> {
     let (input, output) = slippage.apply_to(&slippage::Interaction {
         input: liquidity.input,
@@ -273,15 +273,21 @@ pub fn liquidity_interaction(
     })?;
 
     match liquidity.liquidity.kind.clone() {
-        liquidity::Kind::UniswapV2(pool) => pool.swap(&input, &output, &settlement.into()).ok(),
-        liquidity::Kind::UniswapV3(pool) => pool.swap(&input, &output, &settlement.into()).ok(),
+        liquidity::Kind::UniswapV2(pool) => {
+            pool.swap(&input, &output, &settlement_contract.into()).ok()
+        }
+        liquidity::Kind::UniswapV3(pool) => {
+            pool.swap(&input, &output, &settlement_contract.into()).ok()
+        }
         liquidity::Kind::BalancerV2Stable(pool) => {
-            pool.swap(&input, &output, &settlement.into()).ok()
+            pool.swap(&input, &output, &settlement_contract.into()).ok()
         }
         liquidity::Kind::BalancerV2Weighted(pool) => {
-            pool.swap(&input, &output, &settlement.into()).ok()
+            pool.swap(&input, &output, &settlement_contract.into()).ok()
         }
-        liquidity::Kind::Swapr(pool) => pool.swap(&input, &output, &settlement.into()).ok(),
+        liquidity::Kind::Swapr(pool) => {
+            pool.swap(&input, &output, &settlement_contract.into()).ok()
+        }
         liquidity::Kind::ZeroEx(limit_order) => limit_order.to_interaction(&input).ok(),
     }
     .ok_or(Error::InvalidInteractionExecution(Box::new(
