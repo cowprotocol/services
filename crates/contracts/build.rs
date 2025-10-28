@@ -21,6 +21,8 @@ const AVALANCHE: &str = "43114";
 const BNB: &str = "56";
 const OPTIMISM: &str = "10";
 const LENS: &str = "232";
+const LINEA: &str = "59144";
+const PLASMA: &str = "9745";
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
@@ -123,6 +125,22 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(2621745)),
                 },
             )
+            .add_network(
+                LINEA,
+                Network {
+                    address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
+                    // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(24333100)),
+                },
+            )
+            .add_network(
+                PLASMA,
+                Network {
+                    address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
+                    // <https://explorer.lens.xyz/tx/0x01584b767dda7b115394b93dbcfecadfe589862ae3f7957846a2db82f2f5c703>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(2621745)),
+                },
+            )
     });
     generate_contract_with_config("WETH9", |builder| {
         // Note: the WETH address must be consistent with the one used by the ETH-flow
@@ -139,6 +157,8 @@ fn main() {
             .add_network_str(OPTIMISM, "0x4200000000000000000000000000000000000006")
             .add_network_str(POLYGON, "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270")
             .add_network_str(LENS, "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F")
+            .add_network_str(LINEA, "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f")
+            .add_network_str(PLASMA, "0x6100E367285b01F48D07953803A2d8dCA5D19873")
     });
     generate_contract("CowAmm");
     generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
