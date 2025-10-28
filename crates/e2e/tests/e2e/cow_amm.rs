@@ -247,14 +247,14 @@ async fn cow_amm_jit(web3: Web3) {
     };
 
     // Generate EIP-1271 signature for the CoW AMM order
-    let signature = cow_amm::signing::gpv2_order::generate_eip1271_signature(
+    let signature = cow_amm::gpv2_order::generate_eip1271_signature(
         &cow_amm_order,
         &trading_params,
         *cow_amm.address(),
     );
 
     // Generate commit interaction for the pre-interaction
-    let cow_amm_commitment_data = cow_amm::signing::gpv2_order::generate_commit_interaction(
+    let cow_amm_commitment_data = cow_amm::gpv2_order::generate_commit_interaction(
         &cow_amm_order,
         &cow_amm,
         &onchain.contracts().domain_separator,
@@ -847,14 +847,14 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         appData: FixedBytes(APP_DATA),
     };
     // Generate EIP-1271 signature for the CoW AMM order
-    let signature = cow_amm::signing::gpv2_order::generate_eip1271_signature(
+    let signature = cow_amm::gpv2_order::generate_eip1271_signature(
         &cow_amm_order,
         &trading_params,
         *cow_amm.address(),
     );
 
     // Generate commit interaction for the pre-interaction
-    let cow_amm_commitment_data = cow_amm::signing::gpv2_order::generate_commit_interaction(
+    let cow_amm_commitment_data = cow_amm::gpv2_order::generate_commit_interaction(
         &cow_amm_order,
         &cow_amm,
         &onchain.contracts().domain_separator,
