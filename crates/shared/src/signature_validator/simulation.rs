@@ -13,13 +13,10 @@ use {
         transports::RpcError,
     },
     anyhow::{Context, Result},
-    contracts::{
-        alloy::{
-            ERC1271SignatureValidator::ERC1271SignatureValidator,
-            GPv2Settlement,
-            support::Signatures,
-        },
-        errors::EthcontractErrorType,
+    contracts::alloy::{
+        ERC1271SignatureValidator::ERC1271SignatureValidator,
+        GPv2Settlement,
+        support::Signatures,
     },
     ethcontract::state_overrides::StateOverrides,
     ethrpc::{
@@ -152,7 +149,7 @@ impl Validator {
                     "signature verification failed"
                 )
             })
-            .context("signature verification failed")?;
+            .map_err(|_| SignatureValidationError::Invalid)?;
 
         let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
             .with_context(|| {
@@ -198,13 +195,4 @@ impl SignatureValidating for Validator {
 #[derive(Debug)]
 struct Simulation {
     gas_used: U256,
-}
-
-impl From<ethcontract::errors::MethodError> for SignatureValidationError {
-    fn from(err: ethcontract::errors::MethodError) -> Self {
-        match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Contract => Self::Invalid,
-            _ => Self::Other(err.into()),
-        }
-    }
 }
