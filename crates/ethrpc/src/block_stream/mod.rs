@@ -125,7 +125,7 @@ pub async fn current_block_stream(
         url.clone(),
         "block_stream".into(),
     )));
-    let (alloy, wallet) = crate::alloy::provider(url.as_str());
+    let (alloy, wallet) = crate::alloy::provider(url.as_str(), "block_stream");
     let web3 = crate::Web3 {
         legacy: web3,
         // TODO: replace this with an unbuffered alloy provider

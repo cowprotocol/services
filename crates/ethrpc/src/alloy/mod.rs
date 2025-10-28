@@ -19,10 +19,10 @@ pub use {conversions::Account, instrumentation::ProviderLabelingExt, wallet::Mut
 
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
 /// [`InstrumentationLayer`] and [`BatchCallLayer`].
-fn rpc(url: &str) -> RpcClient {
+fn rpc(url: &str, label: &str) -> RpcClient {
     ClientBuilder::default()
         .layer(LabelingLayer {
-            label: "main".into(),
+            label: label.into(),
         })
         .layer(InstrumentationLayer)
         .layer(BatchCallLayer::new(Config {
@@ -35,8 +35,8 @@ fn rpc(url: &str) -> RpcClient {
 /// Creates a provider with the provided URL and an empty [`MutWallet`].
 ///
 /// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn provider(url: &str) -> (AlloyProvider, MutWallet) {
-    let rpc = rpc(url);
+pub fn provider(url: &str, label: &str) -> (AlloyProvider, MutWallet) {
+    let rpc = rpc(url, label);
     let wallet = MutWallet::default();
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())

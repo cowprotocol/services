@@ -53,7 +53,7 @@ impl Web3<DynTransport> {
     pub fn new_from_url(url: &str) -> Self {
         let legacy_transport = create_test_transport(url);
         let web3 = web3::Web3::new(legacy_transport);
-        let (alloy, wallet) = crate::alloy::provider(url);
+        let (alloy, wallet) = crate::alloy::provider(url, "test");
         Self {
             legacy: web3,
             alloy,
@@ -119,7 +119,7 @@ pub fn web3(
         None => Web3Transport::new(http),
     };
     let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), transport);
-    let (alloy, wallet) = alloy::provider(url.as_str());
+    let (alloy, wallet) = alloy::provider(url.as_str(), name.to_string().as_str());
     Web3 {
         legacy: web3::Web3::new(Web3Transport::new(instrumented)),
         alloy,
