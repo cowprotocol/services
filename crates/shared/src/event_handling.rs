@@ -963,7 +963,7 @@ mod tests {
             ),
         ];
         let event_handler = EventHandler::new(
-            Arc::new(web3),
+            Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract),
             storage,
             None,
@@ -993,7 +993,7 @@ mod tests {
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
         let mut event_handler = EventHandler::new(
-            Arc::new(web3),
+            Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract),
             storage,
             Some(block),
@@ -1024,7 +1024,7 @@ mod tests {
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
         let mut event_handler = EventHandler::new(
-            Arc::new(web3),
+            Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract),
             storage,
             Some(block),
@@ -1061,11 +1061,11 @@ mod tests {
 
         let storage_empty = EventStorage { events: vec![] };
         let event_start =
-            block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
+            block_number_to_block_number_hash(&web3.alloy, (current_block - RANGE_SIZE).into())
                 .await
                 .unwrap();
         let mut base_event_handler = EventHandler::new(
-            Arc::new(web3.clone()),
+            Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract.clone()),
             storage_empty,
             Some(event_start),
@@ -1081,11 +1081,11 @@ mod tests {
         // date but using `new_skip_blocks_before` if there are no events
         let storage_empty = EventStorage { events: vec![] };
         let event_start =
-            block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
+            block_number_to_block_number_hash(&web3.alloy, (current_block - RANGE_SIZE).into())
                 .await
                 .unwrap();
         let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.clone()),
+            Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract.clone()),
             storage_empty,
             event_start,
@@ -1123,7 +1123,7 @@ mod tests {
             events: vec![last_event.clone()],
         };
         let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.clone()),
+            Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract),
             storage_nonempty,
             // Same event start as for the two previous event handlers. The test checks that this

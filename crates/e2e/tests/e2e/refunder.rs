@@ -58,7 +58,10 @@ async fn refunder_tx(web3: Web3) {
     let quote_response = services.submit_quote(&quote).await.unwrap();
 
     let validity_duration = 600;
-    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + validity_duration;
     // Accounting for slippage is necessary for the order to be picked up by the
     // refunder
     let ethflow_order =

@@ -20,6 +20,7 @@ use {
         orders::{ExecutionTime, Interaction, Order},
     },
     ethrpc::{
+        AlloyProvider,
         Web3,
         block_stream::{BlockNumberHash, block_number_to_block_number_hash},
     },
@@ -147,11 +148,11 @@ fn convert_to_quote_id_and_user_valid_to(
 }
 
 async fn settlement_deployment_block_number_hash(
-    web3: &Web3,
+    provider: &AlloyProvider,
     chain_id: u64,
 ) -> Result<BlockNumberHash> {
     let block_number = deployment_block(GPv2Settlement::raw_contract(), chain_id)?;
-    block_number_to_block_number_hash(web3, U64::from(block_number).into())
+    block_number_to_block_number_hash(provider, U64::from(block_number).into())
         .await
         .context("Deployment block not found")
 }
@@ -261,19 +262,22 @@ async fn find_indexing_start_block(
         .context("failed to read last indexed block from db")?;
 
     if last_indexed_block > 0 {
-        return block_number_to_block_number_hash(web3, U64::from(last_indexed_block).into())
-            .await
-            .map(Some)
-            .context("failed to fetch block");
+        return block_number_to_block_number_hash(
+            &web3.alloy,
+            U64::from(last_indexed_block).into(),
+        )
+        .await
+        .map(Some)
+        .context("failed to fetch block");
     }
     if let Some(start_block) = fallback_start_block {
-        return block_number_to_block_number_hash(web3, start_block.into())
+        return block_number_to_block_number_hash(&web3.alloy, start_block.into())
             .await
             .map(Some)
             .context("failed to fetch fallback indexing start block");
     }
     if let Some(chain_id) = settlement_fallback_chain_id {
-        return settlement_deployment_block_number_hash(web3, chain_id)
+        return settlement_deployment_block_number_hash(&web3.alloy, chain_id)
             .await
             .map(Some)
             .context("failed to fetch settlement deployment block");

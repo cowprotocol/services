@@ -396,7 +396,7 @@ async fn get_block_numbers_of_events(
         .into_iter()
         .map(|block_number| async move {
             let timestamp =
-                timestamp_of_block_in_seconds(web3, U64::from(block_number).into()).await?;
+                timestamp_of_block_in_seconds(&web3.alloy, U64::from(block_number).into()).await?;
             Ok((block_number, timestamp))
         });
     let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
