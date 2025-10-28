@@ -10,7 +10,6 @@ use {
     std::{
         fmt::{self, Display, Formatter},
         sync::Arc,
-        time::Duration,
     },
     url::Url,
 };
@@ -19,15 +18,10 @@ use {
 #[derive(Debug, Parser)]
 #[group(skip)]
 pub struct Arguments {
-    /// How often in seconds we poll the node to check if the current block has
-    /// changed.
-    #[clap(
-        long,
-        env,
-        default_value = "5s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub block_stream_poll_interval: Duration,
+    /// WebSocket node URL for real-time block updates via subscriptions.
+    /// If not provided, will attempt to use the regular HTTP node URL.
+    #[clap(long, env)]
+    pub node_ws_url: Option<Url>,
 }
 
 impl Arguments {
@@ -35,21 +29,19 @@ impl Arguments {
         Arc::new(web3)
     }
 
-    pub async fn stream(&self, rpc: Url) -> Result<CurrentBlockWatcher> {
-        current_block_stream(rpc, self.block_stream_poll_interval).await
+    pub async fn stream(&self, http_rpc: Url) -> Result<CurrentBlockWatcher> {
+        let ws_rpc = self.node_ws_url.clone().unwrap_or(http_rpc);
+        current_block_stream(ws_rpc).await
     }
 }
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {
-            block_stream_poll_interval,
+            node_ws_url: ws_node_url,
         } = self;
 
-        writeln!(
-            f,
-            "block_stream_poll_interval: {block_stream_poll_interval:?}"
-        )?;
+        writeln!(f, "node_ws_url: {ws_node_url:?}")?;
 
         Ok(())
     }

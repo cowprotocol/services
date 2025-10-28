@@ -122,9 +122,17 @@ async fn ethereum(
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
-    poll_interval: Duration,
+    current_block_args: &shared::current_block::Arguments,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, unbuffered_web3, chain, url, contracts, poll_interval).await
+    infra::Ethereum::new(
+        web3,
+        unbuffered_web3,
+        chain,
+        url,
+        contracts,
+        current_block_args,
+    )
+    .await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -220,7 +228,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         &chain,
         url,
         contracts.clone(),
-        args.shared.current_block.block_stream_poll_interval,
+        &args.shared.current_block,
     )
     .await;
 
@@ -770,12 +778,12 @@ async fn shadow_mode(args: Arguments) -> ! {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default());
 
-    let current_block = ethrpc::block_stream::current_block_stream(
-        args.shared.node_url,
-        args.shared.current_block.block_stream_poll_interval,
-    )
-    .await
-    .expect("couldn't initialize current block stream");
+    let current_block = args
+        .shared
+        .current_block
+        .stream(args.shared.node_url.clone())
+        .await
+        .expect("couldn't initialize current block stream");
 
     let shadow = shadow::RunLoop::new(
         orderbook,

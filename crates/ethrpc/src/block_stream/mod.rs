@@ -1,12 +1,12 @@
 use {
     crate::{
         Web3,
-        Web3Transport,
         alloy::conversions::{IntoAlloy, IntoLegacy},
-        http::HttpTransport,
-        instrumented::instrument_with_label,
     },
-    alloy::providers::Provider,
+    alloy::{
+        providers::{Provider, ProviderBuilder},
+        transports::ws::WsConnect,
+    },
     anyhow::{Context as _, Result, anyhow, ensure},
     futures::{StreamExt, future},
     primitive_types::{H256, U256},
@@ -107,82 +107,110 @@ impl TryFrom<alloy::rpc::types::Block> for BlockInfo {
     }
 }
 
+impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: alloy::rpc::types::Header) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            number: value.number,
+            hash: value.hash.into_legacy(),
+            parent_hash: value.parent_hash.into_legacy(),
+            timestamp: value.timestamp,
+            gas_limit: primitive_types::U256::from(value.gas_limit),
+            gas_price: value
+                .base_fee_per_gas
+                .map(primitive_types::U256::from)
+                .context("no gas price")?,
+            observed_at: Instant::now(),
+        })
+    }
+}
+
 /// Creates a cloneable stream that yields the current block whenever it
 /// changes.
 ///
-/// The stream is not guaranteed to yield *every* block individually without
-/// gaps but it does yield the newest block whenever it detects a block number
-/// increase. In practice this means that if the node changes the current block
-/// in quick succession we might only observe the last block, skipping some
-/// blocks in between.
+/// Uses websocket subscriptions for real-time block updates. The stream is not
+/// guaranteed to yield *every* block individually without gaps but it does
+/// yield the newest block whenever it detects a block number increase.
 ///
-/// The stream is cloneable so that we only have to poll the node once while
-/// being able to share the result with several consumers. Calling this function
-/// again would create a new poller so it is preferable to clone an existing
-/// stream instead.
-pub async fn current_block_stream(
-    url: Url,
-    poll_interval: Duration,
-) -> Result<CurrentBlockWatcher> {
-    // Build new Web3 specifically for the current block stream to avoid batching
-    // requests together on chains with a very high block frequency.
-    let web3 = web3::Web3::new(Web3Transport::new(HttpTransport::new(
-        Default::default(),
-        url.clone(),
-        "block_stream".into(),
-    )));
-    let (alloy, wallet) = crate::alloy::unbuffered_provider(url.as_str());
-    let web3 = crate::Web3 {
-        legacy: web3,
-        alloy,
-        wallet,
-    };
-    let web3 = instrument_with_label(&web3, "base_currentBlockStream".into());
+/// The stream is cloneable so that we only have to subscribe once while being
+/// able to share the result with several consumers. Calling this function
+/// again would create a new subscription so it is preferable to clone an
+/// existing stream instead.
+///
+/// The websocket reconnection is handled by the alloy lib.
+pub async fn current_block_stream(ws_url: Url) -> Result<CurrentBlockWatcher> {
+    tracing::info!(?ws_url, "connecting to websocket for block stream");
 
-    let first_block = web3.current_block().await?;
-    tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
+    // Create a WS transport, which implements an automatic reconnection mechanism
+    let ws_connect = WsConnect::new(ws_url.as_str());
+    let provider = ProviderBuilder::new()
+        .connect_ws(ws_connect)
+        .await
+        .context("failed to connect to websocket")?;
+
+    let mut stream = provider
+        .subscribe_blocks()
+        .await
+        .context("failed to subscribe to blocks")?
+        .into_stream();
+
+    tracing::info!("waiting for first block from websocket");
+    let first_block = match tokio::time::timeout(Duration::from_secs(30), stream.next()).await {
+        Ok(Some(block)) => BlockInfo::try_from(block.clone())
+            .with_context(|| format!("failed to parse first block {:?}", block))?,
+        Ok(None) => {
+            anyhow::bail!("websocket stream ended before receiving first block");
+        }
+        Err(_) => {
+            anyhow::bail!("timeout waiting for first block from websocket");
+        }
+    };
 
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
         let mut previous_block = first_block;
-        loop {
-            tokio::time::sleep(poll_interval).await;
-            let block = match web3.current_block().await {
-                Ok(block) => block,
+
+        // Process incoming blocks. WsConnect handles reconnection automatically,
+        // so we don't need manual reconnection logic here.
+        while let Some(block) = stream.next().await {
+            let block_info = match BlockInfo::try_from(block.clone()) {
+                Ok(info) => info,
                 Err(err) => {
-                    tracing::warn!("failed to get current block: {:?}", err);
+                    tracing::error!(?err, ?block, "failed to parse block, skipping");
                     continue;
                 }
             };
 
-            update_current_block_metrics(block.number);
+            update_current_block_metrics(block_info.number);
 
-            // If the block is exactly the same, ignore it.
-            if previous_block.hash == block.hash {
+            // If the block is exactly the same as the previous one, ignore it.
+            if previous_block.hash == block_info.hash {
                 continue;
             }
 
-            // The new block is different but might still have the same number.
-
-            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
-            update_block_metrics(previous_block.number, block.number);
+            tracing::debug!(number=%block_info.number, hash=?block_info.hash, "received block");
+            update_block_metrics(previous_block.number, block_info.number);
 
             // Only update the stream if the number has increased.
-            if block.number <= previous_block.number {
+            if block_info.number <= previous_block.number {
                 continue;
             }
 
-            tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
-            if let Err(err) = sender.send(block) {
+            tracing::info!(number=%block_info.number, hash=?block_info.hash, "noticed a new block");
+            if let Err(err) = sender.send(block_info) {
                 tracing::error!(
                     ?err,
-                    "failed to send block to stream, aborting polling loop"
+                    "failed to send block to stream, aborting subscription loop"
                 );
-                panic!("polling loop terminated due to sender failure");
+                panic!("subscription loop terminated due to sender failure");
             }
 
-            previous_block = block;
+            previous_block = block_info;
         }
+
+        // If we reach here, the stream ended permanently
+        tracing::error!("block stream ended after max reconnection attempts");
     };
 
     tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
@@ -433,9 +461,7 @@ mod tests {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
 
         let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
-        let receiver = current_block_stream(node, Duration::from_secs(1))
-            .await
-            .unwrap();
+        let receiver = current_block_stream(node).await.unwrap();
         let mut stream = into_stream(receiver);
         for _ in 0..3 {
             let block = stream.next().await.unwrap();

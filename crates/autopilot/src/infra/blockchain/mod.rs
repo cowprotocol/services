@@ -4,7 +4,6 @@ use {
     chain::Chain,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
     primitive_types::U256,
-    std::time::Duration,
     thiserror::Error,
     url::Url,
 };
@@ -73,14 +72,15 @@ impl Ethereum {
         web3: Web3,
         unbuffered_web3: Web3,
         chain: &Chain,
-        url: Url,
+        http_url: Url,
         addresses: contracts::Addresses,
-        poll_interval: Duration,
+        current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let contracts = Contracts::new(&web3, chain, addresses).await;
 
         Self {
-            current_block: ethrpc::block_stream::current_block_stream(url, poll_interval)
+            current_block: current_block_args
+                .stream(http_url)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,

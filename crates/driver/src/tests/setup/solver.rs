@@ -465,6 +465,7 @@ impl Solver {
             .await
             .unwrap(),
         );
+        let current_block_args = shared::current_block::Arguments { node_ws_url: None };
         let eth = Ethereum::new(
             rpc,
             Addresses {
@@ -484,6 +485,7 @@ impl Solver {
             },
             gas,
             45_000_000.into(),
+            &current_block_args,
         )
         .await;
 

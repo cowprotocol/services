@@ -30,9 +30,6 @@ pub mod swapr;
 pub mod uniswap;
 pub mod zeroex;
 
-/// The default poll interval for the block stream updating task.
-const BLOCK_POLL_INTERVAL: Duration = Duration::from_secs(1);
-
 /// The default pool caching configuration to use.
 fn cache_config() -> CacheConfig {
     CacheConfig {
@@ -59,9 +56,7 @@ pub struct Fetcher {
 impl Fetcher {
     /// Creates a new fetcher for the specified configuration.
     pub async fn try_new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
-        let blocks = current_block::Arguments {
-            block_stream_poll_interval: BLOCK_POLL_INTERVAL,
-        };
+        let blocks = current_block::Arguments { node_ws_url: None };
 
         let block_stream = eth.current_block();
         let block_retriever = blocks.retriever(eth.web3().clone());
