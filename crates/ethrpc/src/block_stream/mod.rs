@@ -1,12 +1,13 @@
 use {
     crate::{
         AlloyProvider,
-        alloy::{
-            ProviderLabelingExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{ProviderLabelingExt, conversions::IntoLegacy},
     },
-    alloy::providers::Provider,
+    alloy::{
+        eips::{BlockId, BlockNumberOrTag},
+        providers::Provider,
+        rpc::types::Block,
+    },
     anyhow::{Context as _, Result, anyhow, ensure},
     futures::{StreamExt, future},
     primitive_types::{H256, U256},
@@ -19,7 +20,6 @@ use {
     tokio_stream::wrappers::WatchStream,
     tracing::{Instrument, instrument},
     url::Url,
-    web3::types::{BlockId, BlockNumber, U64},
 };
 
 pub type BlockNumberHash = (u64, H256);
@@ -87,10 +87,10 @@ impl PartialEq<Self> for BlockInfo {
     }
 }
 
-impl TryFrom<alloy::rpc::types::Block> for BlockInfo {
+impl TryFrom<Block> for BlockInfo {
     type Error = anyhow::Error;
 
-    fn try_from(value: alloy::rpc::types::Block) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: Block) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             number: value.header.number,
             hash: value.header.hash.into_legacy(),
@@ -249,13 +249,11 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 #[async_trait::async_trait]
 impl BlockRetrieving for AlloyProvider {
     async fn current_block(&self) -> Result<BlockInfo> {
-        get_block_at_id(self, BlockNumber::Latest.into())
-            .await?
-            .try_into()
+        get_block_at_id(self, BlockId::latest()).await?.try_into()
     }
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
-        let block = get_block_at_id(self, U64::from(number).into()).await?;
+        let block = get_block_at_id(self, BlockId::number(number)).await?;
         Ok((block.header.number, block.header.hash.into_legacy()))
     }
 
@@ -267,7 +265,7 @@ impl BlockRetrieving for AlloyProvider {
 
         let block_futures: Vec<_> = (start..=end)
             .map(|block_num| {
-                let block_id = alloy::eips::BlockNumberOrTag::Number(block_num).into();
+                let block_id = BlockNumberOrTag::Number(block_num).into();
                 let provider = self.clone();
                 async move {
                     provider
@@ -307,13 +305,9 @@ impl BlockRetrieving for AlloyProvider {
     }
 }
 
-async fn get_block_at_id(
-    provider: &AlloyProvider,
-    id: BlockId,
-) -> Result<alloy::rpc::types::Block> {
-    let block_id: alloy::eips::BlockId = id.into_alloy();
+async fn get_block_at_id(provider: &AlloyProvider, id: BlockId) -> Result<Block> {
     let block = provider
-        .get_block(block_id)
+        .get_block(id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
         .with_context(|| format!("no block for {id:?}"))?;
@@ -323,11 +317,11 @@ async fn get_block_at_id(
 
 pub async fn timestamp_of_block_in_seconds(
     provider: &AlloyProvider,
-    block_number: BlockNumber,
+    block_number: BlockNumberOrTag,
 ) -> Result<u32> {
     u32::try_from(
         provider
-            .get_block_by_number(block_number.into_alloy())
+            .get_block_by_number(block_number)
             .await
             .with_context(|| format!("failed to get block {block_number:?}"))?
             .with_context(|| format!("no block for {block_number:?}"))?
@@ -338,16 +332,16 @@ pub async fn timestamp_of_block_in_seconds(
 }
 
 pub async fn timestamp_of_current_block_in_seconds(provider: &AlloyProvider) -> Result<u32> {
-    timestamp_of_block_in_seconds(provider, BlockNumber::Latest).await
+    timestamp_of_block_in_seconds(provider, BlockNumberOrTag::Latest).await
 }
 
 #[instrument(skip_all)]
 pub async fn block_number_to_block_number_hash(
     provider: &AlloyProvider,
-    block_number: BlockNumber,
+    block_number: BlockNumberOrTag,
 ) -> Result<BlockNumberHash> {
     let block = provider
-        .get_block_by_number(block_number.into_alloy())
+        .get_block_by_number(block_number)
         .await?
         .context("block should exists")?;
     Ok((block.header.number, block.header.hash.into_legacy()))

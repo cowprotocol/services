@@ -772,6 +772,7 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
+        alloy::eips::BlockNumberOrTag,
         contracts::{GPv2Settlement, gpv2_settlement},
         ethcontract::{BlockNumber, Event as EthcontractEvent, H256},
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
@@ -1060,10 +1061,12 @@ mod tests {
         const RANGE_SIZE: u64 = 24 * 3600 / 12;
 
         let storage_empty = EventStorage { events: vec![] };
-        let event_start =
-            block_number_to_block_number_hash(&web3.alloy, (current_block - RANGE_SIZE).into())
-                .await
-                .unwrap();
+        let event_start = block_number_to_block_number_hash(
+            &web3.alloy,
+            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+        )
+        .await
+        .unwrap();
         let mut base_event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract.clone()),
@@ -1080,10 +1083,12 @@ mod tests {
         // We collect events again with an event handler generated from the same start
         // date but using `new_skip_blocks_before` if there are no events
         let storage_empty = EventStorage { events: vec![] };
-        let event_start =
-            block_number_to_block_number_hash(&web3.alloy, (current_block - RANGE_SIZE).into())
-                .await
-                .unwrap();
+        let event_start = block_number_to_block_number_hash(
+            &web3.alloy,
+            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+        )
+        .await
+        .unwrap();
         let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
             Arc::new(web3.alloy.clone()),
             GPv2SettlementContract(contract.clone()),

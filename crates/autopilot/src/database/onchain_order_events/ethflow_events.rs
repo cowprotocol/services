@@ -1,7 +1,7 @@
 use {
     super::{OnchainOrderCustomData, OnchainOrderParsing},
     crate::database::events::log_to_event_index,
-    alloy::rpc::types::Log,
+    alloy::{eips::BlockNumberOrTag, rpc::types::Log},
     anyhow::{Context, Result, anyhow},
     contracts::{
         GPv2Settlement,
@@ -28,7 +28,6 @@ use {
     sqlx::{PgPool, types::BigDecimal},
     std::{collections::HashMap, convert::TryInto},
     tracing::instrument,
-    web3::types::U64,
 };
 
 // 4c84c1c8 is the identifier of the following function:
@@ -152,7 +151,7 @@ async fn settlement_deployment_block_number_hash(
     chain_id: u64,
 ) -> Result<BlockNumberHash> {
     let block_number = deployment_block(GPv2Settlement::raw_contract(), chain_id)?;
-    block_number_to_block_number_hash(provider, U64::from(block_number).into())
+    block_number_to_block_number_hash(provider, BlockNumberOrTag::Number(block_number))
         .await
         .context("Deployment block not found")
 }
@@ -264,17 +263,20 @@ async fn find_indexing_start_block(
     if last_indexed_block > 0 {
         return block_number_to_block_number_hash(
             &web3.alloy,
-            U64::from(last_indexed_block).into(),
+            BlockNumberOrTag::Number(last_indexed_block),
         )
         .await
         .map(Some)
         .context("failed to fetch block");
     }
     if let Some(start_block) = fallback_start_block {
-        return block_number_to_block_number_hash(&web3.alloy, start_block.into())
-            .await
-            .map(Some)
-            .context("failed to fetch fallback indexing start block");
+        return block_number_to_block_number_hash(
+            &web3.alloy,
+            BlockNumberOrTag::Number(start_block),
+        )
+        .await
+        .map(Some)
+        .context("failed to fetch fallback indexing start block");
     }
     if let Some(chain_id) = settlement_fallback_chain_id {
         return settlement_deployment_block_number_hash(&web3.alloy, chain_id)

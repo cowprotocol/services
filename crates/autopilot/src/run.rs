@@ -24,10 +24,11 @@ use {
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
+    alloy::eips::BlockNumberOrTag,
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
-    ethcontract::{BlockNumber, H160, common::DeploymentInformation},
+    ethcontract::{H160, common::DeploymentInformation},
     ethrpc::{
         Web3,
         alloy::conversions::IntoLegacy,
@@ -425,7 +426,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let skip_event_sync_start = if args.skip_event_sync {
         Some(
-            block_number_to_block_number_hash(&web3.alloy, BlockNumber::Latest)
+            block_number_to_block_number_hash(&web3.alloy, BlockNumberOrTag::Latest)
                 .await
                 .expect("Failed to fetch latest block"),
         )
