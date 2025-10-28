@@ -218,7 +218,7 @@ async fn allowance(web3: Web3) {
     // Check malicious custom interactions did not work.
     let allowance = cow
         .allowance(
-            onchain.contracts().gp_settlement.address().into_alloy(),
+            *onchain.contracts().gp_settlement.address(),
             trader.address().into_alloy(),
         )
         .call()
@@ -229,7 +229,7 @@ async fn allowance(web3: Web3) {
         .contracts()
         .weth
         .allowance(
-            onchain.contracts().gp_settlement.address().into_alloy(),
+            *onchain.contracts().gp_settlement.address(),
             trader.address().into_alloy(),
         )
         .call()

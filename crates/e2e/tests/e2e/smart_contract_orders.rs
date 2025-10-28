@@ -1,6 +1,6 @@
 use {
     e2e::setup::{eth, safe::Safe, *},
-    ethcontract::{Bytes, H160, U256},
+    ethcontract::{H160, U256},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -122,11 +122,12 @@ async fn smart_contract_orders(web3: Web3) {
         order_status(uids[1]).await,
         OrderStatus::PresignaturePending
     );
-    safe.exec_call(
+    safe.exec_alloy_call(
         onchain
             .contracts()
             .gp_settlement
-            .set_pre_signature(Bytes(uids[1].0.to_vec()), true),
+            .setPreSignature(uids[1].0.into(), true)
+            .into_transaction_request(),
     )
     .await;
 

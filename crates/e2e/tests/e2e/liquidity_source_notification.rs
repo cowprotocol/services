@@ -222,8 +222,8 @@ http-timeout = "10s"
     let liquorice_order = api::liquorice::onchain::order::Single {
         rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
         nonce: U256::from(0),
-        trader: onchain.contracts().gp_settlement.address(),
-        effective_trader: onchain.contracts().gp_settlement.address(),
+        trader: onchain.contracts().gp_settlement.address().into_legacy(),
+        effective_trader: onchain.contracts().gp_settlement.address().into_legacy(),
         base_token: token_usdc.address(),
         quote_token: token_usdt.address(),
         base_token_amount: trade_amount,
