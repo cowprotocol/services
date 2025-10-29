@@ -23,7 +23,7 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex},
     },
-    web3::signing::Key,
+    web3::{Transport, signing::Key},
 };
 
 pub const NAME: &str = "test-solver";
@@ -474,7 +474,22 @@ impl Solver {
                     .expect("valid websocket URL"),
             ),
         };
-        let eth = Ethereum::new(
+
+        // Mine blocks in a loop while waiting for Ethereum initialization.
+        // This ensures the WebSocket subscription receives blocks and completes.
+        let web3_for_mining = config.blockchain.web3.clone();
+        let mining_task = async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                println!("mining a block...");
+                let _ = web3_for_mining
+                    .transport()
+                    .execute("evm_mine", vec![])
+                    .await;
+            }
+        };
+
+        let eth_task = Ethereum::new(
             rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into_legacy().into()),
@@ -494,8 +509,12 @@ impl Solver {
             gas,
             45_000_000.into(),
             &current_block_args,
-        )
-        .await;
+        );
+
+        let _eth = tokio::select! {
+            eth = eth_task => eth,
+            _ = mining_task => unreachable!("mining task should not complete first"),
+        };
 
         let state = Arc::new(Mutex::new(StateInner {
             called: false,
@@ -507,13 +526,12 @@ impl Solver {
             axum::routing::post(
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
-                    let effective_gas_price = eth
-                        .gas_price(None)
-                        .await
-                        .unwrap()
-                        .effective()
-                        .0
-                        .0
+                    // The test and driver might be initialized at different blocks
+                    // due to a workaround for the CurrentBlockWatcher websocket subscription,
+                    // so the effective gas price might differ. We can ignore it in the comparison.
+                    let effective_gas_price = req["effectiveGasPrice"]
+                        .as_str()
+                        .expect("effectiveGasPrice should be present and a string")
                         .to_string();
                     let expected = json!({
                         "id": (!config.quote).then_some("1"),

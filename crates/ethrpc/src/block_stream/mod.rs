@@ -167,6 +167,8 @@ pub async fn current_block_stream(ws_url: Url) -> Result<CurrentBlockWatcher> {
 
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
+        // Keep provider alive to maintain WebSocket connection
+        let _provider = provider;
         let mut previous_block = first_block;
 
         // Process incoming blocks. WsConnect handles reconnection automatically,
