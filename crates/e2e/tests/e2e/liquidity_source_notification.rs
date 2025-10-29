@@ -239,6 +239,15 @@ http-timeout = "10s"
         minFillAmount: U256::from(1),
         quoteExpiry: U256::from(Utc::now().timestamp() as u64 + 10),
         recipient: liquorice_maker.address().into_alloy(),
+        trader: onchain.contracts().gp_settlement.address().into_legacy(),
+        effective_trader: onchain.contracts().gp_settlement.address().into_legacy(),
+        base_token: token_usdc.address(),
+        quote_token: token_usdt.address(),
+        base_token_amount: trade_amount,
+        quote_token_amount: trade_amount,
+        min_fill_amount: U256::from(1),
+        quote_expiry: U256::from(Utc::now().timestamp() as u64 + 10),
+        recipient: liquorice_maker.address(),
     };
 
     // Create calldata

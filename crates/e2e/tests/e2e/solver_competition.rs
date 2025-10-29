@@ -312,10 +312,16 @@ async fn store_filtered_solutions(web3: Web3) {
     // give the settlement contract a ton of the traded tokens so that the mocked
     // solver solutions can simply give money away to make the trade execute
     token_b
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(50))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(50),
+        )
         .await;
     token_c
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(50))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(50),
+        )
         .await;
 
     // set up trader for their order

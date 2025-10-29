@@ -147,7 +147,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         Arc::new(web3.clone()),
         Arc::new(BalanceOverrides::default()),
         block_stream,
-        onchain.contracts().gp_settlement.address(),
+        onchain.contracts().gp_settlement.address().into_legacy(),
         onchain.contracts().weth.address().into_legacy(),
         BigDecimal::zero(),
         Default::default(),
@@ -295,7 +295,10 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // Send 3 ETH to the settlement contract so we can get verified quotes for
     // selling WETH.
     onchain
-        .send_wei(onchain.contracts().gp_settlement.address(), to_wei(3))
+        .send_wei(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(3),
+        )
         .await;
 
     tracing::info!("Starting services.");
@@ -316,7 +319,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and implicit receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address(),
+            from: onchain.contracts().gp_settlement.address().into_legacy(),
             receiver: None,
             ..request.clone()
         })
@@ -327,8 +330,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and explicit receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address(),
-            receiver: Some(onchain.contracts().gp_settlement.address()),
+            from: onchain.contracts().gp_settlement.address().into_legacy(),
+            receiver: Some(onchain.contracts().gp_settlement.address().into_legacy()),
             ..request.clone()
         })
         .await
@@ -338,7 +341,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and not the receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address(),
+            from: onchain.contracts().gp_settlement.address().into_legacy(),
             receiver: Some(trader.address()),
             ..request.clone()
         })
@@ -350,7 +353,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            receiver: Some(onchain.contracts().gp_settlement.address()),
+            receiver: Some(onchain.contracts().gp_settlement.address().into_legacy()),
             ..request.clone()
         })
         .await

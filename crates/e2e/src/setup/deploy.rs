@@ -1,20 +1,17 @@
 use {
-    crate::deploy,
-    contracts::{
+    contracts::alloy::{
+        BalancerV2Authorizer,
+        BalancerV2Vault,
+        CoWSwapEthFlow,
+        FlashLoanRouter,
+        GPv2AllowListAuthentication,
         GPv2Settlement,
-        alloy::{
-            BalancerV2Authorizer,
-            BalancerV2Vault,
-            CoWSwapEthFlow,
-            FlashLoanRouter,
-            GPv2AllowListAuthentication,
-            HooksTrampoline,
-            InstanceExt,
-            UniswapV2Factory,
-            UniswapV2Router02,
-            WETH9,
-            support::{Balances, Signatures},
-        },
+        HooksTrampoline,
+        InstanceExt,
+        UniswapV2Factory,
+        UniswapV2Router02,
+        WETH9,
+        support::{Balances, Signatures},
     },
     ethcontract::{Address, H256},
     ethrpc::alloy::{
@@ -34,7 +31,7 @@ pub struct DeployedContracts {
 pub struct Contracts {
     pub chain_id: u64,
     pub balancer_vault: BalancerV2Vault::Instance,
-    pub gp_settlement: GPv2Settlement,
+    pub gp_settlement: GPv2Settlement::Instance,
     pub signatures: Signatures::Instance,
     pub gp_authenticator: GPv2AllowListAuthentication::Instance,
     pub balances: Balances::Instance,
@@ -58,7 +55,9 @@ impl Contracts {
             .to_string();
         tracing::info!("connected to forked test network {}", network_id);
 
-        let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
+        let gp_settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let balances = match deployed.balances {
             Some(address) => Balances::Instance::new(address.into_alloy(), web3.alloy.clone()),
             None => Balances::Instance::deployed(&web3.alloy)
@@ -92,13 +91,14 @@ impl Contracts {
                 .unwrap(),
             weth: WETH9::Instance::deployed(&web3.alloy).await.unwrap(),
             allowance: gp_settlement
-                .vault_relayer()
+                .vaultRelayer()
                 .call()
                 .await
-                .expect("Couldn't get vault relayer address"),
+                .expect("Couldn't get vault relayer address")
+                .into_legacy(),
             domain_separator: DomainSeparator(
                 gp_settlement
-                    .domain_separator()
+                    .domainSeparator()
                     .call()
                     .await
                     .expect("Couldn't query domain separator")
@@ -167,13 +167,13 @@ impl Contracts {
             .send_and_watch()
             .await
             .expect("failed to initialize manager");
-        let gp_settlement = deploy!(
-            web3,
-            GPv2Settlement(
-                gp_authenticator.address().into_legacy(),
-                balancer_vault.address().into_legacy(),
-            )
-        );
+        let gp_settlement = GPv2Settlement::Instance::deploy(
+            web3.alloy.clone(),
+            *gp_authenticator.address(),
+            *balancer_vault.address(),
+        )
+        .await
+        .unwrap();
         let balances = Balances::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
@@ -185,23 +185,23 @@ impl Contracts {
             &balancer_authorizer,
             *balancer_vault.address(),
             gp_settlement
-                .vault_relayer()
+                .vaultRelayer()
                 .call()
                 .await
-                .expect("failed to retrieve Vault relayer contract address")
-                .into_alloy(),
+                .expect("failed to retrieve Vault relayer contract address"),
         )
         .await
         .expect("failed to authorize Vault relayer");
 
         let allowance = gp_settlement
-            .vault_relayer()
+            .vaultRelayer()
             .call()
             .await
-            .expect("Couldn't get vault relayer address");
+            .expect("Couldn't get vault relayer address")
+            .into_legacy();
         let domain_separator = DomainSeparator(
             gp_settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("Couldn't query domain separator")
@@ -210,30 +210,25 @@ impl Contracts {
 
         let ethflow = CoWSwapEthFlow::Instance::deploy(
             web3.alloy.clone(),
-            gp_settlement.address().into_alloy(),
+            *gp_settlement.address(),
             *weth.address(),
         )
         .await
         .unwrap();
         let ethflow_secondary = CoWSwapEthFlow::Instance::deploy(
             web3.alloy.clone(),
-            gp_settlement.address().into_alloy(),
+            *gp_settlement.address(),
             *weth.address(),
         )
         .await
         .unwrap();
-        let hooks = HooksTrampoline::Instance::deploy(
-            web3.alloy.clone(),
-            gp_settlement.address().into_alloy(),
-        )
-        .await
-        .unwrap();
-        let flashloan_router = FlashLoanRouter::Instance::deploy(
-            web3.alloy.clone(),
-            gp_settlement.address().into_alloy(),
-        )
-        .await
-        .unwrap();
+        let hooks = HooksTrampoline::Instance::deploy(web3.alloy.clone(), *gp_settlement.address())
+            .await
+            .unwrap();
+        let flashloan_router =
+            FlashLoanRouter::Instance::deploy(web3.alloy.clone(), *gp_settlement.address())
+                .await
+                .unwrap();
 
         Self {
             chain_id: network_id

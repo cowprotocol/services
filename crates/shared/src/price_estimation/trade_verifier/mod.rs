@@ -20,12 +20,10 @@ use {
     alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
-    contracts::{
+    contracts::alloy::{
         GPv2Settlement,
-        alloy::{
-            WETH9,
-            support::{AnyoneAuthenticator, Solver, Spardose, Trader},
-        },
+        WETH9,
+        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
     ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
     ethrpc::{
@@ -71,7 +69,7 @@ pub struct TradeVerifier {
     code_fetcher: Arc<dyn CodeFetching>,
     balance_overrides: Arc<dyn BalanceOverriding>,
     block_stream: CurrentBlockWatcher,
-    settlement: GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
     domain_separator: DomainSeparator,
@@ -95,9 +93,10 @@ impl TradeVerifier {
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<H160>,
     ) -> Result<Self> {
-        let settlement_contract = GPv2Settlement::at(&web3, settlement);
+        let settlement_contract =
+            GPv2Settlement::GPv2Settlement::new(settlement.into_alloy(), web3.alloy.clone());
         let domain_separator =
-            DomainSeparator(settlement_contract.domain_separator().call().await?.0);
+            DomainSeparator(settlement_contract.domainSeparator().call().await?.0);
         Ok(Self {
             simulator,
             code_fetcher,
@@ -154,9 +153,8 @@ impl TradeVerifier {
             out_amount,
             self.native_token,
             &self.domain_separator,
-            self.settlement.address(),
+            self.settlement.address().into_legacy(),
         )?;
-
         let settlement = add_balance_queries(
             settlement,
             query,
@@ -164,31 +162,25 @@ impl TradeVerifier {
             solver_address.into_alloy(),
         );
 
-        let settlement = self
-            .settlement
-            .methods()
-            .settle(
-                settlement.tokens,
-                settlement.clearing_prices,
-                settlement.trades,
-                settlement.interactions,
-            )
-            .tx;
-
+        let settle_call = legacy_settlement_to_alloy(settlement).abi_encode();
         let block = *self.block_stream.borrow();
 
         let solver = Solver::Instance::new(solver_address.into_alloy(), self.web3.alloy.clone());
         let swap_simulation = solver.swap(
-            self.settlement.address().into_alloy(),
-            tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
-            verification.receiver.into_alloy(),
-            alloy::primitives::Bytes::from(settlement.data.unwrap().0),
-        )
+                *self.settlement.address(),
+                tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
+                verification.receiver.into_alloy(),
+                settle_call.into(),
+            )
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
-        .from(solver_address.into_alloy())
-        .to(solver_address.into_alloy())
-        .gas(Self::DEFAULT_GAS)
-        .gas_price(u128::try_from(block.gas_price).map_err(|err| anyhow!(err)).context("converting gas price to u128")?);
+            .from(solver_address.into_alloy())
+            .to(solver_address.into_alloy())
+            .gas(Self::DEFAULT_GAS)
+            .gas_price(
+                u128::try_from(block.gas_price)
+                .map_err(|err| anyhow!(err))
+                .context("converting gas price to u128")?
+            );
 
         if let Some(tenderly) = &self.simulator
             && let Err(err) = tenderly.log_simulation_command(
@@ -251,7 +243,7 @@ impl TradeVerifier {
 
             // It looks like the contract lost a lot of sell tokens but only because it was
             // the trader and had to pay for the trade. Adjust tokens lost downward.
-            if verification.from == self.settlement.address() {
+            if verification.from == self.settlement.address().into_legacy() {
                 summary
                     .tokens_lost
                     .entry(query.sell_token)
@@ -260,7 +252,7 @@ impl TradeVerifier {
             // It looks like the contract gained a lot of buy tokens (negative loss) but
             // only because it was the receiver and got the payout. Adjust the tokens lost
             // upward.
-            if verification.receiver == self.settlement.address() {
+            if verification.receiver == self.settlement.address().into_legacy() {
                 summary
                     .tokens_lost
                     .entry(query.buy_token)
@@ -399,7 +391,7 @@ impl TradeVerifier {
                 .await
                 .context("could not fetch authenticator")?;
             overrides.insert(
-                authenticator,
+                authenticator.into_legacy(),
                 StateOverride {
                     code: Some(web3::types::Bytes::from(
                         AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.to_vec(),
@@ -411,6 +403,50 @@ impl TradeVerifier {
         overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 
         Ok(overrides.into_alloy())
+    }
+}
+
+fn legacy_settlement_to_alloy(
+    settlement: EncodedSettlement,
+) -> GPv2Settlement::GPv2Settlement::settleCall {
+    GPv2Settlement::GPv2Settlement::settleCall {
+        tokens: settlement
+            .tokens
+            .into_iter()
+            .map(|t| t.into_alloy())
+            .collect(),
+        clearingPrices: settlement
+            .clearing_prices
+            .into_iter()
+            .map(|p| p.into_alloy())
+            .collect(),
+        interactions: settlement.interactions.map(|interactions| {
+            interactions
+                .into_iter()
+                .map(|i| GPv2Settlement::GPv2Interaction::Data {
+                    target: i.0.into_alloy(),
+                    value: i.1.into_alloy(),
+                    callData: i.2.0.into(),
+                })
+                .collect()
+        }),
+        trades: settlement
+            .trades
+            .into_iter()
+            .map(|t| GPv2Settlement::GPv2Trade::Data {
+                sellTokenIndex: t.0.into_alloy(),
+                buyTokenIndex: t.1.into_alloy(),
+                receiver: t.2.into_alloy(),
+                sellAmount: t.3.into_alloy(),
+                buyAmount: t.4.into_alloy(),
+                validTo: t.5,
+                appData: t.6.0.into(),
+                feeAmount: t.7.into_alloy(),
+                flags: t.8.into_alloy(),
+                executedAmount: t.9.into_alloy(),
+                signature: t.10.into_alloy(),
+            })
+            .collect(),
     }
 }
 
