@@ -267,6 +267,15 @@ impl PoolsCheckpointHandler {
     }
 }
 
+type UniswapV3EventHandler<B> = tokio::sync::Mutex<
+    EventHandler<
+        AlloyEventRetriever<UniswapV3PoolEventFetcher>,
+        RecentEventsCache,
+        (AlloyUniswapV3PoolEvents, Log),
+        B,
+    >,
+>;
+
 pub struct UniswapV3PoolFetcher<B = ethrpc::AlloyProvider>
 where
     B: BlockRetrieving,
@@ -275,14 +284,7 @@ where
     checkpoint: PoolsCheckpointHandler,
     /// Recent events used on top of pools_checkpoint to get the `latest_block`
     /// pools state.
-    events: tokio::sync::Mutex<
-        EventHandler<
-            AlloyEventRetriever<UniswapV3PoolEventFetcher>,
-            RecentEventsCache,
-            (AlloyUniswapV3PoolEvents, Log),
-            B,
-        >,
-    >,
+    events: UniswapV3EventHandler<B>,
 }
 
 impl<B> UniswapV3PoolFetcher<B>
