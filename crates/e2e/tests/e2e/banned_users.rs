@@ -1,10 +1,7 @@
 use {
     alloy::{
-        network::TransactionBuilder,
-        primitives::address,
+        primitives::{Address, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
-        rpc::types::TransactionRequest,
-        sol_types::SolCall,
     },
     contracts::alloy::ERC20,
     e2e::setup::{
@@ -15,7 +12,6 @@ use {
         to_wei,
         to_wei_with_exp,
     },
-    ethcontract::H160,
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -39,12 +35,8 @@ async fn forked_node_mainnet_single_limit_order() {
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// DAI whale address as per [FORK_BLOCK_MAINNET].
-const DAI_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
-    "762d46904B93a1EEDBfF2fD50445CB8ffA41F9FB"
-));
-const BANNED_USER: H160 = H160(hex_literal::hex!(
-    "7F367cC41522cE07553e823bf3be79A889DEbe1B"
-));
+const DAI_WHALE_MAINNET: Address = address!("762d46904B93a1EEDBfF2fD50445CB8ffA41F9FB");
+const BANNED_USER: Address = address!("7F367cC41522cE07553e823bf3be79A889DEbe1B");
 
 async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
@@ -62,16 +54,10 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
 
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            TransactionRequest::default()
-                .with_from(DAI_WHALE_MAINNET.into_alloy())
-                .with_to(*token_dai.address())
-                .with_input(
-                    ERC20::ERC20::transferCall {
-                        recipient: BANNED_USER.into_alloy(),
-                        amount: to_wei_with_exp(1000, 18).into_alloy(),
-                    }
-                    .abi_encode(),
-                ),
+            token_dai
+                .transfer(BANNED_USER, to_wei_with_exp(1000, 18).into_alloy())
+                .from(DAI_WHALE_MAINNET)
+                .into_transaction_request(),
             ImpersonateConfig {
                 fund_amount: None,
                 stop_impersonate: true,
@@ -86,18 +72,15 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     // Approve GPv2 for trading
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            TransactionRequest::default()
-                .with_from(BANNED_USER.into_alloy())
-                .with_to(*token_dai.address())
-                .with_input(
-                    ERC20::ERC20::approveCall {
-                        spender: onchain.contracts().allowance.into_alloy(),
-                        amount: to_wei_with_exp(1000, 18).into_alloy(),
-                    }
-                    .abi_encode(),
-                ),
+            token_dai
+                .approve(
+                    onchain.contracts().allowance.into_alloy(),
+                    to_wei_with_exp(1000, 18).into_alloy(),
+                )
+                .from(BANNED_USER)
+                .into_transaction_request(),
             ImpersonateConfig {
-                fund_amount: Some(eth(1)), // gas money
+                fund_amount: Some(eth(1)),
                 stop_impersonate: true,
             },
         )
@@ -120,7 +103,7 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
                     value: to_wei_with_exp(1000, 18).try_into().unwrap(),
                 },
             },
-            from: BANNED_USER,
+            from: BANNED_USER.into_legacy(),
             ..Default::default()
         })
         .await;

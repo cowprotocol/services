@@ -1,18 +1,14 @@
 use {
     crate::database::AuctionTransaction,
     ::alloy::{
-        network::TransactionBuilder,
-        primitives::{U256, address},
+        primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
-        rpc::types::TransactionRequest,
-        sol_types::SolCall,
     },
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::{eth, *},
-    ethcontract::H160,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -69,9 +65,7 @@ async fn local_node_no_liquidity_limit_order() {
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// USDC whale address as per [FORK_BLOCK_MAINNET].
-const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
-    "28c6c06298d514db089934071355e5743bf21d60"
-));
+const USDC_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
 
 #[tokio::test]
 #[ignore]
@@ -87,9 +81,7 @@ async fn forked_node_mainnet_single_limit_order() {
 
 const FORK_BLOCK_GNOSIS: u64 = 41502478;
 /// USDC whale address as per [FORK_BLOCK_GNOSIS].
-const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
-    "d4A39d219ADB43aB00739DC5D876D98Fdf0121Bf"
-));
+const USDC_WHALE_GNOSIS: Address = address!("d4A39d219ADB43aB00739DC5D876D98Fdf0121Bf");
 
 #[tokio::test]
 #[ignore]
@@ -848,16 +840,13 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     // Give trader some USDC
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            TransactionRequest::default()
-                .with_from(USDC_WHALE_MAINNET.into_alloy())
-                .with_to(*token_usdc.address())
-                .with_input(
-                    ERC20::ERC20::transferCall {
-                        recipient: trader.address().into_alloy(),
-                        amount: to_wei_with_exp(1000, 6).into_alloy(),
-                    }
-                    .abi_encode(),
-                ),
+            token_usdc
+                .transfer(
+                    trader.address().into_alloy(),
+                    to_wei_with_exp(1000, 6).into_alloy(),
+                )
+                .from(USDC_WHALE_MAINNET)
+                .into_transaction_request(),
             ImpersonateConfig {
                 fund_amount: None,
                 stop_impersonate: true,
@@ -974,16 +963,13 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     // Give trader some USDC
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            TransactionRequest::default()
-                .with_from(USDC_WHALE_GNOSIS.into_alloy())
-                .with_to(*token_usdc.address())
-                .with_input(
-                    ERC20::ERC20::transferCall {
-                        recipient: trader.address().into_alloy(),
-                        amount: to_wei_with_exp(1000, 6).into_alloy(),
-                    }
-                    .abi_encode(),
-                ),
+            token_usdc
+                .transfer(
+                    trader.address().into_alloy(),
+                    to_wei_with_exp(1000, 6).into_alloy(),
+                )
+                .from(USDC_WHALE_GNOSIS)
+                .into_transaction_request(),
             ImpersonateConfig {
                 fund_amount: None,
                 stop_impersonate: true,
