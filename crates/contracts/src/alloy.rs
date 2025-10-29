@@ -693,10 +693,10 @@ crate::bindings!(
         POLYGON => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 45859743),
         // <https://explorer.lens.xyz/tx/0x01584b767dda7b115394b93dbcfecadfe589862ae3f7957846a2db82f2f5c703>
         LENS => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 2621745),
-        // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155> 
+        // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
         LINEA => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 24333100),
         // <https://plasmascan.to/tx/0xf16bd6f307dce94ab252d8dd8266ab30091879fb3d631cbcf3d0ffddf9e6ad05?chainid=9745>
-        PLASMA => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 3439711),    
+        PLASMA => (address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"), 3439711),
     }
 );
 
