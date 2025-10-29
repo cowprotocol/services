@@ -3,14 +3,8 @@
 use {
     anyhow::Result,
     clap::Parser,
-    ethrpc::{
-        Web3,
-        block_stream::{BlockRetrieving, CurrentBlockWatcher, current_block_stream},
-    },
-    std::{
-        fmt::{self, Display, Formatter},
-        sync::Arc,
-    },
+    ethrpc::block_stream::{CurrentBlockWatcher, current_block_stream},
+    std::fmt::{self, Display, Formatter},
     url::Url,
 };
 
@@ -19,19 +13,13 @@ use {
 #[group(skip)]
 pub struct Arguments {
     /// WebSocket node URL for real-time block updates via subscriptions.
-    /// If not provided, will attempt to use the regular HTTP node URL.
-    #[clap(long, env)]
-    pub node_ws_url: Option<Url>,
+    #[clap(long, env, default_value = "ws://localhost:8545")]
+    pub node_ws_url: Url,
 }
 
 impl Arguments {
-    pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
-        Arc::new(web3.alloy.clone())
-    }
-
-    pub async fn stream(&self, http_rpc: Url) -> Result<CurrentBlockWatcher> {
-        let ws_rpc = self.node_ws_url.clone().unwrap_or(http_rpc);
-        current_block_stream(ws_rpc).await
+    pub async fn stream(&self) -> Result<CurrentBlockWatcher> {
+        current_block_stream(self.node_ws_url.clone()).await
     }
 }
 

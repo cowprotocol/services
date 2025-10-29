@@ -282,12 +282,7 @@ pub async fn run(args: Arguments) {
         .instrumented(),
     );
 
-    let current_block_stream = args
-        .shared
-        .current_block
-        .stream(args.shared.node_url.clone())
-        .await
-        .unwrap();
+    let current_block_stream = args.shared.current_block.stream().await.unwrap();
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),

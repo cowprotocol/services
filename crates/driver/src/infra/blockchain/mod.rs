@@ -26,7 +26,6 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 pub struct Rpc {
     web3: Web3,
     chain: Chain,
-    args: RpcArgs,
 }
 
 pub struct RpcArgs {
@@ -46,7 +45,7 @@ impl Rpc {
         );
         let chain = Chain::try_from(web3.eth().chain_id().await?)?;
 
-        Ok(Self { web3, chain, args })
+        Ok(Self { web3, chain })
     }
 
     /// Returns the chain for the RPC connection.
@@ -99,10 +98,10 @@ impl Ethereum {
         tx_gas_limit: U256,
         current_block_args: &shared::current_block::Arguments,
     ) -> Self {
-        let Rpc { web3, chain, args } = rpc;
+        let Rpc { web3, chain } = rpc;
 
         let current_block_stream = current_block_args
-            .stream(args.url.clone())
+            .stream()
             .await
             .expect("couldn't initialize current block stream");
 

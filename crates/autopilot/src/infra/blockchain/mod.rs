@@ -72,7 +72,6 @@ impl Ethereum {
         web3: Web3,
         unbuffered_web3: Web3,
         chain: &Chain,
-        http_url: Url,
         addresses: contracts::Addresses,
         current_block_args: &shared::current_block::Arguments,
     ) -> Self {
@@ -80,7 +79,7 @@ impl Ethereum {
 
         Self {
             current_block: current_block_args
-                .stream(http_url)
+                .stream()
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
