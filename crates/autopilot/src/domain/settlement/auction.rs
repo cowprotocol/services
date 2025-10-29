@@ -5,6 +5,10 @@ use {
     std::collections::{HashMap, HashSet},
 };
 
+/// This struct gets populated with data for a specific transaction
+/// so it's allowed to prune state that is irrelevant for handling
+/// that particular transaction (e.g. `prices` might only contain
+/// prices for tokens that were traded in that transaction).
 #[derive(Debug)]
 pub struct Auction {
     pub id: domain::auction::Id,
