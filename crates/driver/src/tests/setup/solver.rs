@@ -10,7 +10,7 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
+        infra::config::file::FeeHandler,
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
@@ -23,7 +23,7 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex},
     },
-    web3::{Transport, signing::Key},
+    web3::signing::Key,
 };
 
 pub const NAME: &str = "test-solver";
@@ -437,84 +437,6 @@ impl Solver {
             .await
             .into_iter()
             .collect::<HashMap<_, _>>();
-
-        let url = config.blockchain.web3_url.parse().unwrap();
-        let rpc = infra::blockchain::Rpc::try_new(infra::blockchain::RpcArgs {
-            url,
-            max_batch_size: 20,
-            max_concurrent_requests: 10,
-        })
-        .await
-        .unwrap();
-        let gas = Arc::new(
-            infra::blockchain::GasPriceEstimator::new(
-                rpc.web3(),
-                &Default::default(),
-                &[infra::mempool::Config {
-                    min_priority_fee: Default::default(),
-                    gas_price_cap: eth::U256::MAX,
-                    target_confirm_time: Default::default(),
-                    retry_interval: Default::default(),
-                    kind: infra::mempool::Kind::Public {
-                        max_additional_tip: 0.into(),
-                        additional_tip_percentage: 0.,
-                        revert_protection: infra::mempool::RevertProtection::Disabled,
-                    },
-                }],
-            )
-            .await
-            .unwrap(),
-        );
-        let current_block_args = shared::current_block::Arguments {
-            node_ws_url: Some(
-                config
-                    .blockchain
-                    .web3_ws_url
-                    .parse()
-                    .expect("valid websocket URL"),
-            ),
-        };
-
-        // Mine blocks in a loop while waiting for Ethereum initialization.
-        // This ensures the WebSocket subscription receives blocks and completes.
-        let web3_for_mining = config.blockchain.web3.clone();
-        let mining_task = async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                println!("mining a block...");
-                let _ = web3_for_mining
-                    .transport()
-                    .execute("evm_mine", vec![])
-                    .await;
-            }
-        };
-
-        let eth_task = Ethereum::new(
-            rpc,
-            Addresses {
-                settlement: Some(config.blockchain.settlement.address().into_legacy().into()),
-                weth: Some(config.blockchain.weth.address().into_legacy().into()),
-                balances: Some(config.blockchain.balances.address().into_legacy().into()),
-                signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
-                cow_amm_helper_by_factory: Default::default(),
-                flashloan_router: Some(
-                    config
-                        .blockchain
-                        .flashloan_router
-                        .address()
-                        .into_legacy()
-                        .into(),
-                ),
-            },
-            gas,
-            45_000_000.into(),
-            &current_block_args,
-        );
-
-        let _eth = tokio::select! {
-            eth = eth_task => eth,
-            _ = mining_task => unreachable!("mining task should not complete first"),
-        };
 
         let state = Arc::new(Mutex::new(StateInner {
             called: false,
