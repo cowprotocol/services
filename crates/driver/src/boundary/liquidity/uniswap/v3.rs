@@ -102,7 +102,7 @@ pub fn to_interaction(
 
 pub fn collector(
     eth: &Ethereum,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_retriever: ethrpc::AlloyProvider,
     config: &infra::liquidity::config::UniswapV3,
 ) -> Box<dyn LiquidityCollecting> {
     let eth = Arc::new(eth.with_metric_label("uniswapV3".into()));
@@ -125,7 +125,7 @@ pub fn collector(
 
 async fn init_liquidity(
     eth: &Ethereum,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_retriever: ethrpc::AlloyProvider,
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();

@@ -368,9 +368,9 @@ impl BalancerContracts {
 
 impl BalancerPoolFetcher {
     #[expect(clippy::too_many_arguments)]
-    pub async fn new(
+    pub async fn new<B>(
         subgraph_url: &Url,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_retriever: B,
         token_infos: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockWatcher,
@@ -378,7 +378,10 @@ impl BalancerPoolFetcher {
         web3: Web3,
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<H256>,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        B: BlockRetrieving + Clone,
+    {
         let pool_initializer = BalancerSubgraphClient::from_subgraph_url(subgraph_url, client)?;
         let web3 = ethrpc::instrumented::instrument_with_label(&web3, "balancerV2".into());
         let fetcher = Arc::new(Cache::new(
@@ -449,13 +452,16 @@ impl BalancerPoolFetching for BalancerPoolFetcher {
 }
 
 /// Creates an aggregate fetcher for all supported pool factories.
-async fn create_aggregate_pool_fetcher(
+async fn create_aggregate_pool_fetcher<B>(
     web3: Web3,
     pool_initializer: impl PoolInitializing,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_retriever: B,
     token_infos: Arc<dyn TokenInfoFetching>,
     contracts: &BalancerContracts,
-) -> Result<Aggregate> {
+) -> Result<Aggregate>
+where
+    B: BlockRetrieving + Clone,
+{
     let registered_pools = pool_initializer.initialize_pools().await?;
     let fetched_block_number = registered_pools.fetched_block_number;
     let fetched_block_hash = web3
@@ -550,10 +556,10 @@ async fn create_aggregate_pool_fetcher(
 
 /// Helper method for creating a boxed `InternalPoolFetching` instance for the
 /// specified factory and parameters.
-fn create_internal_pool_fetcher<Factory>(
+fn create_internal_pool_fetcher<Factory, B>(
     vault: BalancerV2Vault::Instance,
     factory: Factory,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_retriever: B,
     token_infos: Arc<dyn TokenInfoFetching>,
     factory_instance: &BalancerFactoryInstance,
     registered_pools: RegisteredPools,
@@ -561,6 +567,7 @@ fn create_internal_pool_fetcher<Factory>(
 ) -> Result<Box<dyn InternalPoolFetching>>
 where
     Factory: FactoryIndexing,
+    B: BlockRetrieving,
 {
     let initial_pools = registered_pools
         .pools

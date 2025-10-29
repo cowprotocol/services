@@ -64,7 +64,7 @@ impl Fetcher {
         };
 
         let block_stream = eth.current_block();
-        let block_retriever = blocks.retriever(eth.web3().clone());
+        let block_retriever = eth.web3().alloy.clone();
 
         let uni_v2: Vec<_> = future::try_join_all(
             config

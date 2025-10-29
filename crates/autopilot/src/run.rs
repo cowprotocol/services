@@ -367,7 +367,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
+    let block_retriever = web3.alloy.clone();
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 

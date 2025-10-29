@@ -49,11 +49,12 @@ impl AlloyEventRetrieving for BasePoolFactoryContract {
 }
 
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> = Mutex<
+type PoolUpdater<Factory, B = ethrpc::AlloyProvider> = Mutex<
     EventHandler<
         AlloyEventRetriever<BasePoolFactoryContract>,
         PoolStorage<Factory>,
         (BalancerV2BasePoolFactoryEvents, Log),
+        B,
     >,
 >;
 
@@ -63,21 +64,23 @@ type PoolUpdater<Factory> = Mutex<
 /// `pool_ids_for_token_pairs` which takes a collection of `TokenPair`, gets the
 /// relevant pools from each `PoolStorage` and returns a merged de-duplicated
 /// version of the results.
-pub struct Registry<Factory>
+pub struct Registry<Factory, B = ethrpc::AlloyProvider>
 where
     Factory: FactoryIndexing,
+    B: BlockRetrieving,
 {
     fetcher: Arc<dyn PoolInfoFetching<Factory>>,
-    updater: PoolUpdater<Factory>,
+    updater: PoolUpdater<Factory, B>,
 }
 
-impl<Factory> Registry<Factory>
+impl<Factory, B> Registry<Factory, B>
 where
     Factory: FactoryIndexing,
+    B: BlockRetrieving,
 {
     /// Returns a new pool registry for the specified factory.
     pub fn new(
-        block_retreiver: Arc<dyn BlockRetrieving>,
+        block_retreiver: B,
         fetcher: Arc<dyn PoolInfoFetching<Factory>>,
         factory_instance: &BalancerFactoryInstance,
         initial_pools: Vec<Factory::PoolInfo>,
@@ -94,9 +97,10 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Factory> InternalPoolFetching for Registry<Factory>
+impl<Factory, B> InternalPoolFetching for Registry<Factory, B>
 where
     Factory: FactoryIndexing,
+    B: BlockRetrieving,
 {
     async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<H256> {
         self.updater
@@ -121,9 +125,10 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Factory> Maintaining for Registry<Factory>
+impl<Factory, B> Maintaining for Registry<Factory, B>
 where
     Factory: FactoryIndexing,
+    B: BlockRetrieving + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.updater.run_maintenance().await

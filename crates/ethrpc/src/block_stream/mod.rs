@@ -240,7 +240,7 @@ pub fn into_stream(receiver: CurrentBlockWatcher) -> WatchStream<BlockInfo> {
 /// Trait for abstracting the retrieval of the block information such as the
 /// latest block number.
 #[async_trait::async_trait]
-pub trait BlockRetrieving: Debug + Send + Sync + 'static {
+pub trait BlockRetrieving: Debug + Send + Sync + Clone + 'static {
     async fn current_block(&self) -> Result<BlockInfo>;
     async fn block(&self, number: u64) -> Result<BlockNumberHash>;
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;

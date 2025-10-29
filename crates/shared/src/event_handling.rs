@@ -13,7 +13,7 @@ use {
     },
     futures::{Stream, StreamExt, TryStreamExt, future},
     primitive_types::H256,
-    std::{pin::Pin, sync::Arc},
+    std::pin::Pin,
     tokio::sync::Mutex,
     tracing::Instrument,
     web3::types::Address,
@@ -45,12 +45,13 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 ///    `last_handled_blocks` to make sure the data is consistent. 5. If history
 ///    update is successful, proceed with latest update, and if successful
 ///    update `last_handled_blocks`.
-pub struct EventHandler<C, S, E>
+pub struct EventHandler<C, S, E, B = ethrpc::AlloyProvider>
 where
     C: EventRetrieving<Event = E>,
     S: EventStoring<E>,
+    B: BlockRetrieving,
 {
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_retriever: B,
     contract: C,
     store: S,
     last_handled_blocks: Vec<BlockNumberHash>,
@@ -264,13 +265,14 @@ struct EventRange {
     is_reorg: bool,
 }
 
-impl<C, S, E> EventHandler<C, S, E>
+impl<C, S, E, B> EventHandler<C, S, E, B>
 where
     C: EventRetrieving<Event = E>,
     S: EventStoring<E>,
+    B: BlockRetrieving,
 {
     pub fn new(
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_retriever: B,
         contract: C,
         store: S,
         start_sync_at_block: Option<BlockNumberHash>,
@@ -296,7 +298,7 @@ where
     /// this function only indexes from the specified input block
     /// if there are no more recent events in the database.
     pub async fn new_skip_blocks_before(
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_retriever: B,
         contract: C,
         store: S,
         skip_blocks_before: BlockNumberHash,
@@ -606,7 +608,7 @@ where
     async fn past_events_by_block_number_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<impl Stream<Item = Result<E>> + use<C, S, E> + Send> {
+    ) -> Result<impl Stream<Item = Result<E>> + use<C, S, E, B> + Send> {
         self.contract.get_events_by_block_range(block_range).await
     }
 
@@ -686,11 +688,12 @@ fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, Rang
 }
 
 #[async_trait::async_trait]
-impl<C, S, E> Maintaining for Mutex<EventHandler<C, S, E>>
+impl<C, S, E, B> Maintaining for Mutex<EventHandler<C, S, E, B>>
 where
     E: Send + Sync,
     C: EventRetrieving<Event = E> + Send + Sync,
     S: EventStoring<E> + Send + Sync,
+    B: BlockRetrieving + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         let mut inner = self.lock().await;
@@ -974,7 +977,7 @@ mod tests {
             ),
         ];
         let event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
+            web3.alloy.clone(),
             AlloyEventRetriever(contract),
             storage,
             None,
@@ -1006,7 +1009,7 @@ mod tests {
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
         let mut event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
+            web3.alloy.clone(),
             AlloyEventRetriever(contract),
             storage,
             Some(block),
@@ -1039,7 +1042,7 @@ mod tests {
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
         let mut event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
+            web3.alloy.clone(),
             AlloyEventRetriever(contract),
             storage,
             Some(block),
@@ -1086,7 +1089,7 @@ mod tests {
         .await
         .unwrap();
         let mut base_event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
+            web3.alloy.clone(),
             AlloyEventRetriever(contract.clone()),
             storage_empty,
             Some(event_start),
@@ -1108,7 +1111,7 @@ mod tests {
         .await
         .unwrap();
         let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.alloy.clone()),
+            web3.alloy.clone(),
             AlloyEventRetriever(contract.clone()),
             storage_empty,
             event_start,
@@ -1146,7 +1149,7 @@ mod tests {
             events: vec![last_event.clone()],
         };
         let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.alloy.clone()),
+            web3.alloy.clone(),
             AlloyEventRetriever(contract),
             storage_nonempty,
             // Same event start as for the two previous event handlers. The test checks that this

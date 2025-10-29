@@ -31,7 +31,7 @@ use {
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         ops::Neg,
-        sync::{Arc, Mutex},
+        sync::Mutex,
     },
     tracing::instrument,
 };
@@ -267,7 +267,10 @@ impl PoolsCheckpointHandler {
     }
 }
 
-pub struct UniswapV3PoolFetcher {
+pub struct UniswapV3PoolFetcher<B = ethrpc::AlloyProvider>
+where
+    B: BlockRetrieving,
+{
     /// Pools state on a specific block number in history considered reorg safe
     checkpoint: PoolsCheckpointHandler,
     /// Recent events used on top of pools_checkpoint to get the `latest_block`
@@ -277,16 +280,20 @@ pub struct UniswapV3PoolFetcher {
             AlloyEventRetriever<UniswapV3PoolEventFetcher>,
             RecentEventsCache,
             (AlloyUniswapV3PoolEvents, Log),
+            B,
         >,
     >,
 }
 
-impl UniswapV3PoolFetcher {
+impl<B> UniswapV3PoolFetcher<B>
+where
+    B: BlockRetrieving,
+{
     pub async fn new(
         subgraph_url: &Url,
         web3: Web3,
         client: Client,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_retriever: B,
         max_pools_to_initialize: usize,
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
@@ -352,7 +359,10 @@ impl UniswapV3PoolFetcher {
 }
 
 #[async_trait::async_trait]
-impl PoolFetching for UniswapV3PoolFetcher {
+impl<B> PoolFetching for UniswapV3PoolFetcher<B>
+where
+    B: BlockRetrieving,
+{
     #[instrument(skip_all)]
     async fn fetch(
         &self,
@@ -494,7 +504,10 @@ fn append_events(
 }
 
 #[async_trait::async_trait]
-impl Maintaining for UniswapV3PoolFetcher {
+impl<B> Maintaining for UniswapV3PoolFetcher<B>
+where
+    B: BlockRetrieving + Send + Sync,
+{
     async fn run_maintenance(&self) -> Result<()> {
         let (result1, result2) = futures::join!(
             self.events.run_maintenance(),

@@ -5,19 +5,20 @@ use {
         event_handling::{EventHandler, EventRetrieving, EventStoring},
         maintenance::Maintaining,
     },
-    std::sync::Arc,
     tokio::sync::Mutex,
 };
 
-pub struct EventUpdater<DB, W>(Mutex<EventHandler<W, DB, W::Event>>)
-where
-    DB: EventStoring<W::Event>,
-    W: EventRetrieving + Send + Sync;
-
-impl<DB, W> EventUpdater<DB, W>
+pub struct EventUpdater<DB, W, B = ethrpc::AlloyProvider>(Mutex<EventHandler<W, DB, W::Event, B>>)
 where
     DB: EventStoring<W::Event>,
     W: EventRetrieving + Send + Sync,
+    B: BlockRetrieving;
+
+impl<DB, W, B> EventUpdater<DB, W, B>
+where
+    DB: EventStoring<W::Event>,
+    W: EventRetrieving + Send + Sync,
+    B: BlockRetrieving,
 {
     /// Creates a new event updater.
     ///
@@ -27,7 +28,7 @@ where
     pub fn new(
         contract: W,
         db: DB,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_retriever: B,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
         Self(Mutex::new(EventHandler::new(
@@ -48,7 +49,7 @@ where
     pub async fn new_skip_blocks_before(
         contract: W,
         db: DB,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_retriever: B,
         start_sync_at_block: BlockNumberHash,
     ) -> Result<Self> {
         Ok(Self(Mutex::new(
@@ -64,11 +65,12 @@ where
 }
 
 #[async_trait::async_trait]
-impl<DB, W> Maintaining for EventUpdater<DB, W>
+impl<DB, W, B> Maintaining for EventUpdater<DB, W, B>
 where
     DB: EventStoring<W::Event> + Send + Sync,
     W: EventRetrieving + Send + Sync,
     W::Event: Send + Sync,
+    B: BlockRetrieving + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.run_maintenance().await
