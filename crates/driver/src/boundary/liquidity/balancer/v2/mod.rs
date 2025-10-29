@@ -16,7 +16,10 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethrpc::{alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::IntoAlloy,
+        block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    },
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
@@ -71,12 +74,15 @@ fn to_interaction(
     }
 }
 
-pub fn collector(
+pub fn collector<B>(
     eth: &Ethereum,
     block_stream: CurrentBlockWatcher,
-    block_retriever: ethrpc::AlloyProvider,
+    block_retriever: B,
     config: &infra::liquidity::config::BalancerV2,
-) -> Box<dyn LiquidityCollecting> {
+) -> Box<dyn LiquidityCollecting>
+where
+    B: BlockRetrieving + Clone,
+{
     let eth = Arc::new(eth.with_metric_label("balancerV2".into()));
     let reinit_interval = config.reinit_interval;
     let config = Arc::new(config.clone());
@@ -96,12 +102,15 @@ pub fn collector(
     )) as Box<_>
 }
 
-async fn init_liquidity(
+async fn init_liquidity<B>(
     eth: &Ethereum,
     block_stream: &CurrentBlockWatcher,
-    block_retriever: ethrpc::AlloyProvider,
+    block_retriever: B,
     config: &infra::liquidity::config::BalancerV2,
-) -> Result<impl LiquidityCollecting + use<>> {
+) -> Result<impl LiquidityCollecting + use<B>>
+where
+    B: BlockRetrieving + Clone,
+{
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
         vault: BalancerV2Vault::Instance::new(config.vault.0.into_alloy(), web3.alloy.clone()),

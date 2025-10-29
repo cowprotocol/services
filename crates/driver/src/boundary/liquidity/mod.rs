@@ -9,7 +9,6 @@ use {
     model::TokenPair,
     shared::{
         baseline_solver::BaseTokens,
-        current_block,
         http_client::HttpClientFactory,
         recent_block_cache::{self, CacheConfig},
     },
@@ -29,9 +28,6 @@ pub mod balancer;
 pub mod swapr;
 pub mod uniswap;
 pub mod zeroex;
-
-/// The default poll interval for the block stream updating task.
-const BLOCK_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The default pool caching configuration to use.
 fn cache_config() -> CacheConfig {
@@ -59,10 +55,6 @@ pub struct Fetcher {
 impl Fetcher {
     /// Creates a new fetcher for the specified configuration.
     pub async fn try_new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
-        let blocks = current_block::Arguments {
-            block_stream_poll_interval: BLOCK_POLL_INTERVAL,
-        };
-
         let block_stream = eth.current_block();
         let block_retriever = eth.web3().alloy.clone();
 

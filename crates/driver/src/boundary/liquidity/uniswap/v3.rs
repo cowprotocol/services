@@ -13,7 +13,6 @@ use {
     anyhow::Context,
     ethrpc::{
         alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::BlockRetrieving,
     },
     shared::{
         http_solver::model::TokenAmount,

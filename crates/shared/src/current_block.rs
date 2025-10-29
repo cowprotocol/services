@@ -4,12 +4,10 @@ use {
     anyhow::Result,
     clap::Parser,
     ethrpc::{
-        Web3,
-        block_stream::{BlockRetrieving, CurrentBlockWatcher, current_block_stream},
+        block_stream::{CurrentBlockWatcher, current_block_stream},
     },
     std::{
         fmt::{self, Display, Formatter},
-        sync::Arc,
         time::Duration,
     },
     url::Url,
@@ -31,10 +29,6 @@ pub struct Arguments {
 }
 
 impl Arguments {
-    pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
-        Arc::new(web3.alloy.clone())
-    }
-
     pub async fn stream(&self, rpc: Url) -> Result<CurrentBlockWatcher> {
         current_block_stream(rpc, self.block_stream_poll_interval).await
     }
