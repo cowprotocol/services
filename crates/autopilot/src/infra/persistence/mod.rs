@@ -429,12 +429,12 @@ impl Persistence {
         };
 
         let block = {
-            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
+            let block = database::solver_competition::auction_start_block(&mut ex, auction_id)
                 .await?
                 .ok_or(error::Auction::NotFound)?;
-            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
+            block
+                .parse::<u64>()
                 .map_err(|_| error::Auction::NotFound)?
-                .auction_start_block
                 .into()
         };
 
