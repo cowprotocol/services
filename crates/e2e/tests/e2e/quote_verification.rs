@@ -132,10 +132,9 @@ const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// https://www.tdly.co/shared/simulation/7402de5e-e524-4e24-9af8-50d0a38c105b
 async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     let url = std::env::var("FORK_URL_MAINNET")
-        .expect("FORK_URL_MAINNET must be set to run forked tests")
-        .parse()
-        .unwrap();
-    let block_stream = ethrpc::block_stream::current_block_stream(url)
+        .expect("FORK_URL_MAINNET must be set to run forked tests");
+    let ws_url = url.replace("http://", "ws://").parse().unwrap();
+    let block_stream = ethrpc::block_stream::current_block_stream(web3.alloy.clone(), ws_url)
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;

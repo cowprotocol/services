@@ -54,7 +54,6 @@ use {
         path::PathBuf,
         str::FromStr,
     },
-    web3::Transport,
 };
 
 pub mod blockchain;
@@ -970,31 +969,18 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
-        // Mine blocks in a loop while waiting for Ethereum initialization.
-        // This ensures the WebSocket subscription receives blocks and completes.
-        let web3_for_mining = blockchain.web3.clone();
-        let mining_task = async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                let _ = web3_for_mining
-                    .transport()
-                    .execute("evm_mine", vec![])
-                    .await;
-            }
-        };
-        let driver_config = driver::Config {
-            config_file,
-            enable_simulation: self.enable_simulation,
-            mempools: self.mempools,
-            order_priority_strategies: self.order_priority_strategies,
-            orderbook,
-        };
-        let driver_task = Driver::new(&driver_config, &solvers_with_address, &blockchain);
-
-        let driver = tokio::select! {
-            eth = driver_task => eth,
-            _ = mining_task => unreachable!("mining task should not complete first"),
-        };
+        let driver = Driver::new(
+            &driver::Config {
+                config_file,
+                enable_simulation: self.enable_simulation,
+                mempools: self.mempools,
+                order_priority_strategies: self.order_priority_strategies,
+                orderbook,
+            },
+            &solvers_with_address,
+            &blockchain,
+        )
+        .await;
 
         Test {
             blockchain,

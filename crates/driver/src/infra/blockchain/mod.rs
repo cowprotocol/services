@@ -101,7 +101,7 @@ impl Ethereum {
         let Rpc { web3, chain } = rpc;
 
         let current_block_stream = current_block_args
-            .stream()
+            .stream(web3.alloy.clone())
             .await
             .expect("couldn't initialize current block stream");
 

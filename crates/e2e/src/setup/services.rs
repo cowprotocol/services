@@ -245,7 +245,7 @@ impl<'a> Services<'a> {
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(orderbook::run(args));
 
-        self.wait_for_api_to_come_up().await;
+        Self::wait_for_api_to_come_up().await;
     }
 
     /// Starts a basic version of the protocol with a single baseline solver.
@@ -379,10 +379,8 @@ impl<'a> Services<'a> {
         self.start_api(api_args).await;
     }
 
-    async fn wait_for_api_to_come_up(&self) {
+    async fn wait_for_api_to_come_up() {
         let is_up = || async {
-            // Required for the CurrentBlockWatcher to init properly.
-            self.mint_block().await;
             reqwest::get(format!("{API_HOST}{VERSION_ENDPOINT}"))
                 .await
                 .is_ok()

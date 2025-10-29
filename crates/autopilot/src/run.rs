@@ -104,6 +104,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 }
 
 /// Creates unbuffered Web3 transport.
+// @todo: use real unbuffered alloy provider
 async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     ethrpc(
         url,
@@ -774,7 +775,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     let current_block = args
         .shared
         .current_block
-        .stream()
+        .stream(web3.alloy.clone())
         .await
         .expect("couldn't initialize current block stream");
 

@@ -9,11 +9,7 @@ use {
     anyhow::{Context as _, Result, anyhow, ensure},
     futures::{StreamExt, future},
     primitive_types::{H256, U256},
-    std::{
-        fmt::Debug,
-        num::NonZeroU64,
-        time::{Duration, Instant},
-    },
+    std::{fmt::Debug, num::NonZeroU64, time::Instant},
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::{Instrument, instrument},
@@ -137,38 +133,39 @@ impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
 /// existing stream instead.
 ///
 /// The websocket reconnection is handled by the alloy lib.
-pub async fn current_block_stream(ws_url: Url) -> Result<CurrentBlockWatcher> {
-    tracing::info!(?ws_url, "connecting to websocket for block stream");
+pub async fn current_block_stream(
+    alloy_provider: AlloyProvider,
+    ws_url: Url,
+) -> Result<CurrentBlockWatcher> {
+    tracing::info!(?ws_url, "initializing block stream");
 
     // Create a WS transport, which implements an automatic reconnection mechanism
     let ws_connect = WsConnect::new(ws_url.as_str());
-    let provider = ProviderBuilder::new()
+    let ws_provider = ProviderBuilder::new()
         .connect_ws(ws_connect)
         .await
         .context("failed to connect to websocket")?;
 
-    let mut stream = provider
+    let mut stream = ws_provider
         .subscribe_blocks()
         .await
         .context("failed to subscribe to blocks")?
         .into_stream();
 
-    tracing::info!("waiting for first block from websocket");
-    let first_block = match tokio::time::timeout(Duration::from_secs(30), stream.next()).await {
-        Ok(Some(block)) => BlockInfo::try_from(block.clone())
-            .with_context(|| format!("failed to parse first block {:?}", block))?,
-        Ok(None) => {
-            anyhow::bail!("websocket stream ended before receiving first block");
-        }
-        Err(_) => {
-            anyhow::bail!("timeout waiting for first block from websocket");
-        }
-    };
+    // Fetch the current block immediately via HTTP instead of waiting for WebSocket
+    tracing::info!("fetching initial block via HTTP");
+    let first_block = alloy_provider
+        .get_block(BlockId::Number(BlockNumberOrTag::Latest))
+        .await
+        .context("failed to fetch latest block via HTTP")?
+        .context("latest block not found")?;
+
+    let first_block = BlockInfo::try_from(first_block).context("failed to parse initial block")?;
 
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
-        // Keep provider alive to maintain WebSocket connection
-        let _provider = provider;
+        // Keep WebSocket provider alive to maintain connection
+        let _ws_provider = ws_provider;
         let mut previous_block = first_block;
 
         // Process incoming blocks. WsConnect handles reconnection automatically,
@@ -449,8 +446,11 @@ mod tests {
     async fn mainnet() {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
 
-        let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
-        let receiver = current_block_stream(node).await.unwrap();
+        let alloy_provider = Web3::new_from_env();
+        let ws_node = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
+        let receiver = current_block_stream(alloy_provider.alloy, ws_node)
+            .await
+            .unwrap();
         let mut stream = into_stream(receiver);
         for _ in 0..3 {
             let block = stream.next().await.unwrap();

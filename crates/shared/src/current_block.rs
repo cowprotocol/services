@@ -3,7 +3,10 @@
 use {
     anyhow::Result,
     clap::Parser,
-    ethrpc::block_stream::{CurrentBlockWatcher, current_block_stream},
+    ethrpc::{
+        AlloyProvider,
+        block_stream::{CurrentBlockWatcher, current_block_stream},
+    },
     std::fmt::{self, Display, Formatter},
     url::Url,
 };
@@ -18,8 +21,8 @@ pub struct Arguments {
 }
 
 impl Arguments {
-    pub async fn stream(&self) -> Result<CurrentBlockWatcher> {
-        current_block_stream(self.node_ws_url.clone()).await
+    pub async fn stream(&self, alloy_provider: AlloyProvider) -> Result<CurrentBlockWatcher> {
+        current_block_stream(alloy_provider, self.node_ws_url.clone()).await
     }
 }
 

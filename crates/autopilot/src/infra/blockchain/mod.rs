@@ -79,7 +79,7 @@ impl Ethereum {
 
         Self {
             current_block: current_block_args
-                .stream()
+                .stream(unbuffered_web3.alloy.clone())
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
