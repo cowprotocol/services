@@ -104,7 +104,6 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 }
 
 /// Creates unbuffered Web3 transport.
-// @todo: use real unbuffered alloy provider
 async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     ethrpc(
         url,
