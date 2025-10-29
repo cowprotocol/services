@@ -1,14 +1,11 @@
 use {
     super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
     crate::{ethrpc::Web3, trace_many},
+    alloy::sol_types::SolCall,
     anyhow::{Context, Result, bail, ensure},
-    contracts::ERC20,
-    ethcontract::{
-        PrivateKey,
-        dyns::DynTransport,
-        jsonrpc::ErrorCode,
-        transaction::TransactionBuilder,
-    },
+    contracts::alloy::ERC20,
+    ethcontract::{PrivateKey, jsonrpc::ErrorCode},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
@@ -164,36 +161,64 @@ impl TraceCallDetectorRaw {
     }
 
     fn create_trace_request(&self, token: H160, amount: U256, take_from: H160) -> Vec<CallRequest> {
-        let instance = ERC20::at(&self.web3, token);
-
         let mut requests = Vec::new();
+        let recipient = Self::arbitrary_recipient().into_alloy();
+        let settlement_contract = self.settlement_contract.into_alloy();
 
         // 0
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
+        }
+        .abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 1
-        let tx = instance.transfer(self.settlement_contract, amount).tx;
-        requests.push(call_request(Some(take_from), token, tx));
+        let calldata = ERC20::ERC20::transferCall {
+            recipient: settlement_contract,
+            amount: amount.into_alloy(),
+        }
+        .abi_encode();
+        requests.push(call_request(Some(take_from), token, calldata));
         // 2
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
+        }
+        .abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 3
-        let recipient = Self::arbitrary_recipient();
-        let tx = instance.balance_of(recipient).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall { account: recipient }.abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 4
-        let tx = instance.transfer(recipient, amount).tx;
-        requests.push(call_request(Some(self.settlement_contract), token, tx));
+        let calldata = ERC20::ERC20::transferCall {
+            recipient,
+            amount: amount.into_alloy(),
+        }
+        .abi_encode();
+        requests.push(call_request(
+            Some(self.settlement_contract),
+            token,
+            calldata,
+        ));
         // 5
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
+        }
+        .abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 6
-        let tx = instance.balance_of(recipient).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall { account: recipient }.abi_encode();
+        requests.push(call_request(None, token, calldata));
 
         // 7
-        let tx = instance.approve(recipient, U256::MAX).tx;
-        requests.push(call_request(Some(self.settlement_contract), token, tx));
+        let calldata = ERC20::ERC20::approveCall {
+            spender: recipient,
+            amount: alloy::primitives::U256::MAX,
+        }
+        .abi_encode();
+        requests.push(call_request(
+            Some(self.settlement_contract),
+            token,
+            calldata,
+        ));
 
         requests
     }
@@ -316,16 +341,11 @@ impl TraceCallDetectorRaw {
     }
 }
 
-fn call_request(
-    from: Option<H160>,
-    to: H160,
-    transaction: TransactionBuilder<DynTransport>,
-) -> CallRequest {
-    let calldata = transaction.data.unwrap();
+fn call_request(from: Option<H160>, to: H160, calldata: Vec<u8>) -> CallRequest {
     CallRequest {
         from,
         to: Some(to),
-        data: Some(calldata),
+        data: Some(calldata.into()),
         ..Default::default()
     }
 }
