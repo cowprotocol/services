@@ -250,7 +250,6 @@ http-timeout = "10s"
             .unwrap();
 
         // Create Liquorice order signature
-
         let signer = PrivateKeySigner::from_slice(liquorice_maker.private_key()).unwrap();
         let liquorice_order_signature = signer.sign_hash_sync(&liquorice_order_hash).unwrap();
 
