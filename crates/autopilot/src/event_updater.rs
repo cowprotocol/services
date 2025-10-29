@@ -27,7 +27,6 @@ where
     pub fn new(
         contract: W,
         db: DB,
-        // @todo: drop arc
         block_retriever: Arc<dyn BlockRetrieving>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
