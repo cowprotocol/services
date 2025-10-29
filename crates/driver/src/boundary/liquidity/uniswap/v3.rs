@@ -11,9 +11,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,

@@ -3,9 +3,7 @@
 use {
     anyhow::Result,
     clap::Parser,
-    ethrpc::{
-        block_stream::{CurrentBlockWatcher, current_block_stream},
-    },
+    ethrpc::block_stream::{CurrentBlockWatcher, current_block_stream},
     std::{
         fmt::{self, Display, Formatter},
         time::Duration,
