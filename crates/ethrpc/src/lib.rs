@@ -119,12 +119,12 @@ pub fn web3(
     let (legacy, alloy, wallet) = match buffered_config {
         Some(config) => {
             let legacy = Web3Transport::new(BufferedTransport::with_config(http, config));
-            let (alloy, wallet) = alloy::unbuffered_provider(url.as_str());
+            let (alloy, wallet) = alloy::provider(url.as_str());
             (legacy, alloy, wallet)
         }
         None => {
             let legacy = Web3Transport::new(http);
-            let (alloy, wallet) = alloy::provider(url.as_str());
+            let (alloy, wallet) = alloy::unbuffered_provider(url.as_str());
             (legacy, alloy, wallet)
         }
     };
