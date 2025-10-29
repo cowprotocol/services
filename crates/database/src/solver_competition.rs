@@ -37,6 +37,16 @@ pub struct LoadCompetition {
 }
 
 #[instrument(skip_all)]
+pub async fn auction_start_block(
+    ex: &mut PgConnection,
+    id: AuctionId,
+) -> Result<Option<String>, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT json->>'auctionStartBlock' FROM solver_competitions sc WHERE sc.id = $1;"#;
+    sqlx::query_scalar(QUERY).bind(id).fetch_optional(ex).await
+}
+
+#[instrument(skip_all)]
 pub async fn load_by_id(
     ex: &mut PgConnection,
     id: AuctionId,
