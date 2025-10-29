@@ -1,16 +1,11 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::sources::uniswap_v2::pool_fetching::{
-        DefaultPoolReader,
-        Pool,
-        PoolReading,
-        handle_alloy_contract_error,
-    },
+    crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
     contracts::alloy::ISwaprPair,
     ethcontract::BlockId,
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::{conversions::IntoAlloy, errors::handle_alloy_contract_error},
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,

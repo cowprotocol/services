@@ -1,14 +1,13 @@
 use {
-    alloy::primitives::Bytes,
-    chrono::Utc,
-    contracts::{
-        ERC20,
-        alloy::{ILiquoriceSettlement, InstanceExt},
+    alloy::{
+        primitives::{Bytes, address},
+        providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    driver::{domain::eth::H160, infra},
+    chrono::Utc,
+    contracts::alloy::{ERC20, ILiquoriceSettlement, InstanceExt},
+    driver::infra,
     e2e::{
         api,
-        nodes::forked_node::ForkedNodeApi,
         setup::{
             OnchainComponents,
             Services,
@@ -20,14 +19,15 @@ use {
             to_wei_with_exp,
             wait_for_condition,
         },
-        tx,
     },
     ethcontract::prelude::U256,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
     },
-    hex_literal::hex,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -40,8 +40,10 @@ use {
 
 /// The block number from which we will fetch state for the forked tests.
 pub const FORK_BLOCK: u64 = 23326100;
-pub const USDT_WHALE: H160 = H160(hex!("6AC38D1b2f0c0c3b9E816342b1CA14d91D5Ff60B"));
-pub const USDC_WHALE: H160 = H160(hex!("01b8697695eab322a339c4bf75740db75dc9375e"));
+pub const USDT_WHALE: alloy::primitives::Address =
+    address!("6AC38D1b2f0c0c3b9E816342b1CA14d91D5Ff60B");
+pub const USDC_WHALE: alloy::primitives::Address =
+    address!("01b8697695eab322a339c4bf75740db75dc9375e");
 
 #[tokio::test]
 #[ignore]
@@ -58,7 +60,6 @@ async fn forked_node_liquidity_source_notification_mainnet() {
 async fn liquidity_source_notification(web3: Web3) {
     // Start onchain components
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     // Define trade params
     let trade_amount = to_wei_with_exp(5, 8);
@@ -73,41 +74,63 @@ async fn liquidity_source_notification(web3: Web3) {
     let [trader, liquorice_maker] = onchain.make_accounts(to_wei(1)).await;
 
     // Access trade tokens contracts
-    let token_usdc = ERC20::at(
-        &web3,
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-            .parse()
-            .unwrap(),
+    let token_usdc = ERC20::Instance::new(
+        address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        web3.alloy.clone(),
     );
 
-    let token_usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
+    let token_usdt = ERC20::Instance::new(
+        address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+        web3.alloy.clone(),
     );
 
     // CoW onchain setup
-    {
-        // Fund trader
-        let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
-        tx!(
-            usdc_whale,
-            token_usdc.transfer(trader.address(), trade_amount)
-        );
+    // Fund trader
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdc
+                .transfer(trader.address().into_alloy(), trade_amount.into_alloy())
+                .from(USDC_WHALE)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
-        // Fund solver
-        tx!(
-            usdc_whale,
-            token_usdc.transfer(solver.address(), trade_amount)
-        );
+    // Fund solver
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdc
+                .transfer(solver.address().into_alloy(), trade_amount.into_alloy())
+                .from(USDC_WHALE)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
-        // Trader gives approval to the CoW allowance contract
-        tx!(
-            trader.account(),
-            token_usdc.approve(onchain.contracts().allowance, U256::MAX)
-        );
-    }
+    // Trader gives approval to the CoW allowance contract
+    token_usdc
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            alloy::primitives::U256::MAX,
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Liquorice onchain setup
 
@@ -124,19 +147,36 @@ async fn liquidity_source_notification(web3: Web3) {
         .into_legacy();
 
     // Fund `liquorice_maker`
-    {
-        let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
-        tx!(
-            usdt_whale,
-            token_usdt.transfer(liquorice_maker.address(), trade_amount)
-        );
-    }
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdt
+                .transfer(
+                    liquorice_maker.address().into_alloy(),
+                    trade_amount.into_alloy(),
+                )
+                .from(USDT_WHALE)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
     // Maker gives approval to the Liquorice balance manager contract
-    tx!(
-        liquorice_maker.account(),
-        token_usdt.approve(liquorice_balance_manager_address, U256::MAX)
-    );
+    token_usdt
+        .approve(
+            liquorice_balance_manager_address.into_alloy(),
+            alloy::primitives::U256::MAX,
+        )
+        .from(liquorice_maker.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Liquorice API setup
     let liquorice_api = api::liquorice::server::LiquoriceApi::start().await;
@@ -200,9 +240,9 @@ http-timeout = "10s"
     // Create CoW order
     let order_id = {
         let order = OrderCreation {
-            sell_token: token_usdc.address(),
+            sell_token: token_usdc.address().into_legacy(),
             sell_amount: trade_amount,
-            buy_token: token_usdt.address(),
+            buy_token: token_usdt.address().into_legacy(),
             buy_amount: trade_amount,
             valid_to: model::time::now_in_epoch_seconds() + 300,
             kind: OrderKind::Sell,
@@ -224,8 +264,8 @@ http-timeout = "10s"
         nonce: U256::from(0),
         trader: onchain.contracts().gp_settlement.address().into_legacy(),
         effective_trader: onchain.contracts().gp_settlement.address().into_legacy(),
-        base_token: token_usdc.address(),
-        quote_token: token_usdt.address(),
+        base_token: token_usdc.address().into_legacy(),
+        quote_token: token_usdt.address().into_legacy(),
         base_token_amount: trade_amount,
         quote_token_amount: trade_amount,
         min_fill_amount: U256::from(1),
@@ -283,8 +323,8 @@ http-timeout = "10s"
     liquorice_solver_api_mock.configure_solution(Some(Solution {
         id: 1,
         prices: HashMap::from([
-            (token_usdc.address(), to_wei(11)),
-            (token_usdt.address(), to_wei(10)),
+            (token_usdc.address().into_legacy(), to_wei(11)),
+            (token_usdt.address().into_legacy(), to_wei(10)),
         ]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
@@ -300,7 +340,7 @@ http-timeout = "10s"
                 calldata: liquorice_solution_calldata,
                 value: 0.into(),
                 allowances: vec![solvers_dto::solution::Allowance {
-                    token: token_usdc.address(),
+                    token: token_usdc.address().into_legacy(),
                     spender: liquorice_balance_manager_address,
                     amount: trade_amount,
                 }],

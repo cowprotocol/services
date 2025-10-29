@@ -250,12 +250,14 @@ async fn run<F, Fut, T>(
 #[macro_export]
 macro_rules! assert_approximately_eq {
     ($executed_value:expr_2021, $expected_value:expr_2021) => {{
-        let lower = $expected_value * U256::from(99999999999u128) / U256::from(100000000000u128);
-        let upper =
-            ($expected_value * U256::from(100000000001u128) / U256::from(100000000000u128)) + 1;
+        let lower = $expected_value * ::alloy::primitives::U256::from(99999999999u128)
+            / ::alloy::primitives::U256::from(100000000000u128);
+        let upper = ($expected_value * ::alloy::primitives::U256::from(100000000001u128)
+            / ::alloy::primitives::U256::from(100000000000u128))
+            + ::alloy::primitives::U256::ONE;
         assert!(
             $executed_value >= lower && $executed_value <= upper,
-            "Expected: ~{}, got: {}",
+            "Expected: ~{}, got: {}, ({lower}, {upper})",
             $expected_value,
             $executed_value
         );
