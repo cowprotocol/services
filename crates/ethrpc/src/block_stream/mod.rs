@@ -146,6 +146,8 @@ pub async fn current_block_stream(
         .await
         .context("failed to connect to websocket")?;
 
+    // Init the block subscription stream before fetching the first block to reduce
+    // chance of missing blocks due to race conditions
     let mut stream = ws_provider
         .subscribe_blocks()
         .await
