@@ -428,15 +428,26 @@ impl Persistence {
             orders
         };
 
-        let block = {
+        let start = std::time::Instant::now();
+        let _block = {
             let block = database::solver_competition::auction_start_block(&mut ex, auction_id)
                 .await?
                 .ok_or(error::Auction::NotFound)?;
-            block
-                .parse::<u64>()
+            domain::eth::BlockNo(block.parse::<u64>().map_err(|_| error::Auction::NotFound)?)
+        };
+        let elapsed_new = start.elapsed();
+
+        let start = std::time::Instant::now();
+        let block = {
+            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
+                .await?
+                .ok_or(error::Auction::NotFound)?;
+            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
                 .map_err(|_| error::Auction::NotFound)?
+                .auction_start_block
                 .into()
         };
+        tracing::debug!(old =?start.elapsed(), new = ?elapsed_new, "fetched auction block");
 
         Ok(domain::settlement::Auction {
             id: auction_id,
