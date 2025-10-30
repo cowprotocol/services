@@ -141,7 +141,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         "https" => url.set_scheme("wss").unwrap(),
         _ => unreachable!("unexpected scheme"),
     }
-    let block_stream = ethrpc::block_stream::current_block_stream(web3.alloy.clone(), url)
+    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.alloy.clone(), url)
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;

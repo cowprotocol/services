@@ -121,10 +121,19 @@ async fn ethereum(
     web3: Web3,
     unbuffered_web3: Web3,
     chain: &Chain,
+    url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     current_block_args: &shared::current_block::Arguments,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, unbuffered_web3, chain, contracts, current_block_args).await
+    infra::Ethereum::new(
+        web3,
+        unbuffered_web3,
+        chain,
+        url,
+        contracts,
+        current_block_args,
+    )
+    .await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -203,6 +212,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
+    let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
@@ -220,6 +230,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         web3.clone(),
         unbuffered_ethrpc.web3().clone(),
         &chain,
+        url,
         contracts.clone(),
         &args.shared.current_block,
     )
@@ -774,7 +785,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     let current_block = args
         .shared
         .current_block
-        .stream(web3.alloy.clone())
+        .stream(args.shared.node_url, web3.alloy.clone())
         .await
         .expect("couldn't initialize current block stream");
 

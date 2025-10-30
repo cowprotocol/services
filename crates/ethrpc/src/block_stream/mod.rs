@@ -1,5 +1,8 @@
 use {
-    crate::{AlloyProvider, alloy::conversions::IntoLegacy},
+    crate::{
+        AlloyProvider,
+        alloy::{ProviderLabelingExt, conversions::IntoLegacy},
+    },
     alloy::{
         eips::{BlockId, BlockNumberOrTag},
         providers::{Provider, ProviderBuilder},
@@ -9,7 +12,11 @@ use {
     anyhow::{Context as _, Result, anyhow, ensure},
     futures::{StreamExt, TryStreamExt, stream::FuturesUnordered},
     primitive_types::{H256, U256},
-    std::{fmt::Debug, num::NonZeroU64, time::Instant},
+    std::{
+        fmt::Debug,
+        num::NonZeroU64,
+        time::{Duration, Instant},
+    },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::{Instrument, instrument},
@@ -133,7 +140,7 @@ impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
 /// existing stream instead.
 ///
 /// The websocket reconnection is handled by the alloy lib.
-pub async fn current_block_stream(
+pub async fn current_block_ws_stream(
     alloy_provider: AlloyProvider,
     ws_url: Url,
 ) -> Result<CurrentBlockWatcher> {
@@ -210,6 +217,81 @@ pub async fn current_block_stream(
 
         // If we reach here, the stream ended permanently
         tracing::error!("block stream ended after max reconnection attempts");
+    };
+
+    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    Ok(receiver)
+}
+
+/// Creates a cloneable stream that yields the current block whenever it
+/// changes.
+///
+/// The stream is not guaranteed to yield *every* block individually without
+/// gaps but it does yield the newest block whenever it detects a block number
+/// increase. In practice this means that if the node changes the current block
+/// in quick succession we might only observe the last block, skipping some
+/// blocks in between.
+///
+/// The stream is cloneable so that we only have to poll the node once while
+/// being able to share the result with several consumers. Calling this function
+/// again would create a new poller so it is preferable to clone an existing
+/// stream instead.
+#[deprecated(
+    note = "Use `current_block_ws_stream` instead for real-time WebSocket-based block updates"
+)]
+pub async fn current_block_stream(
+    url: Url,
+    poll_interval: Duration,
+) -> Result<CurrentBlockWatcher> {
+    // Build an alloy transport specifically for the current block stream to avoid
+    // batching requests together on chains with a very high block frequency.
+    let (provider, _) = crate::alloy::unbuffered_provider(url.as_str());
+    let provider = provider.labeled("base_currentBlockStream".into());
+
+    let first_block = provider.current_block().await?;
+    tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
+
+    let (sender, receiver) = watch::channel(first_block);
+    let update_future = async move {
+        let mut previous_block = first_block;
+        loop {
+            tokio::time::sleep(poll_interval).await;
+            let block = match provider.current_block().await {
+                Ok(block) => block,
+                Err(err) => {
+                    tracing::warn!("failed to get current block: {:?}", err);
+                    continue;
+                }
+            };
+
+            update_current_block_metrics(block.number);
+
+            // If the block is exactly the same, ignore it.
+            if previous_block.hash == block.hash {
+                continue;
+            }
+
+            // The new block is different but might still have the same number.
+
+            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
+            update_block_metrics(previous_block.number, block.number);
+
+            // Only update the stream if the number has increased.
+            if block.number <= previous_block.number {
+                continue;
+            }
+
+            tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
+            if let Err(err) = sender.send(block) {
+                tracing::error!(
+                    ?err,
+                    "failed to send block to stream, aborting polling loop"
+                );
+                panic!("polling loop terminated due to sender failure");
+            }
+
+            previous_block = block;
+        }
     };
 
     tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
@@ -454,7 +536,7 @@ mod tests {
 
         let alloy_provider = Web3::new_from_env();
         let ws_node = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
-        let receiver = current_block_stream(alloy_provider.alloy, ws_node)
+        let receiver = current_block_ws_stream(alloy_provider.alloy, ws_node)
             .await
             .unwrap();
         let mut stream = into_stream(receiver);

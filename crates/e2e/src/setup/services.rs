@@ -126,6 +126,7 @@ impl<'a> Services<'a> {
         [
             "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
+            "--block-stream-poll-interval=1s".to_string(),
             "--simulation-node-url=http://localhost:8545".to_string(),
             "--native-price-cache-max-age=2s".to_string(),
             "--native-price-prefetch-time=500ms".to_string(),
@@ -142,6 +143,7 @@ impl<'a> Services<'a> {
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
             "--baseline-sources=None".to_string(),
+            "--network-block-interval=1s".to_string(),
             "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--settlement-contract-address={:?}",
