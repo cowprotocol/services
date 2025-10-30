@@ -376,6 +376,11 @@ impl Persistence {
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
+            // Code that uses the data assembled by this function determines JIT orders
+            // by their presence in the `orders => fee_policies` mapping. If an order has
+            // a mapping it is assumed that this was a regular order and not a JIT order.
+            // So in order to not misclassify JIT orders as regular orders we only fetch
+            // fee policies for orders that were part of the original auction.
             let relevant_orders: HashSet<_> = trades
                 .iter()
                 .filter(|t| auction_orders.contains(&t.uid))
