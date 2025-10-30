@@ -1,7 +1,6 @@
 use {
     super::{Error, Ethereum},
     crate::domain::eth,
-    alloy::contract,
     ethrpc::alloy::{
         conversions::{IntoAlloy, IntoLegacy},
         errors::ContractErrorExt,

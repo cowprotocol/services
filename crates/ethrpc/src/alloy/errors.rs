@@ -1,8 +1,4 @@
-use alloy::{
-    contract::Error as ContractError,
-    sol_types::GenericContractError,
-    transports::RpcError,
-};
+use alloy::{contract::Error as ContractError, transports::RpcError};
 
 /// Bubbles up node errors, ignoring all other errors.
 pub fn ignore_non_node_error<T>(result: Result<T, ContractError>) -> anyhow::Result<Option<T>> {
