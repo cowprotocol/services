@@ -35,18 +35,15 @@ impl ContractErrorExt for ContractError {
     }
 
     fn is_transport_error(&self) -> bool {
-        match self {
-            ContractError::TransportError(RpcError::Transport(_)) => true,
-            _ => false,
-        }
+        matches!(self, ContractError::TransportError(RpcError::Transport(_)))
     }
 
     fn is_node_error(&self) -> bool {
-        match self {
+        matches!(
+            self,
             ContractError::TransportError(RpcError::ErrorResp(_))
-            | ContractError::TransportError(RpcError::Transport(_)) => true,
-            _ => false,
-        }
+                | ContractError::TransportError(RpcError::Transport(_))
+        )
     }
 }
 
