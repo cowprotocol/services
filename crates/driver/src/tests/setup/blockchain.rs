@@ -5,12 +5,14 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{
-        primitives::U256,
+        primitives::{Address, U256},
         signers::local::{MnemonicBuilder, PrivateKeySigner},
+        sol_types::SolCall,
     },
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
+        ERC20,
         ERC20Mintable,
         FlashLoanRouter,
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
@@ -195,8 +197,8 @@ impl QuotedOrder {
 
     fn boundary(&self, blockchain: &Blockchain, secret_key: SecretKey) -> tests::boundary::Order {
         tests::boundary::Order {
-            sell_token: blockchain.get_token(self.order.sell_token),
-            buy_token: blockchain.get_token(self.order.buy_token),
+            sell_token: blockchain.get_token(self.order.sell_token).into_legacy(),
+            buy_token: blockchain.get_token(self.order.buy_token).into_legacy(),
             sell_amount: self.sell_amount(),
             buy_amount: self.buy_amount(),
             valid_to: self.order.valid_to,
@@ -750,10 +752,14 @@ impl Blockchain {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
-            let sell_token =
-                contracts::ERC20::at(&self.web3, self.get_token_wrapped(order.sell_token));
-            let buy_token =
-                contracts::ERC20::at(&self.web3, self.get_token_wrapped(order.buy_token));
+            let sell_token = ERC20::Instance::new(
+                self.get_token_wrapped(order.sell_token),
+                self.web3.alloy.clone(),
+            );
+            let buy_token = ERC20::Instance::new(
+                self.get_token_wrapped(order.buy_token),
+                self.web3.alloy.clone(),
+            );
             let pair = self.find_pair(order);
             let execution = self.execution(order);
 
@@ -791,12 +797,11 @@ impl Blockchain {
                 .unwrap();
 
             // Create the interactions fulfilling the order.
-            let transfer_interaction = sell_token
-                .transfer(pair.contract.address().into_legacy(), execution.sell)
-                .tx
-                .data
-                .unwrap()
-                .0;
+            let transfer_interaction = ERC20::ERC20::transferCall {
+                recipient: *pair.contract.address(),
+                amount: execution.sell.into_alloy(),
+            }
+            .abi_encode();
             let (amount_a_out, amount_b_out) = if pair.token_a == order.sell_token {
                 (0.into(), execution.buy)
             } else {
@@ -824,7 +829,7 @@ impl Blockchain {
                 execution: execution.clone(),
                 interactions: vec![
                     Interaction {
-                        address: sell_token.address(),
+                        address: sell_token.address().into_legacy(),
                         calldata: match solution.calldata {
                             super::Calldata::Valid { additional_bytes } => transfer_interaction
                                 .into_iter()
@@ -845,12 +850,12 @@ impl Blockchain {
                             }
                         },
                         inputs: vec![eth::Asset {
-                            token: sell_token.address().into(),
+                            token: sell_token.address().into_legacy().into(),
                             // Surplus fees stay in the contract.
                             amount: (execution.sell - order.surplus_fee()).into(),
                         }],
                         outputs: vec![eth::Asset {
-                            token: buy_token.address().into(),
+                            token: buy_token.address().into_legacy().into(),
                             amount: execution.buy.into(),
                         }],
                         internalize: order.internalize,
@@ -862,20 +867,20 @@ impl Blockchain {
     }
 
     /// Returns the address of the token with the given symbol.
-    pub fn get_token(&self, token: &str) -> eth::H160 {
+    pub fn get_token(&self, token: &str) -> Address {
         match token {
-            "WETH" => self.weth.address().into_legacy(),
-            "ETH" => eth::ETH_TOKEN.into(),
-            _ => self.tokens.get(token).unwrap().address().into_legacy(),
+            "WETH" => *self.weth.address(),
+            "ETH" => eth::ETH_TOKEN.0.0.into_alloy(),
+            _ => *self.tokens.get(token).unwrap().address(),
         }
     }
 
     /// Returns the address of the token with the given symbol. Wrap ETH into
     /// WETH.
-    pub fn get_token_wrapped(&self, token: &str) -> eth::H160 {
+    pub fn get_token_wrapped(&self, token: &str) -> Address {
         match token {
-            "WETH" | "ETH" => self.weth.address().into_legacy(),
-            _ => self.tokens.get(token).unwrap().address().into_legacy(),
+            "WETH" | "ETH" => *self.weth.address(),
+            _ => *self.tokens.get(token).unwrap().address(),
         }
     }
 

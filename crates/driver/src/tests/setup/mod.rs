@@ -31,13 +31,13 @@ use {
                 EtherExt,
                 is_approximately_equal,
             },
-            hex_address,
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
                 orderbook::Orderbook,
             },
         },
     },
+    alloy::primitives::Address,
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -47,6 +47,7 @@ use {
     number::serialization::HexOrDecimalU256,
     primitive_types::H160,
     secp256k1::SecretKey,
+    serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
     std::{
@@ -1307,15 +1308,15 @@ impl SolveOk<'_> {
     fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
         let u256 =
             |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
-        let sell_token = trade.get("sellToken").unwrap().to_string();
-        let sell_token = sell_token.trim_matches('"');
-        let buy_token = trade.get("buyToken").unwrap().to_string();
-        let buy_token = buy_token.trim_matches('"');
+        let sell_token =
+            Address::deserialize(trade.get("sellToken").unwrap().into_deserializer()).unwrap();
+        let buy_token =
+            Address::deserialize(trade.get("buyToken").unwrap().into_deserializer()).unwrap();
         let sell_amount = u256(trade.get("executedSell").unwrap());
         let buy_amount = u256(trade.get("executedBuy").unwrap());
 
-        sell_token == hex_address(self.blockchain.get_token(expected.order.sell_token))
-            && buy_token == hex_address(self.blockchain.get_token(expected.order.buy_token))
+        sell_token == self.blockchain.get_token(expected.order.sell_token)
+            && buy_token == self.blockchain.get_token(expected.order.buy_token)
             && expected.order.expected_amounts.clone().unwrap().sell == sell_amount
             && expected.order.expected_amounts.clone().unwrap().buy == buy_amount
     }
@@ -1517,8 +1518,8 @@ impl QuoteOk<'_> {
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
         };
 
         let expected = match quoted_order.order.side {
