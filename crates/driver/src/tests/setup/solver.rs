@@ -13,6 +13,8 @@ use {
         infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
         tests::{hex_address, setup::blockchain::Trade},
     },
+    const_hex::ToHexExt,
+    contracts::alloy::ERC20,
     ethereum_types::H160,
     ethrpc::alloy::conversions::IntoLegacy,
     itertools::Itertools,
@@ -122,8 +124,8 @@ impl Solver {
 
             let mut order = json!({
                 "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
-                "sellToken": hex_address(config.blockchain.get_token(sell_token)),
-                "buyToken": hex_address(config.blockchain.get_token(buy_token)),
+                "sellToken": config.blockchain.get_token(sell_token).encode_hex_with_prefix(),
+                "buyToken": config.blockchain.get_token(buy_token).encode_hex_with_prefix(),
                 "sellAmount": sell_amount,
                 "fullSellAmount": if config.quote { sell_amount } else { quote.sell_amount().to_string() },
                 "buyAmount": buy_amount,
@@ -409,17 +411,17 @@ impl Solver {
             .flat_map(|f| {
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
-                    let contract = contracts::ERC20::at(&config.blockchain.web3, token);
-                    let settlement = config.blockchain.settlement.address().into_legacy();
+                    let contract = ERC20::Instance::new(token, config.blockchain.web3.alloy.clone());
+                    let settlement = config.blockchain.settlement.address();
                     (
-                        hex_address(token),
+                        token.encode_hex_with_prefix(),
                         json!({
                             "decimals": contract.decimals().call().await.ok(),
                             "symbol": contract.symbol().call().await.ok(),
                             "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
                             // available balance might break if one test settles 2 auctions after
                             // another
-                            "availableBalance": contract.balance_of(settlement).call().await.unwrap().to_string(),
+                            "availableBalance": contract.balanceOf(*settlement).call().await.unwrap().to_string(),
                             "trusted": config.trusted.contains(token_name.as_str()),
                         }),
                     )

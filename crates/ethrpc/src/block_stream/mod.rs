@@ -7,7 +7,7 @@ use {
         transports::ws::WsConnect,
     },
     anyhow::{Context as _, Result, anyhow, ensure},
-    futures::{StreamExt, future},
+    futures::{StreamExt, TryStreamExt, stream::FuturesUnordered},
     primitive_types::{H256, U256},
     std::{fmt::Debug, num::NonZeroU64, time::Instant},
     tokio::sync::watch,
@@ -296,46 +296,50 @@ impl BlockRetrieving for AlloyProvider {
 
     /// Gets all blocks requested in the range. For successful results it's
     /// enforced that all the blocks are present, in the correct order and that
-    /// there are not reorgs in the block range.
+    /// there are no reorgs in the block range.
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
-        let (start, end) = range.clone().into_inner();
+        let (start, end) = range.into_inner();
 
-        let block_futures: Vec<_> = (start..=end)
-            .map(|block_num| {
-                let block_id = BlockNumberOrTag::Number(block_num).into();
-                let provider = self.clone();
-                async move {
-                    provider
-                        .get_block(block_id)
-                        .await
-                        .with_context(|| format!("failed to fetch block {block_num}"))
-                }
-            })
-            .collect();
+        // Uses FuturesUnordered instead of try_join_all, since the latter
+        // starts using FuturesOrdered once the number of futures exceeds 30, which
+        // doesn't support fail-fast behavior.
+        let futures = FuturesUnordered::new();
+        for block_num in start..=end {
+            let block_id = BlockNumberOrTag::Number(block_num).into();
+            let provider = self.clone();
+            futures.push(async move {
+                provider
+                    .get_block(block_id)
+                    .await
+                    .with_context(|| format!("failed to fetch block {block_num}"))?
+                    .with_context(|| format!("missing block {block_num}"))
+            });
+        }
 
-        let blocks: Vec<_> = future::try_join_all(block_futures).await?;
+        let mut blocks: Vec<Block> = futures.try_collect().await?;
+
+        // Sort the same way as the requested range
+        blocks.sort_by_key(|block| block.number());
 
         let mut prev_hash = None;
         let mut result = Vec::with_capacity(blocks.len());
 
-        for (block_num, block_opt) in (start..=end).zip(blocks) {
-            let block = block_opt.with_context(|| format!("missing block {block_num}"))?;
-
+        for block in blocks {
             let current_hash: H256 = block.header.hash.into_legacy();
-            let current_block = block.header.number;
-
             if prev_hash.is_some_and(|prev| prev != block.header.parent_hash.into_legacy()) {
                 tracing::debug!(
-                    ?range,
+                    start,
+                    end,
                     ?prev_hash,
                     parent_hash = ?block.header.parent_hash,
+                    block_number = ?block.number(),
                     "inconsistent parent in block range"
                 );
                 return Err(anyhow!("inconsistent block range"));
             }
             prev_hash = Some(current_hash);
 
-            result.push((current_block, current_hash));
+            result.push((block.number(), current_hash));
         }
 
         Ok(result)

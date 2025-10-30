@@ -1,27 +1,26 @@
 use {
-    alloy::primitives::{Bytes, FixedBytes, U256},
-    contracts::{
+    alloy::{
+        primitives::{Address, Bytes, FixedBytes, U256, address},
+        providers::ext::{AnvilApi, ImpersonateConfig},
+    },
+    contracts::alloy::{
         ERC20,
-        alloy::support::{Balances, Signatures},
+        support::{Balances, Signatures},
     },
     driver::domain::eth::NonZeroU256,
-    e2e::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{
-            DeployedContracts,
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            colocation::{self, SolverEngine},
-            eth,
-            mock::Mock,
-            run_forked_test_with_block_number,
-            run_test,
-            to_wei,
-            to_wei_with_exp,
-            wait_for_condition,
-        },
-        tx,
+    e2e::setup::{
+        DeployedContracts,
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        colocation::{self, SolverEngine},
+        eth,
+        mock::Mock,
+        run_forked_test_with_block_number,
+        run_test,
+        to_wei,
+        to_wei_with_exp,
+        wait_for_condition,
     },
     ethcontract::{BlockId, BlockNumber, H160},
     ethrpc::alloy::{
@@ -412,33 +411,22 @@ async fn cow_amm_driver_support(web3: Web3) {
         }
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(11)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
     // find some USDC available onchain
-    const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
-        "28c6c06298d514db089934071355e5743bf21d60"
-    ));
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_MAINNET)
-        .await
-        .unwrap();
+    const USDC_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
 
     // create necessary token instances
-    let usdc = ERC20::at(
-        &web3,
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-            .parse()
-            .unwrap(),
+    let usdc = ERC20::Instance::new(
+        address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        web3.alloy.clone(),
     );
 
-    let usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
+    let usdt = ERC20::Instance::new(
+        address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+        web3.alloy.clone(),
     );
 
     // Unbalance the cow amm enough that baseline is able to rebalance
@@ -478,43 +466,80 @@ async fn cow_amm_driver_support(web3: Web3) {
         .await
         .unwrap();
 
-    let amm_usdc_balance_before = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
+    let amm_usdc_balance_before = usdc
+        .balanceOf(USDC_WETH_COW_AMM.into_alloy())
+        .call()
+        .await
+        .unwrap();
 
     // Now we create an unfillable order just so the orderbook is not empty.
     // Otherwise all auctions would be skipped because there is no user order to
     // settle.
 
     // Give trader some USDC
-    tx!(
-        usdc_whale,
-        usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
-    );
-
-    // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
-    );
-
-    // Empty liquidity of one of the AMMs to test EmptyPoolRemoval maintenance job.
-    let zero_balance_amm = addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc");
-    let zero_balance_amm_account = forked_node_api
-        .impersonate(&zero_balance_amm)
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            usdc.transfer(
+                trader.address().into_alloy(),
+                to_wei_with_exp(1000, 6).into_alloy(),
+            )
+            .from(USDC_WHALE_MAINNET)
+            .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
-    let pendle_token = ERC20::at(&web3, addr!("808507121b80c02388fad14726482e061b8da827"));
+
+    // Approve GPv2 for trading
+    usdc.approve(
+        onchain.contracts().allowance.into_alloy(),
+        to_wei_with_exp(1000, 6).into_alloy(),
+    )
+    .from(trader.address().into_alloy())
+    .send_and_watch()
+    .await
+    .unwrap();
+
+    // Empty liquidity of one of the AMMs to test EmptyPoolRemoval maintenance job.
+    const ZERO_BALANCE_AMM: Address = address!("b3bf81714f704720dcb0351ff0d42eca61b069fc");
+    let pendle_token = ERC20::Instance::new(
+        address!("808507121b80c02388fad14726482e061b8da827"),
+        web3.alloy.clone(),
+    );
     let balance = pendle_token
-        .balance_of(zero_balance_amm)
+        .balanceOf(ZERO_BALANCE_AMM)
         .call()
         .await
         .unwrap();
-    tx!(
-        zero_balance_amm_account,
-        pendle_token.transfer(addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"), balance)
-    );
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            pendle_token
+                .transfer(
+                    address!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
+                    balance,
+                )
+                .from(ZERO_BALANCE_AMM)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .get_receipt()
+        .await
+        .unwrap();
+
     assert!(
         pendle_token
-            .balance_of(zero_balance_amm)
+            .balanceOf(ZERO_BALANCE_AMM)
             .call()
             .await
             .unwrap()
@@ -577,9 +602,9 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
 
     // Place Orders
     let order = OrderCreation {
-        sell_token: usdc.address(),
+        sell_token: usdc.address().into_legacy(),
         sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: usdt.address(),
+        buy_token: usdt.address().into_legacy(),
         buy_amount: to_wei_with_exp(2000, 6),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -595,8 +620,8 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: usdc.address(),
-            buy_token: usdt.address(),
+            sell_token: usdc.address().into_legacy(),
+            buy_token: usdt.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -617,7 +642,11 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
         onchain.mint_block().await;
         tokio::time::sleep(tokio::time::Duration::from_millis(1_000)).await;
 
-        let amm_usdc_balance_after = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
+        let amm_usdc_balance_after = usdc
+            .balanceOf(USDC_WETH_COW_AMM.into_alloy())
+            .call()
+            .await
+            .unwrap();
         // CoW AMM traded automatically
         amm_usdc_balance_after != amm_usdc_balance_before
     })
@@ -661,7 +690,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             auction.orders.iter().any(|order| {
                 order.owner == USDC_WETH_COW_AMM
                     && order.sell_token == onchain.contracts().weth.address().into_legacy()
-                    && order.buy_token == usdc.address()
+                    && order.buy_token == usdc.address().into_legacy()
             })
         });
 
