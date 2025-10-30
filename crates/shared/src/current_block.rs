@@ -32,7 +32,7 @@ pub struct Arguments {
 
 impl Arguments {
     pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
-        Arc::new(web3)
+        Arc::new(web3.alloy.clone())
     }
 
     pub async fn stream(&self, rpc: Url) -> Result<CurrentBlockWatcher> {
