@@ -5,7 +5,7 @@ use {
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::{conversions::IntoAlloy, errors::ignore_non_transport_error},
+        alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
     },
     futures::{
         FutureExt,
@@ -63,8 +63,8 @@ impl TokenInfoFetcher {
         };
 
         Ok(TokenInfo {
-            decimals: ignore_non_transport_error(decimals).map_err(|err| Error(err.to_string()))?,
-            symbol: ignore_non_transport_error(symbol).map_err(|err| Error(err.to_string()))?,
+            decimals: ignore_non_node_error(decimals).map_err(|err| Error(err.to_string()))?,
+            symbol: ignore_non_node_error(symbol).map_err(|err| Error(err.to_string()))?,
         })
     }
 }
