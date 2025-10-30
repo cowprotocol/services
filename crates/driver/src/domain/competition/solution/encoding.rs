@@ -334,7 +334,7 @@ fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
         }
 
         // Encode data length as u16 in native endian, then the data itself
-        wrapper_data.extend((w.data.len() as u16).to_ne_bytes().to_vec());
+        wrapper_data.extend((w.data.len() as u16).to_be_bytes().to_vec());
         wrapper_data.extend(w.data.clone());
     }
 
