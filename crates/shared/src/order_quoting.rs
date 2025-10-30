@@ -232,7 +232,7 @@ impl TryFrom<QuoteRow> for QuoteData {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
     /// Computes a quote for the specified order parameters. Doesn't store the
@@ -417,7 +417,7 @@ pub struct OrderQuoter {
 }
 
 impl OrderQuoter {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,

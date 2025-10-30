@@ -1,10 +1,6 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, eth, mock::Mock, solution::JitOrder, *},
-        tx,
-        tx_value,
-    },
-    ethcontract::prelude::U256,
+    ::alloy::primitives::U256,
+    e2e::setup::{colocation::SolverEngine, eth, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -37,24 +33,27 @@ async fn single_limit_order_test(web3: Web3) {
 
     token.mint(solver.address(), to_wei(100)).await;
 
-    tx_value!(
-        trader.account(),
-        to_wei(20),
-        onchain.contracts().weth.deposit()
-    );
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, U256::MAX)
-    );
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(20))
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            ::alloy::primitives::U256::MAX,
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
@@ -71,7 +70,7 @@ async fn single_limit_order_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -112,7 +111,7 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Place order
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(10),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(5),
@@ -149,7 +148,7 @@ async fn single_limit_order_test(web3: Web3) {
         },
         buy: Asset {
             amount: to_wei(1),
-            token: onchain.contracts().weth.address(),
+            token: onchain.contracts().weth.address().into_legacy(),
         },
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -167,7 +166,7 @@ async fn single_limit_order_test(web3: Web3) {
         id: 0,
         prices: HashMap::from([
             (token.address().into_legacy(), to_wei(1)),
-            (onchain.contracts().weth.address(), to_wei(1)),
+            (onchain.contracts().weth.address().into_legacy(), to_wei(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {

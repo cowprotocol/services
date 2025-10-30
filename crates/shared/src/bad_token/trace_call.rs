@@ -1,14 +1,11 @@
 use {
     super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
     crate::{ethrpc::Web3, trace_many},
+    alloy::sol_types::SolCall,
     anyhow::{Context, Result, bail, ensure},
-    contracts::ERC20,
-    ethcontract::{
-        PrivateKey,
-        dyns::DynTransport,
-        jsonrpc::ErrorCode,
-        transaction::TransactionBuilder,
-    },
+    contracts::alloy::ERC20,
+    ethcontract::{PrivateKey, jsonrpc::ErrorCode},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
@@ -164,36 +161,64 @@ impl TraceCallDetectorRaw {
     }
 
     fn create_trace_request(&self, token: H160, amount: U256, take_from: H160) -> Vec<CallRequest> {
-        let instance = ERC20::at(&self.web3, token);
-
         let mut requests = Vec::new();
+        let recipient = Self::arbitrary_recipient().into_alloy();
+        let settlement_contract = self.settlement_contract.into_alloy();
 
         // 0
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
+        }
+        .abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 1
-        let tx = instance.transfer(self.settlement_contract, amount).tx;
-        requests.push(call_request(Some(take_from), token, tx));
+        let calldata = ERC20::ERC20::transferCall {
+            recipient: settlement_contract,
+            amount: amount.into_alloy(),
+        }
+        .abi_encode();
+        requests.push(call_request(Some(take_from), token, calldata));
         // 2
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
+        }
+        .abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 3
-        let recipient = Self::arbitrary_recipient();
-        let tx = instance.balance_of(recipient).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall { account: recipient }.abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 4
-        let tx = instance.transfer(recipient, amount).tx;
-        requests.push(call_request(Some(self.settlement_contract), token, tx));
+        let calldata = ERC20::ERC20::transferCall {
+            recipient,
+            amount: amount.into_alloy(),
+        }
+        .abi_encode();
+        requests.push(call_request(
+            Some(self.settlement_contract),
+            token,
+            calldata,
+        ));
         // 5
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall {
+            account: settlement_contract,
+        }
+        .abi_encode();
+        requests.push(call_request(None, token, calldata));
         // 6
-        let tx = instance.balance_of(recipient).m.tx;
-        requests.push(call_request(None, token, tx));
+        let calldata = ERC20::ERC20::balanceOfCall { account: recipient }.abi_encode();
+        requests.push(call_request(None, token, calldata));
 
         // 7
-        let tx = instance.approve(recipient, U256::MAX).tx;
-        requests.push(call_request(Some(self.settlement_contract), token, tx));
+        let calldata = ERC20::ERC20::approveCall {
+            spender: recipient,
+            amount: alloy::primitives::U256::MAX,
+        }
+        .abi_encode();
+        requests.push(call_request(
+            Some(self.settlement_contract),
+            token,
+            calldata,
+        ));
 
         requests
     }
@@ -316,16 +341,11 @@ impl TraceCallDetectorRaw {
     }
 }
 
-fn call_request(
-    from: Option<H160>,
-    to: H160,
-    transaction: TransactionBuilder<DynTransport>,
-) -> CallRequest {
-    let calldata = transaction.data.unwrap();
+fn call_request(from: Option<H160>, to: H160, calldata: Vec<u8>) -> CallRequest {
     CallRequest {
         from,
         to: Some(to),
-        data: Some(calldata),
+        data: Some(calldata.into()),
         ..Default::default()
     }
 }
@@ -378,8 +398,8 @@ mod tests {
             sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
-        contracts::alloy::{BalancerV2Vault, IUniswapV3Factory, InstanceExt},
-        ethrpc::Web3,
+        contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt},
+        ethrpc::{Web3, alloy::conversions::IntoLegacy},
         hex_literal::hex,
         std::{env, time::Duration},
         web3::types::{
@@ -702,10 +722,12 @@ mod tests {
         //   the callback that I didn't follow in the SC code.
         // - 0x4f9254c83eb525f9fcf346490bbb3ed28a81c667 Not sure why deny listed.
 
-        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: settlement.address(),
+            settlement_contract: settlement.address().into_legacy(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
@@ -756,7 +778,7 @@ mod tests {
                 ),
             ],
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
+        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
         println!("testing good tokens");
         for &token in base_tokens {
@@ -777,7 +799,9 @@ mod tests {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
         let web3 = Web3::new_from_env();
         let base_tokens = vec![testlib::tokens::WETH];
-        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
@@ -788,10 +812,10 @@ mod tests {
         );
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: settlement.address(),
+            settlement_contract: settlement.address().into_legacy(),
             proposers: vec![univ3],
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
+        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
         let result = token_cache.detect(testlib::tokens::USDC).await;
         dbg!(&result);
@@ -906,13 +930,15 @@ mod tests {
 
         let web3 = Web3::new_from_env();
 
-        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+            .await
+            .unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
             proposers: vec![solver_token_finder],
-            settlement_contract: settlement.address(),
+            settlement_contract: settlement.address().into_legacy(),
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
+        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
         for token in tokens {
             let result = token_cache.detect(token).await;

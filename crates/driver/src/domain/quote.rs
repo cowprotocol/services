@@ -16,6 +16,7 @@ use {
         util,
     },
     chrono::Utc,
+    ethrpc::alloy::conversions::IntoLegacy,
     std::{
         collections::{HashMap, HashSet},
         iter,
@@ -47,7 +48,9 @@ impl Quote {
             interactions: solution
                 .interactions()
                 .iter()
-                .map(|i| encode::interaction(i, eth.contracts().settlement()))
+                .map(|i| {
+                    encode::interaction(i, eth.contracts().settlement().address().into_legacy())
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .flatten()
@@ -266,6 +269,7 @@ mod encode {
                 allowance::{Approval, Required},
             },
         },
+        ethcontract::H160,
         num::rational::Ratio,
     };
 
@@ -273,7 +277,7 @@ mod encode {
 
     pub(super) fn interaction(
         interaction: &solution::Interaction,
-        settlement: &contracts::GPv2Settlement,
+        settlement: H160,
     ) -> Result<Vec<eth::Interaction>, solution::encoding::Error> {
         let slippage = solution::slippage::Parameters {
             relative: Ratio::new_raw(DEFAULT_QUOTE_SLIPPAGE_BPS.into(), 10_000.into()),

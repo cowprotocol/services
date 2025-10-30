@@ -19,6 +19,7 @@ use {
         infra,
     },
     anyhow::{Context, Result, anyhow},
+    ethrpc::alloy::conversions::IntoLegacy,
     std::time::Duration,
 };
 
@@ -114,7 +115,13 @@ impl Observer {
         let transaction = match self.eth.transaction(tx).await {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
-                let settlement_contract = self.eth.contracts().settlement().address().into();
+                let settlement_contract = self
+                    .eth
+                    .contracts()
+                    .settlement()
+                    .address()
+                    .into_legacy()
+                    .into();
                 settlement::Transaction::try_new(
                     &transaction,
                     separator,

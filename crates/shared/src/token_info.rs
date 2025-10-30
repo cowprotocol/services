@@ -27,7 +27,7 @@ pub struct TokenInfo {
 #[error("error fetching token info: {0}")]
 pub struct Error(String);
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait]
 pub trait TokenInfoFetching: Send + Sync {
     /// Retrieves information for a token.

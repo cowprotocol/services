@@ -31,13 +31,13 @@ use {
                 EtherExt,
                 is_approximately_equal,
             },
-            hex_address,
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
                 orderbook::Orderbook,
             },
         },
     },
+    alloy::primitives::Address,
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -47,6 +47,7 @@ use {
     number::serialization::HexOrDecimalU256,
     primitive_types::H160,
     secp256k1::SecretKey,
+    serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
     std::{
@@ -434,36 +435,6 @@ pub struct Pool {
 }
 
 impl Pool {
-    /// Restores reserve_a value from the given reserve_b and the quote. Reverse
-    /// operation for the `blockchain::Pool::out` function.
-    /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
-    #[allow(dead_code)]
-    pub fn adjusted_reserve_a(self, quote: &LiquidityQuote) -> Self {
-        let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
-            (quote.sell_amount, quote.buy_amount)
-        } else {
-            (quote.buy_amount, quote.sell_amount)
-        };
-        let reserve_a_min = ceil_div(
-            eth::U256::from(997)
-                * quote_sell_amount
-                * (self.amount_b - quote_buy_amount - eth::U256::from(1)),
-            eth::U256::from(1000) * quote_buy_amount,
-        );
-        let reserve_a_max =
-            (eth::U256::from(997) * quote_sell_amount * (self.amount_b - quote_buy_amount))
-                / (eth::U256::from(1000) * quote_buy_amount);
-        if reserve_a_min > reserve_a_max {
-            panic!(
-                "Unexpected calculated reserves. min: {reserve_a_min:?}, max: {reserve_a_max:?}"
-            );
-        }
-        Self {
-            amount_a: reserve_a_min,
-            ..self
-        }
-    }
-
     /// Restores reserve_b value from the given reserve_a and the quote. Reverse
     /// operation for the `blockchain::Pool::out` function
     /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
@@ -596,7 +567,6 @@ impl Solution {
     }
 
     /// Increase the solution gas consumption by at least `units`.
-    #[allow(dead_code)]
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
         let additional_bytes = (units / 16) + 1;
@@ -1199,10 +1169,11 @@ impl Test {
             "WETH",
             self.blockchain
                 .weth
-                .balance_of(self.trader_address)
+                .balanceOf(self.trader_address.into_alloy())
                 .call()
                 .await
-                .unwrap(),
+                .unwrap()
+                .into_legacy(),
         );
         balances.insert(
             "ETH",
@@ -1216,7 +1187,6 @@ impl Test {
         balances
     }
 
-    #[allow(dead_code)]
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
     }
@@ -1338,15 +1308,15 @@ impl SolveOk<'_> {
     fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
         let u256 =
             |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
-        let sell_token = trade.get("sellToken").unwrap().to_string();
-        let sell_token = sell_token.trim_matches('"');
-        let buy_token = trade.get("buyToken").unwrap().to_string();
-        let buy_token = buy_token.trim_matches('"');
+        let sell_token =
+            Address::deserialize(trade.get("sellToken").unwrap().into_deserializer()).unwrap();
+        let buy_token =
+            Address::deserialize(trade.get("buyToken").unwrap().into_deserializer()).unwrap();
         let sell_amount = u256(trade.get("executedSell").unwrap());
         let buy_amount = u256(trade.get("executedBuy").unwrap());
 
-        sell_token == hex_address(self.blockchain.get_token(expected.order.sell_token))
-            && buy_token == hex_address(self.blockchain.get_token(expected.order.buy_token))
+        sell_token == self.blockchain.get_token(expected.order.sell_token)
+            && buy_token == self.blockchain.get_token(expected.order.buy_token)
             && expected.order.expected_amounts.clone().unwrap().sell == sell_amount
             && expected.order.expected_amounts.clone().unwrap().buy == buy_amount
     }
@@ -1548,8 +1518,8 @@ impl QuoteOk<'_> {
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
         };
 
         let expected = match quoted_order.order.side {

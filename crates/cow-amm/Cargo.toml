@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
+alloy = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }

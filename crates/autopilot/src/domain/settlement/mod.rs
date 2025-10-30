@@ -38,7 +38,6 @@ pub use {
 /// on-chain.
 ///
 /// Referenced as a [`Settlement`] in the codebase.
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Settlement {
     /// The gas used by the settlement transaction.
@@ -46,6 +45,7 @@ pub struct Settlement {
     /// The effective gas price of the settlement transaction.
     gas_price: eth::EffectiveGasPrice,
     /// The block number of the block that contains the settlement transaction.
+    #[allow(dead_code, reason = "we want this data for the Debug printing")]
     block: eth::BlockNo,
     /// The solver (is different from `tx.from` for smart contract solvers)
     solver: eth::Address,

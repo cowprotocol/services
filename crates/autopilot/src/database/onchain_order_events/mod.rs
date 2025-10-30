@@ -581,7 +581,7 @@ async fn get_quote(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn convert_onchain_order_placement(
     order_placement: &ContractOrderPlacement,
     event_timestamp: i64,

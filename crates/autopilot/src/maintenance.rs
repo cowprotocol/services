@@ -28,7 +28,7 @@ use {
 /// to ensure a consistent view of the system.
 pub struct Maintenance {
     /// Indexes and persists all events emited by the settlement contract.
-    settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
+    settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
     /// Indexes ethflow orders (orders selling native ETH).
     ethflow_indexer: Option<EthflowIndexer>,
     /// Used for periodic cleanup tasks to not have the DB overflow with old
@@ -42,7 +42,7 @@ pub struct Maintenance {
 
 impl Maintenance {
     pub fn new(
-        settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
+        settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
         db_cleanup: Postgres,
     ) -> Self {
         Self {

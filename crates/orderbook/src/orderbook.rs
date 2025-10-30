@@ -239,7 +239,6 @@ pub struct Orderbook {
 }
 
 impl Orderbook {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         domain_separator: DomainSeparator,
         settlement_contract: H160,
