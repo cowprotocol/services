@@ -1,6 +1,7 @@
 use {
     super::{Error, Ethereum},
     crate::domain::eth,
+    alloy::contract,
     ethrpc::alloy::{
         conversions::{IntoAlloy, IntoLegacy},
         errors::ContractErrorExt,
@@ -58,9 +59,7 @@ impl Erc20 {
     pub async fn decimals(&self) -> Result<Option<u8>, Error> {
         match self.token.decimals().call().await {
             Ok(decimals) => Ok(Some(decimals)),
-            // Check for the transport because if a method is not available it returns an empty
-            // response that doesn't decode to a proper contract error
-            Err(err) if err.is_transport_error() => Err(err.into()),
+            Err(err) if err.is_node_error() => Err(err.into()),
             Err(_) => Ok(None),
         }
     }
@@ -72,9 +71,7 @@ impl Erc20 {
     pub async fn symbol(&self) -> Result<Option<String>, Error> {
         match self.token.symbol().call().await {
             Ok(symbol) => Ok(Some(symbol)),
-            // Check for the transport because if a method is not available it returns an empty
-            // response that doesn't decode to a proper contract error
-            Err(err) if err.is_transport_error() => Err(err.into()),
+            Err(err) if err.is_node_error() => Err(err.into()),
             Err(_) => Ok(None),
         }
     }
