@@ -293,7 +293,8 @@ fn encode_flashloan_settlement(
 /// Encodes a settlement transaction that uses wrapper contracts.
 ///
 /// Takes the base settlement calldata and wraps it in a wrappedSettleCall
-/// with encoded wrapper metadata.
+/// with encoded wrapper metadata. Since wrappers are a chain, the wrapper
+/// address to call is also processed by this function.
 ///
 /// Returns (first_wrapper_address, wrapped_calldata)
 fn encode_wrapper_settlement(

@@ -355,7 +355,11 @@ impl Solver {
                 }
                 let wrapper_calls = wrappers
                     .iter()
-                    .map(|w| (w.address, w.data.clone(), w.is_omittable))
+                    .map(|w| solvers_dto::auction::WrapperCall {
+                        address: w.address,
+                        data: w.data.clone(),
+                        is_omittable: w.is_omittable,
+                    })
                     .collect();
                 Some((order.uid, wrapper_calls))
             })

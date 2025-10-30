@@ -12,13 +12,12 @@ use {
         util::conv::{rational_to_big_decimal, u256::U256Ext},
     },
     app_data::AppDataHash,
-    ethcontract::H160,
     ethrpc::alloy::conversions::IntoLegacy,
     model::order::{BuyTokenDestination, SellTokenSource},
     std::collections::HashMap,
 };
 
-pub type WrapperCalls = HashMap<order::Uid, Vec<(H160, Vec<u8>, bool)>>;
+pub type WrapperCalls = HashMap<order::Uid, Vec<solvers_dto::auction::WrapperCall>>;
 
 #[expect(clippy::too_many_arguments)]
 pub fn new(
@@ -163,13 +162,7 @@ pub fn new(
                         .get(&order.uid)
                         .into_iter()
                         .flatten()
-                        .map(
-                            |(address, data, is_omittable)| solvers_dto::auction::WrapperCall {
-                                address: *address,
-                                data: data.clone(),
-                                is_omittable: *is_omittable,
-                            },
-                        )
+                        .cloned()
                         .collect(),
                     signature: order.signature.data.clone().into(),
                     signing_scheme: match order.signature.scheme {
