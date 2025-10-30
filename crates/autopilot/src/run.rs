@@ -632,7 +632,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
 
-        maintenance.with_ethflow(onchain_order_indexer);
+        maintenance.spawn_ethflow_indexer(onchain_order_indexer);
         // refunds are not critical for correctness and can therefore be indexed
         // sporadically in a background task
         let service_maintainer = ServiceMaintenance::new(vec![Arc::new(refund_event_handler)]);
