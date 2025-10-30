@@ -5,6 +5,7 @@ use {
     super::{Metrics as DatabaseMetrics, Postgres, events::bytes_to_order_uid},
     crate::database::events::log_to_event_index,
     alloy::{
+        eips::BlockNumberOrTag,
         primitives::{Address, TxHash, U256},
         rpc::types::Log,
     },
@@ -64,7 +65,6 @@ use {
     },
     sqlx::PgConnection,
     std::{collections::HashMap, sync::Arc},
-    web3::types::U64,
 };
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
@@ -396,7 +396,8 @@ async fn get_block_numbers_of_events(
         .into_iter()
         .map(|block_number| async move {
             let timestamp =
-                timestamp_of_block_in_seconds(web3, U64::from(block_number).into()).await?;
+                timestamp_of_block_in_seconds(&web3.alloy, BlockNumberOrTag::Number(block_number))
+                    .await?;
             Ok((block_number, timestamp))
         });
     let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =

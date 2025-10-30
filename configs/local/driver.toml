@@ -1,4 +1,4 @@
-tx-gas-limit = 45000000
+tx-gas-limit = "45000000"
 
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique

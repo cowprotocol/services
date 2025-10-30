@@ -31,7 +31,7 @@ services:
       start_period: 5s
 
   db:
-    image: postgres
+    image: postgres:16
     restart: always
     environment:
       - POSTGRES_USER

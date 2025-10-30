@@ -772,6 +772,7 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
+        alloy::eips::BlockNumberOrTag,
         contracts::alloy::{GPv2Settlement, InstanceExt},
         ethcontract::{BlockNumber, H256},
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
@@ -972,8 +973,12 @@ mod tests {
                     .unwrap(),
             ),
         ];
-        let event_handler =
-            EventHandler::new(Arc::new(web3), AlloyEventRetriever(contract), storage, None);
+        let event_handler = EventHandler::new(
+            Arc::new(web3.alloy.clone()),
+            AlloyEventRetriever(contract),
+            storage,
+            None,
+        );
         let (replacement_blocks, _) = event_handler.past_events_by_block_hashes(&blocks).await;
         assert_eq!(replacement_blocks, blocks[..2]);
     }
@@ -1001,7 +1006,7 @@ mod tests {
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
         let mut event_handler = EventHandler::new(
-            Arc::new(web3),
+            Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
             storage,
             Some(block),
@@ -1034,7 +1039,7 @@ mod tests {
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
         let mut event_handler = EventHandler::new(
-            Arc::new(web3),
+            Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
             storage,
             Some(block),
@@ -1074,12 +1079,14 @@ mod tests {
         const RANGE_SIZE: u64 = 24 * 3600 / 12;
 
         let storage_empty = EventStorage { events: vec![] };
-        let event_start =
-            block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
-                .await
-                .unwrap();
+        let event_start = block_number_to_block_number_hash(
+            &web3.alloy,
+            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+        )
+        .await
+        .unwrap();
         let mut base_event_handler = EventHandler::new(
-            Arc::new(web3.clone()),
+            Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract.clone()),
             storage_empty,
             Some(event_start),
@@ -1094,12 +1101,14 @@ mod tests {
         // We collect events again with an event handler generated from the same start
         // date but using `new_skip_blocks_before` if there are no events
         let storage_empty = EventStorage { events: vec![] };
-        let event_start =
-            block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
-                .await
-                .unwrap();
+        let event_start = block_number_to_block_number_hash(
+            &web3.alloy,
+            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+        )
+        .await
+        .unwrap();
         let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.clone()),
+            Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract.clone()),
             storage_empty,
             event_start,
@@ -1137,7 +1146,7 @@ mod tests {
             events: vec![last_event.clone()],
         };
         let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.clone()),
+            Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
             storage_nonempty,
             // Same event start as for the two previous event handlers. The test checks that this
