@@ -332,6 +332,13 @@ http-timeout = "10s"
     assert!(trade.is_some());
 
     // Ensure that notification was delivered to Liquorice API
+    wait_for_condition(TIMEOUT, || async {
+        let state = liquorice_api.get_state().await;
+        !state.notification_requests.is_empty()
+    })
+    .await
+    .unwrap();
+
     let notification = liquorice_api
         .get_state()
         .await
