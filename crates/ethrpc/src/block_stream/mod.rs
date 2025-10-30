@@ -261,8 +261,7 @@ impl BlockRetrieving for AlloyProvider {
     /// enforced that all the blocks are present, in the correct order and that
     /// there are not reorgs in the block range.
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
-        let (start, end) = range.clone().into_inner();
-
+        let (start, end) = range.into_inner();
         let block_futures: Vec<_> = (start..=end)
             .map(|block_num| {
                 let block_id = BlockNumberOrTag::Number(block_num).into();
@@ -271,7 +270,8 @@ impl BlockRetrieving for AlloyProvider {
                     provider
                         .get_block(block_id)
                         .await
-                        .with_context(|| format!("failed to fetch block {block_num}"))
+                        .with_context(|| format!("failed to fetch block {block_num}"))?
+                        .with_context(|| format!("missing block {block_num}"))
                 }
             })
             .collect();
@@ -281,15 +281,14 @@ impl BlockRetrieving for AlloyProvider {
         let mut prev_hash = None;
         let mut result = Vec::with_capacity(blocks.len());
 
-        for (block_num, block_opt) in (start..=end).zip(blocks) {
-            let block = block_opt.with_context(|| format!("missing block {block_num}"))?;
-
+        for block in blocks {
             let current_hash: H256 = block.header.hash.into_legacy();
             let current_block = block.header.number;
 
             if prev_hash.is_some_and(|prev| prev != block.header.parent_hash.into_legacy()) {
                 tracing::debug!(
-                    ?range,
+                    start,
+                    end,
                     ?prev_hash,
                     parent_hash = ?block.header.parent_hash,
                     "inconsistent parent in block range"
