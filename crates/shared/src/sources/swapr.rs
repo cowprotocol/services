@@ -5,7 +5,7 @@ use {
     anyhow::Result,
     contracts::alloy::ISwaprPair,
     ethcontract::BlockId,
-    ethrpc::alloy::{conversions::IntoAlloy, errors::handle_alloy_contract_error},
+    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_transport_error},
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -41,7 +41,7 @@ fn handle_results(
     pool: Result<Option<Pool>>,
     fee: Result<u32, alloy::contract::Error>,
 ) -> Result<Option<Pool>> {
-    let fee = handle_alloy_contract_error(fee)?;
+    let fee = ignore_non_transport_error(fee)?;
     Ok(pool?.and_then(|pool| {
         Some(Pool {
             fee: Ratio::new(fee?, FEE_BASE),

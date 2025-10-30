@@ -11,7 +11,7 @@ use {
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, H160, U256, errors::MethodError},
-    ethrpc::alloy::{conversions::IntoAlloy, errors::handle_alloy_contract_error},
+    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_transport_error},
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
@@ -330,9 +330,9 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
 }
 
 fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
-    let reserves = handle_alloy_contract_error(fetched_pool.reserves)?;
-    let token0_balance = handle_alloy_contract_error(fetched_pool.token0_balance)?;
-    let token1_balance = handle_alloy_contract_error(fetched_pool.token1_balance)?;
+    let reserves = ignore_non_transport_error(fetched_pool.reserves)?;
+    let token0_balance = ignore_non_transport_error(fetched_pool.token0_balance)?;
+    let token1_balance = ignore_non_transport_error(fetched_pool.token1_balance)?;
 
     let pool = reserves.and_then(|reserves| {
         let r0 = u128::try_from(reserves.reserve0).ok()?;

@@ -1,21 +1,12 @@
-use alloy::{contract::Error as ContractError, sol_types::GenericContractError};
+use alloy::contract::Error as ContractError;
 
 /// Bubbles up node errors, ignoring all other errors.
-// This function can be made to return only the RPC error that wasn't decode
-pub fn handle_alloy_contract_error<T>(
+pub fn ignore_non_transport_error<T>(
     result: Result<T, ContractError>,
 ) -> anyhow::Result<Option<T>> {
     match result {
         Ok(result) => Ok(Some(result)),
-        // Alloy "hides" the contract execution errors under the transport error
-        Err(err @ alloy::contract::Error::TransportError(_)) => {
-            // So we need to try to decode the error as a generic contract error,
-            // we return in case it isn't a contract error
-            match err.try_decode_into_interface_error::<GenericContractError>() {
-                Ok(_) => Ok(None), // contract error
-                Err(err) => Err(err)?,
-            }
-        }
+        Err(err) if err.is_contract_err() => Err(err.into()),
         Err(_) => Ok(None),
     }
 }
