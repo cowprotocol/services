@@ -64,6 +64,7 @@ dependencies = [
 name = "alerter"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "clap",
  "humantime",
@@ -71,7 +72,6 @@ dependencies = [
  "model",
  "number",
  "observe",
- "primitive-types",
  "prometheus",
  "reqwest 0.11.27",
  "serde",

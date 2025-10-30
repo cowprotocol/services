@@ -5,7 +5,54 @@ use {
     std::fmt,
 };
 
+/// (De)serialization structure able to deserialize decimal and hexadecimal
+/// numbers, serializes as decimal.
 pub struct HexOrDecimalU256;
+
+impl<'de> DeserializeAs<'de, alloy::primitives::U256> for HexOrDecimalU256 {
+    fn deserialize_as<D>(deserializer: D) -> Result<alloy::primitives::U256, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor {}
+        impl de::Visitor<'_> for Visitor {
+            type Value = alloy::primitives::U256;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(
+                    formatter,
+                    "a u256 encoded either as 0x hex prefixed or decimal encoded string"
+                )
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if s.trim().starts_with("0x") {
+                    alloy::primitives::U256::from_str_radix(s, 16).map_err(|err| {
+                        de::Error::custom(format!("failed to decode {s:?} as hex u256: {err}"))
+                    })
+                } else {
+                    alloy::primitives::U256::from_str_radix(s, 10).map_err(|err| {
+                        de::Error::custom(format!("failed to decode {s:?} as decimal u256: {err}"))
+                    })
+                }
+            }
+        }
+
+        deserializer.deserialize_str(Visitor {})
+    }
+}
+
+impl SerializeAs<U256> for HexOrDecimalU256 {
+    fn serialize_as<S>(source: &U256, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize(source, serializer)
+    }
+}
 
 impl<'de> DeserializeAs<'de, U256> for HexOrDecimalU256 {
     fn deserialize_as<D>(deserializer: D) -> Result<U256, D::Error>
@@ -16,12 +63,12 @@ impl<'de> DeserializeAs<'de, U256> for HexOrDecimalU256 {
     }
 }
 
-impl SerializeAs<U256> for HexOrDecimalU256 {
-    fn serialize_as<S>(source: &U256, serializer: S) -> Result<S::Ok, S::Error>
+impl SerializeAs<alloy::primitives::U256> for HexOrDecimalU256 {
+    fn serialize_as<S>(source: &alloy::primitives::U256, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serialize(source, serializer)
+        serializer.serialize_str(&source.to_string())
     }
 }
 
