@@ -7,22 +7,19 @@ use {
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     contracts::alloy::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,
-    e2e::{
-        nodes::local_node::TestNodeApi,
-        setup::{
-            ACCOUNT_ENDPOINT,
-            API_HOST,
-            Contracts,
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            TRADES_ENDPOINT,
-            TestAccount,
-            eth,
-            run_test,
-            to_wei,
-            wait_for_condition,
-        },
+    e2e::setup::{
+        ACCOUNT_ENDPOINT,
+        API_HOST,
+        Contracts,
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        TRADES_ENDPOINT,
+        TestAccount,
+        eth,
+        run_test,
+        to_wei,
+        wait_for_condition,
     },
     ethcontract::{Account, H160, H256, U256},
     ethrpc::{
@@ -169,7 +166,9 @@ async fn eth_flow_tx(web3: Web3) {
     let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
@@ -194,7 +193,7 @@ async fn eth_flow_tx(web3: Web3) {
 
     tracing::info!("waiting for trade");
 
-    test_order_was_settled(&ethflow_order, &web3).await;
+    test_order_was_settled(&ethflow_order, &onchain).await;
 
     // make sure the fee was charged for zero fee limit orders
     let fee_charged = || async {
@@ -275,7 +274,9 @@ async fn eth_flow_without_quote(web3: Web3) {
     services.start_protocol(solver).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
         buy_token: dai.address().into_legacy(),
@@ -308,7 +309,7 @@ async fn eth_flow_without_quote(web3: Web3) {
     .await;
 
     tracing::info!("waiting for trade");
-    test_order_was_settled(&ethflow_order, &web3).await;
+    test_order_was_settled(&ethflow_order, &onchain).await;
 }
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
@@ -324,7 +325,10 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.
-    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
             &services,
@@ -347,10 +351,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         ethflow_contract,
     )
     .await;
-    web3.api::<TestNodeApi<_>>()
-        .mine_pending_block()
-        .await
-        .unwrap();
+    onchain.mint_block().await;
 
     dummy_order
         .mine_order_invalidation(dummy_trader.address().into_alloy(), ethflow_contract)
@@ -361,7 +362,9 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 60;
     let ethflow_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
@@ -386,7 +389,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     .await;
 
     tracing::info!("waiting for trade");
-    test_order_was_settled(&ethflow_order, &web3).await;
+    test_order_was_settled(&ethflow_order, &onchain).await;
 
     // Check order events
     let events = crate::database::events_of_order(
@@ -505,11 +508,12 @@ async fn test_trade_availability_in_api(
     }
 }
 
-async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, web3: &Web3) {
+async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, onchain: &OnchainComponents) {
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let buy_token = ERC20Mintable::Instance::new(
             ethflow_order.0.buy_token.into_alloy(),
-            web3.alloy.clone(),
+            onchain.web3().alloy.clone(),
         );
         let receiver_buy_token_balance = buy_token
             .balanceOf(ethflow_order.0.receiver.into_alloy())
@@ -876,7 +880,9 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
     let place_order = async |trader: TestAccount, buy_amount: u64| {
         let valid_to = chrono::offset::Utc::now().timestamp() as u32
-            + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+            + timestamp_of_current_block_in_seconds(&web3.alloy)
+                .await
+                .unwrap()
             + 3600;
         let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
             buy_token: dai.address().into_legacy(),
@@ -920,5 +926,5 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
     // Although the auction contains a problematic order we can
     // still settle good orders.
     tracing::info!("waiting for trade");
-    test_order_was_settled(&order_b, &web3).await;
+    test_order_was_settled(&order_b, &onchain).await;
 }
