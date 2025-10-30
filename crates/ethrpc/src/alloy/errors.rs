@@ -1,4 +1,4 @@
-use alloy::contract::Error as ContractError;
+use alloy::{contract::Error as ContractError, rpc::json_rpc::ErrorPayload, transports::RpcError};
 
 /// Bubbles up node errors, ignoring all other errors.
 pub fn ignore_non_node_error<T>(result: Result<T, ContractError>) -> anyhow::Result<Option<T>> {
@@ -12,7 +12,7 @@ pub fn ignore_non_node_error<T>(result: Result<T, ContractError>) -> anyhow::Res
 pub trait ContractErrorExt {
     /// Returns whether a given error is a contract error, this is considered to
     /// be all errors except the transport error.
-    fn is_contract_err(&self) -> bool;
+    fn is_contract_error(&self) -> bool;
 
     /// Returns whether a given error is specifically a transport error.
     ///
@@ -30,20 +30,23 @@ pub trait ContractErrorExt {
 }
 
 impl ContractErrorExt for ContractError {
-    fn is_contract_err(&self) -> bool {
-        !self.is_transport_error()
+    fn is_contract_error(&self) -> bool {
+        !self.is_node_error()
     }
 
     fn is_transport_error(&self) -> bool {
-        if let ContractError::TransportError(rpc_error) = self {
-            rpc_error.is_transport_error()
-        } else {
-            false
+        match self {
+            ContractError::TransportError(RpcError::Transport(_)) => true,
+            _ => false,
         }
     }
 
     fn is_node_error(&self) -> bool {
-        matches!(self, ContractError::TransportError(_))
+        match self {
+            ContractError::TransportError(RpcError::ErrorResp(_))
+            | ContractError::TransportError(RpcError::Transport(_)) => true,
+            _ => false,
+        }
     }
 }
 
@@ -67,7 +70,9 @@ pub fn testing_alloy_transport_error() -> alloy::contract::Error {
 /// Useful for testing.
 #[cfg(any(test, feature = "test-util"))]
 pub fn testing_alloy_node_error() -> alloy::contract::Error {
-    alloy::contract::Error::TransportError(alloy::transports::TransportError::NullResp)
+    alloy::contract::Error::TransportError(alloy::transports::TransportError::ErrorResp(
+        ErrorPayload::internal_error(),
+    ))
 }
 
 #[cfg(test)]
@@ -81,8 +86,8 @@ mod tests {
 
     #[test]
     fn test_contract_error() {
-        assert!(testing_alloy_contract_error().is_contract_err());
-        assert!(!testing_alloy_transport_error().is_contract_err());
+        assert!(testing_alloy_contract_error().is_contract_error());
+        assert!(!testing_alloy_transport_error().is_contract_error());
         assert!(!testing_alloy_node_error().is_transport_error());
     }
 

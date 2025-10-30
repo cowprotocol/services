@@ -58,8 +58,10 @@ impl Erc20 {
     pub async fn decimals(&self) -> Result<Option<u8>, Error> {
         match self.token.decimals().call().await {
             Ok(decimals) => Ok(Some(decimals)),
-            Err(err) if err.is_contract_err() => Ok(None),
-            Err(err) => Err(err.into()),
+            // Check for the transport because if a method is not available it returns an empty
+            // response that doesn't decode to a proper contract error
+            Err(err) if err.is_transport_error() => Err(err.into()),
+            Err(_) => Ok(None),
         }
     }
 
@@ -70,8 +72,10 @@ impl Erc20 {
     pub async fn symbol(&self) -> Result<Option<String>, Error> {
         match self.token.symbol().call().await {
             Ok(symbol) => Ok(Some(symbol)),
-            Err(err) if err.is_contract_err() => Ok(None),
-            Err(err) => Err(err.into()),
+            // Check for the transport because if a method is not available it returns an empty
+            // response that doesn't decode to a proper contract error
+            Err(err) if err.is_transport_error() => Err(err.into()),
+            Err(_) => Ok(None),
         }
     }
 

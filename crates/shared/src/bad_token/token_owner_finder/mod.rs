@@ -439,7 +439,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
                     async move {
                         match balance.call().await {
                             Ok(balance) => Ok((owner, balance)),
-                            Err(err) if err.is_contract_err() => {
+                            Err(err) if err.is_contract_error() => {
                                 Ok((owner, alloy::primitives::U256::ZERO))
                             }
                             Err(err) => Err(err),
