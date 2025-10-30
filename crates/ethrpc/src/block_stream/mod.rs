@@ -295,6 +295,7 @@ impl BlockRetrieving for AlloyProvider {
                     end,
                     ?prev_hash,
                     parent_hash = ?block.header.parent_hash,
+                    block_number = ?block.number(),
                     "inconsistent parent in block range"
                 );
                 return Err(anyhow!("inconsistent block range"));
