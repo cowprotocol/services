@@ -6,12 +6,11 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-ethcontract = { workspace = true }
-ethcontract-mock = { workspace = true }
 hex-literal = { workspace = true }
 anyhow = { workspace = true }
 maplit = { workspace = true }
 serde_json = { workspace = true }
+alloy = {workspace = true}
 
 [lints]
 workspace = true
