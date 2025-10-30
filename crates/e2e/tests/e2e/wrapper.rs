@@ -24,12 +24,9 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-/// Test that orders can be placed with wrapper contracts specified in the app
-/// data. This replicates the functionality of the playground/test_wrapper.sh
-/// script as a proper E2E test.
-
 /// The block number from which we will fetch state for the forked test.
 const FORK_BLOCK_MAINNET: u64 = 23688436;
+
 /// EmptyWrapper contract address deployed on mainnet.
 const EMPTY_WRAPPER_MAINNET: Address = address!("751871E9cA28B441Bb6d3b7C4255cf2B5873d56a");
 
@@ -45,6 +42,9 @@ async fn forked_node_mainnet_wrapper() {
     .await;
 }
 
+/// Test that orders can be placed with wrapper contracts specified in the app
+/// data. This replicates the functionality of the playground/test_wrapper.sh
+/// script as a proper E2E test.
 async fn forked_mainnet_wrapper_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
@@ -228,26 +228,26 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         // Verify that we actually called the wrapper
         let trades_result = services.get_trades(&order_uid).await.unwrap();
-        if trades_result.len() == 0 {
-            return false;
+        if trades_result.is_empty() {
+            false
+        } else {
+            let solve_tx_hash = trades_result[0].tx_hash.unwrap();
+
+            let solve_tx = web3
+                .alloy
+                .get_transaction_by_hash(solve_tx_hash.into_alloy())
+                .await
+                .unwrap()
+                .unwrap()
+                .into_request();
+
+            assert_eq!(
+                solve_tx.to.unwrap().into_to().unwrap(),
+                EMPTY_WRAPPER_MAINNET
+            );
+
+            true
         }
-
-        let solve_tx_hash = trades_result[0].tx_hash.unwrap();
-
-        let solve_tx = web3
-            .alloy
-            .get_transaction_by_hash(solve_tx_hash.into_alloy())
-            .await
-            .unwrap()
-            .unwrap()
-            .into_request();
-
-        assert_eq!(
-            solve_tx.to.unwrap().into_to().unwrap(),
-            EMPTY_WRAPPER_MAINNET
-        );
-
-        return true;
     })
     .await
     .unwrap();
