@@ -1,7 +1,10 @@
 use {
     ::alloy::{
         primitives::{Address, address},
-        providers::ext::{AnvilApi, ImpersonateConfig},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
     },
     app_data::{AppDataHash, hash_full_app_data},
     contracts::alloy::ERC20,
@@ -216,6 +219,35 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
         (sell_token_balance_before > sell_token_balance_after)
             && (buy_token_balance_after > buy_token_balance_before)
+    })
+    .await
+    .unwrap();
+
+    tracing::info!("Transaction completion observed.");
+
+    wait_for_condition(TIMEOUT, || async {
+        // Verify that we actually called the wrapper
+        let trades_result = services.get_trades(&order_uid).await.unwrap();
+        if trades_result.len() == 0 {
+            return false;
+        }
+
+        let solve_tx_hash = trades_result[0].tx_hash.unwrap();
+
+        let solve_tx = web3
+            .alloy
+            .get_transaction_by_hash(solve_tx_hash.into_alloy())
+            .await
+            .unwrap()
+            .unwrap()
+            .into_request();
+
+        assert_eq!(
+            solve_tx.to.unwrap().into_to().unwrap(),
+            EMPTY_WRAPPER_MAINNET
+        );
+
+        return true;
     })
     .await
     .unwrap();
