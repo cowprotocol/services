@@ -166,7 +166,9 @@ async fn eth_flow_tx(web3: Web3) {
     let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
@@ -272,7 +274,9 @@ async fn eth_flow_without_quote(web3: Web3) {
     services.start_protocol(solver).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
         buy_token: dai.address().into_legacy(),
@@ -321,7 +325,10 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.
-    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
             &services,
@@ -355,7 +362,9 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(&web3.alloy)
+            .await
+            .unwrap()
         + 60;
     let ethflow_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
@@ -871,7 +880,9 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
     let place_order = async |trader: TestAccount, buy_amount: u64| {
         let valid_to = chrono::offset::Utc::now().timestamp() as u32
-            + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+            + timestamp_of_current_block_in_seconds(&web3.alloy)
+                .await
+                .unwrap()
             + 3600;
         let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
             buy_token: dai.address().into_legacy(),
