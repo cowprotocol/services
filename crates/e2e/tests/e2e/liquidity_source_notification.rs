@@ -1,11 +1,14 @@
 use {
-    alloy::primitives::Bytes,
+    alloy::{
+        primitives::{Address, Bytes, U256, address},
+        signers::{SignerSync, local::PrivateKeySigner},
+    },
     chrono::Utc,
     contracts::{
         ERC20,
-        alloy::{ILiquoriceSettlement, InstanceExt},
+        alloy::{InstanceExt, LiquoriceSettlement},
     },
-    driver::{domain::eth::H160, infra},
+    driver::infra,
     e2e::{
         api,
         nodes::forked_node::ForkedNodeApi,
@@ -22,12 +25,10 @@ use {
         },
         tx,
     },
-    ethcontract::prelude::U256,
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
     },
-    hex_literal::hex,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -40,8 +41,8 @@ use {
 
 /// The block number from which we will fetch state for the forked tests.
 pub const FORK_BLOCK: u64 = 23326100;
-pub const USDT_WHALE: H160 = H160(hex!("6AC38D1b2f0c0c3b9E816342b1CA14d91D5Ff60B"));
-pub const USDC_WHALE: H160 = H160(hex!("01b8697695eab322a339c4bf75740db75dc9375e"));
+pub const USDT_WHALE: Address = address!("6AC38D1b2f0c0c3b9E816342b1CA14d91D5Ff60B");
+pub const USDC_WHALE: Address = address!("01b8697695eab322a339c4bf75740db75dc9375e");
 
 #[tokio::test]
 #[ignore]
@@ -90,7 +91,10 @@ async fn liquidity_source_notification(web3: Web3) {
     // CoW onchain setup
     {
         // Fund trader
-        let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
+        let usdc_whale = forked_node_api
+            .impersonate(&USDC_WHALE.into_legacy())
+            .await
+            .unwrap();
         tx!(
             usdc_whale,
             token_usdc.transfer(trader.address(), trade_amount)
@@ -105,7 +109,7 @@ async fn liquidity_source_notification(web3: Web3) {
         // Trader gives approval to the CoW allowance contract
         tx!(
             trader.account(),
-            token_usdc.approve(onchain.contracts().allowance, U256::MAX)
+            token_usdc.approve(onchain.contracts().allowance, ethcontract::U256::MAX)
         );
     }
 
@@ -113,9 +117,10 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Liquorice settlement contract through which we will trade with the
     // `liquorice_maker`
-    let liquorice_settlement = ILiquoriceSettlement::Instance::deployed(&web3.alloy)
+    let liquorice_settlement = LiquoriceSettlement::Instance::deployed(&web3.alloy)
         .await
         .unwrap();
+
     let liquorice_balance_manager_address = liquorice_settlement
         .BALANCE_MANAGER()
         .call()
@@ -125,7 +130,10 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Fund `liquorice_maker`
     {
-        let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
+        let usdt_whale = forked_node_api
+            .impersonate(&USDT_WHALE.into_legacy())
+            .await
+            .unwrap();
         tx!(
             usdt_whale,
             token_usdt.transfer(liquorice_maker.address(), trade_amount)
@@ -135,7 +143,7 @@ async fn liquidity_source_notification(web3: Web3) {
     // Maker gives approval to the Liquorice balance manager contract
     tx!(
         liquorice_maker.account(),
-        token_usdt.approve(liquorice_balance_manager_address, U256::MAX)
+        token_usdt.approve(liquorice_balance_manager_address, ethcontract::U256::MAX)
     );
 
     // Liquorice API setup
@@ -219,57 +227,45 @@ http-timeout = "10s"
     // Prepare Liquorice solution
 
     // Create Liquorice order
-    let liquorice_order = api::liquorice::onchain::order::Single {
-        rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
+    let liquorice_order = LiquoriceSettlement::ILiquoriceSettlement::Single {
+        rfqId: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
         nonce: U256::from(0),
-        trader: onchain.contracts().gp_settlement.address().into_legacy(),
-        effective_trader: onchain.contracts().gp_settlement.address().into_legacy(),
-        base_token: token_usdc.address(),
-        quote_token: token_usdt.address(),
-        base_token_amount: trade_amount,
-        quote_token_amount: trade_amount,
-        min_fill_amount: U256::from(1),
-        quote_expiry: U256::from(Utc::now().timestamp() as u64 + 10),
-        recipient: liquorice_maker.address(),
+        trader: *onchain.contracts().gp_settlement.address(),
+        effectiveTrader: *onchain.contracts().gp_settlement.address(),
+        baseToken: token_usdc.address().into_alloy(),
+        quoteToken: token_usdt.address().into_alloy(),
+        baseTokenAmount: trade_amount.into_alloy(),
+        quoteTokenAmount: trade_amount.into_alloy(),
+        minFillAmount: U256::from(1),
+        quoteExpiry: U256::from(Utc::now().timestamp() as u64 + 10),
+        recipient: liquorice_maker.address().into_alloy(),
     };
 
     // Create calldata
     let liquorice_solution_calldata = {
+        let liquorice_order_hash = liquorice_settlement
+            .hashSingleOrder(liquorice_order.clone())
+            .call()
+            .await
+            .unwrap();
+
         // Create Liquorice order signature
-        let liquorice_order_signature = liquorice_order.sign(
-            &api::liquorice::onchain::DomainSeparator::new(
-                1,
-                liquorice_settlement.address().into_legacy(),
-            ),
-            liquorice_order.hash(),
-            &liquorice_maker,
-        );
+        let signer = PrivateKeySigner::from_slice(liquorice_maker.private_key()).unwrap();
+        let liquorice_order_signature = signer.sign_hash_sync(&liquorice_order_hash).unwrap();
 
         // Create Liquorice settlement calldata
         liquorice_settlement
             .settleSingle(
                 liquorice_maker.address().into_alloy(),
-                ILiquoriceSettlement::ILiquoriceSettlement::Single {
-                    rfqId: liquorice_order.rfq_id.clone(),
-                    nonce: liquorice_order.nonce.into_alloy(),
-                    trader: liquorice_order.trader.into_alloy(),
-                    effectiveTrader: liquorice_order.effective_trader.into_alloy(),
-                    baseToken: liquorice_order.base_token.into_alloy(),
-                    quoteToken: liquorice_order.quote_token.into_alloy(),
-                    baseTokenAmount: liquorice_order.base_token_amount.into_alloy(),
-                    quoteTokenAmount: liquorice_order.quote_token_amount.into_alloy(),
-                    minFillAmount: liquorice_order.min_fill_amount.into_alloy(),
-                    quoteExpiry: liquorice_order.quote_expiry.into_alloy(),
-                    recipient: liquorice_order.recipient.into_alloy(),
+                liquorice_order.clone(),
+                LiquoriceSettlement::Signature::TypedSignature {
+                    signatureType: 3,   // EIP712
+                    transferCommand: 1, // SIMPLE_TRANSFER
+                    signatureBytes: liquorice_order_signature.as_bytes().into(),
                 },
-                ILiquoriceSettlement::Signature::TypedSignature {
-                    signatureType: liquorice_order_signature.signature_type,
-                    transferCommand: liquorice_order_signature.transfer_command,
-                    signatureBytes: Bytes::from(liquorice_order_signature.signature_bytes.0),
-                },
-                liquorice_order.quote_token_amount.into_alloy(),
+                liquorice_order.quoteTokenAmount,
                 // Taker signature is not used in this use case
-                ILiquoriceSettlement::Signature::TypedSignature {
+                LiquoriceSettlement::Signature::TypedSignature {
                     signatureType: 0,
                     transferCommand: 0,
                     signatureBytes: Bytes::from(vec![0u8; 65]),
@@ -351,5 +347,5 @@ http-timeout = "10s"
     assert!(matches!(notification.content, Content::Settle(Settle {
         rfq_ids,
         ..
-    }) if rfq_ids.contains(&liquorice_order.rfq_id)));
+    }) if rfq_ids.contains(&liquorice_order.rfqId)));
 }
