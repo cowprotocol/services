@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, eth},
+        domain::{self, eth, settlement::transaction::EncodedTrade},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -327,10 +327,11 @@ impl Persistence {
         Ok(ex.commit().await?)
     }
 
-    /// Get auction data.
+    /// Get auction data to post-process the given trades.
     pub async fn get_auction(
         &self,
         auction_id: domain::auction::Id,
+        trades: &[EncodedTrade],
     ) -> Result<domain::settlement::Auction, error::Auction> {
         let _timer = Metrics::get()
             .database_queries
@@ -368,7 +369,6 @@ impl Persistence {
             .collect::<Result<_, _>>()?;
 
         let orders = {
-            // get all orders from a competition auction
             let auction_orders = database::auction::get_order_uids(&mut ex, auction_id)
                 .await
                 .map_err(error::Auction::DatabaseError)?
@@ -376,11 +376,21 @@ impl Persistence {
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
+            // Code that uses the data assembled by this function determines JIT orders
+            // by their presence in the `orders => fee_policies` mapping. If an order has
+            // a mapping it is assumed that this was a regular order and not a JIT order.
+            // So in order to not misclassify JIT orders as regular orders we only fetch
+            // fee policies for orders that were part of the original auction.
+            let relevant_orders: HashSet<_> = trades
+                .iter()
+                .filter(|t| auction_orders.contains(&t.uid))
+                .map(|t| t.uid)
+                .collect();
 
             // get fee policies for all orders that were part of the competition auction
             let fee_policies = database::fee_policies::fetch_all(
                 &mut ex,
-                auction_orders
+                relevant_orders
                     .iter()
                     .map(|o| (auction_id, ByteArray(o.0)))
                     .collect::<Vec<_>>()
@@ -411,7 +421,7 @@ impl Persistence {
 
             // compile order data
             let mut orders = HashMap::new();
-            for order in auction_orders.iter() {
+            for order in relevant_orders.iter() {
                 let order_policies = match fee_policies.get(order) {
                     Some(policies) => policies
                         .iter()
