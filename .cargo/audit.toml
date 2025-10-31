@@ -3,7 +3,7 @@
 # Only NEW vulnerabilities will cause CI to fail
 
 [advisories]
-# Known vulnerabilities that are tracked in issue #3338
+# Known vulnerabilities that are tracked in https://github.com/cowprotocol/services/issues/3338
 ignore = [
     # alloy-dyn-abi - DoS vulnerability (RUSTSEC-2025-0073)
     # Needs upgrade to 1.4.1+ (part of alloy migration)
