@@ -86,21 +86,11 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
         .unwrap();
 
     // Trader deposits ETH to get WETH
-    web3.alloy
-        .anvil_send_impersonated_transaction_with_config(
-            token_weth
-                .deposit()
-                .value(to_wei(1).into_alloy())
-                .from(trader.address().into_alloy())
-                .into_transaction_request(),
-            ImpersonateConfig {
-                fund_amount: None,
-                stop_impersonate: true,
-            },
-        )
-        .await
-        .unwrap()
-        .get_receipt()
+    token_weth
+        .deposit()
+        .value(to_wei(1).into_alloy())
+        .from(trader.address().into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
 
@@ -260,12 +250,6 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
         EMPTY_WRAPPER_MAINNET
     );
 
-    // Check that the auction ID propogated through the wrappers ok
-    services
-        .get_solver_competition(solve_tx_hash)
-        .await
-        .unwrap();
-
     // Trace the transaction to verify both wrapper calls happened
     tracing::info!("Tracing transaction to verify wrapper calls");
 
@@ -327,7 +311,22 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
         .iter()
         .map(|data| format!("{:?}", data))
         .collect();
+
+    assert!(
+        call_data_strings[0].contains("0002beef"),
+        "Initial call data does not contain first wrapper data"
+    );
+    assert!(
+        call_data_strings[1].contains("0002feed"),
+        "Initial call data does not contain second wrapper data"
+    );
     tracing::info!("Wrapper call data: {:?}", call_data_strings);
+
+    // Check that the auction ID propogated through the wrappers ok
+    services
+        .get_solver_competition(solve_tx_hash)
+        .await
+        .unwrap();
 
     tracing::info!(
         "Order with wrapper successfully traded on forked mainnet with verified wrapper calls"
