@@ -204,19 +204,18 @@ pub async fn current_block_ws_stream(
             }
 
             tracing::info!(number=%block_info.number, hash=?block_info.hash, "noticed a new block");
-            if let Err(err) = sender.send(block_info) {
-                tracing::error!(
-                    ?err,
-                    "failed to send block to stream, aborting subscription loop"
+            if sender.send(block_info).is_err() {
+                tracing::info!(
+                    "all block stream receivers dropped, shutting down subscription loop"
                 );
-                panic!("subscription loop terminated due to sender failure");
+                break;
             }
 
             previous_block = block_info;
         }
 
-        // If we reach here, the stream ended permanently
-        tracing::error!("block stream ended after max reconnection attempts");
+        // If we reach here, the stream ended (connection closed or system shutdown)
+        tracing::info!("block stream subscription ended");
     };
 
     tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
