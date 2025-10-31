@@ -144,8 +144,8 @@ AND eo.valid_to < $1
     "#;
     sqlx::query_as(QUERY)
         .bind(since_valid_to)
-        .bind(min_validity_duration)
-        .bind(min_price_deviation)
+        // .bind(min_validity_duration)
+        // .bind(min_price_deviation)
         .fetch_all(ex)
         .await
 }
