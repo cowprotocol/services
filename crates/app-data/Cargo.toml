@@ -6,19 +6,18 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-bytes-hex = { workspace = true }
+alloy = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
-tiny-keccak = { workspace = true, features = ["keccak"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_with = { workspace = true }
-primitive-types = { workspace = true, features = ["serde"] }
+bytes-hex = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 number = { path = "../number" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 
 [dev-dependencies]
-ethcontract = { workspace = true }
 
 [features]
 test_helpers = []
