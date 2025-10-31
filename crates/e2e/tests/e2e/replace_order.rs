@@ -349,6 +349,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let balance_after = token_a
             .balanceOf(trader_a.address().into_alloy())
             .call()

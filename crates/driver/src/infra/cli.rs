@@ -1,6 +1,6 @@
 use {
     reqwest::Url,
-    shared::arguments::TracingArguments,
+    shared::{arguments::TracingArguments, current_block},
     std::{net::SocketAddr, path::PathBuf},
 };
 
@@ -24,6 +24,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub tracing: TracingArguments,
+
+    #[clap(flatten)]
+    pub current_block: current_block::Arguments,
 
     /// Whether to use JSON format for the logs.
     #[clap(long, env, default_value = "false")]

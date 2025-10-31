@@ -4,6 +4,9 @@ pub mod local_node;
 /// The default node URL that should be used for e2e tests.
 pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
+/// The default WebSocket node URL for e2e tests.
+pub const NODE_WS_HOST: &str = "ws://127.0.0.1:8545";
+
 /// A blockchain node for development purposes. Dropping this type will
 /// terminate the node.
 pub struct Node {

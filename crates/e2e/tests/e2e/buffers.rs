@@ -144,6 +144,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     tracing::info!("waiting for second trade");
     let trade_happened = || async {
+        onchain.mint_block().await;
         token_b
             .balanceOf(trader.address().into_alloy())
             .call()
