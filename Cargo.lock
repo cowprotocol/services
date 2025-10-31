@@ -6768,9 +6768,8 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 name = "testlib"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
- "ethcontract",
- "ethcontract-mock",
  "hex-literal",
  "maplit",
  "serde_json",

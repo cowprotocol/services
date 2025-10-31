@@ -739,7 +739,10 @@ mod tests {
                     .await
                     .unwrap()
                     .pair_provider,
-                    base_tokens: base_tokens.to_vec(),
+                    base_tokens: base_tokens
+                        .iter()
+                        .map(|token| token.into_legacy())
+                        .collect::<Vec<_>>(),
                 }),
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
@@ -751,7 +754,10 @@ mod tests {
                     .await
                     .unwrap()
                     .pair_provider,
-                    base_tokens: base_tokens.to_vec(),
+                    base_tokens: base_tokens
+                        .iter()
+                        .map(|token| token.into_legacy())
+                        .collect::<Vec<_>>(),
                 }),
                 Arc::new(BalancerVaultFinder(
                     BalancerV2Vault::Instance::deployed(&web3.alloy)
@@ -763,7 +769,10 @@ mod tests {
                         IUniswapV3Factory::Instance::deployed(&web3.alloy)
                             .await
                             .unwrap(),
-                        base_tokens.to_vec(),
+                        base_tokens
+                            .iter()
+                            .map(|token| token.into_legacy())
+                            .collect::<Vec<_>>(),
                         FeeValues::Static,
                     )
                     .await
@@ -782,7 +791,7 @@ mod tests {
 
         println!("testing good tokens");
         for &token in base_tokens {
-            let result = token_cache.detect(token).await;
+            let result = token_cache.detect(token.into_legacy()).await;
             println!("token {token:?} is {result:?}");
         }
 
@@ -798,7 +807,7 @@ mod tests {
     async fn mainnet_univ3() {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
         let web3 = Web3::new_from_env();
-        let base_tokens = vec![testlib::tokens::WETH];
+        let base_tokens = vec![testlib::tokens::WETH.into_legacy()];
         let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
@@ -817,7 +826,9 @@ mod tests {
         });
         let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
 
-        let result = token_cache.detect(testlib::tokens::USDC).await;
+        let result = token_cache
+            .detect(testlib::tokens::USDC.into_legacy())
+            .await;
         dbg!(&result);
         assert!(result.unwrap().is_good());
 
