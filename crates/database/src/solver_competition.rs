@@ -37,6 +37,16 @@ pub struct LoadCompetition {
 }
 
 #[instrument(skip_all)]
+pub async fn auction_start_block(
+    ex: &mut PgConnection,
+    id: AuctionId,
+) -> Result<Option<String>, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT json->>'auctionStartBlock' FROM solver_competitions sc WHERE sc.id = $1;"#;
+    sqlx::query_scalar(QUERY).bind(id).fetch_optional(ex).await
+}
+
+#[instrument(skip_all)]
 pub async fn load_by_id(
     ex: &mut PgConnection,
     id: AuctionId,
@@ -110,6 +120,7 @@ mod tests {
             byte_array::ByteArray,
             events::{EventIndex, Settlement},
         },
+        serde_json::json,
         sqlx::Connection,
     };
 
@@ -120,14 +131,21 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let value = JsonValue::Bool(true);
+        let value = json!({
+            "auctionStartBlock": 1234,
+        });
         let value_str = serde_json::to_string(&value).unwrap();
         save(&mut db, 0, &value_str).await.unwrap();
+
+        // auction_start_block works
+        let value_ = auction_start_block(&mut db, 0).await.unwrap().unwrap();
+        assert_eq!(value_, "1234");
 
         // load by id works
         let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
         assert_eq!(value, value_.json);
         assert!(value_.tx_hashes.is_empty());
+
         // load as latest works
         let value_ = load_latest_competition(&mut db).await.unwrap().unwrap();
         assert_eq!(value, value_.json);

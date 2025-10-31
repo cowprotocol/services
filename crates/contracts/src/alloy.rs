@@ -594,7 +594,7 @@ crate::bindings!(
 );
 
 crate::bindings!(
-    ILiquoriceSettlement,
+    LiquoriceSettlement,
     crate::deployments! {
         // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
         MAINNET => address!("0x0448633eb8B0A42EfED924C42069E0DcF08fb552"),

@@ -48,7 +48,6 @@ pub struct OrderEvent {
 
 /// Inserts a row into the `order_events` table only if the latest event for the
 /// corresponding order UID has a different label than the provided event..
-#[instrument(skip_all)]
 pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,

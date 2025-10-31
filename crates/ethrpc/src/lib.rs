@@ -115,12 +115,21 @@ pub fn web3(
 ) -> Web3 {
     let http = http_factory.cookie_store(true).build().unwrap();
     let http = HttpTransport::new(http, url.clone(), name.to_string());
-    let transport = match args.into_buffered_configuration() {
-        Some(config) => Web3Transport::new(BufferedTransport::with_config(http, config)),
-        None => Web3Transport::new(http),
+    let buffered_config = args.into_buffered_configuration();
+    let (legacy, alloy, wallet) = match buffered_config {
+        Some(config) => {
+            let legacy = Web3Transport::new(BufferedTransport::with_config(http, config));
+            let (alloy, wallet) = alloy::provider(url.as_str());
+            (legacy, alloy, wallet)
+        }
+        None => {
+            let legacy = Web3Transport::new(http);
+            let (alloy, wallet) = alloy::unbuffered_provider(url.as_str());
+            (legacy, alloy, wallet)
+        }
     };
-    let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), transport);
-    let (alloy, wallet) = alloy::provider(url.as_str());
+    let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), legacy);
+
     Web3 {
         legacy: web3::Web3::new(Web3Transport::new(instrumented)),
         alloy,
