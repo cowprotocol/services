@@ -31,17 +31,16 @@ pub struct SettlementEvent {
 }
 
 #[instrument(skip_all)]
-pub async fn get_settlement_without_auction(
+pub async fn get_settlements_without_auction(
     ex: &mut PgConnection,
-) -> Result<Option<SettlementEvent>, sqlx::Error> {
+) -> Result<Vec<SettlementEvent>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index, tx_hash
 FROM settlements
 WHERE auction_id IS NULL
 ORDER BY block_number ASC
-LIMIT 1
     "#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    sqlx::query_as(QUERY).fetch_all(ex).await
 }
 
 #[instrument(skip_all)]
@@ -195,10 +194,8 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db)
-            .await
-            .unwrap()
-            .unwrap();
+        let settlements = get_settlements_without_auction(&mut db).await.unwrap();
+        let settlement = &settlements[0];
 
         assert_eq!(settlement.block_number, event.block_number);
         assert_eq!(settlement.log_index, event.log_index);
@@ -207,8 +204,8 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db).await.unwrap();
+        let settlement = get_settlements_without_auction(&mut db).await.unwrap();
 
-        assert!(settlement.is_none());
+        assert!(settlement.is_empty());
     }
 }
