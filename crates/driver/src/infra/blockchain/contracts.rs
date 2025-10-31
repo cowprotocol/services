@@ -36,6 +36,7 @@ pub struct Contracts {
     /// Mapping from CoW AMM factory address to the corresponding CoW AMM
     /// helper.
     cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
+    web3: Web3,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -122,6 +123,7 @@ impl Contracts {
             flashloan_router,
             balance_helper,
             cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
+            web3: web3.clone(),
         })
     }
 
@@ -159,6 +161,10 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &Balances::Instance {
         &self.balance_helper
+    }
+
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
     }
 
     pub fn cow_amm_helper_by_factory(

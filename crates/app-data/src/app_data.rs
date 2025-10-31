@@ -1,6 +1,7 @@
 use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
     anyhow::{Context, Result, anyhow},
+    bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
@@ -21,6 +22,7 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +34,8 @@ pub struct ProtocolAppData {
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
+    #[serde(default)]
+    pub wrappers: Vec<WrapperCall>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -55,6 +59,23 @@ pub struct Flashloan {
     /// How much of the token to flashloan.
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
+}
+
+/// Contains information about wrapper contracts
+#[serde_as]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[serde(rename_all = "camelCase")]
+pub struct WrapperCall {
+    /// The address of the wrapper contract.
+    pub address: H160,
+    /// Additional calldata to be passed to the wrapper contract.
+    #[serde_as(as = "BytesHex")]
+    pub data: Vec<u8>,
+    /// Declares whether this wrapper (and its data) needs to be included
+    /// unmodified in a solution containing this order.
+    #[serde(default)]
+    pub is_omittable: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -440,6 +461,7 @@ impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
         Self {
             hooks: value.hooks,
+            wrappers: Vec::new(),
             signer: None,
             replaced_order: None,
             partner_fee: PartnerFees::default(),

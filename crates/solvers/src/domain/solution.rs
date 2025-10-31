@@ -7,6 +7,12 @@ use {
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Id(pub u64);
 
+#[derive(Debug, Default)]
+pub struct WrapperCall {
+    pub target: eth::Address,
+    pub data: Vec<u8>,
+}
+
 /// A solution to an auction.
 #[derive(Debug, Default)]
 pub struct Solution {
@@ -17,6 +23,7 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
     pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
+    pub wrappers: Vec<WrapperCall>,
 }
 
 impl Solution {
@@ -110,6 +117,8 @@ pub struct Single {
     pub interactions: Vec<Interaction>,
     /// The estimated gas needed for the solution settling this single order.
     pub gas: eth::Gas,
+    /// The wrapper calls to use
+    pub wrappers: Vec<order::WrapperCall>,
 }
 
 impl Single {
@@ -122,6 +131,7 @@ impl Single {
             output,
             interactions,
             gas,
+            wrappers,
         } = self;
 
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
@@ -180,6 +190,13 @@ impl Single {
             post_interactions: Default::default(),
             gas: Some(gas),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
+            wrappers: wrappers
+                .iter()
+                .map(|w| WrapperCall {
+                    target: eth::Address(w.address),
+                    data: w.data.clone(),
+                })
+                .collect(),
         })
     }
 }

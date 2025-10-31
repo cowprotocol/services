@@ -187,6 +187,7 @@ async fn single_limit_order_test(web3: Web3) {
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // Drive solution

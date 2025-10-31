@@ -4,11 +4,11 @@
 // price api (0x). If this is the case it alerts.
 
 use {
+    alloy::primitives::{Address, U256, address},
     anyhow::{Context, Result},
     clap::Parser,
     model::order::{BUY_ETH_ADDRESS, OrderClass, OrderKind, OrderStatus, OrderUid},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     prometheus::IntGauge,
     reqwest::Client,
     serde_with::serde_as,
@@ -24,10 +24,10 @@ use {
 #[serde(rename_all = "camelCase")]
 struct Order {
     kind: OrderKind,
-    buy_token: H160,
+    buy_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     buy_amount: U256,
-    sell_token: H160,
+    sell_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     sell_amount: U256,
     uid: OrderUid,
@@ -90,12 +90,10 @@ impl OrderBookApi {
 
 // Converts the eth placeholder address to weth. Leaves other addresses
 // untouched.
-fn convert_eth_to_weth(token: H160) -> H160 {
-    let weth: H160 = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-        .parse()
-        .unwrap();
-    if token == BUY_ETH_ADDRESS {
-        weth
+fn convert_eth_to_weth(token: Address) -> Address {
+    const WETH: Address = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+    if token == Address::from_slice(&BUY_ETH_ADDRESS.0) {
+        WETH
     } else {
         token
     }

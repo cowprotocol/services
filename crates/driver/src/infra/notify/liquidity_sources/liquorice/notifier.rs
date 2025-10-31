@@ -20,7 +20,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chrono::Utc,
-    contracts::alloy::ILiquoriceSettlement,
+    contracts::alloy::LiquoriceSettlement,
 };
 
 const NOTIFICATION_SOURCE: &str = "cow_protocol";
@@ -40,7 +40,7 @@ impl Notifier {
         chain: chain::Chain,
     ) -> Result<Self> {
         let liquorice_settlement_contract_address =
-            ILiquoriceSettlement::deployment_address(&chain.id())
+            LiquoriceSettlement::deployment_address(&chain.id())
                 .ok_or(anyhow!("Liquorice settlement contract not found"))?;
 
         Ok(Self {
@@ -85,11 +85,11 @@ impl LiquiditySourceNotifying for Notifier {
 mod utils {
     use {
         crate::domain::{
-            competition::{solution, solution::Settlement},
+            competition::solution::{self, Settlement},
             eth,
         },
         alloy::{primitives::Address, sol_types::SolCall},
-        contracts::alloy::ILiquoriceSettlement,
+        contracts::alloy::LiquoriceSettlement,
         ethrpc::alloy::conversions::IntoAlloy,
         std::collections::HashSet,
     };
@@ -150,7 +150,7 @@ mod utils {
         }
 
         // Decode the calldata using the Liquorice settlement contract ABI
-        let input = ILiquoriceSettlement::ILiquoriceSettlement::settleSingleCall::abi_decode(
+        let input = LiquoriceSettlement::LiquoriceSettlement::settleSingleCall::abi_decode(
             &interaction.call_data.0,
         )
         .ok()?;

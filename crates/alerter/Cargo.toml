@@ -6,6 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 humantime = { workspace = true }
@@ -13,7 +14,6 @@ observe = { workspace = true }
 mimalloc = { workspace = true }
 model = { workspace = true }
 number = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde_with = { workspace = true }

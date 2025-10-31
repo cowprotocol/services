@@ -238,6 +238,9 @@ impl Solver {
         let start = Instant::now();
 
         let flashloan_hints = self.assemble_flashloan_hints(auction);
+        let wrappers = self.assemble_wrappers(auction);
+
+        // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(
             auction,
@@ -246,6 +249,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
+            &wrappers,
             auction.deadline(self.timeouts()).solvers(),
         );
 
@@ -336,6 +340,28 @@ impl Solver {
                     amount: hint.amount.into(),
                 };
                 Some((order.uid, flashloan))
+            })
+            .collect()
+    }
+
+    fn assemble_wrappers(&self, auction: &Auction) -> dto::auction::WrapperCalls {
+        auction
+            .orders()
+            .iter()
+            .filter_map(|order| {
+                let wrappers = order.app_data.wrappers();
+                if wrappers.is_empty() {
+                    return None;
+                }
+                let wrapper_calls = wrappers
+                    .iter()
+                    .map(|w| solvers_dto::auction::WrapperCall {
+                        address: w.address,
+                        data: w.data.clone(),
+                        is_omittable: w.is_omittable,
+                    })
+                    .collect();
+                Some((order.uid, wrapper_calls))
             })
             .collect()
     }
