@@ -164,8 +164,8 @@ impl BalanceSimulator {
             interactions: interactions
                 .iter()
                 .map(|i| Balances::Balances::Interaction {
-                    target: i.target.into_alloy(),
-                    value: i.value.into_alloy(),
+                    target: i.target,
+                    value: i.value,
                     callData: i.call_data.clone().into(),
                 })
                 .collect(),
