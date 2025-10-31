@@ -346,8 +346,8 @@ impl OrderValidator {
                 vec![]
             } else {
                 vec![InteractionData {
-                    target: self.hooks.address().into_legacy(),
-                    value: U256::zero(),
+                    target: *self.hooks.address(),
+                    value: alloy::primitives::U256::ZERO,
                     call_data: self
                         .hooks
                         .execute(
@@ -1419,8 +1419,8 @@ mod tests {
         let order_hash = hashed_eip712_message(&domain_separator, &creation.data().hash_struct());
 
         let pre_interactions = vec![InteractionData {
-            target: hooks.address().into_legacy(),
-            value: U256::zero(),
+            target: *hooks.address(),
+            value: alloy::primitives::U256::ZERO,
             call_data: hooks
                 .execute(vec![
                     (HooksTrampoline::HooksTrampoline::Hook {

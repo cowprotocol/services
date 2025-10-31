@@ -1,6 +1,6 @@
 use {
+    alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::fmt::{self, Debug, Formatter},
@@ -10,7 +10,7 @@ use {
 #[derive(Eq, PartialEq, Clone, Hash, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionData {
-    pub target: H160,
+    pub target: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(with = "bytes_hex")]

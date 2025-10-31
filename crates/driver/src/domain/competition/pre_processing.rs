@@ -285,8 +285,8 @@ impl Utilities {
                             .pre_interactions
                             .iter()
                             .map(|i| InteractionData {
-                                target: i.target.0,
-                                value: i.value.0,
+                                target: i.target.0.into_alloy(),
+                                value: i.value.0.into_alloy(),
                                 call_data: i.call_data.0.clone(),
                             })
                             .collect()

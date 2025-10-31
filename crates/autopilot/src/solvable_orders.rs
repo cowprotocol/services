@@ -1207,13 +1207,13 @@ mod tests {
                 },
                 interactions: Interactions {
                     pre: vec![InteractionData {
-                        target: H160([0xe1; 20]),
-                        value: U256::zero(),
+                        target: Address::from_slice(&[0xe1; 20]),
+                        value: alloy::primitives::U256::ZERO,
                         call_data: vec![1, 2],
                     }],
                     post: vec![InteractionData {
-                        target: H160([0xe2; 20]),
-                        value: U256::zero(),
+                        target: Address::from_slice(&[0xe2; 20]),
+                        value: alloy::primitives::U256::ZERO,
                         call_data: vec![3, 4],
                     }],
                 },
@@ -1227,13 +1227,13 @@ mod tests {
                 signature: Signature::Eip1271(vec![2, 2]),
                 interactions: Interactions {
                     pre: vec![InteractionData {
-                        target: H160([0xe3; 20]),
-                        value: U256::zero(),
+                        target: Address::from_slice(&[0xe3; 20]),
+                        value: alloy::primitives::U256::ZERO,
                         call_data: vec![5, 6],
                     }],
                     post: vec![InteractionData {
-                        target: H160([0xe4; 20]),
-                        value: U256::zero(),
+                        target: Address::from_slice(&[0xe4; 20]),
+                        value: alloy::primitives::U256::ZERO,
                         call_data: vec![7, 9],
                     }],
                 },
@@ -1272,8 +1272,8 @@ mod tests {
                 hash: [2; 32],
                 signature: vec![2, 2],
                 interactions: vec![InteractionData {
-                    target: H160([0xe3; 20]),
-                    value: U256::zero(),
+                    target: Address::from_slice(&[0xe3; 20]),
+                    value: alloy::primitives::U256::ZERO,
                     call_data: vec![5, 6],
                 }],
                 balance_override: None,

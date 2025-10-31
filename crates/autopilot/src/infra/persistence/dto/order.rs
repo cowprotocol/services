@@ -4,6 +4,7 @@ use {
         domain::{self, OrderUid, eth, fee::FeeFactor},
     },
     app_data::AppDataHash,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -146,8 +147,8 @@ impl From<boundary::OrderKind> for domain::auction::order::Side {
 impl From<domain::auction::order::Interaction> for boundary::InteractionData {
     fn from(interaction: domain::auction::order::Interaction) -> Self {
         Self {
-            target: interaction.target,
-            value: interaction.value,
+            target: interaction.target.into_alloy(),
+            value: interaction.value.into_alloy(),
             call_data: interaction.call_data,
         }
     }
@@ -156,8 +157,8 @@ impl From<domain::auction::order::Interaction> for boundary::InteractionData {
 impl From<boundary::InteractionData> for domain::auction::order::Interaction {
     fn from(interaction: boundary::InteractionData) -> Self {
         Self {
-            target: interaction.target,
-            value: interaction.value,
+            target: interaction.target.into_legacy(),
+            value: interaction.value.into_legacy(),
             call_data: interaction.call_data,
         }
     }
