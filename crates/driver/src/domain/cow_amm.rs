@@ -1,8 +1,9 @@
 use {
     crate::domain::eth,
-    contracts::CowAmmLegacyHelper,
+    alloy::{primitives::Address, providers::DynProvider},
+    contracts::alloy::cow_amm::CowAmmLegacyHelper,
     cow_amm::Amm,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     itertools::{
         Either::{Left, Right},
         Itertools,
@@ -17,20 +18,25 @@ use {
 /// Cache for CoW AMM data to avoid using the registry dependency.
 /// Maps AMM address to the corresponding Amm instance.
 pub struct Cache {
-    inner: RwLock<HashMap<eth::Address, Arc<Amm>>>,
-    web3: ethrpc::Web3,
-    helper_by_factory: HashMap<eth::Address, CowAmmLegacyHelper>,
+    inner: RwLock<HashMap<Address, Arc<Amm>>>,
+    web3: DynProvider,
+    helper_by_factory: HashMap<Address, CowAmmLegacyHelper::Instance>,
 }
 
 impl Cache {
-    pub fn new(web3: ethrpc::Web3, factory_mapping: HashMap<eth::Address, eth::Address>) -> Self {
+    pub fn new(web3: DynProvider, factory_mapping: HashMap<Address, Address>) -> Self {
         let helper_by_factory = factory_mapping
             .into_iter()
-            .map(|(factory, helper)| (factory, CowAmmLegacyHelper::at(&web3, helper.0)))
+            .map(|(factory, helper)| {
+                (
+                    factory,
+                    CowAmmLegacyHelper::Instance::new(helper, web3.clone()),
+                )
+            })
             .collect();
         Self {
             inner: RwLock::new(HashMap::new()),
-            web3,
+            web3: web3.clone(),
             helper_by_factory,
         }
     }
@@ -41,13 +47,16 @@ impl Cache {
         &self,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Vec<Arc<Amm>> {
-        let (mut cached_amms, missing_amms): (Vec<Arc<Amm>>, Vec<eth::Address>) = {
+        let (mut cached_amms, missing_amms): (Vec<Arc<Amm>>, Vec<Address>) = {
             let cache = self.inner.read().await;
             surplus_capturing_jit_order_owners
                 .iter()
-                .partition_map(|&address| match cache.get(&address) {
-                    Some(amm) => Left(amm.clone()),
-                    None => Right(address),
+                .partition_map(|&address| {
+                    let address = address.0.into_alloy();
+                    match cache.get(&address) {
+                        Some(amm) => Left(amm.clone()),
+                        None => Right(address),
+                    }
                 })
         };
 
@@ -77,7 +86,7 @@ impl Cache {
                 return None;
             };
 
-            match Amm::new(amm_address.0, helper).await {
+            match Amm::new(amm_address, helper).await {
                 Ok(amm) => Some((amm_address, Arc::new(amm))),
                 Err(err) => {
                     let helper_address = helper.address().0;
@@ -114,15 +123,12 @@ impl Cache {
 
     /// Fetches the factory address for the given AMM by calling the
     /// `FACTORY` function.
-    async fn fetch_amm_factory_address(
-        &self,
-        amm_address: eth::Address,
-    ) -> anyhow::Result<eth::Address> {
+    async fn fetch_amm_factory_address(&self, amm_address: Address) -> anyhow::Result<Address> {
         let factory_getter =
             contracts::alloy::cow_amm::CowAmmFactoryGetter::CowAmmFactoryGetter::new(
-                amm_address.0.into_alloy(),
-                &self.web3.alloy,
+                amm_address,
+                self.web3.clone(),
             );
-        Ok(factory_getter.FACTORY().call().await?.into_legacy().into())
+        Ok(factory_getter.FACTORY().call().await?)
     }
 }

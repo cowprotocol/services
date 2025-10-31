@@ -6,13 +6,13 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::account_balances::BalanceSimulator,
     anyhow::Result,
-    contracts::{alloy::BalancerV2Vault::BalancerV2Vault, erc20::Contract},
+    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
     },
-    futures::{TryFutureExt, future},
+    futures::future,
     model::order::SellTokenSource,
     tracing::instrument,
 };
@@ -56,7 +56,6 @@ impl Balances {
                 query.source,
                 &query.interactions,
                 None,
-                |delegate_call| async move { delegate_call },
                 query.balance_override.clone(),
             )
             .await?;
@@ -67,58 +66,59 @@ impl Balances {
         })
     }
 
-    async fn tradable_balance_simple(&self, query: &Query, token: &Contract) -> Result<U256> {
+    async fn tradable_balance_simple(
+        &self,
+        query: &Query,
+        token: &ERC20::Instance,
+    ) -> Result<U256> {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
-                let balance = token.balance_of(query.owner).call();
-                let allowance = token.allowance(query.owner, self.vault_relayer()).call();
-                let (balance, allowance) = futures::try_join!(balance, allowance)?;
-                std::cmp::min(balance, allowance)
+                let balance = token.balanceOf(query.owner.into_alloy());
+                let allowance =
+                    token.allowance(query.owner.into_alloy(), self.vault_relayer().into_alloy());
+                let (balance, allowance) = futures::try_join!(
+                    balance.call().into_future(),
+                    allowance.call().into_future()
+                )?;
+                std::cmp::min(balance, allowance).into_legacy()
             }
             SellTokenSource::External => {
                 let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
-                // NOTE: the anyhow error conversion can be removed after migrating the token to
-                // alloy
-                let balance = token
-                    .balance_of(query.owner)
-                    .call()
-                    .map_err(anyhow::Error::from);
-                let has_approved_relayer = vault.hasApprovedRelayer(
+                let balance = token.balanceOf(query.owner.into_alloy());
+                let approved = vault.hasApprovedRelayer(
                     query.owner.into_alloy(),
                     self.vault_relayer().into_alloy(),
                 );
-                let approved = has_approved_relayer
-                    .call()
-                    .into_future()
-                    .map_err(anyhow::Error::from);
-                let allowance = token
-                    .allowance(query.owner, self.vault())
-                    .call()
-                    .map_err(anyhow::Error::from);
-                let (balance, approved, allowance) =
-                    futures::try_join!(balance, approved, allowance)?;
+                let allowance =
+                    token.allowance(query.owner.into_alloy(), self.vault().into_alloy());
+                let (balance, approved, allowance) = futures::try_join!(
+                    balance.call().into_future(),
+                    approved.call().into_future(),
+                    allowance.call().into_future()
+                )?;
                 match approved {
                     true => std::cmp::min(balance, allowance),
-                    false => 0.into(),
+                    false => alloy::primitives::U256::ZERO,
                 }
+                .into_legacy()
             }
             SellTokenSource::Internal => {
                 let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
-
-                let get_internal_balance = vault
+                let balance = vault
                     .getInternalBalance(query.owner.into_alloy(), vec![query.token.into_alloy()]);
-                let balance = get_internal_balance.call().into_future();
-
-                let has_approved_relayer = vault.hasApprovedRelayer(
+                let approved = vault.hasApprovedRelayer(
                     query.owner.into_alloy(),
                     self.vault_relayer().into_alloy(),
                 );
-                let approved = has_approved_relayer.call().into_future();
-                let (balance, approved) = futures::try_join!(balance, approved)?;
+                let (balance, approved) = futures::try_join!(
+                    balance.call().into_future(),
+                    approved.call().into_future()
+                )?;
                 match approved {
-                    true => balance[0].into_legacy(), // internal approvals are always U256::MAX
-                    false => 0.into(),
+                    true => balance[0], // internal approvals are always U256::MAX
+                    false => alloy::primitives::U256::ZERO,
                 }
+                .into_legacy()
             }
         };
         Ok(usable_balance)
@@ -134,7 +134,8 @@ impl BalanceFetching for Balances {
             .iter()
             .map(|query| async {
                 if query.interactions.is_empty() {
-                    let token = contracts::ERC20::at(&self.web3, query.token);
+                    let token =
+                        ERC20::Instance::new(query.token.into_alloy(), self.web3.alloy.clone());
                     self.tradable_balance_simple(query, &token).await
                 } else {
                     self.tradable_balance_simulated(query).await
@@ -158,7 +159,6 @@ impl BalanceFetching for Balances {
                 query.source,
                 &query.interactions,
                 Some(amount),
-                |delegate_call| async move { delegate_call },
                 query.balance_override.clone(),
             )
             .await
@@ -184,6 +184,7 @@ mod tests {
         super::*,
         crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider,
         alloy::primitives::address,
+        contracts::alloy::GPv2Settlement,
         ethrpc::Web3,
         model::order::SellTokenSource,
         std::sync::Arc,
@@ -193,8 +194,10 @@ mod tests {
     #[tokio::test]
     async fn test_for_user() {
         let web3 = Web3::new_from_env();
-        let settlement =
-            contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
+        let settlement = GPv2Settlement::GPv2Settlement::new(
+            alloy::primitives::address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            web3.alloy.clone(),
+        );
         let balances = contracts::alloy::support::Balances::Instance::new(
             address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             web3.alloy.clone(),

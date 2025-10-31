@@ -26,7 +26,7 @@ impl TokenQuality {
 }
 
 /// Detect how well behaved a token is.
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BadTokenDetecting: Send + Sync {
     async fn detect(&self, token: H160) -> Result<TokenQuality>;

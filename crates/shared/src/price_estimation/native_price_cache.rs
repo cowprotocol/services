@@ -333,7 +333,7 @@ impl CachingNativePriceEstimator {
     /// recently used prices have a higher priority. If `update_size` is
     /// `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         estimator: Box<dyn NativePriceEstimating>,
         max_age: Duration,

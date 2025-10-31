@@ -1,6 +1,6 @@
 use {
     alloy::{primitives::Address, sol_types::SolCall},
-    contracts::{GPv2Settlement, alloy::IUniswapLikeRouter},
+    contracts::alloy::IUniswapLikeRouter,
     ethcontract::Bytes,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     primitive_types::{H160, U256},
@@ -10,7 +10,7 @@ use {
 #[derive(Debug)]
 pub struct UniswapInteraction {
     pub router: Address,
-    pub settlement: GPv2Settlement,
+    pub settlement: Address,
     pub amount_out: U256,
     pub amount_in_max: U256,
     pub token_in: H160,
@@ -29,7 +29,7 @@ impl UniswapInteraction {
             amountOut: self.amount_out.into_alloy(),
             amountInMax: self.amount_in_max.into_alloy(),
             path: vec![self.token_in.into_alloy(), self.token_out.into_alloy()],
-            to: self.settlement.address().into_alloy(),
+            to: self.settlement,
             deadline: ::alloy::primitives::U256::MAX,
         }
         .abi_encode();
@@ -61,10 +61,7 @@ mod tests {
         let payout_to = 9u8;
 
         let router_address = Address::from(&[1u8; 20]);
-        let settlement = GPv2Settlement::at(
-            &contracts::web3::dummy(),
-            H160::from_low_u64_be(payout_to as u64),
-        );
+        let settlement = H160::from_low_u64_be(payout_to as u64).into_alloy();
         let interaction = UniswapInteraction {
             router: router_address,
             settlement,

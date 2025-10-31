@@ -44,7 +44,7 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<Arc<infra::Driver>>,

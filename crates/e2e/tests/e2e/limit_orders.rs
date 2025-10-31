@@ -1,16 +1,14 @@
 use {
     crate::database::AuctionTransaction,
-    ::alloy::primitives::U256,
+    ::alloy::{
+        primitives::{Address, U256, address},
+        providers::ext::{AnvilApi, ImpersonateConfig},
+    },
     bigdecimal::BigDecimal,
-    contracts::ERC20,
+    contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
-    e2e::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{eth, *},
-        tx,
-    },
-    ethcontract::H160,
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -67,9 +65,7 @@ async fn local_node_no_liquidity_limit_order() {
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// USDC whale address as per [FORK_BLOCK_MAINNET].
-const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
-    "28c6c06298d514db089934071355e5743bf21d60"
-));
+const USDC_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
 
 #[tokio::test]
 #[ignore]
@@ -85,9 +81,7 @@ async fn forked_node_mainnet_single_limit_order() {
 
 const FORK_BLOCK_GNOSIS: u64 = 41502478;
 /// USDC whale address as per [FORK_BLOCK_GNOSIS].
-const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
-    "d4A39d219ADB43aB00739DC5D876D98Fdf0121Bf"
-));
+const USDC_WHALE_GNOSIS: Address = address!("d4A39d219ADB43aB00739DC5D876D98Fdf0121Bf");
 
 #[tokio::test]
 #[ignore]
@@ -371,7 +365,6 @@ async fn two_limit_orders_test(web3: Web3) {
     .unwrap();
 }
 
-#[allow(unused)]
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
@@ -422,7 +415,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver_a.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_a.address().into_legacy()],
                 2,
                 false,
@@ -431,7 +424,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver_b.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![base_b.address().into_legacy()],
                 2,
                 false,
@@ -641,7 +634,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver,
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -661,7 +654,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -679,7 +672,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -723,7 +716,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver,
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -743,7 +736,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: token.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(5)).unwrap(),
@@ -757,7 +750,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: quote.quote.sell_amount,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4)),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -774,7 +767,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -793,7 +786,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: quote.quote.sell_amount,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2)),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -810,7 +803,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -829,41 +822,52 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
 async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let token_usdc = ERC20::at(
-        &web3,
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-            .parse()
-            .unwrap(),
+    let token_usdc = ERC20::Instance::new(
+        address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        web3.alloy.clone(),
     );
 
-    let token_usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
+    let token_usdt = ERC20::Instance::new(
+        address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+        web3.alloy.clone(),
     );
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_MAINNET)
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdc
+                .transfer(
+                    trader.address().into_alloy(),
+                    to_wei_with_exp(1000, 6).into_alloy(),
+                )
+                .from(USDC_WHALE_MAINNET)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
-    );
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
-    );
+    token_usdc
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei_with_exp(1000, 6).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -872,9 +876,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     onchain.mint_block().await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address(),
+        sell_token: token_usdc.address().into_legacy(),
         sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_usdt.address(),
+        buy_token: token_usdt.address().into_legacy(),
         buy_amount: to_wei_with_exp(500, 6),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -890,8 +894,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_usdc.address(),
-            buy_token: token_usdt.address(),
+            sell_token: token_usdc.address().into_legacy(),
+            buy_token: token_usdt.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -902,12 +906,12 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .await;
 
     let sell_token_balance_before = token_usdc
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_usdt
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -921,18 +925,19 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
         let sell_token_balance_after = token_usdc
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
         let buy_token_balance_after = token_usdt
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6))
+            && (buy_token_balance_after
+                >= buy_token_balance_before + to_wei_with_exp(500, 6).into_alloy())
     })
     .await
     .unwrap();
@@ -940,50 +945,61 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
 async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let token_usdc = ERC20::at(
-        &web3,
-        "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83"
-            .parse()
-            .unwrap(),
+    let token_usdc = ERC20::Instance::new(
+        address!("ddafbb505ad214d7b80b1f830fccc89b60fb7a83"),
+        web3.alloy.clone(),
     );
 
-    let token_wxdai = ERC20::at(
-        &web3,
-        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d"
-            .parse()
-            .unwrap(),
+    let token_wxdai = ERC20::Instance::new(
+        address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
+        web3.alloy.clone(),
     );
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_GNOSIS)
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdc
+                .transfer(
+                    trader.address().into_alloy(),
+                    to_wei_with_exp(1000, 6).into_alloy(),
+                )
+                .from(USDC_WHALE_GNOSIS)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .get_receipt()
         .await
         .unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
-    );
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
-    );
+    token_usdc
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei_with_exp(1000, 6).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address(),
+        sell_token: token_usdc.address().into_legacy(),
         sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_wxdai.address(),
+        buy_token: token_wxdai.address().into_legacy(),
         buy_amount: to_wei(500),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -995,12 +1011,12 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let sell_token_balance_before = token_usdc
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_wxdai
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -1013,18 +1029,18 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let sell_token_balance_after = token_usdc
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
         let buy_token_balance_after = token_wxdai
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after >= buy_token_balance_before + to_wei(500))
+            && (buy_token_balance_after >= buy_token_balance_before + eth(500))
     })
     .await
     .unwrap();
@@ -1086,7 +1102,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let mut order = OrderCreation {
         sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -1116,7 +1132,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let balance_before = onchain
         .contracts()
         .weth
-        .balance_of(trader_a.address())
+        .balanceOf(trader_a.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -1154,15 +1170,15 @@ async fn no_liquidity_limit_order(web3: Web3) {
             max_volume_factor: 0.01
         }
     );
-    assert_eq!(fee.token, onchain.contracts().weth.address());
+    assert_eq!(fee.token, onchain.contracts().weth.address().into_legacy());
     assert!(fee.amount > 0.into());
 
     let balance_after = onchain
         .contracts()
         .weth
-        .balance_of(trader_a.address())
+        .balanceOf(trader_a.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= eth(5));
 }

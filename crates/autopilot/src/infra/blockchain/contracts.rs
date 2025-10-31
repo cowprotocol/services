@@ -1,19 +1,27 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::{
-        alloy::{GPv2AllowListAuthentication, HooksTrampoline, support::Balances},
-        bindings::ChainalysisOracle,
+    contracts::bindings::{
+        Balances,
+        ChainalysisOracle,
+        GPv2AllowListAuthentication,
+        GPv2Settlement,
+        HooksTrampoline,
+        InstanceExt,
+        WETH9,
     },
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
     primitive_types::H160,
 };
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
-    weth: contracts::WETH9,
+    weth: WETH9::Instance,
     balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
     trampoline: HooksTrampoline::Instance,
@@ -36,18 +44,13 @@ pub struct Addresses {
 
 impl Contracts {
     pub async fn new(web3: &Web3, chain: &Chain, addresses: Addresses) -> Self {
-        let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
-            address
-                .or_else(|| deployment_address(contract, chain))
-                .unwrap()
-        };
-
-        let settlement = contracts::GPv2Settlement::at(
-            web3,
-            address_for(
-                contracts::GPv2Settlement::raw_contract(),
-                addresses.settlement,
-            ),
+        let settlement = GPv2Settlement::Instance::new(
+            addresses
+                .settlement
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let signatures = contracts::alloy::support::Signatures::Instance::new(
@@ -59,9 +62,13 @@ impl Contracts {
             web3.alloy.clone(),
         );
 
-        let weth = contracts::WETH9::at(
-            web3,
-            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        let weth = WETH9::Instance::new(
+            addresses
+                .weth
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| WETH9::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let balances = Balances::Instance::new(
@@ -88,7 +95,7 @@ impl Contracts {
 
         let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("domain separator")
@@ -100,8 +107,7 @@ impl Contracts {
                 .authenticator()
                 .call()
                 .await
-                .expect("authenticator address")
-                .into_alloy(),
+                .expect("authenticator address"),
             web3.alloy.clone(),
         );
 
@@ -117,7 +123,7 @@ impl Contracts {
         }
     }
 
-    pub fn settlement(&self) -> &contracts::GPv2Settlement {
+    pub fn settlement(&self) -> &GPv2Settlement::Instance {
         &self.settlement
     }
 
@@ -141,14 +147,14 @@ impl Contracts {
         &self.chainalysis_oracle
     }
 
-    pub fn weth(&self) -> &contracts::WETH9 {
+    pub fn weth(&self) -> &WETH9::Instance {
         &self.weth
     }
 
     /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
     /// Gnosis Chain)
     pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
-        self.weth.address().into()
+        self.weth.address().into_legacy().into()
     }
 
     pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {

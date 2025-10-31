@@ -1,6 +1,6 @@
 use {
     crate::{Amm, cache::Storage},
-    contracts::ERC20,
+    contracts::alloy::ERC20,
     ethcontract::futures::future::{join_all, select_ok},
     ethrpc::Web3,
     shared::maintenance::Maintaining,
@@ -25,8 +25,8 @@ impl EmptyPoolRemoval {
             .traded_tokens()
             .iter()
             .map(move |token| async move {
-                ERC20::at(&self.web3, *token)
-                    .balance_of(*amm_address)
+                ERC20::Instance::new(*token, self.web3.alloy.clone())
+                    .balanceOf(*amm_address)
                     .call()
                     .await
                     .map_err(|err| {

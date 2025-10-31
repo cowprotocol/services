@@ -3,10 +3,11 @@ use {
         boundary,
         domain::{self, auction::order, eth},
     },
-    contracts::alloy::GPv2AllowListAuthentication,
-    ethcontract::{BlockId, common::FunctionExt},
-    ethrpc::alloy::conversions::IntoAlloy,
-    std::{collections::HashSet, sync::LazyLock},
+    alloy::sol_types::SolCall,
+    contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement},
+    ethcontract::BlockId,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    std::collections::HashSet,
 };
 
 mod tokenized;
@@ -111,18 +112,20 @@ impl Transaction {
             gas_price: transaction.gas_price,
             solver: solver.ok_or(Error::MissingSolver)?,
             trades: {
-                let tokenized::Tokenized {
-                    tokens,
-                    clearing_prices,
+                let GPv2Settlement::GPv2Settlement::settleCall {
                     trades: decoded_trades,
-                    interactions: _interactions,
-                } = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
+                    tokens,
+                    clearingPrices: clearing_prices,
+                    ..
+                } = GPv2Settlement::GPv2Settlement::settleCall::abi_decode(data)?;
 
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
-                    let flags = tokenized::TradeFlags(trade.8);
-                    let sell_token_index = trade.0.as_usize();
-                    let buy_token_index = trade.1.as_usize();
+                    let flags = tokenized::TradeFlags(trade.flags.into_legacy());
+                    let sell_token_index = usize::try_from(trade.sellTokenIndex)
+                        .expect("SC was able to look up this index");
+                    let buy_token_index = usize::try_from(trade.buyTokenIndex)
+                        .expect("SC was able to look up this index");
                     let sell_token = tokens[sell_token_index];
                     let buy_token = tokens[buy_token_index];
                     let uniform_sell_token_index = tokens
@@ -135,36 +138,36 @@ impl Transaction {
                         uid: tokenized::order_uid(&trade, &tokens, domain_separator)
                             .map_err(Error::OrderUidRecover)?,
                         sell: eth::Asset {
-                            token: sell_token.into(),
-                            amount: trade.3.into(),
+                            token: sell_token.into_legacy().into(),
+                            amount: trade.sellAmount.into_legacy().into(),
                         },
                         buy: eth::Asset {
-                            token: buy_token.into(),
-                            amount: trade.4.into(),
+                            token: buy_token.into_legacy().into(),
+                            amount: trade.buyAmount.into_legacy().into(),
                         },
                         side: flags.side(),
-                        receiver: trade.2.into(),
-                        valid_to: trade.5,
-                        app_data: domain::auction::order::AppDataHash(trade.6.0),
-                        fee_amount: trade.7.into(),
+                        receiver: trade.receiver.into_legacy().into(),
+                        valid_to: trade.validTo,
+                        app_data: domain::auction::order::AppDataHash(trade.appData.into()),
+                        fee_amount: trade.feeAmount.into_legacy().into(),
                         sell_token_balance: flags.sell_token_balance().into(),
                         buy_token_balance: flags.buy_token_balance().into(),
                         partially_fillable: flags.partially_fillable(),
                         signature: (boundary::Signature::from_bytes(
                             flags.signing_scheme(),
-                            &trade.10.0,
+                            trade.signature.as_ref(),
                         )
                         .map_err(Error::SignatureRecover)?)
                         .into(),
-                        executed: trade.9.into(),
+                        executed: trade.executedAmount.into_legacy().into(),
                         prices: Prices {
                             uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index].into(),
-                                buy: clearing_prices[uniform_buy_token_index].into(),
+                                sell: clearing_prices[uniform_sell_token_index].into_legacy(),
+                                buy: clearing_prices[uniform_buy_token_index].into_legacy(),
                             },
                             custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index].into(),
-                                buy: clearing_prices[buy_token_index].into(),
+                                sell: clearing_prices[sell_token_index].into_legacy(),
+                                buy: clearing_prices[buy_token_index].into_legacy(),
                             },
                         },
                     })
@@ -199,12 +202,9 @@ fn find_settlement_trace_and_callers(
 }
 
 fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address) -> bool {
-    static SETTLE_FUNCTION_SELECTOR: LazyLock<[u8; 4]> = LazyLock::new(|| {
-        let abi = &contracts::GPv2Settlement::raw_contract().interface.abi;
-        abi.function("settle").unwrap().selector()
-    });
+    let settle_selector = &GPv2Settlement::GPv2Settlement::settleCall::SELECTOR;
     trace.to.unwrap_or_default() == settlement_contract
-        && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
+        && trace.input.0.starts_with(settle_selector)
 }
 
 async fn find_solver_address(
@@ -272,7 +272,7 @@ pub enum Error {
     #[error("missing auction id")]
     MissingAuctionId,
     #[error(transparent)]
-    Decoding(#[from] tokenized::error::Decoding),
+    Decoding(#[from] alloy::sol_types::Error),
     #[error("failed to recover order uid {0}")]
     OrderUidRecover(tokenized::error::Uid),
     #[error("failed to recover signature {0}")]

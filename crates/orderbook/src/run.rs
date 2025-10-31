@@ -8,12 +8,18 @@ use {
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
+    alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::{
+    contracts::alloy::{
+        BalancerV2Vault,
+        ChainalysisOracle,
         GPv2Settlement,
+        HooksTrampoline,
+        IUniswapV3Factory,
+        InstanceExt,
         WETH9,
         bindings::{
             BalancerV2Vault,
@@ -102,8 +108,8 @@ pub async fn run(args: Arguments) {
     }
 
     let settlement_contract = match args.shared.settlement_contract_address {
-        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
-        None => contracts::GPv2Settlement::deployed(&web3)
+        Some(address) => GPv2Settlement::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        None => GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .expect("load settlement contract"),
     };
@@ -114,7 +120,7 @@ pub async fn run(args: Arguments) {
             .expect("load balances contract"),
     };
     let vault_relayer = settlement_contract
-        .vault_relayer()
+        .vaultRelayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
@@ -128,8 +134,8 @@ pub async fn run(args: Arguments) {
             .expect("load signatures contract"),
     };
     let native_token = match args.shared.native_token_address {
-        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
-        None => WETH9::deployed(&web3)
+        Some(address) => WETH9::Instance::new(address, web3.alloy.clone()),
+        None => WETH9::Instance::deployed(&web3.alloy)
             .await
             .expect("load native token contract"),
     };
@@ -142,7 +148,7 @@ pub async fn run(args: Arguments) {
         signature_validator::Contracts {
             settlement: settlement_contract.clone(),
             signatures: signatures_contract,
-            vault_relayer,
+            vault_relayer: vault_relayer.into_legacy(),
         },
         balance_overrider.clone(),
     );
@@ -173,7 +179,8 @@ pub async fn run(args: Arguments) {
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
-    let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+    let domain_separator =
+        DomainSeparator::new(chain_id, settlement_contract.address().into_legacy());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
 
@@ -190,7 +197,7 @@ pub async fn run(args: Arguments) {
         BalanceSimulator::new(
             settlement_contract.clone(),
             balances_contract.clone(),
-            vault_relayer,
+            vault_relayer.into_legacy(),
             vault_address.map(IntoLegacy::into_legacy),
             balance_overrider,
         ),
@@ -227,7 +234,7 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        native_token.address().into_legacy(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -249,7 +256,7 @@ pub async fn run(args: Arguments) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
-        settlement_contract.address(),
+        settlement_contract.address().into_legacy(),
     )
     .await
     .expect("failed to initialize token owner finders");
@@ -263,7 +270,7 @@ pub async fn run(args: Arguments) {
                     tracing_node_url,
                     "trace",
                 ),
-                settlement_contract.address(),
+                settlement_contract.address().into_legacy(),
                 finder,
             )),
             args.shared.token_quality_cache_expiry,
@@ -301,13 +308,14 @@ pub async fn run(args: Arguments) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            native_token: native_token.address(),
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.address().into_legacy(),
+            native_token: native_token.address().into_legacy(),
             authenticator: settlement_contract
                 .authenticator()
                 .call()
                 .await
-                .expect("failed to query solver authenticator address"),
+                .expect("failed to query solver authenticator address")
+                .into_legacy(),
             base_tokens: base_tokens.clone(),
             block_stream: current_block_stream.clone(),
         },
@@ -439,7 +447,7 @@ pub async fn run(args: Arguments) {
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        settlement_contract.address(),
+        settlement_contract.address().into_legacy(),
         postgres_write.clone(),
         postgres_read.clone(),
         order_validator.clone(),
@@ -522,7 +530,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .expect("failed to connect to database");
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
     database_replica: Postgres,
@@ -562,19 +570,19 @@ fn serve_api(
 /// contract instance. Signature inconsistencies due to a mismatch of these
 /// constants are hard to debug.
 async fn verify_deployed_contract_constants(
-    contract: &GPv2Settlement,
+    contract: &GPv2Settlement::Instance,
     chain_id: u64,
 ) -> Result<()> {
-    let web3 = contract.raw_instance().web3();
+    let provider = contract.provider();
     let bytecode = const_hex::encode(
-        web3.eth()
-            .code(contract.address(), None)
+        provider
+            .get_code_at(*contract.address())
             .await
             .context("Could not load deployed bytecode")?
             .0,
     );
 
-    let domain_separator = DomainSeparator::new(chain_id, contract.address());
+    let domain_separator = DomainSeparator::new(chain_id, contract.address().into_legacy());
     if !bytecode.contains(&const_hex::encode(domain_separator.0)) {
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }

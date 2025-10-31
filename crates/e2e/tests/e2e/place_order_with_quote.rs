@@ -1,8 +1,11 @@
 use {
     ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
-    e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    e2e::{nodes::local_node::TestNodeApi, setup::*},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -29,18 +32,23 @@ async fn place_order_with_quote(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -56,7 +64,7 @@ async fn place_order_with_quote(web3: Web3) {
     let quote_sell_amount = to_wei(1);
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token: token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
@@ -84,7 +92,7 @@ async fn place_order_with_quote(web3: Web3) {
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: quote_sell_amount,
         buy_token: token.address().into_legacy(),
         buy_amount: quote_response.quote.buy_amount,

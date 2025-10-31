@@ -1,7 +1,13 @@
 use {
-    crate::{domain::eth, infra::blockchain::Ethereum},
+    crate::domain::eth,
     chain::Chain,
-    contracts::alloy::{BalancerV2Vault, FlashLoanRouter, support::Balances},
+    contracts::alloy::{
+        BalancerV2Vault,
+        FlashLoanRouter,
+        GPv2Settlement,
+        WETH9,
+        support::Balances,
+    },
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -12,11 +18,11 @@ use {
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     vault_relayer: eth::ContractAddress,
     vault: BalancerV2Vault::Instance,
     signatures: contracts::alloy::support::Signatures::Instance,
-    weth: contracts::WETH9,
+    weth: WETH9::Instance,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
@@ -30,6 +36,7 @@ pub struct Contracts {
     /// Mapping from CoW AMM factory address to the corresponding CoW AMM
     /// helper.
     cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
+    web3: Web3,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -48,26 +55,17 @@ impl Contracts {
         chain: Chain,
         addresses: Addresses,
     ) -> Result<Self, Error> {
-        let address_for = |contract: &ethcontract::Contract,
-                           address: Option<eth::ContractAddress>| {
-            address
-                .or_else(|| deployment_address(contract, chain))
-                .unwrap()
-                .0
-        };
-
-        let settlement = contracts::GPv2Settlement::at(
-            web3,
-            address_for(
-                contracts::GPv2Settlement::raw_contract(),
-                addresses.settlement,
-            ),
-        );
-        let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
-        let vault = BalancerV2Vault::Instance::new(
-            settlement.methods().vault().call().await?.into_alloy(),
+        let settlement = GPv2Settlement::Instance::new(
+            addresses
+                .settlement
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
+                .unwrap(),
             web3.alloy.clone(),
         );
+        let vault_relayer = settlement.vaultRelayer().call().await?;
+        let vault =
+            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.alloy.clone());
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
@@ -85,14 +83,18 @@ impl Contracts {
             web3.alloy.clone(),
         );
 
-        let weth = contracts::WETH9::at(
-            web3,
-            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        let weth = WETH9::Instance::new(
+            addresses
+                .weth
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| WETH9::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let settlement_domain_separator = eth::DomainSeparator(
             settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("domain separator")
@@ -113,7 +115,7 @@ impl Contracts {
 
         Ok(Self {
             settlement,
-            vault_relayer,
+            vault_relayer: vault_relayer.into_legacy().into(),
             vault,
             signatures,
             weth,
@@ -121,10 +123,11 @@ impl Contracts {
             flashloan_router,
             balance_helper,
             cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
+            web3: web3.clone(),
         })
     }
 
-    pub fn settlement(&self) -> &contracts::GPv2Settlement {
+    pub fn settlement(&self) -> &GPv2Settlement::Instance {
         &self.settlement
     }
 
@@ -140,12 +143,12 @@ impl Contracts {
         &self.vault
     }
 
-    pub fn weth(&self) -> &contracts::WETH9 {
+    pub fn weth(&self) -> &WETH9::Instance {
         &self.weth
     }
 
     pub fn weth_address(&self) -> eth::WethAddress {
-        self.weth.address().into()
+        self.weth.address().into_legacy().into()
     }
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
@@ -158,6 +161,10 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &Balances::Instance {
         &self.balance_helper
+    }
+
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
     }
 
     pub fn cow_amm_helper_by_factory(
@@ -182,19 +189,10 @@ pub fn deployment_address(
     )
 }
 
-/// A trait for initializing contract instances with dynamic addresses.
-pub trait ContractAt {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
-}
-
-impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
+    #[error("method error: {0:?}")]
+    Rpc(#[from] alloy::contract::Error),
 }

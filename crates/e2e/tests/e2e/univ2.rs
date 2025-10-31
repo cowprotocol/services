@@ -1,12 +1,12 @@
 use {
     ::alloy::primitives::U256,
+    contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{
-        setup::{eth, *},
-        tx,
-        tx_value,
+    e2e::setup::{eth, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -32,18 +32,23 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -57,7 +62,7 @@ async fn test(web3: Web3) {
         .unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(2),
         buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
@@ -74,23 +79,27 @@ async fn test(web3: Web3) {
 
     // Mine a trivial settlement (not encoding auction ID). This mimics fee
     // withdrawals and asserts we can handle these gracefully.
-    tx!(
-        solver.account(),
-        onchain.contracts().gp_settlement.settle(
+    onchain
+        .contracts()
+        .gp_settlement
+        .settle(
             Default::default(),
             Default::default(),
             Default::default(),
             [
-                vec![(
-                    trader.address(),
-                    U256::ZERO.into_legacy(),
-                    Default::default()
-                )],
+                vec![GPv2Settlement::GPv2Interaction::Data {
+                    target: trader.address().into_alloy(),
+                    value: U256::ZERO,
+                    callData: Default::default(),
+                }],
                 Default::default(),
-                Default::default()
+                Default::default(),
             ],
         )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {

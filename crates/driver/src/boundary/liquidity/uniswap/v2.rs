@@ -8,7 +8,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     async_trait::async_trait,
-    contracts::{GPv2Settlement, alloy::IUniswapLikeRouter},
+    contracts::alloy::IUniswapLikeRouter,
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -99,7 +99,7 @@ pub fn to_interaction(
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
         pool.router.0.into_alloy(),
-        GPv2Settlement::at(&contracts::web3::dummy(), receiver.0),
+        receiver.0.into_alloy(),
         Mutex::new(Allowances::empty(receiver.0)),
     );
 
@@ -161,7 +161,7 @@ where
 
     Ok(Box::new(UniswapLikeLiquidity::with_allowances(
         *router.address(),
-        settlement,
+        *settlement.address(),
         Box::new(NoAllowanceManaging),
         pool_fetcher,
     )))
