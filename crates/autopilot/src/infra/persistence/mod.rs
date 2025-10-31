@@ -63,25 +63,33 @@ impl Persistence {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
-    /// There is always only one `current` auction.
-    ///
-    /// This method replaces the current auction with the given one.
-    ///
-    /// If the given auction is successfully saved, it is also archived.
-    pub async fn replace_current_auction(
-        &self,
-        auction: &domain::RawAuctionData,
-    ) -> Result<domain::auction::Id, DatabaseError> {
+    /// Fetches the ID that should be used for the next auction.
+    pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
         let _timer = observe::metrics::metrics()
-            .on_auction_overhead_start("autopilot", "replace_auction_in_db");
-        let auction = dto::auction::from_domain(auction.clone());
+            .on_auction_overhead_start("autopilot", "get_next_auction_id");
         self.postgres
-            .replace_current_auction(&auction)
+            .get_next_auction_id()
             .await
-            .inspect(|&id| {
-                self.archive_auction(dto::auction::Auction { id, auction });
-            })
             .map_err(DatabaseError)
+    }
+
+    pub fn store_current_auction(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        let auction_dto = dto::auction::from_domain(auction.clone());
+        let self_ = self.clone();
+        tokio::task::spawn(async move {
+            let _ = self_
+                .postgres
+                .insert_auction_with_id(id, &auction_dto)
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to replace auction in DB"));
+
+            self_
+                .archive_auction(dto::auction::Auction {
+                    id,
+                    auction: auction_dto,
+                })
+                .await
+        });
     }
 
     /// Finds solvable orders based on the order's min validity period.
@@ -98,30 +106,17 @@ impl Persistence {
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, instance: dto::auction::Auction) {
-        let Some(uploader) = self.s3.clone() else {
+    async fn archive_auction(&self, instance: dto::auction::Auction) {
+        let Some(uploader) = &self.s3 else {
             return;
         };
-        if instance.auction.orders.is_empty() {
-            tracing::info!("skip upload of empty auction");
-            return;
+        match uploader
+            .upload(instance.id.to_string(), &instance.auction)
+            .await
+        {
+            Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
+            Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
         }
-        tokio::spawn(
-            async move {
-                match uploader
-                    .upload(instance.id.to_string(), &instance.auction)
-                    .await
-                {
-                    Ok(key) => {
-                        tracing::info!(?key, "uploaded auction to s3");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to upload auction to s3");
-                    }
-                }
-            }
-            .instrument(tracing::Span::current()),
-        );
     }
 
     /// Saves the competition data to the DB

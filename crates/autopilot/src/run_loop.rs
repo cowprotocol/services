@@ -262,25 +262,11 @@ impl RunLoop {
     }
 
     async fn cut_auction(&self) -> Option<domain::Auction> {
-        let auction = match self.solvable_orders_cache.current_auction().await {
-            Some(auction) => auction,
-            None => {
-                tracing::debug!("no current auction");
-                return None;
-            }
+        let Some(auction) = self.solvable_orders_cache.current_auction().await else {
+            tracing::debug!("no current auction");
+            return None;
         };
         let auction = self.remove_in_flight_orders(auction).await;
-
-        let id = match self.persistence.replace_current_auction(&auction).await {
-            Ok(id) => {
-                Metrics::auction(id);
-                id
-            }
-            Err(err) => {
-                tracing::error!(?err, "failed to replace current auction");
-                return None;
-            }
-        };
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
@@ -288,6 +274,28 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
+
+        self.assign_id_and_upload(auction).await
+    }
+
+    /// Finalizes the auction by assigning it an ID and persisting it in the
+    /// database and S3 (if configured). Persisting the auction happens in a
+    /// background task to not delay informing the solvers about the
+    /// auction. Persisting the auction is only needed for debugging so any
+    /// error that happens is only logged and does not cause the current
+    /// run loop to fail.
+    async fn assign_id_and_upload(
+        &self,
+        auction: domain::RawAuctionData,
+    ) -> Option<domain::Auction> {
+        let id = self
+            .persistence
+            .get_next_auction_id()
+            .await
+            .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
+            .ok()?;
+        Metrics::auction(id);
+        self.persistence.store_current_auction(id, &auction);
 
         Some(domain::Auction {
             id,
