@@ -1,5 +1,6 @@
 use {
     crate::{boundary, domain::eth},
+    alloy::providers::Provider,
     chain::Chain,
     ethcontract::{U256, errors::ExecutionError},
     ethrpc::{Web3, alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
@@ -43,7 +44,7 @@ impl Rpc {
             args.max_batch_size,
             args.max_concurrent_requests,
         );
-        let chain = Chain::try_from(web3.eth().chain_id().await?)?;
+        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)?;
 
         Ok(Self { web3, chain, args })
     }
@@ -63,6 +64,8 @@ impl Rpc {
 pub enum RpcError {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("alloy transport error: {0:?}")]
+    Alloy(#[from] alloy::transports::TransportError),
     #[error("unsupported chain")]
     UnsupportedChain(#[from] chain::ChainIdNotSupported),
 }

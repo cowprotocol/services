@@ -132,7 +132,8 @@ impl<'a> PriceEstimatorFactory<'a> {
                     Some(
                         self.network
                             .chain
-                            .default_amount_to_estimate_native_prices_with(),
+                            .default_amount_to_estimate_native_prices_with()
+                            .into_legacy(),
                     )
                 })
                 .context("No amount to estimate prices with set.")?,
