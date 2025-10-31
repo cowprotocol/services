@@ -68,6 +68,7 @@ testlib = { workspace = true }
 app-data = { workspace = true, features = ["test_helpers"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 mockall = { workspace = true }
+ethrpc = {workspace = true, features = ["test-util"]}
 
 [features]
 test-util = ["dep:mockall"]

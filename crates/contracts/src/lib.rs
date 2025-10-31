@@ -42,16 +42,6 @@ pub mod paths;
 pub mod vault;
 pub mod web3;
 
-macro_rules! include_contracts {
-    ($($name:ident;)*) => {$(
-        include!(concat!(env!("OUT_DIR"), "/", stringify!($name), ".rs"));
-    )*};
-}
-
-include_contracts! {
-    ERC20;
-}
-
 #[cfg(test)]
 mod tests {
     use {

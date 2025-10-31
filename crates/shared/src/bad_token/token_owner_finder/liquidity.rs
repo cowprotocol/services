@@ -5,7 +5,7 @@ use {
     crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
     alloy::eips::BlockNumberOrTag,
     anyhow::Result,
-    contracts::alloy::{BalancerV2Vault, IUniswapV3Factory},
+    contracts::bindings::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::H160,
     ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,

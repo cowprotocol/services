@@ -1,14 +1,14 @@
 use {
-    chrono::{NaiveDateTime, Utc},
-    contracts::{
-        ERC20,
-        alloy::{IZeroex, InstanceExt},
+    alloy::{
+        primitives::{Address, address},
+        providers::ext::{AnvilApi, ImpersonateConfig},
     },
+    chrono::{NaiveDateTime, Utc},
+    contracts::alloy::{ERC20, IZeroex, InstanceExt},
     driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
         assert_approximately_eq,
-        nodes::forked_node::ForkedNodeApi,
         setup::{
             OnchainComponents,
             Services,
@@ -20,17 +20,16 @@ use {
             to_wei_with_exp,
             wait_for_condition,
         },
-        tx,
     },
     ethcontract::{Account, H256, prelude::U256},
     ethrpc::{
         Web3,
         alloy::{
+            CallBuilderExt,
             ProviderSignerExt,
             conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
         },
     },
-    hex_literal::hex,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -41,8 +40,8 @@ use {
 
 /// The block number from which we will fetch state for the forked tests.
 pub const FORK_BLOCK: u64 = 23112197;
-pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
-pub const USDC_WHALE: H160 = H160(hex!("28c6c06298d514db089934071355e5743bf21d60"));
+pub const USDT_WHALE: Address = address!("F977814e90dA44bFA03b6295A0616a897441aceC");
+pub const USDC_WHALE: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
 
 #[tokio::test]
 #[ignore]
@@ -58,23 +57,18 @@ async fn forked_node_zero_ex_liquidity_mainnet() {
 
 async fn zero_ex_liquidity(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
     let [trader, zeroex_maker] = onchain.make_accounts(to_wei(1)).await;
 
-    let token_usdc = ERC20::at(
-        &web3,
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-            .parse()
-            .unwrap(),
+    let token_usdc = ERC20::Instance::new(
+        address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        web3.alloy.clone(),
     );
 
-    let token_usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
+    let token_usdt = ERC20::Instance::new(
+        address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+        web3.alloy.clone(),
     );
 
     let zeroex_provider = {
@@ -83,41 +77,90 @@ async fn zero_ex_liquidity(web3: Web3) {
     };
     let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
 
-    let amount = to_wei_with_exp(5, 8);
+    let amount = to_wei_with_exp(5, 8).into_alloy();
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
-    tx!(usdc_whale, token_usdc.transfer(trader.address(), amount));
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdc
+                .transfer(trader.address().into_alloy(), amount)
+                .from(USDC_WHALE)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
     // Give 0x maker a bit more USDT
-    let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
-    tx!(
-        usdt_whale,
-        // With a lower amount 0x contract shows much lower fillable amount
-        token_usdt.transfer(zeroex_maker.address(), amount * 4)
-    );
+    // With a lower amount 0x contract shows much lower fillable amount
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdt
+                .transfer(
+                    zeroex_maker.address().into_alloy(),
+                    amount * alloy::primitives::U256::from(4),
+                )
+                .from(USDT_WHALE)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
     // Required for the remaining fillable taker amount
-    tx!(usdc_whale, token_usdc.transfer(solver.address(), amount));
+    web3.alloy
+        .anvil_send_impersonated_transaction_with_config(
+            token_usdc
+                .transfer(solver.address().into_alloy(), amount)
+                .from(USDC_WHALE)
+                .into_transaction_request(),
+            ImpersonateConfig {
+                fund_amount: None,
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
-    tx!(
-        trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, amount)
-    );
-    tx!(
-        zeroex_maker.account(),
-        // With a lower amount 0x contract shows much lower fillable amount
-        token_usdt.approve(zeroex.address().into_legacy(), amount * 4)
-    );
-    tx!(
-        solver.account(),
-        token_usdc.approve(zeroex.address().into_legacy(), amount)
-    );
+    token_usdc
+        .approve(onchain.contracts().allowance.into_alloy(), amount)
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    // With a lower amount 0x contract shows much lower fillable amount
+    token_usdt
+        .approve(*zeroex.address(), amount * alloy::primitives::U256::from(4))
+        .from(zeroex_maker.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    token_usdc
+        .approve(*zeroex.address(), amount)
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let order = OrderCreation {
-        sell_token: token_usdc.address(),
-        sell_amount: amount,
-        buy_token: token_usdt.address(),
-        buy_amount: amount,
+        sell_token: token_usdc.address().into_legacy(),
+        sell_amount: amount.into_legacy(),
+        buy_token: token_usdt.address().into_legacy(),
+        buy_amount: amount.into_legacy(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -179,12 +222,12 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Drive solution
     let sell_token_balance_before = token_usdc
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_usdt
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -195,7 +238,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         token_usdc
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .is_ok_and(|balance| balance < sell_token_balance_before)
@@ -204,7 +247,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     .unwrap();
     wait_for_condition(TIMEOUT, || async {
         token_usdt
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .is_ok_and(|balance| balance >= buy_token_balance_before + amount)
@@ -218,21 +261,21 @@ async fn zero_ex_liquidity(web3: Web3) {
     // [`relative-slippage`] config value is set to 0.1
     // crates/e2e/src/setup/colocation.rs:110 which is then applied to the
     // original filled amount crates/solver/src/liquidity/slippage.rs:110
-    let expected_filled_amount = amount.as_u128() + amount.as_u128() / 10u128;
+    let expected_filled_amount = amount + amount / alloy::primitives::U256::from(10);
     assert_approximately_eq!(
-        U256::from(zeroex_order_amounts.filled),
-        U256::from(expected_filled_amount)
+        alloy::primitives::U256::from(zeroex_order_amounts.filled),
+        expected_filled_amount
     );
     assert!(zeroex_order_amounts.fillable > 0u128);
     assert_approximately_eq!(
-        U256::from(zeroex_order_amounts.fillable),
-        U256::from(amount.as_u128() * 2 - expected_filled_amount)
+        alloy::primitives::U256::from(zeroex_order_amounts.fillable),
+        (amount * alloy::primitives::U256::from(2)) - expected_filled_amount
     );
 
     // Fill the remaining part of the 0x order
     let zeroex_order = Eip712TypedZeroExOrder {
-        maker_token: token_usdt.address(),
-        taker_token: token_usdc.address(),
+        maker_token: token_usdt.address().into_legacy(),
+        taker_token: token_usdc.address().into_legacy(),
         maker_amount: zeroex_order_amounts.fillable,
         taker_amount: zeroex_order_amounts.fillable,
         // doesn't participate in the hash calculation
@@ -254,10 +297,13 @@ async fn zero_ex_liquidity(web3: Web3) {
         .await
         .unwrap();
     assert_approximately_eq!(
-        U256::from(zeroex_order_amounts.filled),
-        U256::from(amount.as_u128() * 2 - expected_filled_amount)
+        alloy::primitives::U256::from(zeroex_order_amounts.filled),
+        (amount * alloy::primitives::U256::from(2)) - expected_filled_amount
     );
-    assert_approximately_eq!(U256::from(zeroex_order_amounts.fillable), U256::zero());
+    assert_approximately_eq!(
+        alloy::primitives::U256::from(zeroex_order_amounts.fillable),
+        alloy::primitives::U256::ZERO
+    );
 }
 
 fn create_zeroex_liquidity_orders(

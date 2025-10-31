@@ -1,9 +1,12 @@
 use {
     anyhow::Result,
     async_trait::async_trait,
-    contracts::{ERC20, errors::EthcontractErrorType},
-    ethcontract::{H160, errors::MethodError},
-    ethrpc::Web3,
+    contracts::alloy::ERC20,
+    ethcontract::H160,
+    ethrpc::{
+        Web3,
+        alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
+    },
     futures::{
         FutureExt,
         future::{BoxFuture, Shared},
@@ -52,26 +55,17 @@ impl TokenInfoFetcher {
             });
         }
 
-        let erc20 = ERC20::at(&self.web3, address);
-        let (decimals, symbol) = futures::join!(
-            erc20.methods().decimals().call(),
-            erc20.methods().symbol().call(),
-        );
+        let erc20 = ERC20::Instance::new(address.into_alloy(), self.web3.alloy.clone());
+        let (decimals, symbol) = {
+            let decimals = erc20.decimals();
+            let symbol = erc20.symbol();
+            futures::join!(decimals.call().into_future(), symbol.call().into_future())
+        };
 
         Ok(TokenInfo {
-            decimals: classify_error(decimals)?,
-            symbol: classify_error(symbol)?,
+            decimals: ignore_non_node_error(decimals).map_err(|err| Error(err.to_string()))?,
+            symbol: ignore_non_node_error(symbol).map_err(|err| Error(err.to_string()))?,
         })
-    }
-}
-
-fn classify_error<T>(result: Result<T, MethodError>) -> Result<Option<T>, Error> {
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(err) => match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Node => Err(Error(err.to_string())),
-            EthcontractErrorType::Contract => Ok(None),
-        },
     }
 }
 

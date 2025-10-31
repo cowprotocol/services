@@ -1,14 +1,14 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::alloy::{
+    contracts::bindings::{
+        Balances,
         ChainalysisOracle,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
         InstanceExt,
         WETH9,
-        support::Balances,
     },
     ethrpc::{
         Web3,

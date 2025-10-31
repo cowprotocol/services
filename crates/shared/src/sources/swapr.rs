@@ -1,16 +1,11 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::sources::uniswap_v2::pool_fetching::{
-        DefaultPoolReader,
-        Pool,
-        PoolReading,
-        handle_alloy_contract_error,
-    },
+    crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
     contracts::alloy::ISwaprPair,
     ethcontract::BlockId,
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -46,7 +41,7 @@ fn handle_results(
     pool: Result<Option<Pool>>,
     fee: Result<u32, alloy::contract::Error>,
 ) -> Result<Option<Pool>> {
-    let fee = handle_alloy_contract_error(fee)?;
+    let fee = ignore_non_node_error(fee)?;
     Ok(pool?.and_then(|pool| {
         Some(Pool {
             fee: Ratio::new(fee?, FEE_BASE),
@@ -64,8 +59,8 @@ mod tests {
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
         },
-        contracts::errors::testing_alloy_contract_error,
         ethcontract::H160,
+        ethrpc::alloy::errors::testing_alloy_contract_error,
         maplit::hashset,
     };
 
