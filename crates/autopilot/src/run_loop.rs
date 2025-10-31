@@ -68,6 +68,11 @@ pub struct Config {
     pub enable_leader_lock: bool,
 }
 
+pub struct Probes {
+    pub liveness: Arc<Liveness>,
+    pub startup: Arc<Option<AtomicBool>>,
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
@@ -77,8 +82,7 @@ pub struct RunLoop {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
-    liveness: Arc<Liveness>,
-    readiness: Arc<Option<AtomicBool>>,
+    probes: Probes,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
@@ -96,8 +100,7 @@ impl RunLoop {
         solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
-        liveness: Arc<Liveness>,
-        readiness: Arc<Option<AtomicBool>>,
+        probes: Probes,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
@@ -113,8 +116,7 @@ impl RunLoop {
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
-            liveness,
-            readiness,
+            probes,
             maintenance,
             competition_updates_sender,
             winner_selection: winner_selection::Arbitrator { max_winners, weth },
@@ -161,15 +163,16 @@ impl RunLoop {
             was_leader = is_leader;
 
             let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
+
+            // caches are warmed up, we're ready to do leader work
+            if let Some(startup) = self_arc.probes.startup.as_ref() {
+                startup.store(true, Ordering::Release);
+            }
+
             if !is_leader {
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
-            }
-
-            // caches are warmed up, we're ready to do leader work
-            if let Some(readiness) = self_arc.readiness.as_ref() {
-                readiness.store(true, Ordering::Release);
             }
 
             if let Some(auction) = self_arc
@@ -248,7 +251,7 @@ impl RunLoop {
         }
 
         observe::log_auction_delta(&previous, &auction);
-        self.liveness.auction();
+        self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
@@ -284,7 +287,7 @@ impl RunLoop {
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
-            self.liveness.auction();
+            self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
         }
