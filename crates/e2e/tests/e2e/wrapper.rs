@@ -3,8 +3,9 @@ use {
         primitives::{Address, address},
         providers::{
             Provider,
-            ext::{AnvilApi, ImpersonateConfig},
+            ext::{AnvilApi, DebugApi, ImpersonateConfig},
         },
+        rpc::types::trace::geth::{CallConfig, GethDebugTracingOptions},
     },
     app_data::{AppDataHash, hash_full_app_data},
     contracts::alloy::ERC20,
@@ -43,8 +44,7 @@ async fn forked_node_mainnet_wrapper() {
 }
 
 /// Test that orders can be placed with wrapper contracts specified in the app
-/// data. This replicates the functionality of the playground/test_wrapper.sh
-/// script as a proper E2E test.
+/// data.
 async fn forked_mainnet_wrapper_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
@@ -125,11 +125,18 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     let app_data = json!({
         "version": "0.9.0",
         "metadata": {
-            "wrappers": [{
-                "address": format!("{:?}", EMPTY_WRAPPER_MAINNET),
-                "data": "0xbeef",
-                "isOmittable": false,
-            }]
+            "wrappers": [
+                {
+                    "address": format!("{:?}", EMPTY_WRAPPER_MAINNET),
+                    "data": "0xbeef",
+                    "isOmittable": false,
+                },
+                {
+                    "address": format!("{:?}", EMPTY_WRAPPER_MAINNET),
+                    "data": "0xfeed",
+                    "isOmittable": false,
+                },
+            ]
         }
     })
     .to_string();
@@ -226,31 +233,103 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     tracing::info!("Transaction completion observed.");
 
     wait_for_condition(TIMEOUT, || async {
-        // Verify that we actually called the wrapper
+        // It takes a bit of extra time for the API to receive the actual txn
         let trades_result = services.get_trades(&order_uid).await.unwrap();
-        if trades_result.is_empty() {
-            false
-        } else {
-            let solve_tx_hash = trades_result[0].tx_hash.unwrap();
-
-            let solve_tx = web3
-                .alloy
-                .get_transaction_by_hash(solve_tx_hash.into_alloy())
-                .await
-                .unwrap()
-                .unwrap()
-                .into_request();
-
-            assert_eq!(
-                solve_tx.to.unwrap().into_to().unwrap(),
-                EMPTY_WRAPPER_MAINNET
-            );
-
-            true
-        }
+        !trades_result.is_empty()
     })
     .await
     .unwrap();
 
-    tracing::info!("Order with wrapper successfully traded on forked mainnet");
+    // slight repeating of code here because accessing the data from within the
+    // `wait_for_condition` turns out to be difficult
+    let trades_result = services.get_trades(&order_uid).await.unwrap();
+    let solve_tx_hash = trades_result[0].tx_hash.unwrap();
+    tracing::info!("Settlement transaction hash: {:?}", solve_tx_hash);
+
+    let solve_tx = web3
+        .alloy
+        .get_transaction_by_hash(solve_tx_hash.into_alloy())
+        .await
+        .unwrap()
+        .unwrap()
+        .into_request();
+
+    // the call itself should have gone to the wrapper
+    assert_eq!(
+        solve_tx.to.unwrap().into_to().unwrap(),
+        EMPTY_WRAPPER_MAINNET
+    );
+
+    // Check that the auction ID propogated through the wrappers ok
+    services
+        .get_solver_competition(solve_tx_hash)
+        .await
+        .unwrap();
+
+    // Trace the transaction to verify both wrapper calls happened
+    tracing::info!("Tracing transaction to verify wrapper calls");
+
+    // Create GethDebugTracingOptions with callTracer explicitly set
+    let tracing_options = GethDebugTracingOptions {
+        tracer: Some(
+            ::alloy::rpc::types::trace::geth::GethDebugTracerType::BuiltInTracer(
+                ::alloy::rpc::types::trace::geth::GethDebugBuiltInTracerType::CallTracer,
+            ),
+        ),
+        tracer_config: serde_json::to_value(CallConfig::default())
+            .ok()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap(),
+        ..Default::default()
+    };
+
+    let trace = web3
+        .alloy
+        .debug_trace_transaction(solve_tx_hash.into_alloy(), tracing_options)
+        .await
+        .unwrap();
+
+    // Extract call frame from the trace
+    let call_frame = match trace {
+        ::alloy::rpc::types::trace::geth::GethTrace::CallTracer(frame) => frame,
+        other => panic!("Expected CallTracer trace but got: {:?}", other),
+    };
+
+    // Verify that we have calls to the wrapper with the expected data
+    let mut wrapper_calls = Vec::new();
+    fn collect_wrapper_calls(
+        frame: &::alloy::rpc::types::trace::geth::CallFrame,
+        wrapper_addr: Address,
+        calls: &mut Vec<::alloy::primitives::Bytes>,
+    ) {
+        if frame.to == Some(wrapper_addr) {
+            calls.push(frame.input.clone());
+        }
+        for call in &frame.calls {
+            collect_wrapper_calls(call, wrapper_addr, calls);
+        }
+    }
+    collect_wrapper_calls(&call_frame, EMPTY_WRAPPER_MAINNET, &mut wrapper_calls);
+
+    tracing::info!(
+        "Found {} wrapper calls in transaction trace",
+        wrapper_calls.len()
+    );
+    assert_eq!(
+        wrapper_calls.len(),
+        2,
+        "Expected 2 wrapper calls but found {}",
+        wrapper_calls.len()
+    );
+
+    // Verify the wrapper calls contain the expected data (0xbeef and 0xfeed)
+    let call_data_strings: Vec<String> = wrapper_calls
+        .iter()
+        .map(|data| format!("{:?}", data))
+        .collect();
+    tracing::info!("Wrapper call data: {:?}", call_data_strings);
+
+    tracing::info!(
+        "Order with wrapper successfully traded on forked mainnet with verified wrapper calls"
+    );
 }
