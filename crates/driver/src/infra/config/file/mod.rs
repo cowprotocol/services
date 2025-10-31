@@ -60,6 +60,8 @@ struct Config {
     #[serde(default)]
     liquidity: LiquidityConfig,
 
+    pod: Option<infra::pod::api::Config>,
+
     /// Defines order prioritization strategies that will be applied in the
     /// specified order.
     #[serde(
