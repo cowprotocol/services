@@ -1,3 +1,4 @@
+tx-gas-limit = "45000000"
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique
 endpoint = "http://baseline"
@@ -25,3 +26,8 @@ base-tokens = [
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 preset = "uniswap-v2"
+
+[pod]
+endpoint = "http://34.76.45.8:8545"
+explorer = "http://tbd.pod"
+contract-address = "0xe6b2271146cb68784ea02194485abB249bF40271"

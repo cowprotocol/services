@@ -12,6 +12,7 @@ use {
             config,
             liquidity,
             notify,
+            pod::api,
             simulator::{self, Simulator},
             solver::Solver,
         },
@@ -94,6 +95,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
+        pod: create_pod(&config).await,
     }
     .serve(
         async {
@@ -198,6 +200,22 @@ fn liquidity_sources_notifier(
         .unwrap_or(&notify::liquidity_sources::config::Config { liquorice: None });
     notify::liquidity_sources::Notifier::try_new(notifier_config, eth.chain())
         .expect("initialize notify sources notifier")
+}
+
+async fn create_pod(config: &config::Config) -> Option<Arc<api::Pod>> {
+    if let Some(pod_cfg) = &config.pod {
+        let pod = api::Pod::new(
+            pod_cfg.endpoint.clone(),
+            pod_cfg.explorer.clone(),
+            pod_cfg.contract_address,
+        )
+        .await
+        .expect("create pod");
+
+        Some(Arc::new(pod))
+    } else {
+        None
+    }
 }
 
 #[cfg(unix)]
