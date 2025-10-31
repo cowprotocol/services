@@ -323,10 +323,20 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     tracing::info!("Wrapper call data: {:?}", call_data_strings);
 
     // Check that the auction ID propogated through the wrappers ok
-    services
-        .get_solver_competition(solve_tx_hash)
-        .await
-        .unwrap();
+    // Sometimes the API isnt ready to respond to the request immediately so we wait
+    // a bit for success
+    wait_for_condition(TIMEOUT, || async {
+        let auction_info = services.get_solver_competition(solve_tx_hash).await;
+
+        if let Ok(a) = auction_info {
+            tracing::info!("Pulled auction id {:?}", a.auction_id);
+            true
+        } else {
+            false
+        }
+    })
+    .await
+    .unwrap();
 
     tracing::info!(
         "Order with wrapper successfully traded on forked mainnet with verified wrapper calls"
