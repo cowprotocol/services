@@ -1,0 +1,81 @@
+# Local-only version (no forking, no RPC needed)
+# Use this for quick testing: docker compose -f docker-compose.local.yml up
+
+services:
+  chain:
+    build:
+      context: .
+      dockerfile: Dockerfile.chain
+    restart: always
+    entrypoint: /usr/local/bin/anvil
+    command: --host 0.0.0.0 --block-time 1
+    environment:
+      - ANVIL_IP_ADDR=0.0.0.0
+    ports:
+      - 8545:8545
+    healthcheck:
+      # Use wget with a short timeout to avoid hanging health checks
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 --tries=1 --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545 | grep -q result"]
+      interval: 2s
+      timeout: 10s
+      retries: 10
+      start_period: 2s
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+
+  explorer-api:
+    build:
+      context: ./explorer-api
+      dockerfile: Dockerfile
+    environment:
+      - JSON_RPC_URL=http://chain:8545
+      - DB_PATH=/data/explorer.sqlite
+      - NETWORK_NAME=local
+      - ENABLE_TRACE_STEPS=true
+      - CHAIN_ID=31337
+    volumes:
+      - explorer-data:/data
+    ports:
+      - 8081:8081
+    depends_on:
+      chain:
+        condition: service_healthy
+
+  explorer-web:
+    build:
+      context: ./explorer-web
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://localhost:8081
+    ports:
+      - 8083:3000
+    depends_on:
+      - explorer-api
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.cowswap
+      args:
+        - CHAIN=${CHAIN:-1}
+        - ETH_RPC_URL=http://chain:8545
+        - NEXT_PUBLIC_LOCAL_EXPLORER_URL=http://localhost:8083
+    ports:
+      - 8000:80
+    depends_on:
+      - chain
+      - explorer-web
+
+volumes:
+  postgres:
+  explorer-data:

@@ -44,6 +44,29 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 > If you make any changes to the files in your repo directory, services will automatically be recompiled and restarted.
 > The CoW Explorer is avialable at http://localhost:8001 to see more information about transaction status
 
+In addition, a local, integrated block explorer is available:
+
+- Explorer API: http://localhost:8081 (Fastify)
+- Explorer Web UI: http://localhost:8083
+- Local Sourcify verifier: http://localhost:5555
+
+The Playground frontend can be pointed to these local endpoints to debug transactions without external services.
+
+### Contract Verification via Sourcify (local)
+
+Use your tool's Sourcify plugin to publish verified sources to the local Sourcify server (http://localhost:5555). Examples:
+
+- Hardhat: install `@sourcify/hardhat-sourcify` and configure `sourcify: { enabled: true, apiUrl: 'http://sourcify:5555' }`, then `npx hardhat sourcify --network localhost` after deployment.
+- Foundry: generate metadata and sources and push to Sourcify using a script or use third-party tools. For local dev, prefer Hardhat plugin or copy metadata/sources to Sourcify endpoint.
+
+Once published, the Explorer API serves:
+
+- GET `/api/verify/status/:address` → `{ verified, type }`
+- GET `/api/source/:address` → metadata and source files
+- GET `/api/abi/:address` → ABI (also cached server-side)
+
+The Explorer UI (Address page) displays verification status, ABI, and source files, and decoding will prefer verified ABIs.
+
 ### Resetting the playground
 
 Resetting the playground involves resetting the state for both the containers, but _also_ resetting the state for your
@@ -115,6 +138,9 @@ await window.ethereum.request({
 | Postgres      | postgres           | 5432          | 5432               | N/A                    | Local/Fork |
 | Adminer       | adminer            | 8082          | 8080               | N/A                    | Local/Fork |
 | Grafana       | grafana            | 3000          | 3000               | N/A                    | Local/Fork |
+| Explorer API  | explorer-api       | 8081          | 8081               | N/A                    | Local/Fork |
+| Explorer Web  | explorer-web       | 8083          | 8080               | N/A                    | Local/Fork |
+| Sourcify      | sourcify           | 5555          | 5555               | N/A                    | Local/Fork |
 
 **NOTE**: Currently only **FORK** mode is supported.
 
@@ -144,6 +170,69 @@ In this mode, the stack will spin up:
 - Baseline
 - Cow Swap
 - Cow Explorer (*not yet implemented*)
+- Playground Explorer API/Web (basic) ✓
+
+### Local Explorer Usage
+
+- API endpoints (examples):
+  - GET `/api/blocks/latest` → latest block with transactions
+  - GET `/api/blocks/123` → block 123
+  - GET `/api/tx/0x...` → transaction + receipt
+  - GET `/api/search?q=` → hash/address/number autodetect
+  - GET `/api/tx/:hash/trace?mode=tree|steps` → call tree or raw structLogs
+  - GET `/api/tx/:hash/steps?from=&to=&stack=&memory=` → step slice with optional stack/memory and source mapping
+  - GET `/api/tx/:hash/gas-report` → frame-level gas usage aggregation
+- UI pages:
+  - `/` search + latest block
+  - `/block/[id]`
+  - `/tx/[hash]`
+
+Environment variables:
+
+```
+# explorer-api
+JSON_RPC_URL=http://chain:8545
+DB_PATH=/data/explorer.sqlite
+NETWORK_NAME=local
+ENABLE_TRACE_STEPS=true
+
+# optional indexer tuning
+INDEXER_INTERVAL_MS=1500
+INDEXER_BATCH=50
+HISTORY_LIMIT=10000
+
+### Monitoring
+
+Prometheus scrapes the Explorer API at `explorer-api:8081/metrics` (job: `explorer-api`). You can explore metrics in Grafana at http://localhost:3000.
+
+# explorer-web
+NEXT_PUBLIC_API_BASE=http://explorer-api:8081
+```
+
+### Frontend integration (local explorer links)
+
+The CoW Swap frontend container is configured to rewrite external Etherscan links to the local Explorer (http://localhost:8083) at response time using Nginx's `sub_filter`. This means “View on Etherscan” links in the app will open the local explorer instead, for both transactions and addresses.
+
+If you need to disable this behavior, remove the custom Nginx config from `Dockerfile.cowswap` or edit `nginx.cowswap.conf`.
+
+### Embed: "Debug in Playground" link
+
+You can embed a simple link module in any UI to deep-link to the local Explorer.
+
+1) Include the helper script from the Explorer Web service:
+
+```
+<script src="http://localhost:8083/embed/debug-link.js"></script>
+<script>
+  DebugInPlayground.config({ baseUrl: 'http://localhost:8083', fallbackUrl: 'https://etherscan.io' });
+  // Append a link for a tx hash
+  document.body.appendChild(DebugInPlayground.link({ kind: 'tx', value: '0xabc...', label: 'Debug in Playground' }));
+  // Or generate URLs directly
+  // DebugInPlayground.txUrl('0x...'); DebugInPlayground.addressUrl('0x...'); DebugInPlayground.blockUrl(123);
+</script>
+```
+
+This module safely falls back to Etherscan if input is not a valid hash/address.
 
 ### Local
 
