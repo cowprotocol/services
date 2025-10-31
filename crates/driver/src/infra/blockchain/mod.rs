@@ -1,5 +1,4 @@
 use {
-    self::contracts::ContractAt,
     crate::{boundary, domain::eth},
     chain::Chain,
     ethcontract::{U256, errors::ExecutionError},
@@ -157,11 +156,6 @@ impl Ethereum {
     /// Onchain smart contract bindings.
     pub fn contracts(&self) -> &Contracts {
         &self.inner.contracts
-    }
-
-    /// Create a contract instance at the specified address.
-    pub fn contract_at<T: ContractAt>(&self, address: eth::ContractAddress) -> T {
-        T::at(self, address)
     }
 
     /// Check if a smart contract is deployed to the given address.

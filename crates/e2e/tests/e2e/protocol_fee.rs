@@ -372,11 +372,17 @@ async fn combined_protocol_fees(web3: Web3) {
     .unwrap()
     .try_into()
     .expect("Expected exactly four elements");
-    assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
-    assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
     assert_approximately_eq!(
-        partner_fee_executed_fee_in_buy_token,
-        partner_fee_order_token_balance
+        market_executed_fee_in_buy_token.into_alloy(),
+        market_order_token_balance.into_alloy()
+    );
+    assert_approximately_eq!(
+        limit_executed_fee_in_buy_token.into_alloy(),
+        limit_order_token_balance.into_alloy()
+    );
+    assert_approximately_eq!(
+        partner_fee_executed_fee_in_buy_token.into_alloy(),
+        partner_fee_order_token_balance.into_alloy()
     );
 }
 
