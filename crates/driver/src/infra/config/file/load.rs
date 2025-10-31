@@ -71,7 +71,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 name: solver_config.name.into(),
                 slippage: solver::Slippage {
                     relative: big_decimal_to_big_rational(&solver_config.slippage.relative),
-                    absolute: solver_config.slippage.absolute.map(eth::Ether),
+                    absolute: solver_config.slippage.absolute.map(|amount| amount.0.into()),
                 },
                 liquidity: if solver_config.skip_liquidity {
                     solver::Liquidity::Skip
@@ -322,8 +322,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             .mempools
             .iter()
             .map(|mempool| mempool::Config {
-                min_priority_fee: config.submission.min_priority_fee,
-                gas_price_cap: config.submission.gas_price_cap,
+                min_priority_fee: config.submission.min_priority_fee.into(),
+                gas_price_cap: config.submission.gas_price_cap.into(),
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 kind: match mempool {
@@ -346,7 +346,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         };
 
                         mempool::Kind::Public {
-                            max_additional_tip: *max_additional_tip,
+                            max_additional_tip: (*max_additional_tip).into(),
                             additional_tip_percentage: *additional_tip_percentage,
                             revert_protection,
                         }
@@ -358,7 +358,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         use_soft_cancellations,
                     } => mempool::Kind::MEVBlocker {
                         url: url.to_owned(),
-                        max_additional_tip: *max_additional_tip,
+                        max_additional_tip: (*max_additional_tip).into(),
                         additional_tip_percentage: *additional_tip_percentage,
                         use_soft_cancellations: *use_soft_cancellations,
                     },
@@ -397,11 +397,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
-        disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
+        disable_gas_simulation: config.disable_gas_simulation,
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
-        tx_gas_limit: config.tx_gas_limit,
+        tx_gas_limit: config.tx_gas_limit.into(),
     }
 }

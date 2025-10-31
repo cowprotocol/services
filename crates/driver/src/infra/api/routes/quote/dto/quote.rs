@@ -30,8 +30,10 @@ impl Quote {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
+    /// Clearing prices as dimensionless exchange rates between tokens.
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    clearing_prices: HashMap<eth::H160, eth::U256>,
+    #[allow(clippy::disallowed_types)] // Dimensionless ratios
+    pub clearing_prices: HashMap<eth::H160, eth::U256>,
     pre_interactions: Vec<Interaction>,
     interactions: Vec<Interaction>,
     solver: eth::H160,
@@ -47,8 +49,7 @@ pub struct Quote {
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    value: eth::U256,
+    value: eth::Ether,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
 }
@@ -57,7 +58,7 @@ impl From<eth::Interaction> for Interaction {
     fn from(interaction: eth::Interaction) -> Self {
         Self {
             target: interaction.target.into(),
-            value: interaction.value.into(),
+            value: interaction.value,
             call_data: interaction.call_data.into(),
         }
     }
@@ -69,12 +70,9 @@ impl From<eth::Interaction> for Interaction {
 struct JitOrder {
     buy_token: eth::H160,
     sell_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    executed_amount: eth::U256,
+    sell_amount: eth::TokenAmount,
+    buy_amount: eth::TokenAmount,
+    executed_amount: eth::TokenAmount,
     receiver: eth::H160,
     partially_fillable: bool,
     valid_to: u32,
@@ -93,8 +91,8 @@ impl From<domain::competition::solution::trade::Jit> for JitOrder {
         Self {
             sell_token: jit.order().sell.token.into(),
             buy_token: jit.order().buy.token.into(),
-            sell_amount: jit.order().sell.amount.into(),
-            buy_amount: jit.order().buy.amount.into(),
+            sell_amount: jit.order().sell.amount,
+            buy_amount: jit.order().buy.amount,
             executed_amount: jit.executed().into(),
             receiver: jit.order().receiver.into(),
             partially_fillable: jit.order().partially_fillable,
