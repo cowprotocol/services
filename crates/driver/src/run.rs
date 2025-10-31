@@ -94,8 +94,19 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
+    };
+
+    if args.validate_startup {
+        tracing::info!(
+            service = "driver",
+            bind_address = %args.addr,
+            solver_count = serve.solvers.len(),
+            "startup validation successful, exiting"
+        );
+        return;
     }
-    .serve(
+
+    let serve = serve.serve(
         async {
             let _ = shutdown_receiver.await;
         },

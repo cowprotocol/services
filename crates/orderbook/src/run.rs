@@ -455,6 +455,15 @@ pub async fn run(args: Arguments) {
             .with_fast_quoter(fast_quoter),
     );
 
+    if args.validate_startup {
+        tracing::info!(
+            service = "orderbook",
+            bind_address = %args.bind_address,
+            "startup validation successful, exiting"
+        );
+        return;
+    }
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         postgres_write,
