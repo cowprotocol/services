@@ -37,7 +37,6 @@ pub mod gpv2_order {
             sol_types::{SolStruct, SolValue},
         },
         contracts::alloy::cow_amm::CowAmm,
-        ethrpc::alloy::conversions::IntoLegacy,
         model::{DomainSeparator, interaction::InteractionData, signature::hashed_eip712_message},
     };
 
@@ -102,7 +101,7 @@ pub mod gpv2_order {
         let calldata = amm.commit(FixedBytes(order_hash)).calldata().clone();
 
         InteractionData {
-            target: amm.address().into_legacy(),
+            target: *amm.address(),
             value: Default::default(),
             call_data: calldata.to_vec(),
         }

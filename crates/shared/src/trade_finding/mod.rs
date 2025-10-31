@@ -12,6 +12,7 @@ use {
     anyhow::{Context, Result},
     derive_more::Debug,
     ethcontract::{Bytes, H160, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
     number::conversions::big_rational_to_u256,
@@ -206,8 +207,8 @@ impl Interaction {
 
     pub fn to_interaction_data(&self) -> InteractionData {
         InteractionData {
-            target: self.target,
-            value: self.value,
+            target: self.target.into_alloy(),
+            value: self.value.into_alloy(),
             call_data: self.data.clone(),
         }
     }
@@ -216,8 +217,8 @@ impl Interaction {
 impl From<InteractionData> for Interaction {
     fn from(interaction: InteractionData) -> Self {
         Self {
-            target: interaction.target,
-            value: interaction.value,
+            target: interaction.target.into_legacy(),
+            value: interaction.value.into_legacy(),
             data: interaction.call_data,
         }
     }
