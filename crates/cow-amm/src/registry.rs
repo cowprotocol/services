@@ -57,7 +57,7 @@ impl Registry {
             address: factory,
         };
         let event_handler = EventHandler::new(
-            Arc::new(self.web3.clone()),
+            Arc::new(self.web3.alloy.clone()),
             AlloyEventRetriever(indexer),
             storage,
             None,

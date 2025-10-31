@@ -81,7 +81,7 @@ impl RefundService {
     }
 
     pub async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
-        let block_time = timestamp_of_current_block_in_seconds(&self.web3).await? as i64;
+        let block_time = timestamp_of_current_block_in_seconds(&self.web3.alloy).await? as i64;
 
         let mut ex = self.db.acquire().await?;
         refundable_orders(
