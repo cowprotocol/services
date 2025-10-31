@@ -11,7 +11,7 @@ pub fn ignore_non_node_error<T>(result: Result<T, ContractError>) -> anyhow::Res
 
 pub trait ContractErrorExt {
     /// Returns whether a given error is a contract error, this is considered to
-    /// be all errors except the transport error where there is revert data.
+    /// be all errors except the transport error where there is no revert data.
     fn is_contract_error(&self) -> bool;
 
     /// Returns whether a given error is a node error.
