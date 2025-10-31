@@ -354,7 +354,7 @@ impl OrderValidator {
                             hooks
                                 .iter()
                                 .map(|hook| HooksTrampoline::HooksTrampoline::Hook {
-                                    target: hook.target.into_alloy(),
+                                    target: hook.target,
                                     callData: alloy::primitives::Bytes::from(
                                         hook.call_data.clone(),
                                     ),
@@ -403,9 +403,9 @@ impl OrderValidator {
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
+                                token: loan.token.into_legacy(),
+                                holder: loan.receiver.into_legacy(),
+                                amount: loan.amount.into_legacy(),
                             }
                         }),
                     },
@@ -579,7 +579,7 @@ impl OrderValidating for OrderValidator {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
-        let app_data_signer = app_data.inner.protocol.signer;
+        let app_data_signer = app_data.inner.protocol.signer.map(IntoLegacy::into_legacy);
 
         let owner = order.verify_owner(domain_separator, app_data_signer)?;
         tracing::debug!(?owner, "recovered owner from order and signature");
@@ -605,9 +605,9 @@ impl OrderValidating for OrderValidator {
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
+                                token: loan.token.into_legacy(),
+                                holder: loan.receiver.into_legacy(),
+                                amount: loan.amount.into_legacy(),
                             }
                         }),
                     })

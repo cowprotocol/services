@@ -91,7 +91,7 @@ async fn gas_limit(web3: Web3) {
                 "metadata": {
                     "hooks": {
                         "pre": [Hook {
-                            target: trader.address(),
+                            target: trader.address().into_alloy(),
                             call_data: Default::default(),
                             gas_limit: 8_000_000,
                         }],
@@ -136,7 +136,7 @@ async fn allowance(web3: Web3) {
             .approve(trader.address().into_alloy(), alloy::primitives::U256::MAX)
             .from(solver.address().into_alloy());
         Hook {
-            target: cow.address().into_legacy(),
+            target: *cow.address(),
             call_data: tx.calldata().to_vec(),
             gas_limit: tx.estimate_gas().await.unwrap(),
         }
@@ -147,7 +147,7 @@ async fn allowance(web3: Web3) {
             ::alloy::primitives::U256::MAX,
         );
         Hook {
-            target: onchain.contracts().weth.address().into_legacy(),
+            target: *onchain.contracts().weth.address(),
             call_data: approve.calldata().to_vec(),
             gas_limit: approve.estimate_gas().await.unwrap(),
         }
@@ -327,8 +327,7 @@ async fn signature(web3: Web3) {
         .to
         .unwrap()
         .into_to()
-        .unwrap()
-        .into_legacy();
+        .unwrap();
     let approval = Hook {
         target,
         call_data,
@@ -472,7 +471,7 @@ async fn partial_fills(web3: Web3) {
         trader.address().into_alloy(),
     );
     let pre_hook = Hook {
-        target: counter.address().into_legacy(),
+        target: *counter.address(),
         call_data: pre_inc.calldata().to_vec(),
         gas_limit: pre_inc.estimate_gas().await.unwrap(),
     };
@@ -483,7 +482,7 @@ async fn partial_fills(web3: Web3) {
         trader.address().into_alloy(),
     );
     let post_hook = Hook {
-        target: counter.address().into_legacy(),
+        target: *counter.address(),
         call_data: post_inc.calldata().to_vec(),
         gas_limit: post_inc.estimate_gas().await.unwrap(),
     };
@@ -635,8 +634,7 @@ async fn quote_verification(web3: Web3) {
         .to
         .unwrap()
         .into_to()
-        .unwrap()
-        .into_legacy();
+        .unwrap();
     let transfer = Hook {
         target,
         call_data,

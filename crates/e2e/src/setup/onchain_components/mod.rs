@@ -104,7 +104,7 @@ where
         .expect("transaction reverted when estimating gas")
         .as_u64();
     Hook {
-        target: tx.to.unwrap(),
+        target: tx.to.map(IntoAlloy::into_alloy).unwrap(),
         call_data: tx.data.unwrap().0,
         gas_limit,
     }
@@ -264,7 +264,7 @@ impl CowToken {
         );
 
         Hook {
-            target: self.contract.address().into_legacy(),
+            target: *self.contract.address(),
             call_data: permit.calldata().to_vec(),
             gas_limit: permit.estimate_gas().await.unwrap(),
         }

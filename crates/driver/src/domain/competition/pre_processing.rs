@@ -298,9 +298,9 @@ impl Utilities {
                             .app_data
                             .flashloan()
                             .map(|loan| BalanceOverrideRequest {
-                                token: loan.token,
-                                amount: loan.amount,
-                                holder: loan.receiver,
+                                token: loan.token.into_legacy(),
+                                amount: loan.amount.into_legacy(),
+                                holder: loan.receiver.into_legacy(),
                             })
                     } else {
                         None
