@@ -128,7 +128,7 @@ pub async fn refundable_orders(
     const QUERY: &str = r#"
 SELECT eo.uid, eo.valid_to from orders o
 INNER JOIN ethflow_orders eo on eo.uid = o.uid 
-INNER JOIN order_quotes oq on o.uid = oq.order_uid
+-- INNER JOIN order_quotes oq on o.uid = oq.order_uid
 LEFT JOIN trades t on o.uid = t.order_uid
 LEFT JOIN onchain_order_invalidations o_inv on o.uid = o_inv.uid
 LEFT JOIN ethflow_refunds o_ref on o.uid = o_ref.order_uid
@@ -138,9 +138,9 @@ AND o_inv.uid is null
 AND o.partially_fillable = false
 AND t.order_uid is null
 AND eo.valid_to < $1
-AND o.sell_amount = oq.sell_amount
-AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
-AND eo.valid_to - extract(epoch from o.creation_timestamp)::int > $2
+-- AND o.sell_amount = oq.sell_amount
+-- AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
+-- AND eo.valid_to - extract(epoch from o.creation_timestamp)::int > $2
     "#;
     sqlx::query_as(QUERY)
         .bind(since_valid_to)
