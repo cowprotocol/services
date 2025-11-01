@@ -231,7 +231,6 @@ impl Solver {
                         );
                         assert_eq!(previous_value, None, "existing price overwritten");
                         {
-                            // trades have optional field `fee`
                             let order = if config.quote {
                                 Default::default()
                             } else {
@@ -250,20 +249,14 @@ impl Solver {
                                 .quoted_order
                                 .order
                                 .solver_fee
-                                .map(|fee| fee.to_string());
-                            let trade_json = match fee {
-                                Some(fee) => json!({
-                                    "kind": "fulfillment",
-                                    "order": order,
-                                    "executedAmount": executed_amount,
-                                    "fee": fee,
-                                }),
-                                None => json!({
-                                    "kind": "fulfillment",
-                                    "order": order,
-                                    "executedAmount": executed_amount,
-                                }),
-                            };
+                                .map(|fee| fee.to_string())
+                                .unwrap_or_else(|| "0".to_string());
+                            let trade_json = json!({
+                                "kind": "fulfillment",
+                                "order": order,
+                                "executedAmount": executed_amount,
+                                "fee": fee,
+                            });
 
                             trades_json.push(trade_json);
                         }
