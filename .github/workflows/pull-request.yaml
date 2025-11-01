@@ -52,6 +52,17 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   nitpicker:
     runs-on: ubuntu-latest
     steps:
