@@ -46,7 +46,17 @@ impl Observer {
     /// belongs to an auction that was arbitrated in another environment (i.e.
     /// prod vs. staging).
     pub async fn post_process_outstanding_settlement_transactions(&self) {
-        let settlements = self.get_unprocessed_settlements().await;
+        let settlements = Self::retry_with_sleep(|| async move {
+            self.persistence
+                .get_settlements_without_auction()
+                .await
+                .inspect_err(|err| {
+                    tracing::warn!(?err, "failed to fetch unprocessed settlements from DB")
+                })
+        })
+        .await
+        .unwrap_or_default();
+
         if settlements.is_empty() {
             tracing::debug!("no unprocessed settlements found");
             return;
@@ -65,19 +75,6 @@ impl Observer {
                 }
             })
             .await;
-    }
-
-    async fn get_unprocessed_settlements(&self) -> Vec<eth::SettlementEvent> {
-        Self::retry_with_sleep(|| async move {
-            self.persistence
-                .get_settlements_without_auction()
-                .await
-                .inspect_err(|err| {
-                    tracing::warn!(?err, "failed to fetch unprocessed settlements from DB");
-                })
-        })
-        .await
-        .unwrap_or_default()
     }
 
     async fn post_process_settlement(&self, settlement: eth::SettlementEvent) -> Result<()> {
