@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use contracts_generate::{
-    ARBITRUM_ONE, AVALANCHE, BASE, BNB, Contract, Contracts, GNOSIS, LENS, LINEA, MAINNET,
-    OPTIMISM, PLASMA, POLYGON, SEPOLIA, networks,
+    ARBITRUM_ONE, AVALANCHE, BASE, BNB, Contract, GNOSIS, LENS, LINEA, MAINNET, Module, OPTIMISM,
+    PLASMA, POLYGON, SEPOLIA, Submodule, networks,
 };
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    Contracts::new()
+    Module::new()
         // 0x
         .add_contract(Contract::new("IZeroex").with_networks(networks![
             MAINNET => "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
@@ -661,45 +661,6 @@ fn main() {
         ]))
         .add_contract(Contract::new("CowAmmUniswapV2PriceOracle"))
         .add_contract(Contract::new("CowAmmFactoryGetter"))
-        // support module
-        // Support contracts used for trade and token simulations.
-        .add_contract(Contract::new("AnyoneAuthenticator"))
-        .add_contract(Contract::new("Solver"))
-        .add_contract(Contract::new("Spardose"))
-        .add_contract(Contract::new("Trader"))
-        // Support contract used for solver fee simulations in the gnosis/solvers repo.
-        .add_contract(Contract::new("Swapper"))
-        .add_contract(Contract::new("Signatures").with_networks(networks![
-            MAINNET => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            ARBITRUM_ONE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            BASE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            AVALANCHE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            BNB => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            OPTIMISM => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            POLYGON => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            LENS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            GNOSIS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            SEPOLIA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-            // built with evm=London, because deployment reverts on Linea otherwise
-            LINEA => "0xf6E57e72F7dB3D9A51a8B4c149C00475b94A37e4",
-            PLASMA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-        ]))
-        // Support contracts used for various order simulations.
-        .add_contract(Contract::new("Balances").with_networks(networks![
-            MAINNET => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            ARBITRUM_ONE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            BASE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            AVALANCHE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            BNB => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            OPTIMISM => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            POLYGON => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            LENS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            GNOSIS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            SEPOLIA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            PLASMA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-            // built with evm=London, because deployment reverts on Linea otherwise
-            LINEA => "0x361350f708f7c0c63c8a505226592c3e5d1faa29",
-        ]))
         // test module
         // Test Contract for using up a specified amount of gas.
         .add_contract(Contract::new("GasHog"))
@@ -713,6 +674,47 @@ fn main() {
             ARBITRUM_ONE => "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04",
             BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
         ]))
+        .add_submodule(
+            Submodule::new("support") // support module
+                // Support contracts used for trade and token simulations.
+                .add_contract(Contract::new("AnyoneAuthenticator"))
+                .add_contract(Contract::new("Solver"))
+                .add_contract(Contract::new("Spardose"))
+                .add_contract(Contract::new("Trader"))
+                // Support contract used for solver fee simulations in the gnosis/solvers repo.
+                .add_contract(Contract::new("Swapper"))
+                .add_contract(Contract::new("Signatures").with_networks(networks![
+                    MAINNET => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    ARBITRUM_ONE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    BASE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    AVALANCHE => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    BNB => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    OPTIMISM => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    POLYGON => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    LENS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    GNOSIS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    SEPOLIA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    // built with evm=London, because deployment reverts on Linea otherwise
+                    LINEA => "0xf6E57e72F7dB3D9A51a8B4c149C00475b94A37e4",
+                    PLASMA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                ]))
+                // Support contracts used for various order simulations.
+                .add_contract(Contract::new("Balances").with_networks(networks![
+                    MAINNET => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    ARBITRUM_ONE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    BASE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    AVALANCHE => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    BNB => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    OPTIMISM => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    POLYGON => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    LENS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    GNOSIS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    SEPOLIA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    PLASMA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
+                    // built with evm=London, because deployment reverts on Linea otherwise
+                    LINEA => "0x361350f708f7c0c63c8a505226592c3e5d1faa29",
+                ])),
+        )
         .write_formatted(Path::new("artifacts"), true, Path::new("src/bindings"))
         .unwrap();
 }

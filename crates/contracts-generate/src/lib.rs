@@ -30,17 +30,26 @@ const MOD_HEADER: &'static str = r#"#![allow(unused_imports, unused_attributes, 
     //! These files may be overwritten by the codegen system at any time.
     "#;
 
-pub struct Contracts {
+pub struct Module {
     pub contracts: Vec<Contract>,
+    submodules: Vec<Submodule>,
 }
 
-impl Contracts {
+impl Module {
     pub fn new() -> Self {
-        Self { contracts: vec![] }
+        Self {
+            contracts: vec![],
+            submodules: vec![],
+        }
     }
 
     pub fn add_contract(mut self, contract: Contract) -> Self {
         self.contracts.push(contract);
+        self
+    }
+
+    pub fn add_submodule(mut self, module: Submodule) -> Self {
+        self.submodules.push(module);
         self
     }
 
@@ -50,11 +59,71 @@ impl Contracts {
         all_derives: bool,
         output_folder: &Path,
     ) -> eyre::Result<()> {
+        std::fs::create_dir_all(&output_folder)?;
+
         let mut mod_file = String::from(MOD_HEADER);
+        for submodule in self.submodules {
+            write_mod_name(&mut mod_file, &submodule.name)?;
+            submodule.write_formatted(bindings_folder, all_derives, &output_folder)?;
+        }
 
         for contract in self.contracts {
             let name = contract.name.clone();
-            contract.write_formatted(bindings_folder, all_derives, output_folder)?;
+            contract.write_formatted(bindings_folder, all_derives, &output_folder)?;
+            write_mod_name(&mut mod_file, &name)?;
+        }
+
+        let file: syn::File = syn::parse_file(&mod_file)?;
+        let formatted = prettyplease::unparse(&file);
+        std::fs::write(output_folder.join("mod.rs"), formatted)?;
+
+        Ok(())
+    }
+}
+
+pub struct Submodule {
+    pub name: String,
+    pub contracts: Vec<Contract>,
+    submodules: Vec<Submodule>,
+}
+
+impl Submodule {
+    pub fn new<S: ToString>(name: S) -> Self {
+        Self {
+            name: name.to_string(),
+            contracts: vec![],
+            submodules: vec![],
+        }
+    }
+
+    pub fn add_contract(mut self, contract: Contract) -> Self {
+        self.contracts.push(contract);
+        self
+    }
+
+    pub fn add_submodule(mut self, module: Submodule) -> Self {
+        self.submodules.push(module);
+        self
+    }
+
+    pub fn write_formatted(
+        self,
+        bindings_folder: &Path,
+        all_derives: bool,
+        output_folder: &Path,
+    ) -> eyre::Result<()> {
+        let output_folder = output_folder.join(self.name);
+        std::fs::create_dir_all(&output_folder)?;
+
+        let mut mod_file = String::from(MOD_HEADER);
+        for submodule in self.submodules {
+            write_mod_name(&mut mod_file, &submodule.name)?;
+            submodule.write_formatted(bindings_folder, all_derives, &output_folder)?;
+        }
+
+        for contract in self.contracts {
+            let name = contract.name.clone();
+            contract.write_formatted(bindings_folder, all_derives, &output_folder)?;
             write_mod_name(&mut mod_file, &name)?;
         }
 
