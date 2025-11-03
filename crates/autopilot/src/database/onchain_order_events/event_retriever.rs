@@ -4,7 +4,7 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::bindings::CoWSwapOnchainOrders,
+    contracts::alloy::CoWSwapOnchainOrders,
     shared::{ethrpc::Web3, event_handling::AlloyEventRetrieving},
 };
 
@@ -42,7 +42,7 @@ impl AlloyEventRetrieving for CoWSwapOnchainOrdersContract {
             ]))
     }
 
-    fn provider(&self) -> &alloy::providers::DynProvider {
+    fn provider(&self) -> &contracts::alloy::Provider {
         &self.web3.alloy
     }
 }

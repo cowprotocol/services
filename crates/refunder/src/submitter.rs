@@ -11,7 +11,7 @@
 use {
     alloy::primitives::Address,
     anyhow::{Result, anyhow},
-    contracts::bindings::CoWSwapEthFlow::{self, EthFlowOrder},
+    contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
     ethcontract::U256,
     ethrpc::alloy::conversions::IntoLegacy,

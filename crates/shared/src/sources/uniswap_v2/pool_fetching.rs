@@ -4,7 +4,7 @@ use {
     anyhow::Result,
     cached::{Cached, TimedCache},
     contracts::{
-        bindings::{
+        alloy::{
             ERC20,
             IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
         },

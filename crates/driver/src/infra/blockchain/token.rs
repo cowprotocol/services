@@ -11,13 +11,13 @@ use {
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 pub struct Erc20 {
-    token: contracts::bindings::ERC20::Instance,
+    token: contracts::alloy::ERC20::Instance,
 }
 
 impl Erc20 {
     pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
         Self {
-            token: contracts::bindings::ERC20::Instance::new(
+            token: contracts::alloy::ERC20::Instance::new(
                 address.0.0.into_alloy(),
                 eth.web3.alloy.clone(),
             ),

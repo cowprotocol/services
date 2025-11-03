@@ -6,7 +6,7 @@ use {
     crate::interactions::Erc20ApproveInteraction,
     ::alloy::sol_types::SolCall,
     anyhow::{Context as _, Result, anyhow, ensure},
-    contracts::bindings::ERC20,
+    contracts::alloy::ERC20,
     ethcontract::{H160, U256},
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
     maplit::hashmap,
@@ -374,7 +374,7 @@ mod tests {
     }
 
     fn allowance_call_data(owner: H160, spender: H160) -> web3::types::Bytes {
-        contracts::bindings::ERC20::ERC20::allowanceCall {
+        contracts::alloy::ERC20::ERC20::allowanceCall {
             owner: owner.into_alloy(),
             spender: spender.into_alloy(),
         }

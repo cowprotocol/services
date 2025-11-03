@@ -2,7 +2,7 @@ use {
     super::Strategy,
     crate::tenderly_api::SimulationError,
     anyhow::Context,
-    contracts::bindings::ERC20,
+    contracts::alloy::ERC20,
     ethcontract::{Address, H256, U256, state_overrides::StateOverride},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     maplit::hashmap,

@@ -1,5 +1,5 @@
 use {
-    contracts::bindings::IZeroex,
+    contracts::alloy::IZeroex,
     ethcontract::Bytes,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::{

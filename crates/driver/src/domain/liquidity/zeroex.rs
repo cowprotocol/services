@@ -1,7 +1,7 @@
 use {
     crate::domain::{eth, liquidity},
     anyhow::anyhow,
-    contracts::bindings::IZeroex,
+    contracts::alloy::IZeroex,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     primitive_types::{H160, H256, U256},
     std::sync::Arc,

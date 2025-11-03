@@ -1,6 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    contracts::bindings::GPv2Settlement,
+    contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::{eth, *},
     ethrpc::alloy::{

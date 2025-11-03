@@ -4,7 +4,7 @@ use {
         domain::{self, auction::order, eth},
     },
     alloy::sol_types::SolCall,
-    contracts::bindings::{GPv2AllowListAuthentication, GPv2Settlement},
+    contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement},
     ethcontract::BlockId,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     std::collections::HashSet,
@@ -76,7 +76,7 @@ impl Transaction {
         // Find trace call to settlement contract
         let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
             .map(|(trace, path)| (trace.input.clone(), path.clone()))
-            // All transactions emitting settlement events should have a /settle call,
+            // All transactions emitting settlement events should have a /settle call, 
             // otherwise it's an execution client bug
             .ok_or(Error::MissingCalldata)?;
 

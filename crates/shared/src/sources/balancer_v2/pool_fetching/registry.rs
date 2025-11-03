@@ -20,7 +20,7 @@ use {
     },
     anyhow::Result,
     contracts::{
-        bindings::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
+        alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, H256, errors::MethodError},

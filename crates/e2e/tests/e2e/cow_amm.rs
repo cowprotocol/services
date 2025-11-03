@@ -3,7 +3,10 @@ use {
         primitives::{Address, Bytes, FixedBytes, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    contracts::bindings::{Balances, ERC20, Signatures},
+    contracts::alloy::{
+        ERC20,
+        support::{Balances, Signatures},
+    },
     driver::domain::eth::NonZeroU256,
     e2e::setup::{
         DeployedContracts,
@@ -72,16 +75,17 @@ async fn cow_amm_jit(web3: Web3) {
 
     // set up cow_amm
     let oracle =
-        contracts::bindings::CowAmmUniswapV2PriceOracle::Instance::deploy(web3.alloy.clone())
+        contracts::alloy::cow_amm::CowAmmUniswapV2PriceOracle::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
 
-    let cow_amm_factory = contracts::bindings::CowAmmConstantProductFactory::Instance::deploy(
-        web3.alloy.clone(),
-        *onchain.contracts().gp_settlement.address(),
-    )
-    .await
-    .unwrap();
+    let cow_amm_factory =
+        contracts::alloy::cow_amm::CowAmmConstantProductFactory::Instance::deploy(
+            web3.alloy.clone(),
+            *onchain.contracts().gp_settlement.address(),
+        )
+        .await
+        .unwrap();
 
     // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
@@ -147,7 +151,7 @@ async fn cow_amm_jit(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    let cow_amm = contracts::bindings::CowAmm::Instance::new(cow_amm, web3.alloy.clone());
+    let cow_amm = contracts::alloy::cow_amm::CowAmm::Instance::new(cow_amm, web3.alloy.clone());
 
     // Start system with the regular baseline solver as a quoter but a mock solver
     // for the actual solver competition. That way we can handcraft a solution
@@ -214,7 +218,7 @@ async fn cow_amm_jit(web3: Web3) {
     // oracle price => 100 WETH == 300000 DAI => 1 WETH == 3000 DAI
     // If this order gets settled around the oracle price it will receive plenty of
     // surplus.
-    let cow_amm_order = contracts::bindings::CowAmm::GPv2Order::Data {
+    let cow_amm_order = contracts::alloy::cow_amm::CowAmm::GPv2Order::Data {
         sellToken: *onchain.contracts().weth.address(),
         buyToken: *dai.address(),
         receiver: Default::default(),
@@ -237,7 +241,7 @@ async fn cow_amm_jit(web3: Web3) {
                 .unwrap(),
         ), // erc20
     };
-    let trading_params = contracts::bindings::CowAmm::ConstantProduct::TradingParams {
+    let trading_params = contracts::alloy::cow_amm::CowAmm::ConstantProduct::TradingParams {
         minTradedToken0: U256::ZERO,
         priceOracle: *oracle.address(),
         priceOracleData: Bytes::copy_from_slice(&oracle_data),
@@ -722,16 +726,17 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Set up the CoW AMM as before
     let oracle =
-        contracts::bindings::CowAmmUniswapV2PriceOracle::Instance::deploy(web3.alloy.clone())
+        contracts::alloy::cow_amm::CowAmmUniswapV2PriceOracle::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
 
-    let cow_amm_factory = contracts::bindings::CowAmmConstantProductFactory::Instance::deploy(
-        web3.alloy.clone(),
-        *onchain.contracts().gp_settlement.address(),
-    )
-    .await
-    .unwrap();
+    let cow_amm_factory =
+        contracts::alloy::cow_amm::CowAmmConstantProductFactory::Instance::deploy(
+            web3.alloy.clone(),
+            *onchain.contracts().gp_settlement.address(),
+        )
+        .await
+        .unwrap();
 
     // Fund the CoW AMM owner with DAI and WETH and approve the factory to transfer
     // them
@@ -809,7 +814,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    let cow_amm = contracts::bindings::CowAmm::Instance::new(cow_amm_address, web3.alloy.clone());
+    let cow_amm =
+        contracts::alloy::cow_amm::CowAmm::Instance::new(cow_amm_address, web3.alloy.clone());
 
     // Start system with the mocked solver. Baseline is still required for the
     // native price estimation.
@@ -868,7 +874,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let executed_amount = to_wei(230);
 
     // CoW AMM order remains the same (selling WETH for DAI)
-    let cow_amm_order = contracts::bindings::CowAmm::GPv2Order::Data {
+    let cow_amm_order = contracts::alloy::cow_amm::CowAmm::GPv2Order::Data {
         sellToken: *onchain.contracts().weth.address(),
         buyToken: *dai.address(),
         receiver: Default::default(),
@@ -891,7 +897,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
                 .unwrap(),
         ), // erc20
     };
-    let trading_params = contracts::bindings::CowAmm::ConstantProduct::TradingParams {
+    let trading_params = contracts::alloy::cow_amm::CowAmm::ConstantProduct::TradingParams {
         minTradedToken0: U256::ZERO,
         priceOracle: *oracle.address(),
         priceOracleData: Bytes::copy_from_slice(&oracle_data),

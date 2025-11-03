@@ -25,7 +25,6 @@ alloy = { workspace = true, features = ["sol-types", "json", "contract", "json-a
 paste = { workspace = true }
 ethcontract = { workspace = true }
 serde_json = { workspace = true }
-serde = { workspace = true }
 
 # [bin-dependencies]
 anyhow = { workspace = true }

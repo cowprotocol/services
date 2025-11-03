@@ -7,7 +7,7 @@ use {
         swap::fixed_point::Bfp,
     },
     anyhow::Result,
-    contracts::bindings::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
+    contracts::alloy::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
     ethcontract::BlockId,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},

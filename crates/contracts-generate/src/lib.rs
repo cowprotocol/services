@@ -217,10 +217,6 @@ impl Contract {
                     DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
                 }
 
-                pub fn deployment_block(chain_id: &u64) -> Option<u64> {
-                    DEPLOYMENT_INFO.get(chain_id).map(|(_, block)| *block).flatten()
-                }
-
                 impl Instance {
                     pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
                         async move {

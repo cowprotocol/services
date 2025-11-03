@@ -12,7 +12,7 @@ use {
     alloy::primitives::Address,
     anyhow::Result,
     arc_swap::ArcSwap,
-    contracts::bindings::IZeroex,
+    contracts::alloy::IZeroex,
     ethrpc::{
         alloy::conversions::IntoLegacy,
         block_stream::{CurrentBlockWatcher, into_stream},

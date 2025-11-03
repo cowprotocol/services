@@ -14,7 +14,7 @@ use {
         sources::{BaselineSource, swapr::SwaprPoolReader},
     },
     anyhow::{Context, Result},
-    contracts::bindings::IUniswapLikeRouter,
+    contracts::alloy::IUniswapLikeRouter,
     ethcontract::{H160, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     hex_literal::hex,
@@ -70,39 +70,37 @@ impl UniV2BaselineSourceParameters {
         match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
             BS::UniswapV2 => Some(Self {
-                router: contracts::bindings::UniswapV2Router02::deployment_address(&chain_id)
+                router: contracts::alloy::UniswapV2Router02::deployment_address(&chain_id)
                     .map(IntoLegacy::into_legacy)?,
                 init_code_digest: UNISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Honeyswap => Some(Self {
-                router: contracts::bindings::HoneyswapRouter::deployment_address(&chain_id)
+                router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)
                     .map(IntoLegacy::into_legacy)?,
                 init_code_digest: HONEYSWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::SushiSwap => Some(Self {
-                router: contracts::bindings::SushiSwapRouter::deployment_address(&chain_id)
+                router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)
                     .map(IntoLegacy::into_legacy)?,
                 init_code_digest: SUSHISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Swapr => Some(Self {
-                router: contracts::bindings::SwaprRouter::deployment_address(&chain_id)
+                router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)
                     .map(IntoLegacy::into_legacy)?,
                 init_code_digest: SWAPR_INIT.into(),
                 pool_reading: PoolReadingStyle::Swapr,
             }),
             BS::TestnetUniswapV2 => Some(Self {
-                router: contracts::bindings::TestnetUniswapV2Router02::deployment_address(
-                    &chain_id,
-                )
-                .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
                 init_code_digest: TESTNET_UNISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Baoswap => Some(Self {
-                router: contracts::bindings::BaoswapRouter::deployment_address(&chain_id)
+                router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)
                     .map(IntoLegacy::into_legacy)?,
                 init_code_digest: BAOSWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
@@ -112,7 +110,7 @@ impl UniV2BaselineSourceParameters {
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
-        let router = contracts::bindings::IUniswapLikeRouter::Instance::new(
+        let router = contracts::alloy::IUniswapLikeRouter::Instance::new(
             self.router.into_alloy(),
             web3.alloy.clone(),
         );

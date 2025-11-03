@@ -30,7 +30,6 @@ fn main() {
         ]))
         // Misc
         .add_contract(Contract::new("ERC20Mintable"))
-        .add_contract(Contract::new("ERC20"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))

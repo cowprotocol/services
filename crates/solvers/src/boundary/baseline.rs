@@ -5,7 +5,7 @@ use {
         boundary,
         domain::{eth, liquidity, order, solver},
     },
-    contracts::bindings::UniswapV3QuoterV2,
+    contracts::alloy::UniswapV3QuoterV2,
     ethereum_types::{H160, U256},
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
@@ -158,7 +158,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
-    uni_v3_quoter_v2: Option<Arc<contracts::bindings::UniswapV3QuoterV2::Instance>>,
+    uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()

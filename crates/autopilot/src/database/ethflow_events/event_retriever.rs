@@ -29,7 +29,7 @@ impl EthFlowRefundRetriever {
 impl AlloyEventRetrieving for EthFlowRefundRetriever {
     type Event = CoWSwapEthFlow::CoWSwapEthFlowEvents;
 
-    fn provider(&self) -> &alloy::providers::DynProvider {
+    fn provider(&self) -> &contracts::alloy::Provider {
         &self.web3.alloy
     }
 

@@ -773,7 +773,7 @@ mod tests {
     use {
         super::*,
         alloy::eips::BlockNumberOrTag,
-        contracts::bindings::GPv2Settlement,
+        contracts::alloy::{GPv2Settlement, InstanceExt},
         ethcontract::{BlockNumber, H256},
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
         std::str::FromStr,
@@ -786,7 +786,7 @@ mod tests {
             Filter::new().address(*self.address())
         }
 
-        fn provider(&self) -> &alloy::providers::DynProvider {
+        fn provider(&self) -> &contracts::alloy::Provider {
             self.provider()
         }
     }

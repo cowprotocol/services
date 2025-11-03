@@ -2,7 +2,7 @@ use {
     alloy::primitives::{Address, TxHash, U256},
     anyhow::{Context, Result},
     app_data::AppDataHash,
-    contracts::bindings::{
+    contracts::alloy::cow_amm::{
         CowAmmLegacyHelper,
         CowAmmLegacyHelper::CowAmmLegacyHelper::orderReturn,
     },

@@ -18,6 +18,7 @@ use {
         },
         infra::metrics,
     },
+    contracts::alloy::InstanceExt,
     ethereum_types::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
@@ -71,7 +72,7 @@ struct Inner {
     native_token_price_estimation_amount: eth::U256,
 
     /// If provided, the solver can rely on Uniswap V3 LPs
-    uni_v3_quoter_v2: Option<Arc<contracts::bindings::UniswapV3QuoterV2::Instance>>,
+    uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
 }
 
 impl Solver {
@@ -80,7 +81,7 @@ impl Solver {
         let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
                 let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
-                contracts::bindings::UniswapV3QuoterV2::Instance::deployed(&web3.alloy)
+                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.alloy)
                     .await
                     .map(Arc::new)
                     .inspect_err(|err| {

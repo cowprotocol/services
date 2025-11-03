@@ -22,7 +22,7 @@ use {
     },
     alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    contracts::bindings::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
+    contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
         BalancerV2BasePoolFactoryEvents,
         PoolCreated,
     },

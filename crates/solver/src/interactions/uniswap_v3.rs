@@ -1,6 +1,6 @@
 use {
     alloy::{primitives::Address, sol_types::SolCall},
-    contracts::bindings::UniswapV3SwapRouterV2::{
+    contracts::alloy::UniswapV3SwapRouterV2::{
         IV3SwapRouter::ExactOutputSingleParams,
         UniswapV3SwapRouterV2::exactOutputSingleCall,
     },

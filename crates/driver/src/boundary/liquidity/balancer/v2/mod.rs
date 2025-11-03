@@ -8,7 +8,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},
-    contracts::bindings::{
+    contracts::alloy::{
         BalancerV2ComposableStablePoolFactory,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,

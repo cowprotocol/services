@@ -2411,7 +2411,6 @@ dependencies = [
  "ethcontract",
  "ethcontract-generate",
  "paste",
- "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",

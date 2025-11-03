@@ -1,17 +1,17 @@
 use {
-    contracts::bindings::{
+    contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
-        Balances,
         CoWSwapEthFlow,
         FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
-        Signatures,
+        InstanceExt,
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
+        support::{Balances, Signatures},
     },
     ethcontract::{Address, H256},
     ethrpc::alloy::{

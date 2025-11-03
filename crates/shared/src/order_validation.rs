@@ -22,7 +22,7 @@ use {
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    contracts::bindings::{HooksTrampoline, WETH9},
+    contracts::alloy::{HooksTrampoline, WETH9},
     ethcontract::{H160, H256, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{

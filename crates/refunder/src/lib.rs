@@ -6,7 +6,7 @@ pub mod submitter;
 use {
     crate::arguments::Arguments,
     clap::Parser,
-    contracts::bindings::CoWSwapEthFlow,
+    contracts::alloy::CoWSwapEthFlow,
     ethcontract::PrivateKey,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,

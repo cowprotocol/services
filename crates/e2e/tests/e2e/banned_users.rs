@@ -3,7 +3,7 @@ use {
         primitives::{Address, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    contracts::bindings::ERC20,
+    contracts::alloy::ERC20,
     e2e::setup::{
         OnchainComponents,
         Services,
