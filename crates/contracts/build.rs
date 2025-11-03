@@ -641,39 +641,42 @@ fn main() {
             LINEA => "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f",
             PLASMA => "0x6100E367285b01F48D07953803A2d8dCA5D19873",
         ]))
-        // cow_amm module
-        .add_contract(Contract::new("CowAmm"))
-        .add_contract(
-            Contract::new("CowAmmConstantProductFactory").with_networks(networks![
-                // <https://etherscan.io/tx/0xf37fc438ddacb00c28305bd7dea3b79091cd5be3405a2b445717d9faf946fa50>
-                MAINNET => ("0x40664207e3375FB4b733d4743CE9b159331fd034", 19861952),
-                // <https://gnosisscan.io/tx/0x4121efab4ad58ae7ad73b50448cccae0de92905e181648e5e08de3d6d9c66083>
-                GNOSIS => ("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0", 33874317),
-                // <https://sepolia.etherscan.io/tx/0x5e6af00c670eb421b96e78fd2e3b9df573b19e6e0ea77d8003e47cdde384b048>
-                SEPOLIA => ("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3", 5874562),
-            ]),
+        .add_submodule(
+            Submodule::new("cow_amm")
+                .add_contract(Contract::new("CowAmm"))
+                .add_contract(Contract::new("CowAmmConstantProductFactory").with_networks(
+                    networks![
+                        // <https://etherscan.io/tx/0xf37fc438ddacb00c28305bd7dea3b79091cd5be3405a2b445717d9faf946fa50>
+                        MAINNET => ("0x40664207e3375FB4b733d4743CE9b159331fd034", 19861952),
+                        // <https://gnosisscan.io/tx/0x4121efab4ad58ae7ad73b50448cccae0de92905e181648e5e08de3d6d9c66083>
+                        GNOSIS => ("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0", 33874317),
+                        // <https://sepolia.etherscan.io/tx/0x5e6af00c670eb421b96e78fd2e3b9df573b19e6e0ea77d8003e47cdde384b048>
+                        SEPOLIA => ("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3", 5874562),
+                    ],
+                ))
+                .add_contract(Contract::new("CowAmmLegacyHelper").with_networks(networks![
+                    // <https://etherscan.io/tx/0x07f0ce50fb9cd30e69799a63ae9100869a3c653d62ea3ba49d2e5e1282f42b63>
+                    MAINNET => ("0x3705ceee5eaa561e3157cf92641ce28c45a3999c", 20332745),
+                    // <https://gnosisscan.io/tx/0x09e56c7173ab1e1c5d02bc2832799422ebca6d9a40e5bae77f6ca908696bfebf>
+                    GNOSIS => ("0xd9ec06b001957498ab1bc716145515d1d0e30ffb", 35026999),
+                ]))
+                .add_contract(Contract::new("CowAmmUniswapV2PriceOracle"))
+                .add_contract(Contract::new("CowAmmFactoryGetter")),
         )
-        .add_contract(Contract::new("CowAmmLegacyHelper").with_networks(networks![
-            // <https://etherscan.io/tx/0x07f0ce50fb9cd30e69799a63ae9100869a3c653d62ea3ba49d2e5e1282f42b63>
-            MAINNET => ("0x3705ceee5eaa561e3157cf92641ce28c45a3999c", 20332745),
-            // <https://gnosisscan.io/tx/0x09e56c7173ab1e1c5d02bc2832799422ebca6d9a40e5bae77f6ca908696bfebf>
-            GNOSIS => ("0xd9ec06b001957498ab1bc716145515d1d0e30ffb", 35026999),
-        ]))
-        .add_contract(Contract::new("CowAmmUniswapV2PriceOracle"))
-        .add_contract(Contract::new("CowAmmFactoryGetter"))
-        // test module
-        // Test Contract for using up a specified amount of gas.
-        .add_contract(Contract::new("GasHog"))
-        // Test Contract for incrementing arbitrary counters.
-        .add_contract(Contract::new("Counter"))
-        // Token with support for `permit` (for pre-interaction tests)
-        .add_contract(Contract::new("CowProtocolToken").with_networks(networks![
-            MAINNET => "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
-            GNOSIS => "0x177127622c4A00F3d409B75571e12cB3c8973d3c",
-            SEPOLIA => "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59",
-            ARBITRUM_ONE => "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04",
-            BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
-        ]))
+        .add_submodule(
+            Submodule::new("test") // Test Contract for using up a specified amount of gas.
+                .add_contract(Contract::new("GasHog"))
+                // Test Contract for incrementing arbitrary counters.
+                .add_contract(Contract::new("Counter"))
+                // Token with support for `permit` (for pre-interaction tests)
+                .add_contract(Contract::new("CowProtocolToken").with_networks(networks![
+                    MAINNET => "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
+                    GNOSIS => "0x177127622c4A00F3d409B75571e12cB3c8973d3c",
+                    SEPOLIA => "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59",
+                    ARBITRUM_ONE => "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04",
+                    BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
+                ])),
+        )
         .add_submodule(
             Submodule::new("support") // support module
                 // Support contracts used for trade and token simulations.
@@ -715,6 +718,6 @@ fn main() {
                     LINEA => "0x361350f708f7c0c63c8a505226592c3e5d1faa29",
                 ])),
         )
-        .write_formatted(Path::new("artifacts"), true, Path::new("src/bindings"))
+        .write_formatted(Path::new("artifacts"), true, Path::new("src/alloy"))
         .unwrap();
 }
