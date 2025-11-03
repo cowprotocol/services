@@ -108,7 +108,7 @@ impl Postgres {
         Ok(id)
     }
 
-    pub async fn insert_auction_with_id(
+    pub async fn replace_current_auction(
         &self,
         id: dto::AuctionId,
         auction: &dto::RawAuctionData,

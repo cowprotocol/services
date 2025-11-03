@@ -65,8 +65,10 @@ impl Persistence {
 
     /// Fetches the ID that should be used for the next auction.
     pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
-        let _timer = observe::metrics::metrics()
-            .on_auction_overhead_start("autopilot", "get_next_auction_id");
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_next_auction_id"])
+            .start_timer();
         self.postgres
             .get_next_auction_id()
             .await
@@ -75,12 +77,16 @@ impl Persistence {
 
     /// Spawns a background task that replaces the current auction in the DB
     /// with the new one.
-    pub fn store_auction_in_db(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+    pub fn replace_current_auction_in_db(
+        &self,
+        id: domain::auction::Id,
+        auction: &domain::RawAuctionData,
+    ) {
         let auction_dto = dto::auction::from_domain(auction.clone());
         let db = self.postgres.clone();
         tokio::task::spawn(async move {
             let _ = db
-                .insert_auction_with_id(id, &auction_dto)
+                .replace_current_auction(id, &auction_dto)
                 .await
                 .inspect_err(|err| tracing::warn!(?err, "failed to replace auction in DB"));
         });

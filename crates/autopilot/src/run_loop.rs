@@ -276,7 +276,7 @@ impl RunLoop {
         Metrics::auction(id);
 
         // always update the auction because the tests use this as a readiness probe
-        self.persistence.store_auction_in_db(id, &auction);
+        self.persistence.replace_current_auction_in_db(id, &auction);
         self.persistence.upload_auction_to_s3(id, &auction);
 
         if auction.orders.is_empty() {
