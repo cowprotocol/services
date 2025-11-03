@@ -6,7 +6,7 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::account_balances::BalanceSimulator,
     anyhow::Result,
-    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
+    contracts::bindings::{BalancerV2Vault::BalancerV2Vault, ERC20},
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
@@ -184,7 +184,7 @@ mod tests {
         super::*,
         crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider,
         alloy::primitives::address,
-        contracts::alloy::GPv2Settlement,
+        contracts::bindings::GPv2Settlement,
         ethrpc::Web3,
         model::order::SellTokenSource,
         std::sync::Arc,
@@ -198,7 +198,7 @@ mod tests {
             alloy::primitives::address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
             web3.alloy.clone(),
         );
-        let balances = contracts::alloy::support::Balances::Instance::new(
+        let balances = contracts::bindings::Balances::Instance::new(
             address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             web3.alloy.clone(),
         );

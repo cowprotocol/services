@@ -14,7 +14,7 @@ use {
         tests::{hex_address, setup::blockchain::Trade},
     },
     const_hex::ToHexExt,
-    contracts::alloy::ERC20,
+    contracts::bindings::ERC20,
     ethereum_types::H160,
     ethrpc::alloy::conversions::IntoLegacy,
     itertools::Itertools,

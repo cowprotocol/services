@@ -33,7 +33,7 @@ use {
     alloy::providers::DynProvider,
     anyhow::{Context, Result},
     clap::ValueEnum,
-    contracts::alloy::{
+    contracts::bindings::{
         BalancerV2ComposableStablePoolFactory,
         BalancerV2ComposableStablePoolFactoryV3,
         BalancerV2ComposableStablePoolFactoryV4,
@@ -47,7 +47,6 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
-        InstanceExt,
     },
     ethcontract::{BlockId, H160, H256},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},

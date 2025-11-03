@@ -14,7 +14,7 @@ use {
     },
     allowance::Allowance,
     alloy::sol_types::SolCall,
-    contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
+    contracts::bindings::{FlashLoanRouter::LoanRequest, WETH9},
     ethcontract::H160,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
@@ -305,7 +305,7 @@ fn encode_wrapper_settlement(
     let wrapper_data = encode_wrapper_data(&solution.wrappers);
 
     // Create wrappedSettleCall
-    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+    let calldata = contracts::bindings::ICowWrapper::ICowWrapper::wrappedSettleCall {
         settleData: settle_calldata.into(),
         wrapperData: wrapper_data.into(),
     }
@@ -434,7 +434,7 @@ struct Flags {
 pub mod codec {
     use {
         crate::domain::{competition::order, eth},
-        contracts::alloy::GPv2Settlement,
+        contracts::bindings::GPv2Settlement,
         ethrpc::alloy::conversions::IntoAlloy,
     };
 

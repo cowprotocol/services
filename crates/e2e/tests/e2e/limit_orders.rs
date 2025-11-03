@@ -5,7 +5,7 @@ use {
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     bigdecimal::BigDecimal,
-    contracts::alloy::ERC20,
+    contracts::bindings::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::{eth, *},

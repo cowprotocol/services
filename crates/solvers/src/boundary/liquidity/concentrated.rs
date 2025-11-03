@@ -1,7 +1,7 @@
 use {
     alloy::primitives::aliases::U24,
     contracts::{
-        alloy::UniswapV3QuoterV2::IQuoterV2::QuoteExactInputSingleParams,
+        bindings::UniswapV3QuoterV2::IQuoterV2::QuoteExactInputSingleParams,
         ethcontract::{H160, U256},
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -12,7 +12,7 @@ use {
 
 #[derive(Debug)]
 pub struct Pool {
-    pub uni_v3_quoter_contract: Arc<contracts::alloy::UniswapV3QuoterV2::Instance>,
+    pub uni_v3_quoter_contract: Arc<contracts::bindings::UniswapV3QuoterV2::Instance>,
     pub address: H160,
     pub tokens: TokenPair,
     pub fee: U24,

@@ -228,7 +228,7 @@ mod tests {
     use {
         super::*,
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
-        contracts::alloy::BalancerV2Vault,
+        contracts::bindings::BalancerV2Vault,
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,

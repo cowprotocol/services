@@ -1,7 +1,7 @@
 use {
     alloy::primitives::U256,
     anyhow::{Result, ensure},
-    contracts::alloy::WETH9,
+    contracts::bindings::WETH9,
     ethcontract::Bytes,
     ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},

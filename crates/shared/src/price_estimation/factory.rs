@@ -28,7 +28,7 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
-    contracts::alloy::WETH9,
+    contracts::bindings::WETH9,
     ethcontract::H160,
     ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     gas_estimation::GasPriceEstimating,

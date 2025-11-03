@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use contracts_generate::{networks, Contract, Contracts};
+use contracts_generate::{
+    ARBITRUM_ONE, AVALANCHE, BASE, BNB, Contract, Contracts, GNOSIS, LENS, LINEA, MAINNET,
+    OPTIMISM, PLASMA, POLYGON, SEPOLIA, networks,
+};
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
@@ -11,8 +14,6 @@ fn main() {
     // - https://github.com/rust-lang/cargo/issues/6003
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
-
-    use contracts_generate::*;
 
     Contracts::new()
         // 0x
@@ -29,6 +30,7 @@ fn main() {
         ]))
         // Misc
         .add_contract(Contract::new("ERC20Mintable"))
+        .add_contract(Contract::new("ERC20"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))
@@ -294,23 +296,25 @@ fn main() {
             POLYGON => ("0xBA12222222228d8Ba445958a75a0704d566BF2C8", 15832990),
             // Not available on Lens
         ]))
-        .add_contract(Contract::new("BalancerV3BatchRouter").with_networks(networks![
-            // <https://etherscan.io/tx/0x41cb8619fb92dd532eb09b0e81fd4ce1c6006a10924893f02909e36a317777f3>
-            MAINNET => ("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1", 21339510),
-            // <https://gnosisscan.io/tx/0xeafddbace9f445266f851ef1d92928e3d01a4622a1a6780b41ac52d5872f12ab>
-            GNOSIS => ("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b", 37377506),
-            // <https://sepolia.etherscan.io/tx/0x95ed8e1aaaa7bdc5881f3c8fc5a4914a66639bee52987c3a1ea88545083b0681>
-            SEPOLIA => ("0xC85b652685567C1B074e8c0D4389f83a2E458b1C", 7219301),
-            // <https://arbiscan.io/tx/0xa7968c6bc0775208ffece789c6e5d09b0eea5f2c3ed2806e9bd94fb0b978ff0f>
-            ARBITRUM_ONE => ("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E", 297828544),
-            // <https://basescan.org/tx/0x47b81146714630ce50445bfa28872a36973acedf785317ca423498810ec8e76c>
-            BASE => ("0x85a80afee867aDf27B50BdB7b76DA70f1E853062", 25347205),
-            // <https://snowscan.xyz/tx/0x3bfaba7135ee2d67d98f20ee1aa4c8b7e81e47be64223376f3086bab429ac806>
-            AVALANCHE => ("0xc9b36096f5201ea332Db35d6D195774ea0D5988f", 59965747),
-            // <https://optimistic.etherscan.io/tx/0xf370aab0d652f3e0f7c34e1a53e1afd98e86c487138300b0939d4e54b0088b67>
-            OPTIMISM => ("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E", 133969588),
-            // Not available on Lens, Polygon, BNB
-        ]))
+        .add_contract(
+            Contract::new("BalancerV3BatchRouter").with_networks(networks![
+                // <https://etherscan.io/tx/0x41cb8619fb92dd532eb09b0e81fd4ce1c6006a10924893f02909e36a317777f3>
+                MAINNET => ("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1", 21339510),
+                // <https://gnosisscan.io/tx/0xeafddbace9f445266f851ef1d92928e3d01a4622a1a6780b41ac52d5872f12ab>
+                GNOSIS => ("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b", 37377506),
+                // <https://sepolia.etherscan.io/tx/0x95ed8e1aaaa7bdc5881f3c8fc5a4914a66639bee52987c3a1ea88545083b0681>
+                SEPOLIA => ("0xC85b652685567C1B074e8c0D4389f83a2E458b1C", 7219301),
+                // <https://arbiscan.io/tx/0xa7968c6bc0775208ffece789c6e5d09b0eea5f2c3ed2806e9bd94fb0b978ff0f>
+                ARBITRUM_ONE => ("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E", 297828544),
+                // <https://basescan.org/tx/0x47b81146714630ce50445bfa28872a36973acedf785317ca423498810ec8e76c>
+                BASE => ("0x85a80afee867aDf27B50BdB7b76DA70f1E853062", 25347205),
+                // <https://snowscan.xyz/tx/0x3bfaba7135ee2d67d98f20ee1aa4c8b7e81e47be64223376f3086bab429ac806>
+                AVALANCHE => ("0xc9b36096f5201ea332Db35d6D195774ea0D5988f", 59965747),
+                // <https://optimistic.etherscan.io/tx/0xf370aab0d652f3e0f7c34e1a53e1afd98e86c487138300b0939d4e54b0088b67>
+                OPTIMISM => ("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E", 133969588),
+                // Not available on Lens, Polygon, BNB
+            ]),
+        )
         // UniV2
         .add_contract(Contract::new("BaoswapRouter").with_networks(networks![
             // https://gnosisscan.io/tx/0xdcbfa037f2c6c7456022df0632ec8d6a75d0f9a195238eec679d5d26895eb7b1
@@ -360,10 +364,12 @@ fn main() {
             // Not available on Base and Lens
         ]))
         .add_contract(Contract::new("ISwaprPair"))
-        .add_contract(Contract::new("TestnetUniswapV2Router02").with_networks(networks![
-            // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
-            SEPOLIA => "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98",
-        ]))
+        .add_contract(
+            Contract::new("TestnetUniswapV2Router02").with_networks(networks![
+                // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
+                SEPOLIA => "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98",
+            ]),
+        )
         // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
         .add_contract(Contract::new("UniswapV2Factory").with_networks(networks![
             // <https://etherscan.io/tx/0xc31d7e7e85cab1d38ce1b8ac17e821ccd47dbde00f9d57f2bd8613bff9428396>
@@ -425,18 +431,20 @@ fn main() {
             // Not listed on Gnosis and Sepolia chains
         ]))
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
-        .add_contract(Contract::new("UniswapV3SwapRouterV2").with_networks(networks![
-            ARBITRUM_ONE => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-            MAINNET => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-            POLYGON => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-            OPTIMISM => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-            BASE => "0x2626664c2603336E57B271c5C0b26F421741e481",
-            AVALANCHE => "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
-            BNB => "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2",
-            LENS => "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13",
-            LINEA => "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
-            // Not available on Gnosis Chain
-        ]))
+        .add_contract(
+            Contract::new("UniswapV3SwapRouterV2").with_networks(networks![
+                ARBITRUM_ONE => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+                MAINNET => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+                POLYGON => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+                OPTIMISM => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+                BASE => "0x2626664c2603336E57B271c5C0b26F421741e481",
+                AVALANCHE => "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
+                BNB => "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2",
+                LENS => "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13",
+                LINEA => "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+                // Not available on Gnosis Chain
+            ]),
+        )
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
         .add_contract(Contract::new("IUniswapV3Factory").with_networks(networks![
             MAINNET => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
@@ -517,10 +525,12 @@ fn main() {
             // Not available on Lens
         ]))
         // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
-        .add_contract(Contract::new("LiquoriceSettlement").with_networks(networks![
-            MAINNET => "0x0448633eb8B0A42EfED924C42069E0DcF08fb552",
-            ARBITRUM_ONE => "0x0448633eb8B0A42EfED924C42069E0DcF08fb552",
-        ]))
+        .add_contract(
+            Contract::new("LiquoriceSettlement").with_networks(networks![
+                MAINNET => "0x0448633eb8B0A42EfED924C42069E0DcF08fb552",
+                ARBITRUM_ONE => "0x0448633eb8B0A42EfED924C42069E0DcF08fb552",
+            ]),
+        )
         .add_contract(Contract::new("FlashLoanRouter").with_networks(networks![
             MAINNET => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
             GNOSIS => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
@@ -561,32 +571,34 @@ fn main() {
             // <https://polygonscan.com/tx/0xe2a4d996de0d6a23108f701b37acba6c47ee34448bb51fec5c23f542a6f3ccc8>
             POLYGON => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 35701901),
         ]))
-        .add_contract(Contract::new("GPv2AllowListAuthentication").with_networks(networks![
-            // <https://etherscan.io/tx/0xb84bf720364f94c749f1ec1cdf0d4c44c70411b716459aaccfd24fc677013375>
-            MAINNET => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 12593263),
-            // <https://gnosisscan.io/tx/0x1a2d87a05a94bc6680a4faee31bbafbd74e9ddb63dd3941c717b5c609c08b957>
-            GNOSIS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 16465099),
-            // <https://sepolia.etherscan.io/tx/0x73c54c75b3f382304f3adf33e3876c8999fb10df786d4a902733369251033cd1>
-            SEPOLIA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 4717469),
-            // <https://arbiscan.io/tx/0xe994adff141a2e72bd9dab3eb7b3480637013bdfb1aa42c62d9d6c90de091237>
-            ARBITRUM_ONE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 204702129),
-            // <https://basescan.org/tx/0x5497004d2a37c9eafd0bd1e5861a67d3a209c5b845724166e3dbca9527ee05ec>
-            BASE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 21407137),
-            // <https://snowscan.xyz/tx/0xa58fc76846917779d7bcbb7d34f4a2a44aab2b702ef983594e34e6972a0c626b>
-            AVALANCHE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 59891351),
-            // <https://bscscan.com/tx/0x8da639c62eb4a810573c178ed245184944d66c834122e3f88994ebf679b50e34>
-            BNB => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 48173639),
-            // <https://optimistic.etherscan.io/tx/0x5b6403b485e369ce524d04234807df782e6639e55a7c1d859f0a67925d9a5f49>
-            OPTIMISM => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 134254466),
-            // <https://polygonscan.com/tx/0x686e4bbcfd6ebae91f0fcc667407c831953629877ec622457916729de3d461c3>
-            POLYGON => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 45854728),
-            // <https://explorer.lens.xyz/tx/0x0730c21885153dcc9a25ab7abdc38309ec7c7a8db15b763fbbaf574d1e7ec498>
-            LENS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 2612937),
-            // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
-            LINEA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 24333100),
-            // <https://plasmascan.to/tx/0xc2ac50ad302e402c4db1e956bd357af7d84e3684ad65e4fdee58abea092ac88c>
-            PLASMA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 3439709),
-        ]))
+        .add_contract(
+            Contract::new("GPv2AllowListAuthentication").with_networks(networks![
+                // <https://etherscan.io/tx/0xb84bf720364f94c749f1ec1cdf0d4c44c70411b716459aaccfd24fc677013375>
+                MAINNET => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 12593263),
+                // <https://gnosisscan.io/tx/0x1a2d87a05a94bc6680a4faee31bbafbd74e9ddb63dd3941c717b5c609c08b957>
+                GNOSIS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 16465099),
+                // <https://sepolia.etherscan.io/tx/0x73c54c75b3f382304f3adf33e3876c8999fb10df786d4a902733369251033cd1>
+                SEPOLIA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 4717469),
+                // <https://arbiscan.io/tx/0xe994adff141a2e72bd9dab3eb7b3480637013bdfb1aa42c62d9d6c90de091237>
+                ARBITRUM_ONE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 204702129),
+                // <https://basescan.org/tx/0x5497004d2a37c9eafd0bd1e5861a67d3a209c5b845724166e3dbca9527ee05ec>
+                BASE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 21407137),
+                // <https://snowscan.xyz/tx/0xa58fc76846917779d7bcbb7d34f4a2a44aab2b702ef983594e34e6972a0c626b>
+                AVALANCHE => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 59891351),
+                // <https://bscscan.com/tx/0x8da639c62eb4a810573c178ed245184944d66c834122e3f88994ebf679b50e34>
+                BNB => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 48173639),
+                // <https://optimistic.etherscan.io/tx/0x5b6403b485e369ce524d04234807df782e6639e55a7c1d859f0a67925d9a5f49>
+                OPTIMISM => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 134254466),
+                // <https://polygonscan.com/tx/0x686e4bbcfd6ebae91f0fcc667407c831953629877ec622457916729de3d461c3>
+                POLYGON => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 45854728),
+                // <https://explorer.lens.xyz/tx/0x0730c21885153dcc9a25ab7abdc38309ec7c7a8db15b763fbbaf574d1e7ec498>
+                LENS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 2612937),
+                // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
+                LINEA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 24333100),
+                // <https://plasmascan.to/tx/0xc2ac50ad302e402c4db1e956bd357af7d84e3684ad65e4fdee58abea092ac88c>
+                PLASMA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 3439709),
+            ]),
+        )
         .add_contract(Contract::new("GPv2Settlement").with_networks(networks![
             // <https://etherscan.io/tx/0xf49f90aa5a268c40001d1227b76bb4dd8247f18361fcad9fffd4a7a44f1320d3>
             MAINNET => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 12593265),
@@ -629,7 +641,6 @@ fn main() {
             LINEA => "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f",
             PLASMA => "0x6100E367285b01F48D07953803A2d8dCA5D19873",
         ]))
-        .add_contract(Contract::new("ERC20"))
         // cow_amm module
         .add_contract(Contract::new("CowAmm"))
         .add_contract(
@@ -702,6 +713,6 @@ fn main() {
             ARBITRUM_ONE => "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04",
             BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
         ]))
-        .write_formatted(Path::new("artifacts"), false, Path::new("src/bindings"))
+        .write_formatted(Path::new("artifacts"), true, Path::new("src/bindings"))
         .unwrap();
 }

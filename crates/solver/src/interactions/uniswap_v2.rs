@@ -1,6 +1,6 @@
 use {
     alloy::{primitives::Address, sol_types::SolCall},
-    contracts::alloy::IUniswapLikeRouter,
+    contracts::bindings::IUniswapLikeRouter,
     ethcontract::Bytes,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     primitive_types::{H160, U256},

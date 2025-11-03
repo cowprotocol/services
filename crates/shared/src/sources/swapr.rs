@@ -3,7 +3,7 @@
 use {
     crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
-    contracts::alloy::ISwaprPair,
+    contracts::bindings::ISwaprPair,
     ethcontract::BlockId,
     ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
     futures::{FutureExt as _, future::BoxFuture},

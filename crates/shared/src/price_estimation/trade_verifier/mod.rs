@@ -20,11 +20,7 @@ use {
     alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
-    contracts::alloy::{
-        GPv2Settlement,
-        WETH9,
-        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
-    },
+    contracts::bindings::{AnyoneAuthenticator, GPv2Settlement, Solver, Spardose, Trader, WETH9},
     ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
     ethrpc::{
         Web3,

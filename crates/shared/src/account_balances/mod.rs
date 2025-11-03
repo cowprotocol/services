@@ -4,7 +4,7 @@ use {
         BalanceOverriding,
     },
     alloy::sol_types::{SolCall, SolType, sol_data},
-    contracts::alloy::{GPv2Settlement, support::Balances},
+    contracts::bindings::{Balances, GPv2Settlement},
     ethcontract::state_overrides::StateOverrides,
     ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     model::{

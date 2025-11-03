@@ -3,7 +3,7 @@ use {
         primitives::{Address, U256},
         sol_types::SolCall,
     },
-    contracts::alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
+    contracts::bindings::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
     ethcontract::{Bytes, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::{

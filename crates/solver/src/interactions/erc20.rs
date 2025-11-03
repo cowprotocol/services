@@ -5,7 +5,7 @@ use {
         primitives::{Address, U256},
         sol_types::SolCall,
     },
-    contracts::alloy::ERC20,
+    contracts::bindings::ERC20,
     ethcontract::Bytes,
     ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},

@@ -4,7 +4,7 @@ use {
         domain::{self, auction::order, eth},
     },
     app_data::AppDataHash,
-    contracts::alloy::GPv2Settlement,
+    contracts::bindings::GPv2Settlement,
     ethcontract::U256,
     ethrpc::alloy::conversions::IntoLegacy,
 };

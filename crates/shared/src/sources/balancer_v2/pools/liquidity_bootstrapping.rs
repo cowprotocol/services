@@ -7,7 +7,7 @@ use {
         swap::fixed_point::Bfp,
     },
     anyhow::Result,
-    contracts::alloy::{
+    contracts::bindings::{
         BalancerV2LiquidityBootstrappingPool,
         BalancerV2LiquidityBootstrappingPoolFactory,
     },

@@ -5,7 +5,7 @@ use {
         providers::Provider,
         rpc::types::TransactionRequest,
     },
-    contracts::alloy::{
+    contracts::bindings::{
         GnosisSafe::{self, GnosisSafe::execTransactionCall},
         GnosisSafeCompatibilityFallbackHandler,
         GnosisSafeProxy,
@@ -182,8 +182,10 @@ impl Safe {
         to: alloy::primitives::Address,
         data: Vec<u8>,
         nonce: alloy::primitives::U256,
-    ) -> alloy::contract::CallBuilder<&contracts::alloy::Provider, PhantomData<execTransactionCall>>
-    {
+    ) -> alloy::contract::CallBuilder<
+        &alloy::providers::DynProvider,
+        PhantomData<execTransactionCall>,
+    > {
         let signature = self.sign({
             // `SafeTx` struct hash computation ported from the Safe Solidity code:
             // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L377>

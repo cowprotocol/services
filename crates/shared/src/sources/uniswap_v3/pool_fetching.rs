@@ -11,7 +11,7 @@ use {
     },
     alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    contracts::alloy::UniswapV3Pool::UniswapV3Pool::{
+    contracts::bindings::UniswapV3Pool::UniswapV3Pool::{
         UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
         UniswapV3PoolEvents,
     },
@@ -523,7 +523,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{U160, aliases::I24},
-        contracts::alloy::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
+        contracts::bindings::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
         ethrpc::alloy::conversions::IntoAlloy,
         serde_json::json,
         std::str::FromStr,

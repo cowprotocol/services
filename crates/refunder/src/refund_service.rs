@@ -6,7 +6,7 @@ use {
         primitives::{Address, Signature, address},
     },
     anyhow::{Context, Result, anyhow},
-    contracts::alloy::CoWSwapEthFlow,
+    contracts::bindings::CoWSwapEthFlow,
     database::{
         OrderUid,
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},

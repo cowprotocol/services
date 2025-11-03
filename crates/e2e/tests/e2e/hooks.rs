@@ -301,7 +301,7 @@ async fn signature(web3: Web3) {
     let safe_address = safe_creation_builder.clone().call().await.unwrap();
     let safe = Safe::deployed(
         chain_id,
-        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
+        contracts::bindings::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
         trader.clone(),
     );
 
@@ -433,7 +433,7 @@ async fn partial_fills(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(3)).await;
 
-    let counter = contracts::alloy::test::Counter::Instance::deploy(web3.alloy.clone())
+    let counter = contracts::bindings::Counter::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
 
@@ -603,7 +603,7 @@ async fn quote_verification(web3: Web3) {
 
     let safe = Safe::deployed(
         chain_id,
-        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
+        contracts::bindings::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
         trader.clone(),
     );
 

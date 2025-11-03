@@ -2,7 +2,7 @@ use {
     crate::{Amm, Metrics},
     alloy::{primitives::Address, rpc::types::Log},
     anyhow::Context,
-    contracts::alloy::cow_amm::{
+    contracts::bindings::{
         CowAmmLegacyHelper,
         CowAmmLegacyHelper::CowAmmLegacyHelper::CowAmmLegacyHelperEvents as CowAmmEvent,
     },

@@ -1,6 +1,6 @@
 use {
     crate::{Amm, cache::Storage},
-    contracts::alloy::ERC20,
+    contracts::bindings::ERC20,
     ethcontract::futures::future::{join_all, select_ok},
     ethrpc::Web3,
     shared::maintenance::Maintaining,

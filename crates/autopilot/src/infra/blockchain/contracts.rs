@@ -7,7 +7,6 @@ use {
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
-        InstanceExt,
         WETH9,
     },
     ethrpc::{
@@ -20,7 +19,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: GPv2Settlement::Instance,
-    signatures: contracts::alloy::support::Signatures::Instance,
+    signatures: contracts::bindings::Signatures::Instance,
     weth: WETH9::Instance,
     balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
@@ -53,11 +52,11 @@ impl Contracts {
             web3.alloy.clone(),
         );
 
-        let signatures = contracts::alloy::support::Signatures::Instance::new(
+        let signatures = contracts::bindings::Signatures::Instance::new(
             addresses
                 .signatures
                 .map(IntoAlloy::into_alloy)
-                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .or_else(|| contracts::bindings::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
         );
@@ -131,7 +130,7 @@ impl Contracts {
         &self.balances
     }
 
-    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
+    pub fn signatures(&self) -> &contracts::bindings::Signatures::Instance {
         &self.signatures
     }
 

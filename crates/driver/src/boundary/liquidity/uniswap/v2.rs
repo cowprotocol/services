@@ -8,7 +8,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     async_trait::async_trait,
-    contracts::alloy::IUniswapLikeRouter,
+    contracts::bindings::IUniswapLikeRouter,
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},

@@ -1,5 +1,5 @@
 use {
-    contracts::alloy::CoWSwapEthFlow,
+    contracts::bindings::CoWSwapEthFlow,
     database::{ethflow_orders::EthOrderData, orders::Order},
     ethcontract::{Bytes, H160, U256},
     ethrpc::alloy::conversions::IntoAlloy,

@@ -5,7 +5,7 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::alloy::cow_amm::CowAmmLegacyHelper::{
+    contracts::bindings::CowAmmLegacyHelper::{
         CowAmmLegacyHelper,
         CowAmmLegacyHelper::CowAmmLegacyHelperEvents as CowAmmEvent,
     },

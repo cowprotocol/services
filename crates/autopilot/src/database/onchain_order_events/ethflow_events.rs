@@ -3,7 +3,7 @@ use {
     crate::database::events::log_to_event_index,
     alloy::{eips::BlockNumberOrTag, rpc::types::Log},
     anyhow::{Context, Result, anyhow},
-    contracts::alloy::{
+    contracts::bindings::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
             CoWSwapOnchainOrdersEvents as ContractEvent,
             OrderPlacement as ContractOrderPlacement,
@@ -293,7 +293,7 @@ mod test {
     use {
         super::*,
         alloy::primitives::{Address, U256},
-        contracts::alloy::CoWSwapOnchainOrders,
+        contracts::bindings::CoWSwapOnchainOrders,
         model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     };
 

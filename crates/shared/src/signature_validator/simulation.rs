@@ -13,10 +13,10 @@ use {
         transports::RpcError,
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
+    contracts::bindings::{
         ERC1271SignatureValidator::ERC1271SignatureValidator,
         GPv2Settlement,
-        support::Signatures,
+        Signatures,
     },
     ethcontract::state_overrides::StateOverrides,
     ethrpc::{

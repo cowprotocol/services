@@ -5,7 +5,7 @@ use {
         rpc::types::{Filter, Log},
     },
     anyhow::Result,
-    contracts::alloy::GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
+    contracts::bindings::GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
     ethrpc::{AlloyProvider, block_stream::RangeInclusive},
     shared::event_handling::{AlloyEventRetrieving, EventStoring},
 };
@@ -28,7 +28,7 @@ impl AlloyEventRetrieving for GPv2SettlementContract {
         Filter::new().address(self.address)
     }
 
-    fn provider(&self) -> &contracts::alloy::Provider {
+    fn provider(&self) -> &alloy::providers::DynProvider {
         &self.provider
     }
 }

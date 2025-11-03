@@ -9,16 +9,17 @@ use {
         signers::local::{MnemonicBuilder, PrivateKeySigner},
         sol_types::SolCall,
     },
-    contracts::alloy::{
+    contracts::bindings::{
         BalancerV2Authorizer,
         BalancerV2Vault,
+        Balances,
         ERC20,
         ERC20Mintable,
         FlashLoanRouter,
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         GPv2Settlement,
+        Signatures,
         WETH9,
-        support::{Balances, Signatures},
     },
     ethcontract::PrivateKey,
     ethrpc::{
@@ -42,7 +43,7 @@ use {
 pub struct Pair {
     token_a: &'static str,
     token_b: &'static str,
-    contract: contracts::alloy::IUniswapLikePair::Instance,
+    contract: contracts::bindings::IUniswapLikePair::Instance,
     pool: Pool,
 }
 
@@ -273,7 +274,7 @@ impl Blockchain {
         .await
         .unwrap();
 
-        let weth = contracts::alloy::WETH9::Instance::deploy_builder(web3.alloy.clone())
+        let weth = contracts::bindings::WETH9::Instance::deploy_builder(web3.alloy.clone())
             .from(main_trader_account.address().into_alloy())
             .deploy()
             .await
@@ -446,7 +447,7 @@ impl Blockchain {
             }
         }
         // Create the uniswap factory.
-        let contract_address = contracts::alloy::UniswapV2Factory::Instance::deploy_builder(
+        let contract_address = contracts::bindings::UniswapV2Factory::Instance::deploy_builder(
             web3.alloy.clone(),
             main_trader_account.address().into_alloy(),
         )
@@ -454,8 +455,10 @@ impl Blockchain {
         .deploy()
         .await
         .unwrap();
-        let uniswap_factory =
-            contracts::alloy::UniswapV2Factory::Instance::new(contract_address, web3.alloy.clone());
+        let uniswap_factory = contracts::bindings::UniswapV2Factory::Instance::new(
+            contract_address,
+            web3.alloy.clone(),
+        );
         // Create and fund a uniswap pair for each pool. Fund the settlement contract
         // with the same liquidity as the pool, to allow for internalized interactions.
         let mut pairs = Vec::new();
@@ -479,7 +482,7 @@ impl Blockchain {
                 .await
                 .unwrap();
             // Fund the pair and the settlement contract.
-            let pair = contracts::alloy::IUniswapLikePair::Instance::new(
+            let pair = contracts::bindings::IUniswapLikePair::Instance::new(
                 uniswap_factory
                     .getPair(token_a, token_b)
                     .call()

@@ -1,7 +1,7 @@
 use {
     anyhow::Result,
     async_trait::async_trait,
-    contracts::alloy::ERC20,
+    contracts::bindings::ERC20,
     ethcontract::H160,
     ethrpc::{
         Web3,

@@ -5,7 +5,7 @@ use {
         signers::{SignerSync, local::PrivateKeySigner},
     },
     chrono::Utc,
-    contracts::alloy::{ERC20, InstanceExt, LiquoriceSettlement},
+    contracts::bindings::{ERC20, LiquoriceSettlement},
     driver::infra,
     e2e::{
         api,

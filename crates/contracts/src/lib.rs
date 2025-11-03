@@ -1,7 +1,7 @@
 #![allow(clippy::let_unit_value)]
 
 pub use ethcontract;
-pub mod alloy;
+// pub mod alloy;
 pub mod errors;
 use {
     anyhow::{Result, anyhow, bail},
@@ -37,52 +37,8 @@ pub fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
 #[macro_use]
 mod macros;
 
+pub mod bindings;
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;
 pub mod web3;
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        crate::alloy::networks::{ARBITRUM_ONE, GNOSIS, MAINNET, SEPOLIA},
-    };
-
-    #[test]
-    fn deployment_addresses() {
-        for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
-            assert!(
-                alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
-            )
-        }
-        for network in &[MAINNET, ARBITRUM_ONE] {
-            assert!(
-                alloy::BalancerV2WeightedPool2TokensFactory::deployment_address(network).is_some()
-            );
-            assert!(
-                alloy::BalancerV2LiquidityBootstrappingPoolFactory::deployment_address(network)
-                    .is_some()
-            );
-        }
-
-        assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
-
-        for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
-        }
-    }
-
-    #[test]
-    fn deployment_information() {
-        assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
-        for network in &[MAINNET, ARBITRUM_ONE] {
-            assert!(
-                alloy::BalancerV2WeightedPool2TokensFactory::deployment_address(network).is_some()
-            );
-        }
-        for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
-        }
-    }
-}

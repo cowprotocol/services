@@ -1,7 +1,7 @@
 use {
     alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    contracts::alloy::GPv2Settlement::GPv2Settlement::{self, GPv2SettlementEvents},
+    contracts::bindings::GPv2Settlement::GPv2Settlement::{self, GPv2SettlementEvents},
     database::{
         OrderUid,
         PgTransaction,

@@ -10,7 +10,7 @@ use {
         },
     },
     anyhow::{Result, ensure},
-    contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
+    contracts::bindings::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     ethcontract::{BlockId, H160, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},

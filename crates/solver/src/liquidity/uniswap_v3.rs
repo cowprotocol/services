@@ -11,7 +11,7 @@ use {
     },
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
-    contracts::alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
+    contracts::bindings::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},

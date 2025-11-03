@@ -1,7 +1,7 @@
 use {
     crate::domain::eth,
     chain::Chain,
-    contracts::alloy::WETH9,
+    contracts::bindings::WETH9,
     ethrpc::alloy::conversions::IntoLegacy,
 };
 

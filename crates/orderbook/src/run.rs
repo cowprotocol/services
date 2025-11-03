@@ -13,21 +13,14 @@ use {
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{
+    contracts::bindings::{
         BalancerV2Vault,
+        Balances,
         ChainalysisOracle,
         GPv2Settlement,
         HooksTrampoline,
         IUniswapV3Factory,
-        InstanceExt,
         WETH9,
-        bindings::{
-            BalancerV2Vault,
-            Balances,
-            ChainalysisOracle,
-            HooksTrampoline,
-            IUniswapV3Factory,
-        },
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
@@ -125,11 +118,10 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
-        Some(address) => contracts::alloy::support::Signatures::Instance::new(
-            address.into_alloy(),
-            web3.alloy.clone(),
-        ),
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.alloy)
+        Some(address) => {
+            contracts::bindings::Signatures::Instance::new(address.into_alloy(), web3.alloy.clone())
+        }
+        None => contracts::bindings::Signatures::Instance::deployed(&web3.alloy)
             .await
             .expect("load signatures contract"),
     };
