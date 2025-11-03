@@ -1,9 +1,6 @@
 use {
-    derive_more::{From, Into},
-    ethcontract::{
-        U256,
-        jsonrpc::serde::{Deserialize, Deserializer, de},
-    },
+    alloy::primitives::U256,
+    serde::{Deserialize, Deserializer, de},
     std::time::Duration,
     thiserror::Error,
 };
@@ -66,9 +63,9 @@ impl Chain {
             | Self::Base
             | Self::Bnb
             | Self::Linea
-            | Self::Optimism => 10u128.pow(17).into(),
-            Self::Gnosis | Self::Avalanche | Self::Lens => 10u128.pow(18).into(),
-            Self::Polygon | Self::Plasma => 10u128.pow(20).into(),
+            | Self::Optimism => U256::from(10u128.pow(17)),
+            Self::Gnosis | Self::Avalanche | Self::Lens => U256::from(10u128.pow(18)),
+            Self::Polygon | Self::Plasma => U256::from(10u128.pow(20)),
             Self::Hardhat => {
                 panic!("unsupported chain for default amount to estimate native prices with")
             }
@@ -135,13 +132,9 @@ impl TryFrom<U256> for Chain {
     /// Initializes `Network` from a chain ID, returns error if the chain id is
     /// not supported
     fn try_from(value: U256) -> Result<Self, Self::Error> {
-        // Check to avoid panics for large `U256` values, as there is no checked
-        // conversion API available, and we don't support chains with IDs greater
-        // than `u64::MAX` anyway.
-        if value > U256::from(u64::MAX) {
-            return Err(ChainIdNotSupported);
-        }
-        value.as_u64().try_into()
+        u64::try_from(value)
+            .map_err(|_| ChainIdNotSupported)?
+            .try_into()
     }
 }
 
@@ -185,7 +178,7 @@ pub struct ChainIdNotSupported;
 
 #[cfg(test)]
 mod test {
-    use {super::*, ethcontract::jsonrpc::serde_json};
+    use super::*;
 
     #[test]
     fn test_blocks_in() {
