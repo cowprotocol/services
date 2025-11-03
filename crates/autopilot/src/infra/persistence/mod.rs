@@ -73,22 +73,33 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    pub fn store_current_auction(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+    /// Spawns a background task that replaces the current auction in the DB
+    /// with the new one.
+    pub fn store_auction_in_db(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
         let auction_dto = dto::auction::from_domain(auction.clone());
-        let self_ = self.clone();
+        let db = self.postgres.clone();
         tokio::task::spawn(async move {
-            let _ = self_
-                .postgres
+            let _ = db
                 .insert_auction_with_id(id, &auction_dto)
                 .await
                 .inspect_err(|err| tracing::warn!(?err, "failed to replace auction in DB"));
+        });
+    }
 
-            self_
-                .archive_auction(dto::auction::Auction {
-                    id,
-                    auction: auction_dto,
-                })
-                .await
+    /// Spawns a background task that uploads the auction to S3.
+    pub fn upload_auction_to_s3(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        if auction.orders.is_empty() {
+            return;
+        }
+        let Some(s3) = self.s3.clone() else {
+            return;
+        };
+        let auction_dto = dto::auction::from_domain(auction.clone());
+        tokio::task::spawn(async move {
+            match s3.upload(id.to_string(), &auction_dto).await {
+                Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
+                Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
+            }
         });
     }
 
@@ -101,22 +112,6 @@ impl Persistence {
             .all_solvable_orders(min_valid_to)
             .await
             .context("failed to fetch all solvable orders")
-    }
-
-    /// Saves the given auction to storage for debugging purposes.
-    ///
-    /// There is no intention to retrieve this data programmatically.
-    async fn archive_auction(&self, instance: dto::auction::Auction) {
-        let Some(uploader) = &self.s3 else {
-            return;
-        };
-        match uploader
-            .upload(instance.id.to_string(), &instance.auction)
-            .await
-        {
-            Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
-            Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
-        }
     }
 
     /// Saves the competition data to the DB

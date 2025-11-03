@@ -267,27 +267,6 @@ impl RunLoop {
             return None;
         };
         let auction = self.remove_in_flight_orders(auction).await;
-
-        if auction.orders.is_empty() {
-            // Updating liveness probe to not report unhealthy due to this optimization
-            self.liveness.auction();
-            tracing::debug!("skipping empty auction");
-            return None;
-        }
-
-        self.assign_id_and_upload(auction).await
-    }
-
-    /// Finalizes the auction by assigning it an ID and persisting it in the
-    /// database and S3 (if configured). Persisting the auction happens in a
-    /// background task to not delay informing the solvers about the
-    /// auction. Persisting the auction is only needed for debugging so any
-    /// error that happens is only logged and does not cause the current
-    /// run loop to fail.
-    async fn assign_id_and_upload(
-        &self,
-        auction: domain::RawAuctionData,
-    ) -> Option<domain::Auction> {
         let id = self
             .persistence
             .get_next_auction_id()
@@ -295,8 +274,17 @@ impl RunLoop {
             .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
             .ok()?;
         Metrics::auction(id);
-        self.persistence.store_current_auction(id, &auction);
 
+        // always update the auction because the tests use this as a readiness probe
+        self.persistence.store_auction_in_db(id, &auction);
+        self.persistence.upload_auction_to_s3(id, &auction);
+
+        if auction.orders.is_empty() {
+            // Updating liveness probe to not report unhealthy due to this optimization
+            self.liveness.auction();
+            tracing::debug!("skipping empty auction");
+            return None;
+        }
         Some(domain::Auction {
             id,
             block: auction.block,
