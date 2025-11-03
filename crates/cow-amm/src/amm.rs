@@ -87,12 +87,12 @@ impl Amm {
     pub fn try_to_db_type(
         &self,
         block_number: u64,
-        helper: Address,
+        factory_address: Address,
         tx_hash: TxHash,
     ) -> Result<database::cow_amms::CowAmm> {
         Ok(database::cow_amms::CowAmm {
             address: ByteArray(self.address.0.0),
-            factory_address: ByteArray(helper.0.0),
+            factory_address: ByteArray(factory_address.0.0),
             tradeable_tokens: self
                 .tradeable_tokens
                 .iter()
