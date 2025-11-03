@@ -31,12 +31,7 @@ use {
     },
     anyhow::{Context, Result},
     chain::Chain,
-    contracts::{
-        ERC20,
-        alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
-        bindings::{BalancerV2Vault, ERC20, IUniswapV3Factory},
-        errors::EthcontractErrorType,
-    },
+    contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
     ethcontract::U256,
     ethrpc::alloy::{
         conversions::{IntoAlloy, IntoLegacy},

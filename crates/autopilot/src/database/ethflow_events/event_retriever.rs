@@ -7,7 +7,7 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::bindings::CoWSwapEthFlow::CoWSwapEthFlow,
+    contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow,
     shared::{ethrpc::Web3, event_handling::AlloyEventRetrieving},
 };
 
@@ -29,7 +29,7 @@ impl EthFlowRefundRetriever {
 impl AlloyEventRetrieving for EthFlowRefundRetriever {
     type Event = CoWSwapEthFlow::CoWSwapEthFlowEvents;
 
-    fn provider(&self) -> &contracts::alloy::Provider {
+    fn provider(&self) -> &alloy::providers::DynProvider {
         &self.web3.alloy
     }
 

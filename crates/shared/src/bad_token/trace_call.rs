@@ -398,7 +398,7 @@ mod tests {
             sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
-        contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt},
+        contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory},
         ethrpc::{Web3, alloy::conversions::IntoLegacy},
         hex_literal::hex,
         std::{env, time::Duration},

@@ -47,7 +47,6 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
-        InstanceExt,
     },
     ethcontract::{BlockId, H160, H256},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},

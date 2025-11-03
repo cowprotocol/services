@@ -37,7 +37,6 @@ pub mod gpv2_order {
             sol_types::{SolStruct, SolValue},
         },
         contracts::alloy::cow_amm::CowAmm,
-        ethrpc::alloy::conversions::IntoLegacy,
         model::{DomainSeparator, interaction::InteractionData, signature::hashed_eip712_message},
     };
 

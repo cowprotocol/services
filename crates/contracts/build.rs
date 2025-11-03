@@ -29,6 +29,7 @@ fn main() {
             // Not available on Lens
         ]))
         // Misc
+        .add_contract(Contract::new("ERC20"))
         .add_contract(Contract::new("ERC20Mintable"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
