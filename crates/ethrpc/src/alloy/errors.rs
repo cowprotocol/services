@@ -11,7 +11,7 @@ pub fn ignore_non_node_error<T>(result: Result<T, ContractError>) -> anyhow::Res
 
 pub trait ContractErrorExt {
     /// Returns whether a given error is a contract error, this is considered to
-    /// be all errors except the transport error.
+    /// be all errors except the transport error where there is no revert data.
     fn is_contract_error(&self) -> bool;
 
     /// Returns whether a given error is a node error.
@@ -42,9 +42,9 @@ impl ContractErrorExt for ContractError {
             ContractError::TransportError(RpcError::ErrorResp(err)) => {
                 // Due to the mismatch between error APIs and best-effort approximation this log
                 // line is left here as a debugging tool in case we start having RPC issues
-                let has_revert_data = err.as_revert_data().is_none();
-                tracing::debug!(?err, %has_revert_data, "transport rpc error");
-                has_revert_data
+                let no_revert_data = err.as_revert_data().is_none();
+                tracing::debug!(?err, %no_revert_data, "transport rpc error");
+                no_revert_data
             }
             ContractError::TransportError(_) => true,
             _ => false,

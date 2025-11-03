@@ -33,6 +33,7 @@ use {
     chain::Chain,
     contracts::{
         ERC20,
+        alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
         bindings::{BalancerV2Vault, ERC20, IUniswapV3Factory},
         errors::EthcontractErrorType,
     },
