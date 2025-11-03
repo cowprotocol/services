@@ -12,6 +12,7 @@ use {
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
         order::{
@@ -142,8 +143,8 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .enumerate()
         .map(
             |(index, (interaction, execution))| database::orders::Interaction {
-                target: ByteArray(interaction.target.0),
-                value: u256_to_big_decimal(&interaction.value),
+                target: ByteArray(*interaction.target.0),
+                value: u256_to_big_decimal(&interaction.value.into_legacy()),
                 data: interaction.call_data.clone(),
                 index: index
                     .try_into()
@@ -625,6 +626,7 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         chrono::Duration,
         database::{
             byte_array::ByteArray,
@@ -1101,8 +1103,8 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let interaction = |byte: u8| InteractionData {
-            target: H160([byte; 20]),
-            value: byte.into(),
+            target: Address::from_slice(&[byte; 20]),
+            value: alloy::primitives::U256::from(byte),
             call_data: vec![byte; byte as _],
         };
 
@@ -1165,19 +1167,19 @@ mod tests {
                 metadata: QuoteMetadataV1 {
                     interactions: vec![
                         InteractionData {
-                            target: H160([1; 20]),
-                            value: U256::from(100),
+                            target: Address::from_slice(&[1; 20]),
+                            value: alloy::primitives::U256::from(100),
                             call_data: vec![1, 20],
                         },
                         InteractionData {
-                            target: H160([2; 20]),
-                            value: U256::from(10),
+                            target: Address::from_slice(&[2; 20]),
+                            value: alloy::primitives::U256::from(10),
                             call_data: vec![2, 20],
                         },
                     ],
                     pre_interactions: vec![InteractionData {
-                        target: H160([3; 20]),
-                        value: U256::from(30),
+                        target: Address::from_slice(&[3; 20]),
+                        value: alloy::primitives::U256::from(30),
                         call_data: vec![3, 20],
                     }],
                     jit_orders: vec![],

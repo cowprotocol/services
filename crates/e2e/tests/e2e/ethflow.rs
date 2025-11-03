@@ -640,7 +640,7 @@ async fn test_order_parameters(
     assert!(!response.interactions.pre.is_empty());
     assert_eq!(
         response.interactions.pre[0].target,
-        ethflow_contract.address().into_legacy()
+        *ethflow_contract.address()
     );
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
 }

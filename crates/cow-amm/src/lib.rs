@@ -102,7 +102,7 @@ pub mod gpv2_order {
         let calldata = amm.commit(FixedBytes(order_hash)).calldata().clone();
 
         InteractionData {
-            target: amm.address().into_legacy(),
+            target: *amm.address(),
             value: Default::default(),
             call_data: calldata.to_vec(),
         }

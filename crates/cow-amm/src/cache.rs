@@ -188,7 +188,7 @@ impl EventStoring<(CowAmmEvent, Log)> for Storage {
                 .iter()
                 .filter_map(|(block_number, tx_hash, amm)| {
                     amm.as_ref()
-                        .try_to_db_type(*block_number, *self.0.helper.address(), *tx_hash)
+                        .try_to_db_type(*block_number, self.0.factory_address, *tx_hash)
                         .inspect_err(|err| {
                             tracing::warn!(
                                 ?err,

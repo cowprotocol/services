@@ -1,6 +1,7 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
+    alloy::providers::Provider,
     chain::Chain,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
     primitive_types::U256,
@@ -26,8 +27,8 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain =
-            Chain::try_from(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
+        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)
+            .map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
@@ -176,6 +177,8 @@ impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
 pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("alloy transport error: {0:?}")]
+    Alloy(#[from] alloy::transports::TransportError),
     #[error("missing field {0}, node client bug?")]
     IncompleteTransactionData(anyhow::Error),
     #[error("transaction not found")]

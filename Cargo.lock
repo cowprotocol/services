@@ -921,13 +921,12 @@ checksum = "59d2a3357dde987206219e78ecfbbb6e8dad06cbb65292758d3270e6254f7355"
 name = "app-data"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "bytes-hex",
  "const-hex",
- "ethcontract",
  "hex-literal",
  "number",
- "primitive-types",
  "serde",
  "serde_json",
  "serde_with",
@@ -2159,8 +2158,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 name = "chain"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "derive_more 1.0.0",
- "ethcontract",
+ "serde",
  "serde_json",
  "thiserror 1.0.61",
 ]
@@ -5087,6 +5087,7 @@ dependencies = [
 name = "model"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "app-data",
  "bigdecimal",

@@ -30,7 +30,7 @@ use {
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::conversions::IntoLegacy,
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
     futures::{StreamExt, stream},
@@ -696,7 +696,7 @@ async fn insert_order_hooks(
                 hooks
                     .into_iter()
                     .map(|hook| Hook {
-                        target: hook.target.into_alloy(),
+                        target: hook.target,
                         callData: alloy::primitives::Bytes::from(hook.call_data.clone()),
                         gasLimit: U256::from(hook.gas_limit),
                     })
