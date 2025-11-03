@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     anyhow::{Context, Result},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
@@ -15,6 +16,7 @@ use {
         },
     },
     ethcontract::{H160, H256},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         interaction::InteractionData,
         order::{
@@ -164,8 +166,9 @@ pub fn extract_interactions(
         .iter()
         .map(|interaction| {
             Ok(InteractionData {
-                target: H160(interaction.0.0),
+                target: Address::from_slice(&interaction.0.0),
                 value: big_decimal_to_u256(&interaction.1)
+                    .map(IntoAlloy::into_alloy)
                     .context("interaction value is not U256")?,
                 call_data: interaction.2.to_vec(),
             })

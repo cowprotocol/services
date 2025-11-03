@@ -1,9 +1,9 @@
 use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result, anyhow},
     bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
     std::{
@@ -22,14 +22,13 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
-    pub signer: Option<H160>,
+    pub signer: Option<Address>,
     pub replaced_order: Option<ReplacedOrder>,
     #[serde(default)]
     pub partner_fee: PartnerFees,
@@ -48,14 +47,14 @@ pub struct ProtocolAppData {
 #[serde(rename_all = "camelCase")]
 pub struct Flashloan {
     /// Which contract to request the flashloan from.
-    pub liquidity_provider: H160,
+    pub liquidity_provider: Address,
     /// Which helper contract should be used to request
     /// the flashloan with.
-    pub protocol_adapter: H160,
+    pub protocol_adapter: Address,
     /// Who should receive the borrowed tokens.
-    pub receiver: H160,
+    pub receiver: Address,
     /// Which token to flashloan.
-    pub token: H160,
+    pub token: Address,
     /// How much of the token to flashloan.
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
@@ -68,7 +67,7 @@ pub struct Flashloan {
 #[serde(rename_all = "camelCase")]
 pub struct WrapperCall {
     /// The address of the wrapper contract.
-    pub address: H160,
+    pub address: Address,
     /// Additional calldata to be passed to the wrapper contract.
     #[serde_as(as = "BytesHex")]
     pub data: Vec<u8>,
@@ -89,7 +88,7 @@ pub struct ReplacedOrder {
 pub struct PartnerFee {
     #[serde(flatten)]
     pub policy: FeePolicy,
-    pub recipient: H160,
+    pub recipient: Address,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -472,7 +471,7 @@ impl From<BackendAppData> for ProtocolAppData {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::Hook, ethcontract::H160};
+    use {super::*, crate::Hook};
 
     macro_rules! assert_app_data {
         ($s:expr_2021, $e:expr_2021 $(,)?) => {{
@@ -559,18 +558,18 @@ mod tests {
             ProtocolAppData {
                 hooks: Hooks {
                     pre: vec![Hook {
-                        target: H160([0; 20]),
+                        target: Address::from_slice(&[0; 20]),
                         call_data: vec![],
                         gas_limit: 0,
                     }],
                     post: vec![
                         Hook {
-                            target: H160([1; 20]),
+                            target: Address::from_slice(&[1; 20]),
                             call_data: vec![1],
                             gas_limit: 1
                         },
                         Hook {
-                            target: H160([2; 20]),
+                            target: Address::from_slice(&[2; 20]),
                             call_data: vec![2, 2],
                             gas_limit: 2,
                         },
@@ -592,7 +591,7 @@ mod tests {
                 }
             "#,
             ProtocolAppData {
-                signer: Some(H160([0x42; 20])),
+                signer: Some(Address::from_slice(&[0x42; 20])),
                 ..Default::default()
             },
         );
@@ -620,7 +619,7 @@ mod tests {
             ProtocolAppData {
                 partner_fee: PartnerFees(vec![PartnerFee {
                     policy: FeePolicy::Volume { bps: 100 },
-                    recipient: H160([2; 20]),
+                    recipient: Address::from_slice(&[2; 20]),
                 }]),
                 ..Default::default()
             },
@@ -667,26 +666,26 @@ mod tests {
                     // this one was parsed from the old format for volume fees
                     PartnerFee {
                         policy: FeePolicy::Volume { bps: 100 },
-                        recipient: H160([2; 20]),
+                        recipient: Address::from_slice(&[2; 20]),
                     },
                     // this one is using the new format
                     PartnerFee {
                         policy: FeePolicy::Volume { bps: 1000 },
-                        recipient: H160([1; 20]),
+                        recipient: Address::from_slice(&[1; 20]),
                     },
                     PartnerFee {
                         policy: FeePolicy::Surplus {
                             bps: 100,
                             max_volume_bps: 100
                         },
-                        recipient: H160([1; 20]),
+                        recipient: Address::from_slice(&[1; 20]),
                     },
                     PartnerFee {
                         policy: FeePolicy::PriceImprovement {
                             bps: 100,
                             max_volume_bps: 100
                         },
-                        recipient: H160([1; 20]),
+                        recipient: Address::from_slice(&[1; 20]),
                     },
                 ]),
                 ..Default::default()
@@ -727,18 +726,18 @@ mod tests {
             ProtocolAppData {
                 hooks: Hooks {
                     pre: vec![Hook {
-                        target: H160([0; 20]),
+                        target: Address::from_slice(&[0; 20]),
                         call_data: vec![],
                         gas_limit: 0,
                     }],
                     post: vec![
                         Hook {
-                            target: H160([1; 20]),
+                            target: Address::from_slice(&[1; 20]),
                             call_data: vec![1],
                             gas_limit: 1
                         },
                         Hook {
-                            target: H160([2; 20]),
+                            target: Address::from_slice(&[2; 20]),
                             call_data: vec![2, 2],
                             gas_limit: 2,
                         },

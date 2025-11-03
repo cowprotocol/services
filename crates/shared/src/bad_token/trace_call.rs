@@ -5,7 +5,7 @@ use {
     anyhow::{Context, Result, bail, ensure},
     contracts::alloy::ERC20,
     ethcontract::{PrivateKey, jsonrpc::ErrorCode},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
@@ -110,8 +110,8 @@ impl TraceCallDetectorRaw {
         let mut request: Vec<_> = pre_interactions
             .iter()
             .map(|i| CallRequest {
-                to: Some(i.target),
-                value: Some(i.value),
+                to: Some(i.target.into_legacy()),
+                value: Some(i.value.into_legacy()),
                 data: Some(Bytes(i.call_data.clone())),
                 ..Default::default()
             })
