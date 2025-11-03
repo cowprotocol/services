@@ -1,5 +1,6 @@
 use {
     ethcontract::Bytes,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
 };
@@ -32,6 +33,10 @@ impl Interaction for EncodedInteraction {
 
 impl Interaction for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        (self.target, self.value, Bytes(self.call_data.clone()))
+        (
+            self.target.into_legacy(),
+            self.value.into_legacy(),
+            Bytes(self.call_data.clone()),
+        )
     }
 }

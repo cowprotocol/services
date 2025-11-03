@@ -262,8 +262,8 @@ async fn cow_amm_jit(web3: Web3) {
         &onchain.contracts().domain_separator,
     );
     let cow_amm_commitment = Call {
-        target: cow_amm_commitment_data.target,
-        value: cow_amm_commitment_data.value,
+        target: cow_amm_commitment_data.target.into_legacy(),
+        value: cow_amm_commitment_data.value.into_legacy(),
         calldata: cow_amm_commitment_data.call_data,
     };
 
@@ -917,8 +917,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         &onchain.contracts().domain_separator,
     );
     let cow_amm_commitment = Call {
-        target: cow_amm_commitment_data.target,
-        value: cow_amm_commitment_data.value,
+        target: cow_amm_commitment_data.target.into_legacy(),
+        value: cow_amm_commitment_data.value.into_legacy(),
         calldata: cow_amm_commitment_data.call_data,
     };
 

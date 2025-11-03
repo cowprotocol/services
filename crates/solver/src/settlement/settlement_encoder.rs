@@ -583,9 +583,10 @@ pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()
 pub mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         contracts::alloy::WETH9,
         ethcontract::Bytes,
-        ethrpc::alloy::conversions::IntoAlloy,
+        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
         shared::interaction::{EncodedInteraction, Interaction},
@@ -862,13 +863,13 @@ pub mod tests {
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder = SettlementEncoder::new(prices);
         let i1 = InteractionData {
-            target: H160::from_low_u64_be(12),
-            value: 321.into(),
+            target: Address::from_slice(&[12; 20]),
+            value: alloy::primitives::U256::from(321),
             call_data: vec![1, 2, 3, 4],
         };
         let i2 = InteractionData {
-            target: H160::from_low_u64_be(42),
-            value: 1212.into(),
+            target: Address::from_slice(&[42; 20]),
+            value: alloy::primitives::U256::from(1212),
             call_data: vec![4, 3, 2, 1],
         };
         encoder
@@ -919,8 +920,16 @@ pub mod tests {
         assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
         assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
 
-        let i1 = (i1.target, i1.value, Bytes(i1.call_data));
-        let i2 = (i2.target, i2.value, Bytes(i2.call_data));
+        let i1 = (
+            i1.target.into_legacy(),
+            i1.value.into_legacy(),
+            Bytes(i1.call_data),
+        );
+        let i2 = (
+            i2.target.into_legacy(),
+            i2.value.into_legacy(),
+            Bytes(i2.call_data),
+        );
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
             encoded.interactions,

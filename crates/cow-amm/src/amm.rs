@@ -167,9 +167,9 @@ fn convert_interactions(
     interactions
         .into_iter()
         .map(|interaction| InteractionData {
-            target: interaction.target.into_legacy(),
-            value: interaction.value.into_legacy(),
-            call_data: interaction.callData.into_legacy().0,
+            target: interaction.target,
+            value: interaction.value,
+            call_data: interaction.callData.to_vec(),
         })
         .collect()
 }
