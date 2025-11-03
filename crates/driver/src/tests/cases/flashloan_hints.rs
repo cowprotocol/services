@@ -6,7 +6,9 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
+    alloy::primitives::Address,
     app_data::{Flashloan, ProtocolAppData, hash_full_app_data},
+    ethrpc::alloy::conversions::IntoLegacy,
     primitive_types::H160,
     std::sync::Arc,
 };
@@ -15,11 +17,11 @@ use {
 #[ignore]
 async fn solutions_with_flashloan() {
     let flashloan = Flashloan {
-        liquidity_provider: H160::from_low_u64_be(1),
-        receiver: H160::from_low_u64_be(2),
-        token: H160::from_low_u64_be(3),
-        protocol_adapter: H160::from_low_u64_be(4),
-        amount: 3.into(),
+        liquidity_provider: Address::from_slice(&[1; 20]),
+        receiver: Address::from_slice(&[2; 20]),
+        token: Address::from_slice(&[3; 20]),
+        protocol_adapter: Address::from_slice(&[4; 20]),
+        amount: ::alloy::primitives::U256::from(3),
     };
     let protocol_app_data = ProtocolAppData {
         flashloan: Some(flashloan.clone()),
@@ -52,11 +54,11 @@ async fn solutions_with_flashloan() {
 #[ignore]
 async fn solutions_without_flashloan() {
     let flashloan = Flashloan {
-        liquidity_provider: H160::from_low_u64_be(1),
-        receiver: H160::from_low_u64_be(2),
-        token: H160::from_low_u64_be(3),
-        protocol_adapter: H160::from_low_u64_be(4),
-        amount: 3.into(),
+        liquidity_provider: Address::from_slice(&[1; 20]),
+        receiver: Address::from_slice(&[2; 20]),
+        token: Address::from_slice(&[3; 20]),
+        protocol_adapter: Address::from_slice(&[4; 20]),
+        amount: ::alloy::primitives::U256::from(3),
     };
     let protocol_app_data = ProtocolAppData {
         flashloan: Some(flashloan.clone()),
@@ -96,10 +98,10 @@ fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::Vali
 
 fn flashloan_into_dto(flashloan: Flashloan) -> solvers_dto::solution::Flashloan {
     solvers_dto::solution::Flashloan {
-        liquidity_provider: flashloan.liquidity_provider,
-        protocol_adapter: flashloan.protocol_adapter,
-        receiver: flashloan.receiver,
-        token: flashloan.token,
-        amount: flashloan.amount,
+        liquidity_provider: flashloan.liquidity_provider.into_legacy(),
+        protocol_adapter: flashloan.protocol_adapter.into_legacy(),
+        receiver: flashloan.receiver.into_legacy(),
+        token: flashloan.token.into_legacy(),
+        amount: flashloan.amount.into_legacy(),
     }
 }
