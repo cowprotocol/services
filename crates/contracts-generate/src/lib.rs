@@ -336,6 +336,7 @@ fn write_mod_name(contents: &mut String, name: &str) -> eyre::Result<()> {
 ///
 /// Example, without blocks:
 /// ```no_run
+/// # use crate::networks;
 /// networks! {
 ///     MAINNET => "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
 ///     SEPOLIA => "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
@@ -344,6 +345,7 @@ fn write_mod_name(contents: &mut String, name: &str) -> eyre::Result<()> {
 ///
 /// Example, with blocks:
 /// ```no_run
+/// # use crate::networks;
 /// networks! {
 ///     MAINNET => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 12593265),
 ///     SEPOLIA => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 4717488),
