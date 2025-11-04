@@ -24,13 +24,25 @@ use {
         run::Liveness,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
-    }, anyhow::{Context, Result}, database::{leader_pg_lock::LeaderLock, order_events::OrderEventLabel}, ethrpc::block_stream::BlockInfo, futures::{FutureExt, TryFutureExt}, itertools::Itertools, model::solver_competition::{
+    },
+    ::observe::metrics,
+    anyhow::{Context, Result},
+    database::{leader_pg_lock::LeaderLock, order_events::OrderEventLabel},
+    ethrpc::block_stream::BlockInfo,
+    futures::{FutureExt, TryFutureExt},
+    itertools::Itertools,
+    model::solver_competition::{
         CompetitionAuction,
         Order,
         Score,
         SolverCompetitionDB,
         SolverSettlement,
-    }, num::ToPrimitive, ::observe::metrics, primitive_types::H256, rand::seq::SliceRandom, shared::token_list::AutoUpdatingTokenList, std::{
+    },
+    num::ToPrimitive,
+    primitive_types::H256,
+    rand::seq::SliceRandom,
+    shared::token_list::AutoUpdatingTokenList,
+    std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
         sync::{
@@ -38,7 +50,9 @@ use {
             atomic::{AtomicBool, Ordering},
         },
         time::{Duration, Instant},
-    }, tokio::sync::Mutex, tracing::{Instrument, instrument}
+    },
+    tokio::sync::Mutex,
+    tracing::{Instrument, instrument},
 };
 
 pub struct Config {
@@ -84,15 +98,19 @@ enum LeaderLockTracker {
     Enabled {
         is_leader: bool,
         was_leader: bool,
-        leader_lock: LeaderLock
-    }
+        leader_lock: LeaderLock,
+    },
 }
 
 impl LeaderLockTracker {
     pub fn new(leader_lock: Option<LeaderLock>) -> Self {
         match leader_lock {
-            Some(leader_lock) => Self::Enabled { is_leader: false, was_leader: false, leader_lock },
-            None => Self::Disabled
+            Some(leader_lock) => Self::Enabled {
+                is_leader: false,
+                was_leader: false,
+                leader_lock,
+            },
+            None => Self::Disabled,
         }
     }
 
@@ -100,7 +118,14 @@ impl LeaderLockTracker {
     /// If not, does nothing
     /// Should be called at the beginning of every run loop iteration
     pub async fn try_acquire(&mut self) {
-        let Self::Enabled { is_leader, was_leader, leader_lock } = self else { return };
+        let Self::Enabled {
+            is_leader,
+            was_leader,
+            leader_lock,
+        } = self
+        else {
+            return;
+        };
 
         *was_leader = *is_leader;
 
@@ -116,11 +141,18 @@ impl LeaderLockTracker {
         }
     }
 
-
     /// Releases the leader lock if it was held
-    /// Should be called after breaking out of run loop (for example: due to shutdown)
+    /// Should be called after breaking out of run loop (for example: due to
+    /// shutdown)
     pub async fn release(self) {
-        let Self::Enabled { mut leader_lock, is_leader, .. } = self else { return };
+        let Self::Enabled {
+            mut leader_lock,
+            is_leader,
+            ..
+        } = self
+        else {
+            return;
+        };
         if is_leader {
             tracing::info!("Shutdown received, stepping down as the leader");
             leader_lock.release().await;
@@ -128,17 +160,26 @@ impl LeaderLockTracker {
         }
     }
 
-    /// Returns true if the last try_acquire call resulted in acquiring the leader lock
-    /// If the feature is disabled, always returns false
+    /// Returns true if the last try_acquire call resulted in acquiring the
+    /// leader lock If the feature is disabled, always returns false
     pub fn just_stepped_up(&self) -> bool {
-        let Self::Enabled { is_leader, was_leader, .. } = self else { return false; };
+        let Self::Enabled {
+            is_leader,
+            was_leader,
+            ..
+        } = self
+        else {
+            return false;
+        };
         *is_leader && !was_leader
     }
 
     /// Returns true if the leader lock is being held
     /// If the feature is disabled, always returns true
     pub fn is_leader(&self) -> bool {
-        let Self::Enabled { is_leader, .. } = self else { return true; };
+        let Self::Enabled { is_leader, .. } = self else {
+            return true;
+        };
         *is_leader
     }
 }
