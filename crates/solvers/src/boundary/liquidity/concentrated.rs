@@ -1,7 +1,10 @@
 use {
     alloy::primitives::aliases::U24,
     contracts::{
-        alloy::UniswapV3QuoterV2::IQuoterV2::QuoteExactInputSingleParams,
+        alloy::UniswapV3QuoterV2::IQuoterV2::{
+            QuoteExactInputSingleParams,
+            QuoteExactOutputSingleParams,
+        },
         ethcontract::{H160, U256},
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -61,16 +64,16 @@ impl BaselineSolvable for Pool {
         }
 
         self.uni_v3_quoter_contract
-            .quoteExactInputSingle(QuoteExactInputSingleParams {
+            .quoteExactOutputSingle(QuoteExactOutputSingleParams {
                 tokenIn: in_token.into_alloy(),
                 tokenOut: out_token.into_alloy(),
-                amountIn: out_amount.into_alloy(),
+                amount: out_amount.into_alloy(),
                 fee: self.fee,
                 sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
             })
             .call()
             .await
-            .map(|result| result.amountOut.into_legacy())
+            .map(|result| result.amountIn.into_legacy())
             .ok()
     }
 
