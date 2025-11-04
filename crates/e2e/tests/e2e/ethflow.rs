@@ -279,14 +279,14 @@ async fn eth_flow_without_quote(web3: Web3) {
             .unwrap()
         + 3600;
     let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
-        buy_token: dai.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_amount: 1.into(),
+        buy_token: *dai.address(),
+        sell_amount: eth(1),
+        buy_amount: alloy::primitives::U256::ONE,
         valid_to,
         partially_fillable: false,
         quote_id: 0,
-        fee_amount: 0.into(),
-        receiver: H160([0x42; 20]),
+        fee_amount: alloy::primitives::U256::ZERO,
+        receiver: Address::from_slice(&[0x42; 20]),
         app_data: Default::default(),
     });
 
@@ -511,17 +511,15 @@ async fn test_trade_availability_in_api(
 async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, onchain: &OnchainComponents) {
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        let buy_token = ERC20Mintable::Instance::new(
-            ethflow_order.0.buy_token.into_alloy(),
-            onchain.web3().alloy.clone(),
-        );
+        let buy_token =
+            ERC20Mintable::Instance::new(ethflow_order.0.buy_token, onchain.web3().alloy.clone());
         let receiver_buy_token_balance = buy_token
-            .balanceOf(ethflow_order.0.receiver.into_alloy())
+            .balanceOf(ethflow_order.0.receiver)
             .call()
             .await
             .expect("Unable to get token balance");
 
-        receiver_buy_token_balance >= ethflow_order.0.buy_amount.into_alloy()
+        receiver_buy_token_balance >= ethflow_order.0.buy_amount
     })
     .await
     .unwrap();
@@ -651,12 +649,15 @@ impl ExtendedEthFlowOrder {
     pub fn from_quote(quote_response: &OrderQuoteResponse, valid_to: u32) -> Self {
         let quote = &quote_response.quote;
         ExtendedEthFlowOrder(EthflowOrder {
-            buy_token: quote.buy_token,
-            receiver: quote.receiver.expect("eth-flow order without receiver"),
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            app_data: ethcontract::Bytes(quote.app_data.hash().0),
-            fee_amount: 0.into(),
+            buy_token: quote.buy_token.into_alloy(),
+            receiver: quote
+                .receiver
+                .expect("eth-flow order without receiver")
+                .into_alloy(),
+            sell_amount: quote.sell_amount.into_alloy(),
+            buy_amount: quote.buy_amount.into_alloy(),
+            app_data: quote.app_data.hash().0.into(),
+            fee_amount: alloy::primitives::U256::ZERO,
             valid_to, // note: valid to in the quote is always unlimited
             partially_fillable: quote.partially_fillable,
             quote_id: quote_response.id.expect("No quote id"),
@@ -673,11 +674,11 @@ impl ExtendedEthFlowOrder {
         OrderBuilder::default()
             .with_kind(OrderKind::Sell)
             .with_sell_token(weth.address().into_legacy())
-            .with_sell_amount(self.0.sell_amount)
-            .with_fee_amount(self.0.fee_amount)
-            .with_receiver(Some(self.0.receiver))
-            .with_buy_token(self.0.buy_token)
-            .with_buy_amount(self.0.buy_amount)
+            .with_sell_amount(self.0.sell_amount.into_legacy())
+            .with_fee_amount(self.0.fee_amount.into_legacy())
+            .with_receiver(Some(self.0.receiver.into_legacy()))
+            .with_buy_token(self.0.buy_token.into_legacy())
+            .with_buy_amount(self.0.buy_amount.into_legacy())
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.app_data.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
@@ -691,7 +692,9 @@ impl ExtendedEthFlowOrder {
             panic!("Slippage must be specified in base points");
         }
         ExtendedEthFlowOrder(EthflowOrder {
-            buy_amount: self.0.buy_amount * (MAX_BASE_POINT - slippage) / MAX_BASE_POINT,
+            buy_amount: self.0.buy_amount
+                * alloy::primitives::U256::from(MAX_BASE_POINT - slippage)
+                / alloy::primitives::U256::from(MAX_BASE_POINT),
             ..self.0
         })
     }
@@ -747,7 +750,7 @@ impl ExtendedEthFlowOrder {
     ) -> TransactionReceipt {
         ethflow_contract
             .createOrder(self.0.clone().into())
-            .value((self.0.sell_amount + self.0.fee_amount).into_alloy())
+            .value(self.0.sell_amount + self.0.fee_amount)
             .from(owner)
             .send()
             .await
@@ -885,14 +888,14 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
                 .unwrap()
             + 3600;
         let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
-            buy_token: dai.address().into_legacy(),
-            sell_amount: to_wei(1),
-            buy_amount: buy_amount.into(),
+            buy_token: *dai.address(),
+            sell_amount: eth(1),
+            buy_amount: alloy::primitives::U256::from(buy_amount),
             valid_to,
             partially_fillable: false,
             quote_id: 0,
-            fee_amount: 0.into(),
-            receiver: H160([0x42; 20]),
+            fee_amount: alloy::primitives::U256::ZERO,
+            receiver: Address::from_slice(&[0x42; 20]),
             app_data: Default::default(),
         });
 
