@@ -24,25 +24,13 @@ use {
         run::Liveness,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
-    },
-    ::observe::metrics,
-    anyhow::{Context, Result},
-    database::order_events::OrderEventLabel,
-    ethrpc::block_stream::BlockInfo,
-    futures::{FutureExt, TryFutureExt},
-    itertools::Itertools,
-    model::solver_competition::{
+    }, anyhow::{Context, Result}, database::{leader_pg_lock::LeaderLock, order_events::OrderEventLabel}, ethrpc::block_stream::BlockInfo, futures::{FutureExt, TryFutureExt}, itertools::Itertools, model::solver_competition::{
         CompetitionAuction,
         Order,
         Score,
         SolverCompetitionDB,
         SolverSettlement,
-    },
-    num::ToPrimitive,
-    primitive_types::H256,
-    rand::seq::SliceRandom,
-    shared::token_list::AutoUpdatingTokenList,
-    std::{
+    }, num::ToPrimitive, ::observe::metrics, primitive_types::H256, rand::seq::SliceRandom, shared::token_list::AutoUpdatingTokenList, std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
         sync::{
@@ -50,9 +38,7 @@ use {
             atomic::{AtomicBool, Ordering},
         },
         time::{Duration, Instant},
-    },
-    tokio::sync::Mutex,
-    tracing::{Instrument, instrument},
+    }, tokio::sync::Mutex, tracing::{Instrument, instrument}
 };
 
 pub struct Config {
@@ -88,6 +74,72 @@ pub struct RunLoop {
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     winner_selection: winner_selection::Arbitrator,
+}
+
+/// Tracks the leader lock status
+/// Provides uniform interface whether the leader lock feature is enabled or not
+enum LeaderLockTracker {
+    Disabled,
+    Enabled {
+        is_leader: bool,
+        was_leader: bool,
+        leader_lock: LeaderLock
+    }
+}
+
+impl LeaderLockTracker {
+    pub fn new(leader_lock: Option<LeaderLock>) -> Self {
+        match leader_lock {
+            Some(leader_lock) => Self::Enabled { is_leader: false, was_leader: false, leader_lock },
+            None => Self::Disabled
+        }
+    }
+
+    /// Tries to acquire the leader lock if it's enabled
+    /// If not, does nothing
+    /// Should be called at the beginning of every run loop iteration
+    pub async fn try_acquire(&mut self) {
+        let Self::Enabled { is_leader, was_leader, leader_lock } = self else { return };
+
+        *was_leader = *is_leader;
+
+        *is_leader = leader_lock.try_acquire().await.unwrap_or_else(|err| {
+            tracing::error!(?err, "failed to become leader");
+            Metrics::leader_lock_error();
+            false
+        });
+
+        if self.just_stepped_up() {
+            tracing::info!("Stepped up as a leader");
+            Metrics::leader_step_up();
+        }
+    }
+
+
+    /// Releases the leader lock if it was held
+    /// Should be called after breaking out of run loop (for example: due to shutdown)
+    pub async fn release(self) {
+        let Self::Enabled { mut leader_lock, is_leader, .. } = self else { return };
+        if is_leader {
+            tracing::info!("Shutdown received, stepping down as the leader");
+            leader_lock.release().await;
+            Metrics::leader_step_down();
+        }
+    }
+
+    /// Returns true if the last try_acquire call resulted in acquiring the leader lock
+    /// If the feature is disabled, always returns false
+    pub fn just_stepped_up(&self) -> bool {
+        let Self::Enabled { is_leader, was_leader, .. } = self else { return false; };
+        *is_leader && !was_leader
+    }
+
+    /// Returns true if the leader lock is being held
+    /// If the feature is disabled, always returns true
+    pub fn is_leader(&self) -> bool {
+        let Self::Enabled { is_leader, .. } = self else { return true; };
+        *is_leader
+    }
 }
 
 impl RunLoop {
@@ -133,7 +185,7 @@ impl RunLoop {
         let mut last_block = None;
 
         let self_arc = Arc::new(self);
-        let mut leader = if self_arc.config.enable_leader_lock {
+        let leader = if self_arc.config.enable_leader_lock {
             Some(
                 self_arc
                     .persistence
@@ -143,28 +195,13 @@ impl RunLoop {
         } else {
             None
         };
-        let mut was_leader: Option<bool> = leader.as_ref().map(|_| false);
+        let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
-            let is_leader = match leader {
-                Some(ref mut leader) => Some(leader.try_acquire().await.unwrap_or_else(|err| {
-                    tracing::error!(?err, "failed to become leader");
-                    Metrics::leader_lock_error();
-                    false
-                })),
-                None => None,
-            };
-            let stepped_up = is_leader
-                .zip(was_leader)
-                .is_some_and(|(is_leader, was_leader)| is_leader && !was_leader);
-
-            if stepped_up {
-                tracing::info!("Stepped up as a leader");
-                Metrics::leader_step_up();
-            };
+            leader_lock_tracker.try_acquire().await;
 
             let start_block = self_arc
-                .update_caches(&mut last_block, is_leader.unwrap_or(true))
+                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
                 .await;
 
             // caches are warmed up, we're ready to do leader work
@@ -172,13 +209,7 @@ impl RunLoop {
                 startup.store(true, Ordering::Release);
             }
 
-            if stepped_up {
-                tracing::info!("Caches warmed up, stepped up as a leader and ready");
-            }
-
-            was_leader = is_leader;
-
-            if !is_leader.unwrap_or(true) {
+            if !leader_lock_tracker.is_leader() {
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -195,12 +226,7 @@ impl RunLoop {
                     .await
             }
         }
-
-        if let Some(mut leader) = leader {
-            tracing::info!("Shutdown received, stepping down as the leader");
-            leader.release().await;
-            Metrics::leader_step_down();
-        }
+        leader_lock_tracker.release().await;
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
