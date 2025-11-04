@@ -78,6 +78,7 @@ pub struct RunLoop {
 
 /// Tracks the leader lock status
 /// Provides uniform interface whether the leader lock feature is enabled or not
+#[expect(clippy::large_enum_variant)]
 enum LeaderLockTracker {
     Disabled,
     Enabled {
