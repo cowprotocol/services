@@ -180,7 +180,7 @@ impl RunLoop {
 
             if !is_leader.unwrap_or(true) {
                 // only the leader is supposed to run the auctions
-                tokio::time::sleep(Duration::from_millis(1)).await;
+                tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
 
