@@ -1,9 +1,7 @@
 use {
     alloy::primitives::aliases::U24,
-    contracts::{
-        alloy::UniswapV3QuoterV2::IQuoterV2::QuoteExactInputSingleParams,
-        ethcontract::{H160, U256},
-    },
+    contracts::alloy::UniswapV3QuoterV2::IQuoterV2::QuoteExactInputSingleParams,
+    ethcontract::{H160, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,

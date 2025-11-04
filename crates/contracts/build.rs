@@ -15,7 +15,12 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    Module::new()
+    // Path to the directory containing the vendored contract artifacts.
+    let vendored_bindings = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("alloy");
+
+    Module::default()
         // 0x
         .add_contract(Contract::new("IZeroex").with_networks(networks![
             MAINNET => "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
@@ -718,6 +723,6 @@ fn main() {
                     LINEA => "0x361350f708f7c0c63c8a505226592c3e5d1faa29",
                 ])),
         )
-        .write_formatted(Path::new("artifacts"), true, Path::new("src/alloy"))
+        .write_formatted(Path::new("artifacts"), true, vendored_bindings)
         .unwrap();
 }

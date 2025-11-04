@@ -583,6 +583,7 @@ pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()
 pub mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         contracts::alloy::WETH9,
         ethcontract::Bytes,
         ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
