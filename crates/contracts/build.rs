@@ -14,6 +14,7 @@ fn main() {
     // - https://github.com/rust-lang/cargo/issues/6003
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=artifacts/");
 
     // Path to the directory containing the vendored contract artifacts.
     let vendored_bindings = Path::new(env!("CARGO_MANIFEST_DIR"))
