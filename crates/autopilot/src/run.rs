@@ -539,7 +539,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default(), startup.clone());
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        args.metrics_address,
+        Default::default(),
+        startup.clone(),
+    );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -774,7 +779,12 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default(), Default::default());
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        args.metrics_address,
+        Default::default(),
+        Default::default(),
+    );
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,
