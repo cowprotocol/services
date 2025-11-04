@@ -17,6 +17,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -567,8 +568,8 @@ impl OrderQuoter {
                 .pre_interactions
                 .iter()
                 .map(|i| InteractionData {
-                    target: i.target,
-                    value: i.value,
+                    target: i.target.into_alloy(),
+                    value: i.value.into_alloy(),
                     call_data: i.data.clone(),
                 })
                 .collect(),
@@ -783,6 +784,7 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
+        alloy::primitives::Address,
         chrono::Utc,
         ethcontract::H160,
         futures::FutureExt,
@@ -1735,25 +1737,25 @@ mod tests {
         let q: QuoteMetadata = QuoteMetadataV1 {
             interactions: vec![
                 InteractionData {
-                    target: H160::from([1; 20]),
-                    value: U256::one(),
+                    target: Address::from_slice(&[1; 20]),
+                    value: alloy::primitives::U256::ONE,
                     call_data: vec![1],
                 },
                 InteractionData {
-                    target: H160::from([2; 20]),
-                    value: U256::from(2),
+                    target: Address::from_slice(&[2; 20]),
+                    value: alloy::primitives::U256::from(2),
                     call_data: vec![2],
                 },
             ],
             pre_interactions: vec![
                 InteractionData {
-                    target: H160::from([3; 20]),
-                    value: U256::from(3),
+                    target: Address::from_slice(&[3; 20]),
+                    value: alloy::primitives::U256::from(3),
                     call_data: vec![3],
                 },
                 InteractionData {
-                    target: H160::from([4; 20]),
-                    value: U256::from(4),
+                    target: Address::from_slice(&[4; 20]),
+                    value: alloy::primitives::U256::from(4),
                     call_data: vec![4],
                 },
             ],

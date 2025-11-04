@@ -128,7 +128,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         .await
         .unwrap();
     // Check that internal buffers were used
-    assert!(settlement_contract_balance == U256::ZERO);
+    assert_eq!(settlement_contract_balance, U256::ZERO);
 
     // Same order can trade again with external liquidity
     let order = OrderCreation {

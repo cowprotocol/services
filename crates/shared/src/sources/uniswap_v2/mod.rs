@@ -241,22 +241,22 @@ mod tests {
 
         test(
             BaselineSource::UniswapV2,
-            testlib::tokens::GNO,
-            testlib::tokens::WETH,
+            testlib::tokens::GNO.into_legacy(),
+            testlib::tokens::WETH.into_legacy(),
             addr!("3e8468f66d30fc99f745481d4b383f89861702c6"),
         )
         .await;
         test(
             BaselineSource::SushiSwap,
-            testlib::tokens::GNO,
-            testlib::tokens::WETH,
+            testlib::tokens::GNO.into_legacy(),
+            testlib::tokens::WETH.into_legacy(),
             addr!("41328fdba556c8c969418ccccb077b7b8d932aa5"),
         )
         .await;
         test(
             BaselineSource::Swapr,
             addr!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
-            testlib::tokens::WETH,
+            testlib::tokens::WETH.into_legacy(),
             addr!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13"),
         )
         .await;

@@ -64,7 +64,7 @@ impl FromStr for AppDataHash {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut bytes = [0u8; 32];
-        const_hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
+        const_hex::decode_to_slice(s, &mut bytes)?;
         Ok(Self(bytes))
     }
 }
