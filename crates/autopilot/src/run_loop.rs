@@ -143,33 +143,42 @@ impl RunLoop {
         } else {
             None
         };
-        let mut was_leader = false;
+        let mut was_leader: Option<bool> = leader.as_ref().map(|_| false);
 
         while !control.should_shutdown() {
-            let is_leader = if let Some(ref mut leader) = leader {
-                leader.try_acquire().await.unwrap_or_else(|err| {
+            let is_leader = match leader {
+                Some(ref mut leader) => Some(leader.try_acquire().await.unwrap_or_else(|err| {
                     tracing::error!(?err, "failed to become leader");
                     Metrics::leader_lock_error();
                     false
-                })
-            } else {
-                true
+                })),
+                None => None,
             };
+            let stepped_up = is_leader
+                .zip(was_leader)
+                .is_some_and(|(is_leader, was_leader)| is_leader && !was_leader);
 
-            if leader.is_some() && is_leader && !was_leader {
+            if stepped_up {
                 tracing::info!("Stepped up as a leader");
                 Metrics::leader_step_up();
-            }
-            was_leader = is_leader;
+            };
 
-            let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
+            let start_block = self_arc
+                .update_caches(&mut last_block, is_leader.unwrap_or(true))
+                .await;
 
             // caches are warmed up, we're ready to do leader work
             if let Some(startup) = self_arc.probes.startup.as_ref() {
                 startup.store(true, Ordering::Release);
             }
 
-            if !is_leader {
+            if stepped_up {
+                tracing::info!("Caches warmed up, stepped up as a leader and ready");
+            }
+
+            was_leader = is_leader;
+
+            if !is_leader.unwrap_or(true) {
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
