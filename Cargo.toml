@@ -99,13 +99,8 @@ tower-http = "0.4"
 tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
 vergen = "8"
-
-foundry-compilers = "0.19.5"
 walkdir = "2.5.0"
-
 forge-sol-macro-gen = {git = "https://github.com/foundry-rs/foundry", version = "1.4.1"}
-alloy-json-abi = "1.4.1"
-alloy-dyn-abi = "1.4.1"
 quote = "1.0.41"
 syn = "2.0.108"
 prettyplease = "0.2.37"
