@@ -9,16 +9,17 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
-bytes-hex = { workspace = true }
 bigdecimal = { workspace = true }
+bytes-hex = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
-derive_more = { workspace = true }
 const-hex = { workspace = true }
+derive_more = { workspace = true }
 hex-literal = { workspace = true }
-number = { workspace = true }
 num = { workspace = true }
+number = { workspace = true }
 primitive-types = { workspace = true }
 secp256k1 = { workspace = true }
 serde = { workspace = true }

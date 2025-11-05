@@ -1,0 +1,63 @@
+# cargo-audit configuration
+# Excludes known vulnerabilities from issue #3338 that require non-trivial upgrades
+# Only NEW vulnerabilities will cause CI to fail
+
+[advisories]
+# Known vulnerabilities that are tracked in https://github.com/cowprotocol/services/issues/3338
+ignore = [
+    # alloy-dyn-abi - DoS vulnerability (RUSTSEC-2025-0073)
+    # Needs upgrade to 1.4.1+ (part of alloy migration)
+    "RUSTSEC-2025-0073",
+
+    # idna - Punycode label vulnerability (RUSTSEC-2024-0421)
+    # Needs upgrade to 1.0.0+ (transitive dependency)
+    "RUSTSEC-2024-0421",
+
+    # protobuf - Uncontrolled recursion (RUSTSEC-2024-0437)
+    # Needs upgrade to 3.7.2+ (transitive dependency)
+    "RUSTSEC-2024-0437",
+
+    # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071)
+    # No patch available yet (cryptography vulnerability)
+    "RUSTSEC-2023-0071",
+
+    # sqlx - Binary protocol overflow (RUSTSEC-2024-0363)
+    # Needs upgrade to 0.8.1+ (breaking changes, tracked in #3338)
+    "RUSTSEC-2024-0363",
+
+    # tracing-subscriber - ANSI escape injection (RUSTSEC-2025-0055)
+    # Needs upgrade to 0.3.20+ (minimal risk in current usage)
+    "RUSTSEC-2025-0055",
+
+    # atty - Unmaintained (RUSTSEC-2024-0375)
+    # Migrate to std::io::IsTerminal (tracked in #3338)
+    "RUSTSEC-2024-0375",
+
+    # atty - Unsound potential unaligned read (RUSTSEC-2021-0145)
+    # Will be removed when migrating to std::io::IsTerminal
+    "RUSTSEC-2021-0145",
+
+    # derivative - Unmaintained (RUSTSEC-2024-0388)
+    # Evaluate alternatives (tracked in #3338)
+    "RUSTSEC-2024-0388",
+
+    # adler - Unmaintained (RUSTSEC-2025-0056)
+    # Use adler2 instead (tracked in #3338)
+    "RUSTSEC-2025-0056",
+
+    # instant - Unmaintained (RUSTSEC-2024-0384)
+    # Use web-time instead (tracked in #3338)
+    "RUSTSEC-2024-0384",
+
+    # paste - Unmaintained (RUSTSEC-2024-0436)
+    # Archived upstream (tracked in #3338)
+    "RUSTSEC-2024-0436",
+
+    # proc-macro-error - Unmaintained (RUSTSEC-2024-0370)
+    # Transitive dependency (tracked in #3338)
+    "RUSTSEC-2024-0370",
+
+    # model crate - data race in Shared (RUSTSEC-2020-0140)
+    # Internal crate issue (tracked in #3338)
+    "RUSTSEC-2020-0140",
+]

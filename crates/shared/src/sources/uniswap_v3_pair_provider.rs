@@ -24,14 +24,18 @@ pub fn pair_address(factory: &H160, pair: &TokenPair, fee: u32) -> H160 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, ethrpc::alloy::conversions::IntoLegacy};
 
     #[test]
     fn mainnet_pool() {
         // https://v3.info.uniswap.org/home#/pools/0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8
         let result = pair_address(
             &addr!("1F98431c8aD98523631AE4a59f267346ea31F984"),
-            &TokenPair::new(testlib::tokens::WETH, testlib::tokens::USDC).unwrap(),
+            &TokenPair::new(
+                testlib::tokens::WETH.into_legacy(),
+                testlib::tokens::USDC.into_legacy(),
+            )
+            .unwrap(),
             3000,
         );
         assert_eq!(result, addr!("8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"));

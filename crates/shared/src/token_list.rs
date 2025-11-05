@@ -130,7 +130,7 @@ struct Metrics {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
+    use {super::*, ethrpc::alloy::conversions::IntoLegacy};
 
     // https://github.com/Uniswap/token-lists/blob/master/test/schema/example.tokenlist.json
     const EXAMPLE_LIST: &str = r#"
@@ -194,7 +194,7 @@ pub mod tests {
                 tokens: vec![
                     TokenModel {
                         chain_id: 1,
-                        address: testlib::tokens::USDC,
+                        address: testlib::tokens::USDC.into_legacy(),
                     },
                     TokenModel {
                         chain_id: 4,
@@ -217,7 +217,7 @@ pub mod tests {
         };
         let tokens = config.get_list(list.tokens);
         let instance = AutoUpdatingTokenList::new(tokens);
-        assert!(instance.contains(&testlib::tokens::USDC));
+        assert!(instance.contains(&testlib::tokens::USDC.into_legacy()));
         // Chain ID 4
         assert!(!instance.contains(&addr!("39AA39c021dfbaE8faC545936693aC917d5E7563")),);
     }
@@ -234,13 +234,13 @@ pub mod tests {
             hardcoded: Default::default(),
         };
         let tokens = config.get_external_list().await.unwrap();
-        assert!(tokens.contains(&testlib::tokens::USDC));
+        assert!(tokens.contains(&testlib::tokens::USDC.into_legacy()));
         let gc_token = addr!("39AA39c021dfbaE8faC545936693aC917d5E7563");
         assert!(!tokens.contains(&gc_token));
 
         config.chain_id = 4;
         let tokens = config.get_list(list.tokens);
-        assert!(!tokens.contains(&testlib::tokens::USDC));
+        assert!(!tokens.contains(&testlib::tokens::USDC.into_legacy()));
         assert!(tokens.contains(&gc_token));
     }
 }

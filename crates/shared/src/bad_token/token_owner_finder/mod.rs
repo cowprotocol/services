@@ -31,12 +31,12 @@ use {
     },
     anyhow::{Context, Result},
     chain::Chain,
-    contracts::{
-        ERC20,
-        alloy::{BalancerV2Vault, IUniswapV3Factory},
-        errors::EthcontractErrorType,
-    },
+    contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
     ethcontract::U256,
+    ethrpc::alloy::{
+        conversions::{IntoAlloy, IntoLegacy},
+        errors::ContractErrorExt,
+    },
     futures::{Stream, StreamExt as _},
     primitive_types::H160,
     rate_limit::Strategy,
@@ -420,7 +420,7 @@ impl TokenOwnerFinder {
 #[async_trait::async_trait]
 impl TokenOwnerFinding for TokenOwnerFinder {
     async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>> {
-        let instance = ERC20::at(&self.web3, token);
+        let instance = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
 
         // We use a stream with ready_chunks so that we can start with the addresses of
         // fast TokenOwnerFinding implementations first without having to wait
@@ -435,12 +435,12 @@ impl TokenOwnerFinding for TokenOwnerFinder {
                 // owner is not the settlement contract.
                 .filter(|owner| *owner != self.settlement_contract)
                 .map(|owner| {
-                    let call = instance.balance_of(owner).call();
+                    let balance = instance.balanceOf(owner.into_alloy());
                     async move {
-                        match call.await {
+                        match balance.call().await {
                             Ok(balance) => Ok((owner, balance)),
-                            Err(err) if EthcontractErrorType::is_contract_err(&err) => {
-                                Ok((owner, 0.into()))
+                            Err(err) if err.is_contract_error() => {
+                                Ok((owner, alloy::primitives::U256::ZERO))
                             }
                             Err(err) => Err(err),
                         }
@@ -448,11 +448,11 @@ impl TokenOwnerFinding for TokenOwnerFinder {
                 });
             let balances = futures::future::try_join_all(futures).await?;
 
-            if let Some(holder) = balances
+            if let Some((addr, balance)) = balances
                 .into_iter()
-                .find(|(_, balance)| *balance >= min_balance)
+                .find(|(_, balance)| *balance >= min_balance.into_alloy())
             {
-                return Ok(Some(holder));
+                return Ok(Some((addr, balance.into_legacy())));
             }
         }
 

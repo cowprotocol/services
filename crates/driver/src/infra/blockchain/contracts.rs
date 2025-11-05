@@ -1,5 +1,5 @@
 use {
-    crate::{domain::eth, infra::blockchain::Ethereum},
+    crate::domain::eth,
     chain::Chain,
     contracts::alloy::{
         BalancerV2Vault,
@@ -36,6 +36,7 @@ pub struct Contracts {
     /// Mapping from CoW AMM factory address to the corresponding CoW AMM
     /// helper.
     cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
+    web3: Web3,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -122,6 +123,7 @@ impl Contracts {
             flashloan_router,
             balance_helper,
             cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
+            web3: web3.clone(),
         })
     }
 
@@ -161,6 +163,10 @@ impl Contracts {
         &self.balance_helper
     }
 
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
+    }
+
     pub fn cow_amm_helper_by_factory(
         &self,
     ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
@@ -181,17 +187,6 @@ pub fn deployment_address(
             .address
             .into(),
     )
-}
-
-/// A trait for initializing contract instances with dynamic addresses.
-pub trait ContractAt {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
-}
-
-impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
 }
 
 #[derive(Debug, Error)]

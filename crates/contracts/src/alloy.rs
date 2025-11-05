@@ -594,7 +594,7 @@ crate::bindings!(
 );
 
 crate::bindings!(
-    ILiquoriceSettlement,
+    LiquoriceSettlement,
     crate::deployments! {
         // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
         MAINNET => address!("0x0448633eb8B0A42EfED924C42069E0DcF08fb552"),
@@ -614,6 +614,8 @@ crate::bindings!(
         AVALANCHE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
     }
 );
+
+crate::bindings!(ICowWrapper);
 
 // Only used in <github.com/gnosis/solvers>
 crate::bindings!(
