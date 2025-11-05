@@ -1,10 +1,10 @@
 use {
     crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
-    alloy::primitives::Address,
-    contracts::alloy::cow_amm::CowAmmLegacyHelper,
+    contracts::CowAmmLegacyHelper,
+    ethcontract::Address,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
-        event_handling::{AlloyEventRetriever, EventHandler},
+        event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
     },
     sqlx::PgPool,
@@ -44,7 +44,7 @@ impl Registry {
     ) {
         let storage = Storage::new(
             deployment_block,
-            CowAmmLegacyHelper::Instance::new(helper_contract, self.web3.alloy.clone()),
+            CowAmmLegacyHelper::at(&self.web3, helper_contract),
             factory,
             db,
         )
@@ -56,12 +56,7 @@ impl Registry {
             web3: self.web3.clone(),
             address: factory,
         };
-        let event_handler = EventHandler::new(
-            Arc::new(self.web3.clone()),
-            AlloyEventRetriever(indexer),
-            storage,
-            None,
-        );
+        let event_handler = EventHandler::new(Arc::new(self.web3.clone()), indexer, storage, None);
         let token_balance_maintainer =
             EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
 

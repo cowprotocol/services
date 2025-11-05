@@ -12,7 +12,6 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
@@ -137,10 +136,9 @@ impl DataAggregator {
             .contracts()
             .cow_amm_helper_by_factory()
             .iter()
-            .map(|(factory, helper)| (factory.0.into_alloy(), helper.0.into_alloy()))
+            .map(|(factory, helper)| (factory.0.into(), helper.0.into()))
             .collect();
-        let cow_amm_cache =
-            cow_amm::Cache::new(eth.web3().alloy.clone(), cow_amm_helper_by_factory);
+        let cow_amm_cache = cow_amm::Cache::new(eth.web3().clone(), cow_amm_helper_by_factory);
 
         Self {
             utilities: Arc::new(Utilities {
@@ -416,9 +414,9 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(&eth::TokenAddress(eth::ContractAddress(t.into_legacy())))
+                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
                                 .and_then(|token| token.price)
-                                .map(|price| price.0.0.into_alloy())
+                                .map(|price| price.0.0)
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
@@ -440,11 +438,7 @@ impl Utilities {
             .into_iter()
             .filter_map(|(amm, result)| match result {
                 Ok(template) => Some(Order {
-                    uid: template
-                        .order
-                        .uid(&domain_separator, &amm.into_legacy())
-                        .0
-                        .into(),
+                    uid: template.order.uid(&domain_separator, &amm).0.into(),
                     receiver: template.order.receiver.map(|addr| addr.into()),
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
@@ -486,7 +480,7 @@ impl Utilities {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
                             data: Bytes(bytes),
-                            signer: amm.into_legacy().into(),
+                            signer: amm.into(),
                         },
                         _ => {
                             tracing::warn!(

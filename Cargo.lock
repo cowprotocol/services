@@ -2169,7 +2169,6 @@ checksum = "06ea2b9bc92be3c2baa9334a323ebca2d6f074ff852cd1d7b11064035cd3868f"
 name = "cow-amm"
 version = "0.1.0"
 dependencies = [
- "alloy",
  "anyhow",
  "app-data",
  "async-trait",
@@ -2659,7 +2658,6 @@ dependencies = [
  "clap",
  "const-hex",
  "contracts",
- "cow-amm",
  "database",
  "driver",
  "ethcontract",

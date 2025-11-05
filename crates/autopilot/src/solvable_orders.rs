@@ -7,7 +7,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
     itertools::Itertools,
@@ -207,7 +207,8 @@ impl SolvableOrdersCache {
 
         let cow_amm_tokens = cow_amms
             .iter()
-            .flat_map(|cow_amm| cow_amm.traded_tokens().iter().map(|t| t.into_legacy()))
+            .flat_map(|cow_amm| cow_amm.traded_tokens())
+            .cloned()
             .collect::<Vec<_>>();
 
         // create auction
@@ -269,7 +270,7 @@ impl SolvableOrdersCache {
             .iter()
             .filter(|cow_amm| {
                 cow_amm.traded_tokens().iter().all(|token| {
-                    let price_exist = prices.contains_key(&token.into_legacy());
+                    let price_exist = prices.contains_key(token);
                     if !price_exist {
                         tracing::debug!(
                             cow_amm = ?cow_amm.address(),
@@ -280,7 +281,9 @@ impl SolvableOrdersCache {
                     price_exist
                 })
             })
-            .map(|cow_amm| eth::Address::from(cow_amm.address().into_legacy()))
+            .map(|cow_amm| cow_amm.address())
+            .cloned()
+            .map(eth::Address::from)
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
