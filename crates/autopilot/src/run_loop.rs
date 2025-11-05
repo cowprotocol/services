@@ -144,15 +144,12 @@ impl LeaderLockTracker {
     /// Should be called after breaking out of run loop (for example: due to
     /// shutdown)
     pub async fn release(self) {
-        let Self::Enabled {
+        if let Self::Enabled {
             mut leader_lock,
-            is_leader,
+            is_leader: true,
             ..
         } = self
-        else {
-            return;
-        };
-        if is_leader {
+        {
             tracing::info!("Shutdown received, stepping down as the leader");
             leader_lock.release().await;
             Metrics::leader_step_down();
