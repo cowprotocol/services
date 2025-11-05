@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = { workspace = true }
 alloy-sol-macro-expander = {workspace = true}
 alloy-sol-macro-input = {workspace = true}
-eyre = {workspace = true}
 forge-sol-macro-gen = {workspace = true}
 prettyplease = {workspace = true}
 proc-macro2 = {workspace = true}

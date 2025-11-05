@@ -1,9 +1,6 @@
 use std::path::Path;
 
-use contracts_generate::{
-    ARBITRUM_ONE, AVALANCHE, BASE, BNB, Contract, GNOSIS, LENS, LINEA, MAINNET, Module, OPTIMISM,
-    PLASMA, POLYGON, SEPOLIA, Submodule, networks,
-};
+use contracts_generate::{Contract, Module, Submodule, networks, networks::*};
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for

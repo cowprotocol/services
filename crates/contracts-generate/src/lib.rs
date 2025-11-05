@@ -2,7 +2,7 @@ use {
     alloy_sol_macro_expander::expand::expand,
     alloy_sol_macro_input::{SolInput, SolInputKind},
     forge_sol_macro_gen::SolMacroGen,
-    quote::format_ident,
+    quote::{ToTokens, format_ident},
     std::{
         collections::HashMap,
         fmt::Write,
@@ -10,18 +10,20 @@ use {
     },
 };
 
-pub const MAINNET: u64 = 1;
-pub const GNOSIS: u64 = 100;
-pub const SEPOLIA: u64 = 11155111;
-pub const ARBITRUM_ONE: u64 = 42161;
-pub const BASE: u64 = 8453;
-pub const POLYGON: u64 = 137;
-pub const AVALANCHE: u64 = 43114;
-pub const BNB: u64 = 56;
-pub const OPTIMISM: u64 = 10;
-pub const LENS: u64 = 232;
-pub const LINEA: u64 = 59144;
-pub const PLASMA: u64 = 9745;
+pub mod networks {
+    pub const MAINNET: u64 = 1;
+    pub const GNOSIS: u64 = 100;
+    pub const SEPOLIA: u64 = 11155111;
+    pub const ARBITRUM_ONE: u64 = 42161;
+    pub const BASE: u64 = 8453;
+    pub const POLYGON: u64 = 137;
+    pub const AVALANCHE: u64 = 43114;
+    pub const BNB: u64 = 56;
+    pub const OPTIMISM: u64 = 10;
+    pub const LENS: u64 = 232;
+    pub const LINEA: u64 = 59144;
+    pub const PLASMA: u64 = 9745;
+}
 
 const MOD_HEADER: &str = r#"#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
     //! This module contains the sol! generated bindings for solidity contracts.
@@ -52,7 +54,7 @@ impl Module {
         bindings_folder: P1,
         all_derives: bool,
         output_folder: P2,
-    ) -> eyre::Result<()>
+    ) -> anyhow::Result<()>
     where
         P1: AsRef<Path>,
         P2: AsRef<Path>,
@@ -109,7 +111,7 @@ impl Submodule {
         bindings_folder: P1,
         all_derives: bool,
         output_folder: P2,
-    ) -> eyre::Result<()>
+    ) -> anyhow::Result<()>
     where
         P1: AsRef<Path>,
         P2: AsRef<Path>,
@@ -170,29 +172,24 @@ impl Contract {
         self,
         bindings_folder: P,
         all_derives: bool,
-    ) -> eyre::Result<proc_macro2::TokenStream> {
+    ) -> anyhow::Result<proc_macro2::TokenStream> {
         let bindings_path = self.bindings_path(bindings_folder.as_ref());
         let mut macrogen = SolMacroGen::new(bindings_path, self.name.clone());
         generate_binding(&mut macrogen, all_derives)?;
+        let mut expansion = macrogen
+            .expansion
+            .expect("if the expansion failed, it should have errored earlier");
 
         let module_name_ident = format_ident!("{}", self.name);
         let instance_name_ident = format_ident!("{}Instance", self.name);
-
-        let network_entries = self.networks.iter().map(|(id, (address, block_number))| {
-            let block_expr = match block_number {
-                Some(block) => quote::quote! { Some(#block) },
-                None => quote::quote! { None },
-            };
-            quote::quote! {
-                (#id, (::alloy::primitives::address!(#address), #block_expr))
-            }
-        });
-
         let instance = quote::quote! {
             pub type Instance = #module_name_ident :: #instance_name_ident<::alloy::providers::DynProvider>;
         };
+        expansion.extend(instance);
 
-        let deployment_info = if self.networks.is_empty() {
+        let no_networks = self.networks.is_empty();
+        let networks = self.networks.into_iter().map(NetworkArm::from);
+        let deployment_info = if no_networks {
             proc_macro2::TokenStream::new()
         } else {
             quote::quote! {
@@ -208,20 +205,27 @@ impl Contract {
                     },
                 };
 
-                static DEPLOYMENT_INFO: LazyLock<HashMap<u64, (Address, Option<u64>)>> = LazyLock::new(|| {
-                    ::std::collections::HashMap::from([
-                        #(#network_entries),*
-                    ])
-                });
+                pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
+                    match chain_id {
+                        #( #networks ,)*
+                        _ => None
+                    }
+                }
 
                 /// Returns the contract's deployment address (if one exists) for the given chain.
-                pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
-                    DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
+                pub const fn deployment_address(chain_id: &u64) -> Option<::alloy::primitives::Address> {
+                    match deployment_info(*chain_id) {
+                        Some((address, _)) => Some(address),
+                        None => None,
+                    }
                 }
 
                 /// Returns the contract's deployment block (if one exists) for the given chain.
-                pub fn deployment_block(chain_id: &u64) -> Option<u64> {
-                    DEPLOYMENT_INFO.get(chain_id).map(|(_, block)| *block).flatten()
+                pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
+                    match deployment_info(*chain_id) {
+                        Some((_, block)) => block,
+                        None => None,
+                    }
                 }
 
                 impl Instance {
@@ -232,8 +236,7 @@ impl Contract {
                                 .await
                                 .context("could not fetch current chain id")?;
 
-                            let (address, _deployed_block) = *DEPLOYMENT_INFO
-                                .get(&chain_id)
+                            let (address, _deployed_block) = deployment_info(chain_id)
                                 .with_context(|| format!("no deployment info for chain {chain_id:?}"))?;
 
                             Ok(Instance::new(
@@ -242,28 +245,9 @@ impl Contract {
                             ))
                         }
                     }
-
-                    pub fn deployed_block(&self) -> impl Future<Output = Result<Option<u64>>> + Send {
-                        async move {
-                            let chain_id = self
-                                .provider()
-                                .get_chain_id()
-                                .await
-                                .context("could not fetch current chain id")?;
-                            if let Some((_address, deployed_block)) = DEPLOYMENT_INFO.get(&chain_id) {
-                                return Ok(*deployed_block);
-                            }
-                            Ok(None)
-                        }
-                    }
                 }
             }
         };
-
-        let mut expansion = macrogen
-            .expansion
-            .expect("if the expansion failed, it should have errored earlier");
-        expansion.extend(instance);
         expansion.extend(deployment_info);
 
         Ok(expansion)
@@ -274,7 +258,7 @@ impl Contract {
         bindings_folder: P1,
         all_derives: bool,
         output_folder: P2,
-    ) -> eyre::Result<()>
+    ) -> anyhow::Result<()>
     where
         P1: AsRef<Path>,
         P2: AsRef<Path>,
@@ -293,8 +277,12 @@ impl Contract {
     }
 }
 
-fn generate_binding(instance: &mut SolMacroGen, all_derives: bool) -> eyre::Result<()> {
-    let input = instance.get_sol_input()?.normalize_json()?;
+fn generate_binding(instance: &mut SolMacroGen, all_derives: bool) -> anyhow::Result<()> {
+    let input = instance
+        .get_sol_input()
+        .map_err(|err| anyhow::anyhow!("{:?}", err))?
+        .normalize_json()
+        .map_err(|err| anyhow::anyhow!("{:?}", err))?;
     let SolInput {
         attrs: _,
         path: _,
@@ -323,13 +311,70 @@ fn generate_binding(instance: &mut SolMacroGen, all_derives: bool) -> eyre::Resu
     Ok(())
 }
 
-fn write_mod_name(contents: &mut String, name: &str) -> eyre::Result<()> {
+fn write_mod_name(contents: &mut String, name: &str) -> anyhow::Result<()> {
     if syn::parse_str::<syn::ItemMod>(&format!("pub mod {name};")).is_ok() {
         write!(contents, "pub mod {name};")?;
     } else {
         write!(contents, "pub mod r#{name};")?;
     }
     Ok(())
+}
+
+/// Wrapper to avoid destructuring the vector of tuples into three iterators.
+///
+/// The following code:
+/// ```ignore
+/// // We need to "destructure" the iterator into several due to
+/// let chain_ids = self.networks.iter().map(|n| n.0);
+/// let addresses = self.networks.iter().map(|n| n.1.0.clone());
+/// let blocks = self.networks.iter().map(|n| match n.1.1 {
+///     Some(block) => quote::quote! {Some (#block)},
+///     None => quote::quote! {None},
+/// });
+/// // ...
+/// quote::quote! {
+///     pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
+///         match chain_id {
+///             #(#chain_id => Some((::alloy::primitives::address!(#address), #block_number)),)*
+///             _ => None
+///         }
+///     }
+/// }
+/// ```
+///
+/// Becomes:
+/// ```ignore
+/// let networks = self.networks.into_iter().map(NetworkArm::from);
+/// // ...
+/// quote::quote! {
+///     pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
+///         match chain_id {
+///             #( #networks ,)*
+///             _ => None
+///         }
+///     }
+/// }
+/// ```
+struct NetworkArm(u64, (String, Option<u64>));
+
+impl ToTokens for NetworkArm {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let chain_id = self.0;
+        let address = &self.1.0;
+        let block_number = match self.1.1 {
+            Some(block) => quote::quote! {Some (#block)},
+            None => quote::quote! {None},
+        };
+        tokens.extend(quote::quote! {
+           #chain_id => Some((::alloy::primitives::address!(#address), #block_number))
+        });
+    }
+}
+
+impl From<(u64, (String, Option<u64>))> for NetworkArm {
+    fn from((chain_id, info): (u64, (String, Option<u64>))) -> Self {
+        Self(chain_id, info)
+    }
 }
 
 /// Declare a network tuple with an optional block number.
