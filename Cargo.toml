@@ -3,8 +3,8 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
-alloy = { version = "1.0.41", default-features = false }
-anyhow = "=1.0.76"
+alloy = { version = "1.1.0", default-features = false }
+anyhow = "1.0.100"
 async-trait = "0.1.80"
 axum = "0.6"
 bigdecimal = "0.3"
