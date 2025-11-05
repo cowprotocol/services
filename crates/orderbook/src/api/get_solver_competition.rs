@@ -1,7 +1,7 @@
 use {
     crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     anyhow::Result,
-    model::{auction::AuctionId, solver_competition::SolverCompetitionAPI},
+    model::{AuctionId, solver_competition::SolverCompetitionAPI},
     primitive_types::H256,
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
