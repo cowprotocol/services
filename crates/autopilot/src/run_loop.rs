@@ -90,8 +90,7 @@ pub struct RunLoop {
     winner_selection: winner_selection::Arbitrator,
 }
 
-/// Tracks the leader lock status
-/// Provides uniform interface whether the leader lock feature is enabled or not
+/// Tracks the autopilot leader lock status.
 #[expect(clippy::large_enum_variant)]
 enum LeaderLockTracker {
     Disabled,
