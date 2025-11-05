@@ -451,6 +451,6 @@ pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Erro
     let block: eth::BlockNo = eth.current_block().borrow().number.into();
     match gas {
         Ok(gas) => tracing::debug!(block = ?block, gas = ?gas.0, ?tx, "simulated settlement"),
-        Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),
+        Err(err) => tracing::debug!(block = ?block, ?err, ?tx, "simulated settlement - failure"),
     }
 }
