@@ -1,5 +1,5 @@
 use {
-    crate::setup::*,
+    crate::{nodes::NODE_WS_HOST, setup::*},
     ::alloy::primitives::Address,
     ethcontract::H160,
     reqwest::Url,
@@ -218,6 +218,7 @@ mempool = "public"
         "driver".to_string(),
         format!("--config={}", config_file.display()),
         format!("--ethrpc={NODE_HOST}"),
+        format!("--node-ws-url={NODE_WS_HOST}"),
     ];
 
     tokio::task::spawn(async move {

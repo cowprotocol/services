@@ -99,15 +99,14 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         tx_gas_limit: U256,
+        current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
 
-        let current_block_stream = ethrpc::block_stream::current_block_stream(
-            args.url.clone(),
-            std::time::Duration::from_millis(500),
-        )
-        .await
-        .expect("couldn't initialize current block stream");
+        let current_block_stream = current_block_args
+            .stream(args.url.clone(), web3.alloy.clone())
+            .await
+            .expect("couldn't initialize current block stream");
 
         let contracts = Contracts::new(&web3, chain, addresses)
             .await

@@ -123,9 +123,17 @@ async fn ethereum(
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
-    poll_interval: Duration,
+    current_block_args: &shared::current_block::Arguments,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, unbuffered_web3, chain, url, contracts, poll_interval).await
+    infra::Ethereum::new(
+        web3,
+        unbuffered_web3,
+        chain,
+        url,
+        contracts,
+        current_block_args,
+    )
+    .await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -224,7 +232,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         &chain,
         url,
         contracts.clone(),
-        args.shared.current_block.block_stream_poll_interval,
+        &args.shared.current_block,
     )
     .await;
 
@@ -367,7 +375,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
+    let block_retriever = Arc::new(web3.alloy.clone());
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
@@ -786,12 +794,12 @@ async fn shadow_mode(args: Arguments) -> ! {
         Default::default(),
     );
 
-    let current_block = ethrpc::block_stream::current_block_stream(
-        args.shared.node_url,
-        args.shared.current_block.block_stream_poll_interval,
-    )
-    .await
-    .expect("couldn't initialize current block stream");
+    let current_block = args
+        .shared
+        .current_block
+        .stream(args.shared.node_url, web3.alloy.clone())
+        .await
+        .expect("couldn't initialize current block stream");
 
     let shadow = shadow::RunLoop::new(
         orderbook,

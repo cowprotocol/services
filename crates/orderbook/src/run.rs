@@ -285,7 +285,7 @@ pub async fn run(args: Arguments) {
     let current_block_stream = args
         .shared
         .current_block
-        .stream(args.shared.node_url.clone())
+        .stream(args.shared.node_url.clone(), web3.alloy.clone())
         .await
         .unwrap();
 

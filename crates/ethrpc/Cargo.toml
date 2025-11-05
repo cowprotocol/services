@@ -11,7 +11,7 @@ name = "ethrpc"
 path = "src/lib.rs"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "contract"] }
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "transport-ws", "provider-ws", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "pubsub", "contract"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 ethcontract = { workspace = true }
