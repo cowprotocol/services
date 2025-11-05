@@ -162,15 +162,14 @@ impl LeaderLockTracker {
     /// Returns true if the last try_acquire call resulted in acquiring the
     /// leader lock If the feature is disabled, always returns false
     pub fn just_stepped_up(&self) -> bool {
-        let Self::Enabled {
-            is_leader,
-            was_leader,
-            ..
-        } = self
-        else {
-            return false;
-        };
-        *is_leader && !was_leader
+        match self {
+            Self::Enabled {
+                is_leader: true,
+                was_leader: false,
+                ..
+            } => true,
+            _ => false,
+        }
     }
 
     /// Returns true if the leader lock is being held
