@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     anyhow::Context,
     bigdecimal::{
         FromPrimitive,
@@ -7,7 +8,7 @@ use {
     database::{OrderUid, auction::AuctionId},
     model::fee_policy::{ExecutedProtocolFee, FeePolicy, Quote},
     num::BigRational,
-    number::conversions::{big_decimal_to_u256, big_rational_to_u256},
+    number::conversions::alloy::{big_decimal_to_u256, big_rational_to_u256},
     std::collections::HashMap,
 };
 
@@ -68,7 +69,7 @@ impl super::Postgres {
                     let executed_protocol_fee = ExecutedProtocolFee {
                         amount: big_decimal_to_u256(&executed_fee.amount)
                             .context("executed fee amount")?,
-                        token: primitive_types::H160(executed_fee.token.0),
+                        token: Address::from_slice(&executed_fee.token.0),
                         policy: fee_policy_from(policy.clone(), quotes.get(&key.1), key.1)?,
                     };
                     result

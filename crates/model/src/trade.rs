@@ -3,8 +3,8 @@
 
 use {
     crate::{fee_policy::ExecutedProtocolFee, order::OrderUid},
+    alloy::primitives::{Address, B256},
     num::BigUint,
-    primitive_types::{H160, H256},
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
 };
@@ -24,11 +24,11 @@ pub struct Trade {
     #[serde_as(as = "DisplayFromStr")]
     pub sell_amount_before_fees: BigUint,
     // ORDER DATA
-    pub owner: H160,
-    pub buy_token: H160,
-    pub sell_token: H160,
+    pub owner: Address,
+    pub buy_token: Address,
+    pub sell_token: Address,
     // Settlement Data
-    pub tx_hash: Option<H256>,
+    pub tx_hash: Option<B256>,
     pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
 }
 
@@ -37,7 +37,7 @@ mod tests {
     use {
         super::*,
         crate::fee_policy::{FeePolicy, Quote},
-        primitive_types::U256,
+        alloy::primitives::U256,
         serde_json::json,
         testlib::assert_json_matches,
     };
@@ -100,14 +100,14 @@ mod tests {
             buy_amount: BigUint::from(69u8),
             sell_amount: BigUint::from(55u8),
             sell_amount_before_fees: BigUint::from(49u8),
-            owner: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(9),
-            sell_token: H160::from_low_u64_be(10),
-            tx_hash: Some(H256::from_low_u64_be(64)),
+            owner: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(9),
+            sell_token: Address::with_last_byte(10),
+            tx_hash: Some(B256::with_last_byte(64)),
             executed_protocol_fees: vec![
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),
-                    token: H160::from_low_u64_be(10),
+                    token: Address::with_last_byte(10),
                     policy: FeePolicy::Surplus {
                         factor: 1.1,
                         max_volume_factor: 2.2,
@@ -115,12 +115,12 @@ mod tests {
                 },
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),
-                    token: H160::from_low_u64_be(10),
+                    token: Address::with_last_byte(10),
                     policy: FeePolicy::Volume { factor: 0.9 },
                 },
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),
-                    token: H160::from_low_u64_be(10),
+                    token: Address::with_last_byte(10),
                     policy: FeePolicy::PriceImprovement {
                         factor: 1.2,
                         max_volume_factor: 1.5,

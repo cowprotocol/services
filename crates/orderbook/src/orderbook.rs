@@ -13,6 +13,7 @@ use {
     chrono::Utc,
     database::order_events::OrderEventLabel,
     ethcontract::H256,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -575,7 +576,7 @@ impl Orderbook {
             Some(Some(tx_hash)) => {
                 let competition = self
                     .database
-                    .load_competition(Identifier::Transaction(tx_hash))
+                    .load_competition(Identifier::Transaction(tx_hash.into_legacy()))
                     .await?;
                 return Ok(dto::order::Status::Traded(solutions(competition)));
             }
