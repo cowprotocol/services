@@ -138,7 +138,13 @@ impl Mempools {
             .submit(tx.clone(), settlement.gas, solver, nonce)
             .await?;
         let submitted_at_block = self.ethereum.current_block().borrow().number;
-        tracing::debug!(?hash, current_block = ?submitted_at_block, "submitted tx to the mempool");
+        tracing::debug!(
+            ?hash,
+            current_block = ?submitted_at_block,
+            max_fee_per_gas = ?settlement.gas.price.max(),
+            priority_fee_per_gas = ?settlement.gas.price.tip(),
+            "submitted tx to the mempool"
+        );
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
