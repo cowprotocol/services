@@ -13,9 +13,9 @@ pub enum LeaderLockTracker {
     /// The autopilot followers (not holding the lock) will keep their caches
     /// warm. It facilitates zero downtime deployments.
     Enabled {
-        /// Are we currently the leader since last call to try_acquire()
+        /// Whether the current instance is the leader since the last call to try_acquire()
         is_leader: bool,
-        /// Were we previously the leader sinec the last call to try_acquire()
+        /// Whether the instance was the leader since the last call to try_acquire()
         was_leader: bool,
         leader_lock: LeaderLock,
     },
