@@ -113,7 +113,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, auction: Arc<String>) -> Result<(Option<Solved>, Auction), Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
@@ -342,7 +342,7 @@ impl Competition {
 
         let Some(settlement) = settlement else {
             // Don't wait for the deadline because we can't produce a solution anyway.
-            return Ok(score);
+            return Ok((score, auction.clone()));
         };
         let solution_id = settlement.solution().get();
 
@@ -387,7 +387,7 @@ impl Competition {
             let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
-        Ok(score)
+        Ok((score, auction.clone()))
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that
