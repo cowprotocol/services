@@ -9,6 +9,7 @@ use {
         util::Bytes,
     },
     app_data::AppDataHash,
+    ethrpc::alloy::conversions::IntoAlloy,
     itertools::Itertools,
     model::{
         DomainSeparator,
@@ -147,7 +148,7 @@ impl Solutions {
                                                 eth::Allowance {
                                                     token: allowance.token.into(),
                                                     spender: allowance.spender.into(),
-                                                    amount: allowance.amount,
+                                                    amount: allowance.amount.into_alloy(),
                                                 }
                                                 .into()
                                             })
