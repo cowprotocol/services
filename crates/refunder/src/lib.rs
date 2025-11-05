@@ -61,6 +61,7 @@ pub async fn run(args: arguments::Arguments) {
         liveness.clone(),
         ([0, 0, 0, 0], args.metrics_port).into(),
         Default::default(),
+        Default::default(),
     );
 
     let ethflow_contracts = args

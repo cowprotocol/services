@@ -4,7 +4,7 @@ use {
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
     model::{
-        auction::AuctionId,
+        AuctionId,
         solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
     },
     primitive_types::H256,

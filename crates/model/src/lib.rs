@@ -1,6 +1,5 @@
 //! Contains models that are shared between the orderbook and the solver.
 
-pub mod auction;
 pub mod fee_policy;
 pub mod interaction;
 pub mod order;
@@ -20,6 +19,8 @@ use {
         signing,
     },
 };
+
+pub type AuctionId = i64;
 
 /// Erc20 token pair specified by two contract addresses.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
