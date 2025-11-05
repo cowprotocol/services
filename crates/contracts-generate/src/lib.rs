@@ -384,7 +384,7 @@ impl From<(u64, (String, Option<u64>))> for NetworkArm {
 /// Example, without blocks:
 /// ```no_run
 /// # #[macro_use] extern crate contracts_generate;
-/// # use contracts_generate::{MAINNET, SEPOLIA};
+/// # use contracts_generate::networks::{MAINNET, SEPOLIA};
 /// # fn main() {
 /// # let _: [(_, (_, Option<u64>)); _] =
 /// networks! {
@@ -397,7 +397,7 @@ impl From<(u64, (String, Option<u64>))> for NetworkArm {
 /// Example, with blocks:
 /// ```no_run
 /// # #[macro_use] extern crate contracts_generate;
-/// # use contracts_generate::{MAINNET, SEPOLIA};
+/// # use contracts_generate::networks::{MAINNET, SEPOLIA};
 /// # fn main() {
 /// # let _: [(_, (_, Option<u64>)); _] =
 /// networks! {
