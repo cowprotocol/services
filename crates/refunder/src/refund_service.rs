@@ -232,13 +232,9 @@ impl RefundService {
             let encoded_ethflow_orders: Vec<_> = stream::iter(futures)
                 .buffer_unordered(10)
                 .filter_map(|result| async {
-                    match result {
-                        Ok(order) => Some(CoWSwapEthFlow::EthFlowOrder::Data::from(order)),
-                        Err(err) => {
-                            tracing::error!(?err, "failed to get data from db");
-                            None
-                        }
-                    }
+                    result
+                        .inspect_err(|err| tracing::error!(?err, "failed to get data from db"))
+                        .ok()
                 })
                 .collect()
                 .await;

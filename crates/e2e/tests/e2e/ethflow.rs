@@ -745,7 +745,7 @@ impl ExtendedEthFlowOrder {
         ethflow_contract: &CoWSwapEthFlow::Instance,
     ) -> TransactionReceipt {
         ethflow_contract
-            .createOrder(self.0.clone().into())
+            .createOrder(self.0.clone())
             .value(self.0.sellAmount + self.0.feeAmount)
             .from(owner)
             .send()
@@ -762,7 +762,7 @@ impl ExtendedEthFlowOrder {
         ethflow_contract: &CoWSwapEthFlow::Instance,
     ) {
         ethflow_contract
-            .invalidateOrder(self.0.clone().into())
+            .invalidateOrder(self.0.clone())
             .from(sender)
             .send_and_watch()
             .await
