@@ -414,9 +414,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-pubsub"
-version = "1.0.41"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06e45a68423e732900a0c824b8e22237db461b79d2e472dd68b7547c16104427"
+checksum = "810766eeed6b10ffa11815682b3f37afc5019809e3b470b23555297d5770ce63"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -743,9 +743,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport-ws"
-version = "1.0.41"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9476a36a34e2fb51b6746d009c53d309a186a825aa95435407f0e07149f4ad2d"
+checksum = "571aadf0afce0d515a28b2c6352662a39cb9f48b4eeff9a5c34557d6ea126730"
 dependencies = [
  "alloy-pubsub",
  "alloy-transport",
