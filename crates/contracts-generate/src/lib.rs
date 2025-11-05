@@ -1,7 +1,9 @@
+mod sol_macro_gen;
+
 use {
+    crate::sol_macro_gen::SolMacroGen,
     alloy_sol_macro_expander::expand::expand,
     alloy_sol_macro_input::{SolInput, SolInputKind},
-    forge_sol_macro_gen::SolMacroGen,
     quote::{ToTokens, format_ident},
     std::{
         collections::HashMap,

@@ -100,7 +100,6 @@ tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
 vergen = "8"
 walkdir = "2.5.0"
-forge-sol-macro-gen = {git = "https://github.com/foundry-rs/foundry", version = "1.4.1"}
 quote = "1.0.41"
 syn = "2.0.108"
 prettyplease = "0.2.37"

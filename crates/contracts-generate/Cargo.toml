@@ -6,8 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 alloy-sol-macro-expander = {workspace = true}
-alloy-sol-macro-input = {workspace = true}
-forge-sol-macro-gen = {workspace = true}
+alloy-sol-macro-input = {workspace = true, features = ["json"]}
 prettyplease = {workspace = true}
 proc-macro2 = {workspace = true}
 quote = {workspace = true}
