@@ -4,7 +4,7 @@ use {
         solver_competition::{Identifier, LoadSolverCompetitionError},
     },
     anyhow::Result,
-    model::{auction::AuctionId, solver_competition_v2::Response},
+    model::{AuctionId, solver_competition_v2::Response},
     primitive_types::H256,
     reqwest::StatusCode,
     std::convert::Infallible,

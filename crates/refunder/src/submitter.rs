@@ -10,7 +10,7 @@
 
 use {
     alloy::{primitives::Address, providers::Provider},
-    anyhow::Result,
+    anyhow::{Context, Result},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
@@ -54,7 +54,12 @@ impl Submitter {
             .alloy
             .get_transaction_count(self.signer_address)
             .await
-            .map_err(anyhow::Error::from)
+            .with_context(|| {
+                format!(
+                    "could not get latest nonce for address {:?}",
+                    self.signer_address
+                )
+            })
     }
 
     pub async fn submit(
