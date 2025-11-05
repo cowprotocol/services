@@ -4,9 +4,9 @@ pub mod submitter;
 
 use {
     crate::arguments::Arguments,
+    alloy::signers::local::PrivateKeySigner,
     clap::Parser,
     contracts::alloy::CoWSwapEthFlow,
-    ethcontract::PrivateKey,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
@@ -69,13 +69,10 @@ pub async fn run(args: arguments::Arguments) {
         .iter()
         .map(|contract| CoWSwapEthFlow::Instance::new(*contract, web3.alloy.clone()))
         .collect();
-    let refunder_pk = args
-        .refunder_pk
-        .parse::<PrivateKey>()
-        .expect("couldn't parse refunder private key");
     let refunder_account = Box::new(
-        alloy::signers::local::PrivateKeySigner::from_slice(&refunder_pk.secret_bytes())
-            .expect("invalid refunder private key bytes"),
+        args.refunder_pk
+            .parse::<PrivateKeySigner>()
+            .expect("couldn't parse refunder private key"),
     );
     let mut refunder = RefundService::new(
         pg_pool,

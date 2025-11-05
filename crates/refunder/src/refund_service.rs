@@ -2,7 +2,7 @@ use {
     crate::submitter::Submitter,
     alloy::{
         network::TxSigner,
-        primitives::{Address, Signature, address},
+        primitives::{Address, B256, Signature, address},
     },
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
@@ -11,7 +11,6 @@ use {
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},
         orders::read_order as read_db_order,
     },
-    ethcontract::H256,
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
     number::conversions::alloy::big_decimal_to_u256,
@@ -131,7 +130,7 @@ impl RefundService {
                     Ok(order) => Some(order.owner),
                     Err(err) => {
                         tracing::error!(
-                            uid =? H256(order_hash),
+                            uid =? B256::from(order_hash),
                             ?err,
                             "Error while getting the current onchain status ot the order"
                         );
