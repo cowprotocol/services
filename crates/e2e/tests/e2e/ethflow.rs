@@ -57,10 +57,7 @@ use {
         trade::Trade,
     },
     number::nonzero::U256 as NonZeroU256,
-    refunder::{
-        ethflow_order::EthflowOrder,
-        refund_service::{INVALIDATED_OWNER, NO_OWNER},
-    },
+    refunder::refund_service::{INVALIDATED_OWNER, NO_OWNER},
     reqwest::Client,
     shared::signature_validator::check_erc1271_result,
 };
@@ -278,16 +275,16 @@ async fn eth_flow_without_quote(web3: Web3) {
             .await
             .unwrap()
         + 3600;
-    let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
-        buy_token: dai.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_amount: 1.into(),
-        valid_to,
-        partially_fillable: false,
-        quote_id: 0,
-        fee_amount: 0.into(),
-        receiver: H160([0x42; 20]),
-        app_data: Default::default(),
+    let ethflow_order = ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
+        buyToken: *dai.address(),
+        sellAmount: eth(1),
+        buyAmount: alloy::primitives::U256::ONE,
+        validTo: valid_to,
+        partiallyFillable: false,
+        quoteId: 0,
+        feeAmount: alloy::primitives::U256::ZERO,
+        receiver: Address::from_slice(&[0x42; 20]),
+        appData: Default::default(),
     });
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
@@ -447,7 +444,7 @@ async fn submit_order(
     assert!(result.status()); // success
     assert_eq!(
         ethflow_order.status(contracts, ethflow_contract).await,
-        EthFlowOrderOnchainStatus::Created(user.address(), ethflow_order.0.valid_to)
+        EthFlowOrderOnchainStatus::Created(user.address(), ethflow_order.0.validTo)
     );
 }
 
@@ -511,17 +508,15 @@ async fn test_trade_availability_in_api(
 async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, onchain: &OnchainComponents) {
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        let buy_token = ERC20Mintable::Instance::new(
-            ethflow_order.0.buy_token.into_alloy(),
-            onchain.web3().alloy.clone(),
-        );
+        let buy_token =
+            ERC20Mintable::Instance::new(ethflow_order.0.buyToken, onchain.web3().alloy.clone());
         let receiver_buy_token_balance = buy_token
-            .balanceOf(ethflow_order.0.receiver.into_alloy())
+            .balanceOf(ethflow_order.0.receiver)
             .call()
             .await
             .expect("Unable to get token balance");
 
-        receiver_buy_token_balance >= ethflow_order.0.buy_amount.into_alloy()
+        receiver_buy_token_balance >= ethflow_order.0.buyAmount
     })
     .await
     .unwrap();
@@ -617,7 +612,7 @@ async fn test_order_parameters(
     assert_eq!(
         response.metadata.ethflow_data,
         Some(EthflowData {
-            user_valid_to: order.0.valid_to as i64,
+            user_valid_to: order.0.validTo as i64,
             refund_tx_hash: None,
         })
     );
@@ -645,21 +640,24 @@ async fn test_order_parameters(
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
 }
 
-pub struct ExtendedEthFlowOrder(pub EthflowOrder);
+pub struct ExtendedEthFlowOrder(pub CoWSwapEthFlow::EthFlowOrder::Data);
 
 impl ExtendedEthFlowOrder {
     pub fn from_quote(quote_response: &OrderQuoteResponse, valid_to: u32) -> Self {
         let quote = &quote_response.quote;
-        ExtendedEthFlowOrder(EthflowOrder {
-            buy_token: quote.buy_token,
-            receiver: quote.receiver.expect("eth-flow order without receiver"),
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            app_data: ethcontract::Bytes(quote.app_data.hash().0),
-            fee_amount: 0.into(),
-            valid_to, // note: valid to in the quote is always unlimited
-            partially_fillable: quote.partially_fillable,
-            quote_id: quote_response.id.expect("No quote id"),
+        ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
+            buyToken: quote.buy_token.into_alloy(),
+            receiver: quote
+                .receiver
+                .expect("eth-flow order without receiver")
+                .into_alloy(),
+            sellAmount: quote.sell_amount.into_alloy(),
+            buyAmount: quote.buy_amount.into_alloy(),
+            appData: quote.app_data.hash().0.into(),
+            feeAmount: alloy::primitives::U256::ZERO,
+            validTo: valid_to, // note: valid to in the quote is always unlimited
+            partiallyFillable: quote.partially_fillable,
+            quoteId: quote_response.id.expect("No quote id"),
         })
     }
 
@@ -673,13 +671,13 @@ impl ExtendedEthFlowOrder {
         OrderBuilder::default()
             .with_kind(OrderKind::Sell)
             .with_sell_token(weth.address().into_legacy())
-            .with_sell_amount(self.0.sell_amount)
-            .with_fee_amount(self.0.fee_amount)
-            .with_receiver(Some(self.0.receiver))
-            .with_buy_token(self.0.buy_token)
-            .with_buy_amount(self.0.buy_amount)
+            .with_sell_amount(self.0.sellAmount.into_legacy())
+            .with_fee_amount(self.0.feeAmount.into_legacy())
+            .with_receiver(Some(self.0.receiver.into_legacy()))
+            .with_buy_token(self.0.buyToken.into_legacy())
+            .with_buy_amount(self.0.buyAmount.into_legacy())
             .with_valid_to(u32::MAX)
-            .with_app_data(self.0.app_data.0)
+            .with_app_data(self.0.appData.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
             .with_eip1271(ethflow_contract.address().into_legacy(), hex!("").into())
             .build()
@@ -690,8 +688,9 @@ impl ExtendedEthFlowOrder {
         if slippage > MAX_BASE_POINT {
             panic!("Slippage must be specified in base points");
         }
-        ExtendedEthFlowOrder(EthflowOrder {
-            buy_amount: self.0.buy_amount * (MAX_BASE_POINT - slippage) / MAX_BASE_POINT,
+        ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
+            buyAmount: self.0.buyAmount * alloy::primitives::U256::from(MAX_BASE_POINT - slippage)
+                / alloy::primitives::U256::from(MAX_BASE_POINT),
             ..self.0
         })
     }
@@ -746,8 +745,8 @@ impl ExtendedEthFlowOrder {
         ethflow_contract: &CoWSwapEthFlow::Instance,
     ) -> TransactionReceipt {
         ethflow_contract
-            .createOrder(self.0.clone().into())
-            .value((self.0.sell_amount + self.0.fee_amount).into_alloy())
+            .createOrder(self.0.clone())
+            .value(self.0.sellAmount + self.0.feeAmount)
             .from(owner)
             .send()
             .await
@@ -763,7 +762,7 @@ impl ExtendedEthFlowOrder {
         ethflow_contract: &CoWSwapEthFlow::Instance,
     ) {
         ethflow_contract
-            .invalidateOrder(self.0.clone().into())
+            .invalidateOrder(self.0.clone())
             .from(sender)
             .send_and_watch()
             .await
@@ -884,16 +883,16 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
                 .await
                 .unwrap()
             + 3600;
-        let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
-            buy_token: dai.address().into_legacy(),
-            sell_amount: to_wei(1),
-            buy_amount: buy_amount.into(),
-            valid_to,
-            partially_fillable: false,
-            quote_id: 0,
-            fee_amount: 0.into(),
-            receiver: H160([0x42; 20]),
-            app_data: Default::default(),
+        let ethflow_order = ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
+            buyToken: *dai.address(),
+            sellAmount: eth(1),
+            buyAmount: alloy::primitives::U256::from(buy_amount),
+            validTo: valid_to,
+            partiallyFillable: false,
+            quoteId: 0,
+            feeAmount: alloy::primitives::U256::ZERO,
+            receiver: Address::from_slice(&[0x42; 20]),
+            appData: Default::default(),
         });
 
         let ethflow_contract = onchain.contracts().ethflows.first().unwrap();

@@ -56,6 +56,33 @@ pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
     big_int_to_u256(&big_int).ok()
 }
 
+pub mod alloy {
+    use {
+        alloy::primitives::U256,
+        anyhow::{Result, ensure},
+        bigdecimal::{BigDecimal, num_bigint::ToBigInt},
+        num::{BigInt, BigUint, bigint::Sign},
+    };
+    pub fn big_uint_to_u256(input: &BigUint) -> Result<U256> {
+        let bytes = input.to_bytes_be();
+        ensure!(bytes.len() <= 32, "too large");
+        Ok(U256::from_be_slice(&bytes))
+    }
+
+    pub fn big_int_to_u256(input: &BigInt) -> Result<U256> {
+        ensure!(input.sign() != Sign::Minus, "negative");
+        big_uint_to_u256(input.magnitude())
+    }
+
+    pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
+        if !big_decimal.is_integer() {
+            return None;
+        }
+        let big_int = big_decimal.to_bigint()?;
+        big_int_to_u256(&big_int).ok()
+    }
+}
+
 pub fn rational_to_big_decimal<T>(value: &Ratio<T>) -> BigDecimal
 where
     T: Clone,
