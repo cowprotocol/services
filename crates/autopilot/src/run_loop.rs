@@ -172,10 +172,10 @@ impl LeaderLockTracker {
     /// Returns true if the leader lock is being held
     /// If the feature is disabled, always returns true
     pub fn is_leader(&self) -> bool {
-        let Self::Enabled { is_leader, .. } = self else {
-            return true;
-        };
-        *is_leader
+        match self {
+            Self::Enabled { is_leader, .. } => *is_leader,
+            _ => true,
+        }
     }
 }
 
