@@ -19,7 +19,7 @@ mimalloc = "0.1.43"
 ethcontract-generate = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e112a88988040cde6110379ee6d1be768a13244", default-features = false }
 ethcontract-mock = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e112a88988040cde6110379ee6d1be768a13244", default-features = false }
 ethereum-types = "0.14.1"
-flate2 = "1.1.5"
+flate2 = "1.0.30"
 futures = "0.3.30"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.3", features = ["web3_", "tokio_"] }
 const-hex = "1.17.0"
