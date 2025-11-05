@@ -9,12 +9,10 @@
 // In the re-newed attempt for submission the same nonce is used as before.
 
 use {
-    alloy::primitives::Address,
-    anyhow::{Result, anyhow},
+    alloy::{primitives::Address, providers::Provider},
+    anyhow::{Context, Result},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
-    ethcontract::U256,
-    ethrpc::alloy::conversions::IntoLegacy,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     shared::ethrpc::Web3,
     std::time::Duration,
@@ -45,18 +43,23 @@ pub struct Submitter {
     pub signer_address: Address,
     pub gas_estimator: Box<dyn GasPriceEstimating>,
     pub gas_parameters_of_last_tx: Option<GasPrice1559>,
-    pub nonce_of_last_submission: Option<U256>,
+    pub nonce_of_last_submission: Option<u64>,
 }
 
 impl Submitter {
-    async fn get_submission_nonce(&self) -> Result<U256> {
+    async fn get_submission_nonce(&self) -> Result<u64> {
         // this command returns the tx count ever mined at the latest block
         // Mempool tx are not considered.
         self.web3
-            .eth()
-            .transaction_count(self.signer_address.into_legacy(), None)
+            .alloy
+            .get_transaction_count(self.signer_address)
             .await
-            .map_err(|err| anyhow!("Could not get latest nonce due to err: {err}"))
+            .with_context(|| {
+                format!(
+                    "could not get latest nonce for address {:?}",
+                    self.signer_address
+                )
+            })
     }
 
     pub async fn submit(
@@ -87,7 +90,7 @@ impl Submitter {
             .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
             .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
             .from(self.signer_address)
-            .nonce(nonce.low_u64())
+            .nonce(nonce)
             .send()
             .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
 
@@ -108,8 +111,8 @@ impl Submitter {
 fn calculate_submission_gas_price(
     gas_price_of_last_submission: Option<GasPrice1559>,
     web3_gas_estimation: GasPrice1559,
-    newest_nonce: U256,
-    nonce_of_last_submission: Option<U256>,
+    newest_nonce: u64,
+    nonce_of_last_submission: Option<u64>,
 ) -> Result<GasPrice1559> {
     // The gas price of the refund tx is the current prevailing gas price
     // of the web3 gas estimation plus a buffer.
@@ -163,7 +166,7 @@ mod tests {
             max_fee_per_gas,
             max_priority_fee_per_gas: 3_000_000_000f64,
         };
-        let newest_nonce = U256::one();
+        let newest_nonce = 1;
         let nonce_of_last_submission = None;
         let gas_price_of_last_submission = None;
         let result = calculate_submission_gas_price(

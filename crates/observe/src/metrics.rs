@@ -88,10 +88,12 @@ pub fn serve_metrics(
     liveness: Arc<dyn LivenessChecking>,
     address: SocketAddr,
     readiness: Arc<Option<AtomicBool>>,
+    startup: Arc<Option<AtomicBool>>,
 ) -> JoinHandle<()> {
     let filter = handle_metrics()
-        .or(handle_liveness(liveness))
-        .or(handle_readiness(readiness));
+        .or(handle_liveness_probe(liveness))
+        .or(handle_readiness_probe(readiness))
+        .or(handle_startup_probe(startup));
     tracing::info!(%address, "serving metrics");
     task::spawn(warp::serve(filter).bind(address))
 }
@@ -102,7 +104,7 @@ pub fn handle_metrics() -> impl Filter<Extract = (impl Reply,), Error = Rejectio
     warp::path("metrics").map(move || encode(registry))
 }
 
-fn handle_liveness(
+fn handle_liveness_probe(
     liveness_checker: Arc<dyn LivenessChecking>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     warp::path("liveness").and_then(move || {
@@ -118,7 +120,7 @@ fn handle_liveness(
     })
 }
 
-fn handle_readiness(
+fn handle_readiness_probe(
     readiness: Arc<Option<AtomicBool>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     warp::path("ready").and_then(move || {
@@ -132,6 +134,29 @@ fn handle_readiness(
                 ));
             };
             let status = if readiness.load(Ordering::Acquire) {
+                warp::http::StatusCode::OK
+            } else {
+                warp::http::StatusCode::SERVICE_UNAVAILABLE
+            };
+            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
+        }
+    })
+}
+
+fn handle_startup_probe(
+    startup: Arc<Option<AtomicBool>>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path("startup").and_then(move || {
+        let startup = startup.clone();
+        async move {
+            let Some(ref startup) = *startup else {
+                // if startup is not configured we're started right away
+                return Result::<_, Infallible>::Ok(warp::reply::with_status(
+                    warp::reply(),
+                    warp::http::StatusCode::OK,
+                ));
+            };
+            let status = if startup.load(Ordering::Acquire) {
                 warp::http::StatusCode::OK
             } else {
                 warp::http::StatusCode::SERVICE_UNAVAILABLE

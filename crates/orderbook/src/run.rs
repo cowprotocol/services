@@ -473,7 +473,12 @@ pub async fn run(args: Arguments) {
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
     tracing::info!(%metrics_address, "serving metrics");
-    let metrics_task = serve_metrics(orderbook, metrics_address, Default::default());
+    let metrics_task = serve_metrics(
+        orderbook,
+        metrics_address,
+        Default::default(),
+        Default::default(),
+    );
 
     futures::pin_mut!(serve_api);
     tokio::select! {
