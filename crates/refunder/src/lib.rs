@@ -1,5 +1,4 @@
 pub mod arguments;
-pub mod ethflow_order;
 pub mod refund_service;
 pub mod submitter;
 
@@ -61,6 +60,7 @@ pub async fn run(args: arguments::Arguments) {
     observe::metrics::serve_metrics(
         liveness.clone(),
         ([0, 0, 0, 0], args.metrics_port).into(),
+        Default::default(),
         Default::default(),
     );
 
