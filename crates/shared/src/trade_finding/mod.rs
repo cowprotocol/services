@@ -9,13 +9,12 @@ use {
         price_estimation::{PriceEstimationError, Query},
         trade_finding::external::dto,
     },
+    alloy::primitives::{Address, Bytes, U256},
     anyhow::{Context, Result},
     derive_more::Debug,
-    ethcontract::{Bytes, H160, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
-    number::conversions::big_rational_to_u256,
+    number::conversions::alloy::big_rational_to_u256,
     serde::{Deserialize, Serialize},
     std::{collections::HashMap, ops::Mul},
     thiserror::Error,
@@ -36,7 +35,7 @@ pub trait TradeFinding: Send + Sync + 'static {
 pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
-    pub solver: H160,
+    pub solver: Address,
     pub execution: QuoteExecution,
 }
 
@@ -68,14 +67,14 @@ impl TradeKind {
         }
     }
 
-    pub fn solver(&self) -> H160 {
+    pub fn solver(&self) -> Address {
         match self {
             TradeKind::Legacy(trade) => trade.solver,
             TradeKind::Regular(trade) => trade.solver,
         }
     }
 
-    pub fn tx_origin(&self) -> Option<H160> {
+    pub fn tx_origin(&self) -> Option<Address> {
         match self {
             TradeKind::Legacy(trade) => trade.tx_origin,
             TradeKind::Regular(trade) => trade.tx_origin,
@@ -84,8 +83,8 @@ impl TradeKind {
 
     pub fn out_amount(
         &self,
-        buy_token: &H160,
-        sell_token: &H160,
+        buy_token: &Address,
+        sell_token: &Address,
         in_amount: &U256,
         order_kind: &OrderKind,
     ) -> Result<U256> {
@@ -130,16 +129,16 @@ pub struct LegacyTrade {
     /// Interactions needed to produce the expected `out_amount`.
     pub interactions: Vec<Interaction>,
     /// Which solver provided this trade.
-    pub solver: H160,
+    pub solver: Address,
     /// If this is set the quote verification need to use this as the
     /// `tx.origin` to make the quote pass the simulation.
-    pub tx_origin: Option<H160>,
+    pub tx_origin: Option<Address>,
 }
 
 /// A trade with JIT orders.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
-    pub clearing_prices: HashMap<H160, U256>,
+    pub clearing_prices: HashMap<Address, U256>,
     /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
     /// The onchain calls to run before sending user funds to the settlement
@@ -148,18 +147,18 @@ pub struct Trade {
     /// Interactions needed to produce the expected trade amount.
     pub interactions: Vec<Interaction>,
     /// Which solver provided this trade.
-    pub solver: H160,
+    pub solver: Address,
     /// If this is set the quote verification need to use this as the
     /// `tx.origin` to make the quote pass the simulation.
-    pub tx_origin: Option<H160>,
+    pub tx_origin: Option<Address>,
     pub jit_orders: Vec<dto::JitOrder>,
 }
 
 impl Trade {
     pub fn out_amount(
         &self,
-        buy_token: &H160,
-        sell_token: &H160,
+        buy_token: &Address,
+        sell_token: &Address,
         in_amount: &U256,
         order_kind: &OrderKind,
     ) -> Result<U256> {
@@ -194,7 +193,7 @@ impl Trade {
 /// Data for a raw GPv2 interaction.
 #[derive(Clone, PartialEq, Eq, Hash, Default, Serialize, Debug)]
 pub struct Interaction {
-    pub target: H160,
+    pub target: Address,
     pub value: U256,
     #[debug("{}", const_hex::encode_prefixed::<&[u8]>(data.as_ref()))]
     pub data: Vec<u8>,
@@ -202,13 +201,17 @@ pub struct Interaction {
 
 impl Interaction {
     pub fn encode(&self) -> EncodedInteraction {
-        (self.target, self.value, Bytes(self.data.clone()))
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(self.data.as_slice()),
+        )
     }
 
     pub fn to_interaction_data(&self) -> InteractionData {
         InteractionData {
-            target: self.target.into_alloy(),
-            value: self.value.into_alloy(),
+            target: self.target,
+            value: self.value,
             call_data: self.data.clone(),
         }
     }
@@ -217,14 +220,14 @@ impl Interaction {
 impl From<InteractionData> for Interaction {
     fn from(interaction: InteractionData) -> Self {
         Self {
-            target: interaction.target.into_legacy(),
-            value: interaction.value.into_legacy(),
+            target: interaction.target,
+            value: interaction.value,
             data: interaction.call_data,
         }
     }
 }
 
-pub type EncodedInteraction = (H160, U256, Bytes<Vec<u8>>);
+pub type EncodedInteraction = (Address, U256, Bytes);
 
 #[derive(Debug, Error)]
 pub enum TradeError {
@@ -294,8 +297,8 @@ mod tests {
     #[test]
     fn test_debug_interaction() {
         let interaction = Interaction {
-            target: H160::zero(),
-            value: U256::one(),
+            target: Default::default(),
+            value: U256::ONE,
             data: vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
         };
 

@@ -94,9 +94,9 @@ pub fn to_interaction(
 
     let encoded = interaction.encode();
     eth::Interaction {
-        target: eth::Address(encoded.0),
-        value: eth::Ether(encoded.1),
-        call_data: crate::util::Bytes(encoded.2.0),
+        target: eth::Address(encoded.0.into_legacy()),
+        value: eth::Ether(encoded.1.into_legacy()),
+        call_data: crate::util::Bytes(encoded.2.0.to_vec()),
     }
 }
 

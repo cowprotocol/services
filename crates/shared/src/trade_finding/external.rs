@@ -17,7 +17,7 @@ use {
         },
     },
     anyhow::{Context, anyhow},
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     futures::FutureExt,
     observe::tracing::tracing_headers,
     reqwest::{Client, header},
@@ -130,19 +130,19 @@ impl From<dto::QuoteKind> for TradeKind {
 impl From<dto::LegacyQuote> for LegacyTrade {
     fn from(quote: dto::LegacyQuote) -> Self {
         Self {
-            out_amount: quote.amount,
+            out_amount: quote.amount.into_alloy(),
             gas_estimate: quote.gas,
             interactions: quote
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
+                    target: interaction.target.into_alloy(),
+                    value: interaction.value.into_alloy(),
                     data: interaction.call_data,
                 })
                 .collect(),
-            solver: quote.solver,
-            tx_origin: quote.tx_origin,
+            solver: quote.solver.into_alloy(),
+            tx_origin: quote.tx_origin.map(IntoAlloy::into_alloy),
         }
     }
 }
@@ -150,14 +150,18 @@ impl From<dto::LegacyQuote> for LegacyTrade {
 impl From<dto::Quote> for Trade {
     fn from(quote: dto::Quote) -> Self {
         Self {
-            clearing_prices: quote.clearing_prices,
+            clearing_prices: quote
+                .clearing_prices
+                .into_iter()
+                .map(|(k, v)| (k.into_alloy(), v.into_alloy()))
+                .collect(),
             gas_estimate: quote.gas,
             pre_interactions: quote
                 .pre_interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
+                    target: interaction.target.into_alloy(),
+                    value: interaction.value.into_alloy(),
                     data: interaction.call_data,
                 })
                 .collect(),
@@ -165,13 +169,13 @@ impl From<dto::Quote> for Trade {
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
+                    target: interaction.target.into_alloy(),
+                    value: interaction.value.into_alloy(),
                     data: interaction.call_data,
                 })
                 .collect(),
-            solver: quote.solver,
-            tx_origin: quote.tx_origin,
+            solver: quote.solver.into_alloy(),
+            tx_origin: quote.tx_origin.map(IntoAlloy::into_alloy),
             jit_orders: quote.jit_orders,
         }
     }
@@ -189,8 +193,8 @@ impl From<dto::Error> for PriceEstimationError {
 impl From<dto::Interaction> for Interaction {
     fn from(interaction: dto::Interaction) -> Self {
         Self {
-            target: interaction.target,
-            value: interaction.value,
+            target: interaction.target.into_alloy(),
+            value: interaction.value.into_alloy(),
             data: interaction.call_data,
         }
     }
@@ -210,9 +214,9 @@ impl TradeFinding for ExternalTradeFinder {
         Ok(Quote {
             out_amount: trade
                 .out_amount(
-                    &query.buy_token,
-                    &query.sell_token,
-                    &query.in_amount.get(),
+                    &query.buy_token.into_alloy(),
+                    &query.sell_token.into_alloy(),
+                    &query.in_amount.get().into_alloy(),
                     &query.kind,
                 )
                 .map_err(TradeError::Other)?,

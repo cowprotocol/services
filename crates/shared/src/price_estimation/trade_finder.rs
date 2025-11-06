@@ -13,6 +13,7 @@ use {
     },
     crate::trade_finding::{TradeError, TradeFinding},
     anyhow::{Result, anyhow},
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,
@@ -85,9 +86,9 @@ impl Inner {
 
         let quote = self.finder.get_quote(&query).await?;
         Ok(Estimate {
-            out_amount: quote.out_amount,
+            out_amount: quote.out_amount.into_legacy(),
             gas: quote.gas_estimate,
-            solver: quote.solver,
+            solver: quote.solver.into_legacy(),
             verified: false,
             execution: quote.execution,
         })
