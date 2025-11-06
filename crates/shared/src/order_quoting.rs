@@ -17,6 +17,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -66,8 +67,8 @@ impl QuoteParameters {
 
         price_estimation::Query {
             verification: self.verification.clone(),
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
+            sell_token: self.sell_token.into_alloy(),
+            buy_token: self.buy_token.into_alloy(),
             in_amount,
             kind,
             block_dependent: true,
@@ -859,8 +860,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -1000,8 +1001,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -1136,8 +1137,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,

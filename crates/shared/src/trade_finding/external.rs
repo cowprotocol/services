@@ -17,7 +17,10 @@ use {
         },
     },
     anyhow::{Context, anyhow},
-    ethrpc::{alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     futures::FutureExt,
     observe::tracing::tracing_headers,
     reqwest::{Client, header},
@@ -56,8 +59,8 @@ impl ExternalTradeFinder {
     async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
             let order = dto::Order {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
+                sell_token: query.sell_token.into_legacy(),
+                buy_token: query.buy_token.into_legacy(),
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
@@ -214,8 +217,8 @@ impl TradeFinding for ExternalTradeFinder {
         Ok(Quote {
             out_amount: trade
                 .out_amount(
-                    &query.buy_token.into_alloy(),
-                    &query.sell_token.into_alloy(),
+                    &query.buy_token,
+                    &query.sell_token,
                     &query.in_amount.get().into_alloy(),
                     &query.kind,
                 )

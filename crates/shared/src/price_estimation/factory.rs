@@ -30,7 +30,10 @@ use {
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
     ethcontract::H160,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -299,7 +302,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn sanitized(&self, estimator: Arc<dyn PriceEstimating>) -> SanitizedPriceEstimator {
         SanitizedPriceEstimator::new(
             estimator,
-            self.network.native_token,
+            self.network.native_token.into_alloy(),
             self.components.bad_token_detector.clone(),
         )
     }
