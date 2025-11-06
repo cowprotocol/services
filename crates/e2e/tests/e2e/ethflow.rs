@@ -583,11 +583,8 @@ async fn test_trade_query(
     assert_eq!(response.len(), 1);
 
     // Expected values from actual EIP1271 order instead of eth-flow order
-    assert_eq!(response[0].owner, ethflow_contract.address().into_legacy());
-    assert_eq!(
-        response[0].sell_token,
-        contracts.weth.address().into_legacy()
-    );
+    assert_eq!(response[0].owner, *ethflow_contract.address());
+    assert_eq!(response[0].sell_token, *contracts.weth.address());
 }
 
 async fn test_order_parameters(

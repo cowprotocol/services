@@ -61,7 +61,7 @@ pub mod alloy {
         alloy::primitives::U256,
         anyhow::{Result, ensure},
         bigdecimal::{BigDecimal, num_bigint::ToBigInt},
-        num::{BigInt, BigUint, bigint::Sign},
+        num::{BigInt, BigRational, BigUint, Zero, bigint::Sign},
     };
     pub fn big_uint_to_u256(input: &BigUint) -> Result<U256> {
         let bytes = input.to_bytes_be();
@@ -80,6 +80,11 @@ pub mod alloy {
         }
         let big_int = big_decimal.to_bigint()?;
         big_int_to_u256(&big_int).ok()
+    }
+
+    pub fn big_rational_to_u256(ratio: &BigRational) -> Result<U256> {
+        ensure!(!ratio.denom().is_zero(), "zero denominator");
+        big_int_to_u256(&(ratio.numer() / ratio.denom()))
     }
 }
 
