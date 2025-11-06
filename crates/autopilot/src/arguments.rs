@@ -479,7 +479,10 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
-        writeln!(f, "sleep_after_empty_auction: {sleep_after_empty_auction:?}")?;
+        writeln!(
+            f,
+            "sleep_after_empty_auction: {sleep_after_empty_auction:?}"
+        )?;
         Ok(())
     }
 }
