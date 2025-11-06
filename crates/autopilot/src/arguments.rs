@@ -81,11 +81,11 @@ pub struct Arguments {
     /// bad token detector thinks they are bad. Base tokens are
     /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    pub allowed_tokens: Vec<Address>,
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
+    pub unsupported_tokens: Vec<Address>,
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token. Estimators with the same name need to also be specified as
