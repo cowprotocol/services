@@ -1,4 +1,4 @@
-use ethereum_types::U256;
+use alloy::primitives::{U256, U512};
 
 /// Computes `x * q / d` rounding down.
 ///
@@ -13,7 +13,14 @@ pub fn mul_ratio(x: U256, q: U256, d: U256) -> Option<U256> {
         return Some(res / d);
     }
 
-    x.full_mul(q).checked_div(d.into())?.try_into().ok()
+    let div = (U512::from(x) * U512::from(q)) / U512::from(d);
+
+    let limbs = div.into_limbs();
+    if limbs[4..].iter().any(|limb| *limb != 0) {
+        return None;
+    }
+
+    Some(U256::from_limbs_slice(&limbs[..4]))
 }
 
 /// Computes `x * q / d` rounding up.
@@ -26,12 +33,19 @@ pub fn mul_ratio_ceil(x: U256, q: U256, d: U256) -> Option<U256> {
 
     // fast path when math in U256 doesn't overflow
     if let Some(p) = x.checked_mul(q) {
-        let (div, rem) = p.div_mod(d);
-        return div.checked_add(u8::from(!rem.is_zero()).into());
+        let (div, rem) = (p / d, p % d);
+        return div.checked_add(U256::from(!rem.is_zero()));
     }
 
-    let p = x.full_mul(q);
-    let (div, rem) = p.div_mod(d.into());
-    let result = U256::try_from(div).ok()?;
-    result.checked_add(u8::from(!rem.is_zero()).into())
+    let p = U512::from(x) * U512::from(q);
+    let d = U512::from(d);
+    let (div, rem) = (p / d, p % d);
+
+    let limbs = div.into_limbs();
+    if limbs[4..].iter().any(|limb| *limb != 0) {
+        return None;
+    }
+
+    let result = U256::from_limbs_slice(&div.into_limbs()[..4]);
+    result.checked_add(U256::from(!rem.is_zero()))
 }
