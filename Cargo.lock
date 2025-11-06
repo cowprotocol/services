@@ -2282,7 +2282,6 @@ dependencies = [
  "const-hex",
  "contracts",
  "database",
- "ethcontract",
  "ethrpc",
  "futures",
  "hex-literal",
