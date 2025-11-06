@@ -1,12 +1,12 @@
 use {
     crate::database::Postgres,
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     ethcontract::H160,
     futures::stream::TryStreamExt,
     model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
     number::conversions::big_decimal_to_big_uint,
-    primitive_types::H256,
     std::convert::TryInto,
 };
 
@@ -91,10 +91,10 @@ fn trade_from(
         .context("sell_amount is not an unsigned integer")?;
     let sell_amount_before_fees = big_decimal_to_big_uint(&row.sell_amount_before_fees)
         .context("sell_amount_before_fees is not an unsigned integer")?;
-    let owner = H160(row.owner.0);
-    let buy_token = H160(row.buy_token.0);
-    let sell_token = H160(row.sell_token.0);
-    let tx_hash = row.tx_hash.map(|hash| H256(hash.0));
+    let owner = Address::from_slice(&row.owner.0);
+    let buy_token = Address::from_slice(&row.buy_token.0);
+    let sell_token = Address::from_slice(&row.sell_token.0);
+    let tx_hash = row.tx_hash.map(|hash| B256::from_slice(&hash.0));
     Ok(Trade {
         block_number,
         log_index,

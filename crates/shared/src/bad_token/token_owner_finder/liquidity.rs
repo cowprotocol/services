@@ -7,7 +7,7 @@ use {
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::H160,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
 };
 
@@ -22,7 +22,7 @@ impl TokenOwnerProposing for UniswapLikePairProviderFinder {
         Ok(self
             .base_tokens
             .iter()
-            .filter_map(|&base_token| TokenPair::new(base_token, token))
+            .filter_map(|base_token| TokenPair::new(base_token.into_alloy(), token.into_alloy()))
             .map(|pair| self.inner.pair_address(&pair))
             .collect())
     }
@@ -105,7 +105,7 @@ impl TokenOwnerProposing for UniswapV3Finder {
         Ok(self
             .base_tokens
             .iter()
-            .filter_map(|base_token| TokenPair::new(*base_token, token))
+            .filter_map(|base_token| TokenPair::new(base_token.into_alloy(), token.into_alloy()))
             .flat_map(|pair| self.fee_values.iter().map(move |fee| (pair, *fee)))
             .map(|(pair, fee)| {
                 uniswap_v3_pair_provider::pair_address(

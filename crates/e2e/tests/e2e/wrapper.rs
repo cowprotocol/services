@@ -238,7 +238,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     let solve_tx = web3
         .alloy
-        .get_transaction_by_hash(solve_tx_hash.into_alloy())
+        .get_transaction_by_hash(solve_tx_hash)
         .await
         .unwrap()
         .unwrap()
@@ -269,7 +269,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     let trace = web3
         .alloy
-        .debug_trace_transaction(solve_tx_hash.into_alloy(), tracing_options)
+        .debug_trace_transaction(solve_tx_hash, tracing_options)
         .await
         .unwrap();
 
@@ -326,7 +326,9 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     // Sometimes the API isnt ready to respond to the request immediately so we wait
     // a bit for success
     wait_for_condition(TIMEOUT, || async {
-        let auction_info = services.get_solver_competition(solve_tx_hash).await;
+        let auction_info = services
+            .get_solver_competition(solve_tx_hash.into_legacy())
+            .await;
 
         if let Ok(a) = auction_info {
             tracing::info!("Pulled auction id {:?}", a.auction_id);

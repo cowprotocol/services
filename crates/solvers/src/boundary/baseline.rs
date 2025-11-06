@@ -7,6 +7,7 @@ use {
     },
     contracts::alloy::UniswapV3QuoterV2,
     ethereum_types::{H160, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::{
@@ -130,10 +131,10 @@ impl<'a> Solver<'a> {
 
             let buy_token = liquidity
                 .token_pair
-                .other(&sell_token)
+                .other(&sell_token.into_alloy())
                 .expect("Inconsistent path");
             let buy_amount = liquidity
-                .get_amount_out(buy_token, (sell_amount, sell_token))
+                .get_amount_out(buy_token.into_legacy(), (sell_amount, sell_token))
                 .await?;
 
             segments.push(solver::Segment {
@@ -143,13 +144,13 @@ impl<'a> Solver<'a> {
                     amount: sell_amount,
                 },
                 output: eth::Asset {
-                    token: eth::TokenAddress(buy_token),
+                    token: eth::TokenAddress(buy_token.into_legacy()),
                     amount: buy_amount,
                 },
                 gas: eth::Gas(liquidity.gas_cost().await.into()),
             });
 
-            sell_token = buy_token;
+            sell_token = buy_token.into_legacy();
             sell_amount = buy_amount;
         }
         Some(segments)
@@ -217,9 +218,10 @@ fn to_boundary_liquidity(
                     }
                 }
                 liquidity::State::LimitOrder(limit_order) => {
-                    if let Some(token_pair) =
-                        TokenPair::new(limit_order.maker.token.0, limit_order.taker.token.0)
-                    {
+                    if let Some(token_pair) = TokenPair::new(
+                        limit_order.maker.token.0.into_alloy(),
+                        limit_order.taker.token.0.into_alloy(),
+                    ) {
                         onchain_liquidity
                             .entry(token_pair)
                             .or_default()
@@ -321,5 +323,5 @@ fn to_boundary_base_tokens(
 
 fn to_boundary_token_pair(pair: &liquidity::TokenPair) -> TokenPair {
     let (a, b) = pair.get();
-    TokenPair::new(a.0, b.0).unwrap()
+    TokenPair::new(a.0.into_alloy(), b.0.into_alloy()).unwrap()
 }

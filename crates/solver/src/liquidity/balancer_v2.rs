@@ -262,7 +262,11 @@ mod tests {
     }
 
     fn token_pair(seed0: u8, seed1: u8) -> TokenPair {
-        TokenPair::new(H160([seed0; 20]), H160([seed1; 20])).unwrap()
+        TokenPair::new(
+            Address::from_slice(&[seed0; 20]),
+            Address::from_slice(&[seed1; 20]),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -392,9 +396,21 @@ mod tests {
 
         let base_tokens = BaseTokens::new(H160([0xb0; 20]), &[]);
         let traded_pairs = [
-            TokenPair::new(H160([0x70; 20]), H160([0x71; 20])).unwrap(),
-            TokenPair::new(H160([0x70; 20]), H160([0x72; 20])).unwrap(),
-            TokenPair::new(H160([0xb0; 20]), H160([0x73; 20])).unwrap(),
+            TokenPair::new(
+                Address::from_slice(&[0x70; 20]),
+                Address::from_slice(&[0x71; 20]),
+            )
+            .unwrap(),
+            TokenPair::new(
+                Address::from_slice(&[0x70; 20]),
+                Address::from_slice(&[0x72; 20]),
+            )
+            .unwrap(),
+            TokenPair::new(
+                Address::from_slice(&[0xb0; 20]),
+                Address::from_slice(&[0x73; 20]),
+            )
+            .unwrap(),
         ];
         let pairs = base_tokens.relevant_pairs(traded_pairs.into_iter());
 
