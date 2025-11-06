@@ -196,6 +196,7 @@ impl<'a> Services<'a> {
             format!("--ethflow-contracts={ethflow_contracts}"),
             "--skip-event-sync=true".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
+            "--sleep-after-empty-auction=0s".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

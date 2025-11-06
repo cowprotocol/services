@@ -265,6 +265,11 @@ pub struct Arguments {
     /// and not cut any auctions.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub enable_leader_lock: bool,
+
+    /// How long the autopilot should wait before cutting the next auction when
+    /// the current one did not contain any settleable orders.
+    #[clap(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
+    pub sleep_after_empty_auction: Duration,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -397,6 +402,7 @@ impl std::fmt::Display for Arguments {
             db_based_solver_participation_guard,
             disable_order_filtering,
             enable_leader_lock,
+            sleep_after_empty_auction,
         } = self;
 
         write!(f, "{shared}")?;
@@ -473,6 +479,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
+        writeln!(f, "sleep_after_empty_auction: {sleep_after_empty_auction:?}")?;
         Ok(())
     }
 }

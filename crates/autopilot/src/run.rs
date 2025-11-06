@@ -663,6 +663,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
         enable_leader_lock: args.enable_leader_lock,
+        sleep_after_empty_auction: args.sleep_after_empty_auction,
     };
 
     let drivers_futures = args
