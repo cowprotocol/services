@@ -67,6 +67,8 @@ pub struct Config {
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
+    /// How long the autopilot should wait after auctions without
+    /// settleable orders to avoid busy looping.
     pub sleep_after_empty_auction: Duration,
 }
 
@@ -274,9 +276,7 @@ impl RunLoop {
             // Updating liveness probe to not report unhealthy due to this optimization
             self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
-            // Simple way to avoid cutting thousands of auctions while the auctions
-            // are empty before the official launch on new a new chain.
-            tokio::time::sleep(Duration::from_millis(1_000)).await;
+            tokio::time::sleep(self.config.sleep_after_empty_auction).await;
             return None;
         }
 
