@@ -1,6 +1,6 @@
 use {
+    alloy::primitives::Address,
     anyhow::Result,
-    ethcontract::H160,
     prometheus::IntCounterVec,
     reqwest::{Client, Url},
     serde::Deserialize,
@@ -18,12 +18,12 @@ pub struct TokenListConfiguration {
     pub chain_id: u64,
     pub client: Client,
     pub update_interval: Duration,
-    pub hardcoded: Vec<H160>,
+    pub hardcoded: Vec<Address>,
 }
 
 impl TokenListConfiguration {
     #[instrument(skip_all)]
-    async fn get_external_list(&self) -> Result<HashSet<H160>> {
+    async fn get_external_list(&self) -> Result<HashSet<Address>> {
         let model: TokenListModel = if let Some(url) = &self.url {
             self.client.get(url.clone()).send().await?.json().await?
         } else {
@@ -32,7 +32,7 @@ impl TokenListConfiguration {
         Ok(self.get_list(model.tokens))
     }
 
-    fn get_list(&self, tokens: Vec<TokenModel>) -> HashSet<H160> {
+    fn get_list(&self, tokens: Vec<TokenModel>) -> HashSet<Address> {
         tokens
             .into_iter()
             .filter(|token| token.chain_id == self.chain_id)
@@ -43,7 +43,7 @@ impl TokenListConfiguration {
 }
 #[derive(Clone, Debug, Default)]
 pub struct AutoUpdatingTokenList {
-    tokens: Arc<RwLock<HashSet<H160>>>,
+    tokens: Arc<RwLock<HashSet<Address>>>,
 }
 
 impl AutoUpdatingTokenList {
@@ -91,17 +91,17 @@ impl AutoUpdatingTokenList {
         Self { tokens }
     }
 
-    pub fn new(tokens: HashSet<H160>) -> Self {
+    pub fn new(tokens: HashSet<Address>) -> Self {
         Self {
             tokens: Arc::new(RwLock::new(tokens)),
         }
     }
 
-    pub fn contains(&self, address: &H160) -> bool {
+    pub fn contains(&self, address: &Address) -> bool {
         self.tokens.read().unwrap().contains(address)
     }
 
-    pub fn all(&self) -> HashSet<H160> {
+    pub fn all(&self) -> HashSet<Address> {
         self.tokens.read().unwrap().clone()
     }
 }
@@ -118,7 +118,7 @@ struct TokenListModel {
 #[serde(rename_all = "camelCase")]
 struct TokenModel {
     chain_id: u64,
-    address: H160,
+    address: Address,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -130,7 +130,7 @@ struct Metrics {
 
 #[cfg(test)]
 pub mod tests {
-    use {super::*, ethrpc::alloy::conversions::IntoLegacy};
+    use {super::*, alloy::primitives::address};
 
     // https://github.com/Uniswap/token-lists/blob/master/test/schema/example.tokenlist.json
     const EXAMPLE_LIST: &str = r#"
@@ -194,11 +194,11 @@ pub mod tests {
                 tokens: vec![
                     TokenModel {
                         chain_id: 1,
-                        address: testlib::tokens::USDC.into_legacy(),
+                        address: testlib::tokens::USDC,
                     },
                     TokenModel {
                         chain_id: 4,
-                        address: addr!("39AA39c021dfbaE8faC545936693aC917d5E7563"),
+                        address: address!("39AA39c021dfbaE8faC545936693aC917d5E7563"),
                     }
                 ]
             }
@@ -217,9 +217,9 @@ pub mod tests {
         };
         let tokens = config.get_list(list.tokens);
         let instance = AutoUpdatingTokenList::new(tokens);
-        assert!(instance.contains(&testlib::tokens::USDC.into_legacy()));
+        assert!(instance.contains(&testlib::tokens::USDC));
         // Chain ID 4
-        assert!(!instance.contains(&addr!("39AA39c021dfbaE8faC545936693aC917d5E7563")),);
+        assert!(!instance.contains(&address!("39AA39c021dfbaE8faC545936693aC917d5E7563")));
     }
 
     #[ignore]
@@ -234,13 +234,13 @@ pub mod tests {
             hardcoded: Default::default(),
         };
         let tokens = config.get_external_list().await.unwrap();
-        assert!(tokens.contains(&testlib::tokens::USDC.into_legacy()));
-        let gc_token = addr!("39AA39c021dfbaE8faC545936693aC917d5E7563");
+        assert!(tokens.contains(&testlib::tokens::USDC));
+        let gc_token = address!("39AA39c021dfbaE8faC545936693aC917d5E7563");
         assert!(!tokens.contains(&gc_token));
 
         config.chain_id = 4;
         let tokens = config.get_list(list.tokens);
-        assert!(!tokens.contains(&testlib::tokens::USDC.into_legacy()));
+        assert!(!tokens.contains(&testlib::tokens::USDC));
         assert!(tokens.contains(&gc_token));
     }
 }
