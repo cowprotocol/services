@@ -18,7 +18,7 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{BlockRetrieving, RangeInclusive},
     },
     itertools::{Either, Itertools},
@@ -155,8 +155,8 @@ impl PoolsCheckpointHandler {
 
         let mut pools_by_token_pair: HashMap<TokenPair, HashSet<H160>> = HashMap::new();
         for pool in &registered_pools.pools {
-            let pair =
-                TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
+            let pair = TokenPair::new(pool.token0.id.into_alloy(), pool.token1.id.into_alloy())
+                .context("cant create pair")?;
             pools_by_token_pair.entry(pair).or_default().insert(pool.id);
         }
 

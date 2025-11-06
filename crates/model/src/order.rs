@@ -9,6 +9,7 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
+    alloy::primitives::Address,
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -257,7 +258,10 @@ impl OrderData {
     }
 
     pub fn token_pair(&self) -> Option<TokenPair> {
-        TokenPair::new(self.buy_token, self.sell_token)
+        TokenPair::new(
+            Address::from_slice(&self.buy_token.0),
+            Address::from_slice(&self.sell_token.0),
+        )
     }
 
     pub fn uid(&self, domain: &DomainSeparator, owner: &H160) -> OrderUid {

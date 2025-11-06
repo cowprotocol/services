@@ -4,7 +4,10 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     futures::future,
     model::TokenPair,
     shared::{
@@ -132,7 +135,7 @@ impl Fetcher {
             .iter()
             .map(|pair| {
                 let (a, b) = pair.get();
-                TokenPair::new(a.into(), b.into()).expect("a != b")
+                TokenPair::new(a.0.0.into_alloy(), b.0.0.into_alloy()).expect("a != b")
             })
             .collect();
 
