@@ -13,8 +13,8 @@ impl PairProvider {
         // https://uniswap.org/docs/v2/javascript-SDK/getting-pair-addresses/
         let salt = {
             let mut buffer = [0u8; 40];
-            buffer[0..20].copy_from_slice(&token0.as_slice());
-            buffer[20..40].copy_from_slice(&token1.as_slice());
+            buffer[0..20].copy_from_slice(token0.as_slice());
+            buffer[20..40].copy_from_slice(token1.as_slice());
             keccak256(&buffer)
         };
         create2_target_address(self.factory, &salt, &self.init_code_digest)
