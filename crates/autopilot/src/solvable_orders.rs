@@ -691,7 +691,7 @@ async fn find_unsupported_tokens(
             .map(|token| {
                 let bad_token = bad_token.clone();
                 async move {
-                    match bad_token.detect(token).await {
+                    match bad_token.detect(token.into_legacy()).await {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
                             tracing::warn!(

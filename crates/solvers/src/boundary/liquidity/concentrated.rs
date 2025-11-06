@@ -34,7 +34,7 @@ impl BaselineSolvable for Pool {
         out_token: H160,
         (in_amount, in_token): (U256, H160),
     ) -> Option<U256> {
-        if TokenPair::new(out_token, in_token) != Some(self.tokens) {
+        if TokenPair::new(out_token.into_alloy(), in_token.into_alloy()) != Some(self.tokens) {
             // The pool has wrong tokens or input amount would overflow
             return None;
         }
@@ -58,7 +58,7 @@ impl BaselineSolvable for Pool {
         in_token: H160,
         (out_amount, out_token): (U256, H160),
     ) -> Option<U256> {
-        if TokenPair::new(out_token, in_token) != Some(self.tokens) {
+        if TokenPair::new(out_token.into_alloy(), in_token.into_alloy()) != Some(self.tokens) {
             // The pool has wrong tokens or out amount would overflow
             return None;
         }

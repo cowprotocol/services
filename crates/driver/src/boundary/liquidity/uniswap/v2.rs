@@ -79,11 +79,11 @@ pub(in crate::boundary::liquidity) fn to_domain_pool(
         router: router(&pool),
         reserves: liquidity::uniswap::v2::Reserves::try_new(
             eth::Asset {
-                token: pool.tokens.get().0.into(),
+                token: pool.tokens.get().0.into_legacy().into(),
                 amount: pool.reserves.0.into(),
             },
             eth::Asset {
-                token: pool.tokens.get().1.into(),
+                token: pool.tokens.get().1.into_legacy().into(),
                 amount: pool.reserves.1.into(),
             },
         )
