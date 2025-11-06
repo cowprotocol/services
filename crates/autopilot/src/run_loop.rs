@@ -273,6 +273,9 @@ impl RunLoop {
             // Updating liveness probe to not report unhealthy due to this optimization
             self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
+            // Simple way to avoid cutting thousands of auctions while the auctions
+            // are empty before the official launch on new a new chain.
+            tokio::time::sleep(Duration::from_millis(1_000)).await;
             return None;
         }
 
