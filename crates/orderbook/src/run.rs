@@ -232,8 +232,8 @@ pub async fn run(args: Arguments) {
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter().copied());
-    allowed_tokens.push(BUY_ETH_ADDRESS);
+    allowed_tokens.extend(base_tokens.tokens().iter().map(|t| t.into_alloy()));
+    allowed_tokens.push(BUY_ETH_ADDRESS.into_alloy());
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)

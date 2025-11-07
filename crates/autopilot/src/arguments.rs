@@ -81,11 +81,11 @@ pub struct Arguments {
     /// bad token detector thinks they are bad. Base tokens are
     /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    pub allowed_tokens: Vec<Address>,
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
+    pub unsupported_tokens: Vec<Address>,
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token. Estimators with the same name need to also be specified as
@@ -141,7 +141,7 @@ pub struct Arguments {
     /// Hardcoded list of trusted tokens to use in addition to
     /// `trusted_tokens_url`.
     #[clap(long, env, use_value_delimiter = true)]
-    pub trusted_tokens: Option<Vec<H160>>,
+    pub trusted_tokens: Option<Vec<Address>>,
 
     /// Time interval after which the trusted tokens list needs to be updated.
     #[clap(
@@ -677,9 +677,9 @@ impl FromStr for FeePolicy {
 #[derive(Debug, Clone)]
 pub struct CowAmmConfig {
     /// Which contract to index for CoW AMM deployment events.
-    pub factory: H160,
+    pub factory: Address,
     /// Which helper contract to use for interfacing with the indexed CoW AMMs.
-    pub helper: H160,
+    pub helper: Address,
     /// At which block indexing should start on the factory.
     pub index_start: u64,
 }

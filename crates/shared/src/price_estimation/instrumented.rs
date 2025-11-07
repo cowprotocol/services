@@ -129,8 +129,8 @@ mod tests {
             MockPriceEstimating,
             PriceEstimationError,
         },
+        alloy::primitives::Address,
         anyhow::anyhow,
-        ethcontract::H160,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
     };
@@ -139,8 +139,8 @@ mod tests {
     async fn records_metrics_for_each_query() {
         let query = Arc::new(Query {
             verification: Default::default(),
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
+            sell_token: Address::new([1; 20]),
+            buy_token: Address::new([2; 20]),
             in_amount: NonZeroU256::try_from(3).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
@@ -152,7 +152,7 @@ mod tests {
             Ok(Estimate::default()),
             Err(PriceEstimationError::NoLiquidity),
             Err(PriceEstimationError::UnsupportedToken {
-                token: H160([0; 20]),
+                token: Address::new([0; 20]),
                 reason: "".to_string(),
             }),
             Err(PriceEstimationError::UnsupportedOrderType("".to_string())),
