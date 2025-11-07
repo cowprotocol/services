@@ -80,23 +80,23 @@ async function getJson<T>(url: string): Promise<T | null> {
 export async function findRemoteRepoMatch(apiUrl: string, chainId: number, address: string): Promise<RemoteRepoMatch | null> {
   const addr = address.toLowerCase();
   const base = apiUrl.replace(/\/$/, '');
-  // 1) Fast check endpoint first
-  const url = `${base}/check-by-addresses?addresses=${encodeURIComponent(addr)}&chainIds=${encodeURIComponent(String(chainId))}`;
-  type CheckResp = Array<{ address?: string; chainId?: string | number; status?: string }>;
+  // 1) Fast check endpoint first - using v2 API (v1 check-by-addresses is deprecated)
+  const url = `${base}/files/any/${chainId}/${addr}`;
+  // v2 API returns different structure - simpler check for contract existence
   try {
-    const data = await getJson<CheckResp>(url);
-    if (Array.isArray(data) && data.length) {
-      const item = data.find((x) => String(x.address || '').toLowerCase() === addr);
-      const status = String(item?.status || '').toLowerCase();
-      let kind: 'full' | 'partial' | null = null;
-      if (status === 'perfect' || status === 'full' || status === 'full_match') kind = 'full';
-      else if (status === 'partial' || status === 'partial_match') kind = 'partial';
-      if (kind) {
-        const prefix = kind === 'full' ? 'full_match' : 'partial_match';
-        // Use repository paths for direct files access
-        const apiBase = `${base}/repository/contracts/${prefix}/${chainId}/${addr}`;
-        return { type: kind, apiBase };
+    const res = await fetch(url);
+    if (res.ok) {
+      // Contract is verified - determine if full or partial match
+      // Try full match first
+      const fullUrl = `${base}/files/tree/any/${chainId}/${addr}`;
+      const treeData = await getJson<any>(fullUrl);
+      let kind: 'full' | 'partial' = 'full';
+      if (treeData && treeData.status === 'partial') {
+        kind = 'partial';
       }
+      const prefix = kind === 'full' ? 'full_match' : 'partial_match';
+      const apiBase = `${base}/repository/contracts/${prefix}/${chainId}/${addr}`;
+      return { type: kind, apiBase };
     }
   } catch {}
   // 2) Fallback to tree endpoint which reports matches even when check says false (e.g., proxies)
