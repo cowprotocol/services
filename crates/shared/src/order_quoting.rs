@@ -17,6 +17,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
