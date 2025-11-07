@@ -495,7 +495,7 @@ impl OrderValidating for OrderValidator {
         for &token in &[order.sell_token, order.buy_token] {
             if let TokenQuality::Bad { reason } = self
                 .bad_token_detector
-                .detect(token)
+                .detect(token.into_alloy())
                 .await
                 .map_err(PartialValidationError::Other)?
             {
@@ -1232,11 +1232,11 @@ mod tests {
         let mut bad_token_detector = MockBadTokenDetecting::new();
         bad_token_detector
             .expect_detect()
-            .with(eq(H160::from_low_u64_be(1)))
+            .with(eq(Address::with_last_byte(1)))
             .returning(|_| Ok(TokenQuality::Good));
         bad_token_detector
             .expect_detect()
-            .with(eq(H160::from_low_u64_be(2)))
+            .with(eq(Address::with_last_byte(2)))
             .returning(|_| Ok(TokenQuality::Good));
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
