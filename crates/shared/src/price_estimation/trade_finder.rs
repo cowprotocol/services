@@ -72,8 +72,8 @@ impl Inner {
         if let Some(verifier) = &self.verifier {
             let trade = self.finder.get_trade(&query).await?;
             let price_query = PriceQuery {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
+                sell_token: query.sell_token.into_legacy(),
+                buy_token: query.buy_token.into_legacy(),
                 in_amount: query.in_amount,
                 kind: query.kind,
             };

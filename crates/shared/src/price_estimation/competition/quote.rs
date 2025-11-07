@@ -9,6 +9,7 @@ use {
         QuoteVerificationMode,
     },
     anyhow::Context,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
     primitive_types::{H160, U256},
@@ -26,7 +27,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
             };
-            let get_context = self.ranking.provide_context(out_token, query.timeout);
+            let get_context = self
+                .ranking
+                .provide_context(out_token.into_legacy(), query.timeout);
 
             // Filter out 0 gas cost estimate because they are obviously wrong and would
             // likely win the price competition which would lead to us paying huge

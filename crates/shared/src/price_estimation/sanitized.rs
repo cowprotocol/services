@@ -9,11 +9,11 @@ use {
             gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
         },
     },
+    alloy::primitives::Address,
     anyhow::anyhow,
     ethrpc::alloy::conversions::IntoAlloy,
     futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
-    primitive_types::H160,
     std::sync::Arc,
     tracing::instrument,
 };
@@ -23,13 +23,13 @@ use {
 pub struct SanitizedPriceEstimator {
     inner: Arc<dyn PriceEstimating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    native_token: H160,
+    native_token: Address,
 }
 
 impl SanitizedPriceEstimator {
     pub fn new(
         inner: Arc<dyn PriceEstimating>,
-        native_token: H160,
+        native_token: Address,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
         Self {
@@ -42,7 +42,7 @@ impl SanitizedPriceEstimator {
     /// Checks if the traded tokens are supported by the protocol.
     async fn handle_bad_tokens(&self, query: &Query) -> Result<(), PriceEstimationError> {
         for token in [query.sell_token, query.buy_token] {
-            match self.bad_token_detector.detect(token.into_alloy()).await {
+            match self.bad_token_detector.detect(token).await {
                 Err(err) => return Err(PriceEstimationError::ProtocolInternal(err)),
                 Ok(TokenQuality::Bad { reason }) => {
                     return Err(PriceEstimationError::UnsupportedToken { token, reason });
@@ -77,7 +77,9 @@ impl PriceEstimating for SanitizedPriceEstimator {
             }
 
             // sell WETH for ETH => 1 to 1 conversion with cost for unwrapping
-            if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
+            if query.sell_token == self.native_token
+                && query.buy_token == BUY_ETH_ADDRESS.into_alloy()
+            {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_UNWRAP,
@@ -90,7 +92,9 @@ impl PriceEstimating for SanitizedPriceEstimator {
             }
 
             // sell ETH for WETH => 1 to 1 conversion with cost for wrapping
-            if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
+            if query.sell_token == BUY_ETH_ADDRESS.into_alloy()
+                && query.buy_token == self.native_token
+            {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_WRAP,
@@ -108,12 +112,14 @@ impl PriceEstimating for SanitizedPriceEstimator {
 
             let mut adjusted_query = Query::clone(&*query);
             let modification = if query.sell_token != self.native_token
-                && query.buy_token == BUY_ETH_ADDRESS
+                && query.buy_token == BUY_ETH_ADDRESS.into_alloy()
             {
                 tracing::debug!(?query, "estimate price for buying native asset");
                 adjusted_query.buy_token = self.native_token;
                 Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
-            } else if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
+            } else if query.sell_token == BUY_ETH_ADDRESS.into_alloy()
+                && query.buy_token != self.native_token
+            {
                 tracing::debug!(?query, "estimate price for selling native asset");
                 adjusted_query.sell_token = self.native_token;
                 Some(Modification::AddGas(GAS_PER_WETH_WRAP))
@@ -152,6 +158,8 @@ mod tests {
             bad_token::{MockBadTokenDetecting, TokenQuality},
             price_estimation::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         },
+        alloy::primitives::Address,
+        ethrpc::alloy::conversions::IntoAlloy,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         primitive_types::{H160, U256},
@@ -172,7 +180,7 @@ mod tests {
             }
         });
 
-        let native_token = H160::from_low_u64_le(42);
+        let native_token = Address::with_last_byte(42);
 
         let queries = [
             // This is the common case (Tokens are supported, distinct and not ETH).
@@ -180,8 +188,8 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: H160::from_low_u64_le(1),
-                    buy_token: H160::from_low_u64_le(2),
+                    sell_token: Address::with_last_byte(1),
+                    buy_token: Address::with_last_byte(2),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
@@ -201,8 +209,8 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: H160::from_low_u64_le(1),
-                    buy_token: BUY_ETH_ADDRESS,
+                    sell_token: Address::with_last_byte(1),
+                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
@@ -222,8 +230,8 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: H160::from_low_u64_le(1),
-                    buy_token: BUY_ETH_ADDRESS,
+                    sell_token: Address::with_last_byte(1),
+                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
                     in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
@@ -239,8 +247,8 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BUY_ETH_ADDRESS,
-                    buy_token: H160::from_low_u64_le(1),
+                    sell_token: BUY_ETH_ADDRESS.into_alloy(),
+                    buy_token: Address::with_last_byte(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
@@ -261,8 +269,8 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: H160::from_low_u64_le(1),
-                    buy_token: H160::from_low_u64_le(1),
+                    sell_token: Address::with_last_byte(1),
+                    buy_token: Address::with_last_byte(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
@@ -280,8 +288,8 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BUY_ETH_ADDRESS,
-                    buy_token: BUY_ETH_ADDRESS,
+                    sell_token: BUY_ETH_ADDRESS.into_alloy(),
+                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
@@ -300,7 +308,7 @@ mod tests {
                 Query {
                     verification: Default::default(),
                     sell_token: native_token,
-                    buy_token: BUY_ETH_ADDRESS,
+                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
@@ -319,7 +327,7 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BUY_ETH_ADDRESS,
+                    sell_token: BUY_ETH_ADDRESS.into_alloy(),
                     buy_token: native_token,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
@@ -339,15 +347,15 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BAD_TOKEN,
-                    buy_token: H160::from_low_u64_le(1),
+                    sell_token: BAD_TOKEN.into_alloy(),
+                    buy_token: Address::with_last_byte(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
-                    token: BAD_TOKEN,
+                    token: BAD_TOKEN.into_alloy(),
                     reason: "".to_string(),
                 }),
             ),
@@ -355,15 +363,15 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: H160::from_low_u64_le(1),
-                    buy_token: BAD_TOKEN,
+                    sell_token: Address::with_last_byte(1),
+                    buy_token: BAD_TOKEN.into_alloy(),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
-                    token: BAD_TOKEN,
+                    token: BAD_TOKEN.into_alloy(),
                     reason: "".to_string(),
                 }),
             ),

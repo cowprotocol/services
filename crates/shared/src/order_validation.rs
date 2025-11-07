@@ -187,9 +187,10 @@ impl From<CalculateQuoteError> for ValidationError {
             CalculateQuoteError::Price {
                 source: PriceEstimationError::UnsupportedToken { token, reason },
                 ..
-            } => {
-                ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
-            }
+            } => ValidationError::Partial(PartialValidationError::UnsupportedToken {
+                token: token.into_legacy(),
+                reason,
+            }),
             CalculateQuoteError::Price {
                 source: PriceEstimationError::ProtocolInternal(err),
                 ..
@@ -488,7 +489,7 @@ impl OrderValidating for OrderValidator {
         if has_same_buy_and_sell_token(&order, self.native_token.address()) {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
-        if order.sell_token == BUY_ETH_ADDRESS {
+        if order.sell_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy() {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
 
@@ -857,7 +858,8 @@ pub enum OrderValidToError {
 /// This also checks for orders selling wrapped native token for native token.
 fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &Address) -> bool {
     order.sell_token == order.buy_token
-        || (order.sell_token == native_token.into_legacy() && order.buy_token == BUY_ETH_ADDRESS)
+        || (order.sell_token == native_token.into_legacy()
+            && order.buy_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy())
 }
 
 /// Retrieves the quote for an order that is being created and verify that its
