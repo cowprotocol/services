@@ -3,6 +3,7 @@ use {
         boundary::{self},
         domain::{self, OrderUid, eth, fee::FeeFactor},
     },
+    alloy::primitives::Address,
     app_data::AppDataHash,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     number::serialization::HexOrDecimalU256,
@@ -289,9 +290,9 @@ impl FeePolicy {
                 factor: factor.into(),
                 max_volume_factor: max_volume_factor.into(),
                 quote: Quote {
-                    sell_amount: quote.sell_amount,
-                    buy_amount: quote.buy_amount,
-                    fee: quote.fee,
+                    sell_amount: quote.sell_amount.into_alloy(),
+                    buy_amount: quote.buy_amount.into_alloy(),
+                    fee: quote.fee.into_alloy(),
                     solver: quote.solver,
                 },
             },
@@ -318,9 +319,9 @@ impl FeePolicy {
                 factor: FeeFactor::try_from(factor).unwrap(),
                 max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
                 quote: domain::fee::Quote {
-                    sell_amount: quote.sell_amount,
-                    buy_amount: quote.buy_amount,
-                    fee: quote.fee,
+                    sell_amount: quote.sell_amount.into_legacy(),
+                    buy_amount: quote.buy_amount.into_legacy(),
+                    fee: quote.fee.into_legacy(),
                     solver: quote.solver,
                 },
             },
@@ -336,31 +337,31 @@ impl FeePolicy {
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
+    pub sell_amount: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub buy_amount: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub fee: U256,
-    pub solver: H160,
+    pub fee: alloy::primitives::U256,
+    pub solver: Address,
 }
 
 impl Quote {
     fn from_domain(quote: domain::Quote) -> Self {
         Quote {
-            sell_amount: quote.sell_amount.0,
-            buy_amount: quote.buy_amount.0,
-            fee: quote.fee.0,
-            solver: quote.solver.0,
+            sell_amount: quote.sell_amount.0.into_alloy(),
+            buy_amount: quote.buy_amount.0.into_alloy(),
+            fee: quote.fee.0.into_alloy(),
+            solver: quote.solver,
         }
     }
 
     pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
         domain::Quote {
             order_uid,
-            sell_amount: self.sell_amount.into(),
-            buy_amount: self.buy_amount.into(),
-            fee: self.fee.into(),
-            solver: self.solver.into(),
+            sell_amount: self.sell_amount.into_legacy().into(),
+            buy_amount: self.buy_amount.into_legacy().into(),
+            fee: self.fee.into_legacy().into(),
+            solver: self.solver,
         }
     }
 }
