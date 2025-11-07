@@ -469,13 +469,13 @@ impl OrderQuoter {
                 .estimate(trade_query.clone())
                 .map_err(|err| (EstimatorKind::Regular, err).into()),
             self.native_price_estimator
-                .estimate_native_price(parameters.sell_token, trade_query.timeout)
+                .estimate_native_price(parameters.sell_token.into_alloy(), trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeSell, err).into()),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
-                .estimate_native_price(parameters.buy_token, trade_query.timeout)
+                .estimate_native_price(parameters.buy_token.into_alloy(), trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
@@ -787,6 +787,7 @@ mod tests {
         alloy::primitives::Address,
         chrono::Utc,
         ethcontract::H160,
+        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
@@ -886,14 +887,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1027,14 +1028,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1163,14 +1164,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1284,14 +1285,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
 
@@ -1358,14 +1359,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 

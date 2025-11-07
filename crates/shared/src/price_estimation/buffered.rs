@@ -6,7 +6,9 @@ use {
         PriceEstimationError,
         native::{NativePriceEstimateResult, NativePriceEstimating},
     },
+    alloy::primitives::Address,
     anyhow::anyhow,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{
         channel::mpsc,
         future::FutureExt as _,
@@ -86,7 +88,7 @@ where
     #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
-        token: H160,
+        token: Address,
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
@@ -97,17 +99,19 @@ where
             let mut rx = self.results.subscribe();
 
             // Sends the token for requesting price
-            self.requests.unbounded_send(token).map_err(|e| {
-                PriceEstimationError::ProtocolInternal(anyhow!(
-                    "failed to append a new token to the queue: {e:?}"
-                ))
-            })?;
+            self.requests
+                .unbounded_send(token.into_legacy())
+                .map_err(|e| {
+                    PriceEstimationError::ProtocolInternal(anyhow!(
+                        "failed to append a new token to the queue: {e:?}"
+                    ))
+                })?;
 
             tokio::time::timeout(timeout, async {
                 loop {
                     match rx.recv().await {
                         Ok(value) => {
-                            if value.token == token {
+                            if value.token == token.into_legacy() {
                                 return value.result;
                             }
                         }
@@ -262,15 +266,15 @@ mod tests {
     impl NativePriceEstimating for MockNativePriceBatchFetching {
         fn estimate_native_price(
             &self,
-            token: H160,
+            token: Address,
             timeout: Duration,
         ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
             async move {
                 let prices = self
-                    .fetch_native_prices(HashSet::from([token]), timeout)
+                    .fetch_native_prices(HashSet::from([token.into_legacy()]), timeout)
                     .await?;
                 prices
-                    .get(&token)
+                    .get(&token.into_legacy())
                     .cloned()
                     .ok_or(PriceEstimationError::NoLiquidity)?
             }
@@ -278,8 +282,8 @@ mod tests {
         }
     }
 
-    fn token(u: u64) -> H160 {
-        H160::from_low_u64_be(u)
+    fn token(u: u64) -> Address {
+        Address::left_padding_from(&u.to_be_bytes())
     }
 
     #[tokio::test]
