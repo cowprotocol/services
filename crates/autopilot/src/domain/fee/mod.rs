@@ -186,7 +186,7 @@ impl ProtocolFees {
                                 sell_amount: quote.sell_amount.into(),
                                 buy_amount: quote.buy_amount.into(),
                                 fee: quote.fee.into(),
-                                solver: quote.solver.into(),
+                                solver: quote.solver,
                             },
                         }
                     }
