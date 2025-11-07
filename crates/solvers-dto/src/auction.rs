@@ -56,6 +56,8 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub wrappers: Vec<WrapperCall>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     pub signature: Vec<u8>,
@@ -158,7 +160,6 @@ pub struct Token {
     pub trusted: bool,
 }
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Liquidity {
@@ -288,9 +289,22 @@ pub struct ForeignLimitOrder {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanHint {
-    pub lender: H160,
-    pub borrower: H160,
+    pub liquidity_provider: H160,
+    pub protocol_adapter: H160,
+    pub receiver: H160,
     pub token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WrapperCall {
+    pub address: H160,
+    #[serde(with = "bytes_hex")]
+    pub data: Vec<u8>,
+    /// Declares whether this wrapper (and its data) needs to be included
+    /// unmodified in a solution containing this order.
+    #[serde(default)]
+    pub is_omittable: bool,
 }

@@ -106,6 +106,10 @@ fn run() -> Result<()> {
             "HooksTrampoline",
             "Manually vendored ABI and bytecode for hooks trampoline contract",
         )
+        .manual(
+            "LiquoriceSettlement",
+            "Liquorice does not publish its code",
+        )
         .npm(
             "UniswapV2Factory",
             "@uniswap/v2-core@1.0.1/build/UniswapV2Factory.json",
@@ -123,6 +127,11 @@ fn run() -> Result<()> {
             "balancer/balancer-deployments/7211ed9f209d767f8ff411bb57262daf83ecb439/\
              tasks/deprecated/20230206-composable-stable-pool-v3/artifact/\
              ComposableStablePool.json",
+        )?
+        .github(
+            "BalancerQueries",
+            "balancer/balancer-deployments/80505f7061ff668dc55173344564fa1ddd83b726/\
+            v2/tasks/20220721-balancer-queries/artifact/BalancerQueries.json",
         )?
         .github(
             "BalancerV2ComposableStablePoolFactory",

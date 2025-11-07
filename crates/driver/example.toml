@@ -1,3 +1,4 @@
+tx-gas-limit = "45000000"
 [[solver]]
 name = "mysolver" # Arbitrary name given to this solver, must be unique
 endpoint = "http://0.0.0.0:7872"
@@ -38,17 +39,11 @@ balances = "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"
 signatures = "0x8262d639c38470F38d2eff15926F7071c28057Af"
 flashloan-router = "0x0000000000000000000000000000000000000000"
 
-[[contracts.flashloan-wrappers]]
-lender = "0x0000000000000000000000000000000000000000"
-helper-contract = "0x0000000000000000000000000000000000000000"
-
 [[contracts.cow-amms]]
 # address of factory creating new CoW AMMs
 factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"
 # address of contract to help interfacing with the created CoW AMMs
 helper = "0x86f3df416979136cb4fdea2c0886301b911c163b"
-# at which block the driver should start indexing the factory (1 block before deployment)
-index-start = 20188649
 
 [liquidity]
 base-tokens = [
@@ -111,3 +106,10 @@ max-order-age = "1m"
 # [enso]
 # url = "http://localhost:8454"
 # network-block-interval = "12s"
+
+# [liquidity-sources-notifier] # Sends settlement notifications to third party liquidity sources used by solvers
+# [liquidity-sources-notifier.liquorice]
+# base-url = "https://api.liquorice.tech/"
+# api-key = "..."
+# http_timeout = "10s"
+

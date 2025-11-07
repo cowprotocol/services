@@ -11,25 +11,28 @@ use {
             Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
-            solver::{Solver, Timeouts},
+            notify,
+            solver::Solver,
             tokens,
         },
     },
     error::Error,
     futures::Future,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
+    shared::account_balances,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
 mod error;
-mod routes;
+pub mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub liquidity: liquidity::Fetcher,
+    pub liquidity_sources_notifier: notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub eth: Ethereum,
     pub mempools: Mempools,
@@ -46,19 +49,25 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
-        disable_access_list_simulation: bool,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
         ));
 
+        let balance_fetcher = account_balances::cached(
+            self.eth.web3(),
+            self.eth.balance_simulator().clone(),
+            self.eth.current_block().clone(),
+        );
+
         let tokens = tokens::Fetcher::new(&self.eth);
         let fetcher = Arc::new(domain::competition::DataAggregator::new(
             self.eth.clone(),
             app_data_retriever.clone(),
             self.liquidity.clone(),
-            disable_access_list_simulation,
+            tokens.clone(),
+            balance_fetcher,
         ));
 
         let order_sorting_strategies =
@@ -109,6 +118,7 @@ impl Api {
                     solver,
                     self.eth.clone(),
                     self.liquidity.clone(),
+                    self.liquidity_sources_notifier.clone(),
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
@@ -190,10 +200,6 @@ impl State {
 
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
-    }
-
-    fn timeouts(&self) -> Timeouts {
-        self.0.solver.timeouts()
     }
 }
 

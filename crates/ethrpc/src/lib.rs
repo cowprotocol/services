@@ -1,15 +1,15 @@
 pub mod alloy;
 pub mod block_stream;
 pub mod buffered;
-pub mod dummy;
 pub mod extensions;
 pub mod http;
 pub mod instrumented;
+#[cfg(any(test, feature = "test-util"))]
 pub mod mock;
-pub mod multicall;
 
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},
+    crate::alloy::MutWallet,
     ::alloy::providers::DynProvider,
     ethcontract::{batch::CallBatch, transport::DynTransport},
     reqwest::{Client, Url},
@@ -33,6 +33,7 @@ pub type AlloyProvider = DynProvider;
 pub struct Web3<T: Transport = DynTransport> {
     pub legacy: web3::Web3<T>,
     pub alloy: AlloyProvider,
+    pub wallet: MutWallet,
 }
 
 impl<T: Transport> std::ops::Deref for Web3<T> {
@@ -53,9 +54,11 @@ impl Web3<DynTransport> {
     pub fn new_from_url(url: &str) -> Self {
         let legacy_transport = create_test_transport(url);
         let web3 = web3::Web3::new(legacy_transport);
+        let (alloy, wallet) = crate::alloy::provider(url);
         Self {
             legacy: web3,
-            alloy: crate::alloy::provider(url),
+            alloy,
+            wallet,
         }
     }
 }
@@ -112,19 +115,30 @@ pub fn web3(
 ) -> Web3 {
     let http = http_factory.cookie_store(true).build().unwrap();
     let http = HttpTransport::new(http, url.clone(), name.to_string());
-    let transport = match args.into_buffered_configuration() {
-        Some(config) => Web3Transport::new(BufferedTransport::with_config(http, config)),
-        None => Web3Transport::new(http),
+    let buffered_config = args.into_buffered_configuration();
+    let (legacy, alloy, wallet) = match buffered_config {
+        Some(config) => {
+            let legacy = Web3Transport::new(BufferedTransport::with_config(http, config));
+            let (alloy, wallet) = alloy::provider(url.as_str());
+            (legacy, alloy, wallet)
+        }
+        None => {
+            let legacy = Web3Transport::new(http);
+            let (alloy, wallet) = alloy::unbuffered_provider(url.as_str());
+            (legacy, alloy, wallet)
+        }
     };
-    let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), transport);
+    let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), legacy);
+
     Web3 {
         legacy: web3::Web3::new(Web3Transport::new(instrumented)),
-        alloy: alloy::provider(url.as_str()),
+        alloy,
+        wallet,
     }
 }
 
 /// Convenience method to create a transport from a URL.
-fn create_test_transport(url: &str) -> Web3Transport {
+pub fn create_test_transport(url: &str) -> Web3Transport {
     let http_transport = HttpTransport::new(
         Client::builder()
             .timeout(Duration::from_secs(10))

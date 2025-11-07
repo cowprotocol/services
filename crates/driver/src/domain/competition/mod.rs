@@ -21,6 +21,7 @@ use {
         },
         util::{Bytes, math},
     },
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
@@ -28,9 +29,8 @@ use {
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
-        time::Duration,
+        time::{Duration, Instant},
     },
-    tap::TapFallible,
     tokio::{
         sync::{mpsc, oneshot},
         task,
@@ -47,7 +47,7 @@ pub mod sorting;
 
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
-use crate::domain::BlockNo;
+use crate::{domain::BlockNo, infra::notify::liquidity_sources::LiquiditySourceNotifying};
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
@@ -62,6 +62,7 @@ pub struct Competition {
     pub solver: Solver,
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
+    pub liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
@@ -73,11 +74,12 @@ pub struct Competition {
 }
 
 impl Competition {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         solver: Solver,
         eth: Ethereum,
         liquidity: infra::liquidity::Fetcher,
+        liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
@@ -90,6 +92,7 @@ impl Competition {
             solver,
             eth,
             liquidity,
+            liquidity_sources_notifier,
             simulator,
             mempools,
             settlements: Default::default(),
@@ -110,11 +113,20 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    #[instrument(skip_all)]
-    pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
-        let auction = Arc::new(auction);
-        let tasks = self.fetcher.start_or_get_tasks_for_auction(auction.clone());
-        let mut auction = Arc::unwrap_or_clone(auction);
+    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+        let start = Instant::now();
+        let timer = ::observe::metrics::metrics()
+            .on_auction_overhead_start("driver", "pre_processing_total");
+
+        let tasks = self
+            .fetcher
+            .start_or_get_tasks_for_auction(auction)
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "pre-processing auction failed");
+                Error::MalformedRequest
+            })?;
+        let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
         let settlement_contract = self.eth.contracts().settlement().address();
         let solver_address = self.solver.account().address();
@@ -124,6 +136,7 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
+        let settlement = settlement_contract.into_legacy();
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
@@ -131,7 +144,7 @@ impl Competition {
                 auction,
                 solver_address,
                 order_sorting_strategies,
-                settlement_contract,
+                settlement,
             )
         });
 
@@ -148,12 +161,12 @@ impl Competition {
                 balances,
                 app_data,
                 cow_amm_orders,
-                &eth::Address(settlement_contract),
+                &eth::Address(settlement),
             )
         })
         .await;
 
-        // We can tun bad token filtering and liquidity fetching in parallel
+        // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
             async {
                 match self.solver.liquidity() {
@@ -164,6 +177,14 @@ impl Competition {
             self.without_unsupported_orders(auction)
         );
 
+        let elapsed = start.elapsed();
+        metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["total"])
+            .observe(elapsed.as_secs_f64());
+        drop(timer);
+        tracing::debug!(?elapsed, "auction task execution time");
+
         let auction = &auction;
 
         // Fetch the solutions from the solver.
@@ -171,13 +192,14 @@ impl Competition {
             .solver
             .solve(auction, &liquidity)
             .await
-            .tap_err(|err| {
+            .inspect_err(|err| {
                 if err.is_timeout() {
                     notify::solver_timeout(&self.solver, auction.id());
                 }
             })?;
 
-        observe::postprocessing(&solutions, auction.deadline().driver());
+        let deadline = auction.deadline(self.solver.timeouts()).driver();
+        observe::postprocessing(&solutions, deadline);
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -253,12 +275,9 @@ impl Competition {
                 settlements.push(settlement);
             }
         };
-        if tokio::time::timeout(
-            auction.deadline().driver().remaining().unwrap_or_default(),
-            future,
-        )
-        .await
-        .is_err()
+        if tokio::time::timeout(deadline.remaining().unwrap_or_default(), future)
+            .await
+            .is_err()
         {
             observe::postprocessing_timed_out(&settlements);
             notify::postprocessing_timed_out(&self.solver, auction.id())
@@ -284,7 +303,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
+                    .inspect_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
                         notify::scoring_failed(
                             &self.solver,
@@ -339,7 +358,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(remaining) = auction.deadline().driver().remaining() {
+        if let Ok(remaining) = deadline.remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
@@ -505,6 +524,7 @@ impl Competition {
     {
         task::spawn_blocking(move || {
             let _timer = metrics::get().processing_stage_timer(stage);
+            let _timer2 = ::observe::metrics::metrics().on_auction_overhead_start("driver", stage);
             f()
         })
         .await
@@ -647,6 +667,23 @@ impl Competition {
             lock.swap_remove_front(index)
                 .ok_or(Error::SolutionNotAvailable)?
         };
+
+        // Asynchronously notify liquidity sources to not block settlement execution.
+        {
+            let liquidity_sources_notifier_clone = self.liquidity_sources_notifier.clone();
+            let settlement_clone = settlement.clone();
+            tokio::spawn(async move {
+                match liquidity_sources_notifier_clone
+                    .settlement(&settlement_clone)
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(err) => {
+                        tracing::error!(?err, "Failed to notify liquidity sources on settlement");
+                    }
+                }
+            });
+        }
 
         // When settling, the gas price must be carefully chosen to ensure the
         // transaction is included in a block before the deadline.
@@ -870,4 +907,6 @@ pub enum Error {
     TooManyPendingSettlements,
     #[error("no valid orders found in the auction")]
     NoValidOrdersFound,
+    #[error("could not parse the request")]
+    MalformedRequest,
 }

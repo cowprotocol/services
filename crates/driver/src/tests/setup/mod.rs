@@ -4,7 +4,7 @@ use {
     self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
         domain::{
-            competition::{order, order::app_data::AppData},
+            competition::order::{self, app_data::AppData},
             eth,
             time,
         },
@@ -31,21 +31,23 @@ use {
                 EtherExt,
                 is_approximately_equal,
             },
-            hex_address,
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
                 orderbook::Orderbook,
             },
         },
     },
+    alloy::primitives::Address,
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::serialization::HexOrDecimalU256,
     primitive_types::H160,
     secp256k1::SecretKey,
+    serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
     std::{
@@ -370,7 +372,7 @@ pub fn test_solver() -> Solver {
         name: solver::NAME.to_owned(),
         balance: eth::U256::exp10(18),
         private_key: ethcontract::PrivateKey::from_slice(
-            hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
+            const_hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
                 .unwrap(),
         )
         .unwrap(),
@@ -433,36 +435,6 @@ pub struct Pool {
 }
 
 impl Pool {
-    /// Restores reserve_a value from the given reserve_b and the quote. Reverse
-    /// operation for the `blockchain::Pool::out` function.
-    /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
-    #[allow(dead_code)]
-    pub fn adjusted_reserve_a(self, quote: &LiquidityQuote) -> Self {
-        let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
-            (quote.sell_amount, quote.buy_amount)
-        } else {
-            (quote.buy_amount, quote.sell_amount)
-        };
-        let reserve_a_min = ceil_div(
-            eth::U256::from(997)
-                * quote_sell_amount
-                * (self.amount_b - quote_buy_amount - eth::U256::from(1)),
-            eth::U256::from(1000) * quote_buy_amount,
-        );
-        let reserve_a_max =
-            (eth::U256::from(997) * quote_sell_amount * (self.amount_b - quote_buy_amount))
-                / (eth::U256::from(1000) * quote_buy_amount);
-        if reserve_a_min > reserve_a_max {
-            panic!(
-                "Unexpected calculated reserves. min: {reserve_a_min:?}, max: {reserve_a_max:?}"
-            );
-        }
-        Self {
-            amount_a: reserve_a_min,
-            ..self
-        }
-    }
-
     /// Restores reserve_b value from the given reserve_a and the quote. Reverse
     /// operation for the `blockchain::Pool::out` function
     /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
@@ -595,7 +567,6 @@ impl Solution {
     }
 
     /// Increase the solution gas consumption by at least `units`.
-    #[allow(dead_code)]
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
         let additional_bytes = (units / 16) + 1;
@@ -923,7 +894,7 @@ impl Setup {
         // Hardcoded trader account. Don't use this account for anything else!!!
         let trader_address = eth::H160::from_str(TRADER_ADDRESS).unwrap();
         let trader_secret_key = SecretKey::from_slice(
-            &hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
+            &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
                 .unwrap(),
         )
         .unwrap();
@@ -1187,20 +1158,22 @@ impl Test {
         let mut balances = HashMap::new();
         for (token, contract) in self.blockchain.tokens.iter() {
             let balance = contract
-                .balance_of(self.trader_address)
+                .balanceOf(self.trader_address.into_alloy())
                 .call()
                 .await
-                .unwrap();
+                .unwrap()
+                .into_legacy();
             balances.insert(*token, balance);
         }
         balances.insert(
             "WETH",
             self.blockchain
                 .weth
-                .balance_of(self.trader_address)
+                .balanceOf(self.trader_address.into_alloy())
                 .call()
                 .await
-                .unwrap(),
+                .unwrap()
+                .into_legacy(),
         );
         balances.insert(
             "ETH",
@@ -1214,7 +1187,6 @@ impl Test {
         balances
     }
 
-    #[allow(dead_code)]
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
     }
@@ -1336,15 +1308,15 @@ impl SolveOk<'_> {
     fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
         let u256 =
             |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
-        let sell_token = trade.get("sellToken").unwrap().to_string();
-        let sell_token = sell_token.trim_matches('"');
-        let buy_token = trade.get("buyToken").unwrap().to_string();
-        let buy_token = buy_token.trim_matches('"');
+        let sell_token =
+            Address::deserialize(trade.get("sellToken").unwrap().into_deserializer()).unwrap();
+        let buy_token =
+            Address::deserialize(trade.get("buyToken").unwrap().into_deserializer()).unwrap();
         let sell_amount = u256(trade.get("executedSell").unwrap());
         let buy_amount = u256(trade.get("executedBuy").unwrap());
 
-        sell_token == hex_address(self.blockchain.get_token(expected.order.sell_token))
-            && buy_token == hex_address(self.blockchain.get_token(expected.order.buy_token))
+        sell_token == self.blockchain.get_token(expected.order.sell_token)
+            && buy_token == self.blockchain.get_token(expected.order.buy_token)
             && expected.order.expected_amounts.clone().unwrap().sell == sell_amount
             && expected.order.expected_amounts.clone().unwrap().buy == buy_amount
     }
@@ -1546,8 +1518,8 @@ impl QuoteOk<'_> {
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
         };
 
         let expected = match quoted_order.order.side {
@@ -1584,9 +1556,9 @@ impl QuoteOk<'_> {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();
             let calldata = interaction.get("callData").unwrap().as_str().unwrap();
-            assert_eq!(target, format!("0x{}", hex::encode(expected.address)));
+            assert_eq!(target, const_hex::encode_prefixed(expected.address));
             assert_eq!(value, "0");
-            assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
+            assert_eq!(calldata, const_hex::encode_prefixed(&expected.calldata));
         }
         self
     }
@@ -1612,10 +1584,7 @@ impl QuoteOk<'_> {
         let app_data = result_jit_order.get("appData").unwrap().as_str().unwrap();
         assert_eq!(
             app_data,
-            format!(
-                "0x{}",
-                hex::encode(expected.quoted_order.order.app_data.hash().0.0)
-            )
+            const_hex::encode_prefixed(expected.quoted_order.order.app_data.hash().0.0)
         );
 
         let result_pre_interactions = result
@@ -1635,9 +1604,9 @@ impl QuoteOk<'_> {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();
             let calldata = interaction.get("callData").unwrap().as_str().unwrap();
-            assert_eq!(target, format!("0x{}", hex::encode(expected.address)));
+            assert_eq!(target, const_hex::encode_prefixed(expected.address));
             assert_eq!(value, "0");
-            assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
+            assert_eq!(calldata, const_hex::encode_prefixed(&expected.calldata));
         }
         self
     }

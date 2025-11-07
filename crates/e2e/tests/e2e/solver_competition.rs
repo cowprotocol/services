@@ -1,9 +1,10 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, mock::Mock, *},
-        tx,
+    ::alloy::primitives::U256,
+    e2e::setup::{colocation::SolverEngine, eth, mock::Mock, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
     },
-    ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -47,10 +48,13 @@ async fn solver_competition(web3: Web3) {
     token_a.mint(solver.address(), to_wei(1000)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(100))
-    );
+
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system
     colocation::start_driver(
@@ -59,7 +63,7 @@ async fn solver_competition(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -68,7 +72,7 @@ async fn solver_competition(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -83,7 +87,7 @@ async fn solver_competition(web3: Web3) {
     services.start_autopilot(
         None,
         vec![
-            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())
+            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())
             ),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
@@ -94,9 +98,9 @@ async fn solver_competition(web3: Web3) {
 
     // Place Order
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -111,15 +115,21 @@ async fn solver_competition(web3: Web3) {
     onchain.mint_block().await;
 
     tracing::info!("waiting for trade");
-    let trade_happened =
-        || async { token_a.balance_of(trader.address()).call().await.unwrap() == U256::zero() };
+    let trade_happened = || async {
+        token_a
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            == U256::ZERO
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     let indexed_trades = || async {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap())
+                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
                 .await
                 .is_ok(),
             None => false,
@@ -129,7 +139,7 @@ async fn solver_competition(web3: Web3) {
 
     let trades = services.get_trades(&uid).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
 
@@ -170,14 +180,20 @@ async fn wrong_solution_submission_address(web3: Web3) {
         .await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(100))
-    );
-    tx!(
-        trader_b.account(),
-        token_b.approve(onchain.contracts().allowance, to_wei(100))
-    );
+
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system, with two solvers, one that knows about base_a and one that
     // knows about base_b
@@ -187,8 +203,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
-                vec![base_a.address()],
+                *onchain.contracts().weth.address(),
+                vec![base_a.address().into_legacy()],
                 1,
                 true,
             )
@@ -196,8 +212,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
             colocation::start_baseline_solver(
                 "solver2".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
-                vec![base_b.address()],
+                *onchain.contracts().weth.address(),
+                vec![base_b.address().into_legacy()],
                 1,
                 true,
             )
@@ -212,7 +228,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         None,
         // Solver 1 has a wrong submission address, meaning that the solutions should be discarded from solver1
         vec![
-            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address())),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;
@@ -224,9 +240,9 @@ async fn wrong_solution_submission_address(web3: Web3) {
 
     // Place Orders
     let order_a = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -242,9 +258,9 @@ async fn wrong_solution_submission_address(web3: Web3) {
     onchain.mint_block().await;
 
     let order_b = OrderCreation {
-        sell_token: token_b.address(),
+        sell_token: token_b.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -262,7 +278,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid_a).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap())
+                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
                 .await
                 .is_ok(),
             None => false,
@@ -273,7 +289,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // Verify that test_solver was excluded due to wrong driver address
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
@@ -296,18 +312,27 @@ async fn store_filtered_solutions(web3: Web3) {
     // give the settlement contract a ton of the traded tokens so that the mocked
     // solver solutions can simply give money away to make the trade execute
     token_b
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(50))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(50),
+        )
         .await;
     token_c
-        .mint(onchain.contracts().gp_settlement.address(), to_wei(50))
+        .mint(
+            onchain.contracts().gp_settlement.address().into_legacy(),
+            to_wei(50),
+        )
         .await;
 
     // set up trader for their order
     token_a.mint(trader.address(), to_wei(2)).await;
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(2))
-    );
+
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(2))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
 
@@ -315,14 +340,18 @@ async fn store_filtered_solutions(web3: Web3) {
     let bad_solver = Mock::default();
 
     // Start system
-    let base_tokens = vec![token_a.address(), token_b.address(), token_c.address()];
+    let base_tokens = vec![
+        token_a.address().into_legacy(),
+        token_b.address().into_legacy(),
+        token_c.address().into_legacy(),
+    ];
     colocation::start_driver(
         onchain.contracts(),
         vec![
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 good_solver_account.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 base_tokens.clone(),
                 1,
                 true,
@@ -355,8 +384,8 @@ async fn store_filtered_solutions(web3: Web3) {
             vec![
                 format!(
                     "--drivers=good_solver|http://localhost:11088/good_solver|{},bad_solver|http://localhost:11088/bad_solver|{}",
-                    hex::encode(good_solver_account.address()),
-                    hex::encode(bad_solver_account.address()),
+                    const_hex::encode(good_solver_account.address()),
+                    const_hex::encode(bad_solver_account.address()),
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
@@ -372,9 +401,9 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // Place order
     let order_ab = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -387,9 +416,9 @@ async fn store_filtered_solutions(web3: Web3) {
     );
 
     let order_ac = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
-        buy_token: token_c.address(),
+        buy_token: token_c.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -417,8 +446,8 @@ async fn store_filtered_solutions(web3: Web3) {
     good_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token_a.address(), to_wei(3)),
-            (token_b.address(), to_wei(1)),
+            (token_a.address().into_legacy(), to_wei(3)),
+            (token_b.address().into_legacy(), to_wei(1)),
         ]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
@@ -432,6 +461,7 @@ async fn store_filtered_solutions(web3: Web3) {
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // bad solver settles both orders at 2:1. Because it can't beat the
@@ -440,9 +470,9 @@ async fn store_filtered_solutions(web3: Web3) {
     bad_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token_a.address(), to_wei(2)),
-            (token_b.address(), to_wei(1)),
-            (token_c.address(), to_wei(1)),
+            (token_a.address().into_legacy(), to_wei(2)),
+            (token_b.address().into_legacy(), to_wei(1)),
+            (token_c.address().into_legacy(), to_wei(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
@@ -461,6 +491,7 @@ async fn store_filtered_solutions(web3: Web3) {
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // Drive solution
@@ -470,7 +501,7 @@ async fn store_filtered_solutions(web3: Web3) {
         let trade = services.get_trades(&order_ab_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?)
+                .get_solver_competition(trade.tx_hash?.into_legacy())
                 .await
                 .is_ok(),
         )
@@ -486,12 +517,15 @@ async fn store_filtered_solutions(web3: Web3) {
         .unwrap();
 
     let competition = services
-        .get_solver_competition(trade.tx_hash.unwrap())
+        .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
 
     assert_eq!(competition.transaction_hashes.len(), 1);
-    assert_eq!(competition.transaction_hashes[0], trade.tx_hash.unwrap());
+    assert_eq!(
+        competition.transaction_hashes[0],
+        trade.tx_hash.unwrap().into_legacy()
+    );
 
     assert_eq!(competition.reference_scores.len(), 1);
     // since the only other solutions were unfair the reference score is zero
@@ -518,7 +552,10 @@ async fn store_filtered_solutions(web3: Web3) {
     assert!(!good_solution.filtered_out);
     assert!(good_solution.is_winner);
     assert_eq!(good_solution.solver_address, good_solver_account.address());
-    assert_eq!(good_solution.tx_hash.unwrap(), trade.tx_hash.unwrap());
+    assert_eq!(
+        good_solution.tx_hash.unwrap(),
+        trade.tx_hash.unwrap().into_legacy()
+    );
     // since the only other solutions were unfair the reference score is zero
     assert_eq!(good_solution.reference_score, Some(0.into()));
 

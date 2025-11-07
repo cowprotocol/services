@@ -1,10 +1,10 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
+    alloy::providers::Provider,
     chain::Chain,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
     primitive_types::U256,
-    std::time::Duration,
     thiserror::Error,
     url::Url,
 };
@@ -26,8 +26,8 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain =
-            Chain::try_from(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
+        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)
+            .map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
@@ -75,12 +75,13 @@ impl Ethereum {
         chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,
-        poll_interval: Duration,
+        current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let contracts = Contracts::new(&web3, chain, addresses).await;
 
         Self {
-            current_block: ethrpc::block_stream::current_block_stream(url, poll_interval)
+            current_block: current_block_args
+                .stream(url, unbuffered_web3.alloy.clone())
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
@@ -176,6 +177,8 @@ impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
 pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("alloy transport error: {0:?}")]
+    Alloy(#[from] alloy::transports::TransportError),
     #[error("missing field {0}, node client bug?")]
     IncompleteTransactionData(anyhow::Error),
     #[error("transaction not found")]

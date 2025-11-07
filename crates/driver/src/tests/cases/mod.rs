@@ -24,10 +24,6 @@ pub mod quote;
 pub mod settle;
 pub mod solver_balance;
 
-#[allow(dead_code)]
-/// Example solver name.
-const SOLVER_NAME: &str = "test1";
-
 /// The default surplus factor. Set to a high value to ensure a positive score
 /// by default. Use a surplus factor of 1 if you want to test negative scores.
 pub const DEFAULT_SURPLUS_FACTOR: &str = "1e-8";

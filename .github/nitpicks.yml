@@ -1,7 +1,8 @@
 - markdown: |
     Reminder: Please update the DB Readme and comment whether migrations are reversible (include rollback scripts if applicable).
-    If creating new tables, update the [tables list](https://github.com/cowprotocol/services/blob/main/crates/database/src/lib.rs#L51-L87).
-    When adding a new index, consider using `CREATE INDEX CONCURRENTLY` for tables involved in the critical execution path.
+    * If creating new tables, update the [tables list](https://github.com/cowprotocol/services/blob/main/crates/database/src/lib.rs#L51-L87).
+    * When adding a new index, consider using `CREATE INDEX CONCURRENTLY` for tables involved in the critical execution path.
+    * For breaking changes, remember that during rollout k8s starts the new autopilot, runs the Flyway migration, and only then shuts down the old pod. That overlap means the previous version can still be processing requests on the migrated schema, so make it compatible first and ship the breaking DB change in the following release.
   pathFilter:
     - "database/sql/**"
 

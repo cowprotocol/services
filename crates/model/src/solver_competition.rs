@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, order::OrderUid},
+    crate::{AuctionId, order::OrderUid},
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},

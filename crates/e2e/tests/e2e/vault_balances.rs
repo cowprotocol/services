@@ -1,5 +1,9 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::setup::{eth, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
@@ -27,18 +31,25 @@ async fn vault_balances(web3: Web3) {
     token.mint(trader.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().balancer_vault.address(), to_wei(10))
-    );
-    tx!(
-        trader.account(),
-        onchain.contracts().balancer_vault.set_relayer_approval(
-            trader.address(),
-            onchain.contracts().allowance,
-            true
+
+    token
+        .approve(*onchain.contracts().balancer_vault.address(), eth(10))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .balancer_vault
+        .setRelayerApproval(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy(),
+            true,
         )
-    );
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -46,10 +57,10 @@ async fn vault_balances(web3: Web3) {
     // Place Orders
     let order = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(10),
         sell_token_balance: SellTokenSource::External,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(8),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
@@ -64,7 +75,7 @@ async fn vault_balances(web3: Web3) {
     let balance_before = onchain
         .contracts()
         .weth
-        .balance_of(trader.address())
+        .balanceOf(trader.address().into_alloy())
         .call()
         .await
         .unwrap();
@@ -73,7 +84,7 @@ async fn vault_balances(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let token_balance = token
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .expect("Couldn't fetch token balance");
@@ -81,12 +92,12 @@ async fn vault_balances(web3: Web3) {
         let weth_balance_after = onchain
             .contracts()
             .weth
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .unwrap();
 
-        token_balance.is_zero() && weth_balance_after.saturating_sub(balance_before) >= to_wei(8)
+        token_balance.is_zero() && weth_balance_after.saturating_sub(balance_before) >= eth(8)
     })
     .await
     .unwrap();

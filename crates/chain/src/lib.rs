@@ -1,9 +1,6 @@
 use {
-    derive_more::{From, Into},
-    ethcontract::{
-        U256,
-        jsonrpc::serde::{Deserialize, Deserializer, de},
-    },
+    alloy::primitives::U256,
+    serde::{Deserialize, Deserializer, de},
     std::time::Duration,
     thiserror::Error,
 };
@@ -24,6 +21,8 @@ pub enum Chain {
     Optimism = 10,
     Polygon = 137,
     Lens = 232,
+    Linea = 59144,
+    Plasma = 9745,
 }
 
 impl Chain {
@@ -49,6 +48,8 @@ impl Chain {
             Self::Optimism => "Optimism",
             Self::Polygon => "Polygon",
             Self::Lens => "Lens",
+            Self::Linea => "Linea",
+            Self::Plasma => "Plasma",
         }
     }
 
@@ -61,9 +62,10 @@ impl Chain {
             | Self::ArbitrumOne
             | Self::Base
             | Self::Bnb
-            | Self::Optimism => 10u128.pow(17).into(),
-            Self::Gnosis | Self::Avalanche | Self::Lens => 10u128.pow(18).into(),
-            Self::Polygon => 10u128.pow(20).into(),
+            | Self::Linea
+            | Self::Optimism => U256::from(10u128.pow(17)),
+            Self::Gnosis | Self::Avalanche | Self::Lens => U256::from(10u128.pow(18)),
+            Self::Polygon | Self::Plasma => U256::from(10u128.pow(20)),
             Self::Hardhat => {
                 panic!("unsupported chain for default amount to estimate native prices with")
             }
@@ -85,6 +87,8 @@ impl Chain {
             Self::Optimism => Duration::from_millis(2_000),
             Self::Polygon => Duration::from_millis(2_000),
             Self::Lens => Duration::from_millis(2_000),
+            Self::Linea => Duration::from_millis(2_000),
+            Self::Plasma => Duration::from_millis(1_000),
         }
     }
 
@@ -114,6 +118,8 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Optimism as u64 => Self::Optimism,
             x if x == Self::Polygon as u64 => Self::Polygon,
             x if x == Self::Lens as u64 => Self::Lens,
+            x if x == Self::Linea as u64 => Self::Linea,
+            x if x == Self::Plasma as u64 => Self::Plasma,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
@@ -126,13 +132,9 @@ impl TryFrom<U256> for Chain {
     /// Initializes `Network` from a chain ID, returns error if the chain id is
     /// not supported
     fn try_from(value: U256) -> Result<Self, Self::Error> {
-        // Check to avoid panics for large `U256` values, as there is no checked
-        // conversion API available, and we don't support chains with IDs greater
-        // than `u64::MAX` anyway.
-        if value > U256::from(u64::MAX) {
-            return Err(ChainIdNotSupported);
-        }
-        value.as_u64().try_into()
+        u64::try_from(value)
+            .map_err(|_| ChainIdNotSupported)?
+            .try_into()
     }
 }
 
@@ -176,7 +178,7 @@ pub struct ChainIdNotSupported;
 
 #[cfg(test)]
 mod test {
-    use {super::*, ethcontract::jsonrpc::serde_json};
+    use super::*;
 
     #[test]
     fn test_blocks_in() {

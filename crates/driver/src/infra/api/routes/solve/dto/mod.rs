@@ -1,4 +1,4 @@
-mod solve_request;
+pub mod solve_request;
 mod solve_response;
 
 pub use {

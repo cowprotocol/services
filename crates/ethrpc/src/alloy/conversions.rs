@@ -1,6 +1,7 @@
 use {
     alloy::{network::TxSigner, signers::Signature},
     anyhow::Context,
+    std::collections::HashMap,
 };
 
 /////////////////////////////////
@@ -13,6 +14,16 @@ pub trait IntoAlloy {
 
     /// Converts the legacy type to the corresponding Alloy type.
     fn into_alloy(self) -> Self::To;
+}
+
+impl IntoAlloy for ethcontract::I256 {
+    type To = alloy::primitives::I256;
+
+    fn into_alloy(self) -> Self::To {
+        let mut buf = [0u8; 32];
+        self.to_little_endian(&mut buf);
+        alloy::primitives::I256::from_le_bytes(buf)
+    }
 }
 
 impl IntoAlloy for primitive_types::U256 {
@@ -80,6 +91,64 @@ impl IntoAlloy for web3::types::BlockId {
                 alloy::eips::BlockId::Number(number.into_alloy())
             }
         }
+    }
+}
+
+impl IntoAlloy for ethcontract::tokens::Bytes<Vec<u8>> {
+    type To = alloy::primitives::Bytes;
+
+    fn into_alloy(self) -> Self::To {
+        alloy::primitives::Bytes::copy_from_slice(self.0.as_slice())
+    }
+}
+
+impl IntoAlloy for web3::types::Bytes {
+    type To = alloy::primitives::Bytes;
+
+    fn into_alloy(self) -> Self::To {
+        alloy::primitives::Bytes::copy_from_slice(self.0.as_slice())
+    }
+}
+
+impl IntoAlloy for HashMap<ethcontract::H256, ethcontract::H256> {
+    type To = HashMap<
+        alloy::primitives::B256,
+        alloy::primitives::B256,
+        alloy::primitives::map::FbBuildHasher<32>,
+    >;
+
+    fn into_alloy(self) -> Self::To {
+        self.into_iter()
+            .map(|(k, v)| (k.into_alloy(), v.into_alloy()))
+            .collect()
+    }
+}
+
+impl IntoAlloy for ethcontract::state_overrides::StateOverride {
+    type To = alloy::rpc::types::eth::state::AccountOverride;
+
+    fn into_alloy(self) -> Self::To {
+        Self::To {
+            balance: self.balance.map(IntoAlloy::into_alloy),
+            nonce: self.nonce.map(|u| u.as_u64()),
+            code: self.code.map(IntoAlloy::into_alloy),
+            state: self.state.map(IntoAlloy::into_alloy),
+            state_diff: self.state_diff.map(IntoAlloy::into_alloy),
+            move_precompile_to: None,
+        }
+    }
+}
+
+impl IntoAlloy for ethcontract::state_overrides::StateOverrides {
+    type To = alloy::rpc::types::eth::state::StateOverride;
+
+    fn into_alloy(self) -> Self::To {
+        alloy::rpc::types::eth::state::StateOverridesBuilder::new(
+            self.into_iter()
+                .map(|(k, v)| (k.into_alloy(), v.into_alloy()))
+                .collect(),
+        )
+        .build()
     }
 }
 
@@ -160,10 +229,48 @@ impl IntoLegacy for alloy::primitives::Address {
     }
 }
 
-impl IntoAlloy for alloy::primitives::aliases::B256 {
+impl IntoLegacy for alloy::primitives::aliases::B256 {
     type To = primitive_types::H256;
 
-    fn into_alloy(self) -> Self::To {
+    fn into_legacy(self) -> Self::To {
         primitive_types::H256(self.into())
+    }
+}
+
+impl IntoLegacy for alloy::primitives::Bytes {
+    type To = web3::types::Bytes;
+
+    fn into_legacy(self) -> Self::To {
+        web3::types::Bytes(self.to_vec())
+    }
+}
+
+impl IntoLegacy
+    for HashMap<
+        alloy::primitives::B256,
+        alloy::primitives::B256,
+        alloy::primitives::map::FbBuildHasher<32>,
+    >
+{
+    type To = HashMap<ethcontract::H256, ethcontract::H256>;
+
+    fn into_legacy(self) -> Self::To {
+        self.into_iter()
+            .map(|(k, v)| (k.into_legacy(), v.into_legacy()))
+            .collect()
+    }
+}
+
+impl IntoLegacy for alloy::rpc::types::eth::state::AccountOverride {
+    type To = ethcontract::state_overrides::StateOverride;
+
+    fn into_legacy(self) -> Self::To {
+        Self::To {
+            balance: self.balance.map(IntoLegacy::into_legacy),
+            nonce: self.nonce.map(Into::into),
+            code: self.code.map(IntoLegacy::into_legacy),
+            state: self.state.map(IntoLegacy::into_legacy),
+            state_diff: self.state_diff.map(IntoLegacy::into_legacy),
+        }
     }
 }

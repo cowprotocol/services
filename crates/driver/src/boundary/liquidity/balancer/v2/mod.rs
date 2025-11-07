@@ -8,22 +8,23 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},
-    contracts::{
+    contracts::alloy::{
         BalancerV2ComposableStablePoolFactory,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
         BalancerV2Vault,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
-        GPv2Settlement,
     },
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    },
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
-            BalancerFactoryKind,
             BalancerPoolFetcher,
-            pool_fetching::BalancerContracts,
+            pool_fetching::{BalancerContracts, BalancerFactoryInstance},
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
@@ -49,14 +50,13 @@ fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = ethrpc::dummy::web3();
     let handler = balancer_v2::SettlementHandler::new(
         pool.id.into(),
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
-        GPv2Settlement::at(&web3, receiver.0),
-        BalancerV2Vault::at(&web3, pool.vault.into()),
+        receiver.0.into_alloy(),
+        pool.vault.0.into_alloy(),
         Allowances::empty(receiver.0),
     );
 
@@ -68,9 +68,9 @@ fn to_interaction(
     let (target, value, call_data) = interaction.encode_swap();
 
     eth::Interaction {
-        target: target.into(),
-        value: value.into(),
-        call_data: call_data.0.into(),
+        target: target.into_legacy().into(),
+        value: value.into_legacy().into(),
+        call_data: call_data.0.to_vec().into(),
     }
 }
 
@@ -107,29 +107,24 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::at(&web3, config.vault.into()),
+        vault: BalancerV2Vault::Instance::new(config.vault.0.into_alloy(), web3.alloy.clone()),
         factories: [
             config
                 .weighted
                 .iter()
                 .map(|&factory| {
-                    (
-                        BalancerFactoryKind::Weighted,
-                        BalancerV2WeightedPoolFactory::at(&web3, factory.into())
-                            .raw_instance()
-                            .clone(),
-                    )
+                    BalancerFactoryInstance::Weighted(BalancerV2WeightedPoolFactory::Instance::new(
+                        factory,
+                        web3.alloy.clone(),
+                    ))
                 })
                 .collect::<Vec<_>>(),
             config
                 .weighted_v3plus
                 .iter()
                 .map(|&factory| {
-                    (
-                        BalancerFactoryKind::WeightedV3,
-                        BalancerV2WeightedPoolFactoryV3::at(&web3, factory.into())
-                            .raw_instance()
-                            .clone(),
+                    BalancerFactoryInstance::WeightedV3(
+                        BalancerV2WeightedPoolFactoryV3::Instance::new(factory, web3.alloy.clone()),
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -137,23 +132,21 @@ async fn init_liquidity(
                 .stable
                 .iter()
                 .map(|&factory| {
-                    (
-                        BalancerFactoryKind::StableV2,
-                        BalancerV2StablePoolFactoryV2::at(&web3, factory.into())
-                            .raw_instance()
-                            .clone(),
-                    )
+                    BalancerFactoryInstance::StableV2(BalancerV2StablePoolFactoryV2::Instance::new(
+                        factory,
+                        web3.alloy.clone(),
+                    ))
                 })
                 .collect::<Vec<_>>(),
             config
                 .liquidity_bootstrapping
                 .iter()
                 .map(|&factory| {
-                    (
-                        BalancerFactoryKind::LiquidityBootstrapping,
-                        BalancerV2LiquidityBootstrappingPoolFactory::at(&web3, factory.into())
-                            .raw_instance()
-                            .clone(),
+                    BalancerFactoryInstance::LiquidityBootstrapping(
+                        BalancerV2LiquidityBootstrappingPoolFactory::Instance::new(
+                            factory,
+                            web3.alloy.clone(),
+                        ),
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -161,11 +154,11 @@ async fn init_liquidity(
                 .composable_stable
                 .iter()
                 .map(|&factory| {
-                    (
-                        BalancerFactoryKind::ComposableStable,
-                        BalancerV2ComposableStablePoolFactory::at(&web3, factory.into())
-                            .raw_instance()
-                            .clone(),
+                    BalancerFactoryInstance::ComposableStable(
+                        BalancerV2ComposableStablePoolFactory::Instance::new(
+                            factory,
+                            web3.alloy.clone(),
+                        ),
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -197,7 +190,7 @@ async fn init_liquidity(
     Ok(BalancerV2Liquidity::new(
         web3,
         balancer_pool_fetcher,
-        eth.contracts().settlement().clone(),
-        contracts.vault,
+        *eth.contracts().settlement().address(),
+        *contracts.vault.address(),
     ))
 }

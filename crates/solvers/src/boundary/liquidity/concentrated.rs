@@ -1,5 +1,13 @@
 use {
-    contracts::ethcontract::{H160, U256},
+    alloy::primitives::aliases::U24,
+    contracts::{
+        alloy::UniswapV3QuoterV2::IQuoterV2::{
+            QuoteExactInputSingleParams,
+            QuoteExactOutputSingleParams,
+        },
+        ethcontract::{H160, U256},
+    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,
     std::sync::Arc,
@@ -7,10 +15,10 @@ use {
 
 #[derive(Debug)]
 pub struct Pool {
-    pub uni_v3_quoter_contract: Arc<contracts::UniswapV3QuoterV2>,
+    pub uni_v3_quoter_contract: Arc<contracts::alloy::UniswapV3QuoterV2::Instance>,
     pub address: H160,
     pub tokens: TokenPair,
-    pub fee: u32,
+    pub fee: U24,
 }
 
 impl Pool {
@@ -26,20 +34,22 @@ impl BaselineSolvable for Pool {
         out_token: H160,
         (in_amount, in_token): (U256, H160),
     ) -> Option<U256> {
-        if TokenPair::new(out_token, in_token) != Some(self.tokens) {
+        if TokenPair::new(out_token.into_alloy(), in_token.into_alloy()) != Some(self.tokens) {
             // The pool has wrong tokens or input amount would overflow
             return None;
         }
 
         self.uni_v3_quoter_contract
-            .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
+            .quoteExactInputSingle(QuoteExactInputSingleParams {
+                tokenIn: in_token.into_alloy(),
+                tokenOut: out_token.into_alloy(),
+                amountIn: in_amount.into_alloy(),
+                fee: self.fee,
+                sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
+            })
             .call()
             .await
-            .map(
-                |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
-                    amount_out
-                },
-            )
+            .map(|result| result.amountOut.into_legacy())
             .ok()
     }
 
@@ -48,20 +58,22 @@ impl BaselineSolvable for Pool {
         in_token: H160,
         (out_amount, out_token): (U256, H160),
     ) -> Option<U256> {
-        if TokenPair::new(out_token, in_token) != Some(self.tokens) {
+        if TokenPair::new(out_token.into_alloy(), in_token.into_alloy()) != Some(self.tokens) {
             // The pool has wrong tokens or out amount would overflow
             return None;
         }
 
         self.uni_v3_quoter_contract
-            .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
+            .quoteExactOutputSingle(QuoteExactOutputSingleParams {
+                tokenIn: in_token.into_alloy(),
+                tokenOut: out_token.into_alloy(),
+                amount: out_amount.into_alloy(),
+                fee: self.fee,
+                sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
+            })
             .call()
             .await
-            .map(
-                |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
-                    amount_in
-                },
-            )
+            .map(|result| result.amountIn.into_legacy())
             .ok()
     }
 

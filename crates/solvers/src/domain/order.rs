@@ -2,6 +2,7 @@
 
 use {
     crate::{domain::eth, util},
+    ethcontract::H160,
     ethereum_types::{Address, H256},
     std::fmt::{self, Debug, Display, Formatter},
 };
@@ -16,6 +17,7 @@ pub struct Order {
     pub class: Class,
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
+    pub wrappers: Vec<WrapperCall>,
 }
 
 impl Order {
@@ -138,8 +140,15 @@ impl Debug for AppData {
 /// A hint for the solver to use a flashloan for this order.
 #[derive(Debug, Clone)]
 pub struct FlashloanHint {
-    pub lender: eth::Address,
-    pub borrower: eth::Address,
+    pub liquidity_provider: eth::Address,
+    pub protocol_adapter: eth::Address,
+    pub receiver: eth::Address,
     pub token: eth::TokenAddress,
     pub amount: eth::U256,
+}
+
+#[derive(Debug, Clone)]
+pub struct WrapperCall {
+    pub address: H160,
+    pub data: Vec<u8>,
 }

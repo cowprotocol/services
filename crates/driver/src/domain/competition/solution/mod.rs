@@ -16,6 +16,7 @@ use {
         },
     },
     chrono::Utc,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -38,6 +39,12 @@ pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::
 
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
+#[derive(Clone)]
+pub struct WrapperCall {
+    pub address: eth::Address,
+    pub data: Vec<u8>,
+}
+
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
 /// A solution represents a set of orders which the solver has found an optimal
@@ -55,10 +62,11 @@ pub struct Solution {
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
+    wrappers: Vec<WrapperCall>,
 }
 
 impl Solution {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
         mut trades: Vec<Trade>,
@@ -72,6 +80,7 @@ impl Solution {
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
+        wrappers: Vec<WrapperCall>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
@@ -128,6 +137,7 @@ impl Solution {
             weth,
             gas,
             flashloans,
+            wrappers,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -196,6 +206,10 @@ impl Solution {
 
     pub fn pre_interactions(&self) -> &[eth::Interaction] {
         &self.pre_interactions
+    }
+
+    pub fn post_interactions(&self) -> &[eth::Interaction] {
+        &self.post_interactions
     }
 
     /// The solver which generated this solution.
@@ -269,7 +283,10 @@ impl Solution {
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
                 eth.erc20(required.0.token)
-                    .allowance(settlement_contract.address().into(), required.0.spender)
+                    .allowance(
+                        settlement_contract.address().into_legacy().into(),
+                        required.0.spender,
+                    )
                     .await
                     .map(|existing| (required, existing))
             }))
@@ -375,6 +392,7 @@ impl Solution {
                 (None, None) => None,
             },
             flashloans,
+            wrappers: self.wrappers.clone(),
         })
     }
 
@@ -408,7 +426,7 @@ impl Solution {
             let amount = normalized
                 .entry((allowance.0.token, allowance.0.spender))
                 .or_insert(eth::U256::zero());
-            *amount = amount.saturating_add(allowance.0.amount);
+            *amount = amount.saturating_add(allowance.0.amount.into_legacy());
         }
         normalized
             .into_iter()
@@ -416,7 +434,7 @@ impl Solution {
                 eth::Allowance {
                     token,
                     spender,
-                    amount,
+                    amount: amount.into_alloy(),
                 }
                 .into()
             })

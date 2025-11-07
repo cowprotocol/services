@@ -1,17 +1,17 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
+    alloy::primitives::Address,
     anyhow::{Context, anyhow, ensure},
     clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option},
+        arguments::{display_list, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
     std::{
-        fmt,
-        fmt::{Display, Formatter},
+        fmt::{self, Display, Formatter},
         net::SocketAddr,
         num::NonZeroUsize,
         str::FromStr,
@@ -43,7 +43,7 @@ pub struct Arguments {
     /// Support for multiple contract was added to support transition period for
     /// integrators when the migration of the eth-flow contract happens.
     #[clap(long, env, use_value_delimiter = true)]
-    pub ethflow_contracts: Vec<H160>,
+    pub ethflow_contracts: Vec<Address>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// If there are already events in the database for a date later than this,
@@ -62,7 +62,12 @@ pub struct Arguments {
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
-    pub db_url: Url,
+    pub db_write_url: Url,
+
+    /// Url of the Postgres database replica. By default it's the same as
+    /// db_write_url
+    #[clap(long, env)]
+    pub db_read_url: Option<Url>,
 
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
@@ -76,15 +81,11 @@ pub struct Arguments {
     /// bad token detector thinks they are bad. Base tokens are
     /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    pub allowed_tokens: Vec<Address>,
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
-
-    /// The number of pairs that are automatically updated in the pool cache.
-    #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: NonZeroUsize,
+    pub unsupported_tokens: Vec<Address>,
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token. Estimators with the same name need to also be specified as
@@ -111,7 +112,11 @@ pub struct Arguments {
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
-    pub banned_users: Vec<H160>,
+    pub banned_users: Vec<Address>,
+
+    /// Maximum number of entries to keep in the banned users cache.
+    #[clap(long, env, default_value = "10000")]
+    pub banned_users_max_cache_size: NonZeroUsize,
 
     /// If the auction hasn't been updated in this amount of time the pod fails
     /// the liveness check. Expects a value in seconds.
@@ -136,7 +141,7 @@ pub struct Arguments {
     /// Hardcoded list of trusted tokens to use in addition to
     /// `trusted_tokens_url`.
     #[clap(long, env, use_value_delimiter = true)]
-    pub trusted_tokens: Option<Vec<H160>>,
+    pub trusted_tokens: Option<Vec<Address>>,
 
     /// Time interval after which the trusted tokens list needs to be updated.
     #[clap(
@@ -249,6 +254,17 @@ pub struct Arguments {
     /// Configuration for the solver participation guard.
     #[clap(flatten)]
     pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
+
+    /// Configures whether the autopilot is supposed to do any non-trivial
+    /// order filtering (e.g. based on balances or EIP-1271 signature validity).
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub disable_order_filtering: bool,
+
+    /// Enables the usage of leader lock in the database
+    /// The second instance of autopilot will act as a follower
+    /// and not cut any auctions.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub enable_leader_lock: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -349,10 +365,10 @@ impl std::fmt::Display for Arguments {
             skip_event_sync,
             allowed_tokens,
             unsupported_tokens,
-            pool_cache_lru_size,
             native_price_estimators,
             min_order_validity_period,
             banned_users,
+            banned_users_max_cache_size,
             max_auction_age,
             limit_order_price_factor,
             trusted_tokens_url,
@@ -366,7 +382,8 @@ impl std::fmt::Display for Arguments {
             fee_policy_max_partner_fee,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
-            db_url,
+            db_write_url,
+            db_read_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
@@ -378,6 +395,8 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             db_based_solver_participation_guard,
+            disable_order_filtering,
+            enable_leader_lock,
         } = self;
 
         write!(f, "{shared}")?;
@@ -389,18 +408,21 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
-        let _intentionally_ignored = db_url;
-        writeln!(f, "db_url: SECRET")?;
+        display_secret_option(f, "db_write_url", Some(&db_write_url))?;
+        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
-        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"
         )?;
         writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(
+            f,
+            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
+        )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
         writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
@@ -449,6 +471,8 @@ impl std::fmt::Display for Arguments {
             f,
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
+        writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
+        writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
     }
 }
@@ -653,9 +677,9 @@ impl FromStr for FeePolicy {
 #[derive(Debug, Clone)]
 pub struct CowAmmConfig {
     /// Which contract to index for CoW AMM deployment events.
-    pub factory: H160,
+    pub factory: Address,
     /// Which helper contract to use for interfacing with the indexed CoW AMMs.
-    pub helper: H160,
+    pub helper: Address,
     /// At which block indexing should start on the factory.
     pub index_start: u64,
 }

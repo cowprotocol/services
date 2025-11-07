@@ -14,8 +14,9 @@ use {
         sources::{BaselineSource, swapr::SwaprPoolReader},
     },
     anyhow::{Context, Result},
-    contracts::IUniswapLikeRouter,
+    contracts::alloy::IUniswapLikeRouter,
     ethcontract::{H160, H256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
@@ -55,7 +56,7 @@ enum PoolReadingStyle {
 }
 
 pub struct UniV2BaselineSource {
-    pub router: IUniswapLikeRouter,
+    pub router: IUniswapLikeRouter::Instance,
     pub pair_provider: PairProvider,
     pub pool_fetching: Arc<dyn PoolFetching>,
 }
@@ -63,52 +64,59 @@ pub struct UniV2BaselineSource {
 impl UniV2BaselineSourceParameters {
     pub fn from_baseline_source(source: BaselineSource, chain: &str) -> Option<Self> {
         use BaselineSource as BS;
-        let (contract, init_code_digest, pool_reading) = match source {
+
+        let chain_id = chain.parse::<u64>().expect("chain id should be an integer");
+
+        match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
-            BS::UniswapV2 => Some((
-                contracts::UniswapV2Router02::raw_contract(),
-                UNISWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
-            BS::Honeyswap => Some((
-                contracts::HoneyswapRouter::raw_contract(),
-                HONEYSWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
-            BS::SushiSwap => Some((
-                contracts::SushiSwapRouter::raw_contract(),
-                SUSHISWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
-            BS::Baoswap => Some((
-                contracts::BaoswapRouter::raw_contract(),
-                BAOSWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
-            BS::Swapr => Some((
-                contracts::SwaprRouter::raw_contract(),
-                SWAPR_INIT,
-                PoolReadingStyle::Swapr,
-            )),
-            BS::TestnetUniswapV2 => Some((
-                contracts::TestnetUniswapV2Router02::raw_contract(),
-                TESTNET_UNISWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
-        }?;
-        Some(Self {
-            router: contract.networks.get(chain)?.address,
-            init_code_digest: H256(init_code_digest),
-            pool_reading,
-        })
+            BS::UniswapV2 => Some(Self {
+                router: contracts::alloy::UniswapV2Router02::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: UNISWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::Honeyswap => Some(Self {
+                router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: HONEYSWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::SushiSwap => Some(Self {
+                router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: SUSHISWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::Swapr => Some(Self {
+                router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: SWAPR_INIT.into(),
+                pool_reading: PoolReadingStyle::Swapr,
+            }),
+            BS::TestnetUniswapV2 => Some(Self {
+                router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: TESTNET_UNISWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::Baoswap => Some(Self {
+                router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: BAOSWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+        }
     }
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
-        let router = contracts::IUniswapLikeRouter::at(&web3, self.router);
+        let router = contracts::alloy::IUniswapLikeRouter::Instance::new(
+            self.router.into_alloy(),
+            web3.alloy.clone(),
+        );
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
-            factory,
+            factory: factory.into_legacy(),
             init_code_digest: self.init_code_digest.0,
         };
         let pool_reader = DefaultPoolReader::new(web3.clone(), pair_provider);
@@ -166,7 +174,17 @@ impl FromStr for UniV2BaselineSourceParameters {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, model::TokenPair};
+    use {
+        super::*,
+        crate::recent_block_cache::Block,
+        alloy::{
+            primitives::{Address, address},
+            providers::Provider,
+        },
+        ethrpc::alloy::conversions::IntoAlloy,
+        maplit::hashset,
+        model::TokenPair,
+    };
 
     #[test]
     fn parse_address_init() {
@@ -206,7 +224,7 @@ mod tests {
             .into_source(web3)
             .await
             .unwrap();
-        let pair = TokenPair::new(token0, token1).unwrap();
+        let pair = TokenPair::new(token0.into_alloy(), token1.into_alloy()).unwrap();
         let pool = source.pair_provider.pair_address(&pair);
         assert_eq!(pool, expected_pool_address);
     }
@@ -223,22 +241,22 @@ mod tests {
 
         test(
             BaselineSource::UniswapV2,
-            testlib::tokens::GNO,
-            testlib::tokens::WETH,
+            testlib::tokens::GNO.into_legacy(),
+            testlib::tokens::WETH.into_legacy(),
             addr!("3e8468f66d30fc99f745481d4b383f89861702c6"),
         )
         .await;
         test(
             BaselineSource::SushiSwap,
-            testlib::tokens::GNO,
-            testlib::tokens::WETH,
+            testlib::tokens::GNO.into_legacy(),
+            testlib::tokens::WETH.into_legacy(),
             addr!("41328fdba556c8c969418ccccb077b7b8d932aa5"),
         )
         .await;
         test(
             BaselineSource::Swapr,
             addr!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
-            testlib::tokens::WETH,
+            testlib::tokens::WETH.into_legacy(),
             addr!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13"),
         )
         .await;
@@ -288,5 +306,82 @@ mod tests {
             addr!("4505b262dc053998c10685dc5f9098af8ae5c8ad"),
         )
         .await;
+    }
+
+    const GNOSIS_CHAIN_WETH: Address = address!("6A023CCd1ff6F2045C3309768eAd9E68F978f6e1");
+    const GNOSIS_CHAIN_WXDAI: Address = address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+
+    #[tokio::test]
+    #[ignore]
+    async fn fetch_baoswap_pool() {
+        let web3 = Web3::new_from_env();
+        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let pool_fetcher =
+            UniV2BaselineSourceParameters::from_baseline_source(BaselineSource::Baoswap, &version)
+                .unwrap()
+                .into_source(&web3)
+                .await
+                .unwrap()
+                .pool_fetching;
+        let pool = pool_fetcher
+            .fetch(
+                hashset! {
+                    TokenPair::new(
+                        GNOSIS_CHAIN_WETH,
+                        GNOSIS_CHAIN_WXDAI,
+                    )
+                    .unwrap(),
+                },
+                Block::Recent,
+            )
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        println!("WETH <> wxDAI pool: {pool:#?}");
+        assert_eq!(
+            pool.address.into_alloy(),
+            address!("8c36f7ca02d50bf8e705f582328b873acbe9438d")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn fetch_honeyswap_pool() {
+        let web3 = Web3::new_from_env();
+        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let pool_fetcher = UniV2BaselineSourceParameters::from_baseline_source(
+            BaselineSource::Honeyswap,
+            &version,
+        )
+        .unwrap()
+        .into_source(&web3)
+        .await
+        .unwrap()
+        .pool_fetching;
+        let pool = pool_fetcher
+            .fetch(
+                hashset! {
+                    TokenPair::new(
+                        GNOSIS_CHAIN_WETH,
+                        GNOSIS_CHAIN_WXDAI,
+                    )
+                    .unwrap(),
+                },
+                Block::Recent,
+            )
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        println!("WETH <> wxDAI pool: {pool:#?}");
+        assert_eq!(
+            pool.address.into_alloy(),
+            address!("7bea4af5d425f2d4485bdad1859c88617df31a67")
+        );
     }
 }

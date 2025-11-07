@@ -3,20 +3,32 @@ use {
         nodes::forked_node::ForkedNodeApi,
         setup::{DeployedContracts, deploy::Contracts},
     },
+    ::alloy::{
+        network::{Ethereum, NetworkWallet},
+        signers::local::PrivateKeySigner,
+    },
     app_data::Hook,
-    contracts::{CowProtocolToken, ERC20Mintable},
+    contracts::alloy::{
+        ERC20Mintable,
+        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
+        test::CowProtocolToken,
+    },
+    core::panic,
     ethcontract::{
         Account,
-        Bytes,
         H160,
         PrivateKey,
         U256,
         transaction::{TransactionBuilder, TransactionResult},
     },
+    ethrpc::alloy::{
+        CallBuilderExt,
+        ProviderSignerExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     hex_literal::hex,
     model::{
         DomainSeparator,
-        TokenPair,
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     secp256k1::SecretKey,
@@ -74,6 +86,13 @@ pub fn to_wei(base: u32) -> U256 {
     to_wei_with_exp(base, 18)
 }
 
+/// Returns the provided Eth amount in wei.
+///
+/// Equivalent to `amount * 10^18`.
+pub fn eth(amount: u32) -> ::alloy::primitives::U256 {
+    ::alloy::primitives::U256::from(amount) * ::alloy::primitives::utils::Unit::ETHER.wei()
+}
+
 pub async fn hook_for_transaction<T>(tx: TransactionBuilder<T>) -> Hook
 where
     T: web3::Transport,
@@ -85,7 +104,7 @@ where
         .expect("transaction reverted when estimating gas")
         .as_u64();
     Hook {
-        target: tx.to.unwrap(),
+        target: tx.to.map(IntoAlloy::into_alloy).unwrap(),
         call_data: tx.data.unwrap().0,
         gas_limit,
     }
@@ -168,18 +187,23 @@ impl Iterator for AccountGenerator {
 
 #[derive(Debug)]
 pub struct MintableToken {
-    contract: ERC20Mintable,
+    contract: ERC20Mintable::Instance,
     minter: Account,
 }
 
 impl MintableToken {
     pub async fn mint(&self, to: H160, amount: U256) {
-        tx!(self.minter, self.contract.mint(to, amount));
+        self.contract
+            .mint(to.into_alloy(), amount.into_alloy())
+            .from(self.minter.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 }
 
 impl Deref for MintableToken {
-    type Target = ERC20Mintable;
+    type Target = ERC20Mintable::Instance;
 
     fn deref(&self) -> &Self::Target {
         &self.contract
@@ -188,18 +212,29 @@ impl Deref for MintableToken {
 
 #[derive(Debug)]
 pub struct CowToken {
-    contract: CowProtocolToken,
+    contract: CowProtocolToken::Instance,
     holder: Account,
 }
 
 impl CowToken {
     pub async fn fund(&self, to: H160, amount: U256) {
-        tx!(self.holder, self.contract.transfer(to, amount));
+        self.contract
+            .transfer(to.into_alloy(), amount.into_alloy())
+            .from(self.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
-        let domain = self.contract.domain_separator().call().await.unwrap();
-        let nonce = self.contract.nonces(owner.address()).call().await.unwrap();
+        let domain = self.contract.DOMAIN_SEPARATOR().call().await.unwrap();
+        let nonce = self
+            .contract
+            .nonces(owner.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy();
         let deadline = U256::max_value();
 
         let struct_hash = {
@@ -219,21 +254,25 @@ impl CowToken {
         let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);
 
         let permit = self.contract.permit(
-            owner.address(),
-            spender,
-            value,
-            deadline,
+            owner.address().into_alloy(),
+            spender.into_alloy(),
+            value.into_alloy(),
+            deadline.into_alloy(),
             signature.v,
-            Bytes(signature.r.0),
-            Bytes(signature.s.0),
+            signature.r.0.into(),
+            signature.s.0.into(),
         );
 
-        hook_for_transaction(permit.tx).await
+        Hook {
+            target: *self.contract.address(),
+            call_data: permit.calldata().to_vec(),
+            gas_limit: permit.estimate_gas().await.unwrap(),
+        }
     }
 }
 
 impl Deref for CowToken {
-    type Target = CowProtocolToken;
+    type Target = CowProtocolToken::Instance;
 
     fn deref(&self) -> &Self::Target {
         &self.contract
@@ -286,6 +325,9 @@ impl OnchainComponents {
         assert_eq!(res.len(), N);
 
         for account in &res {
+            let signer = PrivateKeySigner::from_slice(account.private_key()).unwrap();
+            self.web3.wallet.register_signer(signer);
+
             self.send_wei(account.address(), with_wei).await;
         }
 
@@ -298,10 +340,14 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
+            self.web3
+                .wallet
+                .register_signer(PrivateKeySigner::from_slice(solver.private_key()).unwrap());
+
             self.contracts
                 .gp_authenticator
-                .add_solver(solver.address())
-                .send()
+                .addSolver(solver.address().into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
@@ -313,15 +359,15 @@ impl OnchainComponents {
         if allowed {
             self.contracts
                 .gp_authenticator
-                .add_solver(solver)
-                .send()
+                .addSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         } else {
             self.contracts
                 .gp_authenticator
-                .remove_solver(solver)
-                .send()
+                .removeSolver(solver.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to remove solver");
         }
@@ -333,13 +379,9 @@ impl OnchainComponents {
         &mut self,
         with_wei: U256,
     ) -> [TestAccount; N] {
-        let auth_manager = self
-            .contracts
-            .gp_authenticator
-            .manager()
-            .call()
-            .await
-            .unwrap();
+        let authenticator = &self.contracts.gp_authenticator;
+
+        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
@@ -348,29 +390,36 @@ impl OnchainComponents {
             .await
             .expect("could not set auth_manager balance");
 
-        let auth_manager = forked_node_api
-            .impersonate(&auth_manager)
-            .await
-            .expect("could not impersonate auth_manager");
+        let impersonated_authenticator = {
+            forked_node_api
+                .impersonate(&auth_manager)
+                .await
+                .expect("could not impersonate auth_manager");
+
+            // we create a new provider without a wallet so that
+            // alloy does not try to sign the tx with it and instead
+            // forwards the tx to the node for signing. This will
+            // work because we told anvil to impersonate that address.
+            let provider = authenticator.provider().clone().without_wallet();
+            GPv2AllowListAuthentication::new(*authenticator.address(), provider)
+        };
 
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            self.contracts
-                .gp_authenticator
-                .add_solver(solver.address())
-                .from(auth_manager.clone())
-                .send()
+            impersonated_authenticator
+                .addSolver(solver.address().into_alloy())
+                .from(auth_manager.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add solver");
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            self.contracts
-                .gp_authenticator
-                .add_solver(router.address())
-                .from(auth_manager.clone())
-                .send()
+            impersonated_authenticator
+                .addSolver(*router.address())
+                .from(auth_manager.into_alloy())
+                .send_and_watch()
                 .await
                 .expect("failed to add flashloan wrapper");
         }
@@ -381,12 +430,16 @@ impl OnchainComponents {
     /// Deploy `N` tokens without any onchain liquidity
     pub async fn deploy_tokens<const N: usize>(&self, minter: &Account) -> [MintableToken; N] {
         let mut res = Vec::with_capacity(N);
+
         for _ in 0..N {
-            let contract = ERC20Mintable::builder(&self.web3)
-                .from(minter.clone())
+            let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
+                // We can't escape the .from here because we need to ensure Minter permissions later on
+                .from(minter.address().into_alloy())
                 .deploy()
                 .await
-                .expect("MintableERC20 deployment failed");
+                .expect("ERC20Mintable deployment failed");
+            let contract = ERC20Mintable::Instance::new(contract_address, self.web3.alloy.clone());
+
             res.push(MintableToken {
                 contract,
                 minter: minter.clone(),
@@ -423,38 +476,67 @@ impl OnchainComponents {
         weth_amount: U256,
     ) {
         for MintableToken { contract, minter } in tokens {
-            tx!(minter, contract.mint(minter.address(), token_amount));
-            tx_value!(minter, weth_amount, self.contracts.weth.deposit());
+            contract
+                .mint(minter.address().into_alloy(), token_amount.into_alloy())
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
 
-            tx!(
-                minter,
-                self.contracts
-                    .uniswap_v2_factory
-                    .create_pair(contract.address(), self.contracts.weth.address())
-            );
-            tx!(
-                minter,
-                contract.approve(self.contracts.uniswap_v2_router.address(), token_amount)
-            );
-            tx!(
-                minter,
-                self.contracts
-                    .weth
-                    .approve(self.contracts.uniswap_v2_router.address(), weth_amount)
-            );
-            tx!(
-                minter,
-                self.contracts.uniswap_v2_router.add_liquidity(
-                    contract.address(),
-                    self.contracts.weth.address(),
-                    token_amount,
-                    weth_amount,
-                    0_u64.into(),
-                    0_u64.into(),
-                    minter.address(),
-                    U256::max_value(),
+            self.contracts
+                .weth
+                .deposit()
+                .value(weth_amount.into_alloy())
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
+
+            self.contracts
+                .uniswap_v2_factory
+                .createPair(*contract.address(), *self.contracts.weth.address())
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
+
+            contract
+                .approve(
+                    *self.contracts.uniswap_v2_router.address(),
+                    token_amount.into_alloy(),
                 )
-            );
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
+
+            self.contracts
+                .weth
+                .approve(
+                    *self.contracts.uniswap_v2_router.address(),
+                    weth_amount.into_alloy(),
+                )
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
+
+            self.contracts
+                .uniswap_v2_router
+                .addLiquidity(
+                    *contract.address(),
+                    *self.contracts.weth.address(),
+                    token_amount.into_alloy(),
+                    weth_amount.into_alloy(),
+                    ::alloy::primitives::U256::ZERO,
+                    ::alloy::primitives::U256::ZERO,
+                    minter.address().into_alloy(),
+                    ::alloy::primitives::U256::MAX,
+                )
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
         }
     }
 
@@ -467,85 +549,99 @@ impl OnchainComponents {
         asset_a.0.mint(lp.address(), asset_a.1).await;
         asset_b.0.mint(lp.address(), asset_b.1).await;
 
-        tx!(
-            lp,
-            self.contracts
-                .uniswap_v2_factory
-                .create_pair(asset_a.0.address(), asset_b.0.address())
-        );
-        tx!(
-            lp,
-            asset_a
-                .0
-                .approve(self.contracts.uniswap_v2_router.address(), asset_a.1)
-        );
-        tx!(
-            lp,
-            asset_b
-                .0
-                .approve(self.contracts.uniswap_v2_router.address(), asset_b.1)
-        );
-        tx!(
-            lp,
-            self.contracts.uniswap_v2_router.add_liquidity(
-                asset_a.0.address(),
-                asset_b.0.address(),
-                asset_a.1,
-                asset_b.1,
-                0_u64.into(),
-                0_u64.into(),
-                lp.address(),
-                U256::max_value(),
+        self.contracts
+            .uniswap_v2_factory
+            .createPair(*asset_a.0.address(), *asset_b.0.address())
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        asset_a
+            .0
+            .approve(
+                *self.contracts.uniswap_v2_router.address(),
+                asset_a.1.into_alloy(),
             )
-        );
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        asset_b
+            .0
+            .approve(
+                *self.contracts.uniswap_v2_router.address(),
+                asset_b.1.into_alloy(),
+            )
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+        self.contracts
+            .uniswap_v2_router
+            .addLiquidity(
+                *asset_a.0.address(),
+                *asset_b.0.address(),
+                asset_a.1.into_alloy(),
+                asset_b.1.into_alloy(),
+                ::alloy::primitives::U256::ZERO,
+                ::alloy::primitives::U256::ZERO,
+                lp.address().into_alloy(),
+                ::alloy::primitives::U256::MAX,
+            )
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
     ///
     /// This can be used to modify the pool reserves during a test.
     pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
-        let pair = contracts::IUniswapLikePair::at(
-            &self.web3,
+        let pair = contracts::alloy::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
-                .get_pair(self.contracts.weth.address(), token.address())
+                .getPair(*self.contracts.weth.address(), *token.address())
                 .call()
                 .await
                 .expect("failed to get Uniswap V2 pair"),
+            self.web3.alloy.clone(),
         );
         assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
 
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
-        token.mint(pair.address(), amount + 1).await;
-        let (out0, out1) = if TokenPair::new(self.contracts.weth.address(), token.address())
-            .unwrap()
-            .get()
-            .0
-            == token.address()
-        {
+        token.mint(pair.address().into_legacy(), amount + 1).await;
+        let (out0, out1) = if self.contracts.weth.address() < token.address() {
             (1, 0)
         } else {
             (0, 1)
         };
         pair.swap(
-            out0.into(),
-            out1.into(),
-            token.minter.address(),
+            ::alloy::primitives::U256::from(out0),
+            ::alloy::primitives::U256::from(out1),
+            token.minter.address().into_alloy(),
             Default::default(),
         )
-        .from(token.minter.clone())
-        .send()
+        .from(token.minter.address().into_alloy())
+        .send_and_watch()
         .await
         .expect("Uniswap V2 pair couldn't mint");
     }
 
-    pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
-        let contract =
-            CowProtocolToken::builder(&self.web3, holder.address(), holder.address(), supply)
-                .deploy()
-                .await
-                .expect("CowProtocolToken deployment failed");
+    pub async fn deploy_cow_token(&self, supply: U256) -> CowToken {
+        let holder = NetworkWallet::<Ethereum>::default_signer_address(&self.web3().wallet);
+        let holder = Account::Local(holder.into_legacy(), None);
+        let contract = CowProtocolToken::CowProtocolToken::deploy(
+            self.web3.alloy.clone(),
+            holder.address().into_alloy(),
+            holder.address().into_alloy(),
+            supply.into_alloy(),
+        )
+        .await
+        .expect("CowProtocolToken deployment failed");
         CowToken { contract, holder }
     }
 
@@ -555,47 +651,58 @@ impl OnchainComponents {
         cow_amount: U256,
         weth_amount: U256,
     ) -> CowToken {
-        let holder = Account::Local(
-            self.web3
-                .eth()
-                .accounts()
-                .await
-                .expect("getting accounts failed")[0],
-            None,
-        );
-        let cow = self.deploy_cow_token(holder.clone(), cow_supply).await;
+        let cow = self.deploy_cow_token(cow_supply).await;
 
-        tx_value!(holder, weth_amount, self.contracts.weth.deposit());
+        self.contracts
+            .weth
+            .deposit()
+            .value(weth_amount.into_alloy())
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
 
-        tx!(
-            holder,
-            self.contracts
-                .uniswap_v2_factory
-                .create_pair(cow.address(), self.contracts.weth.address())
-        );
-        tx!(
-            holder,
-            cow.approve(self.contracts.uniswap_v2_router.address(), cow_amount)
-        );
-        tx!(
-            holder,
-            self.contracts
-                .weth
-                .approve(self.contracts.uniswap_v2_router.address(), weth_amount)
-        );
-        tx!(
-            holder,
-            self.contracts.uniswap_v2_router.add_liquidity(
-                cow.address(),
-                self.contracts.weth.address(),
-                cow_amount,
-                weth_amount,
-                0_u64.into(),
-                0_u64.into(),
-                holder.address(),
-                U256::max_value(),
+        self.contracts
+            .uniswap_v2_factory
+            .createPair(*cow.address(), *self.contracts.weth.address())
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+        cow.approve(
+            *self.contracts.uniswap_v2_router.address(),
+            cow_amount.into_alloy(),
+        )
+        .from(cow.holder.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+        self.contracts
+            .weth
+            .approve(
+                *self.contracts.uniswap_v2_router.address(),
+                weth_amount.into_alloy(),
             )
-        );
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+        self.contracts
+            .uniswap_v2_router
+            .addLiquidity(
+                *cow.address(),
+                *self.contracts.weth.address(),
+                cow_amount.into_alloy(),
+                weth_amount.into_alloy(),
+                ::alloy::primitives::U256::ZERO,
+                ::alloy::primitives::U256::ZERO,
+                cow.holder.address().into_alloy(),
+                ::alloy::primitives::U256::MAX,
+            )
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
 
         cow
     }

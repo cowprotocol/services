@@ -4,10 +4,11 @@
 
 use {
     crate::interactions::Erc20ApproveInteraction,
+    ::alloy::sol_types::SolCall,
     anyhow::{Context as _, Result, anyhow, ensure},
-    contracts::{ERC20, dummy_contract},
+    contracts::alloy::ERC20,
     ethcontract::{H160, U256},
-    ethrpc::Web3,
+    ethrpc::{Web3, alloy::conversions::IntoAlloy},
     maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
@@ -16,7 +17,6 @@ use {
     std::{
         collections::{HashMap, HashSet},
         slice,
-        sync::Arc,
     },
     web3::types::CallRequest,
 };
@@ -116,15 +116,10 @@ pub struct Approval {
 
 impl Interaction for Approval {
     fn encode(&self) -> EncodedInteraction {
-        // Use a "dummy" contract - unfortunately `ethcontract` doesn't
-        // allow you use the generated contract intances to encode
-        // transaction data without a `Web3` instance. Hopefully, this
-        // limitation will be lifted soon to clean up stuff like this.
-        let token = dummy_contract!(ERC20, self.token);
         let approve = Erc20ApproveInteraction {
-            token,
-            spender: self.spender,
-            amount: U256::max_value(),
+            token: self.token.into_alloy(),
+            spender: self.spender.into_alloy(),
+            amount: alloy::primitives::U256::MAX,
         };
 
         approve.encode()
@@ -136,17 +131,11 @@ impl Interaction for Approval {
 pub struct AllowanceManager {
     web3: Web3,
     owner: H160,
-    erc20: Arc<ERC20>,
 }
 
 impl AllowanceManager {
     pub fn new(web3: Web3, owner: H160) -> Self {
-        // Only instantiate a single contract instance to generate calldata.
-        // The actual call will be done with the web3 instance using the respective
-        // `token` as the `to` address. (performance optimization)
-        let erc20 = Arc::new(ERC20::at(&web3, owner));
-
-        Self { web3, owner, erc20 }
+        Self { web3, owner }
     }
 }
 
@@ -155,7 +144,6 @@ impl AllowanceManaging for AllowanceManager {
     async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances> {
         Ok(fetch_allowances(
             self.web3.clone(),
-            self.erc20.clone(),
             self.owner,
             hashmap! { spender => tokens },
         )
@@ -173,13 +161,7 @@ impl AllowanceManaging for AllowanceManager {
                 .insert(request.token);
         }
 
-        let allowances = fetch_allowances(
-            self.web3.clone(),
-            self.erc20.clone(),
-            self.owner,
-            spender_tokens,
-        )
-        .await?;
+        let allowances = fetch_allowances(self.web3.clone(), self.owner, spender_tokens).await?;
         let mut result = Vec::new();
         for request in requests {
             let allowance = allowances
@@ -194,7 +176,6 @@ impl AllowanceManaging for AllowanceManager {
 
 async fn fetch_allowances<T>(
     web3: Web3<T>,
-    erc20: Arc<ERC20>,
     owner: H160,
     spender_tokens: HashMap<H160, HashSet<H160>>,
 ) -> Result<HashMap<H160, Allowances>>
@@ -208,11 +189,17 @@ where
         .flat_map(|(spender, tokens)| tokens.into_iter().map(move |token| (spender, token)))
         .map(|(spender, token)| {
             let web3 = web3.clone();
-            let erc20 = erc20.clone();
 
             async move {
-                let calldata = erc20.allowance(owner, spender).m.tx.data.unwrap();
-                let req = CallRequest::builder().to(token).data(calldata).build();
+                let calldata = ERC20::ERC20::allowanceCall {
+                    owner: owner.into_alloy(),
+                    spender: spender.into_alloy(),
+                }
+                .abi_encode();
+                let req = CallRequest::builder()
+                    .to(token)
+                    .data(calldata.into())
+                    .build();
                 let allowance = web3.eth().call(req, None).await;
                 (spender, token, allowance)
             }
@@ -243,8 +230,8 @@ where
 mod tests {
     use {
         super::*,
+        alloy::sol_types::SolCall,
         ethcontract::{
-            Bytes,
             common::abi::{self, Token},
             web3::types::CallRequest,
         },
@@ -371,23 +358,25 @@ mod tests {
         assert_eq!(
             Approval { token, spender }.encode(),
             (
-                token,
-                0.into(),
-                Bytes(
-                    hex::decode(
-                        "095ea7b3\
-                         0000000000000000000000000202020202020202020202020202020202020202\
-                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                    )
-                    .unwrap()
+                token.into_alloy(),
+                alloy::primitives::U256::ZERO,
+                const_hex::decode(
+                    "095ea7b3\
+                    0000000000000000000000000202020202020202020202020202020202020202\
+                    ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 )
+                .unwrap().into()
             )
         );
     }
 
     fn allowance_call_data(owner: H160, spender: H160) -> web3::types::Bytes {
-        let token = dummy_contract!(ERC20, H160::zero());
-        token.allowance(owner, spender).m.tx.data.unwrap()
+        contracts::alloy::ERC20::ERC20::allowanceCall {
+            owner: owner.into_alloy(),
+            spender: spender.into_alloy(),
+        }
+        .abi_encode()
+        .into()
     }
 
     fn allowance_return_data(value: U256) -> Value {
@@ -419,11 +408,8 @@ mod tests {
                 }
             });
 
-        let erc20 = Arc::new(ERC20::at(&web3, Default::default()));
-
         let allowances = fetch_allowances(
             web3,
-            erc20,
             owner,
             hashmap! {
                 spender => hashset![H160([0x11; 20]), H160([0x22; 20])],

@@ -1,23 +1,34 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::alloy::{ChainalysisOracle, InstanceExt},
-    ethrpc::Web3,
+    contracts::alloy::{
+        ChainalysisOracle,
+        GPv2AllowListAuthentication,
+        GPv2Settlement,
+        HooksTrampoline,
+        InstanceExt,
+        WETH9,
+        support::Balances,
+    },
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
     primitive_types::H160,
 };
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    settlement: contracts::GPv2Settlement,
-    signatures: contracts::support::Signatures,
-    weth: contracts::WETH9,
-    balances: contracts::support::Balances,
+    settlement: GPv2Settlement::Instance,
+    signatures: contracts::alloy::support::Signatures::Instance,
+    weth: WETH9::Instance,
+    balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
-    trampoline: contracts::HooksTrampoline,
+    trampoline: HooksTrampoline::Instance,
 
     /// The authenticator contract that decides which solver is allowed to
     /// submit settlements.
-    authenticator: contracts::GPv2AllowListAuthentication,
+    authenticator: GPv2AllowListAuthentication::Instance,
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: domain::eth::DomainSeparator,
 }
@@ -33,47 +44,49 @@ pub struct Addresses {
 
 impl Contracts {
     pub async fn new(web3: &Web3, chain: &Chain, addresses: Addresses) -> Self {
-        let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
-            address
-                .or_else(|| deployment_address(contract, chain))
-                .unwrap()
-        };
-
-        let settlement = contracts::GPv2Settlement::at(
-            web3,
-            address_for(
-                contracts::GPv2Settlement::raw_contract(),
-                addresses.settlement,
-            ),
+        let settlement = GPv2Settlement::Instance::new(
+            addresses
+                .settlement
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
-        let weth = contracts::WETH9::at(
-            web3,
-            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        let weth = WETH9::Instance::new(
+            addresses
+                .weth
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| WETH9::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
-        let balances = contracts::support::Balances::at(
-            web3,
-            address_for(
-                contracts::support::Balances::raw_contract(),
-                addresses.balances,
-            ),
+        let balances = Balances::Instance::new(
+            addresses
+                .balances
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| Balances::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
-        let trampoline = contracts::HooksTrampoline::at(
-            web3,
-            address_for(
-                contracts::HooksTrampoline::raw_contract(),
-                addresses.trampoline,
-            ),
+        let trampoline = HooksTrampoline::Instance::new(
+            addresses
+                .trampoline
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| HooksTrampoline::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
@@ -82,20 +95,20 @@ impl Contracts {
 
         let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("domain separator")
                 .0,
         );
 
-        let authenticator = contracts::GPv2AllowListAuthentication::at(
-            web3,
+        let authenticator = GPv2AllowListAuthentication::Instance::new(
             settlement
                 .authenticator()
                 .call()
                 .await
                 .expect("authenticator address"),
+            web3.alloy.clone(),
         );
 
         Self {
@@ -110,19 +123,19 @@ impl Contracts {
         }
     }
 
-    pub fn settlement(&self) -> &contracts::GPv2Settlement {
+    pub fn settlement(&self) -> &GPv2Settlement::Instance {
         &self.settlement
     }
 
-    pub fn balances(&self) -> &contracts::support::Balances {
+    pub fn balances(&self) -> &Balances::Instance {
         &self.balances
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
-    pub fn trampoline(&self) -> &contracts::HooksTrampoline {
+    pub fn trampoline(&self) -> &HooksTrampoline::Instance {
         &self.trampoline
     }
 
@@ -134,17 +147,17 @@ impl Contracts {
         &self.chainalysis_oracle
     }
 
-    pub fn weth(&self) -> &contracts::WETH9 {
+    pub fn weth(&self) -> &WETH9::Instance {
         &self.weth
     }
 
     /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
     /// Gnosis Chain)
     pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
-        self.weth.address().into()
+        self.weth.address().into_legacy().into()
     }
 
-    pub fn authenticator(&self) -> &contracts::GPv2AllowListAuthentication {
+    pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {
         &self.authenticator
     }
 }

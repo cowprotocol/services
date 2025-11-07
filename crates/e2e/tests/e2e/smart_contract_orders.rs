@@ -1,10 +1,10 @@
 use {
-    e2e::{
-        setup::{safe::Safe, *},
-        tx,
+    e2e::setup::{eth, safe::Safe, *},
+    ethcontract::{H160, U256},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
     },
-    ethcontract::{Bytes, H160, U256},
-    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -39,17 +39,21 @@ async fn smart_contract_orders(web3: Web3) {
     token.mint(safe.address().into_legacy(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
-        .await;
+    safe.exec_alloy_call(
+        token
+            .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+            .into_transaction_request(),
+    )
+    .await;
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(5),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
@@ -118,11 +122,12 @@ async fn smart_contract_orders(web3: Web3) {
         order_status(uids[1]).await,
         OrderStatus::PresignaturePending
     );
-    safe.exec_call(
+    safe.exec_alloy_call(
         onchain
             .contracts()
             .gp_settlement
-            .set_pre_signature(Bytes(uids[1].0.to_vec()), true),
+            .setPreSignature(uids[1].0.into(), true)
+            .into_transaction_request(),
     )
     .await;
 
@@ -130,19 +135,19 @@ async fn smart_contract_orders(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let token_balance = token
-            .balance_of(safe.address().into_legacy())
+            .balanceOf(safe.address())
             .call()
             .await
             .expect("Couldn't fetch token balance");
         let weth_balance = onchain
             .contracts()
             .weth
-            .balance_of(safe.address().into_legacy())
+            .balanceOf(safe.address())
             .call()
             .await
             .expect("Couldn't fetch native token balance");
 
-        token_balance.is_zero() && weth_balance > to_wei(6)
+        token_balance.is_zero() && weth_balance > eth(6)
     })
     .await
     .unwrap();
@@ -152,8 +157,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let trader = contracts::test::GasHog::builder(&web3)
-        .deploy()
+    let trader = contracts::alloy::test::GasHog::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
 
@@ -162,11 +166,17 @@ async fn erc1271_gas_limit(web3: Web3) {
         .await;
 
     // Fund trader accounts and approve relayer
-    cow.fund(trader.address(), to_wei(5)).await;
-    tx!(
-        solver.account(),
-        trader.approve(cow.address(), onchain.contracts().allowance, to_wei(10))
-    );
+    cow.fund(trader.address().into_legacy(), to_wei(5)).await;
+    trader
+        .approve(
+            *cow.address(),
+            onchain.contracts().allowance.into_alloy(),
+            eth(10),
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services
@@ -184,14 +194,14 @@ async fn erc1271_gas_limit(web3: Web3) {
     U256::exp10(6).to_big_endian(&mut signature);
 
     let order = OrderCreation {
-        sell_token: cow.address(),
+        sell_token: cow.address().into_legacy(),
         sell_amount: to_wei(4),
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: onchain.contracts().weth.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         signature: Signature::Eip1271(signature.to_vec()),
-        from: Some(trader.address()),
+        from: Some(trader.address().into_legacy()),
         ..Default::default()
     };
 

@@ -9,6 +9,7 @@
 //! trait to conveniently create a new `Provider` with an additional
 //! [`LabelingLayer`].
 use {
+    crate::alloy::RpcClientRandomIdExt,
     alloy::{
         providers::{DynProvider, Provider, ProviderBuilder},
         rpc::{
@@ -26,7 +27,6 @@ use {
 };
 
 /// Layer that attaches a label to each request that passes through.
-#[allow(dead_code)]
 pub(crate) struct LabelingLayer {
     pub label: String,
 }
@@ -86,7 +86,6 @@ where
 
 /// Layer that logs and collects metrics based on the
 /// [`ProviderLabel`] metadata attached to each request.
-#[allow(dead_code)]
 pub(crate) struct InstrumentationLayer;
 
 impl<S> Layer<S> for InstrumentationLayer {
@@ -160,7 +159,7 @@ impl ProviderLabelingExt for DynProvider {
         let is_local = self.client().is_local();
         let transport = self.client().transport().clone();
         let transport_with_label = LabelingLayer { label }.layer(transport);
-        let client = RpcClient::new(transport_with_label, is_local);
+        let client = RpcClient::with_random_id(transport_with_label, is_local);
         ProviderBuilder::new().connect_client(client).erased()
     }
 }

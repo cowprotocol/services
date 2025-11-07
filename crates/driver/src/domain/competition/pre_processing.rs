@@ -1,27 +1,37 @@
 use {
-    super::{Auction, Order, auction, order},
+    super::{Auction, Order, order},
     crate::{
-        domain::{eth, liquidity},
-        infra::{self, observe::metrics},
+        domain::{
+            competition::order::{SellTokenBalance, app_data::AppData},
+            cow_amm,
+            eth,
+            liquidity,
+        },
+        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
         util::Bytes,
     },
+    anyhow::{Context, Result},
     chrono::Utc,
-    futures::{
-        FutureExt,
-        future::{BoxFuture, join_all},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
-    model::{order::OrderKind, signature::Signature},
-    shared::signature_validator::SignatureValidating,
-    std::{
-        collections::HashMap,
-        future::Future,
-        sync::{Arc, Mutex},
+    model::{
+        interaction::InteractionData,
+        order::{OrderKind, SellTokenSource},
+        signature::Signature,
     },
-    tap::TapFallible,
+    shared::{
+        account_balances::{BalanceFetching, Query},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
+        signature_validator::SignatureValidating,
+    },
+    std::{collections::HashMap, future::Future, sync::Arc, time::Duration},
+    tokio::sync::Mutex,
+    tracing::Instrument,
 };
 
 type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
+
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
@@ -34,6 +44,7 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// while the third task can continue in the background.
 #[derive(Clone, Debug)]
 pub struct DataFetchingTasks {
+    pub auction: Shared<Arc<Auction>>,
     pub balances: Shared<Arc<Balances>>,
     pub app_data:
         Shared<Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>>,
@@ -47,7 +58,9 @@ pub struct Utilities {
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
     liquidity_fetcher: infra::liquidity::Fetcher,
-    disable_access_list_simulation: bool,
+    tokens: tokens::Fetcher,
+    balance_fetcher: Arc<dyn BalanceFetching>,
+    cow_amm_cache: cow_amm::Cache,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -61,7 +74,7 @@ impl std::fmt::Debug for Utilities {
 #[derive(Debug)]
 struct ControlBlock {
     /// Auction for which the data aggregation task was spawned.
-    auction: auction::Id,
+    solve_request: Arc<String>,
     /// Data aggregation task.
     tasks: DataFetchingTasks,
 }
@@ -76,35 +89,39 @@ impl DataAggregator {
     /// Aggregates all the data that is needed to pre-process the given auction.
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.
-    pub fn start_or_get_tasks_for_auction(&self, auction: Arc<Auction>) -> DataFetchingTasks {
-        let new_id = auction
-            .id()
-            .expect("auctions used for quoting do not have to be prioritized");
+    pub async fn start_or_get_tasks_for_auction(
+        &self,
+        request: Arc<String>,
+    ) -> Result<DataFetchingTasks> {
+        let mut lock = self.control.lock().await;
+        let current_auction = &lock.solve_request;
 
-        let mut lock = self.control.lock().unwrap();
-        let current_id = lock.auction;
-        if new_id.0 < current_id.0 {
-            tracing::error!(?current_id, ?new_id, "received an outdated auction");
-        }
-        if current_id.0 == new_id.0 {
+        // The autopilot ensures that all drivers receive identical
+        // requests per auction. That means we can use the significantly
+        // cheaper string comparison instead of parsing the JSON to compare
+        // the auction ids.
+        if &request == current_auction {
+            let id = lock.tasks.auction.clone().await.id;
+            init_auction_id_in_span(id.map(|i| i.0));
             tracing::debug!("await running data aggregation task");
-            return lock.tasks.clone();
+            return Ok(lock.tasks.clone());
         }
 
-        let tasks = self.assemble_tasks(auction);
+        let tasks = self.assemble_tasks(request.clone()).await?;
 
         tracing::debug!("started new data aggregation task");
-        lock.auction = new_id;
+        lock.solve_request = request;
         lock.tasks = tasks.clone();
 
-        tasks
+        Ok(tasks)
     }
 
     pub fn new(
         eth: infra::Ethereum,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         liquidity_fetcher: infra::liquidity::Fetcher,
-        disable_access_list_simulation: bool,
+        tokens: tokens::Fetcher,
+        balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -113,7 +130,17 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            eth.balance_overrider(),
         );
+
+        let cow_amm_helper_by_factory = eth
+            .contracts()
+            .cow_amm_helper_by_factory()
+            .iter()
+            .map(|(factory, helper)| (factory.0.into_alloy(), helper.0.into_alloy()))
+            .collect();
+        let cow_amm_cache =
+            cow_amm::Cache::new(eth.web3().alloy.clone(), cow_amm_helper_by_factory);
 
         Self {
             utilities: Arc::new(Utilities {
@@ -121,11 +148,14 @@ impl DataAggregator {
                 signature_validator,
                 app_data_retriever,
                 liquidity_fetcher,
-                disable_access_list_simulation,
+                tokens,
+                balance_fetcher,
+                cow_amm_cache,
             }),
             control: Mutex::new(ControlBlock {
-                auction: auction::Id(0),
+                solve_request: Default::default(),
                 tasks: DataFetchingTasks {
+                    auction: futures::future::pending().boxed().shared(),
                     balances: futures::future::pending().boxed().shared(),
                     app_data: futures::future::pending().boxed().shared(),
                     cow_amm_orders: futures::future::pending().boxed().shared(),
@@ -135,7 +165,9 @@ impl DataAggregator {
         }
     }
 
-    fn assemble_tasks(&self, auction: Arc<Auction>) -> DataFetchingTasks {
+    async fn assemble_tasks(&self, request: Arc<String>) -> Result<DataFetchingTasks> {
+        let auction = self.utilities.parse_request(request).await?;
+
         let balances =
             Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)));
 
@@ -149,12 +181,13 @@ impl DataAggregator {
         let liquidity =
             Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
 
-        DataFetchingTasks {
+        Ok(DataFetchingTasks {
+            auction: futures::future::ready(auction).boxed().shared(),
             balances,
             app_data,
             cow_amm_orders,
             liquidity,
-        }
+        })
     }
 
     /// Spawns an async task and returns a `Shared` handle to its result.
@@ -166,7 +199,7 @@ impl DataAggregator {
     where
         T: Send + Sync + Clone + 'static,
     {
-        let shared = fut.boxed().shared();
+        let shared = fut.instrument(tracing::Span::current()).boxed().shared();
 
         // Start the computation in the background
         tokio::spawn(shared.clone());
@@ -176,11 +209,50 @@ impl DataAggregator {
 }
 
 impl Utilities {
+    /// Parses the JSON body of the `/solve` request during the unified
+    /// auction pre-processing since eagerly deserializing these requests
+    /// is surprisingly costly because their are so big.
+    async fn parse_request(&self, solve_request: Arc<String>) -> Result<Arc<Auction>> {
+        let auction_dto: SolveRequest = {
+            let _timer = metrics::get().processing_stage_timer("parse_dto");
+            let _timer2 =
+                observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
+            // deserialization takes tens of milliseconds so run it on a blocking task
+            tokio::task::spawn_blocking(move || {
+                serde_json::from_str(&solve_request).context("could not parse solve request")
+            })
+            .await
+            .context("failed to await blocking task")??
+        };
+
+        // now that we finally know the auction id we can set it in the span
+        init_auction_id_in_span(Some(auction_dto.id()));
+
+        let auction_domain = {
+            let _timer = metrics::get().processing_stage_timer("convert_to_domain");
+            let _timer2 = observe::metrics::metrics()
+                .on_auction_overhead_start("driver", "convert_to_domain");
+            let app_data = self
+                .app_data_retriever
+                .as_ref()
+                .map(|retriever| retriever.get_cached())
+                .unwrap_or_default();
+            let auction = auction_dto
+                .into_domain(&self.eth, &self.tokens, app_data)
+                .await
+                .context("could not convert auction DTO to domain type")?;
+            Arc::new(auction)
+        };
+
+        Ok(auction_domain)
+    }
+
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
-        let ethereum = self.eth.with_metric_label("orderBalances".into());
-        let mut tokens: HashMap<_, _> = Default::default();
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_balances");
+
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
         // the same token with the same source in two different orders using a
@@ -188,7 +260,7 @@ impl Utilities {
         // pre-interactions were specified. This is done to avoid creating
         // dependencies between orders (i.e. order 1 is required for executing
         // order 2) which we currently cannot express with the solver interface.
-        let traders = auction
+        let queries = auction
             .orders
             .iter()
             .chunk_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
@@ -196,41 +268,70 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                tokens.entry(token).or_insert_with(|| ethereum.erc20(token));
-                if others.all(|order| order.pre_interactions == first.pre_interactions) {
-                    (trader, token, source, &first.pre_interactions[..])
-                } else {
-                    (trader, token, source, Default::default())
+                let all_setups_equal = others.all(|order| {
+                    order.pre_interactions == first.pre_interactions
+                        && order.app_data.flashloan() == first.app_data.flashloan()
+                });
+                Query {
+                    owner: trader.0.0,
+                    token: token.0.0,
+                    source: match source {
+                        SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                        SellTokenBalance::Internal => SellTokenSource::Internal,
+                        SellTokenBalance::External => SellTokenSource::External,
+                    },
+                    interactions: if all_setups_equal {
+                        first
+                            .pre_interactions
+                            .iter()
+                            .map(|i| InteractionData {
+                                target: i.target.0.into_alloy(),
+                                value: i.value.0.into_alloy(),
+                                call_data: i.call_data.0.clone(),
+                            })
+                            .collect()
+                    } else {
+                        Vec::default()
+                    },
+                    balance_override: if all_setups_equal {
+                        first
+                            .app_data
+                            .flashloan()
+                            .map(|loan| BalanceOverrideRequest {
+                                token: loan.token.into_legacy(),
+                                amount: loan.amount.into_legacy(),
+                                holder: loan.receiver.into_legacy(),
+                            })
+                    } else {
+                        None
+                    },
                 }
             })
             .collect::<Vec<_>>();
 
-        let balances = join_all(traders.into_iter().map(
-            |(trader, token, source, interactions)| {
-                let token_contract = tokens.get(&token);
-                let token_contract = token_contract.expect("all tokens were created earlier");
-                let fetch_balance = token_contract.tradable_balance(
-                    trader.into(),
-                    source,
-                    interactions,
-                    self.disable_access_list_simulation,
-                );
+        let balances = self.balance_fetcher.get_balances(&queries).await;
 
-                async move {
-                    let balance = fetch_balance.await;
+        let result: HashMap<_, _> = queries
+            .into_iter()
+            .zip(balances)
+            .filter_map(|(query, balance)| {
+                let balance = balance.ok()?;
+                Some((
                     (
-                        (trader, token, source),
-                        balance.map(order::SellAmount::from).ok(),
-                    )
-                }
-            },
-        ))
-        .await
-        .into_iter()
-        .filter_map(|(key, value)| Some((key, value?)))
-        .collect();
+                        order::Trader(query.owner.into()),
+                        query.token.into(),
+                        match query.source {
+                            SellTokenSource::Erc20 => SellTokenBalance::Erc20,
+                            SellTokenSource::Internal => SellTokenBalance::Internal,
+                            SellTokenSource::External => SellTokenBalance::External,
+                        },
+                    ),
+                    order::SellAmount(balance),
+                ))
+            })
+            .collect();
 
-        Arc::new(balances)
+        Arc::new(result)
     }
 
     /// Fetches the app data for all orders in the auction.
@@ -244,50 +345,67 @@ impl Utilities {
         };
 
         let _timer = metrics::get().processing_stage_timer("fetch_app_data");
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_app_data");
 
-        let app_data = join_all(
-            auction
-                .orders
-                .iter()
-                .map(|order| order.app_data.hash())
-                .unique()
-                .map(|app_data_hash| {
-                    let app_data_retriever = app_data_retriever.clone();
-                    async move {
-                        let fetched_app_data = app_data_retriever
-                            .get(&app_data_hash)
-                            .await
-                            .tap_err(|err| {
-                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
-                            })
-                            .ok()
-                            .flatten();
+        let futures: FuturesUnordered<_> = auction
+            .orders
+            .iter()
+            .flat_map(|order| match order.app_data {
+                AppData::Full(_) => None,
+                // only fetch appdata we don't already have in full
+                AppData::Hash(hash) => Some(hash),
+            })
+            .unique()
+            .map(async move |app_data_hash| {
+                let fetched_app_data = app_data_retriever
+                    .get_cached_or_fetch(&app_data_hash)
+                    .await
+                    .inspect_err(|err| {
+                        tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
+                    })
+                    .ok()
+                    .flatten();
 
-                        (app_data_hash, fetched_app_data)
-                    }
-                }),
-        )
-        .await
-        .into_iter()
-        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
-        .collect::<HashMap<_, _>>();
+                (app_data_hash, fetched_app_data)
+            })
+            .collect();
+
+        // Only await responses for a short amount of time. Even if we don't await
+        // all futures fully the remaining appdata requests will finish in background
+        // tasks. That way we should have enough time to immediately fetch appdatas
+        // of new orders (once the cache is filled). But we also don't run the risk
+        // of stalling the driver completely until everything is fetched.
+        // In practice that means the solver will only see a few appdatas in the first
+        // auction after a restart. But on subsequent auctions everything should be
+        // available.
+        const MAX_APP_DATA_WAIT: Duration = Duration::from_millis(500);
+        let app_data: HashMap<_, _> = futures
+            .take_until(tokio::time::sleep(MAX_APP_DATA_WAIT))
+            .filter_map(async move |(hash, json)| Some((hash, json?)))
+            .collect()
+            .await;
 
         Arc::new(app_data)
     }
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
-        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
+
+        let cow_amms = self
+            .cow_amm_cache
+            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
+            .await;
+
         let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
         let validator = self.signature_validator.as_ref();
+
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
-                // Only generate orders for cow amms the auction told us about.
-                // Otherwise the solver would expect the order to get surplus but
-                // the autopilot would actually not count it.
-                .filter(|amm| auction.surplus_capturing_jit_order_owners.contains(&eth::Address(*amm.address())))
                 // Only generate orders where the auction provided the required
                 // reference prices. Otherwise there will be an error during the
                 // surplus calculation which will also result in 0 surplus for
@@ -298,9 +416,9 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
+                                .get(&eth::TokenAddress(eth::ContractAddress(t.into_legacy())))
                                 .and_then(|token| token.price)
-                                .map(|price| price.0.0)
+                                .map(|price| price.0.0.into_alloy())
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
@@ -322,7 +440,11 @@ impl Utilities {
             .into_iter()
             .filter_map(|(amm, result)| match result {
                 Ok(template) => Some(Order {
-                    uid: template.order.uid(&domain_separator, &amm).0.into(),
+                    uid: template
+                        .order
+                        .uid(&domain_separator, &amm.into_legacy())
+                        .0
+                        .into(),
                     receiver: template.order.receiver.map(|addr| addr.into()),
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
@@ -364,7 +486,7 @@ impl Utilities {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
                             data: Bytes(bytes),
-                            signer: amm.into(),
+                            signer: amm.into_legacy().into(),
                         },
                         _ => {
                             tracing::warn!(
@@ -397,6 +519,8 @@ impl Utilities {
         auction: Arc<Auction>,
     ) -> Arc<Vec<liquidity::Liquidity>> {
         let _timer = metrics::get().processing_stage_timer("fetch_liquidity");
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_liquidity");
         let pairs = auction.liquidity_pairs();
         Arc::new(
             self.liquidity_fetcher
@@ -404,4 +528,13 @@ impl Utilities {
                 .await,
         )
     }
+}
+
+fn init_auction_id_in_span(id: Option<i64>) {
+    let Some(id) = id else {
+        return;
+    };
+    let current_span = tracing::Span::current();
+    debug_assert!(current_span.has_field("auction_id"));
+    current_span.record("auction_id", id);
 }

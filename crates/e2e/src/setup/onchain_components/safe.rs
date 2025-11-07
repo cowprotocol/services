@@ -3,6 +3,7 @@ use {
     alloy::{
         primitives::{Address, Bytes, U256},
         providers::Provider,
+        rpc::types::TransactionRequest,
     },
     contracts::alloy::{
         GnosisSafe::{self, GnosisSafe::execTransactionCall},
@@ -13,10 +14,7 @@ use {
     ethcontract::transaction::TransactionBuilder,
     ethrpc::{
         AlloyProvider,
-        alloy::{
-            ProviderSignerExt,
-            conversions::{IntoAlloy, TryIntoAlloyAsync},
-        },
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
     },
     hex_literal::hex,
     model::{
@@ -38,37 +36,15 @@ pub struct Infrastructure {
 
 impl Infrastructure {
     pub async fn new(provider: AlloyProvider) -> Self {
-        let first_account = *provider.get_accounts().await.unwrap().first().unwrap();
-
-        let singleton = {
-            let deployed_address = GnosisSafe::Instance::deploy_builder(provider.clone())
-                .from(first_account)
-                .deploy()
-                .await
-                .unwrap();
-            GnosisSafe::Instance::new(deployed_address, provider.clone())
-        };
-        let fallback = {
-            let deployed_address =
-                GnosisSafeCompatibilityFallbackHandler::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
-                    .deploy()
-                    .await
-                    .unwrap();
-            GnosisSafeCompatibilityFallbackHandler::Instance::new(
-                deployed_address,
-                provider.clone(),
-            )
-        };
-        let factory = {
-            let deployed_address =
-                GnosisSafeProxyFactory::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
-                    .deploy()
-                    .await
-                    .unwrap();
-            GnosisSafeProxyFactory::Instance::new(deployed_address, provider.clone())
-        };
+        let singleton = GnosisSafe::Instance::deploy(provider.clone())
+            .await
+            .unwrap();
+        let fallback = GnosisSafeCompatibilityFallbackHandler::Instance::deploy(provider.clone())
+            .await
+            .unwrap();
+        let factory = GnosisSafeProxyFactory::Instance::deploy(provider.clone())
+            .await
+            .unwrap();
 
         Self {
             singleton,
@@ -83,31 +59,31 @@ impl Infrastructure {
         owners: Vec<TestAccount>,
         threshold: usize,
     ) -> GnosisSafe::Instance {
-        let provider = self
-            .provider
-            .with_signer(owners[0].account().clone().try_into_alloy().await.unwrap());
-        let safe_proxy =
-            GnosisSafeProxy::Instance::deploy_builder(provider.clone(), *self.singleton.address())
-                .deploy()
-                .await
-                .unwrap();
-        let safe = GnosisSafe::Instance::new(safe_proxy, provider.clone());
+        let safe_proxy = GnosisSafeProxy::Instance::deploy_builder(
+            self.provider.clone(),
+            *self.singleton.address(),
+        )
+        .deploy()
+        .await
+        .unwrap();
+        let safe = GnosisSafe::Instance::new(safe_proxy, self.provider.clone());
 
-        contracts::alloy::tx!(
-            safe.setup(
-                owners
-                    .into_iter()
-                    .map(|owner| owner.address().into_alloy())
-                    .collect(),
-                U256::from(threshold),
-                Address::default(), // delegate call
-                Bytes::default(),   // delegate call bytes
-                *self.fallback.address(),
-                Address::default(), // relayer payment token
-                U256::ZERO,         // relayer payment amount
-                Address::default(), // relayer address
-            )
-        );
+        safe.setup(
+            owners
+                .into_iter()
+                .map(|owner| owner.address().into_alloy())
+                .collect(),
+            U256::from(threshold),
+            Address::default(), // delegate call
+            Bytes::default(),   // delegate call bytes
+            *self.fallback.address(),
+            Address::default(), // relayer payment token
+            U256::ZERO,         // relayer payment amount
+            Address::default(), // relayer address
+        )
+        .send_and_watch()
+        .await
+        .unwrap();
 
         safe
     }
@@ -146,20 +122,12 @@ impl Safe {
         }
     }
 
-    pub async fn exec_call<T: ethcontract::tokens::Tokenize>(
-        &self,
-        tx: ethcontract::dyns::DynMethodBuilder<T>,
-    ) {
-        let contract = &self.contract;
-        let TransactionBuilder {
-            data, value, to, ..
-        } = tx.tx;
-
-        contracts::alloy::tx!(
-            contract.execTransaction(
-                to.unwrap().into_alloy(),
-                value.unwrap_or_default().into_alloy(),
-                alloy::primitives::Bytes::from(data.unwrap_or_default().0),
+    async fn exec_alloy_tx(&self, to: Address, value: U256, calldata: Bytes) {
+        self.contract
+            .execTransaction(
+                to,
+                value,
+                calldata,
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -169,9 +137,33 @@ impl Safe {
                 crate::setup::safe::gnosis_safe_prevalidated_signature(
                     self.owner.address().into_alloy(),
                 ),
-            ),
-            self.owner.address().into_alloy()
-        );
+            )
+            .from(self.owner.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+    }
+
+    pub async fn exec_call<T: ethcontract::tokens::Tokenize>(
+        &self,
+        tx: ethcontract::dyns::DynMethodBuilder<T>,
+    ) {
+        let TransactionBuilder {
+            data, value, to, ..
+        } = tx.tx;
+        self.exec_alloy_tx(
+            to.unwrap().into_alloy(),
+            value.unwrap_or_default().into_alloy(),
+            alloy::primitives::Bytes::from(data.unwrap_or_default().0),
+        )
+        .await;
+    }
+
+    pub async fn exec_alloy_call(&self, tx: TransactionRequest) {
+        let to = tx.to.unwrap().into_to().unwrap();
+        let value = tx.value.unwrap_or_default();
+        let data = tx.input.input().unwrap_or_default().to_owned();
+        self.exec_alloy_tx(to, value, data).await;
     }
 
     /// Returns the address of the Safe.

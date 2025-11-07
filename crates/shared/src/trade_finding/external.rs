@@ -17,7 +17,10 @@ use {
         },
     },
     anyhow::{Context, anyhow},
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     futures::FutureExt,
     observe::tracing::tracing_headers,
     reqwest::{Client, header},
@@ -56,8 +59,8 @@ impl ExternalTradeFinder {
     async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
             let order = dto::Order {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
+                sell_token: query.sell_token.into_legacy(),
+                buy_token: query.buy_token.into_legacy(),
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
@@ -130,19 +133,19 @@ impl From<dto::QuoteKind> for TradeKind {
 impl From<dto::LegacyQuote> for LegacyTrade {
     fn from(quote: dto::LegacyQuote) -> Self {
         Self {
-            out_amount: quote.amount,
+            out_amount: quote.amount.into_alloy(),
             gas_estimate: quote.gas,
             interactions: quote
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
+                    target: interaction.target.into_alloy(),
+                    value: interaction.value.into_alloy(),
                     data: interaction.call_data,
                 })
                 .collect(),
-            solver: quote.solver,
-            tx_origin: quote.tx_origin,
+            solver: quote.solver.into_alloy(),
+            tx_origin: quote.tx_origin.map(IntoAlloy::into_alloy),
         }
     }
 }
@@ -150,14 +153,18 @@ impl From<dto::LegacyQuote> for LegacyTrade {
 impl From<dto::Quote> for Trade {
     fn from(quote: dto::Quote) -> Self {
         Self {
-            clearing_prices: quote.clearing_prices,
+            clearing_prices: quote
+                .clearing_prices
+                .into_iter()
+                .map(|(k, v)| (k.into_alloy(), v.into_alloy()))
+                .collect(),
             gas_estimate: quote.gas,
             pre_interactions: quote
                 .pre_interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
+                    target: interaction.target.into_alloy(),
+                    value: interaction.value.into_alloy(),
                     data: interaction.call_data,
                 })
                 .collect(),
@@ -165,13 +172,13 @@ impl From<dto::Quote> for Trade {
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
+                    target: interaction.target.into_alloy(),
+                    value: interaction.value.into_alloy(),
                     data: interaction.call_data,
                 })
                 .collect(),
-            solver: quote.solver,
-            tx_origin: quote.tx_origin,
+            solver: quote.solver.into_alloy(),
+            tx_origin: quote.tx_origin.map(IntoAlloy::into_alloy),
             jit_orders: quote.jit_orders,
         }
     }
@@ -189,8 +196,8 @@ impl From<dto::Error> for PriceEstimationError {
 impl From<dto::Interaction> for Interaction {
     fn from(interaction: dto::Interaction) -> Self {
         Self {
-            target: interaction.target,
-            value: interaction.value,
+            target: interaction.target.into_alloy(),
+            value: interaction.value.into_alloy(),
             data: interaction.call_data,
         }
     }
@@ -212,7 +219,7 @@ impl TradeFinding for ExternalTradeFinder {
                 .out_amount(
                     &query.buy_token,
                     &query.sell_token,
-                    &query.in_amount.get(),
+                    &query.in_amount.get().into_alloy(),
                     &query.kind,
                 )
                 .map_err(TradeError::Other)?,
@@ -264,7 +271,6 @@ pub(crate) mod dto {
     #[serde(untagged)]
     pub enum QuoteKind {
         Legacy(LegacyQuote),
-        #[allow(unused)]
         Regular(Quote),
     }
 
@@ -284,7 +290,6 @@ pub(crate) mod dto {
     #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
-    #[allow(unused)]
     pub struct Quote {
         #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub clearing_prices: HashMap<H160, U256>,
@@ -313,7 +318,6 @@ pub(crate) mod dto {
     #[serde_as]
     #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
-    #[allow(unused)]
     pub struct JitOrder {
         pub buy_token: H160,
         pub sell_token: H160,

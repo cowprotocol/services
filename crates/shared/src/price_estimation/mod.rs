@@ -4,6 +4,7 @@ use {
         arguments::{self, display_option, display_secret_option},
         trade_finding::{Interaction, QuoteExecution},
     },
+    alloy::primitives::Address,
     anyhow::{Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
@@ -262,6 +263,13 @@ pub struct Arguments {
         value_parser = parse_tuple::<H160, H160>
     )]
     pub native_price_approximation_tokens: Vec<(H160, H160)>,
+
+    /// Tokens for which quote verification should not be attempted. This is an
+    /// escape hatch when there is a very bad but verifiable liquidity source
+    /// that would win against a very good but unverifiable liquidity source
+    /// (e.g. private liquidity that exists but can't be verified).
+    #[clap(long, env, value_delimiter = ',')]
+    pub tokens_without_verification: Vec<H160>,
 }
 
 /// Custom Clap parser for tuple pair
@@ -354,6 +362,7 @@ impl Display for Arguments {
             quote_timeout,
             balance_overrides,
             native_price_approximation_tokens,
+            tokens_without_verification,
         } = self;
 
         display_option(
@@ -423,6 +432,10 @@ impl Display for Arguments {
             f,
             "native_price_approximation_tokens: {native_price_approximation_tokens:?}"
         )?;
+        writeln!(
+            f,
+            "tokens_without_verification: {tokens_without_verification:?}"
+        )?;
 
         Ok(())
     }
@@ -431,7 +444,7 @@ impl Display for Arguments {
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
     #[error("token {token:?} is not supported: {reason:}")]
-    UnsupportedToken { token: H160, reason: String },
+    UnsupportedToken { token: Address, reason: String },
 
     #[error("No liquidity")]
     NoLiquidity,
@@ -480,8 +493,8 @@ impl Clone for PriceEstimationError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Query {
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in
     /// buy_token.
     pub in_amount: NonZeroU256,
@@ -546,7 +559,7 @@ impl Estimate {
 
 pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait PriceEstimating: Send + Sync + 'static {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
 }

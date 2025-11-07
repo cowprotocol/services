@@ -3,7 +3,11 @@ use {
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
-    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+        block_stream::timestamp_of_current_block_in_seconds,
+    },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,
@@ -29,14 +33,14 @@ async fn refunder_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Get quote id for order placement
-    let buy_token = token.address();
+    let buy_token = token.address().into_legacy();
     let receiver = Some(H160([42; 20]));
     let sell_amount = U256::from("3000000000000000");
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
-        from: ethflow_contract.address(),
-        sell_token: onchain.contracts().weth.address(),
+        from: ethflow_contract.address().into_legacy(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -54,7 +58,10 @@ async fn refunder_tx(web3: Web3) {
     let quote_response = services.submit_quote(&quote).await.unwrap();
 
     let validity_duration = 600;
-    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + validity_duration;
     // Accounting for slippage is necessary for the order to be picked up by the
     // refunder
     let ethflow_order =
@@ -64,8 +71,8 @@ async fn refunder_tx(web3: Web3) {
     let ethflow_contract_2 = onchain.contracts().ethflows.get(1).unwrap();
 
     let quote = OrderQuoteRequest {
-        from: ethflow_contract_2.address(),
-        sell_token: onchain.contracts().weth.address(),
+        from: ethflow_contract_2.address().into_legacy(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -85,10 +92,10 @@ async fn refunder_tx(web3: Web3) {
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
 
     ethflow_order
-        .mine_order_creation(user.account(), ethflow_contract)
+        .mine_order_creation(user.address().into_alloy(), ethflow_contract)
         .await;
     ethflow_order_2
-        .mine_order_creation(user.account(), ethflow_contract_2)
+        .mine_order_creation(user.address().into_alloy(), ethflow_contract_2)
         .await;
 
     let order_id = ethflow_order
@@ -100,6 +107,7 @@ async fn refunder_tx(web3: Web3) {
 
     tracing::info!("Waiting for orders to be indexed.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services.get_order(&order_id).await.is_ok() && services.get_order(&order_id_2).await.is_ok()
     })
     .await
@@ -121,13 +129,19 @@ async fn refunder_tx(web3: Web3) {
 
     // Create the refund service and execute the refund tx
     let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
+    let refunder_signer = {
+        match refunder.account().clone().try_into_alloy().await.unwrap() {
+            ethrpc::alloy::Account::Signer(signer) => signer,
+            _ => panic!("Refunder account must be a signer"),
+        }
+    };
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
         vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
         10i64,
-        refunder.account().clone(),
+        refunder_signer,
     );
 
     assert_ne!(
@@ -161,6 +175,7 @@ async fn refunder_tx(web3: Web3) {
     tracing::info!("Waiting for autopilot to index refund tx hash.");
     for order in &[order_id, order_id_2] {
         let has_tx_hash = || async {
+            onchain.mint_block().await;
             services
                 .get_order(order)
                 .await

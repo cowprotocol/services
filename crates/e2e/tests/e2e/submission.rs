@@ -1,6 +1,11 @@
 use {
-    e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
+    ::alloy::primitives::U256,
+    e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{BlockId, H160, H256},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
@@ -28,18 +33,23 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -52,12 +62,16 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(2),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,

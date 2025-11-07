@@ -1,8 +1,8 @@
 use {
     crate::{Amm, cache::Storage},
-    contracts::ERC20,
-    ethcontract::futures::future::{join_all, select_ok},
+    contracts::alloy::ERC20,
     ethrpc::Web3,
+    futures::future::{join_all, select_ok},
     shared::maintenance::Maintaining,
     std::sync::Arc,
     tokio::sync::RwLock,
@@ -25,8 +25,8 @@ impl EmptyPoolRemoval {
             .traded_tokens()
             .iter()
             .map(move |token| async move {
-                ERC20::at(&self.web3, *token)
-                    .balance_of(*amm_address)
+                ERC20::Instance::new(*token, self.web3.alloy.clone())
+                    .balanceOf(*amm_address)
                     .call()
                     .await
                     .map_err(|err| {

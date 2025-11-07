@@ -16,6 +16,7 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
@@ -27,8 +28,9 @@ clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
 ethcontract = { workspace = true }
+ethrpc = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
@@ -47,7 +49,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 shared = { workspace = true }
-strum_macros = { workspace = true }
+strum = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

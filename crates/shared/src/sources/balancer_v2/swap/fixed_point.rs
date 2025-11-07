@@ -132,12 +132,12 @@ impl Bfp {
         self.0.is_zero()
     }
 
-    #[allow(clippy::should_implement_trait)]
+    #[expect(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, Error> {
         Ok(Self(self.0.checked_add(other.0).ok_or(Error::AddOverflow)?))
     }
 
-    #[allow(clippy::should_implement_trait)]
+    #[expect(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, Error> {
         Ok(Self(self.0.checked_sub(other.0).ok_or(Error::SubOverflow)?))
     }

@@ -1,5 +1,4 @@
 pub mod balancer_v2;
-pub mod order_converter;
 pub mod slippage;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
@@ -192,15 +191,6 @@ impl Settleable for LimitOrder {
     }
 }
 
-#[cfg(test)]
-impl From<Order> for LimitOrder {
-    fn from(order: Order) -> Self {
-        order_converter::OrderConverter::test(H160([0x42; 20]))
-            .normalize_limit_order(BalancedOrder::full(order), true)
-            .unwrap()
-    }
-}
-
 /// An order processed by `balance_orders`.
 ///
 /// To ensure that all orders passed to solvers are settleable we need to
@@ -325,18 +315,6 @@ impl std::fmt::Debug for StablePoolOrder {
     }
 }
 
-pub fn token_pairs<T>(reserves: &BTreeMap<H160, T>) -> Vec<TokenPair> {
-    reserves
-        .keys()
-        .flat_map(|&token_a| {
-            reserves.keys().filter_map(move |&token_b| {
-                let pair = TokenPair::new(token_a, token_b)?;
-                (pair.get().0 == token_a).then_some(pair)
-            })
-        })
-        .collect()
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AmmOrderExecution {
     pub input_max: TokenAmount,
@@ -395,7 +373,7 @@ impl Settleable for ConcentratedLiquidity {
 
 #[cfg(test)]
 pub mod tests {
-    use {super::*, maplit::btreemap, std::sync::Mutex};
+    use {super::*, std::sync::Mutex};
 
     pub struct CapturingSettlementHandler<L>
     where
@@ -468,30 +446,6 @@ pub mod tests {
         assert_eq!(
             simple_limit_order(OrderKind::Buy, 1, 2).full_execution_amount(),
             2.into(),
-        );
-    }
-
-    #[test]
-    fn enumerate_token_pairs() {
-        let token_map: BTreeMap<_, Option<u32>> = btreemap! {
-            H160([0x11; 20]) => None,
-            H160([0x22; 20]) => None,
-            H160([0x33; 20]) => None,
-            H160([0x44; 20]) => None,
-        };
-        let mut pairs = token_pairs(&token_map);
-        pairs.sort();
-
-        assert_eq!(
-            pairs,
-            vec![
-                TokenPair::new(H160([0x11; 20]), H160([0x22; 20])).unwrap(),
-                TokenPair::new(H160([0x11; 20]), H160([0x33; 20])).unwrap(),
-                TokenPair::new(H160([0x11; 20]), H160([0x44; 20])).unwrap(),
-                TokenPair::new(H160([0x22; 20]), H160([0x33; 20])).unwrap(),
-                TokenPair::new(H160([0x22; 20]), H160([0x44; 20])).unwrap(),
-                TokenPair::new(H160([0x33; 20]), H160([0x44; 20])).unwrap(),
-            ]
         );
     }
 }

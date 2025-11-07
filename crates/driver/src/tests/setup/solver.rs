@@ -10,15 +10,13 @@ use {
             eth,
             time::{self},
         },
-        infra::{
-            self,
-            Ethereum,
-            blockchain::contracts::Addresses,
-            config::file::{FeeHandler, FlashloanWrapperConfig},
-        },
+        infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
         tests::{hex_address, setup::blockchain::Trade},
     },
+    const_hex::ToHexExt,
+    contracts::alloy::ERC20,
     ethereum_types::H160,
+    ethrpc::alloy::conversions::IntoLegacy,
     itertools::Itertools,
     serde_json::json,
     solvers_dto::auction::FlashloanHint,
@@ -126,8 +124,8 @@ impl Solver {
 
             let mut order = json!({
                 "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
-                "sellToken": hex_address(config.blockchain.get_token(sell_token)),
-                "buyToken": hex_address(config.blockchain.get_token(buy_token)),
+                "sellToken": config.blockchain.get_token(sell_token).encode_hex_with_prefix(),
+                "buyToken": config.blockchain.get_token(buy_token).encode_hex_with_prefix(),
                 "sellAmount": sell_amount,
                 "fullSellAmount": if config.quote { sell_amount } else { quote.sell_amount().to_string() },
                 "buyAmount": buy_amount,
@@ -149,7 +147,7 @@ impl Solver {
                     order::Kind::Limit => "limit",
                 },
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
-                "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
+                "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
             if let Some(receiver) = quote.order.receiver {
@@ -157,10 +155,11 @@ impl Solver {
             }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
-                    lender: flashloan.lender.unwrap(),
-                    borrower: flashloan.borrower.unwrap(),
-                    token: flashloan.token,
-                    amount: flashloan.amount
+                    liquidity_provider: flashloan.liquidity_provider.into_legacy(),
+                    protocol_adapter: flashloan.protocol_adapter.into_legacy(),
+                    receiver: flashloan.receiver.into_legacy(),
+                    token: flashloan.token.into_legacy(),
+                    amount: flashloan.amount.into_legacy(),
                 });
             }
             if config.fee_handler == FeeHandler::Solver {
@@ -198,7 +197,7 @@ impl Solver {
                                     "internalize": interaction.internalize,
                                     "target": hex_address(interaction.address),
                                     "value": "0",
-                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "callData": const_hex::encode_prefixed(&interaction.calldata),
                                     "allowances": [],
                                     "inputs": interaction.inputs.iter().map(|input| {
                                         json!({
@@ -278,7 +277,7 @@ impl Solver {
                                     "internalize": interaction.internalize,
                                     "target": hex_address(interaction.address),
                                     "value": "0",
-                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "callData": const_hex::encode_prefixed(&interaction.calldata),
                                     "allowances": [],
                                     "inputs": interaction.inputs.iter().map(|input| {
                                         json!({
@@ -301,7 +300,7 @@ impl Solver {
                                 "internalize": interaction.internalize,
                                 "target": hex_address(interaction.address),
                                 "value": "0",
-                                "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                "callData": const_hex::encode_prefixed(&interaction.calldata),
                                 "allowances": [],
                                 "inputs": interaction.inputs.iter().map(|input| {
                                     json!({
@@ -368,7 +367,7 @@ impl Solver {
                                 },
                                 "sellTokenBalance": jit.quoted_order.order.sell_token_source,
                                 "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
-                                "signature": format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))),
+                                "signature": const_hex::encode_prefixed(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key)),
                                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
                             });
                             trades_json.push(json!({
@@ -412,17 +411,17 @@ impl Solver {
             .flat_map(|f| {
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
-                    let contract = contracts::ERC20::at(&config.blockchain.web3, token);
+                    let contract = ERC20::Instance::new(token, config.blockchain.web3.alloy.clone());
                     let settlement = config.blockchain.settlement.address();
                     (
-                        hex_address(token),
+                        token.encode_hex_with_prefix(),
                         json!({
                             "decimals": contract.decimals().call().await.ok(),
                             "symbol": contract.symbol().call().await.ok(),
                             "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
                             // available balance might break if one test settles 2 auctions after
                             // another
-                            "availableBalance": contract.balance_of(settlement).call().await.unwrap().to_string(),
+                            "availableBalance": contract.balanceOf(*settlement).call().await.unwrap().to_string(),
                             "trusted": config.trusted.contains(token_name.as_str()),
                         }),
                     )
@@ -468,30 +467,29 @@ impl Solver {
             .await
             .unwrap(),
         );
-        let flashloan_wrappers = config
-            .solutions
-            .iter()
-            .flat_map(|solution| solution.flashloans.clone())
-            .map(|(_order, flashloan)| FlashloanWrapperConfig {
-                lender: flashloan.lender,
-                helper_contract: config.blockchain.flashloan_wrapper.address(),
-                fee_in_bps: Default::default(),
-            })
-            .collect::<Vec<_>>();
         let eth = Ethereum::new(
             rpc,
             Addresses {
-                settlement: Some(config.blockchain.settlement.address().into()),
-                weth: Some(config.blockchain.weth.address().into()),
-                balances: Some(config.blockchain.balances.address().into()),
-                signatures: Some(config.blockchain.signatures.address().into()),
-                cow_amms: vec![],
-                flashloan_default_lender: flashloan_wrappers.first().map(|w| w.lender.into()),
-                flashloan_wrappers,
-                flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
+                settlement: Some(config.blockchain.settlement.address().into_legacy().into()),
+                weth: Some(config.blockchain.weth.address().into_legacy().into()),
+                balances: Some(config.blockchain.balances.address().into_legacy().into()),
+                signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
+                cow_amm_helper_by_factory: Default::default(),
+                flashloan_router: Some(
+                    config
+                        .blockchain
+                        .flashloan_router
+                        .address()
+                        .into_legacy()
+                        .into(),
+                ),
             },
             gas,
-            None,
+            45_000_000.into(),
+            &shared::current_block::Arguments {
+                block_stream_poll_interval: None,
+                node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),
+            },
         )
         .await;
 

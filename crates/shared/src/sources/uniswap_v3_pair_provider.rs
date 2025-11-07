@@ -7,8 +7,8 @@ pub fn pair_address(factory: &H160, pair: &TokenPair, fee: u32) -> H160 {
 
     let (token0, token1) = pair.get();
     let mut buffer = [0u8; 32 * 3];
-    buffer[12..32].copy_from_slice(&token0.0);
-    buffer[44..64].copy_from_slice(&token1.0);
+    buffer[12..32].copy_from_slice(token0.as_slice());
+    buffer[44..64].copy_from_slice(token1.as_slice());
     buffer[92..96].copy_from_slice(&fee.to_be_bytes());
     let hash = keccak256(&buffer);
 

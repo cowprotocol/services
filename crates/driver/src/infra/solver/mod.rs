@@ -22,11 +22,14 @@ use {
     },
     anyhow::Result,
     derive_more::{From, Into},
+    ethrpc::alloy::conversions::IntoLegacy,
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
-    std::{collections::HashMap, time::Duration},
-    tap::TapFallible,
+    std::{
+        collections::HashMap,
+        time::{Duration, Instant},
+    },
     thiserror::Error,
     tracing::{Instrument, instrument},
 };
@@ -233,7 +236,11 @@ impl Solver {
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
+        let start = Instant::now();
+
         let flashloan_hints = self.assemble_flashloan_hints(auction);
+        let wrappers = self.assemble_wrappers(auction);
+
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(
@@ -243,13 +250,9 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
+            &wrappers,
+            auction.deadline(self.timeouts()).solvers(),
         );
-
-        if let Some(id) = auction.id() {
-            // Only auctions with IDs are real auctions (/quote requests don't have an ID,
-            // and it makes no sense to store them)
-            self.persistence.archive_auction(id, &auction_dto);
-        }
 
         let body = {
             // pre-allocate a big enough buffer to avoid re-allocating memory
@@ -260,9 +263,20 @@ impl Solver {
             String::from_utf8(buffer).expect("serde_json only writes valid utf8")
         };
 
+        if let Some(id) = auction.id() {
+            // Only auctions with IDs are real auctions (/quote requests don't have an ID).
+            // Only for those it makes sense to archive them and measure the execution time.
+            self.persistence.archive_auction(id, &auction_dto);
+            ::observe::metrics::metrics().measure_auction_overhead(
+                start,
+                "driver",
+                "serialize_request",
+            );
+        }
+
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let timeout = match auction.deadline().solvers().remaining() {
+        let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,
             Err(_) => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");
@@ -288,8 +302,15 @@ impl Solver {
             started_at.elapsed(),
         );
         let res = res?;
-        let res: solvers_dto::solution::Solutions = serde_json::from_str(&res)
-            .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
+        let res: solvers_dto::solution::Solutions =
+            serde_json::from_str(&res).inspect_err(|err| {
+                tracing::warn!(res, ?err, "failed to parse solver response");
+                self.notify(
+                    auction.id(),
+                    None,
+                    notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
+                );
+            })?;
         let solutions = dto::Solutions::from(res).into_domain(
             auction,
             liquidity,
@@ -306,7 +327,6 @@ impl Solver {
         if !self.config.flashloans_enabled {
             return Default::default();
         }
-        let default_lender = self.eth.contracts().flashloan_default_lender();
 
         auction
             .orders()
@@ -314,12 +334,35 @@ impl Solver {
             .flat_map(|order| {
                 let hint = order.app_data.flashloan()?;
                 let flashloan = eth::Flashloan {
-                    lender: hint.lender.or(default_lender.map(|l| l.0))?.into(),
-                    borrower: hint.borrower.unwrap_or(order.uid.owner().0).into(),
-                    token: hint.token.into(),
-                    amount: hint.amount.into(),
+                    liquidity_provider: hint.liquidity_provider.into_legacy().into(),
+                    protocol_adapter: hint.protocol_adapter.into_legacy().into(),
+                    receiver: hint.receiver.into_legacy().into(),
+                    token: hint.token.into_legacy().into(),
+                    amount: hint.amount.into_legacy().into(),
                 };
                 Some((order.uid, flashloan))
+            })
+            .collect()
+    }
+
+    fn assemble_wrappers(&self, auction: &Auction) -> dto::auction::WrapperCalls {
+        auction
+            .orders()
+            .iter()
+            .filter_map(|order| {
+                let wrappers = order.app_data.wrappers();
+                if wrappers.is_empty() {
+                    return None;
+                }
+                let wrapper_calls = wrappers
+                    .iter()
+                    .map(|w| solvers_dto::auction::WrapperCall {
+                        address: w.address.into_legacy(),
+                        data: w.data.clone(),
+                        is_omittable: w.is_omittable,
+                    })
+                    .collect();
+                Some((order.uid, wrapper_calls))
             })
             .collect()
     }

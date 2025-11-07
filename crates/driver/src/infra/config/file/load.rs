@@ -7,6 +7,7 @@ use {
             config::file,
             liquidity,
             mempool,
+            notify,
             simulator,
             solver::{self, BadTokenDetection, SolutionMerging},
         },
@@ -285,23 +286,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         reinit_interval,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
-                        weighted: weighted
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
-                        weighted_v3plus: weighted_v3plus
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
-                        stable: stable.into_iter().map(eth::ContractAddress::from).collect(),
-                        liquidity_bootstrapping: liquidity_bootstrapping
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
-                        composable_stable: composable_stable
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
+                        weighted,
+                        weighted_v3plus,
+                        stable,
+                        liquidity_bootstrapping,
+                        composable_stable,
                         pool_deny_list: pool_deny_list.clone(),
                         graph_url,
                         reinit_interval,
@@ -317,6 +306,17 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     http_timeout: config.http_timeout,
                 }),
         },
+        liquidity_sources_notifier: config.liquidity_sources_notifier.map(|notifier| {
+            notify::liquidity_sources::config::Config {
+                liquorice: notifier.liquorice.map(|liquorice_config| {
+                    notify::liquidity_sources::config::Liquorice {
+                        base_url: liquorice_config.base_url,
+                        api_key: liquorice_config.api_key,
+                        http_timeout: liquorice_config.http_timeout,
+                    }
+                }),
+            }
+        }),
         mempools: config
             .submission
             .mempools
@@ -388,41 +388,20 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
-            cow_amms: config
+            cow_amm_helper_by_factory: config
                 .contracts
                 .cow_amms
                 .into_iter()
-                .map(|cfg| blockchain::contracts::CowAmmConfig {
-                    index_start: cfg.index_start,
-                    factory: cfg.factory,
-                    helper: cfg.helper,
-                })
+                .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
                 .collect(),
-            flashloan_default_lender: {
-                // Make sure flashloan default lender exists in the flashloan wrappers
-                if let Some(default_lender) = config.contracts.flashloan_default_lender
-                    && !config
-                        .contracts
-                        .flashloan_wrappers
-                        .iter()
-                        .any(|wrapper| wrapper.lender == default_lender)
-                {
-                    panic!(
-                        "Flashloan default lender {default_lender:?} not found in flashloan \
-                         wrappers"
-                    );
-                }
-                config.contracts.flashloan_default_lender.map(Into::into)
-            },
-            flashloan_wrappers: config.contracts.flashloan_wrappers,
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
-        archive_node_url: config.archive_node_url,
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
+        tx_gas_limit: config.tx_gas_limit,
     }
 }

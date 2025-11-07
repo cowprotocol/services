@@ -1,6 +1,8 @@
 pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
+    alloy::primitives::Address,
+    number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
@@ -49,6 +51,9 @@ struct Config {
     /// Use Enso for transaction simulation.
     enso: Option<EnsoConfig>,
 
+    /// Liquidity sources notifier configuration.
+    liquidity_sources_notifier: Option<LiquiditySourcesNotifier>,
+
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
 
@@ -62,9 +67,6 @@ struct Config {
         default = "default_order_priority_strategies"
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
-
-    /// Archive node URL used to index CoW AMM
-    archive_node_url: Option<Url>,
 
     /// How long should the token quality computed by the simulation
     /// based logic be cached.
@@ -81,6 +83,9 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    #[serde_as(as = "HexOrDecimalU256")]
+    tx_gas_limit: eth::U256,
 }
 
 #[serde_as]
@@ -372,46 +377,22 @@ struct ContractsConfig {
     /// Override the default address of the Signatures contract.
     signatures: Option<eth::H160>,
 
-    /// List of all cow amm factories the driver should generate
-    /// rebalancing orders for.
+    /// List of all cow amm factories with the corresponding helper contract.
     #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
-
-    /// Flashloan wrapper-related configs.
-    #[serde(default)]
-    flashloan_wrappers: Vec<FlashloanWrapperConfig>,
 
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::H160>,
-
-    /// Address of the default flashloan lender that should be used as lender,
-    /// for all flashloans that don't have a specific lender set.
-    flashloan_default_lender: Option<eth::H160>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct FlashloanWrapperConfig {
-    /// Flashloan lender smart contract address.
-    pub lender: eth::H160,
-    /// Flashloan helper contract address.
-    /// Currently Maker and Aave lenders are supported.
-    pub helper_contract: eth::H160,
-    /// Flashloan fee in bps.
-    #[serde(default)]
-    pub fee_in_bps: eth::U256,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CowAmmConfig {
-    /// Which contract to index for CoW AMM deployment events.
+    /// CoW AMM factory address.
     pub factory: eth::H160,
-    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    /// Which helper contract to use for interfacing with CoW AMMs.
     pub helper: eth::H160,
-    /// At which block indexing should start on the factory.
-    pub index_start: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -636,26 +617,26 @@ enum BalancerV2Config {
 
         /// The weighted pool factory contract addresses.
         #[serde(default)]
-        weighted: Vec<eth::H160>,
+        weighted: Vec<Address>,
 
         /// The weighted pool factory v3+ contract addresses.
         #[serde(default)]
-        weighted_v3plus: Vec<eth::H160>,
+        weighted_v3plus: Vec<Address>,
 
         /// The stable pool factory contract addresses.
         #[serde(default)]
-        stable: Vec<eth::H160>,
+        stable: Vec<Address>,
 
         /// The liquidity bootstrapping pool factory contract addresses.
         ///
         /// These are weighted pools with dynamic weights for initial token
         /// offerings.
         #[serde(default)]
-        liquidity_bootstrapping: Vec<eth::H160>,
+        liquidity_bootstrapping: Vec<Address>,
 
         /// The composable stable pool factory contract addresses.
         #[serde(default)]
-        composable_stable: Vec<eth::H160>,
+        composable_stable: Vec<Address>,
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
@@ -707,6 +688,28 @@ fn default_number_of_orders_per_merged_solution() -> usize {
     3
 }
 
+/// A configuration for sending notifications to liquidity sources.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LiquiditySourcesNotifier {
+    /// Configuration for Liquorice liquidity
+    pub liquorice: Option<LiquoriceConfig>,
+}
+
+/// Liquorice API configuration
+/// <https://liquorice.gitbook.io/liquorice-docs>
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LiquoriceConfig {
+    /// Liquorice API base URL
+    pub base_url: String,
+    /// API key for the Liquorice API
+    pub api_key: String,
+    /// The HTTP timeout for requests to the Liquorice API
+    #[serde(with = "humantime_serde", default = "default_http_timeout")]
+    pub http_timeout: Duration,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[serde(tag = "estimator")]
@@ -727,6 +730,7 @@ pub enum GasEstimatorType {
         max_block_percentile: f64,
     },
     Web3,
+    Alloy,
 }
 
 impl Default for GasEstimatorType {

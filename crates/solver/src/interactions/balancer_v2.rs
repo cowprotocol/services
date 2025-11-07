@@ -1,7 +1,11 @@
 use {
-    contracts::{BalancerV2Vault, GPv2Settlement},
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
+    contracts::alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
     ethcontract::{Bytes, H256},
-    primitive_types::U256,
+    ethrpc::alloy::conversions::IntoAlloy,
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -11,8 +15,8 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct BalancerSwapGivenOutInteraction {
-    pub settlement: GPv2Settlement,
-    pub vault: BalancerV2Vault,
+    pub settlement: Address,
+    pub vault: Address,
     pub pool_id: H256,
     pub asset_in_max: TokenAmount,
     pub asset_out: TokenAmount,
@@ -26,26 +30,30 @@ pub static NEVER: LazyLock<U256> = LazyLock::new(|| U256::from(1) << 255);
 
 impl BalancerSwapGivenOutInteraction {
     pub fn encode_swap(&self) -> EncodedInteraction {
-        let method = self.vault.swap(
-            (
-                Bytes(self.pool_id.0),
-                1, // GivenOut,
-                self.asset_in_max.token,
-                self.asset_out.token,
-                self.asset_out.amount,
-                self.user_data.clone(),
-            ),
-            (
-                self.settlement.address(), // sender
-                false,                     // fromInternalBalance
-                self.settlement.address(), // recipient
-                false,                     // toInternalBalance
-            ),
-            self.asset_in_max.amount,
-            *NEVER,
-        );
-        let calldata = method.tx.data.expect("no calldata").0;
-        (self.vault.address(), 0.into(), Bytes(calldata))
+        let single_swap = IVault::SingleSwap {
+            poolId: self.pool_id.into_alloy(),
+            kind: 1, // GivenOut
+            assetIn: self.asset_in_max.token.into_alloy(),
+            assetOut: self.asset_out.token.into_alloy(),
+            amount: self.asset_out.amount.into_alloy(),
+            userData: self.user_data.clone().into_alloy(),
+        };
+        let funds = IVault::FundManagement {
+            sender: self.settlement,
+            fromInternalBalance: false,
+            recipient: self.settlement,
+            toInternalBalance: false,
+        };
+
+        let method = swapCall {
+            singleSwap: single_swap,
+            funds,
+            limit: self.asset_in_max.amount.into_alloy(),
+            deadline: *NEVER,
+        }
+        .abi_encode();
+
+        (self.vault, U256::ZERO, method.into())
     }
 }
 
@@ -57,14 +65,14 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::dummy_contract, primitive_types::H160};
+    use {super::*, primitive_types::H160};
 
     #[test]
     fn encode_unwrap_weth() {
-        let vault = dummy_contract!(BalancerV2Vault, [0x01; 20]);
+        let vault_address = [0x01; 20].into();
         let interaction = BalancerSwapGivenOutInteraction {
-            settlement: dummy_contract!(GPv2Settlement, [0x02; 20]),
-            vault: vault.clone(),
+            settlement: Address::from_slice(&[0x02; 20]),
+            vault: vault_address,
             pool_id: H256([0x03; 32]),
             asset_in_max: TokenAmount::new(H160([0x04; 20]), 1_337_000_000_000_000_000_000u128),
             asset_out: TokenAmount::new(H160([0x05; 20]), 42_000_000_000_000_000_000u128),
@@ -95,28 +103,26 @@ mod tests {
         assert_eq!(
             interaction.encode(),
             (
-                vault.address(),
-                0.into(),
-                Bytes(
-                    hex::decode(
-                        "52bbbe29\
-                         00000000000000000000000000000000000000000000000000000000000000e0\
-                         0000000000000000000000000202020202020202020202020202020202020202\
-                         0000000000000000000000000000000000000000000000000000000000000000\
-                         0000000000000000000000000202020202020202020202020202020202020202\
-                         0000000000000000000000000000000000000000000000000000000000000000\
-                         0000000000000000000000000000000000000000000000487a9a304539440000\
-                         8000000000000000000000000000000000000000000000000000000000000000\
-                         0303030303030303030303030303030303030303030303030303030303030303\
-                         0000000000000000000000000000000000000000000000000000000000000001\
-                         0000000000000000000000000404040404040404040404040404040404040404\
-                         0000000000000000000000000505050505050505050505050505050505050505\
-                         00000000000000000000000000000000000000000000000246ddf97976680000\
-                         00000000000000000000000000000000000000000000000000000000000000c0\
-                         0000000000000000000000000000000000000000000000000000000000000000"
-                    )
-                    .unwrap()
-                ),
+                vault_address,
+                U256::ZERO,
+                const_hex::decode(
+                    "52bbbe29\
+                    00000000000000000000000000000000000000000000000000000000000000e0\
+                    0000000000000000000000000202020202020202020202020202020202020202\
+                    0000000000000000000000000000000000000000000000000000000000000000\
+                    0000000000000000000000000202020202020202020202020202020202020202\
+                    0000000000000000000000000000000000000000000000000000000000000000\
+                    0000000000000000000000000000000000000000000000487a9a304539440000\
+                    8000000000000000000000000000000000000000000000000000000000000000\
+                    0303030303030303030303030303030303030303030303030303030303030303\
+                    0000000000000000000000000000000000000000000000000000000000000001\
+                    0000000000000000000000000404040404040404040404040404040404040404\
+                    0000000000000000000000000505050505050505050505050505050505050505\
+                    00000000000000000000000000000000000000000000000246ddf97976680000\
+                    00000000000000000000000000000000000000000000000000000000000000c0\
+                    0000000000000000000000000000000000000000000000000000000000000000"
+                )
+                .unwrap().into()
             )
         );
     }

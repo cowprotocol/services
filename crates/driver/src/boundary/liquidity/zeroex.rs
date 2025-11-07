@@ -84,7 +84,7 @@ pub async fn collector(
     config: &infra::liquidity::config::ZeroEx,
 ) -> anyhow::Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("zeroex".into());
-    let settlement = eth.contracts().settlement().clone();
+    let settlement = *eth.contracts().settlement().address();
     let web3 = eth.web3().clone();
     let contract = contracts::alloy::IZeroex::Instance::deployed(&web3.alloy).await?;
     let http_client_factory = &HttpClientFactory::new(&shared::http_client::Arguments {

@@ -12,7 +12,7 @@ use crate::{
 
 /// A trade which executes an order as part of this solution.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(Jit),

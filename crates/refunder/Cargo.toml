@@ -6,18 +6,17 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 humantime = { workspace = true }
-itertools = { workspace = true }
 mimalloc = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }

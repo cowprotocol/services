@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, eth},
+        domain::{self, eth, settlement::transaction::EncodedTrade},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -11,6 +11,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
+        leader_pg_lock::LeaderLock,
         order_events::OrderEventLabel,
         order_execution::Asset,
         orders::{
@@ -33,6 +34,7 @@ use {
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
+        time::Duration,
     },
     tracing::Instrument,
 };
@@ -57,6 +59,10 @@ impl Persistence {
         }
     }
 
+    pub async fn leader(&self, key: String) -> LeaderLock {
+        LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
+    }
+
     /// There is always only one `current` auction.
     ///
     /// This method replaces the current auction with the given one.
@@ -66,6 +72,8 @@ impl Persistence {
         &self,
         auction: &domain::RawAuctionData,
     ) -> Result<domain::auction::Id, DatabaseError> {
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "replace_auction_in_db");
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
             .replace_current_auction(&auction)
@@ -119,7 +127,7 @@ impl Persistence {
     /// Saves the competition data to the DB
     pub async fn save_competition(
         &self,
-        competition: &boundary::Competition,
+        competition: boundary::Competition,
     ) -> Result<(), DatabaseError> {
         self.postgres
             .save_competition(competition)
@@ -319,10 +327,11 @@ impl Persistence {
         Ok(ex.commit().await?)
     }
 
-    /// Get auction data.
+    /// Get auction data to post-process the given trades.
     pub async fn get_auction(
         &self,
         auction_id: domain::auction::Id,
+        trades: &[EncodedTrade],
     ) -> Result<domain::settlement::Auction, error::Auction> {
         let _timer = Metrics::get()
             .database_queries
@@ -360,19 +369,28 @@ impl Persistence {
             .collect::<Result<_, _>>()?;
 
         let orders = {
-            // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
+            let auction_orders = database::auction::get_order_uids(&mut ex, auction_id)
                 .await
                 .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
+            // Code that uses the data assembled by this function determines JIT orders
+            // by their presence in the `orders => fee_policies` mapping. If an order has
+            // a mapping it is assumed that this was a regular order and not a JIT order.
+            // So in order to not misclassify JIT orders as regular orders we only fetch
+            // fee policies for orders that were part of the original auction.
+            let relevant_orders: HashSet<_> = trades
+                .iter()
+                .filter(|t| auction_orders.contains(&t.uid))
+                .map(|t| t.uid)
+                .collect();
 
             // get fee policies for all orders that were part of the competition auction
             let fee_policies = database::fee_policies::fetch_all(
                 &mut ex,
-                auction_orders
+                relevant_orders
                     .iter()
                     .map(|o| (auction_id, ByteArray(o.0)))
                     .collect::<Vec<_>>()
@@ -403,7 +421,7 @@ impl Persistence {
 
             // compile order data
             let mut orders = HashMap::new();
-            for order in auction_orders.iter() {
+            for order in relevant_orders.iter() {
                 let order_policies = match fee_policies.get(order) {
                     Some(policies) => policies
                         .iter()
@@ -421,12 +439,12 @@ impl Persistence {
         };
 
         let block = {
-            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
+            let block = database::solver_competition::auction_start_block(&mut ex, auction_id)
                 .await?
                 .ok_or(error::Auction::NotFound)?;
-            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
+            block
+                .parse::<u64>()
                 .map_err(|_| error::Auction::NotFound)?
-                .auction_start_block
                 .into()
         };
 
@@ -637,7 +655,6 @@ impl Persistence {
     pub async fn save_settlement(
         &self,
         event: domain::eth::SettlementEvent,
-        auction_id: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
@@ -649,6 +666,8 @@ impl Persistence {
 
         let block_number = i64::try_from(event.block.0).context("block overflow")?;
         let log_index = i64::try_from(event.log_index).context("log index overflow")?;
+        let auction_id = settlement.map(|s| s.auction_id()).unwrap_or_default();
+        tracing::debug!(hash = ?event.transaction, ?auction_id, "saving settlement details for tx");
 
         database::settlements::update_settlement_auction(
             &mut ex,

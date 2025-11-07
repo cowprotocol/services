@@ -1,6 +1,7 @@
 use {
     crate::util::{Bytes, conv::u256::U256Ext},
     derive_more::{From, Into},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
     solvers_dto::auction::FlashloanHint,
     std::{
@@ -314,9 +315,9 @@ pub struct Interaction {
 impl From<Interaction> for model::interaction::InteractionData {
     fn from(interaction: Interaction) -> Self {
         Self {
-            target: interaction.target.into(),
-            value: interaction.value.into(),
-            call_data: interaction.call_data.into(),
+            target: interaction.target.0.into_alloy(),
+            value: interaction.value.0.into_alloy(),
+            call_data: interaction.call_data.0,
         }
     }
 }
@@ -324,8 +325,8 @@ impl From<Interaction> for model::interaction::InteractionData {
 impl From<model::interaction::InteractionData> for Interaction {
     fn from(interaction: model::interaction::InteractionData) -> Self {
         Self {
-            target: interaction.target.into(),
-            value: interaction.value.into(),
+            target: interaction.target.into_legacy().into(),
+            value: interaction.value.into_legacy().into(),
             call_data: interaction.call_data.into(),
         }
     }
@@ -425,8 +426,9 @@ impl From<CodeDigest> for [u8; 32] {
 
 #[derive(Debug, Clone)]
 pub struct Flashloan {
-    pub lender: ContractAddress,
-    pub borrower: Address,
+    pub liquidity_provider: ContractAddress,
+    pub protocol_adapter: ContractAddress,
+    pub receiver: Address,
     pub token: TokenAddress,
     pub amount: TokenAmount,
 }
@@ -434,20 +436,22 @@ pub struct Flashloan {
 impl From<&solvers_dto::solution::Flashloan> for Flashloan {
     fn from(value: &solvers_dto::solution::Flashloan) -> Self {
         Self {
-            lender: value.lender.into(),
-            borrower: value.borrower.into(),
+            liquidity_provider: value.liquidity_provider.into(),
+            protocol_adapter: value.protocol_adapter.into(),
+            receiver: value.receiver.into(),
             token: value.token.into(),
             amount: value.amount.into(),
         }
     }
 }
 
-#[allow(clippy::from_over_into)]
+#[expect(clippy::from_over_into)]
 impl Into<FlashloanHint> for &Flashloan {
     fn into(self) -> FlashloanHint {
         FlashloanHint {
-            lender: self.lender.into(),
-            borrower: self.borrower.into(),
+            liquidity_provider: self.liquidity_provider.into(),
+            protocol_adapter: self.protocol_adapter.into(),
+            receiver: self.receiver.into(),
             token: self.token.into(),
             amount: self.amount.into(),
         }

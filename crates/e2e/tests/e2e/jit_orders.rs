@@ -1,10 +1,10 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
-        tx,
-        tx_value,
+    ::alloy::primitives::U256,
+    e2e::setup::{colocation::SolverEngine, eth, mock::Mock, solution::JitOrder, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
     },
-    ethcontract::prelude::U256,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -33,22 +33,31 @@ async fn single_limit_order_test(web3: Web3) {
 
     token.mint(solver.address(), to_wei(100)).await;
 
-    tx_value!(
-        trader.account(),
-        to_wei(20),
-        onchain.contracts().weth.deposit()
-    );
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, U256::MAX)
-    );
-    tx!(
-        solver.account(),
-        token.approve(onchain.contracts().allowance, U256::MAX)
-    );
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(20))
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token
+        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
 
@@ -61,7 +70,7 @@ async fn single_limit_order_test(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -71,7 +80,7 @@ async fn single_limit_order_test(web3: Web3) {
                 name: "mock_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
-                base_tokens: vec![token.address()],
+                base_tokens: vec![token.address().into_legacy()],
                 merge_solutions: true,
             },
         ],
@@ -87,7 +96,7 @@ async fn single_limit_order_test(web3: Web3) {
             vec![
                 format!(
                     "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    hex::encode(solver.address())
+                    const_hex::encode(solver.address())
                 ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
@@ -102,9 +111,9 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Place order
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -116,8 +125,16 @@ async fn single_limit_order_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let trader_balance_before = token.balance_of(trader.address()).call().await.unwrap();
-    let solver_balance_before = token.balance_of(solver.address()).call().await.unwrap();
+    let trader_balance_before = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    let solver_balance_before = token
+        .balanceOf(solver.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     onchain.mint_block().await;
@@ -127,11 +144,11 @@ async fn single_limit_order_test(web3: Web3) {
         owner: trader.address(),
         sell: Asset {
             amount: to_wei(10),
-            token: token.address(),
+            token: token.address().into_legacy(),
         },
         buy: Asset {
             amount: to_wei(1),
-            token: onchain.contracts().weth.address(),
+            token: onchain.contracts().weth.address().into_legacy(),
         },
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -148,8 +165,8 @@ async fn single_limit_order_test(web3: Web3) {
     mock_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token.address(), to_wei(1)),
-            (onchain.contracts().weth.address(), to_wei(1)),
+            (token.address().into_legacy(), to_wei(1)),
+            (onchain.contracts().weth.address().into_legacy(), to_wei(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
@@ -170,21 +187,30 @@ async fn single_limit_order_test(web3: Web3) {
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
-        let trader_balance_after = token.balance_of(trader.address()).call().await.unwrap();
-        let solver_balance_after = token.balance_of(solver.address()).call().await.unwrap();
+        let trader_balance_after = token
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        let solver_balance_after = token
+            .balanceOf(solver.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
 
         let trader_balance_increased =
-            trader_balance_after.saturating_sub(trader_balance_before) >= to_wei(5);
+            trader_balance_after.saturating_sub(trader_balance_before) >= eth(5);
         // Since the fee is 0 in the custom solution, the balance difference has to be
         // exactly 10 wei
         let solver_balance_decreased =
-            solver_balance_before.saturating_sub(solver_balance_after) == to_wei(10);
+            solver_balance_before.saturating_sub(solver_balance_after) == eth(10);
         trader_balance_increased && solver_balance_decreased
     })
     .await
@@ -204,7 +230,10 @@ async fn single_limit_order_test(web3: Web3) {
             .tx_hash?;
 
         // jit order can be found on /api/v1/transactions/{tx_hash}/orders
-        let orders_by_tx = services.get_orders_for_tx(&tx_hash).await.ok()?;
+        let orders_by_tx = services
+            .get_orders_for_tx(&tx_hash.into_legacy())
+            .await
+            .ok()?;
 
         // jit order can be found on /api/v1/account/{owner}/orders
         let orders_by_owner = services

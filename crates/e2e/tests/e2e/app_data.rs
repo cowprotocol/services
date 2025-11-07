@@ -1,6 +1,10 @@
 use {
     app_data::{AppDataHash, hash_full_app_data},
-    e2e::{setup::*, tx},
+    e2e::setup::{eth, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -35,18 +39,21 @@ async fn app_data(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: token_a.address().into_legacy(),
             sell_amount: to_wei(2),
-            buy_token: token_b.address(),
+            buy_token: token_b.address().into_legacy(),
             buy_amount: to_wei(1),
             valid_to,
             kind: OrderKind::Sell,
@@ -194,18 +201,21 @@ async fn app_data_full_format(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: token_a.address().into_legacy(),
             sell_amount: to_wei(2),
-            buy_token: token_b.address(),
+            buy_token: token_b.address().into_legacy(),
             buy_amount: to_wei(1),
             valid_to,
             kind: OrderKind::Sell,
@@ -257,9 +267,10 @@ async fn app_data_full_format(web3: Web3) {
                 ]
             }},
             "flashloan": {{
-                "lender": "0x1111111111111111111111111111111111111111",
-                "borrower": "0x2222222222222222222222222222222222222222",
+                "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                "receiver": "0x2222222222222222222222222222222222222222",
                 "token": "0x3333333333333333333333333333333333333333",
+                "protocolAdapter": "0x4444444444444444444444444444444444444444",
                 "amount": "1234"
             }},
             "signer": "{:?}",

@@ -29,13 +29,12 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 observe = { workspace = true }
-hex = { workspace = true }
+const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
-mockall = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
@@ -59,6 +58,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"
 url = { workspace = true }
 web3 = { workspace = true }
 
+mockall = { workspace = true, optional = true }
+
 [dev-dependencies]
 async-stream = { workspace = true }
 ethcontract-mock = { workspace = true }
@@ -66,6 +67,11 @@ regex = { workspace = true }
 testlib = { workspace = true }
 app-data = { workspace = true, features = ["test_helpers"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+mockall = { workspace = true }
+ethrpc = {workspace = true, features = ["test-util"]}
+
+[features]
+test-util = ["dep:mockall"]
 
 [lints]
 workspace = true

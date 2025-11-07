@@ -16,9 +16,10 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
+    alloy::primitives::Address,
     anyhow::Result,
-    contracts::{BalancerV2Vault, GPv2Settlement},
     ethcontract::H256,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
     shared::{
         ethrpc::Web3,
@@ -32,8 +33,8 @@ use {
 
 /// A liquidity provider for Balancer V2 weighted pools.
 pub struct BalancerV2Liquidity {
-    settlement: GPv2Settlement,
-    vault: BalancerV2Vault,
+    settlement: Address,
+    vault: Address,
     pool_fetcher: Arc<dyn BalancerPoolFetching>,
     allowance_manager: Box<dyn AllowanceManaging>,
 }
@@ -42,10 +43,10 @@ impl BalancerV2Liquidity {
     pub fn new(
         web3: Web3,
         pool_fetcher: Arc<dyn BalancerPoolFetching>,
-        settlement: GPv2Settlement,
-        vault: BalancerV2Vault,
+        settlement: Address,
+        vault: Address,
     ) -> Self {
-        let allowance_manager = AllowanceManager::new(web3, settlement.address());
+        let allowance_manager = AllowanceManager::new(web3, settlement.into_legacy());
         Self {
             settlement,
             vault,
@@ -65,13 +66,13 @@ impl BalancerV2Liquidity {
 
         let allowances = self
             .allowance_manager
-            .get_allowances(tokens, self.vault.address())
+            .get_allowances(tokens, self.vault.into_legacy())
             .await?;
 
         let inner = Arc::new(Inner {
             allowances,
-            settlement: self.settlement.clone(),
-            vault: self.vault.clone(),
+            settlement: self.settlement,
+            vault: self.vault,
         });
 
         let weighted_product_orders: Vec<_> = pools
@@ -133,18 +134,13 @@ pub struct SettlementHandler {
 }
 
 struct Inner {
-    settlement: GPv2Settlement,
-    vault: BalancerV2Vault,
+    settlement: Address,
+    vault: Address,
     allowances: Allowances,
 }
 
 impl SettlementHandler {
-    pub fn new(
-        pool_id: H256,
-        settlement: GPv2Settlement,
-        vault: BalancerV2Vault,
-        allowances: Allowances,
-    ) -> Self {
+    pub fn new(pool_id: H256, settlement: Address, vault: Address, allowances: Allowances) -> Self {
         SettlementHandler {
             pool_id,
             inner: Arc::new(Inner {
@@ -155,7 +151,7 @@ impl SettlementHandler {
         }
     }
 
-    pub fn vault(&self) -> &BalancerV2Vault {
+    pub fn vault(&self) -> &Address {
         &self.inner.vault
     }
 
@@ -169,8 +165,8 @@ impl SettlementHandler {
         output: TokenAmount,
     ) -> BalancerSwapGivenOutInteraction {
         BalancerSwapGivenOutInteraction {
-            settlement: self.inner.settlement.clone(),
-            vault: self.inner.vault.clone(),
+            settlement: self.inner.settlement,
+            vault: self.inner.vault,
             pool_id: self.pool_id,
             asset_in_max: input_max,
             asset_out: output,
@@ -232,7 +228,7 @@ mod tests {
     use {
         super::*,
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
-        contracts::dummy_contract,
+        contracts::alloy::BalancerV2Vault,
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
@@ -258,15 +254,19 @@ mod tests {
         },
     };
 
-    fn dummy_contracts() -> (GPv2Settlement, BalancerV2Vault) {
+    fn dummy_contracts() -> (Address, BalancerV2Vault::Instance) {
         (
-            dummy_contract!(GPv2Settlement, H160([0xc0; 20])),
-            dummy_contract!(BalancerV2Vault, H160([0xc1; 20])),
+            Address::from_slice(&[0xc0; 20]),
+            BalancerV2Vault::Instance::new([0xc1; 20].into(), ethrpc::mock::web3().alloy),
         )
     }
 
     fn token_pair(seed0: u8, seed1: u8) -> TokenPair {
-        TokenPair::new(H160([seed0; 20]), H160([seed1; 20])).unwrap()
+        TokenPair::new(
+            Address::from_slice(&[seed0; 20]),
+            Address::from_slice(&[seed1; 20]),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -396,16 +396,28 @@ mod tests {
 
         let base_tokens = BaseTokens::new(H160([0xb0; 20]), &[]);
         let traded_pairs = [
-            TokenPair::new(H160([0x70; 20]), H160([0x71; 20])).unwrap(),
-            TokenPair::new(H160([0x70; 20]), H160([0x72; 20])).unwrap(),
-            TokenPair::new(H160([0xb0; 20]), H160([0x73; 20])).unwrap(),
+            TokenPair::new(
+                Address::from_slice(&[0x70; 20]),
+                Address::from_slice(&[0x71; 20]),
+            )
+            .unwrap(),
+            TokenPair::new(
+                Address::from_slice(&[0x70; 20]),
+                Address::from_slice(&[0x72; 20]),
+            )
+            .unwrap(),
+            TokenPair::new(
+                Address::from_slice(&[0xb0; 20]),
+                Address::from_slice(&[0x73; 20]),
+            )
+            .unwrap(),
         ];
         let pairs = base_tokens.relevant_pairs(traded_pairs.into_iter());
 
         let (settlement, vault) = dummy_contracts();
         let liquidity_provider = BalancerV2Liquidity {
             settlement,
-            vault,
+            vault: *vault.address(),
             pool_fetcher: Arc::new(pool_fetcher),
             allowance_manager: Box::new(allowance_manager),
         };
@@ -451,10 +463,10 @@ mod tests {
     fn encodes_swaps_in_settlement() {
         let (settlement, vault) = dummy_contracts();
         let inner = Arc::new(Inner {
-            settlement: settlement.clone(),
-            vault: vault.clone(),
+            settlement,
+            vault: *vault.address(),
             allowances: Allowances::new(
-                vault.address(),
+                vault.address().into_legacy(),
                 hashmap! {
                     H160([0x70; 20]) => 0.into(),
                     H160([0x71; 20]) => 100.into(),
@@ -496,12 +508,12 @@ mod tests {
             [
                 Approval {
                     token: H160([0x70; 20]),
-                    spender: vault.address(),
+                    spender: vault.address().into_legacy(),
                 }
                 .encode(),
                 BalancerSwapGivenOutInteraction {
-                    settlement: settlement.clone(),
-                    vault: vault.clone(),
+                    settlement,
+                    vault: *vault.address(),
                     pool_id: H256([0x90; 32]),
                     asset_in_max: TokenAmount::new(H160([0x70; 20]), 10),
                     asset_out: TokenAmount::new(H160([0x71; 20]), 11),
@@ -510,7 +522,7 @@ mod tests {
                 .encode(),
                 BalancerSwapGivenOutInteraction {
                     settlement,
-                    vault,
+                    vault: *vault.address(),
                     pool_id: H256([0x90; 32]),
                     asset_in_max: TokenAmount::new(H160([0x71; 20]), 12),
                     asset_out: TokenAmount::new(H160([0x72; 20]), 13),

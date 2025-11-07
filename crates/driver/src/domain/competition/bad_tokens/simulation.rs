@@ -10,6 +10,7 @@ use {
         },
         infra::{self, observe::metrics},
     },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::FutureExt,
     model::interaction::InteractionData,
     shared::{
@@ -37,8 +38,10 @@ struct Inner {
 
 impl Detector {
     pub fn new(max_age: Duration, eth: &infra::Ethereum) -> Self {
-        let detector =
-            TraceCallDetectorRaw::new(eth.web3().clone(), eth.contracts().settlement().address());
+        let detector = TraceCallDetectorRaw::new(
+            eth.web3().clone(),
+            eth.contracts().settlement().address().into_legacy(),
+        );
         Self(Arc::new(Inner {
             cache: Cache::new(max_age),
             detector,
@@ -71,8 +74,8 @@ impl Detector {
                     .pre_interactions
                     .iter()
                     .map(|i| InteractionData {
-                        target: i.target.0,
-                        value: i.value.0,
+                        target: i.target.0.into_alloy(),
+                        value: i.value.0.into_alloy(),
                         call_data: i.call_data.0.clone(),
                     })
                     .collect();

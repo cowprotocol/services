@@ -31,7 +31,7 @@ services:
       start_period: 5s
 
   db:
-    image: postgres
+    image: postgres:16
     restart: always
     environment:
       - POSTGRES_USER
@@ -55,7 +55,7 @@ services:
     build:
       context: ../
       target: migrations
-      dockerfile: ./Dockerfile
+      dockerfile: ./playground/Dockerfile
     restart: on-failure
     environment:
       - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -65,12 +65,14 @@ services:
   orderbook:
     build:
       context: ../
-      target: orderbook
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
+    command: ["cargo", "watch", "-x", "run --bin orderbook"]
     environment:
       - NODE_URL=http://chain:8545
-      - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - ACCOUNT_BALANCES_SIMULATION=true
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -86,20 +88,29 @@ services:
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
     depends_on:
       - db-migrations
     ports:
-      - 8080:80
+      - 8080:80 # API
+      - 9586:9586 # metrics
+      - 6669:6669 # tokio console
 
   autopilot:
     build:
       context: ../
-      target: autopilot
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
+    command: ["cargo", "watch", "-x", "run --bin autopilot"]
     environment:
-      - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=warn,autopilot=trace,shared=info,shared::price_estimation=debug
+      - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
@@ -119,29 +130,47 @@ services:
       - TOML_TRACE_ERROR=1
       - ETHFLOW_CONTRACTS
       - ETHFLOW_INDEXING_START
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
     depends_on:
       orderbook:
         condition: service_started
       chain:
         condition: service_healthy
+    ports:
+      - 9589:9589 # metrics
+      - 6670:6669 # tokio console
 
   driver:
     build:
       context: ../
-      target: driver
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
-    command: --config /driver.toml
+    command:
+      [
+        "cargo",
+        "watch",
+        "-x",
+        "run --bin driver -- --config configs/${ENV}/driver.toml",
+      ]
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ./driver.toml:/driver.toml
+      - ../:/src
     ports:
-      - 9000:80
+      - 9000:80 # API & metrics
+      - 6671:6669 # tokio console
     depends_on:
       chain:
         condition: service_healthy
@@ -150,19 +179,29 @@ services:
   baseline:
     build:
       context: ../
-      target: solvers
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
-    command: baseline --config /baseline.toml
+    command:
+      [
+        "cargo",
+        "watch",
+        "-x",
+        "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
+      ]
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ./baseline.toml:/baseline.toml
+      - ../:/src
     ports:
-      - 9001:80
+      - 9001:80 # API & metrics
+      - 6672:6669 # tokio console
 
   frontend:
     build:
@@ -180,7 +219,7 @@ services:
       dockerfile: Dockerfile.explorer
       args:
         - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://127.0.0.1:8545
+        - ETH_RPC_URL=http://chain:8545
     ports:
       - 8001:80
 
@@ -188,7 +227,7 @@ services:
     image: grafana/tempo:latest
     ports:
       - "4317:4317" # OTLP gRPC
-    command: [ "-config.file=/etc/tempo.yaml" ]
+    command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./tempo.yaml:/etc/tempo.yaml
 
@@ -200,6 +239,17 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
 volumes:
   postgres:

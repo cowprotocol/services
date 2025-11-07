@@ -1,10 +1,13 @@
 use {
-    crate::setup::*,
-    ethcontract::{H160, common::DeploymentInformation},
+    crate::{nodes::NODE_WS_HOST, setup::*},
+    ::alloy::primitives::Address,
+    ethcontract::H160,
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,
 };
+
+pub mod utils;
 
 pub struct SolverEngine {
     pub name: String,
@@ -17,7 +20,7 @@ pub struct SolverEngine {
 pub async fn start_baseline_solver(
     name: String,
     account: TestAccount,
-    weth: H160,
+    weth: Address,
     base_tokens: Vec<H160>,
     max_hops: usize,
     merge_solutions: bool,
@@ -108,6 +111,22 @@ pub fn start_driver(
     liquidity: LiquidityProvider,
     quote_using_limit_orders: bool,
 ) -> JoinHandle<()> {
+    start_driver_with_config_override(
+        contracts,
+        solvers,
+        liquidity,
+        quote_using_limit_orders,
+        None,
+    )
+}
+
+pub fn start_driver_with_config_override(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    liquidity: LiquidityProvider,
+    quote_using_limit_orders: bool,
+    config_override: Option<&str>,
+) -> JoinHandle<()> {
     let base_tokens: HashSet<_> = solvers
         .iter()
         .flat_map(|solver| solver.base_tokens.iter())
@@ -123,7 +142,7 @@ pub fn start_driver(
                  base_tokens: _,
                  merge_solutions,
              }| {
-                let account = hex::encode(account.private_key());
+                let account = const_hex::encode(account.private_key());
                 format!(
                     r#"
 [[solver]]
@@ -146,73 +165,18 @@ solving-share-of-deadline = 1.0
     let liquidity = liquidity.to_string(contracts);
 
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
-
-    let cow_amms = contracts
-        .cow_amm_helper
-        .iter()
-        .map(|contract| {
-            let Some(DeploymentInformation::BlockNumber(block)) = contract.deployment_information()
-            else {
-                panic!("unknown deployment block for cow amm contract");
-            };
-
-            format!(
-                r#"
-[[contracts.cow-amms]]
-index-start = {}
-helper = "{:?}"
-factory = "{:?}"
-"#,
-                block - 1, // start indexing 1 block before the contract was deployed
-                contract.address(),
-                contract.address(),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let flashloan_router_config = contracts
         .flashloan_router
         .as_ref()
         .map(|contract| format!("flashloan-router = \"{:?}\"", contract.address()))
         .unwrap_or_default();
 
-    let maker_adapter = contracts
-        .flashloan_wrapper_maker
-        .as_ref()
-        .map(|contract| {
-            format!(
-                r#"
-            [[contracts.flashloan-wrappers]] # Maker
-            lender = "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"
-            helper-contract = "{:?}"
-        "#,
-                contract.address()
-            )
-        })
-        .unwrap_or_default();
-
-    let aave_adapter = contracts
-        .flashloan_wrapper_aave
-        .as_ref()
-        .map(|contract| {
-            format!(
-                r#"
-            [[contracts.flashloan-wrappers]] # Aave
-            lender = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
-            helper-contract = "{:?}"
-            fee-in-bps = "5"
-        "#,
-                contract.address()
-            )
-        })
-        .unwrap_or_default();
-
-    let config_file = config_tmp_file(format!(
+    let base_config = format!(
         r#"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
 flashloans-enabled = true
+tx-gas-limit = "45000000"
 
 [gas-estimator]
 estimator = "web3"
@@ -223,11 +187,6 @@ weth = "{:?}"
 balances = "{:?}"
 signatures = "{:?}"
 {flashloan_router_config}
-
-{maker_adapter}
-{aave_adapter}
-
-{cow_amms}
 
 {solvers}
 
@@ -246,11 +205,20 @@ mempool = "public"
         contracts.weth.address(),
         contracts.balances.address(),
         contracts.signatures.address(),
-    ));
+    );
+
+    let final_config = if let Some(override_str) = config_override {
+        utils::toml::merge_raw(&base_config, override_str).expect("Failed to merge driver config")
+    } else {
+        base_config
+    };
+
+    let config_file = config_tmp_file(final_config);
     let args = vec![
         "driver".to_string(),
         format!("--config={}", config_file.display()),
         format!("--ethrpc={NODE_HOST}"),
+        format!("--node-ws-url={NODE_WS_HOST}"),
     ];
 
     tokio::task::spawn(async move {

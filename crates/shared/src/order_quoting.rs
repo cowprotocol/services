@@ -17,6 +17,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -66,8 +67,8 @@ impl QuoteParameters {
 
         price_estimation::Query {
             verification: self.verification.clone(),
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
+            sell_token: self.sell_token.into_alloy(),
+            buy_token: self.buy_token.into_alloy(),
             in_amount,
             kind,
             block_dependent: true,
@@ -232,7 +233,7 @@ impl TryFrom<QuoteRow> for QuoteData {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
     /// Computes a quote for the specified order parameters. Doesn't store the
@@ -417,7 +418,7 @@ pub struct OrderQuoter {
 }
 
 impl OrderQuoter {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
@@ -572,6 +573,8 @@ impl OrderQuoter {
                     call_data: i.data.clone(),
                 })
                 .collect(),
+            // quote verification already tries to auto-fake missing balances
+            balance_override: None,
         };
         let mut balances = self.balance_fetcher.get_balances(&[query]).await;
         balances.pop().context("missing balance result")?
@@ -781,6 +784,7 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
+        alloy::primitives::Address,
         chrono::Utc,
         ethcontract::H160,
         futures::FutureExt,
@@ -856,8 +860,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -997,8 +1001,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -1133,8 +1137,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,
@@ -1733,25 +1737,25 @@ mod tests {
         let q: QuoteMetadata = QuoteMetadataV1 {
             interactions: vec![
                 InteractionData {
-                    target: H160::from([1; 20]),
-                    value: U256::one(),
+                    target: Address::from_slice(&[1; 20]),
+                    value: alloy::primitives::U256::ONE,
                     call_data: vec![1],
                 },
                 InteractionData {
-                    target: H160::from([2; 20]),
-                    value: U256::from(2),
+                    target: Address::from_slice(&[2; 20]),
+                    value: alloy::primitives::U256::from(2),
                     call_data: vec![2],
                 },
             ],
             pre_interactions: vec![
                 InteractionData {
-                    target: H160::from([3; 20]),
-                    value: U256::from(3),
+                    target: Address::from_slice(&[3; 20]),
+                    value: alloy::primitives::U256::from(3),
                     call_data: vec![3],
                 },
                 InteractionData {
-                    target: H160::from([4; 20]),
-                    value: U256::from(4),
+                    target: Address::from_slice(&[4; 20]),
+                    value: alloy::primitives::U256::from(4),
                     call_data: vec![4],
                 },
             ],

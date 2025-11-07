@@ -5,20 +5,35 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    anyhow::Result,
-    contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::Bytes,
-    ethrpc::Web3,
-    futures::future,
-    primitive_types::{H160, U256},
+    crate::price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
+    alloy::{
+        dyn_abi::SolType,
+        primitives::Address,
+        sol_types::{SolCall, sol_data},
+        transports::RpcError,
+    },
+    anyhow::{Context, Result},
+    contracts::alloy::{
+        ERC1271SignatureValidator::ERC1271SignatureValidator,
+        GPv2Settlement,
+        support::Signatures,
+    },
+    ethcontract::state_overrides::StateOverrides,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
+    primitive_types::U256,
+    std::sync::Arc,
     tracing::instrument,
 };
 
 pub struct Validator {
-    signatures: contracts::support::Signatures,
-    settlement: contracts::GPv2Settlement,
-    vault_relayer: H160,
+    signatures_address: Address,
+    settlement: GPv2Settlement::Instance,
+    vault_relayer: Address,
     web3: Web3,
+    balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
 impl Validator {
@@ -27,36 +42,44 @@ impl Validator {
 
     pub fn new(
         web3: &Web3,
-        settlement: contracts::GPv2Settlement,
-        signatures: contracts::support::Signatures,
-        vault_relayer: H160,
+        settlement: GPv2Settlement::Instance,
+        signatures_address: Address,
+        vault_relayer: Address,
+        balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         Self {
-            signatures,
+            signatures_address,
             settlement,
             vault_relayer,
             web3: web3.clone(),
+            balance_overrider,
         }
     }
 
-    /// Simulate isValidSignature for the cases in which the order does not have
-    /// pre-interactions
-    async fn simulate_without_pre_interactions(
+    /// Simulate isValidSignature for the cases in which the order does not
+    /// require a "setup" in the form of pre-interactions or a flashloan.
+    async fn simulate_without_setup(
         &self,
-        check: &SignatureCheck,
+        check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
         // Since there are no interactions (no dynamic conditions / complex pre-state
         // change), the order's validity can be directly determined by whether
         // the signature matches the expected hash of the order data, checked
         // with isValidSignature method called on the owner's contract
-        let contract = ERC1271SignatureValidator::at(&self.web3, check.signer);
+        let contract = ERC1271SignatureValidator::new(check.signer.into_alloy(), &self.web3.alloy);
         let magic_bytes = contract
-            .methods()
-            .is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()))
+            .isValidSignature(check.hash.into(), check.signature.clone().into())
             .call()
             .await
-            .map(|value| hex::encode(value.0))?;
+            .map(|value| const_hex::encode(value.0))
+            .map_err(|err| match err {
+                alloy::contract::Error::TransportError(RpcError::ErrorResp(err)) => {
+                    tracing::error!(?err, "failed to call isValidSignature");
+                    SignatureValidationError::Invalid
+                }
+                err => SignatureValidationError::Other(err.into()),
+            })?;
 
         if magic_bytes != Self::IS_VALID_SIGNATURE_MAGIC_BYTES {
             return Err(SignatureValidationError::Invalid);
@@ -65,61 +88,95 @@ impl Validator {
         Ok(())
     }
 
+    /// Simulates the signature validation setting balance overrides and
+    /// pre-interactions; returning the gas used for the signature validation
+    /// only.
+    ///
+    /// These are required as they may interact with the signature, for example,
+    /// adding composable CoW orders.
     #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
-        check: &SignatureCheck,
+        check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
+        let overrides: StateOverrides = match &check.balance_override {
+            Some(overrides) => self
+                .balance_overrider
+                .state_override(overrides.clone())
+                .await
+                .into_iter()
+                .collect(),
+            None => Default::default(),
+        };
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let validate_call = self.signatures.methods().validate(
-            (self.settlement.address(), self.vault_relayer),
-            check.signer,
-            Bytes(check.hash),
-            Bytes(check.signature.clone()),
-            check
+        let validate_call = Signatures::Signatures::validateCall {
+            contracts: Signatures::Signatures::Contracts {
+                settlement: *self.settlement.address(),
+                vaultRelayer: self.vault_relayer,
+            },
+            signer: check.signer.into_alloy(),
+            order: check.hash.into(),
+            signature: check.signature.clone().into(),
+            interactions: check
                 .interactions
                 .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .map(|i| Signatures::Signatures::Interaction {
+                    target: i.target,
+                    value: i.value,
+                    callData: i.call_data.clone().into(),
+                })
                 .collect(),
-        );
-        let gas_cost_call = self
+        };
+        let simulation = self
             .settlement
-            .simulate_delegatecall(
-                self.signatures.address(),
-                Bytes(validate_call.tx.data.unwrap_or_default().0),
-            )
-            .from(crate::SIMULATION_ACCOUNT.clone());
-        let result = gas_cost_call
-            .tx
-            .estimate_gas()
-            .await
-            .map_err(|_| SignatureValidationError::Invalid);
+            .simulateDelegatecall(self.signatures_address, validate_call.abi_encode().into())
+            .state(overrides.clone().into_alloy())
+            .from(crate::SIMULATION_ACCOUNT.address().into_alloy());
 
-        tracing::trace!(?check, ?result, "simulated signature");
-        Ok(Simulation { gas_used: result? })
+        let result = simulation.clone().call().await;
+
+        let response_bytes = result
+            .inspect_err(|err| {
+                tracing::debug!(
+                    ?simulation,
+                    ?check,
+                    ?overrides,
+                    ?err,
+                    "signature verification failed"
+                )
+            })
+            .map_err(|_| SignatureValidationError::Invalid)?;
+
+        let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
+            .with_context(|| {
+                format!(
+                    "could not decode signature check result: {}",
+                    const_hex::encode(&response_bytes.0)
+                )
+            })?
+            .into_legacy();
+
+        Ok(Simulation { gas_used })
     }
 }
 
 #[async_trait::async_trait]
 impl SignatureValidating for Validator {
+    /// Validates a signature, setting up state for the simulation if needed.
     #[instrument(skip_all)]
-    async fn validate_signatures(
+    async fn validate_signature(
         &self,
-        checks: Vec<SignatureCheck>,
-    ) -> Vec<Result<(), SignatureValidationError>> {
-        future::join_all(checks.into_iter().map(|check| async move {
-            if check.interactions.is_empty() {
-                self.simulate_without_pre_interactions(&check).await?;
-            } else {
-                self.simulate(&check).await?;
-            }
-            Ok(())
-        }))
-        .await
+        check: SignatureCheck,
+    ) -> Result<(), SignatureValidationError> {
+        if check.requires_setup() {
+            self.simulate(check).await.map(|_| ())
+        } else {
+            self.simulate_without_setup(check).await
+        }
     }
 
     async fn validate_signature_and_get_additional_gas(
@@ -127,7 +184,7 @@ impl SignatureValidating for Validator {
         check: SignatureCheck,
     ) -> Result<u64, SignatureValidationError> {
         Ok(self
-            .simulate(&check)
+            .simulate(check)
             .await?
             .gas_used
             .try_into()
@@ -138,13 +195,4 @@ impl SignatureValidating for Validator {
 #[derive(Debug)]
 struct Simulation {
     gas_used: U256,
-}
-
-impl From<ethcontract::errors::MethodError> for SignatureValidationError {
-    fn from(err: ethcontract::errors::MethodError) -> Self {
-        match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Contract => Self::Invalid,
-            _ => Self::Other(err.into()),
-        }
-    }
 }

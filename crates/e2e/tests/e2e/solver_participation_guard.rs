@@ -1,20 +1,25 @@
 use {
-    e2e::{
-        setup::{
-            Db,
-            ExtraServiceArgs,
-            MintableToken,
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            TestAccount,
-            run_test,
-            to_wei,
-            wait_for_condition,
-        },
-        tx,
+    alloy::primitives::U256,
+    e2e::setup::{
+        Db,
+        ExtraServiceArgs,
+        MintableToken,
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        TestAccount,
+        eth,
+        run_test,
+        to_wei,
+        wait_for_condition,
     },
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
+    },
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -22,10 +27,7 @@ use {
     secp256k1::SecretKey,
     sqlx::Row,
     std::time::Instant,
-    web3::{
-        signing::SecretKeyRef,
-        types::{H160, U256},
-    },
+    web3::{signing::SecretKeyRef, types::H160},
 };
 
 #[tokio::test]
@@ -207,9 +209,8 @@ async fn not_allowed_solver(web3: Web3) {
     onchain
         .contracts()
         .gp_authenticator
-        .methods()
-        .remove_solver(solver_address)
-        .send()
+        .removeSolver(solver_address.into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
 
@@ -223,9 +224,8 @@ async fn not_allowed_solver(web3: Web3) {
     onchain
         .contracts()
         .gp_authenticator
-        .methods()
-        .add_solver(solver_address)
-        .send()
+        .addSolver(solver_address.into_alloy())
+        .send_and_watch()
         .await
         .unwrap();
 
@@ -249,46 +249,54 @@ async fn setup(
     // Create and fund Uniswap pool
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver.account(),
-        token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
+            eth(1000),
+            eth(1000),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address().into_alloy(),
+            U256::MAX,
         )
-    );
-    tx!(
-        solver.account(),
-        token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(1000))
-    );
+
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     (trader_a, token_a, token_b)
 }
@@ -325,9 +333,9 @@ async fn execute_order(
     services: &Services<'_>,
 ) -> anyhow::Result<()> {
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -338,7 +346,11 @@ async fn execute_order(
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
-    let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    let balance_before = token_b
+        .balanceOf(trader_a.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -348,8 +360,12 @@ async fn execute_order(
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
-        let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= to_wei(5);
+        let balance_after = token_b
+            .balanceOf(trader_a.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= eth(5);
         let auction_ids_after =
             fetch_last_settled_auction_ids(services.db()).await.len() > auction_ids_before;
         balance_changes && auction_ids_after

@@ -8,6 +8,7 @@ mod solver;
 
 use {
     crate::nodes::{NODE_HOST, Node},
+    ::alloy::signers::local::{MnemonicBuilder, coins_bip39::English},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
     ethrpc::Web3,
@@ -192,6 +193,7 @@ async fn run<F, Fut, T>(
     observe::tracing::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
+    services::ensure_e2e_readonly_user().await;
     // The mutex guarantees that no more than a test at a time is running on
     // the testing node.
     // Note that the mutex is expected to become poisoned if a test panics. This
@@ -213,6 +215,19 @@ async fn run<F, Fut, T>(
     }));
 
     let web3 = Web3::new_from_url(NODE_HOST);
+    let phrase = "test test test test test test test test test test test junk";
+    let signers = (0..10).map(|i| {
+        MnemonicBuilder::<English>::default()
+            .phrase(phrase)
+            .index(i)
+            .unwrap()
+            .build()
+            .unwrap()
+    });
+
+    for signer in signers {
+        web3.wallet.register_signer(signer);
+    }
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
@@ -235,12 +250,14 @@ async fn run<F, Fut, T>(
 #[macro_export]
 macro_rules! assert_approximately_eq {
     ($executed_value:expr_2021, $expected_value:expr_2021) => {{
-        let lower = $expected_value * U256::from(99999999999u128) / U256::from(100000000000u128);
-        let upper =
-            ($expected_value * U256::from(100000000001u128) / U256::from(100000000000u128)) + 1;
+        let lower = $expected_value * ::alloy::primitives::U256::from(99999999999u128)
+            / ::alloy::primitives::U256::from(100000000000u128);
+        let upper = ($expected_value * ::alloy::primitives::U256::from(100000000001u128)
+            / ::alloy::primitives::U256::from(100000000000u128))
+            + ::alloy::primitives::U256::ONE;
         assert!(
             $executed_value >= lower && $executed_value <= upper,
-            "Expected: ~{}, got: {}",
+            "Expected: ~{}, got: {}, ({lower}, {upper})",
             $expected_value,
             $executed_value
         );

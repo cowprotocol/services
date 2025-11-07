@@ -8,6 +8,8 @@ use {
             setup::{blockchain::Trade, orderbook::Orderbook},
         },
     },
+    const_hex::ToHexExt,
+    ethrpc::alloy::conversions::IntoLegacy,
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -50,6 +52,8 @@ impl Driver {
             "0.0.0.0:0".to_owned(),
             "--ethrpc".to_owned(),
             blockchain.web3_url.clone(),
+            "--node-ws-url".to_owned(),
+            blockchain.web3_ws_url.clone(),
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];
@@ -73,8 +77,8 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     for quote in quotes.iter() {
         let mut order = json!({
             "uid": quote.order_uid(&test.blockchain),
-            "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
-            "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
+            "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
+            "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
             "protocolFees": match quote.order.kind {
@@ -109,7 +113,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             },
             "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
             "signingScheme": "eip712",
-            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
+            "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
             "quote": quote.order.quote,
         });
         if let Some(receiver) = quote.order.receiver {
@@ -121,24 +125,24 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         match trade {
             Trade::Fulfillment(fulfillment) => {
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.sell_token)),
+                    "address": test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.sell_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(fulfillment.quoted_order.order.sell_token),
                 }));
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.buy_token)),
+                    "address": test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.buy_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(fulfillment.quoted_order.order.buy_token),
                 }));
             }
             Trade::Jit(jit) => {
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(jit.quoted_order.order.sell_token)),
+                    "address": test.blockchain.get_token_wrapped(jit.quoted_order.order.sell_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(jit.quoted_order.order.sell_token),
                 }));
                 tokens_json.push(json!({
-                    "address": hex_address(test.blockchain.get_token_wrapped(jit.quoted_order.order.buy_token)),
+                    "address": test.blockchain.get_token_wrapped(jit.quoted_order.order.buy_token).encode_hex_with_prefix(),
                     "price": "1000000000000000000",
                     "trusted": test.trusted.contains(jit.quoted_order.order.buy_token),
                 }));
@@ -183,8 +187,8 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
 
     let quote = test.quoted_orders.first().unwrap();
     json!({
-        "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
-        "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
+        "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
+        "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "amount": match quote.order.side {
             order::Side::Buy => quote.buy_amount().to_string(),
             order::Side::Sell => quote.sell_amount().to_string(),
@@ -220,6 +224,7 @@ async fn create_config_file(
     )
     .unwrap();
     writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
     write!(
         file,
         r#"[contracts]
@@ -229,19 +234,14 @@ async fn create_config_file(
            signatures = "{}"
            flashloan-router = "{}"
 
-           [[contracts.flashloan-wrappers]]
-           lender = "0x0000000000000000000000000000000000000000"
-           helper-contract = "{}"
-
            [submission]
            gas-price-cap = "1000000000000"
            "#,
-        hex_address(blockchain.settlement.address()),
-        hex_address(blockchain.weth.address()),
-        hex_address(blockchain.balances.address()),
-        hex_address(blockchain.signatures.address()),
-        hex_address(blockchain.flashloan_router.address()),
-        hex_address(blockchain.flashloan_wrapper.address()),
+        blockchain.settlement.address(),
+        blockchain.weth.address(),
+        blockchain.balances.address(),
+        blockchain.signatures.address(),
+        hex_address(blockchain.flashloan_router.address().into_legacy()),
     )
     .unwrap();
 
@@ -332,7 +332,7 @@ async fn create_config_file(
                 .map(|abs| abs.0)
                 .unwrap_or_default(),
             solver.slippage.relative,
-            hex::encode(solver.private_key.secret_bytes()),
+            const_hex::encode(solver.private_key.secret_bytes()),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),

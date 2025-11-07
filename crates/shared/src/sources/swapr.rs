@@ -1,10 +1,11 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
+    crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
-    contracts::ISwaprPair,
-    ethcontract::{BlockId, errors::MethodError},
+    contracts::alloy::ISwaprPair,
+    ethcontract::BlockId,
+    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -22,13 +23,14 @@ const FEE_BASE: u32 = 10_000;
 impl PoolReading for SwaprPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.0.pair_provider.pair_address(&pair);
-        let pair_contract = ISwaprPair::at(&self.0.web3, pair_address);
-
         let fetch_pool = self.0.read_state(pair, block);
-        let fetch_fee = pair_contract.swap_fee().block(block).call();
 
         async move {
-            let (pool, fee) = futures::join!(fetch_pool, fetch_fee);
+            let pair_contract =
+                ISwaprPair::Instance::new(pair_address.into_alloy(), self.0.web3.alloy.clone());
+            let fetch_fee = pair_contract.swapFee().block(block.into_alloy());
+
+            let (pool, fee) = futures::join!(fetch_pool, fetch_fee.call().into_future());
             handle_results(pool, fee)
         }
         .boxed()
@@ -37,9 +39,9 @@ impl PoolReading for SwaprPoolReader {
 
 fn handle_results(
     pool: Result<Option<Pool>>,
-    fee: Result<u32, MethodError>,
+    fee: Result<u32, alloy::contract::Error>,
 ) -> Result<Option<Pool>> {
-    let fee = pool_fetching::handle_contract_error(fee)?;
+    let fee = ignore_non_node_error(fee)?;
     Ok(pool?.and_then(|pool| {
         Some(Pool {
             fee: Ratio::new(fee?, FEE_BASE),
@@ -57,14 +59,16 @@ mod tests {
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
         },
-        contracts::errors::testing_contract_error,
+        alloy::primitives::{Address, address},
         ethcontract::H160,
+        ethrpc::alloy::errors::testing_alloy_contract_error,
         maplit::hashset,
     };
 
     #[test]
     fn sets_fee() {
-        let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let tokens =
+            TokenPair::new(Address::from_slice(&[1; 20]), Address::from_slice(&[2; 20])).unwrap();
         let address = H160::from_low_u64_be(1);
         assert_eq!(
             handle_results(
@@ -89,12 +93,13 @@ mod tests {
 
     #[test]
     fn ignores_contract_errors_when_reading_fee() {
-        let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let tokens =
+            TokenPair::new(Address::from_slice(&[1; 20]), Address::from_slice(&[2; 20])).unwrap();
         let address = H160::from_low_u64_be(1);
         assert!(
             handle_results(
                 Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),
-                Err(testing_contract_error()),
+                Err(testing_alloy_contract_error()),
             )
             .unwrap()
             .is_none()
@@ -119,8 +124,8 @@ mod tests {
             .fetch(
                 hashset! {
                     TokenPair::new(
-                        addr!("6A023CCd1ff6F2045C3309768eAd9E68F978f6e1"),
-                        addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
+                        address!("6A023CCd1ff6F2045C3309768eAd9E68F978f6e1"),
+                        address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
                     )
                     .unwrap(),
                 },

@@ -1,7 +1,6 @@
 use {
-    ethcontract::Bytes,
+    alloy::primitives::{Address, Bytes, U256},
     model::interaction::InteractionData,
-    primitive_types::{H160, U256},
 };
 
 pub trait Interaction: std::fmt::Debug + Send + Sync {
@@ -19,9 +18,9 @@ impl Interaction for Box<dyn Interaction> {
 }
 
 pub type EncodedInteraction = (
-    H160,           // target
-    U256,           // value
-    Bytes<Vec<u8>>, // callData
+    Address, // target
+    U256,    // value
+    Bytes,   // callData
 );
 
 impl Interaction for EncodedInteraction {
@@ -32,6 +31,10 @@ impl Interaction for EncodedInteraction {
 
 impl Interaction for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        (self.target, self.value, Bytes(self.call_data.clone()))
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(self.call_data.as_slice()),
+        )
     }
 }

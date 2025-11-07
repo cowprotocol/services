@@ -1,8 +1,8 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, mock::Mock, *},
-        tx,
-        tx_value,
+    e2e::setup::{colocation::SolverEngine, eth, mock::Mock, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
     },
     futures::FutureExt,
     model::{
@@ -52,18 +52,23 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -72,8 +77,8 @@ async fn test(web3: Web3) {
     tracing::info!("Quoting order");
     let request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address(),
-        buy_token: token.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
+        buy_token: token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -186,18 +191,23 @@ async fn uses_stale_liquidity(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(1))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(1),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(1))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -205,8 +215,8 @@ async fn uses_stale_liquidity(web3: Web3) {
 
     let quote = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address(),
-        buy_token: token.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
+        buy_token: token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
                 value: NonZeroU256::new(to_wei(1)).unwrap(),
@@ -266,14 +276,14 @@ async fn quote_timeout(web3: Web3) {
                 name: "test_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
-                base_tokens: vec![sell_token.address()],
+                base_tokens: vec![sell_token.address().into_legacy()],
                 merge_solutions: true,
             },
             SolverEngine {
                 name: "test_quoter".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
-                base_tokens: vec![sell_token.address()],
+                base_tokens: vec![sell_token.address().into_legacy()],
                 merge_solutions: true,
             },
         ],
@@ -306,8 +316,8 @@ async fn quote_timeout(web3: Web3) {
 
     let quote_request = |timeout| OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address(),
-        buy_token: sell_token.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
+        buy_token: sell_token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -329,7 +339,9 @@ async fn quote_timeout(web3: Web3) {
 
     // native token price requests are also capped to the max timeout
     let start = std::time::Instant::now();
-    let res = services.get_native_price(&sell_token.address()).await;
+    let res = services
+        .get_native_price(&sell_token.address().into_legacy())
+        .await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
@@ -359,13 +371,16 @@ async fn quote_timeout(web3: Web3) {
 
     // set up trader to pass balance checks during order creation
     sell_token.mint(trader.address(), to_wei(1)).await;
-    tx!(
-        trader.account(),
-        sell_token.approve(onchain.contracts().allowance, to_wei(1))
-    );
+
+    sell_token
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let order = OrderCreation {
-        sell_token: sell_token.address(),
+        sell_token: sell_token.address().into_legacy(),
         sell_amount: to_wei(1),
         buy_token: Default::default(),
         buy_amount: to_wei(1),

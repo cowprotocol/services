@@ -3,9 +3,11 @@
 use {
     super::TokenOwnerProposing,
     crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
+    alloy::eips::BlockNumberOrTag,
     anyhow::Result,
-    contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{BlockNumber, H160},
+    contracts::alloy::{BalancerV2Vault, IUniswapV3Factory},
+    ethcontract::H160,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
 };
 
@@ -20,24 +22,24 @@ impl TokenOwnerProposing for UniswapLikePairProviderFinder {
         Ok(self
             .base_tokens
             .iter()
-            .filter_map(|&base_token| TokenPair::new(base_token, token))
+            .filter_map(|base_token| TokenPair::new(base_token.into_alloy(), token.into_alloy()))
             .map(|pair| self.inner.pair_address(&pair))
             .collect())
     }
 }
 
 /// The balancer vault contract contains all the balances of all pools.
-pub struct BalancerVaultFinder(pub BalancerV2Vault);
+pub struct BalancerVaultFinder(pub BalancerV2Vault::Instance);
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for BalancerVaultFinder {
     async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
-        Ok(vec![self.0.address()])
+        Ok(vec![self.0.address().into_legacy()])
     }
 }
 
 pub struct UniswapV3Finder {
-    pub factory: IUniswapV3Factory,
+    pub factory: IUniswapV3Factory::Instance,
     pub base_tokens: Vec<H160>,
     fee_values: Vec<u32>,
 }
@@ -54,7 +56,7 @@ pub enum FeeValues {
 
 impl UniswapV3Finder {
     pub async fn new(
-        factory: IUniswapV3Factory,
+        factory: IUniswapV3Factory::Instance,
         base_tokens: Vec<H160>,
         fee_values: FeeValues,
     ) -> Result<Self> {
@@ -74,18 +76,25 @@ impl UniswapV3Finder {
 
     // Possible fee values as given by
     // https://github.com/Uniswap/v3-core/blob/9161f9ae4aaa109f7efdff84f1df8d4bc8bfd042/contracts/UniswapV3Factory.sol#L26
-    async fn fee_values(factory: &IUniswapV3Factory) -> Result<Vec<u32>> {
+    async fn fee_values(factory: &IUniswapV3Factory::Instance) -> Result<Vec<u32>> {
         // We expect there to be few of these kind of events (currently there are 4) so
         // fetching all of them is fine. Alternatively we could index these
         // events in the database.
         let events = factory
-            .events()
-            .fee_amount_enabled()
-            .from_block(BlockNumber::Earliest)
-            .to_block(BlockNumber::Latest)
+            .FeeAmountEnabled_filter()
+            .from_block(BlockNumberOrTag::Earliest)
+            .to_block(BlockNumberOrTag::Latest)
             .query()
             .await?;
-        let fee_values = events.into_iter().map(|event| event.data.fee).collect();
+        let fee_values = events
+            .into_iter()
+            .map(|(enabled, _)| {
+                enabled
+                    .fee
+                    .try_into()
+                    .expect("uint24 always fits inside u32")
+            })
+            .collect();
         Ok(fee_values)
     }
 }
@@ -96,10 +105,14 @@ impl TokenOwnerProposing for UniswapV3Finder {
         Ok(self
             .base_tokens
             .iter()
-            .filter_map(|base_token| TokenPair::new(*base_token, token))
+            .filter_map(|base_token| TokenPair::new(base_token.into_alloy(), token.into_alloy()))
             .flat_map(|pair| self.fee_values.iter().map(move |fee| (pair, *fee)))
             .map(|(pair, fee)| {
-                uniswap_v3_pair_provider::pair_address(&self.factory.address(), &pair, fee)
+                uniswap_v3_pair_provider::pair_address(
+                    &self.factory.address().into_legacy(),
+                    &pair,
+                    fee,
+                )
             })
             .collect())
     }

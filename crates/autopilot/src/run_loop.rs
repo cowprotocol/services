@@ -20,14 +20,16 @@ use {
             self,
             solvers::dto::{settle, solve},
         },
+        leader_lock_tracker::LeaderLockTracker,
         maintenance::Maintenance,
         run::Liveness,
+        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::block_stream::BlockInfo,
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::BlockInfo},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -44,7 +46,10 @@ use {
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
@@ -61,6 +66,12 @@ pub struct Config {
     pub max_run_loop_delay: Duration,
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
+    pub enable_leader_lock: bool,
+}
+
+pub struct Probes {
+    pub liveness: Arc<Liveness>,
+    pub startup: Arc<Option<AtomicBool>>,
 }
 
 pub struct RunLoop {
@@ -72,7 +83,7 @@ pub struct RunLoop {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
-    liveness: Arc<Liveness>,
+    probes: Probes,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
@@ -81,7 +92,7 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Config,
         eth: infra::Ethereum,
@@ -90,7 +101,7 @@ impl RunLoop {
         solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
-        liveness: Arc<Liveness>,
+        probes: Probes,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
@@ -106,33 +117,100 @@ impl RunLoop {
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
-            liveness,
+            probes,
             maintenance,
             competition_updates_sender,
             winner_selection: winner_selection::Arbitrator { max_winners, weth },
         }
     }
 
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self, mut control: ShutdownController) {
         Maintenance::spawn_cow_amm_indexing_task(
             self.maintenance.clone(),
             self.eth.current_block().clone(),
         );
+
         let mut last_auction = None;
         let mut last_block = None;
+
         let self_arc = Arc::new(self);
-        loop {
-            let auction = self_arc
-                .next_auction(&mut last_auction, &mut last_block)
+        let leader = if self_arc.config.enable_leader_lock {
+            Some(
+                self_arc
+                    .persistence
+                    .leader("autopilot_startup".to_string())
+                    .await,
+            )
+        } else {
+            None
+        };
+        let mut leader_lock_tracker = LeaderLockTracker::new(leader);
+
+        while !control.should_shutdown() {
+            leader_lock_tracker.try_acquire().await;
+
+            let start_block = self_arc
+                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
                 .await;
-            if let Some(auction) = auction {
+
+            // caches are warmed up, we're ready to do leader work
+            if let Some(startup) = self_arc.probes.startup.as_ref() {
+                startup.store(true, Ordering::Release);
+            }
+
+            if !leader_lock_tracker.is_leader() {
+                // only the leader is supposed to run the auctions
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+
+            if let Some(auction) = self_arc
+                .next_auction(start_block, &mut last_auction, &mut last_block)
+                .await
+            {
                 let auction_id = auction.id;
                 self_arc
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
-            };
+            }
         }
+        leader_lock_tracker.release().await;
+    }
+
+    async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
+        let current_block = *self.eth.current_block().borrow();
+        let time_since_last_block = current_block.observed_at.elapsed();
+        let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
+            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
+                // don't emit warning if we finished prev run loop within the same block
+                tracing::warn!(
+                    missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
+                    "missed optimal auction start, wait for new block"
+                );
+            }
+            ethrpc::block_stream::next_block(self.eth.current_block()).await
+        } else {
+            current_block
+        };
+
+        self.run_maintenance(&auction_block).await;
+
+        match self
+            .solvable_orders_cache
+            .update(auction_block.number, is_leader)
+            .await
+        {
+            Ok(()) => {
+                tracing::trace!("solvable orders cache updated");
+                self.solvable_orders_cache.track_auction_update("success");
+            }
+            Err(err) => {
+                self.solvable_orders_cache.track_auction_update("failure");
+                tracing::warn!(?err, "failed to update auction");
+            }
+        }
+        auction_block
     }
 
     /// Sleeps until the next auction is supposed to start, builds it and
@@ -140,44 +218,11 @@ impl RunLoop {
     #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
     async fn next_auction(
         &self,
+        start_block: BlockInfo,
         prev_auction: &mut Option<domain::Auction>,
         prev_block: &mut Option<H256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
-        let start_block = {
-            let current_block = *self.eth.current_block().borrow();
-            let time_since_last_block = current_block.observed_at.elapsed();
-            let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
-                if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                    // don't emit warning if we finished prev run loop within the same block
-                    tracing::warn!(
-                        missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
-                        "missed optimal auction start, wait for new block"
-                    );
-                }
-                ethrpc::block_stream::next_block(self.eth.current_block()).await
-            } else {
-                current_block
-            };
-
-            self.run_maintenance(&auction_block).await;
-            match self
-                .solvable_orders_cache
-                .update(auction_block.number)
-                .await
-            {
-                Ok(()) => {
-                    tracing::trace!("solvable orders cache updated");
-                    self.solvable_orders_cache.track_auction_update("success");
-                }
-                Err(err) => {
-                    self.solvable_orders_cache.track_auction_update("failure");
-                    tracing::warn!(?err, "failed to update auction");
-                }
-            }
-            auction_block
-        };
-
         let auction = self.cut_auction().await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 
@@ -190,7 +235,7 @@ impl RunLoop {
         }
 
         observe::log_auction_delta(&previous, &auction);
-        self.liveness.auction();
+        self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
@@ -226,7 +271,7 @@ impl RunLoop {
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
-            self.liveness.auction();
+            self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
         }
@@ -508,7 +553,7 @@ impl RunLoop {
         tracing::trace!(?competition, "saving competition");
         futures::try_join!(
             self.persistence
-                .save_competition(&competition)
+                .save_competition(competition)
                 .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .save_surplus_capturing_jit_order_owners(
@@ -535,7 +580,12 @@ impl RunLoop {
     ) -> Vec<competition::Participant<Unranked>> {
         let request = solve::Request::new(
             auction,
-            &self.trusted_tokens.all(),
+            &self
+                .trusted_tokens
+                .all()
+                .into_iter()
+                .map(IntoLegacy::into_legacy)
+                .collect(),
             self.config.solve_deadline,
         );
 
@@ -664,7 +714,7 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,

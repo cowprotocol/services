@@ -1,7 +1,12 @@
 use {
+    ::alloy::primitives::U256,
+    contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{setup::*, tx, tx_value},
-    ethcontract::U256,
+    e2e::setup::{eth, *},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -27,30 +32,39 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    tx!(
-        trader.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
-    );
-    tx_value!(
-        trader.account(),
-        to_wei(3),
-        onchain.contracts().weth.deposit()
-    );
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: to_wei(2),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
@@ -65,27 +79,45 @@ async fn test(web3: Web3) {
 
     // Mine a trivial settlement (not encoding auction ID). This mimics fee
     // withdrawals and asserts we can handle these gracefully.
-    tx!(
-        solver.account(),
-        onchain.contracts().gp_settlement.settle(
+    onchain
+        .contracts()
+        .gp_settlement
+        .settle(
             Default::default(),
             Default::default(),
             Default::default(),
             [
-                vec![(trader.address(), U256::from(0), Default::default())],
+                vec![GPv2Settlement::GPv2Interaction::Data {
+                    target: trader.address().into_alloy(),
+                    value: U256::ZERO,
+                    callData: Default::default(),
+                }],
                 Default::default(),
-                Default::default()
+                Default::default(),
             ],
         )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
+    let trade_happened = || async {
+        token
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            != U256::ZERO
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, to_wei(1));
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, eth(1));
 
     let all_events_registered = || async {
         let events = crate::database::events_of_order(services.db(), &uid).await;
@@ -103,24 +135,30 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
-    let cip_20_data_updated = || async {
-        onchain.mint_block().await;
-        let data = match crate::database::most_recent_cip_20_data(services.db()).await {
-            Some(data) => data,
-            None => return false,
+    let data_updated = || async {
+        let mut db = services.db().acquire().await.unwrap();
+        let Some(auction_id) = crate::database::latest_auction_id(&mut db).await.unwrap() else {
+            return false;
         };
 
+        let participants = crate::database::auction_participants(&mut db, auction_id)
+            .await
+            .unwrap();
+        let prices = crate::database::auction_prices(&mut db, auction_id)
+            .await
+            .unwrap();
+        let scores = crate::database::reference_scores(&mut db, auction_id)
+            .await
+            .unwrap();
         // sell and buy token price can be found
-        data.prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
-            && data.prices.iter().any(|p| p.token.0 == token.address().0)
+        prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
+            && prices.iter().any(|p| p.token.0 == token.address().0)
             // solver participated in the competition
-            && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
+            && participants.iter().any(|p| p.0 == solver.address().0)
             // and won the auction
-            && data.reference_scores.first().is_some_and(|score| score.solver.0 == solver.address().0)
+            && scores.first().is_some_and(|score| score.solver.0 == solver.address().0)
     };
-    wait_for_condition(TIMEOUT, cip_20_data_updated)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, data_updated).await.unwrap();
 }
 
 fn order_events_matching_fuzzy(actual: &[OrderEvent], expected: &[OrderEventLabel]) -> bool {

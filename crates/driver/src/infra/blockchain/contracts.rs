@@ -1,45 +1,42 @@
 use {
-    crate::{
-        boundary,
-        domain::eth,
-        infra::{blockchain::Ethereum, config},
-    },
+    crate::domain::eth,
     chain::Chain,
-    contracts::FlashLoanRouter,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    contracts::alloy::{
+        BalancerV2Vault,
+        FlashLoanRouter,
+        GPv2Settlement,
+        WETH9,
+        support::Balances,
+    },
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
     std::collections::HashMap,
     thiserror::Error,
 };
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    settlement: contracts::GPv2Settlement,
+    settlement: GPv2Settlement::Instance,
     vault_relayer: eth::ContractAddress,
-    vault: contracts::BalancerV2Vault,
-    signatures: contracts::support::Signatures,
-    weth: contracts::WETH9,
+    vault: BalancerV2Vault::Instance,
+    signatures: contracts::alloy::support::Signatures::Instance,
+    weth: WETH9::Instance,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    cow_amm_registry: cow_amm::Registry,
 
-    /// Each lender potentially has different solver wrapper.
-    flashloan_wrapper_by_lender: HashMap<eth::ContractAddress, FlashloanWrapperData>,
     /// Single router that supports multiple flashloans in the
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
-    flashloan_router: Option<FlashLoanRouter>,
-    /// Default lender to use for flashloans, if flashloan doesn't have a lender
-    /// specified.
-    flashloan_default_lender: Option<eth::ContractAddress>,
-    balance_helper: contracts::support::Balances,
-}
-
-#[derive(Debug, Clone)]
-pub struct FlashloanWrapperData {
-    pub helper_contract: contracts::IFlashLoanSolverWrapper,
-    pub fee_in_bps: eth::U256,
+    flashloan_router: Option<FlashLoanRouter::Instance>,
+    balance_helper: Balances::Instance,
+    /// Mapping from CoW AMM factory address to the corresponding CoW AMM
+    /// helper.
+    cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
+    web3: Web3,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -48,10 +45,8 @@ pub struct Addresses {
     pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
-    pub cow_amms: Vec<CowAmmConfig>,
-    pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
+    pub cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
     pub flashloan_router: Option<eth::ContractAddress>,
-    pub flashloan_default_lender: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -59,121 +54,84 @@ impl Contracts {
         web3: &Web3,
         chain: Chain,
         addresses: Addresses,
-        block_stream: CurrentBlockWatcher,
-        archive_node: Option<super::RpcArgs>,
     ) -> Result<Self, Error> {
-        let address_for = |contract: &ethcontract::Contract,
-                           address: Option<eth::ContractAddress>| {
-            address
-                .or_else(|| deployment_address(contract, chain))
-                .unwrap()
-                .0
-        };
-
-        let settlement = contracts::GPv2Settlement::at(
-            web3,
-            address_for(
-                contracts::GPv2Settlement::raw_contract(),
-                addresses.settlement,
-            ),
+        let settlement = GPv2Settlement::Instance::new(
+            addresses
+                .settlement
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
-        let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
+        let vault_relayer = settlement.vaultRelayer().call().await?;
         let vault =
-            contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
-        let balance_helper = contracts::support::Balances::at(
-            web3,
-            address_for(
-                contracts::support::Balances::raw_contract(),
-                addresses.balances,
-            ),
+            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.alloy.clone());
+        let balance_helper = Balances::Instance::new(
+            addresses
+                .balances
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| Balances::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
-        let weth = contracts::WETH9::at(
-            web3,
-            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        let weth = WETH9::Instance::new(
+            addresses
+                .weth
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| WETH9::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let settlement_domain_separator = eth::DomainSeparator(
             settlement
-                .domain_separator()
+                .domainSeparator()
                 .call()
                 .await
                 .expect("domain separator")
                 .0,
         );
 
-        let archive_node_web3 = archive_node.as_ref().map_or(web3.clone(), |args| {
-            boundary::buffered_web3_client(
-                &args.url,
-                args.max_batch_size,
-                args.max_concurrent_requests,
-            )
-        });
-        let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
-        for config in addresses.cow_amms {
-            cow_amm_registry
-                .add_listener(config.index_start, config.factory, config.helper)
-                .await;
-        }
-        cow_amm_registry.spawn_maintenance_task(block_stream);
-
-        let flashloan_wrapper_by_lender = addresses
-            .flashloan_wrappers
-            .iter()
-            .map(|wrapper_config| {
-                let helper_contract = contracts::IFlashLoanSolverWrapper::at(
-                    web3,
-                    address_for(
-                        contracts::IFlashLoanSolverWrapper::raw_contract(),
-                        Some(wrapper_config.helper_contract.into()),
-                    ),
-                );
-                let wrapper_data = FlashloanWrapperData {
-                    helper_contract,
-                    fee_in_bps: wrapper_config.fee_in_bps,
-                };
-                (wrapper_config.lender.into(), wrapper_data)
-            })
-            .collect();
-
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
             .or_else(|| {
-                contracts::FlashLoanRouter::raw_contract()
-                    .networks
-                    .get(&chain.id().to_string())
-                    .map(|deployment| eth::ContractAddress(deployment.address))
+                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
+                    eth::ContractAddress(deployment_address.into_legacy())
+                })
             })
-            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+            .map(|address| {
+                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
+            });
 
         Ok(Self {
             settlement,
-            vault_relayer,
+            vault_relayer: vault_relayer.into_legacy().into(),
             vault,
             signatures,
             weth,
             settlement_domain_separator,
-            cow_amm_registry,
-            flashloan_wrapper_by_lender,
             flashloan_router,
-            flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
+            cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
+            web3: web3.clone(),
         })
     }
 
-    pub fn settlement(&self) -> &contracts::GPv2Settlement {
+    pub fn settlement(&self) -> &GPv2Settlement::Instance {
         &self.settlement
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
@@ -181,54 +139,39 @@ impl Contracts {
         self.vault_relayer
     }
 
-    pub fn vault(&self) -> &contracts::BalancerV2Vault {
+    pub fn vault(&self) -> &BalancerV2Vault::Instance {
         &self.vault
     }
 
-    pub fn weth(&self) -> &contracts::WETH9 {
+    pub fn weth(&self) -> &WETH9::Instance {
         &self.weth
     }
 
     pub fn weth_address(&self) -> eth::WethAddress {
-        self.weth.address().into()
+        self.weth.address().into_legacy().into()
     }
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
         &self.settlement_domain_separator
     }
 
-    pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
-        &self.cow_amm_registry
-    }
-
-    pub fn get_flashloan_wrapper(
-        &self,
-        lender: &eth::ContractAddress,
-    ) -> Option<&FlashloanWrapperData> {
-        self.flashloan_wrapper_by_lender.get(lender)
-    }
-
-    pub fn flashloan_default_lender(&self) -> Option<eth::ContractAddress> {
-        self.flashloan_default_lender
-    }
-
-    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+    pub fn flashloan_router(&self) -> Option<&FlashLoanRouter::Instance> {
         self.flashloan_router.as_ref()
     }
 
-    pub fn balance_helper(&self) -> &contracts::support::Balances {
+    pub fn balance_helper(&self) -> &Balances::Instance {
         &self.balance_helper
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct CowAmmConfig {
-    /// Which contract to index for CoW AMM deployment events.
-    pub factory: eth::H160,
-    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
-    pub helper: eth::H160,
-    /// At which block indexing should start on the factory.
-    pub index_start: u64,
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
+    }
+
+    pub fn cow_amm_helper_by_factory(
+        &self,
+    ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
+        &self.cow_amm_helper_by_factory
+    }
 }
 
 /// Returns the address of a contract for the specified network, or `None` if
@@ -246,31 +189,10 @@ pub fn deployment_address(
     )
 }
 
-/// A trait for initializing contract instances with dynamic addresses.
-pub trait ContractAt {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
-}
-
-impl ContractAt for contracts::IUniswapLikeRouter {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.0)
-    }
-}
-
-impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
-}
-
-impl ContractAt for contracts::support::Balances {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
+    #[error("method error: {0:?}")]
+    Rpc(#[from] alloy::contract::Error),
 }

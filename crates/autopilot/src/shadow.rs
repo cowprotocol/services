@@ -11,7 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{Participant, Unranked, winner_selection},
+            competition::{Participant, Score, Unranked, winner_selection},
             eth::WrappedNativeToken,
         },
         infra::{
@@ -23,8 +23,9 @@ use {
     },
     ::observe::metrics,
     anyhow::Context,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     itertools::Itertools,
+    num::{CheckedSub, Saturating},
     shared::token_list::AutoUpdatingTokenList,
     std::{num::NonZeroUsize, sync::Arc, time::Duration},
     tracing::{Instrument, instrument},
@@ -43,7 +44,7 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<Arc<infra::Driver>>,
@@ -135,7 +136,7 @@ impl RunLoop {
         let total_score = ranking
             .winners()
             .map(|p| p.solution().score())
-            .reduce(std::ops::Add::add)
+            .reduce(Score::saturating_add)
             .unwrap_or_default();
 
         for participant in ranking.ranked() {
@@ -143,7 +144,17 @@ impl RunLoop {
             let reference_score = scores.get(&participant.driver().submission_address);
             let driver = participant.driver();
             let reward = reference_score
-                .map(|reference| total_score - *reference)
+                .map(|reference| {
+                    total_score.checked_sub(reference).unwrap_or_else(|| {
+                        tracing::trace!(
+                            driver =% driver.name,
+                            ?reference_score,
+                            ?total_score,
+                            "reference score exceeds total score, capping reward to 0"
+                        );
+                        Score::default()
+                    })
+                })
                 .unwrap_or_default();
 
             tracing::info!(
@@ -167,7 +178,16 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
-        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
+        let request = solve::Request::new(
+            auction,
+            &self
+                .trusted_tokens
+                .all()
+                .into_iter()
+                .map(IntoLegacy::into_legacy)
+                .collect(),
+            self.solve_deadline,
+        );
 
         futures::future::join_all(
             self.drivers
@@ -230,7 +250,7 @@ impl RunLoop {
             }
             tracing::debug!(
                 driver = %driver.name,
-                calldata = format!("0x{}", hex::encode(calldata)),
+                calldata = const_hex::encode_prefixed(calldata),
                 "revealed calldata"
             );
         }))

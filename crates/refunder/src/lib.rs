@@ -1,13 +1,12 @@
 pub mod arguments;
-pub mod ethflow_order;
 pub mod refund_service;
 pub mod submitter;
 
 use {
     crate::arguments::Arguments,
+    alloy::signers::local::PrivateKeySigner,
     clap::Parser,
-    contracts::CoWSwapEthFlow,
-    ethcontract::{Account, PrivateKey},
+    contracts::alloy::CoWSwapEthFlow,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
@@ -58,14 +57,23 @@ pub async fn run(args: arguments::Arguments) {
         // Program will be healthy at the start even if no loop was ran yet.
         last_successful_loop: RwLock::new(Instant::now()),
     });
-    observe::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        ([0, 0, 0, 0], args.metrics_port).into(),
+        Default::default(),
+        Default::default(),
+    );
 
     let ethflow_contracts = args
         .ethflow_contracts
         .iter()
-        .map(|contract| CoWSwapEthFlow::at(&web3, *contract))
+        .map(|contract| CoWSwapEthFlow::Instance::new(*contract, web3.alloy.clone()))
         .collect();
-    let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);
+    let refunder_account = Box::new(
+        args.refunder_pk
+            .parse::<PrivateKeySigner>()
+            .expect("couldn't parse refunder private key"),
+    );
     let mut refunder = RefundService::new(
         pg_pool,
         web3,

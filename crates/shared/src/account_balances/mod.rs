@@ -1,7 +1,12 @@
 use {
-    alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    crate::price_estimation::trade_verifier::balance_overrides::{
+        BalanceOverrideRequest,
+        BalanceOverriding,
+    },
+    alloy::sol_types::{SolCall, SolType, sol_data},
+    contracts::alloy::{GPv2Settlement, support::Balances},
+    ethcontract::state_overrides::StateOverrides,
+    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -20,6 +25,7 @@ pub struct Query {
     pub token: H160,
     pub source: SellTokenSource,
     pub interactions: Vec<InteractionData>,
+    pub balance_override: Option<BalanceOverrideRequest>,
 }
 
 impl Query {
@@ -29,6 +35,9 @@ impl Query {
             token: o.data.sell_token,
             source: o.data.sell_token_balance,
             interactions: o.interactions.pre.clone(),
+            // TODO eventually delete together with the balance
+            // checks in the autopilot
+            balance_override: None,
         }
     }
 }
@@ -47,7 +56,7 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner
@@ -57,7 +66,7 @@ pub trait BalanceFetching: Send + Sync {
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not
     // given the allowance to the allowance manager or if the token does not
-    // allow freely transferring amounts around for for example if it is paused
+    // allow freely transferring amounts around for example if it is paused
     // or takes a fee on transfer. If the node supports the trace_callMany we
     // can perform more extensive tests.
     async fn can_transfer(
@@ -83,25 +92,29 @@ pub fn cached(
     cached
 }
 
+#[derive(Clone)]
 pub struct BalanceSimulator {
-    settlement: contracts::GPv2Settlement,
-    balances: contracts::support::Balances,
+    settlement: GPv2Settlement::Instance,
+    balances: Balances::Instance,
     vault_relayer: H160,
     vault: H160,
+    balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
 impl BalanceSimulator {
     pub fn new(
-        settlement: contracts::GPv2Settlement,
-        balances: contracts::support::Balances,
+        settlement: GPv2Settlement::Instance,
+        balances: Balances::Instance,
         vault_relayer: H160,
         vault: Option<H160>,
+        balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         Self {
             settlement,
             vault_relayer,
             vault: vault.unwrap_or_default(),
             balances,
+            balance_overrider,
         }
     }
 
@@ -113,19 +126,24 @@ impl BalanceSimulator {
         self.vault
     }
 
-    pub async fn simulate<F, Fut>(
+    pub async fn simulate(
         &self,
         owner: H160,
         token: H160,
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
-        add_access_lists: F,
-    ) -> Result<Simulation, SimulationError>
-    where
-        F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
-        Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
-    {
+        balance_override: Option<BalanceOverrideRequest>,
+    ) -> Result<Simulation, SimulationError> {
+        let overrides: StateOverrides = match balance_override {
+            Some(overrides) => self
+                .balance_overrider
+                .state_override(overrides)
+                .await
+                .into_iter()
+                .collect(),
+            None => Default::default(),
+        };
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -133,29 +151,35 @@ impl BalanceSimulator {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances.balance(
-            (self.settlement.address(), self.vault_relayer, self.vault),
-            owner,
-            token,
-            amount.unwrap_or_default(),
-            Bytes(source.as_bytes()),
-            interactions
+        let balance_call = Balances::Balances::balanceCall {
+            contracts: Balances::Balances::Contracts {
+                settlement: *self.settlement.address(),
+                vaultRelayer: self.vault_relayer.into_alloy(),
+                vault: self.vault.into_alloy(),
+            },
+            trader: owner.into_alloy(),
+            token: token.into_alloy(),
+            amount: amount.unwrap_or_default().into_alloy(),
+            source: source.as_bytes().into(),
+            interactions: interactions
                 .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .map(|i| Balances::Balances::Interaction {
+                    target: i.target,
+                    value: i.value,
+                    callData: i.call_data.clone().into(),
+                })
                 .collect(),
-        );
+        };
 
-        let delegate_call = self
+        let response = self
             .settlement
-            .simulate_delegatecall(
-                self.balances.address(),
-                Bytes(balance_call.tx.data.unwrap_or_default().0),
-            )
-            .from(crate::SIMULATION_ACCOUNT.clone());
+            .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
+            .with_cloned_provider()
+            .state(overrides.into_alloy())
+            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy())
+            .call()
+            .await?;
 
-        let delegate_call = add_access_lists(delegate_call).await;
-
-        let response = delegate_call.call().await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(
                 sol_data::Uint<256>,
@@ -199,7 +223,7 @@ pub struct Simulation {
 #[derive(Debug, Error)]
 pub enum SimulationError {
     #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
+    Method(#[from] alloy::contract::Error),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
 }

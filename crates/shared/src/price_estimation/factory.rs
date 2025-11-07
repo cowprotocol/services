@@ -16,7 +16,6 @@ use {
         bad_token::BadTokenDetecting,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
         price_estimation::{
@@ -25,11 +24,16 @@ use {
             competition::PriceRanking,
             native::NativePriceEstimating,
         },
+        tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
+    contracts::alloy::WETH9,
     ethcontract::H160,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -104,27 +108,20 @@ impl<'a> PriceEstimatorFactory<'a> {
             .tenderly
             .get_api_instance(&components.http_factory, "price_estimation".to_owned())
             .unwrap()
-            .map(|t| TenderlyCodeSimulator::new(t, network.chain.id()));
+            .map(|t| Arc::new(TenderlyCodeSimulator::new(t, network.chain.id())));
 
-        let simulator: Arc<dyn CodeSimulating> = match tenderly {
-            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
-                web3.clone(),
-                tenderly,
-            )),
-            None => Arc::new(web3.clone()),
-        };
-
-        let balance_overrides = args.balance_overrides.init(simulator.clone());
+        let balance_overrides = args.balance_overrides.init(web3.clone());
 
         let verifier = TradeVerifier::new(
             web3,
-            simulator,
+            tenderly,
             components.code_fetcher.clone(),
             balance_overrides,
             network.block_stream.clone(),
             network.settlement,
             network.native_token,
             args.quote_inaccuracy_limit.clone(),
+            args.tokens_without_verification.iter().cloned().collect(),
         )
         .await?;
         Ok(Some(Arc::new(verifier)))
@@ -138,7 +135,8 @@ impl<'a> PriceEstimatorFactory<'a> {
                     Some(
                         self.network
                             .chain
-                            .default_amount_to_estimate_native_prices_with(),
+                            .default_amount_to_estimate_native_prices_with()
+                            .into_legacy(),
                     )
                 })
                 .context("No amount to estimate prices with set.")?,
@@ -191,7 +189,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     async fn create_native_estimator(
         &mut self,
         source: &NativePriceEstimatorSource,
-        weth: &contracts::WETH9,
+        weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
             NativePriceEstimatorSource::Driver(driver) => {
@@ -234,7 +232,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.args.coin_gecko.coin_gecko_url.clone(),
                     self.args.coin_gecko.coin_gecko_api_key.clone(),
                     &self.network.chain,
-                    weth.address(),
+                    weth.address().into_legacy(),
                     self.components.tokens.clone(),
                 )
                 .await?;
@@ -304,7 +302,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn sanitized(&self, estimator: Arc<dyn PriceEstimating>) -> SanitizedPriceEstimator {
         SanitizedPriceEstimator::new(
             estimator,
-            self.network.native_token,
+            self.network.native_token.into_alloy(),
             self.components.bad_token_detector.clone(),
         )
     }
@@ -347,7 +345,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
-        weth: contracts::WETH9,
+        weth: WETH9::Instance,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,

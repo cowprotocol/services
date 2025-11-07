@@ -1,7 +1,7 @@
 use {
     super::{Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
-    anyhow::{Context as _, Result, bail, ensure},
+    anyhow::{Context as _, Result, ensure},
     itertools::Either,
     model::{
         interaction::InteractionData,
@@ -362,6 +362,7 @@ impl SettlementEncoder {
         self.execution_plan.push((interaction, internalizable));
     }
 
+    #[cfg(test)]
     pub(crate) fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
         for existing_unwrap in self.unwraps.iter_mut() {
             if existing_unwrap.merge(&unwrap).is_ok() {
@@ -374,6 +375,7 @@ impl SettlementEncoder {
         self.unwraps.push(unwrap);
     }
 
+    #[cfg(test)]
     pub(crate) fn add_token_equivalency(&mut self, token_a: H160, token_b: H160) -> Result<()> {
         let (new_token, existing_price) = match (
             self.clearing_prices.get(&token_a),
@@ -388,7 +390,7 @@ impl SettlementEncoder {
                 // have the same price (i.e. are equivalent).
                 return Ok(());
             }
-            (None, None) => bail!("tokens not part of solution for equivalency"),
+            (None, None) => anyhow::bail!("tokens not part of solution for equivalency"),
             (Some(price_a), None) => (token_b, *price_a),
             (None, Some(price_b)) => (token_a, *price_b),
         };
@@ -581,8 +583,9 @@ pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()
 pub mod tests {
     use {
         super::*,
-        contracts::{WETH9, dummy_contract},
-        ethcontract::Bytes,
+        alloy::primitives::Address,
+        contracts::alloy::WETH9,
+        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
         shared::interaction::{EncodedInteraction, Interaction},
@@ -624,16 +627,16 @@ pub mod tests {
 
     #[test]
     fn settlement_merges_unwraps_for_same_token() {
-        let weth = dummy_contract!(WETH9, [0x42; 20]);
+        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().alloy);
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
-            amount: 1.into(),
+            amount: alloy::primitives::U256::ONE,
         });
         encoder.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
-            amount: 2.into(),
+            amount: alloy::primitives::U256::from(2),
         });
 
         assert_eq!(
@@ -642,7 +645,7 @@ pub mod tests {
                 .interactions[1],
             [UnwrapWethInteraction {
                 weth,
-                amount: 3.into(),
+                amount: alloy::primitives::U256::from(3),
             }
             .encode()],
         );
@@ -737,30 +740,37 @@ pub mod tests {
     fn settlement_encoder_appends_unwraps_for_different_tokens() {
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: 1.into(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: alloy::primitives::U256::ONE,
         });
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x02; 20]),
-            amount: 2.into(),
+            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().alloy),
+            amount: alloy::primitives::U256::from(2),
         });
 
         assert_eq!(
             encoder
                 .unwraps
                 .iter()
-                .map(|unwrap| (unwrap.weth.address().0, unwrap.amount.as_u64()))
+                .map(|unwrap| (*unwrap.weth.address(), unwrap.amount))
                 .collect::<Vec<_>>(),
-            vec![([0x01; 20], 1), ([0x02; 20], 2)],
+            vec![
+                ([0x01; 20].into(), alloy::primitives::U256::ONE),
+                ([0x02; 20].into(), alloy::primitives::U256::from(2))
+            ],
         );
     }
 
     #[test]
     fn settlement_unwraps_after_execution_plan() {
-        let interaction: EncodedInteraction = (H160([0x01; 20]), 0.into(), Bytes(Vec::new()));
+        let interaction: EncodedInteraction = (
+            Address::new([0x01; 20]),
+            alloy::primitives::U256::ZERO,
+            alloy::primitives::Bytes::default(),
+        );
         let unwrap = UnwrapWethInteraction {
-            weth: dummy_contract!(WETH9, [0x01; 20]),
-            amount: 1.into(),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            amount: alloy::primitives::U256::ONE,
         };
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
@@ -856,13 +866,13 @@ pub mod tests {
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder = SettlementEncoder::new(prices);
         let i1 = InteractionData {
-            target: H160::from_low_u64_be(12),
-            value: 321.into(),
+            target: Address::from_slice(&[12; 20]),
+            value: alloy::primitives::U256::from(321),
             call_data: vec![1, 2, 3, 4],
         };
         let i2 = InteractionData {
-            target: H160::from_low_u64_be(42),
-            value: 1212.into(),
+            target: Address::from_slice(&[42; 20]),
+            value: alloy::primitives::U256::from(1212),
             call_data: vec![4, 3, 2, 1],
         };
         encoder
@@ -913,8 +923,8 @@ pub mod tests {
         assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
         assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
 
-        let i1 = (i1.target, i1.value, Bytes(i1.call_data));
-        let i2 = (i2.target, i2.value, Bytes(i2.call_data));
+        let i1 = (i1.target, i1.value, i1.call_data.into());
+        let i2 = (i2.target, i2.value, i2.call_data.into());
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
             encoded.interactions,
@@ -937,10 +947,10 @@ pub mod tests {
             .build();
         encoder.add_trade(order_1_3, 11.into(), 0.into()).unwrap();
 
-        let weth = dummy_contract!(WETH9, token(2));
+        let weth = WETH9::Instance::new(token(2).into_alloy(), ethrpc::mock::web3().alloy);
         encoder.add_unwrap(UnwrapWethInteraction {
             weth,
-            amount: 12.into(),
+            amount: alloy::primitives::U256::from(12),
         });
 
         let encoded = encoder.finish(InternalizationStrategy::SkipInternalizableInteraction);
@@ -968,7 +978,11 @@ pub mod tests {
     pub struct TestInteraction;
     impl Interaction for TestInteraction {
         fn encode(&self) -> EncodedInteraction {
-            (H160::zero(), U256::zero(), Bytes::default())
+            (
+                Address::ZERO,
+                alloy::primitives::U256::ZERO,
+                alloy::primitives::Bytes::default(),
+            )
         }
     }
 

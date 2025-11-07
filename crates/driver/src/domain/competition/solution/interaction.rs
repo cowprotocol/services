@@ -9,7 +9,7 @@ use {
 /// Interaction with a smart contract which is needed to execute this solution
 /// on the blockchain.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum Interaction {
     Custom(Custom),
     Liquidity(Liquidity),
@@ -56,7 +56,7 @@ impl Interaction {
                     eth::Allowance {
                         token: interaction.input.token,
                         spender: address.into(),
-                        amount: eth::U256::max_value(),
+                        amount: alloy::primitives::U256::MAX,
                     }
                     .into(),
                 ]

@@ -9,11 +9,12 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
+    alloy::primitives::Address,
     anyhow::Result,
     arc_swap::ArcSwap,
-    contracts::{GPv2Settlement, alloy::IZeroex},
+    contracts::alloy::IZeroex,
     ethrpc::{
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{CurrentBlockWatcher, into_stream},
     },
     futures::StreamExt,
@@ -48,16 +49,15 @@ impl ZeroExLiquidity {
         web3: Web3,
         api: Arc<dyn ZeroExApi>,
         zeroex: IZeroex::Instance,
-        gpv2: GPv2Settlement,
+        gpv2: Address,
         blocks_stream: CurrentBlockWatcher,
     ) -> Self {
-        let gpv2_address = gpv2.address();
-        let allowance_manager = AllowanceManager::new(web3, gpv2_address);
+        let allowance_manager = AllowanceManager::new(web3, gpv2.into_legacy());
         let orderbook_cache: Arc<OrderbookCache> = Default::default();
         let cache = orderbook_cache.clone();
-        tokio::spawn(async move {
-            Self::run_orderbook_fetching(api, blocks_stream, cache, gpv2_address).await
-        });
+        tokio::spawn(
+            async move { Self::run_orderbook_fetching(api, blocks_stream, cache, gpv2).await },
+        );
 
         Self {
             zeroex: Arc::new(zeroex),
@@ -79,7 +79,7 @@ impl ZeroExLiquidity {
         }
 
         let limit_order = LimitOrder {
-            id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(hex::encode(
+            id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(const_hex::encode(
                 &record.metadata().order_hash,
             ))),
             sell_token: record.order().maker_token,
@@ -103,7 +103,7 @@ impl ZeroExLiquidity {
         api: Arc<dyn ZeroExApi>,
         blocks_stream: CurrentBlockWatcher,
         orderbook_cache: Arc<OrderbookCache>,
-        gpv2_address: H160,
+        gpv2_address: Address,
     ) {
         let mut block_stream = into_stream(blocks_stream);
         while block_stream.next().await.is_some() {
@@ -112,7 +112,7 @@ impl ZeroExLiquidity {
                 OrdersQuery::default(),
                 // orders fillable only by our settlement contract
                 OrdersQuery {
-                    sender: Some(gpv2_address),
+                    sender: Some(gpv2_address.into_legacy()),
                     ..Default::default()
                 },
             ];
@@ -166,7 +166,11 @@ fn group_by_token_pair(
 ) -> HashMap<(H160, H160), Vec<OrderRecord>> {
     orders
         .filter_map(|record| {
-            TokenPair::new(record.order().taker_token, record.order().maker_token).map(|_| {
+            TokenPair::new(
+                record.order().taker_token.into_alloy(),
+                record.order().maker_token.into_alloy(),
+            )
+            .map(|_| {
                 (
                     (record.order().taker_token, record.order().maker_token),
                     record,
@@ -186,7 +190,7 @@ fn get_useful_orders(
     for orders in order_buckets
         .iter()
         .filter_map(|((token_a, token_b), record)| {
-            TokenPair::new(*token_a, *token_b)
+            TokenPair::new(token_a.into_alloy(), token_b.into_alloy())
                 .is_some_and(|pair| relevant_pairs.contains(&pair))
                 .then_some(record)
         })
@@ -266,7 +270,8 @@ pub mod tests {
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
-        let fake_order = [TokenPair::new(token_a, token_b).unwrap()].into_iter();
+        let fake_order =
+            [TokenPair::new(token_a.into_alloy(), token_b.into_alloy()).unwrap()].into_iter();
         base_tokens.relevant_pairs(fake_order)
     }
 

@@ -1,18 +1,19 @@
 # CoW Playground
 
 The ultimate goal is to have a single command that will spin up a local CoW network, with all the components needed to
-run the CoW Protocol stack 🚀
+run the CoW Protocol stack. The stack will also auto-recompile and restart any services for a live editing experience 🚀
 
 ## Quickstart
 
 1. Clone this repo.
-2. It is expected that this is run from a `devcontainer` in VSCode, or a similar environment.
-3. Configure the stack by editing the `.env.example` file and renaming it to `.env`. **NOTE**: RPC demand is very high,
+2. Configure the stack by editing the `.env.example` file and renaming it to `.env`. **NOTE**: RPC demand is very high,
    for optimal performance, use a local node. The stack was tested with `reth` on `mainnet`.
-4. Run `docker-compose -f docker-compose.fork.yml up -d`.
-5. Configure Rabby Wallet (or see [Metamask specific notes](#metamask)) to use the RPC endpoint at
+3. Run `docker-compose -f docker-compose.fork.yml up --build`.
+    * If you're *not* using Linux, we recommend you use the `docker-compose.non-interactive.yml` definition instead;
+      due to how mounts are done outside of Linux, running cargo-watch leads to [very slow buids](https://github.com/watchexec/cargo-watch#docker-running-cargo-commands-over-a-mount-is-very-slow).
+4. Configure Rabby Wallet (or see [Metamask specific notes](#metamask)) to use the RPC endpoint at
    `http://localhost:8545` (for `mainnet`, or your network of choice).
-6. Configure your wallet to use a test account (any of the first 10 accounts from the test mnemonic will do).
+5. Configure your wallet to use a test account (any of the first 10 accounts from the test mnemonic will do).
 
 **NOTE**: By default, `anvil` will set the balances of the first 10 accounts to 10000 ETH. The wallet configuration is:
 
@@ -40,6 +41,8 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 > Initially you will start with 10000 ETH, to run proper transaction you will need to wrap some ETH first.
 > The EthFlow is not configured by default, the next section explains how to set it up.
 > You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see how the Protocol interacts.
+> If you make any changes to the files in your repo directory, services will automatically be recompiled and restarted.
+> The CoW Explorer is avialable at http://localhost:8001 to see more information about transaction status
 
 ### Resetting the playground
 
@@ -100,20 +103,22 @@ await window.ethereum.request({
 
 ## Components
 
-| **Component** | **Container name** | **Host port** | **Container port** | **Stack**  |
-|---------------|--------------------|---------------|--------------------|------------|
-| Autopilot     | autopilot          | N/A           | N/A                | Common     |
-| Driver        | driver             | N/A           | 80                 | Common     |
-| Baseline      | baseline           | N/A           | 80                 | Common     |
-| CoW Swap      | cowswap            | 8000          | 80                 | Local/Fork |
-| CoW Explorer  | cowexplorer        | 8001          | 80                 | Local/Fork |
-| Orderbook     | orderbook          | 8080          | 80                 | Local/Fork |
-| RPC           | chain              | 8545          | 8545               | Local/Fork |
-| Postgres      | postgres           | 5432          | 5432               | Local/Fork |
-| Adminer       | adminer            | 8082          | 8080               | Local/Fork |
-| Grafana       | grafana            | 3000          | 3000               | Local/Fork |
+| **Component** | **Container name** | **Host port** | **Container port** | **Tokio Console Port** | **Stack**  |
+|---------------|--------------------|---------------|--------------------|------------------------|------------|
+| Autopilot     | autopilot          | N/A           | N/A                | 6670                   | Local/Fork |
+| Driver        | driver             | N/A           | 80                 | 6671                   | Local/Fork |
+| Baseline      | baseline           | N/A           | 80                 | 6672                   | Local/Fork |
+| CoW Swap      | cowswap            | 8000          | 80                 | N/A                    | Local/Fork |
+| CoW Explorer  | cowexplorer        | 8001          | 80                 | N/A                    | Local/Fork |
+| Orderbook     | orderbook          | 8080          | 80                 | 6669                   | Local/Fork |
+| RPC           | chain              | 8545          | 8545               | N/A                    | Local/Fork |
+| Postgres      | postgres           | 5432          | 5432               | N/A                    | Local/Fork |
+| Adminer       | adminer            | 8082          | 8080               | N/A                    | Local/Fork |
+| Grafana       | grafana            | 3000          | 3000               | N/A                    | Local/Fork |
 
 **NOTE**: Currently only **FORK** mode is supported.
+
+Some services support to be inspected with [tokio-console](https://github.com/tokio-rs/console). For that simply install `tokio-console` and run `tokio-console http://localhost:<PORT>`. The relevant port numbers can be found in the table above.
 
 ## Modes
 

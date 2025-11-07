@@ -26,13 +26,14 @@ use {
         swap::fixed_point::Bfp,
     },
     crate::{
-        ethrpc::{Web3, Web3Transport},
+        ethrpc::Web3,
         recent_block_cache::{Block, CacheConfig},
         token_info::TokenInfoFetching,
     },
+    alloy::providers::DynProvider,
     anyhow::{Context, Result},
     clap::ValueEnum,
-    contracts::{
+    contracts::alloy::{
         BalancerV2ComposableStablePoolFactory,
         BalancerV2ComposableStablePoolFactoryV3,
         BalancerV2ComposableStablePoolFactoryV4,
@@ -46,13 +47,14 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
+        InstanceExt,
     },
-    ethcontract::{BlockId, H160, H256, Instance, dyns::DynInstance},
+    ethcontract::{BlockId, H160, H256},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashSet},
         sync::Arc,
     },
     tracing::instrument,
@@ -148,7 +150,7 @@ impl FetchedBalancerPools {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalancerPoolFetching: Send + Sync {
     async fn fetch(
@@ -183,6 +185,63 @@ pub enum BalancerFactoryKind {
     ComposableStableV4,
     ComposableStableV5,
     ComposableStableV6,
+}
+
+pub enum BalancerFactoryInstance {
+    Weighted(BalancerV2WeightedPoolFactory::Instance),
+    WeightedV3(BalancerV2WeightedPoolFactoryV3::Instance),
+    WeightedV4(BalancerV2WeightedPoolFactoryV4::Instance),
+    Weighted2Token(BalancerV2WeightedPool2TokensFactory::Instance),
+    StableV2(BalancerV2StablePoolFactoryV2::Instance),
+    LiquidityBootstrapping(BalancerV2LiquidityBootstrappingPoolFactory::Instance),
+    NoProtocolFeeLiquidityBootstrapping(
+        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::Instance,
+    ),
+    ComposableStable(BalancerV2ComposableStablePoolFactory::Instance),
+    ComposableStableV3(BalancerV2ComposableStablePoolFactoryV3::Instance),
+    ComposableStableV4(BalancerV2ComposableStablePoolFactoryV4::Instance),
+    ComposableStableV5(BalancerV2ComposableStablePoolFactoryV5::Instance),
+    ComposableStableV6(BalancerV2ComposableStablePoolFactoryV6::Instance),
+}
+
+impl BalancerFactoryInstance {
+    pub fn address(&self) -> &alloy::primitives::Address {
+        match self {
+            BalancerFactoryInstance::Weighted(instance) => instance.address(),
+            BalancerFactoryInstance::WeightedV3(instance) => instance.address(),
+            BalancerFactoryInstance::WeightedV4(instance) => instance.address(),
+            BalancerFactoryInstance::Weighted2Token(instance) => instance.address(),
+            BalancerFactoryInstance::StableV2(instance) => instance.address(),
+            BalancerFactoryInstance::LiquidityBootstrapping(instance) => instance.address(),
+            BalancerFactoryInstance::NoProtocolFeeLiquidityBootstrapping(instance) => {
+                instance.address()
+            }
+            BalancerFactoryInstance::ComposableStable(instance) => instance.address(),
+            BalancerFactoryInstance::ComposableStableV3(instance) => instance.address(),
+            BalancerFactoryInstance::ComposableStableV4(instance) => instance.address(),
+            BalancerFactoryInstance::ComposableStableV5(instance) => instance.address(),
+            BalancerFactoryInstance::ComposableStableV6(instance) => instance.address(),
+        }
+    }
+
+    pub fn provider(&self) -> &DynProvider {
+        match self {
+            BalancerFactoryInstance::Weighted(instance) => instance.provider(),
+            BalancerFactoryInstance::WeightedV3(instance) => instance.provider(),
+            BalancerFactoryInstance::WeightedV4(instance) => instance.provider(),
+            BalancerFactoryInstance::Weighted2Token(instance) => instance.provider(),
+            BalancerFactoryInstance::StableV2(instance) => instance.provider(),
+            BalancerFactoryInstance::LiquidityBootstrapping(instance) => instance.provider(),
+            BalancerFactoryInstance::NoProtocolFeeLiquidityBootstrapping(instance) => {
+                instance.provider()
+            }
+            BalancerFactoryInstance::ComposableStable(instance) => instance.provider(),
+            BalancerFactoryInstance::ComposableStableV3(instance) => instance.provider(),
+            BalancerFactoryInstance::ComposableStableV4(instance) => instance.provider(),
+            BalancerFactoryInstance::ComposableStableV5(instance) => instance.provider(),
+            BalancerFactoryInstance::ComposableStableV6(instance) => instance.provider(),
+        }
+    }
 }
 
 impl BalancerFactoryKind {
@@ -225,75 +284,90 @@ impl BalancerFactoryKind {
 
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
-    pub vault: BalancerV2Vault,
-    pub factories: Vec<(BalancerFactoryKind, DynInstance)>,
+    pub vault: BalancerV2Vault::Instance,
+    pub factories: Vec<BalancerFactoryInstance>,
 }
 
 impl BalancerContracts {
     pub async fn try_new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
-        let vault = BalancerV2Vault::deployed(&web3)
+        let vault = BalancerV2Vault::Instance::deployed(&web3.alloy)
             .await
             .context("Cannot retrieve balancer vault")?;
 
         macro_rules! instance {
             ($factory:ident) => {{
-                $factory::deployed(&web3)
+                $factory::Instance::deployed(&web3.alloy)
                     .await
                     .context(format!(
                         "Cannot retrieve Balancer factory {}",
                         stringify!($factory)
                     ))?
-                    .raw_instance()
-                    .clone()
             }};
         }
 
-        let mut factories = HashMap::new();
+        let mut factories = Vec::new();
         for kind in factory_kinds {
             let instance = match &kind {
-                BalancerFactoryKind::Weighted => instance!(BalancerV2WeightedPoolFactory),
-                BalancerFactoryKind::WeightedV3 => instance!(BalancerV2WeightedPoolFactoryV3),
-                BalancerFactoryKind::WeightedV4 => instance!(BalancerV2WeightedPoolFactoryV4),
-                BalancerFactoryKind::Weighted2Token => {
-                    instance!(BalancerV2WeightedPool2TokensFactory)
+                BalancerFactoryKind::Weighted => {
+                    BalancerFactoryInstance::Weighted(instance!(BalancerV2WeightedPoolFactory))
                 }
-                BalancerFactoryKind::StableV2 => instance!(BalancerV2StablePoolFactoryV2),
+                BalancerFactoryKind::WeightedV3 => {
+                    BalancerFactoryInstance::WeightedV3(instance!(BalancerV2WeightedPoolFactoryV3))
+                }
+                BalancerFactoryKind::WeightedV4 => {
+                    BalancerFactoryInstance::WeightedV4(instance!(BalancerV2WeightedPoolFactoryV4))
+                }
+                BalancerFactoryKind::Weighted2Token => BalancerFactoryInstance::Weighted2Token(
+                    instance!(BalancerV2WeightedPool2TokensFactory),
+                ),
+                BalancerFactoryKind::StableV2 => {
+                    BalancerFactoryInstance::StableV2(instance!(BalancerV2StablePoolFactoryV2))
+                }
                 BalancerFactoryKind::LiquidityBootstrapping => {
-                    instance!(BalancerV2LiquidityBootstrappingPoolFactory)
+                    BalancerFactoryInstance::LiquidityBootstrapping(instance!(
+                        BalancerV2LiquidityBootstrappingPoolFactory
+                    ))
                 }
                 BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
-                    instance!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory)
+                    BalancerFactoryInstance::NoProtocolFeeLiquidityBootstrapping(instance!(
+                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory
+                    ))
                 }
-                BalancerFactoryKind::ComposableStable => {
-                    instance!(BalancerV2ComposableStablePoolFactory)
-                }
+                BalancerFactoryKind::ComposableStable => BalancerFactoryInstance::ComposableStable(
+                    instance!(BalancerV2ComposableStablePoolFactory),
+                ),
                 BalancerFactoryKind::ComposableStableV3 => {
-                    instance!(BalancerV2ComposableStablePoolFactoryV3)
+                    BalancerFactoryInstance::ComposableStableV3(instance!(
+                        BalancerV2ComposableStablePoolFactoryV3
+                    ))
                 }
                 BalancerFactoryKind::ComposableStableV4 => {
-                    instance!(BalancerV2ComposableStablePoolFactoryV4)
+                    BalancerFactoryInstance::ComposableStableV4(instance!(
+                        BalancerV2ComposableStablePoolFactoryV4
+                    ))
                 }
                 BalancerFactoryKind::ComposableStableV5 => {
-                    instance!(BalancerV2ComposableStablePoolFactoryV5)
+                    BalancerFactoryInstance::ComposableStableV5(instance!(
+                        BalancerV2ComposableStablePoolFactoryV5
+                    ))
                 }
                 BalancerFactoryKind::ComposableStableV6 => {
-                    instance!(BalancerV2ComposableStablePoolFactoryV6)
+                    BalancerFactoryInstance::ComposableStableV6(instance!(
+                        BalancerV2ComposableStablePoolFactoryV6
+                    ))
                 }
             };
 
-            factories.insert(kind, instance);
+            factories.push(instance);
         }
 
-        Ok(Self {
-            vault,
-            factories: factories.into_iter().collect(),
-        })
+        Ok(Self { vault, factories })
     }
 }
 
 impl BalancerPoolFetcher {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn new(
         subgraph_url: &Url,
         block_retriever: Arc<dyn BlockRetrieving>,
@@ -395,18 +469,16 @@ async fn create_aggregate_pool_fetcher(
 
     macro_rules! registry {
         ($factory:ident, $instance:expr_2021) => {{
+            use ethrpc::alloy::conversions::IntoLegacy;
+
             create_internal_pool_fetcher(
                 contracts.vault.clone(),
-                $factory::with_deployment_info(
-                    &$instance.web3(),
-                    $instance.address(),
-                    $instance.deployment_information(),
-                ),
+                $factory::Instance::new(*$instance.address(), $instance.provider().clone()),
                 block_retriever.clone(),
                 token_infos.clone(),
                 $instance,
                 registered_pools_by_factory
-                    .remove(&$instance.address())
+                    .remove(&(*$instance.address()).into_legacy())
                     .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
                 fetched_block_hash,
             )?
@@ -414,26 +486,42 @@ async fn create_aggregate_pool_fetcher(
     }
 
     let mut fetchers = Vec::new();
-    for (kind, instance) in &contracts.factories {
-        let registry = match kind {
-            BalancerFactoryKind::Weighted | BalancerFactoryKind::Weighted2Token => {
+    for instance in &contracts.factories {
+        let registry = match &instance {
+            BalancerFactoryInstance::Weighted(_) => {
                 registry!(BalancerV2WeightedPoolFactory, instance)
             }
-            BalancerFactoryKind::WeightedV3 | BalancerFactoryKind::WeightedV4 => {
+            BalancerFactoryInstance::Weighted2Token(_) => {
+                registry!(BalancerV2WeightedPoolFactory, instance)
+            }
+            BalancerFactoryInstance::WeightedV3(_) => {
                 registry!(BalancerV2WeightedPoolFactoryV3, instance)
             }
-            BalancerFactoryKind::StableV2 => {
+            BalancerFactoryInstance::WeightedV4(_) => {
+                registry!(BalancerV2WeightedPoolFactoryV3, instance)
+            }
+            BalancerFactoryInstance::StableV2(_) => {
                 registry!(BalancerV2StablePoolFactoryV2, instance)
             }
-            BalancerFactoryKind::LiquidityBootstrapping
-            | BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
+            BalancerFactoryInstance::LiquidityBootstrapping(_) => {
                 registry!(BalancerV2LiquidityBootstrappingPoolFactory, instance)
             }
-            BalancerFactoryKind::ComposableStable
-            | BalancerFactoryKind::ComposableStableV3
-            | BalancerFactoryKind::ComposableStableV4
-            | BalancerFactoryKind::ComposableStableV5
-            | BalancerFactoryKind::ComposableStableV6 => {
+            BalancerFactoryInstance::NoProtocolFeeLiquidityBootstrapping(_) => {
+                registry!(BalancerV2LiquidityBootstrappingPoolFactory, instance)
+            }
+            BalancerFactoryInstance::ComposableStable(_) => {
+                registry!(BalancerV2ComposableStablePoolFactory, instance)
+            }
+            BalancerFactoryInstance::ComposableStableV3(_) => {
+                registry!(BalancerV2ComposableStablePoolFactory, instance)
+            }
+            BalancerFactoryInstance::ComposableStableV4(_) => {
+                registry!(BalancerV2ComposableStablePoolFactory, instance)
+            }
+            BalancerFactoryInstance::ComposableStableV5(_) => {
+                registry!(BalancerV2ComposableStablePoolFactory, instance)
+            }
+            BalancerFactoryInstance::ComposableStableV6(_) => {
                 registry!(BalancerV2ComposableStablePoolFactory, instance)
             }
         };
@@ -463,11 +551,11 @@ async fn create_aggregate_pool_fetcher(
 /// Helper method for creating a boxed `InternalPoolFetching` instance for the
 /// specified factory and parameters.
 fn create_internal_pool_fetcher<Factory>(
-    vault: BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     factory: Factory,
     block_retriever: Arc<dyn BlockRetrieving>,
     token_infos: Arc<dyn TokenInfoFetching>,
-    factory_instance: &Instance<Web3Transport>,
+    factory_instance: &BalancerFactoryInstance,
     registered_pools: RegisteredPools,
     fetched_block_hash: H256,
 ) -> Result<Box<dyn InternalPoolFetching>>

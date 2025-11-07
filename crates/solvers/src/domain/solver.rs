@@ -18,9 +18,11 @@ use {
         },
         infra::metrics,
     },
+    contracts::alloy::InstanceExt,
     ethereum_types::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
+    tracing::Instrument,
 };
 
 pub struct Solver(Arc<Inner>);
@@ -70,7 +72,7 @@ struct Inner {
     native_token_price_estimation_amount: eth::U256,
 
     /// If provided, the solver can rely on Uniswap V3 LPs
-    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
+    uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
 }
 
 impl Solver {
@@ -79,7 +81,7 @@ impl Solver {
         let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
                 let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
-                contracts::UniswapV3QuoterV2::deployed(&web3)
+                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.alloy)
                     .await
                     .map(Arc::new)
                     .inspect_err(|err| {
@@ -121,8 +123,7 @@ impl Solver {
         let inner = self.0.clone();
         let span = tracing::Span::current();
         let background_work = async move {
-            let _entered = span.enter();
-            inner.solve(auction, sender).await;
+            inner.solve(auction, sender).instrument(span).await;
         };
 
         let mut handle = tokio::spawn(background_work);
@@ -190,7 +191,8 @@ impl Inner {
                 }
             };
 
-            let compute_solution = async |request| -> Option<Solution> {
+            let compute_solution = async |request: Request| -> Option<Solution> {
+                let wrappers = request.wrappers.clone();
                 let route = boundary_solver.route(request, self.max_hops).await?;
                 let interactions = route
                     .segments
@@ -229,6 +231,7 @@ impl Inner {
                         output,
                         interactions,
                         gas,
+                        wrappers,
                     }
                     .into_solution(fee)?
                     .with_id(solution::Id(i as u64))
@@ -250,7 +253,11 @@ impl Inner {
 
     fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> + use<> {
         let order::Order {
-            sell, buy, side, ..
+            sell,
+            buy,
+            side,
+            wrappers,
+            ..
         } = order.clone();
 
         let n = if order.partially_fillable {
@@ -272,6 +279,7 @@ impl Inner {
                         amount: buy.amount / divisor,
                     },
                     side,
+                    wrappers: wrappers.clone(),
                 }
             })
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
@@ -301,6 +309,7 @@ impl Inner {
             sell,
             buy,
             side: order::Side::Buy,
+            wrappers: order.wrappers.clone(),
         }
     }
 }
@@ -322,6 +331,7 @@ pub struct Request {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: order::Side,
+    pub wrappers: Vec<order::WrapperCall>,
 }
 
 /// A trading route.

@@ -4,11 +4,13 @@ pub mod database;
 pub mod domain;
 pub mod event_updater;
 pub mod infra;
+mod leader_lock_tracker;
 mod maintenance;
 pub mod periodic_db_cleanup;
 pub mod run;
 pub mod run_loop;
 pub mod shadow;
+pub mod shutdown_controller;
 pub mod solvable_orders;
 pub mod util;
 

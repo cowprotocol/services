@@ -20,13 +20,14 @@ use {
         event_handling::EventStoring,
         sources::balancer_v2::pools::{FactoryIndexing, PoolIndexing, common},
     },
+    alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    contracts::balancer_v2_base_pool_factory::{
-        Event as BasePoolFactoryEvent,
-        event_data::PoolCreated,
+    contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
+        BalancerV2BasePoolFactoryEvents,
+        PoolCreated,
     },
-    ethcontract::{Event, H160, H256},
-    ethrpc::block_stream::RangeInclusive,
+    ethcontract::{H160, H256},
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::RangeInclusive},
     model::TokenPair,
     std::{
         cmp,
@@ -83,8 +84,8 @@ where
     ) -> impl Iterator<Item = H256> + '_ + use<'_, Factory> {
         let (token0, token1) = token_pair.get();
 
-        let pools0 = self.pools_by_token.get(&token0);
-        let pools1 = self.pools_by_token.get(&token1);
+        let pools0 = self.pools_by_token.get(&token0.into_legacy());
+        let pools1 = self.pools_by_token.get(&token1.into_legacy());
 
         pools0
             .zip(pools1)
@@ -134,7 +135,7 @@ where
     ) -> Result<()> {
         let pool = self
             .pool_info_fetcher
-            .fetch_pool_info(pool_creation.pool, block_created)
+            .fetch_pool_info(pool_creation.pool.into_legacy(), block_created)
             .await?;
         self.insert_pool(pool);
 
@@ -183,13 +184,13 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Factory> EventStoring<BasePoolFactoryEvent> for PoolStorage<Factory>
+impl<Factory> EventStoring<(BalancerV2BasePoolFactoryEvents, Log)> for PoolStorage<Factory>
 where
     Factory: FactoryIndexing,
 {
     async fn replace_events(
         &mut self,
-        events: Vec<Event<BasePoolFactoryEvent>>,
+        events: Vec<(BalancerV2BasePoolFactoryEvents, Log)>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         tracing::debug!("replacing {} events for block {:?}", events.len(), range);
@@ -198,15 +199,17 @@ where
         self.append_events(events).await
     }
 
-    async fn append_events(&mut self, events: Vec<Event<BasePoolFactoryEvent>>) -> Result<()> {
+    async fn append_events(
+        &mut self,
+        events: Vec<(BalancerV2BasePoolFactoryEvents, Log)>,
+    ) -> Result<()> {
         tracing::debug!("inserting {} events", events.len());
 
-        for event in events {
-            let block_created = event.meta.context("event missing metadata")?.block_number;
-            let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
+        for (event, log) in events {
+            let BalancerV2BasePoolFactoryEvents::PoolCreated(event) = event;
+            let block_created = log.block_number.context("event missing block number")?;
 
-            self.index_pool_creation(pool_created, block_created)
-                .await?;
+            self.index_pool_creation(event, block_created).await?;
         }
 
         Ok(())
@@ -230,6 +233,7 @@ mod tests {
             pools::{MockFactoryIndexing, common::MockPoolInfoFetching, weighted},
             swap::fixed_point::Bfp,
         },
+        ethrpc::alloy::conversions::IntoAlloy,
         maplit::{hashmap, hashset},
         mockall::predicate::eq,
     };
@@ -256,7 +260,7 @@ mod tests {
             .map(|i| {
                 (
                     PoolCreated {
-                        pool: pool_addresses[i],
+                        pool: pool_addresses[i].into_alloy(),
                     },
                     i as u64,
                 )
@@ -438,7 +442,7 @@ mod tests {
             weights: vec![Bfp::from_wei(1337.into())],
         };
         let new_creation = PoolCreated {
-            pool: new_pool.common.address,
+            pool: new_pool.common.address.into_alloy(),
         };
 
         mock_pool_fetcher
@@ -530,7 +534,9 @@ mod tests {
         let n = 3;
         let (pool_ids, pool_addresses, tokens, _, _) = pool_init_data(0, n);
         let token_pairs: Vec<TokenPair> = (0..n)
-            .map(|i| TokenPair::new(tokens[i], tokens[(i + 1) % n]).unwrap())
+            .map(|i| {
+                TokenPair::new(tokens[i].into_alloy(), tokens[(i + 1) % n].into_alloy()).unwrap()
+            })
             .collect();
 
         let mut registry = PoolStorage::new(

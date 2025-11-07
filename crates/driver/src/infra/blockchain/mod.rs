@@ -1,12 +1,19 @@
 use {
-    self::contracts::ContractAt,
     crate::{boundary, domain::eth},
+    alloy::providers::Provider,
     chain::Chain,
-    ethcontract::errors::ExecutionError,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    shared::account_balances::{BalanceSimulator, SimulationError},
+    ethcontract::{U256, errors::ExecutionError},
+    ethrpc::{Web3, alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    shared::{
+        account_balances::{BalanceSimulator, SimulationError},
+        price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrides,
+            BalanceOverriding,
+        },
+    },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
+    tracing::{Level, instrument},
     url::Url,
     web3::{Transport, types::CallRequest},
 };
@@ -38,7 +45,7 @@ impl Rpc {
             args.max_batch_size,
             args.max_concurrent_requests,
         );
-        let chain = Chain::try_from(web3.eth().chain_id().await?)?;
+        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)?;
 
         Ok(Self { web3, chain, args })
     }
@@ -58,6 +65,8 @@ impl Rpc {
 pub enum RpcError {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("alloy transport error: {0:?}")]
+    Alloy(#[from] alloy::transports::TransportError),
     #[error("unsupported chain")]
     UnsupportedChain(#[from] chain::ChainIdNotSupported),
 }
@@ -75,6 +84,8 @@ struct Inner {
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
+    balance_overrider: Arc<dyn BalanceOverriding>,
+    tx_gas_limit: U256,
 }
 
 impl Ethereum {
@@ -88,35 +99,26 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
-        archive_node_url: Option<&Url>,
+        tx_gas_limit: U256,
+        current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
 
-        let current_block_stream = ethrpc::block_stream::current_block_stream(
-            args.url.clone(),
-            std::time::Duration::from_millis(500),
-        )
-        .await
-        .expect("couldn't initialize current block stream");
+        let current_block_stream = current_block_args
+            .stream(args.url.clone(), web3.alloy.clone())
+            .await
+            .expect("couldn't initialize current block stream");
 
-        let contracts = Contracts::new(
-            &web3,
-            chain,
-            addresses,
-            current_block_stream.clone(),
-            archive_node_url.map(|url| RpcArgs {
-                url: url.clone(),
-                max_batch_size: args.max_batch_size,
-                max_concurrent_requests: args.max_concurrent_requests,
-            }),
-        )
-        .await
-        .expect("could not initialize important smart contracts");
+        let contracts = Contracts::new(&web3, chain, addresses)
+            .await
+            .expect("could not initialize important smart contracts");
+        let balance_overrider = Arc::new(BalanceOverrides::new(web3.clone()));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             contracts.vault_relayer().0,
-            Some(contracts.vault().address()),
+            Some(contracts.vault().address().into_legacy()),
+            balance_overrider.clone(),
         );
 
         Self {
@@ -126,6 +128,8 @@ impl Ethereum {
                 contracts,
                 gas,
                 balance_simulator,
+                balance_overrider,
+                tx_gas_limit,
             }),
             web3,
         }
@@ -137,6 +141,10 @@ impl Ethereum {
 
     pub fn balance_simulator(&self) -> &BalanceSimulator {
         &self.inner.balance_simulator
+    }
+
+    pub fn balance_overrider(&self) -> Arc<dyn BalanceOverriding> {
+        Arc::clone(&self.inner.balance_overrider)
     }
 
     /// Clones self and returns an instance that captures metrics extended with
@@ -153,11 +161,6 @@ impl Ethereum {
         &self.inner.contracts
     }
 
-    /// Create a contract instance at the specified address.
-    pub fn contract_at<T: ContractAt>(&self, address: eth::ContractAddress) -> T {
-        T::at(self, address)
-    }
-
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
         let code = self.web3.eth().code(address.into(), None).await?;
@@ -171,37 +174,13 @@ impl Ethereum {
     }
 
     /// Create access list used by a transaction.
+    #[instrument(skip_all)]
     pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
     where
         CallRequest: From<T>,
     {
         let mut tx: CallRequest = tx.into();
-        // Specifically set high gas because some nodes don't pick a sensible value if
-        // omitted. And since we are only interested in access lists a very high
-        // value is fine.
-        tx.gas = Some(match self.inner.chain {
-            // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
-            // making it unsuitable for this use case. To address this, we use a
-            // fixed gas limit of 100,000,000, which is sufficient
-            // for all solution types, while avoiding the "insufficient funds for gas * price +
-            // value" error that could occur when a large amount of ETH is
-            // needed to simulate the transaction, due to high transaction gas limit.
-            //
-            // If a new network is added, ensure its block gas limit is checked and handled
-            // appropriately to maintain compatibility with this logic.
-            Chain::ArbitrumOne => 100_000_000.into(),
-            Chain::Mainnet => self.block_gas_limit().0,
-            Chain::Goerli => self.block_gas_limit().0,
-            Chain::Gnosis => self.block_gas_limit().0,
-            Chain::Sepolia => self.block_gas_limit().0,
-            Chain::Base => self.block_gas_limit().0,
-            Chain::Bnb => self.block_gas_limit().0,
-            Chain::Optimism => self.block_gas_limit().0,
-            Chain::Avalanche => self.block_gas_limit().0,
-            Chain::Polygon => self.block_gas_limit().0,
-            Chain::Lens => self.block_gas_limit().0,
-            Chain::Hardhat => self.block_gas_limit().0,
-        });
+        tx.gas = Some(self.inner.tx_gas_limit);
         tx.gas_price = self.simulation_gas_price().await;
 
         let json = self
@@ -294,6 +273,7 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
+    #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
@@ -329,6 +309,8 @@ impl fmt::Debug for Ethereum {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
+    Rpc(#[from] alloy::contract::Error),
+    #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
@@ -351,6 +333,7 @@ impl Error {
             }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
+            Error::Rpc(_) => true,
         }
     }
 }
@@ -359,6 +342,7 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
+            contracts::Error::Rpc(err) => Self::Rpc(err),
         }
     }
 }
@@ -366,7 +350,7 @@ impl From<contracts::Error> for Error {
 impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
-            SimulationError::Method(err) => Self::Method(err),
+            SimulationError::Method(err) => Self::Rpc(err),
             SimulationError::Web3(err) => Self::Web3(err),
         }
     }
