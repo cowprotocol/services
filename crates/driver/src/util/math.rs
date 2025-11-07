@@ -1,4 +1,4 @@
-use alloy::primitives::{U256, U512};
+use alloy::primitives::{U256, U512, ruint::UintTryFrom};
 
 /// Computes `x * q / d` rounding down.
 ///
@@ -15,14 +15,7 @@ pub fn mul_ratio(x: U256, q: U256, d: U256) -> Option<U256> {
 
     // SAFETY: at this point !d.is_zero() upholds
     let div = (x.widening_mul(q)) / U512::from(d);
-
-    // After the division, check the most significant limbs (>U256) for overflow
-    let limbs = div.into_limbs();
-    if limbs[4..] != [0, 0, 0, 0] {
-        return None;
-    }
-
-    Some(U256::from_limbs_slice(&limbs[..4]))
+    U256::uint_try_from(div).ok()
 }
 
 /// Computes `x * q / d` rounding up.
@@ -44,13 +37,7 @@ pub fn mul_ratio_ceil(x: U256, q: U256, d: U256) -> Option<U256> {
     // SAFETY: at this point !d.is_zero() upholds
     let (div, rem) = (p / d, p % d);
 
-    // After the division, check the most significant limbs (>U256) for overflow
-    let limbs = div.into_limbs();
-    if limbs[4..] != [0, 0, 0, 0] {
-        return None;
-    }
-
-    let result = U256::from_limbs_slice(&div.into_limbs()[..4]);
+    let result = U256::uint_try_from(div).ok()?;
     result.checked_add(U256::from(!rem.is_zero()))
 }
 
