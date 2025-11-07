@@ -86,6 +86,18 @@ pub mod alloy {
         ensure!(!ratio.denom().is_zero(), "zero denominator");
         big_int_to_u256(&(ratio.numer() / ratio.denom()))
     }
+
+    pub fn u256_to_big_uint(input: &U256) -> BigUint {
+        BigUint::from_bytes_be(&input.to_be_bytes::<32>())
+    }
+
+    pub fn u256_to_big_int(input: &U256) -> BigInt {
+        BigInt::from_biguint(Sign::Plus, u256_to_big_uint(input))
+    }
+
+    pub fn u256_to_big_rational(input: &U256) -> BigRational {
+        BigRational::new(u256_to_big_int(input), 1.into())
+    }
 }
 
 pub fn rational_to_big_decimal<T>(value: &Ratio<T>) -> BigDecimal

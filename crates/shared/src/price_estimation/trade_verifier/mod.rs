@@ -25,7 +25,7 @@ use {
         WETH9,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
+    ethcontract::{H160, U256, state_overrides::StateOverride},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -141,7 +141,11 @@ impl TradeVerifier {
                 };
                 (tokens, prices)
             }
-            TradeKind::Regular(trade) => trade.clearing_prices.iter().map(|e| e.to_owned()).unzip(),
+            TradeKind::Regular(trade) => trade
+                .clearing_prices
+                .iter()
+                .map(|(addr, value)| (addr.into_legacy(), value.into_legacy()))
+                .unzip(),
         };
 
         let settlement = encode_settlement(
@@ -155,17 +159,12 @@ impl TradeVerifier {
             &self.domain_separator,
             self.settlement.address().into_legacy(),
         )?;
-        let settlement = add_balance_queries(
-            settlement,
-            query,
-            &verification,
-            solver_address.into_alloy(),
-        );
+        let settlement = add_balance_queries(settlement, query, &verification, solver_address);
 
         let settle_call = legacy_settlement_to_alloy(settlement).abi_encode();
         let block = *self.block_stream.borrow();
 
-        let solver = Solver::Instance::new(solver_address.into_alloy(), self.web3.alloy.clone());
+        let solver = Solver::Instance::new(solver_address, self.web3.alloy.clone());
         let swap_simulation = solver.swap(
                 *self.settlement.address(),
                 tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
@@ -173,8 +172,8 @@ impl TradeVerifier {
                 settle_call.into(),
             )
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
-            .from(solver_address.into_alloy())
-            .to(solver_address.into_alloy())
+            .from(solver_address)
+            .to(solver_address)
             .gas(Self::DEFAULT_GAS)
             .gas_price(
                 u128::try_from(block.gas_price)
@@ -209,11 +208,11 @@ impl TradeVerifier {
             // for a different `tx.origin` we need to pretend these
             // quotes actually simulated successfully to not lose these competitive quotes
             // when we enable quote verification in prod.
-            if trade.tx_origin() == Some(H160::zero()) {
+            if trade.tx_origin() == Some(Address::ZERO) {
                 let estimate = Estimate {
                     out_amount: *out_amount,
                     gas: trade.gas_estimate().context("no gas estimate")?,
-                    solver: trade.solver(),
+                    solver: trade.solver().into_legacy(),
                     verified: true,
                     execution: QuoteExecution {
                         interactions: map_interactions_data(&trade.interactions()),
@@ -303,12 +302,14 @@ impl TradeVerifier {
                 holder: Self::SPARDOSE.into_legacy(),
                 amount: match query.kind {
                     OrderKind::Sell => query.in_amount.get(),
-                    OrderKind::Buy => trade.out_amount(
-                        &query.buy_token,
-                        &query.sell_token,
-                        &query.in_amount.get(),
-                        &query.kind,
-                    )?,
+                    OrderKind::Buy => trade
+                        .out_amount(
+                            &query.buy_token.into_alloy(),
+                            &query.sell_token.into_alloy(),
+                            &query.in_amount.get().into_alloy(),
+                            &query.kind,
+                        )?
+                        .into_legacy(),
                 },
             })
             .await
@@ -400,7 +401,10 @@ impl TradeVerifier {
                 },
             );
         }
-        overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
+        overrides.insert(
+            trade.tx_origin().unwrap_or(trade.solver()).into_legacy(),
+            solver_override,
+        );
 
         Ok(overrides.into_alloy())
     }
@@ -424,8 +428,8 @@ fn legacy_settlement_to_alloy(
             interactions
                 .into_iter()
                 .map(|i| GPv2Settlement::GPv2Interaction::Data {
-                    target: i.0.into_alloy(),
-                    value: i.1.into_alloy(),
+                    target: i.0,
+                    value: i.1,
                     callData: i.2.0.into(),
                 })
                 .collect()
@@ -461,9 +465,9 @@ impl TradeVerifying for TradeVerifier {
     ) -> Result<Estimate> {
         let out_amount = trade
             .out_amount(
-                &query.buy_token,
-                &query.sell_token,
-                &query.in_amount.get(),
+                &query.buy_token.into_alloy(),
+                &query.sell_token.into_alloy(),
+                &query.in_amount.get().into_alloy(),
                 &query.kind,
             )
             .context("failed to compute trade out amount")?;
@@ -471,9 +475,9 @@ impl TradeVerifying for TradeVerifier {
         let unverified_result = trade
             .gas_estimate()
             .map(|gas| Estimate {
-                out_amount,
+                out_amount: out_amount.into_legacy(),
                 gas,
-                solver: trade.solver(),
+                solver: trade.solver().into_legacy(),
                 verified: false,
                 execution: QuoteExecution {
                     interactions: map_interactions_data(&trade.interactions()),
@@ -492,7 +496,12 @@ impl TradeVerifying for TradeVerifier {
         }
 
         match self
-            .verify_inner(query, verification.clone(), &trade, &out_amount)
+            .verify_inner(
+                query,
+                verification.clone(),
+                &trade,
+                &out_amount.into_legacy(),
+            )
             .await
         {
             Ok(verified) => Ok(verified),
@@ -535,14 +544,13 @@ fn encode_settlement(
             OrderKind::Buy => query.in_amount.get(),
         };
         trade_interactions.push((
-            native_token,
-            0.into(),
-            Bytes(
-                WETH9::WETH9::withdrawCall {
-                    wad: buy_amount.into_alloy(),
-                }
-                .abi_encode(),
-            ),
+            native_token.into_alloy(),
+            alloy::primitives::U256::ZERO,
+            WETH9::WETH9::withdrawCall {
+                wad: buy_amount.into_alloy(),
+            }
+            .abi_encode()
+            .into(),
         ));
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
@@ -579,7 +587,7 @@ fn encode_settlement(
         .abi_encode();
         Interaction {
             target: solver_address,
-            value: 0.into(),
+            value: alloy::primitives::U256::ZERO,
             data: setup_call,
         }
     };
@@ -762,9 +770,9 @@ fn add_balance_queries(
     .abi_encode();
 
     let interaction = (
-        solver_address.into_legacy(),
-        0.into(),
-        Bytes(query_balance_call),
+        solver_address,
+        alloy::primitives::U256::ZERO,
+        query_balance_call.into(),
     );
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
@@ -871,7 +879,7 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver: trade.solver(),
+        solver: trade.solver().into_legacy(),
         verified: true,
         execution: QuoteExecution {
             interactions: map_interactions_data(&trade.interactions()),

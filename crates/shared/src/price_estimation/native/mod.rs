@@ -1,6 +1,7 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     bigdecimal::{BigDecimal, ToPrimitive},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
@@ -80,8 +81,8 @@ impl NativePriceEstimator {
     // TODO explain why we use BUY order type (shallow liquidity)
     fn query(&self, token: &H160, timeout: Duration) -> Query {
         Query {
-            sell_token: *token,
-            buy_token: self.native_token,
+            sell_token: token.into_alloy(),
+            buy_token: self.native_token.into_alloy(),
             in_amount: self.price_estimation_amount,
             kind: OrderKind::Buy,
             verification: Default::default(),
@@ -122,6 +123,7 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
+        alloy::primitives::Address,
         primitive_types::H160,
         std::str::FromStr,
     };
@@ -130,8 +132,8 @@ mod tests {
     async fn prices_dont_get_modified() {
         let mut inner = MockPriceEstimating::new();
         inner.expect_estimate().times(1).returning(|query| {
-            assert!(query.buy_token.to_low_u64_be() == 7);
-            assert!(query.sell_token.to_low_u64_be() == 3);
+            assert!(query.buy_token == Address::with_last_byte(7));
+            assert!(query.sell_token == Address::with_last_byte(3));
             async {
                 Ok(Estimate {
                     out_amount: 123_456_789_000_000_000u128.into(),
@@ -160,8 +162,8 @@ mod tests {
     async fn errors_get_propagated() {
         let mut inner = MockPriceEstimating::new();
         inner.expect_estimate().times(1).returning(|query| {
-            assert!(query.buy_token.to_low_u64_be() == 7);
-            assert!(query.sell_token.to_low_u64_be() == 2);
+            assert!(query.buy_token == Address::with_last_byte(7));
+            assert!(query.sell_token == Address::with_last_byte(2));
             async { Err(PriceEstimationError::NoLiquidity) }.boxed()
         });
 

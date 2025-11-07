@@ -585,8 +585,7 @@ pub mod tests {
         super::*,
         alloy::primitives::Address,
         contracts::alloy::WETH9,
-        ethcontract::Bytes,
-        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
         shared::interaction::{EncodedInteraction, Interaction},
@@ -764,7 +763,11 @@ pub mod tests {
 
     #[test]
     fn settlement_unwraps_after_execution_plan() {
-        let interaction: EncodedInteraction = (H160([0x01; 20]), 0.into(), Bytes(Vec::new()));
+        let interaction: EncodedInteraction = (
+            Address::new([0x01; 20]),
+            alloy::primitives::U256::ZERO,
+            alloy::primitives::Bytes::default(),
+        );
         let unwrap = UnwrapWethInteraction {
             weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
             amount: alloy::primitives::U256::ONE,
@@ -920,16 +923,8 @@ pub mod tests {
         assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
         assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
 
-        let i1 = (
-            i1.target.into_legacy(),
-            i1.value.into_legacy(),
-            Bytes(i1.call_data),
-        );
-        let i2 = (
-            i2.target.into_legacy(),
-            i2.value.into_legacy(),
-            Bytes(i2.call_data),
-        );
+        let i1 = (i1.target, i1.value, i1.call_data.into());
+        let i2 = (i2.target, i2.value, i2.call_data.into());
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
             encoded.interactions,
@@ -983,7 +978,11 @@ pub mod tests {
     pub struct TestInteraction;
     impl Interaction for TestInteraction {
         fn encode(&self) -> EncodedInteraction {
-            (H160::zero(), U256::zero(), Bytes::default())
+            (
+                Address::ZERO,
+                alloy::primitives::U256::ZERO,
+                alloy::primitives::Bytes::default(),
+            )
         }
     }
 
