@@ -990,12 +990,18 @@ impl Contract {
 
                 /// Returns the contract's deployment address (if one exists) for the given chain.
                 pub const fn deployment_address(chain_id: &u64) -> Option<::alloy::primitives::Address> {
-                    deployment_info(*chain_id).and_then(|(address, _)| address)
+                    match deployment_info(*chain_id) {
+                        Some((address, _)) => Some(address),
+                        None => None,
+                    }
                 }
 
                 /// Returns the contract's deployment block (if one exists) for the given chain.
                 pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
-                    deployment_info(*chain_id).and_then((_, block))
+                    match deployment_info(*chain_id) {
+                        Some((_, block)) => block,
+                        None => None,
+                    }
                 }
 
                 impl Instance {
