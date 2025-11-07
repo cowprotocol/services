@@ -2,8 +2,6 @@ use {
     alloy::primitives::U256,
     anyhow::{Result, ensure},
     contracts::alloy::WETH9,
-    ethcontract::Bytes,
-    ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
@@ -35,9 +33,9 @@ impl UnwrapWethInteraction {
 impl Interaction for UnwrapWethInteraction {
     fn encode(&self) -> EncodedInteraction {
         (
-            self.weth.address().into_legacy(),
-            0.into(),
-            Bytes(self.weth.withdraw(self.amount).calldata().to_vec()),
+            *self.weth.address(),
+            alloy::primitives::U256::ZERO,
+            self.weth.withdraw(self.amount).calldata().to_vec().into(),
         )
     }
 }
@@ -56,8 +54,8 @@ mod tests {
         };
         let withdraw_call = interaction.encode();
 
-        assert_eq!(withdraw_call.0, weth.address().into_legacy());
-        assert_eq!(withdraw_call.1, U256::ZERO.into_legacy());
+        assert_eq!(withdraw_call.0, *weth.address());
+        assert!(withdraw_call.1.is_zero());
         let call = &withdraw_call.2.0;
         assert_eq!(call.len(), 36);
         let withdraw_signature = hex!("2e1a7d4d");

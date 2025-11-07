@@ -1,8 +1,7 @@
 use {
     alloy::{primitives::Address, sol_types::SolCall},
     contracts::alloy::IUniswapLikeRouter,
-    ethcontract::Bytes,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     primitive_types::{H160, U256},
     shared::interaction::{EncodedInteraction, Interaction},
 };
@@ -33,18 +32,13 @@ impl UniswapInteraction {
             deadline: ::alloy::primitives::U256::MAX,
         }
         .abi_encode();
-        (self.router.into_legacy(), 0.into(), Bytes(calldata))
+        (self.router, alloy::primitives::U256::ZERO, calldata.into())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        alloy::primitives::Address,
-        ethrpc::alloy::conversions::IntoLegacy,
-        hex_literal::hex,
-    };
+    use {super::*, alloy::primitives::Address, hex_literal::hex};
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
         let mut result = [0u8; 32];
@@ -73,7 +67,7 @@ mod tests {
         let swap_call = interaction.encode();
 
         // Verify Swap
-        assert_eq!(swap_call.0, router_address.into_legacy());
+        assert_eq!(swap_call.0, router_address);
         let call = &swap_call.2.0;
         let swap_signature = hex!("8803dbee");
         let path_offset = 160;

@@ -1,6 +1,5 @@
 use {
     alloy::primitives::Address,
-    primitive_types::H160,
     reqwest::Url,
     shared::{
         arguments::{display_option, display_secret_option},
@@ -78,7 +77,7 @@ pub struct Arguments {
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
+    pub unsupported_tokens: Vec<Address>,
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
@@ -106,7 +105,7 @@ pub struct Arguments {
     /// bad token detector thinks they are bad. Base tokens are
     /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    pub allowed_tokens: Vec<Address>,
 
     /// Skip EIP-1271 order signature validation on creation.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]

@@ -691,7 +691,7 @@ async fn find_unsupported_tokens(
             .map(|token| {
                 let bad_token = bad_token.clone();
                 async move {
-                    match bad_token.detect(token.into_legacy()).await {
+                    match bad_token.detect(token).await {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
                             tracing::warn!(
@@ -1313,7 +1313,7 @@ mod tests {
         let token0 = H160::from_low_u64_le(0);
         let token1 = H160::from_low_u64_le(1);
         let token2 = H160::from_low_u64_le(2);
-        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0]));
+        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0.into_alloy()]));
         let orders = vec![
             OrderBuilder::default()
                 .with_sell_token(token0)

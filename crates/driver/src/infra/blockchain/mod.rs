@@ -13,6 +13,7 @@ use {
     },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
+    tracing::{Level, instrument},
     url::Url,
     web3::{Transport, types::CallRequest},
 };
@@ -173,6 +174,7 @@ impl Ethereum {
     }
 
     /// Create access list used by a transaction.
+    #[instrument(skip_all)]
     pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
     where
         CallRequest: From<T>,
@@ -271,6 +273,7 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
+    #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
