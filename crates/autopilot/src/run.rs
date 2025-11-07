@@ -491,8 +491,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         cow_amm_registry
             .add_listener(
                 config.index_start,
-                config.factory.into_alloy(),
-                config.helper.into_alloy(),
+                config.factory,
+                config.helper,
                 db_write.pool.clone(),
             )
             .await;
