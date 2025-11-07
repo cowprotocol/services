@@ -17,7 +17,6 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
-    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -568,8 +567,8 @@ impl OrderQuoter {
                 .pre_interactions
                 .iter()
                 .map(|i| InteractionData {
-                    target: i.target.into_alloy(),
-                    value: i.value.into_alloy(),
+                    target: i.target,
+                    value: i.value,
                     call_data: i.data.clone(),
                 })
                 .collect(),
