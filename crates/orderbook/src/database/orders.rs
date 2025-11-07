@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     crate::dto::TokenMetadata,
+    alloy::primitives::B256,
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -66,7 +67,7 @@ pub trait OrderStoring: Send + Sync {
         old_order: &OrderUid,
         new_order: &Order,
     ) -> Result<(), InsertionError>;
-    async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
+    async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
     /// orders first).
     async fn user_orders(
@@ -315,7 +316,7 @@ impl OrderStoring for Postgres {
         .transpose()
     }
 
-    async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         tokio::try_join!(
             self.user_order_for_tx(tx_hash),
             self.jit_orders_for_tx(tx_hash)
@@ -367,7 +368,7 @@ impl OrderStoring for Postgres {
 
 impl Postgres {
     /// Retrieve all user posted orders for a given transaction.
-    pub async fn user_order_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn user_order_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["user_order_for_tx"])
@@ -384,7 +385,7 @@ impl Postgres {
     }
 
     /// Retrieve all JIT orders for a given transaction.
-    pub async fn jit_orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn jit_orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["jit_orders_for_tx"])
