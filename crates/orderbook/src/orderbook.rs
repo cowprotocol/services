@@ -7,7 +7,7 @@ use {
         dto,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
@@ -512,7 +512,7 @@ impl Orderbook {
 
     pub async fn get_user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>> {
