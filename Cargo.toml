@@ -103,7 +103,6 @@ walkdir = "2.5.0"
 quote = "1.0.41"
 syn = "2.0.108"
 prettyplease = "0.2.37"
-contracts-generate = {path = "crates/contracts-generate"}
 proc-macro2 = "1.0.103"
 alloy-sol-macro-input = "1.4.1"
 alloy-sol-macro-expander = "1.4.1"

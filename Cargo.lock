@@ -2139,29 +2139,20 @@ name = "contracts"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "anyhow",
- "contracts-generate",
- "ethcontract",
- "ethcontract-generate",
- "paste",
- "serde",
- "serde_json",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
-name = "contracts-generate"
-version = "0.1.0"
-dependencies = [
  "alloy-sol-macro-expander",
  "alloy-sol-macro-input",
  "anyhow",
+ "ethcontract",
+ "ethcontract-generate",
+ "paste",
  "prettyplease",
  "proc-macro2",
  "quote",
+ "serde",
+ "serde_json",
  "syn 2.0.108",
+ "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 
