@@ -1,0 +1,98 @@
+[profile.default]
+src = "contracts/src"
+out = "contracts/out"
+libs = ["contracts/lib"]
+test = "contracts/test"
+script = "contracts/script"
+
+# Optimizer settings
+solc_version = "0.8.26"
+optimizer = true
+optimizer_runs = 1000000
+via_ir = true
+
+# Allow multiple Solidity versions
+auto_detect_solc = true
+solc = "0.8.26"
+
+# EVM version
+evm_version = "cancun"
+
+# Remappings
+remappings = [
+    "@openzeppelin/=contracts/lib/openzeppelin-contracts/",
+    "@cowprotocol/=contracts/lib/cow-protocol-contracts/src/contracts/",
+    "@uniswap/v2-core/=contracts/lib/v2-core/",
+    "@uniswap/v2-periphery/=contracts/lib/v2-periphery/",
+    "solmate/=contracts/lib/solmate/src/",
+    "forge-std/=contracts/lib/forge-std/src/"
+]
+
+# Test settings
+verbosity = 3
+fuzz_runs = 256
+
+# Filesystem permissions
+fs_permissions = [
+    { access = "read-write", path = "./config" },
+    { access = "read-write", path = "../../configs" },
+    { access = "read-write", path = "../" },
+    { access = "read", path = "./contracts/out-uniswap-v2" },
+    { access = "read", path = "./contracts/out-uniswap-v2-periphery" },
+    { access = "read", path = "./contracts/out-cow-protocol" },
+    { access = "read", path = "./out-uniswap-v2" },
+    { access = "read", path = "./out-uniswap-v2-periphery" },
+    { access = "read", path = "./out-cow-protocol" }
+]
+
+# RPC
+[rpc_endpoints]
+localhost = "http://localhost:8545"
+
+# Etherscan is disabled for offline/local development
+# Verification is not needed for local Anvil deployments
+
+# Profile for Uniswap V2 contracts (Solidity 0.5.16)
+[profile.uniswap-v2]
+src = "contracts/lib/v2-core/contracts"
+out = "contracts/out-uniswap-v2"
+libs = ["contracts/lib/v2-core", "contracts/lib/v2-periphery"]
+script = "contracts/lib/v2-core/contracts"
+test = "contracts/lib/v2-core/test"
+solc_version = "0.5.16"
+optimizer = true
+optimizer_runs = 999999
+evm_version = "istanbul"
+ignored_error_codes = [5159]
+
+# Profile for Uniswap V2 Periphery (Solidity 0.6.6)
+[profile.uniswap-v2-periphery]
+src = "contracts/lib/v2-periphery/contracts"
+out = "contracts/out-uniswap-v2-periphery"
+libs = ["contracts/lib/v2-core", "contracts/lib/v2-periphery", "contracts/lib/solidity-lib"]
+script = "contracts/lib/v2-periphery/contracts"
+test = "contracts/lib/v2-periphery/test"
+solc_version = "0.6.6"
+optimizer = true
+optimizer_runs = 999999
+evm_version = "istanbul"
+ignored_error_codes = [5159]
+remappings = [
+    "@uniswap/lib/=contracts/lib/solidity-lib/",
+    "@uniswap/v2-core/=contracts/lib/v2-core/"
+]
+
+# Profile for CoW Protocol (Solidity 0.7.6)
+[profile.cow-protocol]
+src = "contracts/lib/cow-protocol/src/contracts"
+out = "contracts/out-cow-protocol"
+libs = []
+script = "contracts/lib/cow-protocol/src/contracts"
+# Don't compile tests, only production contracts
+test = "contracts/test"
+solc_version = "0.7.6"
+optimizer = true
+optimizer_runs = 1000000
+via_ir = false
+evm_version = "istanbul"
+ignored_error_codes = [5159]

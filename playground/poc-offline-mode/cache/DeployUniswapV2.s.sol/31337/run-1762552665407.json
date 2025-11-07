@@ -1,0 +1,19 @@
+{
+  "transactions": [
+    {
+      "rpc": "http://chain:8545"
+    },
+    {
+      "rpc": "http://chain:8545"
+    },
+    {
+      "rpc": "http://chain:8545"
+    },
+    {
+      "rpc": "http://chain:8545"
+    },
+    {
+      "rpc": "http://chain:8545"
+    }
+  ]
+}

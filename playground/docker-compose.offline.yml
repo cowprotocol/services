@@ -1,0 +1,330 @@
+services:
+  # Anvil node with pre-deployed contracts (offline mode)
+  chain:
+    image: ghcr.io/foundry-rs/foundry:latest
+    restart: always
+    entrypoint: /usr/local/bin/anvil
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8545"
+      - --chain-id
+      - "31337"
+      - --block-time
+      - "1"
+      - --gas-limit
+      - "30000000"
+      - --code-size-limit
+      - "50000"
+    environment:
+      - ANVIL_IP_ADDR=0.0.0.0
+    ports:
+      - 8545:8545
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "cast rpc eth_blockNumber --rpc-url http://127.0.0.1:8545 > /dev/null",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 2s
+
+  # Deploy contracts to the chain
+  deploy-contracts:
+    build:
+      context: ./poc-offline-mode
+      dockerfile: Dockerfile
+    restart: "no"
+    working_dir: /workspace
+    entrypoint: []
+    command: 
+      - bash
+      - -c
+      - |
+        bash ./scripts/deploy-all.sh > /workspace/playground/deploy.log 2>&1
+        echo $? > /workspace/playground/deploy.exit
+    environment:
+      - RPC_URL=http://chain:8545
+      - DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+    volumes:
+      - ./poc-offline-mode:/workspace
+      - ../configs:/workspace/configs:rw
+      - .:/workspace/playground:rw
+    depends_on:
+      chain:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    restart: always
+    env_file: .env.offline
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    command: -d postgres
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8082:8080
+    depends_on:
+      - db
+
+  db-migrations:
+    build:
+      context: ../
+      target: migrations
+      dockerfile: ./playground/Dockerfile
+    restart: on-failure
+    env_file: .env.offline
+    environment:
+      - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+    depends_on:
+      - db
+
+  orderbook:
+    build:
+      context: ../
+      target: localdev
+      dockerfile: ./playground/Dockerfile
+    restart: always
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for chain to be reachable..."
+        until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
+          echo "Chain not ready, waiting..."
+          sleep 1
+        done
+        echo "Chain is ready! Starting orderbook..."
+        cargo watch -x 'run --bin orderbook'
+    env_file: .env.offline
+    environment:
+      - NODE_URL=http://chain:8545
+      - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - ACCOUNT_BALANCES_SIMULATION=true
+      - ACCOUNT_BALANCES_SIMULATOR=Web3
+      - SIMULATION_NODE_URL=http://chain:8545
+      - EIP1271_SKIP_CREATION_VALIDATION=true
+      - ENABLE_EIP1271_ORDERS=true
+      - PRICE_ESTIMATORS=None
+      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - DRIVERS=baseline|http://driver/baseline
+      - BIND_ADDRESS=0.0.0.0:80
+      - BASELINE_SOURCES=UniswapV2
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
+    depends_on:
+      db-migrations:
+        condition: service_completed_successfully
+      chain:
+        condition: service_healthy
+      deploy-contracts:
+        condition: service_completed_successfully
+    ports:
+      - 8080:80 # API
+      - 9586:9586 # metrics
+      - 6669:6669 # tokio console
+
+  autopilot:
+    build:
+      context: ../
+      target: localdev
+      dockerfile: ./playground/Dockerfile
+    restart: always
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for chain to be reachable..."
+        until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
+          sleep 1
+        done
+        echo "Chain is ready! Starting autopilot..."
+        cargo watch -x 'run --bin autopilot'
+    env_file: .env.offline
+    environment:
+      - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
+      - NODE_URL=http://chain:8545
+      - SIMULATION_NODE_URL=http://chain:8545
+      - SETTLE_INTERVAL=15s
+      - GAS_ESTIMATORS=Native,Web3
+      - PRICE_ESTIMATORS=None
+      - NATIVE_PRICE_ESTIMATORS=baseline
+      - BLOCK_STREAM_POLL_INTERVAL=1s
+      - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
+      - NATIVE_PRICE_CACHE_MAX_AGE=20m
+      - SOLVER_TIME_LIMIT=5
+      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
+      - SKIP_EVENT_SYNC=true
+      - BASELINE_SOURCES=UniswapV2
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
+    depends_on:
+      orderbook:
+        condition: service_started
+      chain:
+        condition: service_healthy
+      deploy-contracts:
+        condition: service_completed_successfully
+    ports:
+      - 9589:9589 # metrics
+      - 6670:6669 # tokio console
+
+  driver:
+    build:
+      context: ../
+      target: localdev
+      dockerfile: ./playground/Dockerfile
+    restart: always
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for chain to be reachable..."
+        until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
+          sleep 1
+        done
+        echo "Chain is ready! Starting driver..."
+        cargo watch -x 'run --bin driver -- --config configs/offline/driver.toml'
+    env_file: .env.offline
+    environment:
+      - ETHRPC=http://chain:8545
+      - ADDR=0.0.0.0:80
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
+    ports:
+      - 9000:80 # API & metrics
+      - 6671:6669 # tokio console
+    depends_on:
+      chain:
+        condition: service_healthy
+      deploy-contracts:
+        condition: service_completed_successfully
+
+  # baseline (solver engine)
+  baseline:
+    build:
+      context: ../
+      target: localdev
+      dockerfile: ./playground/Dockerfile
+    restart: always
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for chain to be reachable..."
+        until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
+          sleep 1
+        done
+        echo "Chain is ready! Starting baseline solver..."
+        cargo watch -x 'run --bin solvers -- baseline --config configs/offline/baseline.toml'
+    env_file: .env.offline
+    environment:
+      - ADDR=0.0.0.0:80
+      - LOG=solvers=trace,shared=trace
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
+    ports:
+      - 9001:80 # API & metrics
+      - 6672:6669 # tokio console
+    depends_on:
+      chain:
+        condition: service_healthy
+      deploy-contracts:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.cowswap
+      args:
+        - CHAIN=31337
+        - ETH_RPC_URL=http://127.0.0.1:8545
+    env_file: .env.offline
+    environment:
+      - REACT_APP_NETWORK_ID=31337
+      - REACT_APP_NETWORK_NAME=Anvil Offline
+      - REACT_APP_NETWORK_URL_PRODUCTION=http://127.0.0.1:8545
+      - REACT_APP_API_URL=http://127.0.0.1:8080
+    ports:
+      - 8000:80
+
+  explorer:
+    build:
+      context: .
+      dockerfile: Dockerfile.explorer
+      args:
+        - CHAIN=31337
+        - ETH_RPC_URL=http://chain:8545
+    environment:
+      - REACT_APP_NETWORK_ID=31337
+      - REACT_APP_NETWORK_NAME=Anvil Offline
+      - REACT_APP_NETWORK_URL=http://chain:8545
+    ports:
+      - 8001:80
+
+  tempo:
+    image: grafana/tempo:latest
+    ports:
+      - "4317:4317" # OTLP gRPC
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+volumes:
+  postgres:
