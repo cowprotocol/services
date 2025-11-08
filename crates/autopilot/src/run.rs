@@ -137,6 +137,7 @@ async fn ethereum(
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
+    observe::panic_hook::install();
     let args = Arguments::parse_from(args);
     let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
@@ -144,8 +145,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.use_json_logs,
         tracing_config(&args.shared.tracing, "autopilot".into()),
     );
-    observe::tracing::initialize(&obs_config);
-    observe::panic_hook::install();
+    observe::tracing::initialize_reentrant(&obs_config);
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 
