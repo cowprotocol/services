@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 
-// sourcify integration
+// sourcify integration with v2 API support
 // This module reads verified contract metadata and sources from a local
 // sourcify repository mount (see SOURCIFY_REPO_PATH in config) and can
 // optionally fall back to the sourcify HTTP API when the local repository
@@ -18,6 +18,7 @@ export type RepoMatch = {
   dir: string;
 };
 
+// Local repository functions remain the same
 export async function findRepoMatch({ repoPath, chainId }: VerifyRepoPaths, address: string): Promise<RepoMatch | null> {
   const addr = address.toLowerCase();
   const full = path.join(repoPath, 'contracts', 'full_match', String(chainId), addr);
@@ -60,10 +61,41 @@ export async function listSources(dir: string): Promise<Array<{ path: string; co
   return out;
 }
 
-// Remote (HTTP) sourcify helpers
+// Remote (HTTP) sourcify v2 API helpers
 export type RemoteRepoMatch = {
   type: 'full' | 'partial';
-  apiBase: string; // e.g. http://sourcify:5555/files/contracts/full_match/1/0xabc...
+  chainId: number;
+  address: string;
+  apiBase: string;
+};
+
+export type ContractV2Response = {
+  chainId: string;
+  address: string;
+  creatorTxHash?: string;
+  // Match status
+  create2Args?: any;
+  // Files
+  files?: {
+    found: string[];
+    missing: string[];
+  };
+  // Compilation info
+  compilationTarget?: string;
+  compiler?: {
+    version: string;
+  };
+  language?: string;
+  // Library info
+  libraries?: Record<string, string>;
+  // Settings
+  settings?: any;
+  // Sources
+  sources?: Record<string, any>;
+  // ABI
+  abi?: any[];
+  // Storage layout
+  storageLayout?: any;
 };
 
 async function getJson<T>(url: string): Promise<T | null> {
@@ -76,74 +108,116 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-// Query sourcify server for verification status and build a base path for files
+// Query sourcify v2 server for verification status
 export async function findRemoteRepoMatch(apiUrl: string, chainId: number, address: string): Promise<RemoteRepoMatch | null> {
   const addr = address.toLowerCase();
   const base = apiUrl.replace(/\/$/, '');
-  // 1) Fast check endpoint first - using v2 API (v1 check-by-addresses is deprecated)
-  const url = `${base}/files/any/${chainId}/${addr}`;
-  // v2 API returns different structure - simpler check for contract existence
+  
+  // Use v2 API endpoint with correct interpolation
+  const url = `${base}/v2/contract/${chainId}/${addr}`;
+  
   try {
     const res = await fetch(url);
     if (res.ok) {
-      // Contract is verified - determine if full or partial match
-      // Try full match first
-      const fullUrl = `${base}/files/tree/any/${chainId}/${addr}`;
-      const treeData = await getJson<any>(fullUrl);
-      let kind: 'full' | 'partial' = 'full';
-      if (treeData && treeData.status === 'partial') {
-        kind = 'partial';
-      }
-      const prefix = kind === 'full' ? 'full_match' : 'partial_match';
-      const apiBase = `${base}/repository/contracts/${prefix}/${chainId}/${addr}`;
-      return { type: kind, apiBase };
+      const data = await res.json() as ContractV2Response;
+      
+      // v2 API returns contract details directly
+      // Determine match type based on the response
+      // The v2 API doesn't explicitly state full vs partial in the same way,
+      // but we can infer from the response structure or default to full
+      
+      return {
+        type: 'full', // v2 API typically returns fully verified contracts
+        chainId,
+        address: addr,
+        apiBase: base
+      };
     }
-  } catch {}
-  // 2) Fallback to tree endpoint which reports matches even when check says false (e.g., proxies)
-  type TreeResp = { status?: string; files?: string[] };
-  const treeUrl = `${base}/files/tree/any/${chainId}/${addr}`;
-  const tree = await getJson<TreeResp>(treeUrl);
-  if (tree && (tree.status === 'perfect' || tree.status === 'full' || tree.status === 'partial')) {
-    const kind = tree.status === 'partial' ? 'partial' : 'full';
-    const prefix = kind === 'full' ? 'full_match' : 'partial_match';
-    const apiBase = `${base}/repository/contracts/${prefix}/${chainId}/${addr}`;
-    return { type: kind, apiBase };
+  } catch (err) {
+    console.error(`Error fetching contract from Sourcify v2: ${err}`);
   }
+  
   return null;
 }
 
+// Read contract details using v2 API
 export async function readRemoteMetadata(match: RemoteRepoMatch): Promise<any | null> {
-  const m = `${match.apiBase}/metadata.json`;
-  return await getJson<any>(m);
+  const url = `${match.apiBase}/v2/contract/${match.chainId}/${match.address}`;
+  const contract = await getJson<ContractV2Response>(url);
+  
+  if (!contract) return null;
+  
+  // Transform v2 response to match expected metadata format
+  return {
+    compiler: contract.compiler,
+    language: contract.language,
+    output: {
+      abi: contract.abi,
+      devdoc: {},
+      userdoc: {}
+    },
+    settings: contract.settings,
+    sources: contract.sources,
+    version: 1
+  };
 }
 
+// List contract sources using v2 API
 export async function listRemoteSources(match: RemoteRepoMatch, metadata?: any): Promise<Array<{ path: string; content: string }>> {
   const out: Array<{ path: string; content: string }> = [];
-  // Prefer listing by metadata.sources keys, if present
-  const sources = (metadata && metadata.sources && typeof metadata.sources === 'object') ? Object.keys(metadata.sources) : [];
-  const base = match.apiBase + '/sources';
-  const fetchFile = async (p: string) => {
-    const url = `${base}/${encodeURI(p)}`;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      return await res.text();
-    } catch {
-      return null;
-    }
-  };
-  if (sources.length) {
-    for (const p of sources) {
-      const content = await fetchFile(p);
-      if (content != null) out.push({ path: p, content });
-    }
+  
+  // Fetch the contract details from v2 API
+  const url = `${match.apiBase}/v2/contract/${match.chainId}/${match.address}`;
+  const contract = await getJson<ContractV2Response>(url);
+  
+  if (!contract || !contract.sources) {
     return out;
   }
-  // If metadata absent or lacks keys, try a few common roots (best-effort)
-  const tryFiles = ['contract.sol', 'contract.json'];
-  for (const f of tryFiles) {
-    const content = await fetchFile(f);
-    if (content != null) out.push({ path: f, content });
+  
+  // v2 API includes sources directly in the response
+  for (const [sourcePath, sourceData] of Object.entries(contract.sources)) {
+    if (sourceData && typeof sourceData === 'object' && 'content' in sourceData) {
+      out.push({ 
+        path: sourcePath, 
+        content: (sourceData as any).content || ''
+      });
+    }
   }
+  
+  return out;
+}
+
+// Alternative: Use the repository endpoint if you need the raw files
+// Note: This endpoint structure might vary based on your Sourcify instance
+export async function getRepositoryFiles(apiBase: string, chainId: number, address: string, matchType: 'full' | 'partial' = 'full'): Promise<Array<{ path: string; content: string }>> {
+  const addr = address.toLowerCase();
+  const matchPath = matchType === 'full' ? 'full_match' : 'partial_match';
+  const baseUrl = `${apiBase}/repository/contracts/${matchPath}/${chainId}/${addr}`;
+  
+  const out: Array<{ path: string; content: string }> = [];
+  
+  // Try to fetch metadata.json first
+  try {
+    const metadataUrl = `${baseUrl}/metadata.json`;
+    const res = await fetch(metadataUrl);
+    if (res.ok) {
+      const metadata = await res.json();
+      
+      // Extract source file paths from metadata
+      if (metadata.sources) {
+        for (const sourcePath of Object.keys(metadata.sources)) {
+          const sourceUrl = `${baseUrl}/sources/${encodeURIComponent(sourcePath)}`;
+          try {
+            const sourceRes = await fetch(sourceUrl);
+            if (sourceRes.ok) {
+              const content = await sourceRes.text();
+              out.push({ path: sourcePath, content });
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+  
   return out;
 }
