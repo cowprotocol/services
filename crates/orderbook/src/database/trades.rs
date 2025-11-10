@@ -3,7 +3,6 @@ use {
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
-    ethcontract::H160,
     futures::stream::TryStreamExt,
     model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
     number::conversions::big_decimal_to_big_uint,
@@ -18,7 +17,7 @@ pub trait TradeRetrieving: Send + Sync {
 /// Any default value means that this field is unfiltered.
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct TradeFilter {
-    pub owner: Option<H160>,
+    pub owner: Option<Address>,
     pub order_uid: Option<OrderUid>,
 }
 
@@ -33,7 +32,7 @@ impl TradeRetrieving for Postgres {
         let mut ex = self.pool.acquire().await?;
         let trades = database::trades::trades(
             &mut ex,
-            filter.owner.map(|owner| ByteArray(owner.0)).as_ref(),
+            filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
             filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
         )
         .into_inner()

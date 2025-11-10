@@ -6,9 +6,9 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result},
     model::order::OrderUid,
-    primitive_types::H160,
     serde::Deserialize,
     std::convert::Infallible,
     warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
@@ -18,7 +18,7 @@ use {
 #[serde(rename_all = "camelCase")]
 struct Query {
     pub order_uid: Option<OrderUid>,
-    pub owner: Option<H160>,
+    pub owner: Option<Address>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -80,8 +80,6 @@ pub fn get_trades(db: Postgres) -> impl Filter<Extract = (ApiReply,), Error = Re
 mod tests {
     use {
         super::*,
-        hex_literal::hex,
-        primitive_types::H160,
         warp::test::{RequestBuilder, request},
     };
 
@@ -92,7 +90,7 @@ mod tests {
             request.method("GET").filter(&filter).await
         };
 
-        let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
+        let owner = Address::with_last_byte(1);
         let owner_path = format!("/v1/trades?owner=0x{owner:x}");
         let result = trade_filter(request().path(owner_path.as_str()))
             .await
@@ -118,7 +116,7 @@ mod tests {
             request.method("GET").filter(&filter).await
         };
 
-        let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
+        let owner = Address::with_last_byte(1);
         let uid = OrderUid([1u8; 56]);
         let path = format!("/v1/trades?owner=0x{owner:x}&orderUid={uid}");
 
