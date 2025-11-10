@@ -179,8 +179,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "STEP 7: Saving Blockchain State"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Use cast to dump the state
-cast rpc anvil_dumpState > state/poc-state.json --rpc-url $RPC_URL
+# Use RPC method to dump the state
+cast rpc anvil_dumpState state/poc-state.json --rpc-url $RPC_URL > /dev/null
 
 echo ""
 echo "✅ Blockchain state saved to state/poc-state.json"

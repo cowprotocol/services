@@ -10,7 +10,6 @@ contracts/broadcast/
 contracts/lib/
 
 # State files (keep initial, ignore runtime)
-state/poc-state.json
 state/backups/
 
 # Logs
