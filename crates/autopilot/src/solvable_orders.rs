@@ -444,16 +444,14 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
     let banned = banned_users
         .banned(orders.iter().flat_map(|order| {
             std::iter::once(order.metadata.owner)
-                .chain(order.data.receiver)
-                .map(IntoAlloy::into_alloy)
+                .chain(order.data.receiver.map(IntoAlloy::into_alloy))
         }))
         .await;
     orders
         .iter()
         .filter_map(|order| {
             std::iter::once(order.metadata.owner)
-                .chain(order.data.receiver)
-                .map(IntoAlloy::into_alloy)
+                .chain(order.data.receiver.map(IntoAlloy::into_alloy))
                 .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
         })
@@ -1173,7 +1171,7 @@ mod tests {
         .enumerate()
         .map(|(i, owner)| Order {
             metadata: OrderMetadata {
-                owner,
+                owner: owner.into_alloy(),
                 uid: OrderUid([i as u8; 56]),
                 ..Default::default()
             },

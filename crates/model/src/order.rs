@@ -161,7 +161,7 @@ impl OrderBuilder {
         domain: &DomainSeparator,
         key: SecretKeyRef,
     ) -> Self {
-        self.0.metadata.owner = key.address();
+        self.0.metadata.owner = Address::new(key.address().0);
         self.0.metadata.uid = self.0.data.uid(domain, &key.address());
         self.0.signature =
             EcdsaSignature::sign(signing_scheme, domain, &self.0.data.hash_struct(), key)
@@ -170,13 +170,13 @@ impl OrderBuilder {
     }
 
     pub fn with_eip1271(mut self, owner: H160, signature: Vec<u8>) -> Self {
-        self.0.metadata.owner = owner;
+        self.0.metadata.owner = Address::new(owner.0);
         self.0.signature = Signature::Eip1271(signature);
         self
     }
 
     pub fn with_presign(mut self, owner: H160) -> Self {
-        self.0.metadata.owner = owner;
+        self.0.metadata.owner = Address::new(owner.0);
         self.0.signature = Signature::PreSign;
         self
     }
@@ -687,7 +687,7 @@ pub enum OnchainOrderPlacementError {
 #[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OnchainOrderData {
-    pub sender: H160,
+    pub sender: Address,
     pub placement_error: Option<OnchainOrderPlacementError>,
 }
 
@@ -697,7 +697,7 @@ pub struct OnchainOrderData {
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
-    pub owner: H160,
+    pub owner: Address,
     pub uid: OrderUid,
     /// deprecated, always set to null
     #[serde_as(as = "Option<HexOrDecimalU256>")]
@@ -714,18 +714,18 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee: U256,
-    pub executed_fee_token: H160,
+    pub executed_fee_token: Address,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]
     pub class: OrderClass,
-    pub settlement_contract: H160,
+    pub settlement_contract: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_order_data: Option<OnchainOrderData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub onchain_user: Option<H160>,
+    pub onchain_user: Option<Address>,
     pub is_liquidity_order: bool,
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
@@ -1119,7 +1119,7 @@ mod tests {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
                 class: OrderClass::Limit,
-                owner: H160::from_low_u64_be(1),
+                owner: Address::with_last_byte(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: None,
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
@@ -1127,10 +1127,10 @@ mod tests {
                 executed_sell_amount_before_fees: 4.into(),
                 executed_fee_amount: 1.into(),
                 executed_fee: 1.into(),
-                executed_fee_token: H160::from_low_u64_be(10),
+                executed_fee_token: Address::with_last_byte(10),
                 invalidated: true,
                 status: OrderStatus::Open,
-                settlement_contract: H160::from_low_u64_be(2),
+                settlement_contract: Address::with_last_byte(2),
                 full_app_data: Some("123".to_string()),
                 ..Default::default()
             },
