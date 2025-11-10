@@ -320,15 +320,15 @@ impl SolvableOrdersCache {
     }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        if self.disable_order_filters {
-            return Default::default();
-        }
         let fetched_balances = self
             .timed_future(
                 "balance_filtering",
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
+        if self.disable_order_filters {
+            return Default::default();
+        }
 
         tracing::trace!("fetched balances for solvable orders");
         queries
