@@ -1,7 +1,7 @@
 use {
+    alloy::primitives::U256,
     anyhow::Result,
     database::{Address, byte_array::ByteArray},
-    primitive_types::{H160, U256},
     sqlx::PgConnection,
 };
 
@@ -61,8 +61,8 @@ trade_components AS (
     JOIN trades t ON j.uid = t.order_uid
     JOIN order_execution oe ON j.uid = oe.order_uid
     WHERE j.owner = $1 AND NOT EXISTS (
-        SELECT 1 
-        FROM orders o 
+        SELECT 1
+        FROM orders o
         WHERE o.uid = j.uid
     )
 ),
@@ -88,14 +88,14 @@ FROM trade_surplus
 }
 
 impl super::Postgres {
-    pub async fn total_surplus(&self, user: &H160) -> Result<U256> {
+    pub async fn total_surplus(&self, user: &alloy::primitives::Address) -> Result<U256> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["get_total_surplus"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let surplus = fetch_total_surplus(&mut ex, &ByteArray(user.0)).await?;
-        Ok(U256::from_f64_lossy(surplus))
+        let surplus = fetch_total_surplus(&mut ex, &ByteArray(user.0.0)).await?;
+        Ok(U256::from(surplus))
     }
 }
