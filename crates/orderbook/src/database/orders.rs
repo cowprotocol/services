@@ -72,7 +72,7 @@ pub trait OrderStoring: Send + Sync {
     /// orders first).
     async fn user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
@@ -329,7 +329,7 @@ impl OrderStoring for Postgres {
 
     async fn user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>> {
@@ -341,7 +341,7 @@ impl OrderStoring for Postgres {
         let mut ex = self.pool.acquire().await?;
         database::order_history::user_orders(
             &mut ex,
-            &ByteArray(owner.0),
+            &ByteArray(owner.0.0),
             i64::try_from(offset).unwrap_or(i64::MAX),
             limit.map(|l| i64::try_from(l).unwrap_or(i64::MAX)),
         )
@@ -641,6 +641,7 @@ mod tests {
                 SigningScheme as DbSigningScheme,
             },
         },
+        ethrpc::alloy::conversions::IntoAlloy,
         model::{
             interaction::InteractionData,
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
@@ -904,7 +905,7 @@ mod tests {
             .unwrap();
 
         let order_statuses = db
-            .user_orders(&owner, 0, None)
+            .user_orders(&owner.into_alloy(), 0, None)
             .await
             .unwrap()
             .iter()
