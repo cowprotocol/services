@@ -7,12 +7,12 @@ use {
         dto,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
+    alloy::primitives::B256,
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethcontract::H256,
     ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
@@ -496,7 +496,7 @@ impl Orderbook {
         self.database_replica.single_order(uid).await
     }
 
-    pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {
+    pub async fn get_orders_for_tx(&self, hash: &B256) -> Result<Vec<Order>> {
         self.database_replica.orders_for_tx(hash).await
     }
 
