@@ -91,13 +91,13 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
-        let liquidity = match solver.liquidity() {
-            solver::Liquidity::Fetch => {
+        let liquidity = match (solver.liquidity(), self.liquidity_pairs()) {
+            (solver::Liquidity::Fetch, Some(pairs)) => {
                 liquidity
-                    .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
+                    .fetch(&pairs, infra::liquidity::AtBlock::Recent)
                     .await
-            }
-            solver::Liquidity::Skip => Default::default(),
+            },
+            _  => Default::default(),
         };
 
         let auction = self
@@ -226,15 +226,12 @@ impl Order {
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        let pair = liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
-            .expect("sell != buy by construction");
-        iter::once(pair).collect()
+    fn liquidity_pairs(&self) -> Option<HashSet<liquidity::TokenPair>> {
+        liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
+            .map(|pair| iter::once(pair).collect()).ok()
     }
 }
 
-/// The sell and buy tokens to quote for. This type maintains the invariant that
-/// the sell and buy tokens are distinct.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Tokens {
     sell: eth::TokenAddress,
@@ -242,13 +239,8 @@ pub struct Tokens {
 }
 
 impl Tokens {
-    /// Creates a new instance of [`Tokens`], verifying that the input buy and
-    /// sell tokens are distinct.
-    pub fn try_new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
-        if sell == buy {
-            return Err(SameTokens);
-        }
-        Ok(Self { sell, buy })
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Self {
+        Self { sell, buy }
     }
 
     pub fn sell(&self) -> eth::TokenAddress {

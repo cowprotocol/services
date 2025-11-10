@@ -109,7 +109,6 @@ pub enum PartialValidationError {
     Forbidden,
     ValidTo(OrderValidToError),
     InvalidNativeSellToken,
-    SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
@@ -486,9 +485,6 @@ impl OrderValidating for OrderValidator {
 
         self.validity_configuration.validate_period(&order)?;
 
-        if has_same_buy_and_sell_token(&order, self.native_token.address()) {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
         if order.sell_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy() {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
@@ -1199,17 +1195,6 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Excessive,
             ))
-        ));
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to,
-                    buy_token: H160::from_low_u64_be(2),
-                    sell_token: H160::from_low_u64_be(2),
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::SameBuyAndSellToken)
         ));
         assert!(matches!(
             validator
