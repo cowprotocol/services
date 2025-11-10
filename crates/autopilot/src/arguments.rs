@@ -401,6 +401,7 @@ impl std::fmt::Display for Arguments {
             db_based_solver_participation_guard,
             disable_order_filtering,
             enable_leader_lock,
+            force_presign_order_filtering,
         } = self;
 
         write!(f, "{shared}")?;
@@ -476,6 +477,7 @@ impl std::fmt::Display for Arguments {
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
         writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
+        writeln!(f, "force_presign_order_filtering: {force_presign_order_filtering}")?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
     }
