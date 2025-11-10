@@ -1,0 +1,29 @@
+app-data-fetching-enabled = true
+orderbook-url = "http://orderbook"
+tx-gas-limit = "45000000"
+
+[[solver]]
+name = "baseline" # Arbitrary name given to this solver, must be unique
+endpoint = "http://baseline"
+absolute-slippage = "40000000000000000" # Denominated in wei, optional
+relative-slippage = "0.1" # Percentage in the [0, 1] range
+# Anvil account #0 private key (from test mnemonic)
+account = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+[submission]
+gas-price-cap = "1000000000000"
+
+[[submission.mempool]]
+mempool = "public"
+
+[liquidity]
+base-tokens = [
+    "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F", # WETH (auto-generated from deployment)
+    "0x67d269191c92Caf3cD7723F116c85e6E9bf55933", # DAI (auto-generated from deployment)
+    "0xc5a5C42992dECbae36851359345FE25997F5C42d", # USDC (auto-generated from deployment)
+]
+
+[[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)
+router = "0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690"
+pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Uniswap V2 init code hash
+missing-pool-cache-time = "1h"

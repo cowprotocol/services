@@ -46,8 +46,8 @@ contract GenerateConfigs is Script {
             '\n',
             '[[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)\n',
             'router = "', vm.toString(uniswapV2Router), '"\n',
-            'factory = "', vm.toString(uniswapV2Factory), '"\n',
-            'init-code-digest = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Uniswap V2 init code hash\n'
+            'pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Uniswap V2 init code hash\n',
+            'missing-pool-cache-time = "1h"\n'
         );
 
         // Generate baseline.toml
@@ -90,16 +90,12 @@ contract GenerateConfigs is Script {
             'BALANCER_VAULT_ADDRESS=', vm.toString(balancerVault), '\n'
         );
 
-        // Write TOML files - paths work both locally and in Docker
-        vm.writeFile("configs/offline/driver.toml", driverToml);
-        vm.writeFile("configs/offline/baseline.toml", baselineToml);
+        // Write TOML files to poc-offline-mode/configs/
+        vm.writeFile("./configs/driver.toml", driverToml);
+        vm.writeFile("./configs/baseline.toml", baselineToml);
         
         // Write .env.offline to playground/
-        vm.writeFile("playground/.env.offline", envOffline);
+        vm.writeFile("../.env.offline", envOffline);
 
-        console.log("Generated configuration files:");
-        console.log("  - configs/offline/driver.toml");
-        console.log("  - configs/offline/baseline.toml");
-        console.log("  - playground/.env.offline");
     }
 }

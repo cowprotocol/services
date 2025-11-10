@@ -61,13 +61,16 @@ echo ""
 echo "✅ Uniswap V2 deployed!"
 echo ""
 
-# Extract Uniswap addresses from broadcast - deployed via deployCode so no contractName
-UNISWAP_FACTORY=$(jq -r '[.transactions[] | select(.transactionType == "CREATE")] | .[0].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
-UNISWAP_ROUTER=$(jq -r '[.transactions[] | select(.transactionType == "CREATE")] | .[1].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
+# Extract Uniswap addresses from broadcast
+# Factory and Router are deployed via deployCode (transactionType CREATE)
+UNISWAP_FACTORY=$(jq -r '[.transactions[] | select(.transactionType == "CREATE" and .contractName == null)] | .[0].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
+UNISWAP_ROUTER=$(jq -r '[.transactions[] | select(.transactionType == "CREATE" and .contractName == null)] | .[1].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
+
 # Get pair addresses from PairCreated event logs
-PAIR_WETH_USDC=$(jq -r '.receipts[] | select(.transactionHash != null and .logs != null) | .logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9") | .address' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | sed -n '1p')
-PAIR_WETH_DAI=$(jq -r '.receipts[] | select(.transactionHash != null and .logs != null) | .logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9") | .address' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | sed -n '2p')
-PAIR_USDC_DAI=$(jq -r '.receipts[] | select(.transactionHash != null and .logs != null) | .logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9") | .address' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | sed -n '3p')
+# The pair address is in the data field (first 32 bytes, prefixed with 0x followed by 24 zeros)
+PAIR_WETH_USDC=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[0].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_WETH_DAI=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[1].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_USDC_DAI=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[2].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
 
 # Export for next scripts
 export UNISWAP_FACTORY
@@ -103,8 +106,8 @@ echo ""
 COW_AUTHENTICATOR=$(jq -r '[.transactions[] | select(.transactionType == "CREATE")] | .[0].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
 COW_SETTLEMENT=$(jq -r '[.transactions[] | select(.transactionType == "CREATE")] | .[1].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
 # VaultRelayer is created by Settlement contract, need to read it from chain
-# cast call returns bytes32, we need to extract the address (last 20 bytes)
-COW_VAULT_RELAYER=$(cast call $COW_SETTLEMENT "vaultRelayer()" --rpc-url $RPC_URL | xargs | sed 's/^0x0*//; s/^/0x/')
+# cast call returns bytes32, we need to extract the address (last 20 bytes = 40 hex chars)
+COW_VAULT_RELAYER=$(cast call $COW_SETTLEMENT "vaultRelayer()" --rpc-url $RPC_URL | xargs | cut -c 27-66)
 BALANCER_VAULT="0xBA12222222228d8Ba445958a75a0704d566BF2C8"
 
 # Export for next scripts
@@ -120,11 +123,16 @@ echo "  Vault Relayer: $COW_VAULT_RELAYER"
 echo "  Balancer Vault: $BALANCER_VAULT"
 echo ""
 
-# Step 4: Add Liquidity
+# Step 4: Add Liquidity (using direct method to bypass router)
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "STEP 4: Adding Initial Liquidity"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "⏳ Coming soon..."
+forge script contracts/script/AddLiquidityDirect.s.sol:AddLiquidityDirect \
+    --rpc-url $RPC_URL \
+    --broadcast
+
+echo ""
+echo "✅ Liquidity added to all pairs!"
 echo ""
 
 # Step 5: Export Addresses to JSON
@@ -166,6 +174,18 @@ echo ""
 echo "✅ Configuration files generated!"
 echo ""
 
+# Step 7: Dump blockchain state
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "STEP 7: Saving Blockchain State"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Use cast to dump the state
+cast rpc anvil_dumpState > state/poc-state.json --rpc-url $RPC_URL
+
+echo ""
+echo "✅ Blockchain state saved to state/poc-state.json"
+echo ""
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ DEPLOYMENT COMPLETE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -174,9 +194,10 @@ echo "📋 Deployment Summary:"
 echo "  ✅ Step 1: Tokens deployed (WETH, USDC, DAI)"
 echo "  ✅ Step 2: Uniswap V2 deployed (Factory, Router, Pairs)"
 echo "  ✅ Step 3: CoW Protocol deployed (Settlement, Auth, VaultRelayer)"
-echo "  ⏳ Step 4: Add liquidity (TODO)"
+echo "  ⚠️  Step 4: Liquidity addition skipped (needs debugging)"
 echo "  ✅ Step 5: Addresses exported to JSON"
 echo "  ✅ Step 6: Configuration files generated"
+echo "  ✅ Step 7: Blockchain state saved"
 echo ""
 echo "📁 Output files:"
 echo "  - config/addresses.json (deployment addresses)"

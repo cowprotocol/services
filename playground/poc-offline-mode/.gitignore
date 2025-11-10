@@ -1,6 +1,8 @@
 # Environment
 .env
 
+cache/
+broadcast/
 # Foundry
 contracts/out/
 contracts/cache/

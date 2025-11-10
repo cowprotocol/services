@@ -3,22 +3,21 @@ services:
   chain:
     image: ghcr.io/foundry-rs/foundry:latest
     restart: always
-    entrypoint: /usr/local/bin/anvil
+    entrypoint: /bin/sh
     command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8545"
-      - --chain-id
-      - "31337"
-      - --block-time
-      - "1"
-      - --gas-limit
-      - "30000000"
-      - --code-size-limit
-      - "50000"
+      - -c
+      - |
+        if [ -f /state/poc-state.json ]; then
+          echo "📂 Loading existing blockchain state..."
+          anvil --load-state /state/poc-state.json --dump-state /state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000
+        else
+          echo "🆕 Starting fresh Anvil node (no state file found)..."
+          anvil --dump-state /state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000
+        fi
     environment:
       - ANVIL_IP_ADDR=0.0.0.0
+    volumes:
+      - ./poc-offline-mode/state:/state
     ports:
       - 8545:8545
     healthcheck:
@@ -31,31 +30,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 2s
-
-  # Deploy contracts to the chain
-  deploy-contracts:
-    build:
-      context: ./poc-offline-mode
-      dockerfile: Dockerfile
-    restart: "no"
-    working_dir: /workspace
-    entrypoint: []
-    command: 
-      - bash
-      - -c
-      - |
-        bash ./scripts/deploy-all.sh > /workspace/playground/deploy.log 2>&1
-        echo $? > /workspace/playground/deploy.exit
-    environment:
-      - RPC_URL=http://chain:8545
-      - DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-    volumes:
-      - ./poc-offline-mode:/workspace
-      - ../configs:/workspace/configs:rw
-      - .:/workspace/playground:rw
-    depends_on:
-      chain:
-        condition: service_healthy
 
   db:
     image: postgres:16
@@ -112,6 +86,9 @@ services:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - SETTLEMENT_CONTRACT_ADDRESS=${SETTLEMENT_CONTRACT_ADDRESS}
+      - NATIVE_TOKEN_ADDRESS=${NATIVE_TOKEN_ADDRESS}
+      - BALANCER_V2_VAULT_ADDRESS=${BALANCER_VAULT_ADDRESS}
       - ACCOUNT_BALANCES_SIMULATION=true
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -136,8 +113,6 @@ services:
         condition: service_completed_successfully
       chain:
         condition: service_healthy
-      deploy-contracts:
-        condition: service_completed_successfully
     ports:
       - 8080:80 # API
       - 9586:9586 # metrics
@@ -165,6 +140,9 @@ services:
       - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
+      - SETTLEMENT_CONTRACT_ADDRESS=${SETTLEMENT_CONTRACT_ADDRESS}
+      - NATIVE_TOKEN_ADDRESS=${NATIVE_TOKEN_ADDRESS}
+      - BALANCER_V2_VAULT_ADDRESS=${BALANCER_VAULT_ADDRESS}
       - SETTLE_INTERVAL=15s
       - GAS_ESTIMATORS=Native,Web3
       - PRICE_ESTIMATORS=None
@@ -190,8 +168,6 @@ services:
         condition: service_started
       chain:
         condition: service_healthy
-      deploy-contracts:
-        condition: service_completed_successfully
     ports:
       - 9589:9589 # metrics
       - 6670:6669 # tokio console
@@ -229,8 +205,6 @@ services:
     depends_on:
       chain:
         condition: service_healthy
-      deploy-contracts:
-        condition: service_completed_successfully
 
   # baseline (solver engine)
   baseline:
@@ -265,8 +239,6 @@ services:
     depends_on:
       chain:
         condition: service_healthy
-      deploy-contracts:
-        condition: service_completed_successfully
 
   frontend:
     build:
