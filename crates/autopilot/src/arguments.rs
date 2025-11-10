@@ -260,6 +260,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_filtering: bool,
 
+    // Filter out that have not been presigned even if disable_order_filtering is turned on.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub force_presign_order_filtering: bool,
+
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
     /// and not cut any auctions.
