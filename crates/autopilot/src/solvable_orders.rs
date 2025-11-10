@@ -230,7 +230,7 @@ impl SolvableOrdersCache {
                 .timed_future(
                     "weth_price_fetch",
                     self.native_price_estimator
-                        .estimate_native_price(self.weth, Default::default()),
+                        .estimate_native_price(self.weth.into_alloy(), Default::default()),
                 )
                 .await
                 .expect("weth price fetching can never fail");
@@ -924,17 +924,17 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_price()
-            .withf(move |token, _| *token == token1)
+            .withf(move |token, _| *token == token1.into_alloy())
             .returning(|_, _| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token2)
+            .withf(move |token, _| *token == token2.into_alloy())
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token3)
+            .withf(move |token, _| *token == token3.into_alloy())
             .returning(|_, _| async { Ok(0.25) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
@@ -1005,27 +1005,27 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_price()
-            .withf(move |token, _| *token == token1)
+            .withf(move |token, _| *token == token1.into_alloy())
             .returning(|_, _| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token2)
+            .withf(move |token, _| *token == token2.into_alloy())
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token3)
+            .withf(move |token, _| *token == token3.into_alloy())
             .returning(|_, _| async { Ok(0.25) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token4)
+            .withf(move |token, _| *token == token4.into_alloy())
             .returning(|_, _| async { Ok(0.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token5)
+            .withf(move |token, _| *token == token5.into_alloy())
             .returning(|_, _| async { Ok(5.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
@@ -1112,17 +1112,17 @@ mod tests {
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token3)
+            .withf(move |token, _| *token == token3.into_alloy())
             .returning(|_, _| async { Ok(3.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token_approx1)
+            .withf(move |token, _| *token == token_approx1.into_alloy())
             .returning(|_, _| async { Ok(40.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token_approx2)
+            .withf(move |token, _| *token == token_approx2.into_alloy())
             .returning(|_, _| async { Ok(50.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(

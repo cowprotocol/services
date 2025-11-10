@@ -12,10 +12,11 @@ use {
         boundary::{self},
         domain::{self, eth},
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     app_data::Validator,
     derive_more::Into,
-    primitive_types::{H160, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    primitive_types::H160,
     rust_decimal::Decimal,
     std::{collections::HashSet, str::FromStr},
 };
@@ -183,9 +184,9 @@ impl ProtocolFees {
                             factor,
                             max_volume_factor,
                             quote: Quote {
-                                sell_amount: quote.sell_amount.into(),
-                                buy_amount: quote.buy_amount.into(),
-                                fee: quote.fee.into(),
+                                sell_amount: quote.sell_amount.0.into_alloy(),
+                                buy_amount: quote.buy_amount.0.into_alloy(),
+                                fee: quote.fee.0.into_alloy(),
                                 solver: quote.solver,
                             },
                         }
@@ -208,7 +209,7 @@ impl ProtocolFees {
         let reference_quote = quote.clone().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
             sell_amount: order.data.sell_amount.into(),
-            buy_amount: U256::zero().into(),
+            buy_amount: U256::ZERO.into_legacy().into(),
             fee: order.data.fee_amount.into(),
             solver: Address::ZERO,
         });
@@ -340,9 +341,9 @@ pub struct Quote {
 impl Quote {
     fn from_domain(value: &domain::Quote) -> Self {
         Self {
-            sell_amount: value.sell_amount.into(),
-            buy_amount: value.buy_amount.into(),
-            fee: value.fee.into(),
+            sell_amount: value.sell_amount.0.into_alloy(),
+            buy_amount: value.buy_amount.0.into_alloy(),
+            fee: value.fee.0.into_alloy(),
             solver: value.solver,
         }
     }

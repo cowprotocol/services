@@ -1,7 +1,8 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
+    alloy::primitives::Address,
     bigdecimal::{BigDecimal, ToPrimitive},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
@@ -52,7 +53,7 @@ pub trait NativePriceEstimating: Send + Sync {
     /// that is needed to buy 1 unit of the specified token).
     fn estimate_native_price(
         &self,
-        token: H160,
+        token: Address,
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
 }
@@ -96,11 +97,11 @@ impl NativePriceEstimating for NativePriceEstimator {
     #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
-        token: H160,
+        token: Address,
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let query = Arc::new(self.query(&token, timeout));
+            let query = Arc::new(self.query(&token.into_legacy(), timeout));
             let estimate = self.inner.estimate(query.clone()).await?;
             let price = estimate.price_in_buy_token_f64(&query);
             if is_price_malformed(price) {
@@ -153,7 +154,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(H160::from_low_u64_be(3), HEALTHY_PRICE_ESTIMATION_TIME)
+            .estimate_native_price(Address::with_last_byte(3), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(result.unwrap(), 1. / 0.123456789);
     }
@@ -174,7 +175,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(H160::from_low_u64_be(2), HEALTHY_PRICE_ESTIMATION_TIME)
+            .estimate_native_price(Address::with_last_byte(2), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
     }

@@ -9,7 +9,7 @@ use {
         QuoteVerificationMode,
     },
     anyhow::Context,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
     primitive_types::{H160, U256},
@@ -112,8 +112,10 @@ impl PriceRanking {
                     .estimate()
                     .map_ok(|gas| gas.effective_gas_price())
                     .map_err(PriceEstimationError::ProtocolInternal);
-                let (native_price, gas_price) =
-                    futures::try_join!(native.estimate_native_price(token, timeout), gas)?;
+                let (native_price, gas_price) = futures::try_join!(
+                    native.estimate_native_price(token.into_alloy(), timeout),
+                    gas
+                )?;
 
                 Ok(RankingContext {
                     native_price,

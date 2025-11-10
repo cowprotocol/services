@@ -5,9 +5,9 @@ use {
         Query,
         native::{NativePriceEstimateResult, NativePriceEstimating},
     },
+    alloy::primitives::Address,
     ethcontract::jsonrpc::futures_util::future::BoxFuture,
     futures::future::FutureExt,
-    primitive_types::H160,
     prometheus::{HistogramVec, IntCounterVec},
     std::{
         sync::Arc,
@@ -85,7 +85,7 @@ impl<T: PriceEstimating> PriceEstimating for InstrumentedPriceEstimator<T> {
 impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstimator<T> {
     fn estimate_native_price(
         &self,
-        token: H160,
+        token: Address,
         timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
