@@ -596,10 +596,7 @@ async fn test_order_parameters(
 ) {
     // Expected values from actual EIP1271 order instead of eth-flow order
     assert_eq!(response.data.valid_to, u32::MAX);
-    assert_eq!(
-        response.metadata.owner,
-        ethflow_contract.address().into_legacy()
-    );
+    assert_eq!(response.metadata.owner, *ethflow_contract.address());
     assert_eq!(
         response.data.sell_token,
         contracts.weth.address().into_legacy()
@@ -616,7 +613,7 @@ async fn test_order_parameters(
     assert_eq!(
         response.metadata.onchain_order_data,
         Some(OnchainOrderData {
-            sender: *owner,
+            sender: owner.into_alloy(),
             placement_error: None,
         })
     );

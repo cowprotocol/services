@@ -773,10 +773,10 @@ impl OrderValidating for OrderValidator {
 
         let order = Order {
             metadata: OrderMetadata {
-                owner,
+                owner: owner.into_alloy(),
                 creation_date: chrono::offset::Utc::now(),
                 uid,
-                settlement_contract,
+                settlement_contract: settlement_contract.into_alloy(),
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
