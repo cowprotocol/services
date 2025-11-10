@@ -12,6 +12,7 @@ use {
         boundary::{self},
         domain::{self, eth},
     },
+    alloy::primitives::Address,
     app_data::Validator,
     derive_more::Into,
     primitive_types::{H160, U256},
@@ -185,7 +186,7 @@ impl ProtocolFees {
                                 sell_amount: quote.sell_amount.into(),
                                 buy_amount: quote.buy_amount.into(),
                                 fee: quote.fee.into(),
-                                solver: quote.solver.into(),
+                                solver: quote.solver,
                             },
                         }
                     }
@@ -209,7 +210,7 @@ impl ProtocolFees {
             sell_amount: order.data.sell_amount.into(),
             buy_amount: U256::zero().into(),
             fee: order.data.fee_amount.into(),
-            solver: H160::zero().into(),
+            solver: Address::ZERO,
         });
 
         let partner_fee =
@@ -333,7 +334,7 @@ pub struct Quote {
     pub buy_amount: U256,
     /// The amount that needs to be paid, denominated in the sell token.
     pub fee: U256,
-    pub solver: H160,
+    pub solver: Address,
 }
 
 impl Quote {
@@ -342,7 +343,7 @@ impl Quote {
             sell_amount: value.sell_amount.into(),
             buy_amount: value.buy_amount.into(),
             fee: value.fee.into(),
-            solver: value.solver.into(),
+            solver: value.solver,
         }
     }
 }
