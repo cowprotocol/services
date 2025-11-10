@@ -1,8 +1,8 @@
 chain-id = "31337" # Anvil local chain
 base-tokens = [
-    "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1", # WETH (auto-generated from deployment)
-    "0x4A679253410272dd5232B3Ff7cF5dbB88f295319", # DAI (auto-generated from deployment)
-    "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f", # USDC (auto-generated from deployment)
+    "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", # WETH
+    "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44", # DAI
+    "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1", # USDC
 ]
 max-hops = 2
 max-partial-attempts = 5

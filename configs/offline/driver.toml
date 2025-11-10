@@ -2,6 +2,12 @@ app-data-fetching-enabled = true
 orderbook-url = "http://orderbook"
 tx-gas-limit = "45000000"
 
+[contracts]
+gp-v2-settlement = "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E"
+weth = "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d"
+balances = "0xfa387EAD79576Bc60f08dc9f0A211480De903Aa1"
+signatures = "0x6E8954c061EEaaa1e0c62039DdC8A92E6B8ABC46"
+
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique
 endpoint = "http://baseline"
@@ -18,12 +24,12 @@ mempool = "public"
 
 [liquidity]
 base-tokens = [
-    "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1", # WETH (auto-generated from deployment)
-    "0x4A679253410272dd5232B3Ff7cF5dbB88f295319", # DAI (auto-generated from deployment)
-    "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f", # USDC (auto-generated from deployment)
+    "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", # WETH
+    "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44", # DAI
+    "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1", # USDC
 ]
 
-[[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)
-router = "0x09635F643e140090A9A8Dcd712eD6285858ceBef"
-pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Uniswap V2 init code hash
+[[liquidity.uniswap-v2]] # Uniswap V2 configuration
+router = "0x4A679253410272dd5232B3Ff7cF5dbB88f295319"
+pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Standard Uniswap V2 init code hash
 missing-pool-cache-time = "1h"

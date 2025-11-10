@@ -182,7 +182,7 @@ services:
           sleep 1
         done
         echo "Chain is ready! Starting driver..."
-        cargo watch -x 'run --bin driver -- --config configs/offline/driver.toml'
+        target/aarch64-unknown-linux-gnu/debug/driver --config configs/offline/driver.toml
     env_file: .env.offline
     environment:
       - ETHRPC=http://chain:8545
@@ -217,7 +217,7 @@ services:
           sleep 1
         done
         echo "Chain is ready! Starting baseline solver..."
-        cargo watch -x 'run --bin solvers -- baseline --config configs/offline/baseline.toml'
+        target/aarch64-unknown-linux-gnu/debug/solvers baseline --config configs/offline/baseline.toml
     env_file: .env.offline
     environment:
       - ADDR=0.0.0.0:80
