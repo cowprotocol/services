@@ -1,7 +1,8 @@
 use {
     crate::{AuctionId, order::OrderUid},
+    alloy::primitives::{Address, B256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, H256, U256},
+    primitive_types::U256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -13,9 +14,9 @@ use {
 pub struct Response {
     pub auction_id: AuctionId,
     pub auction_start_block: i64,
-    pub transaction_hashes: Vec<H256>,
+    pub transaction_hashes: Vec<B256>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub reference_scores: BTreeMap<H160, U256>,
+    pub reference_scores: BTreeMap<Address, U256>,
     pub auction: Auction,
     pub solutions: Vec<Solution>,
 }
@@ -26,23 +27,23 @@ pub struct Response {
 pub struct Auction {
     pub orders: Vec<OrderUid>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<Address, U256>,
 }
 
 #[serde_as]
 #[derive(Clone, Default, Deserialize, Serialize, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
-    pub solver_address: H160,
+    pub solver_address: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub score: U256,
     pub ranking: i64,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub clearing_prices: BTreeMap<H160, U256>,
+    pub clearing_prices: BTreeMap<Address, U256>,
     pub orders: Vec<Order>,
     pub is_winner: bool,
     pub filtered_out: bool,
-    pub tx_hash: Option<H256>,
+    pub tx_hash: Option<B256>,
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub reference_score: Option<U256>,
 }
@@ -59,9 +60,9 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     /// The buy token address.
-    pub buy_token: H160,
+    pub buy_token: Address,
     /// The sell token address.
-    pub sell_token: H160,
+    pub sell_token: Address,
 }
 
 #[cfg(test)]
@@ -112,8 +113,8 @@ mod tests {
             ],
         });
 
-        let solver = H160([0x22; 20]);
-        let tx = H256([0x33; 32]);
+        let solver = Address::new([0x22; 20]);
+        let tx = B256::new([0x33; 32]);
 
         let orig = Response {
             auction_id: 0,
@@ -125,7 +126,7 @@ mod tests {
             auction: Auction {
                 orders: vec![OrderUid([0x11; 56])],
                 prices: btreemap! {
-                    H160([0x22; 20]) => 2000.into(),
+                    Address::new([0x22; 20]) => 2000.into(),
                 },
             },
             solutions: vec![Solution {
@@ -133,14 +134,14 @@ mod tests {
                 score: 123.into(),
                 ranking: 1,
                 clearing_prices: btreemap! {
-                    H160([0x22; 20]) => 8.into(),
+                    Address::new([0x22; 20]) => 8.into(),
                 },
                 orders: vec![Order {
                     id: OrderUid([0x11; 56]),
                     sell_amount: 12.into(),
                     buy_amount: 13.into(),
-                    buy_token: H160([0x22; 20]),
-                    sell_token: H160([0x22; 20]),
+                    buy_token: Address::new([0x22; 20]),
+                    sell_token: Address::new([0x22; 20]),
                 }],
                 is_winner: true,
                 filtered_out: false,
