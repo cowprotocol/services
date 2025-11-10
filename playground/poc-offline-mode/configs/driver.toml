@@ -18,12 +18,12 @@ mempool = "public"
 
 [liquidity]
 base-tokens = [
-    "0x5FbDB2315678afecb367f032d93F642f64180aa3", # WETH (auto-generated from deployment)
-    "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9", # DAI (auto-generated from deployment)
-    "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0", # USDC (auto-generated from deployment)
+    "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", # WETH (auto-generated from deployment)
+    "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44", # DAI (auto-generated from deployment)
+    "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1", # USDC (auto-generated from deployment)
 ]
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)
-router = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+router = "0x4A679253410272dd5232B3Ff7cF5dbB88f295319"
 pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Uniswap V2 init code hash
 missing-pool-cache-time = "1h"

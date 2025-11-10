@@ -86,9 +86,6 @@ services:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - SETTLEMENT_CONTRACT_ADDRESS=${SETTLEMENT_CONTRACT_ADDRESS}
-      - NATIVE_TOKEN_ADDRESS=${NATIVE_TOKEN_ADDRESS}
-      - BALANCER_V2_VAULT_ADDRESS=${BALANCER_VAULT_ADDRESS}
       - ACCOUNT_BALANCES_SIMULATION=true
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -100,6 +97,8 @@ services:
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - BASELINE_SOURCES=UniswapV2
+      - TOKEN_OWNER_FINDERS=liquidity
+      - AMOUNT_TO_ESTIMATE_PRICES_WITH=100000000000000000
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
@@ -140,9 +139,6 @@ services:
       - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
-      - SETTLEMENT_CONTRACT_ADDRESS=${SETTLEMENT_CONTRACT_ADDRESS}
-      - NATIVE_TOKEN_ADDRESS=${NATIVE_TOKEN_ADDRESS}
-      - BALANCER_V2_VAULT_ADDRESS=${BALANCER_VAULT_ADDRESS}
       - SETTLE_INTERVAL=15s
       - GAS_ESTIMATORS=Native,Web3
       - PRICE_ESTIMATORS=None

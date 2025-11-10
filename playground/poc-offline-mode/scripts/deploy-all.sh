@@ -123,6 +123,56 @@ echo "  Vault Relayer: $COW_VAULT_RELAYER"
 echo "  Balancer Vault: $BALANCER_VAULT"
 echo ""
 
+# Step 3.5: Deploy Balances Contract
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "STEP 3.5: Deploying Balances Contract"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+forge script contracts/script/DeployBalances.s.sol:DeployBalances \
+    --rpc-url $RPC_URL \
+    --broadcast \
+    --private-key $DEPLOYER_PRIVATE_KEY \
+    --skip-simulation \
+    -vvv
+
+echo ""
+echo "✅ Balances contract deployed!"
+echo ""
+
+# Extract Balances address from broadcast (CREATE2 transaction)
+BALANCES_CONTRACT=$(jq -r '.transactions[] | select(.contractName == "Balances") | .contractAddress' broadcast/DeployBalances.s.sol/31337/run-latest.json)
+
+# Export for next scripts
+export BALANCES_CONTRACT
+
+echo "📝 Deployed Balances address:"
+echo "  Balances: $BALANCES_CONTRACT"
+echo ""
+
+# Step 3.6: Deploy Signatures Contract
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "STEP 3.6: Deploying Signatures Contract"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+forge script contracts/script/DeploySignatures.s.sol:DeploySignatures \
+    --rpc-url $RPC_URL \
+    --broadcast \
+    --private-key $DEPLOYER_PRIVATE_KEY \
+    --skip-simulation \
+    -vvv
+
+echo ""
+echo "✅ Signatures contract deployed!"
+echo ""
+
+# Extract Signatures address from broadcast (CREATE2 transaction)
+SIGNATURES_CONTRACT=$(jq -r '.transactions[] | select(.contractName == "Signatures") | .contractAddress' broadcast/DeploySignatures.s.sol/31337/run-latest.json)
+
+# Export for next scripts
+export SIGNATURES_CONTRACT
+
+echo "📝 Deployed Signatures address:"
+echo "  Signatures: $SIGNATURES_CONTRACT"
+echo ""
+
 # Step 4: Add Liquidity (using direct method to bypass router)
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "STEP 4: Adding Initial Liquidity"
@@ -165,6 +215,8 @@ export SETTLEMENT_CONTRACT_ADDRESS=${COW_SETTLEMENT}
 export AUTHENTICATOR_ADDRESS=${COW_AUTHENTICATOR}
 export VAULT_RELAYER_ADDRESS=${COW_VAULT_RELAYER}
 export BALANCER_VAULT_ADDRESS=${BALANCER_VAULT}
+export BALANCES_CONTRACT_ADDRESS=${BALANCES_CONTRACT}
+export SIGNATURES_CONTRACT_ADDRESS=${SIGNATURES_CONTRACT}
 
 forge script contracts/script/GenerateConfigs.s.sol:GenerateConfigs \
     --rpc-url $RPC_URL \
@@ -172,18 +224,6 @@ forge script contracts/script/GenerateConfigs.s.sol:GenerateConfigs \
 
 echo ""
 echo "✅ Configuration files generated!"
-echo ""
-
-# Step 7: Dump blockchain state
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "STEP 7: Saving Blockchain State"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# Use RPC method to dump the state
-cast rpc anvil_dumpState state/poc-state.json --rpc-url $RPC_URL > /dev/null
-
-echo ""
-echo "✅ Blockchain state saved to state/poc-state.json"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -194,7 +234,9 @@ echo "📋 Deployment Summary:"
 echo "  ✅ Step 1: Tokens deployed (WETH, USDC, DAI)"
 echo "  ✅ Step 2: Uniswap V2 deployed (Factory, Router, Pairs)"
 echo "  ✅ Step 3: CoW Protocol deployed (Settlement, Auth, VaultRelayer)"
-echo "  ⚠️  Step 4: Liquidity addition skipped (needs debugging)"
+echo "  ✅ Step 3.5: Balances contract deployed"
+echo "  ✅ Step 3.6: Signatures contract deployed"
+echo "  ✅ Step 4: Liquidity added to all pairs"
 echo "  ✅ Step 5: Addresses exported to JSON"
 echo "  ✅ Step 6: Configuration files generated"
 echo "  ✅ Step 7: Blockchain state saved"
