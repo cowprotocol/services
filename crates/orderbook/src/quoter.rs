@@ -159,8 +159,6 @@ impl QuoteHandler {
 }
 
 /// Calculates the protocol fee based on volume fee and adjusts quote amounts.
-///
-/// Returns `Some(AdjustedQuote)` if volume fee is provided, `None` otherwise.
 fn get_adjusted_quote_data(
     quote: &Quote,
     volume_fee: Option<FeeFactor>,
