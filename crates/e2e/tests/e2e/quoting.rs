@@ -412,7 +412,6 @@ async fn quote_timeout(web3: Web3) {
 
 /// Test that volume fees are correctly applied to quotes.
 async fn volume_fee(web3: Web3) {
-    tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
@@ -509,6 +508,4 @@ async fn volume_fee(web3: Web3) {
         protocol_fee_sell_amount_buy > 0,
         "Protocol fee should be non-zero for buy orders"
     );
-
-    tracing::info!("Volume fee test passed");
 }
