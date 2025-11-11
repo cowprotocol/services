@@ -27,6 +27,7 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
+derive_more = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
@@ -59,6 +60,7 @@ warp = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+shared = { workspace = true, features = ["test-util"] }
 tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]

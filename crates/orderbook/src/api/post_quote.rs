@@ -105,6 +105,7 @@ mod tests {
             },
         },
         number::nonzero::U256 as NonZeroU256,
+        primitive_types::U256,
         reqwest::StatusCode,
         serde_json::json,
         shared::order_quoting::CalculateQuoteError,
@@ -318,6 +319,8 @@ mod tests {
             expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
             verified: false,
+            protocol_fee_bps: Some("2".to_string()),
+            protocol_fee_sell_amount: Some(U256::from(20)),
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
             order_quote_response.clone(),
