@@ -19,13 +19,14 @@ services:
           response=$$(wget -qO- --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545);
           block=$$(echo $$response | sed -n 's/.*\"result\":\"\\([^\"\\]*\\)\".*/\\1/p');
           if [ -n \"$$block\" ] && [ \"$$block\" != \"0x0\" ] && [ \"$$block\" != \"null\" ]; then
-            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3;
+            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3 &&
+            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x79bfED30344291b33c3B2637b6F8C50c9ba35259 0x600160005260206000F3 &&
             exit 0;
           else
             exit 1;
           fi;
         " ]
-      interval: 5s
+      interval: 60s
       timeout: 30s
       retries: 5
       start_period: 5s
@@ -91,6 +92,7 @@ services:
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+      - SETTLEMENT_CONTRACT_ADDRESS=0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9
     volumes:
       - ../:/src
     depends_on:
@@ -133,6 +135,7 @@ services:
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+      - SETTLEMENT_CONTRACT_ADDRESS=0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9
     volumes:
       - ../:/src
     depends_on:
@@ -166,6 +169,7 @@ services:
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+      - SETTLEMENT_CONTRACT_ADDRESS=0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9
     volumes:
       - ../:/src
     ports:
@@ -197,6 +201,7 @@ services:
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+      - SETTLEMENT_CONTRACT_ADDRESS=0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9
     volumes:
       - ../:/src
     ports:
