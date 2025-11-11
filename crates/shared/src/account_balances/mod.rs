@@ -6,7 +6,11 @@ use {
     alloy::sol_types::{SolCall, SolType, sol_data},
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethcontract::state_overrides::StateOverrides,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -32,7 +36,7 @@ impl Query {
     pub fn from_order(o: &Order) -> Self {
         Self {
             owner: o.metadata.owner,
-            token: o.data.sell_token,
+            token: o.data.sell_token.into_legacy(),
             source: o.data.sell_token_balance,
             interactions: o.interactions.pre.clone(),
             // TODO eventually delete together with the balance

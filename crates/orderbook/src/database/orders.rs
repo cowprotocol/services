@@ -31,7 +31,15 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{
+        alloy::{
+            big_decimal_to_u256 as alloy_big_decimal_to_u256,
+            u256_to_big_decimal as alloy_u256_to_big_decimal,
+        },
+        big_decimal_to_big_uint,
+        big_decimal_to_u256,
+        u256_to_big_decimal,
+    },
     primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
@@ -159,14 +167,14 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         uid: order_uid,
         owner: ByteArray(order.metadata.owner.0),
         creation_timestamp: order.metadata.creation_date,
-        sell_token: ByteArray(order.data.sell_token.0),
-        buy_token: ByteArray(order.data.buy_token.0),
-        receiver: order.data.receiver.map(|h160| ByteArray(h160.0)),
-        sell_amount: u256_to_big_decimal(&order.data.sell_amount),
-        buy_amount: u256_to_big_decimal(&order.data.buy_amount),
+        sell_token: ByteArray(order.data.sell_token.0.0),
+        buy_token: ByteArray(order.data.buy_token.0.0),
+        receiver: order.data.receiver.map(|addr| ByteArray(addr.0.0)),
+        sell_amount: alloy_u256_to_big_decimal(&order.data.sell_amount),
+        buy_amount: alloy_u256_to_big_decimal(&order.data.buy_amount),
         valid_to: order.data.valid_to as i64,
         app_data: ByteArray(order.data.app_data.0),
-        fee_amount: u256_to_big_decimal(&order.data.fee_amount),
+        fee_amount: alloy_u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
         class: order_class_into(&order.metadata.class),
         partially_fillable: order.data.partially_fillable,
@@ -582,14 +590,17 @@ fn full_order_with_quote_into_model_order(
             .transpose()?,
     };
     let data = OrderData {
-        sell_token: H160(order.sell_token.0),
-        buy_token: H160(order.buy_token.0),
-        receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        sell_token: Address::new(order.sell_token.0),
+        buy_token: Address::new(order.buy_token.0),
+        receiver: order.receiver.map(|address| Address::new(address.0)),
+        sell_amount: alloy_big_decimal_to_u256(&order.sell_amount)
+            .context("sell_amount is not U256")?,
+        buy_amount: alloy_big_decimal_to_u256(&order.buy_amount)
+            .context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
+        fee_amount: alloy_big_decimal_to_u256(&order.fee_amount)
+            .context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),

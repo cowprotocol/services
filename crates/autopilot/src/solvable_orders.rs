@@ -16,7 +16,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::u256_to_big_decimal,
+    number::conversions::alloy::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
@@ -443,17 +443,14 @@ impl SolvableOrdersCache {
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(orders.iter().flat_map(|order| {
-            std::iter::once(order.metadata.owner)
-                .chain(order.data.receiver)
-                .map(IntoAlloy::into_alloy)
+            std::iter::once(order.metadata.owner.into_alloy()).chain(order.data.receiver)
         }))
         .await;
     orders
         .iter()
         .filter_map(|order| {
-            std::iter::once(order.metadata.owner)
+            std::iter::once(order.metadata.owner.into_alloy())
                 .chain(order.data.receiver)
-                .map(IntoAlloy::into_alloy)
                 .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
         })
@@ -535,7 +532,7 @@ fn orders_with_balance(
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        if order.data.receiver.as_ref() == Some(&settlement_contract) {
+        if order.data.receiver.as_ref() == Some(&settlement_contract.into_alloy()) {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
             // as the receiver are flashloan orders which unlock the necessary
@@ -557,7 +554,7 @@ fn orders_with_balance(
             None => return false,
             Some(balance) => balance,
         };
-        balance >= needed_balance
+        balance.into_alloy() >= needed_balance
     });
     orders
 }
@@ -583,8 +580,8 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
         };
 
         let (Ok(sell_amount), Ok(buy_amount)) = (
-            remaining.remaining(order.data.sell_amount),
-            remaining.remaining(order.data.buy_amount),
+            remaining.remaining(order.data.sell_amount.into_legacy()),
+            remaining.remaining(order.data.buy_amount.into_legacy()),
         ) else {
             return false;
         };
@@ -603,7 +600,12 @@ async fn get_orders_with_native_prices(
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
-        .flat_map(|order| [order.data.sell_token, order.data.buy_token])
+        .flat_map(|order| {
+            [
+                order.data.sell_token.into_legacy(),
+                order.data.buy_token.into_legacy(),
+            ]
+        })
         .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
@@ -618,7 +620,7 @@ async fn get_orders_with_native_prices(
     let mut filtered_market_orders = 0_i64;
     let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
-        match (prices.get(t0), prices.get(t1)) {
+        match (prices.get(&t0.into_legacy()), prices.get(&t1.into_legacy())) {
             (Some(_), Some(_)) => true,
             _ => {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
@@ -655,8 +657,8 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     let mut high_priority_tokens = IndexSet::new();
     let mut most_used_tokens = HashMap::<H160, usize>::new();
     for order in orders {
-        let sell_token = order.data.sell_token;
-        let buy_token = order.data.buy_token;
+        let sell_token = order.data.sell_token.into_legacy();
+        let buy_token = order.data.buy_token.into_legacy();
         let is_market = now.signed_duration_since(order.metadata.creation_date) <= MARKET_ORDER_AGE;
 
         if is_market {
@@ -736,8 +738,14 @@ fn filter_mispriced_limit_orders(
             return true;
         }
 
-        let sell_price = *prices.get(&order.data.sell_token).unwrap();
-        let buy_price = *prices.get(&order.data.buy_token).unwrap();
+        let sell_price = prices
+            .get(&order.data.sell_token.into_legacy())
+            .unwrap()
+            .into_alloy();
+        let buy_price = prices
+            .get(&order.data.buy_token.into_legacy())
+            .unwrap()
+            .into_alloy();
 
         // Convert the sell and buy price to the native token (ETH) and make sure that
         // sell is higher than buy with the configurable price factor.
@@ -902,39 +910,39 @@ mod tests {
 
     #[tokio::test]
     async fn get_orders_with_native_prices_with_timeout() {
-        let token1 = H160([1; 20]);
-        let token2 = H160([2; 20]);
-        let token3 = H160([3; 20]);
+        let token1 = Address::repeat_byte(1);
+        let token2 = Address::repeat_byte(2);
+        let token3 = Address::repeat_byte(3);
 
         let orders = vec![
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token2)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token3)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
         ];
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_price()
-            .withf(move |token, _| *token == token1.into_alloy())
+            .withf(move |token, _| *token == token1)
             .returning(|_, _| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token2.into_alloy())
+            .withf(move |token, _| *token == token2)
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token3.into_alloy())
+            .withf(move |token, _| *token == token3)
             .returning(|_, _| async { Ok(0.25) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
@@ -961,71 +969,71 @@ mod tests {
         assert_eq!(
             prices,
             btreemap! {
-                token1 => U256::from(2_000_000_000_000_000_000_u128),
-                token3 => U256::from(250_000_000_000_000_000_u128),
+                token1.into_legacy() => U256::from(2_000_000_000_000_000_000_u128),
+                token3.into_legacy() => U256::from(250_000_000_000_000_000_u128),
             }
         );
     }
 
     #[tokio::test]
     async fn filters_orders_with_tokens_without_native_prices() {
-        let token1 = H160([1; 20]);
-        let token2 = H160([2; 20]);
-        let token3 = H160([3; 20]);
-        let token4 = H160([4; 20]);
-        let token5 = H160([5; 20]);
+        let token1 = Address::repeat_byte(1);
+        let token2 = Address::repeat_byte(2);
+        let token3 = Address::repeat_byte(3);
+        let token4 = Address::repeat_byte(4);
+        let token5 = Address::repeat_byte(5);
 
         let orders = vec![
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token2)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token2)
                 .with_buy_token(token3)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token3)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token2)
                 .with_buy_token(token4)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
         ];
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_price()
-            .withf(move |token, _| *token == token1.into_alloy())
+            .withf(move |token, _| *token == token1)
             .returning(|_, _| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token2.into_alloy())
+            .withf(move |token, _| *token == token2)
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token3.into_alloy())
+            .withf(move |token, _| *token == token3)
             .returning(|_, _| async { Ok(0.25) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token4.into_alloy())
+            .withf(move |token, _| *token == token4)
             .returning(|_, _| async { Ok(0.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token5.into_alloy())
+            .withf(move |token, _| *token == token5)
             .returning(|_, _| async { Ok(5.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
@@ -1047,7 +1055,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             metrics,
-            vec![token5],
+            vec![token5.into_legacy()],
             Duration::ZERO,
         )
         .await;
@@ -1062,7 +1070,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             metrics,
-            vec![token5],
+            vec![token5.into_legacy()],
             Duration::ZERO,
         )
         .await;
@@ -1071,18 +1079,18 @@ mod tests {
         assert_eq!(
             prices,
             btreemap! {
-                token1 => U256::from(2_000_000_000_000_000_000_u128),
-                token3 => U256::from(250_000_000_000_000_000_u128),
-                token5 => U256::from(5_000_000_000_000_000_000_u128),
+                token1.into_legacy() => U256::from(2_000_000_000_000_000_000_u128),
+                token3.into_legacy() => U256::from(250_000_000_000_000_000_u128),
+                token5.into_legacy() => U256::from(5_000_000_000_000_000_000_u128),
             }
         );
     }
 
     #[tokio::test]
     async fn check_native_price_approximations() {
-        let token1 = H160([1; 20]);
-        let token2 = H160([2; 20]);
-        let token3 = H160([3; 20]);
+        let token1 = Address::repeat_byte(1);
+        let token2 = Address::repeat_byte(2);
+        let token3 = Address::repeat_byte(3);
 
         let token_approx1 = H160([4; 20]);
         let token_approx2 = H160([5; 20]);
@@ -1091,20 +1099,20 @@ mod tests {
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token2)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token2)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token3)
-                .with_buy_amount(1.into())
-                .with_sell_amount(1.into())
+                .with_buy_amount(alloy::primitives::U256::ONE)
+                .with_sell_amount(alloy::primitives::U256::ONE)
                 .build(),
         ];
 
@@ -1112,7 +1120,7 @@ mod tests {
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token3.into_alloy())
+            .withf(move |token, _| *token == token3)
             .returning(|_, _| async { Ok(3.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
@@ -1133,7 +1141,10 @@ mod tests {
             Default::default(),
             3,
             // Set to use native price approximations for the following tokens
-            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            HashMap::from([
+                (token1.into_legacy(), token_approx1),
+                (token2.into_legacy(), token_approx2),
+            ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
@@ -1150,9 +1161,9 @@ mod tests {
         assert_eq!(
             prices,
             btreemap! {
-                token1 => U256::from(40_000_000_000_000_000_000_u128),
-                token2 => U256::from(50_000_000_000_000_000_000_u128),
-                token3 => U256::from(3_000_000_000_000_000_000_u128),
+                token1.into_legacy() => U256::from(40_000_000_000_000_000_000_u128),
+                token2.into_legacy() => U256::from(50_000_000_000_000_000_000_u128),
+                token3.into_legacy() => U256::from(3_000_000_000_000_000_000_u128),
             }
         );
     }
@@ -1178,8 +1189,8 @@ mod tests {
                 ..Default::default()
             },
             data: OrderData {
-                buy_amount: 1.into(),
-                sell_amount: 1.into(),
+                buy_amount: alloy::primitives::U256::ONE,
+                sell_amount: alloy::primitives::U256::ONE,
                 ..Default::default()
             },
             ..Default::default()
@@ -1310,10 +1321,10 @@ mod tests {
 
     #[test]
     fn filter_unsupported_tokens_() {
-        let token0 = H160::from_low_u64_le(0);
-        let token1 = H160::from_low_u64_le(1);
-        let token2 = H160::from_low_u64_le(2);
-        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0.into_alloy()]));
+        let token0 = Address::with_last_byte(0);
+        let token1 = Address::with_last_byte(1);
+        let token2 = Address::with_last_byte(2);
+        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0]));
         let orders = vec![
             OrderBuilder::default()
                 .with_sell_token(token0)
@@ -1352,10 +1363,10 @@ mod tests {
 
         let order = |sell_amount: u8, buy_amount: u8| Order {
             data: OrderData {
-                sell_token,
-                sell_amount: sell_amount.into(),
-                buy_token,
-                buy_amount: buy_amount.into(),
+                sell_token: sell_token.into_alloy(),
+                sell_amount: alloy::primitives::U256::from(sell_amount),
+                buy_token: buy_token.into_alloy(),
+                buy_amount: alloy::primitives::U256::from(buy_amount),
                 ..Default::default()
             },
             metadata: OrderMetadata {
@@ -1398,14 +1409,14 @@ mod tests {
 
     #[test]
     fn orders_with_balance_() {
-        let settlement_contract = H160([1; 20]);
+        let settlement_contract = Address::repeat_byte(1);
         let orders = vec![
             // enough balance for sell and fee
             Order {
                 data: OrderData {
-                    sell_token: H160::from_low_u64_be(2),
-                    sell_amount: 1.into(),
-                    fee_amount: 1.into(),
+                    sell_token: Address::with_last_byte(2),
+                    sell_amount: alloy::primitives::U256::ONE,
+                    fee_amount: alloy::primitives::U256::ONE,
                     partially_fillable: false,
                     ..Default::default()
                 },
@@ -1414,9 +1425,9 @@ mod tests {
             // missing fee balance
             Order {
                 data: OrderData {
-                    sell_token: H160::from_low_u64_be(3),
-                    sell_amount: 1.into(),
-                    fee_amount: 1.into(),
+                    sell_token: Address::with_last_byte(3),
+                    sell_amount: alloy::primitives::U256::ONE,
+                    fee_amount: alloy::primitives::U256::ONE,
                     partially_fillable: false,
                     ..Default::default()
                 },
@@ -1425,9 +1436,9 @@ mod tests {
             // at least 1 partially fillable balance
             Order {
                 data: OrderData {
-                    sell_token: H160::from_low_u64_be(4),
-                    sell_amount: 2.into(),
-                    fee_amount: 0.into(),
+                    sell_token: Address::with_last_byte(4),
+                    sell_amount: alloy::primitives::U256::from(2),
+                    fee_amount: alloy::primitives::U256::ZERO,
                     partially_fillable: true,
                     ..Default::default()
                 },
@@ -1436,9 +1447,9 @@ mod tests {
             // 0 partially fillable balance
             Order {
                 data: OrderData {
-                    sell_token: H160::from_low_u64_be(5),
-                    sell_amount: 2.into(),
-                    fee_amount: 0.into(),
+                    sell_token: Address::with_last_byte(5),
+                    sell_amount: alloy::primitives::U256::from(2),
+                    fee_amount: alloy::primitives::U256::ZERO,
                     partially_fillable: true,
                     ..Default::default()
                 },
@@ -1447,9 +1458,9 @@ mod tests {
             // considered flashloan order because of special receiver
             Order {
                 data: OrderData {
-                    sell_token: H160::from_low_u64_be(6),
-                    sell_amount: 200.into(),
-                    fee_amount: 0.into(),
+                    sell_token: Address::with_last_byte(6),
+                    sell_amount: alloy::primitives::U256::from(200),
+                    fee_amount: alloy::primitives::U256::ZERO,
                     partially_fillable: true,
                     receiver: Some(settlement_contract),
                     ..Default::default()
@@ -1468,7 +1479,8 @@ mod tests {
         .collect();
         let expected = &[0, 2, 4];
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract);
+        let filtered =
+            orders_with_balance(orders.clone(), &balances, settlement_contract.into_legacy());
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);
@@ -1495,11 +1507,13 @@ mod tests {
         };
 
         let orders = vec![
-            order(token(4), token(6), 31),
-            order(token(4), token(6), 31),
-            order(token(1), token(2), 29), // older market order
-            order(token(5), token(6), 31),
-            order(token(1), token(3), 1), // youngest market order
+            order(Address::with_last_byte(4), Address::with_last_byte(6), 31),
+            order(Address::with_last_byte(4), Address::with_last_byte(6), 31),
+            // older market order
+            order(Address::with_last_byte(1), Address::with_last_byte(2), 29),
+            order(Address::with_last_byte(5), Address::with_last_byte(6), 31),
+            // youngest market order
+            order(Address::with_last_byte(1), Address::with_last_byte(3), 1),
         ];
         let result = prioritize_missing_prices(orders);
         assert!(result.into_iter().eq([
