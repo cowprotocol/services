@@ -79,13 +79,15 @@ services:
           echo "Chain not ready, waiting..."
           sleep 1
         done
-        echo "Chain is ready! Starting orderbook..."
+        echo "Chain is ready! Building and starting orderbook..."
+        cargo build --bin orderbook
         target/aarch64-unknown-linux-gnu/debug/orderbook
     env_file: .env.offline
     environment:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - LOG_FILTER=orderbook=trace,shared=trace
       - ACCOUNT_BALANCES_SIMULATION=true
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -130,19 +132,20 @@ services:
         until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
           sleep 1
         done
-        echo "Chain is ready! Starting autopilot..."
+        echo "Chain is ready! Building and starting autopilot..."
+        cargo build --bin autopilot
         target/aarch64-unknown-linux-gnu/debug/autopilot
     env_file: .env.offline
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
+      - LOG_FILTER=debug,autopilot=trace,shared=debug,shared::price_estimation=trace,autopilot::solvable_orders=trace,autopilot::run=trace
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
       - GAS_ESTIMATORS=Native,Web3
       - PRICE_ESTIMATORS=None
-      - NATIVE_PRICE_ESTIMATORS=baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
       - BLOCK_STREAM_POLL_INTERVAL=1s
       - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
@@ -185,12 +188,14 @@ services:
         until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
           sleep 1
         done
-        echo "Chain is ready! Starting driver..."
+        echo "Chain is ready! Building and starting driver..."
+        cargo build --bin driver
         target/aarch64-unknown-linux-gnu/debug/driver --config configs/offline/driver.toml
     env_file: .env.offline
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
+      - RUST_LOG=driver=trace,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
@@ -220,7 +225,8 @@ services:
         until curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545 | grep -q result; do
           sleep 1
         done
-        echo "Chain is ready! Starting baseline solver..."
+        echo "Chain is ready! Building and starting baseline solver..."
+        cargo build --bin solvers
         target/aarch64-unknown-linux-gnu/debug/solvers baseline --config configs/offline/baseline.toml
     env_file: .env.offline
     environment:

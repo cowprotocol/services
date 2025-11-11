@@ -31,5 +31,5 @@ base-tokens = [
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 router = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
-pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Standard Uniswap V2 init code hash
+pool-code = "0xb6912aa8f91da604bdd903b3484a9f6bb569baa993085fc590133487ff27f91e" # Foundry deployed Uniswap V2 init code hash
 missing-pool-cache-time = "1h"

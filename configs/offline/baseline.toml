@@ -7,7 +7,3 @@ base-tokens = [
 max-hops = 2
 max-partial-attempts = 5
 native-token-price-estimation-amount = "100000000000000000" # 0.1 ETH
-
-[liquidity.uniswap-v2]
-router = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
-pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"
