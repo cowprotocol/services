@@ -43,6 +43,7 @@ enum RefundStatus {
 }
 
 impl RefundService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: PgPool,
         web3: Web3,
