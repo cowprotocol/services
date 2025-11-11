@@ -102,6 +102,7 @@ pub struct SolvableOrdersCache {
     native_price_timeout: Duration,
     settlement_contract: H160,
     disable_order_filters: bool,
+    force_presign_order_filtering: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -128,6 +129,7 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: H160,
         disable_order_filters: bool,
+        force_presign_order_filtering: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -146,6 +148,7 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_filters,
+            force_presign_order_filtering,
         })
     }
 
@@ -390,7 +393,7 @@ impl SolvableOrdersCache {
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
         let filter_invalid_signatures = async {
-            if self.disable_order_filters {
+            if self.disable_order_filters && !self.force_presign_order_filtering {
                 return Default::default();
             }
             find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
