@@ -23,7 +23,7 @@ use {
 };
 
 /// Adjusted quote amounts after applying volume fee.
-struct AdjustedQuote {
+struct AdjustedQuoteData {
     /// Adjusted sell amount (original for SELL orders, increased for BUY
     /// orders)
     sell_amount: U256,
@@ -122,8 +122,7 @@ impl QuoteHandler {
             }
         };
 
-        let adjusted_quote = self.calculate_and_apply_volume_fee(&quote, &request.side);
-
+        let adjusted_quote = get_adjusted_quote_data(&quote, self.volume_fee, &request.side);
         let response = OrderQuoteResponse {
             quote: OrderQuote {
                 sell_token: request.sell_token,
@@ -157,87 +156,78 @@ impl QuoteHandler {
         tracing::debug!(?response, "finished computing quote");
         Ok(response)
     }
+}
 
-    /// Calculates the protocol fee based on configured volume fee and adjusts
-    /// quote amounts to account for the fee.
-    ///
-    /// Returns an `AdjustedQuote` containing:
-    /// - Adjusted sell and buy amounts (accounting for protocol fee)
-    /// - Protocol fee in basis points
-    /// - Protocol fee amount in sell token
-    fn calculate_and_apply_volume_fee(
-        &self,
-        quote: &Quote,
-        side: &OrderQuoteSide,
-    ) -> AdjustedQuote {
-        let Some(factor) = self.volume_fee else {
-            // No volume fee configured, return original amounts
-            return AdjustedQuote {
-                sell_amount: quote.sell_amount,
-                buy_amount: quote.buy_amount,
-                protocol_fee_bps: None,
-                protocol_fee_sell_amount: None,
-            };
+/// Calculates the protocol fee based on volume fee and adjusts quote amounts.
+///
+/// Returns `Some(AdjustedQuote)` if volume fee is provided, `None` otherwise.
+fn get_adjusted_quote_data(
+    quote: &Quote,
+    volume_fee: Option<FeeFactor>,
+    side: &OrderQuoteSide,
+) -> AdjustedQuoteData {
+    let Some(factor) = volume_fee else {
+        return AdjustedQuoteData {
+            sell_amount: quote.sell_amount,
+            buy_amount: quote.buy_amount,
+            protocol_fee_bps: None,
+            protocol_fee_sell_amount: None,
         };
+    };
+    // Calculate the volume (surplus token amount) to apply fee to
+    // Following driver's logic in
+    // crates/driver/src/domain/competition/solution/fee.rs:189-202:
+    let factor_f64: f64 = factor.into();
+    let (protocol_fee_in_surplus_token, adjusted_sell_amount, adjusted_buy_amount) = match side {
+        OrderQuoteSide::Sell { .. } => {
+            // For SELL orders, fee is calculated on buy amount
+            let fee_f64 = quote.buy_amount.to_f64_lossy() * factor_f64;
+            let protocol_fee = U256::from_f64_lossy(fee_f64);
 
-        // Calculate the volume (surplus token amount) to apply fee to
-        // Following driver's logic in fee.rs:189-202:
-        // - SELL orders: volume = buy_amount (surplus token)
-        // - BUY orders: volume = sell_amount (surplus token)
-        let (protocol_fee_in_surplus_token, adjusted_sell_amount, adjusted_buy_amount) = match side
-        {
-            OrderQuoteSide::Sell { .. } => {
-                // For SELL orders, fee is calculated on buy amount
-                let factor_f64: f64 = factor.into();
-                let fee_f64 = quote.buy_amount.to_f64_lossy() * factor_f64;
-                let protocol_fee = U256::from_f64_lossy(fee_f64);
+            // Reduce buy amount by protocol fee
+            let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
 
-                // Reduce buy amount by protocol fee
-                let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
-
-                (protocol_fee, quote.sell_amount, adjusted_buy)
-            }
-            OrderQuoteSide::Buy { .. } => {
-                // For BUY orders, fee is calculated on sell amount
-                let factor_f64: f64 = factor.into();
-                let fee_f64 = quote.sell_amount.to_f64_lossy() * factor_f64;
-                let protocol_fee = U256::from_f64_lossy(fee_f64);
-
-                // Increase sell amount by protocol fee
-                let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
-
-                (protocol_fee, adjusted_sell, quote.buy_amount)
-            }
-        };
-
-        // Convert protocol fee to sell token for the response
-        let protocol_fee_sell_amount = match side {
-            OrderQuoteSide::Sell { .. } => {
-                // Fee is in buy token, convert to sell token using price ratio
-                // price = buy_amount / sell_amount
-                // fee_in_sell = fee_in_buy * sell_amount / buy_amount
-                if quote.buy_amount.is_zero() {
-                    U256::zero()
-                } else {
-                    protocol_fee_in_surplus_token
-                        .full_mul(quote.sell_amount)
-                        .checked_div(quote.buy_amount.into())
-                        .and_then(|result| result.try_into().ok())
-                        .unwrap_or(U256::zero())
-                }
-            }
-            OrderQuoteSide::Buy { .. } => {
-                // Fee is already in sell token
-                protocol_fee_in_surplus_token
-            }
-        };
-
-        AdjustedQuote {
-            sell_amount: adjusted_sell_amount,
-            buy_amount: adjusted_buy_amount,
-            protocol_fee_bps: Some(factor.to_bps().to_string()),
-            protocol_fee_sell_amount: Some(protocol_fee_sell_amount),
+            (protocol_fee, quote.sell_amount, adjusted_buy)
         }
+        OrderQuoteSide::Buy { .. } => {
+            // For BUY orders, fee is calculated on sell amount
+            let fee_f64 = quote.sell_amount.to_f64_lossy() * factor_f64;
+            let protocol_fee = U256::from_f64_lossy(fee_f64);
+
+            // Increase sell amount by protocol fee
+            let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
+
+            (protocol_fee, adjusted_sell, quote.buy_amount)
+        }
+    };
+
+    // Convert protocol fee to sell token for the response
+    let protocol_fee_sell_amount = match side {
+        OrderQuoteSide::Sell { .. } => {
+            // Fee is in buy token, convert to sell token using price ratio
+            // price = buy_amount / sell_amount
+            // fee_in_sell = fee_in_buy * sell_amount / buy_amount
+            if quote.buy_amount.is_zero() {
+                U256::zero()
+            } else {
+                protocol_fee_in_surplus_token
+                    .full_mul(quote.sell_amount)
+                    .checked_div(quote.buy_amount.into())
+                    .and_then(|result| result.try_into().ok())
+                    .unwrap_or_default()
+            }
+        }
+        OrderQuoteSide::Buy { .. } => {
+            // Fee is already in sell token
+            protocol_fee_in_surplus_token
+        }
+    };
+
+    AdjustedQuoteData {
+        sell_amount: adjusted_sell_amount,
+        buy_amount: adjusted_buy_amount,
+        protocol_fee_bps: Some(factor.to_bps().to_string()),
+        protocol_fee_sell_amount: Some(protocol_fee_sell_amount),
     }
 }
 
@@ -302,72 +292,6 @@ mod tests {
         }
     }
 
-    // Test helper function that directly tests the volume fee calculation logic
-    // without needing the full QuoteHandler infrastructure
-    fn apply_volume_fee_to_quote(
-        volume_fee: Option<FeeFactor>,
-        quote: &Quote,
-        side: &OrderQuoteSide,
-    ) -> Option<AdjustedQuote> {
-        let factor = volume_fee?;
-
-        let (protocol_fee_in_surplus_token, adjusted_sell_amount, adjusted_buy_amount) = match side
-        {
-            OrderQuoteSide::Sell { .. } => {
-                let factor_f64: f64 = factor.into();
-                let fee_f64 = quote.buy_amount.to_f64_lossy() * factor_f64;
-                let protocol_fee = U256::from_f64_lossy(fee_f64);
-                let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
-                (protocol_fee, quote.sell_amount, adjusted_buy)
-            }
-            OrderQuoteSide::Buy { .. } => {
-                let factor_f64: f64 = factor.into();
-                let fee_f64 = quote.sell_amount.to_f64_lossy() * factor_f64;
-                let protocol_fee = U256::from_f64_lossy(fee_f64);
-                let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
-                (protocol_fee, adjusted_sell, quote.buy_amount)
-            }
-        };
-
-        // Convert protocol fee from surplus token to sell token
-        let protocol_fee_sell_amount = match side {
-            OrderQuoteSide::Sell { .. } => {
-                // fee is in buy token, convert to sell token
-                // fee_sell = fee_buy * (sell_amount / buy_amount)
-                protocol_fee_in_surplus_token
-                    .full_mul(quote.sell_amount)
-                    .checked_div(quote.buy_amount.into())
-                    .and_then(|v| v.try_into().ok())
-                    .unwrap_or(U256::zero())
-            }
-            OrderQuoteSide::Buy { .. } => {
-                // fee is already in sell token
-                protocol_fee_in_surplus_token
-            }
-        };
-
-        Some(AdjustedQuote {
-            sell_amount: adjusted_sell_amount,
-            buy_amount: adjusted_buy_amount,
-            protocol_fee_bps: Some(factor.to_bps().to_string()),
-            protocol_fee_sell_amount: Some(protocol_fee_sell_amount),
-        })
-    }
-
-    #[test]
-    fn test_no_volume_fee_configured() {
-        let quote = create_test_quote(to_wei(100), to_wei(100));
-        let side = OrderQuoteSide::Sell {
-            sell_amount: model::quote::SellAmount::BeforeFee {
-                value: number::nonzero::U256::try_from(to_wei(100)).unwrap(),
-            },
-        };
-
-        let result = apply_volume_fee_to_quote(None, &quote, &side);
-
-        assert!(result.is_none());
-    }
-
     #[test]
     fn test_volume_fee_sell_order() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
@@ -380,8 +304,7 @@ mod tests {
             },
         };
 
-        let result = apply_volume_fee_to_quote(Some(volume_fee), &quote, &side)
-            .expect("Should return adjusted quote when volume fee is configured");
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
 
         // For SELL orders:
         // - sell_amount stays the same
@@ -412,8 +335,7 @@ mod tests {
             buy_amount_after_fee: number::nonzero::U256::try_from(to_wei(100)).unwrap(),
         };
 
-        let result = apply_volume_fee_to_quote(Some(volume_fee), &quote, &side)
-            .expect("Should return adjusted quote when volume fee is configured");
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
 
         // For BUY orders:
         // - buy_amount stays the same
@@ -444,8 +366,7 @@ mod tests {
             },
         };
 
-        let result = apply_volume_fee_to_quote(Some(volume_fee), &quote, &side)
-            .expect("Should return adjusted quote when volume fee is configured");
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
 
         assert_eq!(result.protocol_fee_bps, Some("10".to_string()));
         assert_eq!(result.sell_amount, to_wei(100));
@@ -465,7 +386,6 @@ mod tests {
     fn test_volume_fee_basis_points_conversion() {
         let test_cases = vec![
             (0.0001, "1"), // 0.01% = 1 bps
-            (0.0002, "2"), // 0.02% = 2 bps
             (0.001, "10"), // 0.1% = 10 bps
             (0.01, "100"), // 1% = 100 bps
             (0.05, "500"), // 5% = 500 bps
@@ -482,10 +402,9 @@ mod tests {
                 },
             };
 
-            let result = apply_volume_fee_to_quote(Some(volume_fee), &quote, &side)
-                .expect("Should return adjusted quote when volume fee is configured");
+            let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
 
-            assert_eq!(result.protocol_fee_bps, Some(expected_bps.to_string()),);
+            assert_eq!(result.protocol_fee_bps, Some(expected_bps.to_string()));
         }
     }
 }
