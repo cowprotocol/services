@@ -165,7 +165,8 @@ impl FeeFactor {
     }
 }
 
-/// TryFrom implementation for the cases we want to enforce the constraint [0, 1)
+/// TryFrom implementation for the cases we want to enforce the constraint [0,
+/// 1)
 impl TryFrom<f64> for FeeFactor {
     type Error = anyhow::Error;
 
