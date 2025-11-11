@@ -543,6 +543,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.run_loop_native_price_timeout,
         eth.contracts().settlement().address().into_legacy(),
         args.disable_order_filtering,
+        args.force_presign_order_filtering,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
