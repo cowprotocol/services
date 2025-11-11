@@ -18,16 +18,11 @@ use {
     std::time::Duration,
 };
 
-// Max gas price used for submitting transactions
-const MAX_GAS_PRICE: u64 = 800_000_000_000;
-
 // The gas price buffer determines the gas price buffer used to
 // send out EIP1559 txs.
 // Example: If the prevailing gas is 10Gwei and the buffer factor is 1.20
 // then the gas_price used will be 12.
 const GAS_PRICE_BUFFER_FACTOR: f64 = 1.3;
-// Starting priority fee that the refunder is willing to pay. (=2 Gwei)
-const START_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
 
 // In order to resubmit a new tx with the same nonce, the gas tip and
 // max_fee_per_gas needs to be increased by at least 10 percent.
@@ -44,6 +39,8 @@ pub struct Submitter {
     pub gas_estimator: Box<dyn GasPriceEstimating>,
     pub gas_parameters_of_last_tx: Option<GasPrice1559>,
     pub nonce_of_last_submission: Option<u64>,
+    pub max_gas_price: u64,
+    pub start_priority_fee_tip: u64,
 }
 
 impl Submitter {
@@ -77,6 +74,8 @@ impl Submitter {
             gas_price_estimation,
             nonce,
             self.nonce_of_last_submission,
+            self.max_gas_price,
+            self.start_priority_fee_tip,
         )?;
 
         self.gas_parameters_of_last_tx = Some(gas_price);
@@ -113,13 +112,15 @@ fn calculate_submission_gas_price(
     web3_gas_estimation: GasPrice1559,
     newest_nonce: u64,
     nonce_of_last_submission: Option<u64>,
+    max_gas_price: u64,
+    start_priority_fee_tip: u64,
 ) -> Result<GasPrice1559> {
     // The gas price of the refund tx is the current prevailing gas price
     // of the web3 gas estimation plus a buffer.
     let mut new_gas_price = web3_gas_estimation.bump(GAS_PRICE_BUFFER_FACTOR);
     // limit the prio_fee to max_fee_per_gas as otherwise tx is invalid
     new_gas_price.max_priority_fee_per_gas =
-        (START_PRIORITY_FEE_TIP as f64).min(new_gas_price.max_fee_per_gas);
+        (start_priority_fee_tip as f64).min(new_gas_price.max_fee_per_gas);
 
     // If tx from the previous submission was not mined,
     // we incease the tip and max_gas_fee for miners
@@ -136,15 +137,15 @@ fn calculate_submission_gas_price(
             .max(gas_price_of_last_submission.max_priority_fee_per_gas);
     }
 
-    if new_gas_price.max_fee_per_gas > MAX_GAS_PRICE as f64 {
+    if new_gas_price.max_fee_per_gas > max_gas_price as f64 {
         tracing::warn!(
             "Refunding txs are likely not mined in time, as the current gas price {:?} is higher \
              than MAX_GAS_PRICE specified {:?}",
             new_gas_price.max_fee_per_gas,
-            MAX_GAS_PRICE
+            max_gas_price
         );
         new_gas_price.max_fee_per_gas =
-            f64::min(MAX_GAS_PRICE as f64, new_gas_price.max_fee_per_gas);
+            f64::min(max_gas_price as f64, new_gas_price.max_fee_per_gas);
     }
     new_gas_price.max_priority_fee_per_gas = f64::min(
         new_gas_price.max_priority_fee_per_gas,
@@ -159,6 +160,9 @@ mod tests {
 
     #[test]
     fn test_calculate_submission_gas_price() {
+        const TEST_MAX_GAS_PRICE: u64 = 800_000_000_000;
+        const TEST_START_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
+
         // First case: previous tx was successful
         let max_fee_per_gas = 4_000_000_000f64;
         let web3_gas_estimation = GasPrice1559 {
@@ -174,11 +178,13 @@ mod tests {
             web3_gas_estimation,
             newest_nonce,
             nonce_of_last_submission,
+            TEST_MAX_GAS_PRICE,
+            TEST_START_PRIORITY_FEE_TIP,
         )
         .unwrap();
         let expected_result = GasPrice1559 {
             max_fee_per_gas: max_fee_per_gas * GAS_PRICE_BUFFER_FACTOR,
-            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64,
+            max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as f64,
             base_fee_per_gas: 2_000_000_000f64,
         };
         assert_eq!(result, expected_result);
@@ -187,7 +193,7 @@ mod tests {
         let max_fee_per_gas_of_last_tx = max_fee_per_gas * 2f64;
         let gas_price_of_last_submission = GasPrice1559 {
             max_fee_per_gas: max_fee_per_gas_of_last_tx,
-            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64,
+            max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as f64,
             base_fee_per_gas: 2_000_000_000f64,
         };
         let result = calculate_submission_gas_price(
@@ -195,16 +201,18 @@ mod tests {
             web3_gas_estimation,
             newest_nonce,
             nonce_of_last_submission,
+            TEST_MAX_GAS_PRICE,
+            TEST_START_PRIORITY_FEE_TIP,
         )
         .unwrap();
         let expected_result = GasPrice1559 {
             max_fee_per_gas: max_fee_per_gas_of_last_tx * GAS_PRICE_BUMP,
-            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64 * GAS_PRICE_BUMP,
+            max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as f64 * GAS_PRICE_BUMP,
             base_fee_per_gas: 2_000_000_000f64,
         };
         assert_eq!(result, expected_result);
         // Thrid case: MAX_GAS_PRICE is not exceeded
-        let max_fee_per_gas = MAX_GAS_PRICE as f64 + 1000f64;
+        let max_fee_per_gas = TEST_MAX_GAS_PRICE as f64 + 1000f64;
         let web3_gas_estimation = GasPrice1559 {
             base_fee_per_gas: 2_000_000_000f64,
             max_fee_per_gas,
@@ -217,12 +225,14 @@ mod tests {
             web3_gas_estimation,
             newest_nonce,
             nonce_of_last_submission,
+            TEST_MAX_GAS_PRICE,
+            TEST_START_PRIORITY_FEE_TIP,
         )
         .unwrap();
         let expected_result = GasPrice1559 {
             base_fee_per_gas: 2_000_000_000f64,
-            max_fee_per_gas: MAX_GAS_PRICE as f64,
-            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64,
+            max_fee_per_gas: TEST_MAX_GAS_PRICE as f64,
+            max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as f64,
         };
         assert_eq!(result, expected_result);
     }
