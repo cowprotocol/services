@@ -122,7 +122,8 @@ impl QuoteHandler {
             }
         };
 
-        let adjusted_quote = get_adjusted_quote_data(&quote, self.volume_fee, &request.side);
+        let adjusted_quote = get_adjusted_quote_data(&quote, self.volume_fee, &request.side)
+            .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
         let response = OrderQuoteResponse {
             quote: OrderQuote {
                 sell_token: request.sell_token,
@@ -163,14 +164,14 @@ fn get_adjusted_quote_data(
     quote: &Quote,
     volume_fee: Option<FeeFactor>,
     side: &OrderQuoteSide,
-) -> AdjustedQuoteData {
+) -> anyhow::Result<AdjustedQuoteData> {
     let Some(factor) = volume_fee else {
-        return AdjustedQuoteData {
+        return Ok(AdjustedQuoteData {
             sell_amount: quote.sell_amount,
             buy_amount: quote.buy_amount,
             protocol_fee_bps: None,
             protocol_fee_sell_amount: None,
-        };
+        });
     };
     // Calculate the volume (surplus token amount) to apply fee to
     // Following driver's logic in
@@ -208,8 +209,17 @@ fn get_adjusted_quote_data(
             protocol_fee_in_surplus_token
                 .full_mul(quote.sell_amount)
                 .checked_div(quote.buy_amount.into())
-                .and_then(|result| result.try_into().ok())
-                .unwrap_or_default()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "error converting protocol fee from buy to sell token: division by zero"
+                    )
+                })?
+                .try_into()
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "error converting protocol fee from buy to sell token: U256 overflow"
+                    )
+                })?
         }
         OrderQuoteSide::Buy { .. } => {
             // Fee is already in sell token
@@ -217,12 +227,12 @@ fn get_adjusted_quote_data(
         }
     };
 
-    AdjustedQuoteData {
+    Ok(AdjustedQuoteData {
         sell_amount: adjusted_sell_amount,
         buy_amount: adjusted_buy_amount,
         protocol_fee_bps: Some(factor.to_bps().to_string()),
         protocol_fee_sell_amount: Some(protocol_fee_sell_amount),
-    }
+    })
 }
 
 /// Result from handling a quote request.
@@ -298,7 +308,7 @@ mod tests {
             },
         };
 
-        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side).unwrap();
 
         // For SELL orders:
         // - sell_amount stays the same
@@ -329,7 +339,7 @@ mod tests {
             buy_amount_after_fee: number::nonzero::U256::try_from(to_wei(100)).unwrap(),
         };
 
-        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side).unwrap();
 
         // For BUY orders:
         // - buy_amount stays the same
@@ -360,7 +370,7 @@ mod tests {
             },
         };
 
-        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side).unwrap();
 
         assert_eq!(result.protocol_fee_bps, Some("10".to_string()));
         assert_eq!(result.sell_amount, to_wei(100));
@@ -396,7 +406,7 @@ mod tests {
                 },
             };
 
-            let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side);
+            let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side).unwrap();
 
             assert_eq!(result.protocol_fee_bps, Some(expected_bps.to_string()));
         }
