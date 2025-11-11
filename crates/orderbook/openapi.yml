@@ -1694,7 +1694,8 @@ components:
             already included in the returned sellAmount. For BUY orders, this
             amount is applied before network fees are added to sellAmount. Only
             present when a volume fee is configured.
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - quote
         - expiration
