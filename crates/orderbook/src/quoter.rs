@@ -207,15 +207,11 @@ fn get_adjusted_quote_data(
             // Fee is in buy token, convert to sell token using price ratio
             // price = buy_amount / sell_amount
             // fee_in_sell = fee_in_buy * sell_amount / buy_amount
-            if quote.buy_amount.is_zero() {
-                U256::zero()
-            } else {
-                protocol_fee_in_surplus_token
-                    .full_mul(quote.sell_amount)
-                    .checked_div(quote.buy_amount.into())
-                    .and_then(|result| result.try_into().ok())
-                    .unwrap_or_default()
-            }
+            protocol_fee_in_surplus_token
+                .full_mul(quote.sell_amount)
+                .checked_div(quote.buy_amount.into())
+                .and_then(|result| result.try_into().ok())
+                .unwrap_or_default()
         }
         OrderQuoteSide::Buy { .. } => {
             // Fee is already in sell token
