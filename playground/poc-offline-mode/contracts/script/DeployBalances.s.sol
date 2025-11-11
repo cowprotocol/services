@@ -2,11 +2,7 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Script.sol";
-
-// Minimal Balances interface for deployment
-contract Balances {
-    constructor() {}
-}
+import {Balances} from "../src/Balances.sol";
 
 contract DeployBalances is Script {
     function run() public {

@@ -66,9 +66,7 @@ impl Chain {
             | Self::Optimism => U256::from(10u128.pow(17)),
             Self::Gnosis | Self::Avalanche | Self::Lens => U256::from(10u128.pow(18)),
             Self::Polygon | Self::Plasma => U256::from(10u128.pow(20)),
-            Self::Hardhat => {
-                panic!("unsupported chain for default amount to estimate native prices with")
-            }
+            Self::Hardhat => U256::from(10u128.pow(17)), // Use same as testnets for local testing
         }
     }
 

@@ -80,7 +80,7 @@ services:
           sleep 1
         done
         echo "Chain is ready! Starting orderbook..."
-        cargo watch -x 'run --bin orderbook'
+        target/aarch64-unknown-linux-gnu/debug/orderbook
     env_file: .env.offline
     environment:
       - NODE_URL=http://chain:8545
@@ -131,7 +131,7 @@ services:
           sleep 1
         done
         echo "Chain is ready! Starting autopilot..."
-        cargo watch -x 'run --bin autopilot'
+        target/aarch64-unknown-linux-gnu/debug/autopilot
     env_file: .env.offline
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -148,10 +148,14 @@ services:
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
+      - RUN_LOOP_NATIVE_PRICE_TIMEOUT=5s
       - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
-      - SKIP_EVENT_SYNC=true
+      - NATIVE_PRICE_ESTIMATION_RESULTS_REQUIRED=1
+      - DRIVERS=baseline|http://driver/baseline|0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
       - BASELINE_SOURCES=UniswapV2
+      - TOKEN_OWNER_FINDERS=liquidity
+      - DISABLE_ORDER_FILTERING=true
+      - AMOUNT_TO_ESTIMATE_PRICES_WITH=100000000000000000
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TOKIO_CONSOLE=true

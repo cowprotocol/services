@@ -21,7 +21,7 @@ evm_version = "cancun"
 # Remappings
 remappings = [
     "@openzeppelin/=contracts/lib/openzeppelin-contracts/",
-    "@cowprotocol/=contracts/lib/cow-protocol-contracts/src/contracts/",
+    "@cowprotocol/=contracts/lib/cow-protocol/src/contracts/",
     "@uniswap/v2-core/=contracts/lib/v2-core/",
     "@uniswap/v2-periphery/=contracts/lib/v2-periphery/",
     "solmate/=contracts/lib/solmate/src/",
