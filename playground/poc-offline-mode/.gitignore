@@ -1,8 +1,6 @@
 # Environment
 .env
 
-cache/
-broadcast/
 # Foundry
 contracts/out/
 contracts/cache/
@@ -29,3 +27,6 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+cache/
+broadcast/
