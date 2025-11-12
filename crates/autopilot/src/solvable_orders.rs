@@ -103,6 +103,7 @@ pub struct SolvableOrdersCache {
     settlement_contract: H160,
     disable_order_balance_filter: bool,
     disable_1271_order_sig_filter: bool,
+    disable_1271_order_balance_filter: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -130,6 +131,7 @@ impl SolvableOrdersCache {
         settlement_contract: H160,
         disable_order_balance_filter: bool,
         disable_1271_order_sig_filter: bool,
+        disable_1271_order_balance_filter: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -149,6 +151,7 @@ impl SolvableOrdersCache {
             settlement_contract,
             disable_order_balance_filter,
             disable_1271_order_sig_filter,
+            disable_1271_order_balance_filter,
         })
     }
 
@@ -197,7 +200,12 @@ impl SolvableOrdersCache {
         let orders = if self.disable_order_balance_filter {
             orders
         } else {
-            let orders = orders_with_balance(orders, &balances, self.settlement_contract);
+            let orders = orders_with_balance(
+                orders,
+                &balances,
+                self.settlement_contract,
+                self.disable_1271_order_balance_filter,
+            );
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
 
@@ -539,10 +547,15 @@ fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
     settlement_contract: H160,
+    disable_1271_order_balance_filter: bool,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
+        if disable_1271_order_balance_filter && matches!(order.signature, Signature::Eip1271(_)) {
+            return true;
+        }
+
         if order.data.receiver.as_ref() == Some(&settlement_contract) {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
@@ -1481,12 +1494,50 @@ mod tests {
         .collect();
         let expected = &[0, 2, 4];
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract);
+        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, false);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);
             assert!(found, "{}", index);
         }
+    }
+
+    #[test]
+    fn eip1271_orders_can_skip_balance_filtering() {
+        let settlement_contract = H160([1; 20]);
+        let eip1271_order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(7),
+                sell_amount: 10.into(),
+                fee_amount: 5.into(),
+                partially_fillable: false,
+                ..Default::default()
+            },
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            ..Default::default()
+        };
+        let regular_order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(8),
+                sell_amount: 10.into(),
+                fee_amount: 5.into(),
+                partially_fillable: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let orders = vec![regular_order.clone(), eip1271_order.clone()];
+        let balances: Balances = Default::default();
+
+        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, true);
+        // 1721 filter is disabled, only the regular order is filtered out
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(filtered[0].signature, Signature::Eip1271(_)));
+
+        let filtered_without_override =
+            orders_with_balance(orders, &balances, settlement_contract, false);
+        assert!(filtered_without_override.is_empty());
     }
 
     #[test]
