@@ -2,12 +2,18 @@ app-data-fetching-enabled = true
 orderbook-url = "http://orderbook"
 tx-gas-limit = "45000000"
 
+[contracts]
+gp-v2-settlement = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+weth = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+balances = "0x65f63a74B9900c7DFE26aC0cf171A536b7509f56"
+signatures = "0x7377795aa7b4a8fca5e4e194f54eaff667db45f0"
+
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique
 endpoint = "http://baseline"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
-# Anvil account #0 private key (from test mnemonic)
+# Anvil account #0 private key (from test mnemonic) - this is the authorized solver
 account = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 [submission]
@@ -16,20 +22,14 @@ gas-price-cap = "1000000000000"
 [[submission.mempool]]
 mempool = "public"
 
-[contracts]
-gp-v2-settlement = "0xb7f8bc63bbcad18155201308c8f3540b07f84f5e"
-weth = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
-balances = "0xbd5a6618df333f8f66702daadc9a953e2b52a65d"
-signatures = "0x7377795aa7b4a8fca5e4e194f54eaff667db45f0"
-
 [liquidity]
 base-tokens = [
-    "0x5fbdb2315678afecb367f032d93f642f64180aa3", # WETH (auto-generated from deployment)
-    "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9", # DAI (auto-generated from deployment)
-    "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0", # USDC (auto-generated from deployment)
+    "0x5FbDB2315678afecb367f032d93F642f64180aa3", # WETH
+    "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9", # DAI
+    "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0", # USDC
 ]
 
-[[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)
-router = "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
-pool-code = "0xb6912aa8f91da604bdd903b3484a9f6bb569baa993085fc590133487ff27f91e" # Uniswap V2 init code hash
+[[liquidity.uniswap-v2]] # Uniswap V2 configuration
+router = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+pool-code = "0xb6912aa8f91da604bdd903b3484a9f6bb569baa993085fc590133487ff27f91e" # Foundry deployed Uniswap V2 init code hash
 missing-pool-cache-time = "1h"
