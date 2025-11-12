@@ -1,12 +1,20 @@
 use {
-    crate::liquidity::USDC_WHALE, ::alloy::{primitives::{U256, address}, providers::ext::{AnvilApi, ImpersonateConfig}}, contracts::alloy::ERC20, driver::domain::eth::NonZeroU256, e2e::{nodes::local_node::TestNodeApi, setup::*}, ethrpc::alloy::{
+    ::alloy::primitives::U256,
+    driver::domain::eth::NonZeroU256,
+    e2e::{nodes::local_node::TestNodeApi, setup::*},
+    ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
-    }, model::{
+    },
+    model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
-    }, secp256k1::SecretKey, shared::ethrpc::Web3, std::ops::DerefMut, web3::signing::SecretKeyRef
+    },
+    secp256k1::SecretKey,
+    shared::ethrpc::Web3,
+    std::ops::DerefMut,
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -122,14 +130,13 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(10)).await;
-    let amount = to_wei_with_exp(5, 8).into_alloy();
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     token.mint(trader.address(), to_wei(10)).await;
 
-    onchain
+    /*onchain
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(3))
@@ -145,8 +152,9 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
         .value(eth(3))
         .send_and_watch()
         .await
-        .unwrap();
-    token.approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .unwrap();*/
+    token
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -186,12 +194,6 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
     tracing::debug!(?quote_metadata);
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
-    // assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
         sell_token: token.address().into_legacy(),

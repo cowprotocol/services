@@ -18,11 +18,10 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
-    alloy::primitives::Address,
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    contracts::alloy::{HooksTrampoline, WETH9},
+    contracts::alloy::HooksTrampoline,
     ethcontract::{H160, H256, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
@@ -216,9 +215,6 @@ pub trait LimitOrderCounting: Send + Sync {
 
 #[derive(Clone)]
 pub struct OrderValidator {
-    /// For Pre/Partial-Validation: performed during fee & quote phase
-    /// when only part of the order data is available
-    native_token: WETH9::Instance,
     banned_users: Arc<order_validation::banned::Users>,
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
@@ -290,7 +286,6 @@ pub struct OrderAppData {
 impl OrderValidator {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        native_token: WETH9::Instance,
         banned_users: Arc<order_validation::banned::Users>,
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
@@ -306,7 +301,6 @@ impl OrderValidator {
         max_gas_per_order: u64,
     ) -> Self {
         Self {
-            native_token,
             banned_users,
             validity_configuration,
             eip1271_skip_creation_validation,
@@ -849,15 +843,6 @@ pub enum OrderValidToError {
     Excessive,
 }
 
-/// Returns true if the orders have same buy and sell tokens.
-///
-/// This also checks for orders selling wrapped native token for native token.
-fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &Address) -> bool {
-    order.sell_token == order.buy_token
-        || (order.sell_token == native_token.into_legacy()
-            && order.buy_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy())
-}
-
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
 ///
@@ -1034,49 +1019,8 @@ mod tests {
         std::str::FromStr,
     };
 
-    #[test]
-    fn detects_orders_with_same_buy_and_sell_token() {
-        let native_token = [0xef; 20].into();
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x01; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: native_token.into_legacy(),
-                buy_token: BUY_ETH_ADDRESS,
-                ..Default::default()
-            },
-            &native_token,
-        ));
-
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x02; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        // Sell token set to 0xeee...eee has no special meaning, so it isn't
-        // considered buying and selling the same token.
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: BUY_ETH_ADDRESS,
-                buy_token: native_token.into_legacy(),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-    }
-
     #[tokio::test]
     async fn pre_validate_err() {
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1088,7 +1032,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::from_set(banned_users)),
             validity_configuration,
             false,
@@ -1228,9 +1171,7 @@ mod tests {
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             validity_configuration,
             false,
@@ -1329,9 +1270,7 @@ mod tests {
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
@@ -1540,9 +1479,7 @@ mod tests {
             .expect_count()
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
@@ -1621,9 +1558,7 @@ mod tests {
             .expect_count()
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1685,9 +1620,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1742,9 +1675,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1802,9 +1733,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1865,9 +1794,7 @@ mod tests {
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1927,9 +1854,7 @@ mod tests {
             .returning(|_| Err(SignatureValidationError::Invalid));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1996,9 +1921,7 @@ mod tests {
                 .returning(move |_, _| Err(create_error()));
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
-            let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
             let validator = OrderValidator::new(
-                native_token,
                 Arc::new(order_validation::banned::Users::none()),
                 OrderValidPeriodConfiguration::any(),
                 false,
@@ -2087,9 +2010,7 @@ mod tests {
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -2498,9 +2419,7 @@ mod tests {
             .returning(|_| Ok(default_verification_gas_limit()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
