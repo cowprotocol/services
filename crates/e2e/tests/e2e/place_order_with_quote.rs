@@ -130,7 +130,8 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token.mint(trader.address(), to_wei(10).into_alloy()).await;
+    token.mint(trader.address(), to_wei(10)).await;
+
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address())

@@ -207,13 +207,6 @@ impl Inner {
                     })
                     .collect();
 
-                // The baseline solver generates a path with swapping
-                // for exact output token amounts. This leads to
-                // potential rounding errors for buy orders, where we
-                // can buy slightly more than intended. Fix this by
-                // capping the output amount to the order's buy amount
-                // for buy orders.
-                // let mut output = route.output();
                 let mut output = if route.is_empty() {
                     order.sell
                 } else {
@@ -224,6 +217,13 @@ impl Inner {
                 } else {
                     route.input()
                 };
+
+                // The baseline solver generates a path with swapping
+                // for exact output token amounts. This leads to
+                // potential rounding errors for buy orders, where we
+                // can buy slightly more than intended. Fix this by
+                // capping the output amount to the order's buy amount
+                // for buy orders.
                 if let order::Side::Buy = order.side {
                     output.amount = cmp::min(output.amount, order.buy.amount);
                 }
