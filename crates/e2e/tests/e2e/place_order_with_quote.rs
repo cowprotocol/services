@@ -11,7 +11,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_place_order_with_quote() {
+async fn local_node_place_order_with_quote_basic() {
     run_test(place_order_with_quote).await;
 }
 
@@ -90,7 +90,7 @@ async fn place_order_with_quote(web3: Web3) {
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
-        sell_token: token.address().into_legacy(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: quote_sell_amount,
         buy_token: token.address().into_legacy(),
         buy_amount: quote_response.quote.buy_amount,
@@ -146,6 +146,11 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
+    token.approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -189,7 +194,7 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
     // assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
-        sell_token: onchain.contracts().weth.address().into_legacy(),
+        sell_token: token.address().into_legacy(),
         sell_amount: quote_sell_amount,
         buy_token: token.address().into_legacy(),
         buy_amount: quote_response.quote.buy_amount,
