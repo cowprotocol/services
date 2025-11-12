@@ -189,8 +189,10 @@ fn get_adjusted_quote_data(
             (protocol_fee, quote.sell_amount, adjusted_buy)
         }
         OrderQuoteSide::Buy { .. } => {
-            // For BUY orders, fee is calculated on sell amount
-            let fee_f64 = quote.sell_amount.to_f64_lossy() * factor_f64;
+            // For BUY orders, fee is calculated on sell amount + network fee.
+            // Network fee is already in sell token, so it is added to get the total volume.
+            let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
+            let fee_f64 = total_sell_volume.to_f64_lossy() * factor_f64;
             let protocol_fee = U256::from_f64_lossy(fee_f64);
 
             // Increase sell amount by protocol fee
@@ -333,7 +335,7 @@ mod tests {
     fn test_volume_fee_buy_order() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
 
-        // Buying 100 tokens, expecting to sell 100 tokens
+        // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
         let quote = create_test_quote(to_wei(100), to_wei(100));
         let side = OrderQuoteSide::Buy {
             buy_amount_after_fee: number::nonzero::U256::try_from(to_wei(100)).unwrap(),
@@ -341,14 +343,14 @@ mod tests {
 
         let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side).unwrap();
 
-        // For BUY orders:
+        // For BUY orders with no network fee:
         // - buy_amount stays the same
         // - sell_amount is increased by 0.02% of original sell_amount
         // - protocol_fee_bps = "2"
         assert_eq!(result.buy_amount, to_wei(100));
         assert_eq!(result.protocol_fee_bps, Some("2".to_string()));
 
-        // sell_amount should be increased by 0.02%
+        // sell_amount should be increased by 0.02% of sell_amount (no network fee)
         // Expected: 100 + (100 * 0.0002) = 100 + 0.02 = 100.02
         let expected_sell = to_wei(100) + (to_wei(100) / U256::from(5000)); // 0.02% = 1/5000
         assert_eq!(result.sell_amount, expected_sell);
@@ -356,6 +358,39 @@ mod tests {
         // Protocol fee in sell token is just the fee amount
         let expected_fee = to_wei(100) / U256::from(5000);
         assert_eq!(result.protocol_fee_sell_amount, Some(expected_fee));
+    }
+
+    #[test]
+    fn test_volume_fee_buy_order_with_network_fee() {
+        let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
+
+        // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
+        let mut quote = create_test_quote(to_wei(100), to_wei(100));
+        quote.fee_amount = to_wei(5); // Network fee in sell token
+        let side = OrderQuoteSide::Buy {
+            buy_amount_after_fee: number::nonzero::U256::try_from(to_wei(100)).unwrap(),
+        };
+
+        let result = get_adjusted_quote_data(&quote, Some(volume_fee), &side).unwrap();
+
+        // For BUY orders with network fee:
+        // - buy_amount stays the same
+        // - protocol fee is calculated on (sell_amount + network_fee)
+        // - sell_amount is increased by protocol fee
+        assert_eq!(result.buy_amount, to_wei(100));
+        assert_eq!(result.protocol_fee_bps, Some("2".to_string()));
+
+        // Total volume = sell_amount + network_fee = 100 + 5 = 105
+        // Protocol fee = 105 * 0.0002 = 0.021
+        // sell_amount should be increased by protocol fee
+        // Expected: 100 + 0.021 = 100.021
+        let total_volume = to_wei(100) + to_wei(5); // 105
+        let expected_protocol_fee = total_volume / U256::from(5000); // 0.021
+        let expected_sell = to_wei(100) + expected_protocol_fee; // 100.021
+        assert_eq!(result.sell_amount, expected_sell);
+
+        // Protocol fee in sell token
+        assert_eq!(result.protocol_fee_sell_amount, Some(expected_protocol_fee));
     }
 
     #[test]
