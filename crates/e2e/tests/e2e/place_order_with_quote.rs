@@ -136,23 +136,6 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
 
     token.mint(trader.address(), to_wei(10)).await;
 
-    /*onchain
-        .contracts()
-        .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
-    onchain
-        .contracts()
-        .weth
-        .deposit()
-        .from(trader.address().into_alloy())
-        .value(eth(3))
-        .send_and_watch()
-        .await
-        .unwrap();*/
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address().into_alloy())
