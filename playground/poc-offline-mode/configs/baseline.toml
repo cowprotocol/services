@@ -1,0 +1,9 @@
+chain-id = "31337" # Anvil local chain
+base-tokens = [
+    "0x5fbdb2315678afecb367f032d93f642f64180aa3", # WETH (auto-generated from deployment)
+    "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9", # DAI (auto-generated from deployment)
+    "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0", # USDC (auto-generated from deployment)
+]
+max-hops = 2
+max-partial-attempts = 5
+native-token-price-estimation-amount = "100000000000000000" # 0.1 ETH

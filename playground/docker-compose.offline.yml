@@ -9,10 +9,10 @@ services:
       - |
         if [ -f /state/poc-state.json ]; then
           echo "📂 Loading existing blockchain state..."
-          anvil --load-state ./state/poc-state.json --dump-state ./state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000
+          anvil --load-state ./state/poc-state.json --dump-state ./state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
         else
           echo "🆕 Starting fresh Anvil node (no state file found)..."
-          anvil --dump-state /state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000
+          anvil --dump-state /state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
         fi
     environment:
       - ANVIL_IP_ADDR=0.0.0.0
@@ -88,7 +88,7 @@ services:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - LOG_FILTER=orderbook=trace,shared=trace
-      - ACCOUNT_BALANCES_SIMULATION=true
+      - ACCOUNT_BALANCES_SIMULATION=false
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
       - EIP1271_SKIP_CREATION_VALIDATION=true
@@ -101,6 +101,7 @@ services:
       - BASELINE_SOURCES=UniswapV2
       - TOKEN_OWNER_FINDERS=liquidity
       - AMOUNT_TO_ESTIMATE_PRICES_WITH=100000000000000000
+      - HOOKS_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
@@ -139,7 +140,7 @@ services:
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=debug,autopilot=trace,shared=debug,shared::price_estimation=trace,autopilot::solvable_orders=trace,autopilot::run=trace
+      - LOG_FILTER=trace,autopilot=trace,shared=debug,shared::price_estimation=trace,autopilot::solvable_orders=trace,autopilot::run=trace
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
@@ -158,7 +159,9 @@ services:
       - BASELINE_SOURCES=UniswapV2
       - TOKEN_OWNER_FINDERS=liquidity
       - DISABLE_ORDER_FILTERING=true
+      - SKIP_EVENT_SYNC=true
       - AMOUNT_TO_ESTIMATE_PRICES_WITH=100000000000000000
+      - HOOKS_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TOKIO_CONSOLE=true

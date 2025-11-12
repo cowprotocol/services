@@ -7,9 +7,11 @@ contract DeployCowProtocol is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        address balancerVault = vm.envAddress("BALANCER_VAULT_ADDRESS");
         
         console.log("Deploying CoW Protocol contracts...");
         console.log("Deployer:", deployer);
+        console.log("Balancer Vault:", balancerVault);
         
         vm.startBroadcast(deployerPrivateKey);
         
@@ -24,7 +26,6 @@ contract DeployCowProtocol is Script {
         // Deploy GPv2Settlement
         // Constructor: GPv2Authentication _authenticator, IVault _vault
         // NOTE: The Settlement contract creates its own VaultRelayer in the constructor
-        address balancerVault = address(0xBA12222222228d8Ba445958a75a0704d566BF2C8); // Balancer V2 Vault on mainnet
         address settlement = deployCode(
             "contracts/out-cow-protocol/GPv2Settlement.sol/GPv2Settlement.json",
             abi.encode(authenticator, balancerVault)

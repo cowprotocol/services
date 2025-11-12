@@ -37,25 +37,22 @@ contract AddLiquidityDirect is Script {
         address usdc = vm.envAddress("USDC_ADDRESS");
         address dai = vm.envAddress("DAI_ADDRESS");
         
-        // Load Uniswap factory
+        // Load Uniswap factory - REQUIRED for pair lookup
         address factory = vm.envAddress("UNISWAP_FACTORY");
-
+        
         console.log("===========================================");
         console.log("ADDING LIQUIDITY TO UNISWAP V2 PAIRS");
         console.log("===========================================");
         console.log("Deployer:", deployer);
         console.log("Factory:", factory);
         console.log("");
+        console.log("Tokens:");
+        console.log("  WETH:", weth);
+        console.log("  USDC:", usdc);
+        console.log("  DAI:", dai);
+        console.log("");
 
         vm.startBroadcast(deployerPrivateKey);
-
-        // Check initial balances
-        console.log("Initial balances:");
-        console.log("  ETH:", deployer.balance / 1e18, "ETH");
-        console.log("  WETH:", IERC20(weth).balanceOf(deployer) / 1e18, "WETH");
-        console.log("  USDC:", IERC20(usdc).balanceOf(deployer) / 1e6, "USDC");
-        console.log("  DAI:", IERC20(dai).balanceOf(deployer) / 1e18, "DAI");
-        console.log("");
 
         // Liquidity amounts (using realistic ratios)
         // WETH = $2000, USDC = $1, DAI = $1
@@ -68,63 +65,65 @@ contract AddLiquidityDirect is Script {
         uint256 usdcForDai = 10_000 * 1e6;   // 10,000 USDC
         uint256 daiForUsdc = 10_000 * 1e18;  // 10,000 DAI
 
-        // Add WETH-USDC liquidity
-        console.log("Adding WETH-USDC liquidity...");
-        console.log("  WETH:", wethForUsdc / 1e18, "WETH");
-        console.log("  USDC:", usdcAmount / 1e6, "USDC");
+        // Get pair addresses from factory
         address wethUsdcPair = IUniswapV2Factory(factory).getPair(weth, usdc);
-        console.log("  Pair:", wethUsdcPair);
+        require(wethUsdcPair != address(0), "WETH-USDC pair not found!");
+        
+        address wethDaiPair = IUniswapV2Factory(factory).getPair(weth, dai);
+        require(wethDaiPair != address(0), "WETH-DAI pair not found!");
+        
+        address usdcDaiPair = IUniswapV2Factory(factory).getPair(usdc, dai);
+        require(usdcDaiPair != address(0), "USDC-DAI pair not found!");
+
+        console.log("");
+        console.log("Adding liquidity to WETH-USDC pair...");
+        console.log("  Pair address:", wethUsdcPair);
+        console.log("  Adding WETH amount (wei):", wethForUsdc);
+        console.log("  Adding USDC amount (wei):", usdcAmount);
         
         IERC20(weth).transfer(wethUsdcPair, wethForUsdc);
         IERC20(usdc).transfer(wethUsdcPair, usdcAmount);
         uint liquidity1 = IUniswapV2Pair(wethUsdcPair).mint(deployer);
-        console.log("  Liquidity minted:", liquidity1);
         
         (uint112 r0, uint112 r1,) = IUniswapV2Pair(wethUsdcPair).getReserves();
-        console.log("  Reserves:", uint256(r0), uint256(r1));
-        console.log("  WETH-USDC liquidity added");
+        console.log("  Liquidity minted:", liquidity1);
+        console.log("  Reserves after - r0:", r0);
+        console.log("  Reserves after - r1:", r1);
 
-        // Add WETH-DAI liquidity
         console.log("");
-        console.log("Adding WETH-DAI liquidity...");
-        console.log("  WETH:", wethForDai / 1e18, "WETH");
-        console.log("  DAI:", daiAmount / 1e18, "DAI");
-        address wethDaiPair = IUniswapV2Factory(factory).getPair(weth, dai);
-        console.log("  Pair:", wethDaiPair);
+        console.log("Adding liquidity to WETH-DAI pair...");
+        console.log("  Pair address:", wethDaiPair);
+        console.log("  Adding WETH amount (wei):", wethForDai);
+        console.log("  Adding DAI amount (wei):", daiAmount);
         
         IERC20(weth).transfer(wethDaiPair, wethForDai);
         IERC20(dai).transfer(wethDaiPair, daiAmount);
         uint liquidity2 = IUniswapV2Pair(wethDaiPair).mint(deployer);
-        console.log("  Liquidity minted:", liquidity2);
         
         (r0, r1,) = IUniswapV2Pair(wethDaiPair).getReserves();
-        console.log("  Reserves:", uint256(r0), uint256(r1));
-        console.log("  WETH-DAI liquidity added");
+        console.log("  Liquidity minted:", liquidity2);
+        console.log("  Reserves after - r0:", r0);
+        console.log("  Reserves after - r1:", r1);
 
-        // Add USDC-DAI liquidity
         console.log("");
-        console.log("Adding USDC-DAI liquidity...");
-        console.log("  USDC:", usdcForDai / 1e6, "USDC");
-        console.log("  DAI:", daiForUsdc / 1e18, "DAI");
-        address usdcDaiPair = IUniswapV2Factory(factory).getPair(usdc, dai);
-        console.log("  Pair:", usdcDaiPair);
+        console.log("Adding liquidity to USDC-DAI pair...");
+        console.log("  Pair address:", usdcDaiPair);
+        console.log("  Adding USDC:", usdcForDai / 1e6);
+        console.log("  Adding DAI:", daiForUsdc / 1e18);
         
         IERC20(usdc).transfer(usdcDaiPair, usdcForDai);
         IERC20(dai).transfer(usdcDaiPair, daiForUsdc);
         uint liquidity3 = IUniswapV2Pair(usdcDaiPair).mint(deployer);
-        console.log("  Liquidity minted:", liquidity3);
         
         (r0, r1,) = IUniswapV2Pair(usdcDaiPair).getReserves();
-        console.log("  Reserves:", uint256(r0), uint256(r1));
-        console.log("  USDC-DAI liquidity added");
+        console.log("  Liquidity minted:", liquidity3);
+        console.log("  Reserves after: r0 =", r0, "r1 =", r1);
 
         vm.stopBroadcast();
 
         console.log("");
         console.log("===========================================");
         console.log("LIQUIDITY ADDED SUCCESSFULLY");
-        console.log("===========================================");
-        console.log("All three pairs now have liquidity!");
         console.log("===========================================");
     }
 }

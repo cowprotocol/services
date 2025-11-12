@@ -3,17 +3,17 @@ orderbook-url = "http://orderbook"
 tx-gas-limit = "45000000"
 
 [contracts]
-gp-v2-settlement = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+gp-v2-settlement = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
 weth = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
-balances = "0x01b2080bb29c398e17dbfe8072651252df5cb55d"
-signatures = "0x6E8954c061EEaaa1e0c62039DdC8A92E6B8ABC46"
+balances = "0x65f63a74B9900c7DFE26aC0cf171A536b7509f56"
+signatures = "0x7377795aa7b4a8fca5e4e194f54eaff667db45f0"
 
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique
 endpoint = "http://baseline"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
-# Anvil account #0 private key (from test mnemonic)
+# Anvil account #0 private key (from test mnemonic) - this is the authorized solver
 account = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 [submission]

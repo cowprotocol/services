@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Script.sol";
-import {Balances} from "../src/Balances.sol";
+import {Balances} from "../../src/Balances.sol";
 
 contract DeployBalances is Script {
     function run() public {
