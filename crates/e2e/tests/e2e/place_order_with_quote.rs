@@ -12,7 +12,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_place_order_with_quote() {
+async fn local_node_place_order_with_quote_basic() {
     run_test(place_order_with_quote).await;
 }
 
@@ -137,6 +137,11 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
         .deposit()
         .from(trader.address())
         .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
+    token.approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
