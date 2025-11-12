@@ -31,8 +31,6 @@ struct AdjustedQuoteData {
     buy_amount: U256,
     /// Protocol fee in basis points (e.g., "2" for 0.02%)
     protocol_fee_bps: Option<String>,
-    /// Protocol fee amount in sell token
-    protocol_fee_sell_amount: Option<U256>,
 }
 
 /// A high-level interface for handling API quote requests.
@@ -151,7 +149,6 @@ impl QuoteHandler {
             id: quote.id,
             verified: quote.data.verified,
             protocol_fee_bps: adjusted_quote.protocol_fee_bps,
-            protocol_fee_sell_amount: adjusted_quote.protocol_fee_sell_amount,
         };
 
         tracing::debug!(?response, "finished computing quote");
@@ -170,14 +167,13 @@ fn get_adjusted_quote_data(
             sell_amount: quote.sell_amount,
             buy_amount: quote.buy_amount,
             protocol_fee_bps: None,
-            protocol_fee_sell_amount: None,
         });
     };
     // Calculate the volume (surplus token amount) to apply fee to
     // Following driver's logic in
     // crates/driver/src/domain/competition/solution/fee.rs:189-202:
     let factor_f64: f64 = factor.into();
-    let (protocol_fee_in_surplus_token, adjusted_sell_amount, adjusted_buy_amount) = match side {
+    let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
             // For SELL orders, fee is calculated on buy amount
             let fee_f64 = quote.buy_amount.to_f64_lossy() * factor_f64;
@@ -186,7 +182,7 @@ fn get_adjusted_quote_data(
             // Reduce buy amount by protocol fee
             let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
 
-            (protocol_fee, quote.sell_amount, adjusted_buy)
+            (quote.sell_amount, adjusted_buy)
         }
         OrderQuoteSide::Buy { .. } => {
             // For BUY orders, fee is calculated on sell amount + network fee.
@@ -198,34 +194,7 @@ fn get_adjusted_quote_data(
             // Increase sell amount by protocol fee
             let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
 
-            (protocol_fee, adjusted_sell, quote.buy_amount)
-        }
-    };
-
-    // Convert protocol fee to sell token for the response
-    let protocol_fee_sell_amount = match side {
-        OrderQuoteSide::Sell { .. } => {
-            // Fee is in buy token, convert to sell token using price ratio
-            // price = buy_amount / sell_amount
-            // fee_in_sell = fee_in_buy * sell_amount / buy_amount
-            protocol_fee_in_surplus_token
-                .full_mul(quote.sell_amount)
-                .checked_div(quote.buy_amount.into())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "error converting protocol fee from buy to sell token: division by zero"
-                    )
-                })?
-                .try_into()
-                .map_err(|_| {
-                    anyhow::anyhow!(
-                        "error converting protocol fee from buy to sell token: U256 overflow"
-                    )
-                })?
-        }
-        OrderQuoteSide::Buy { .. } => {
-            // Fee is already in sell token
-            protocol_fee_in_surplus_token
+            (adjusted_sell, quote.buy_amount)
         }
     };
 
@@ -233,7 +202,6 @@ fn get_adjusted_quote_data(
         sell_amount: adjusted_sell_amount,
         buy_amount: adjusted_buy_amount,
         protocol_fee_bps: Some(factor.to_bps().to_string()),
-        protocol_fee_sell_amount: Some(protocol_fee_sell_amount),
     })
 }
 
@@ -323,12 +291,6 @@ mod tests {
         // Expected: 100 - (100 * 0.0002) = 100 - 0.02 = 99.98
         let expected_buy = to_wei(100) - (to_wei(100) / U256::from(5000)); // 0.02% = 1/5000
         assert_eq!(result.buy_amount, expected_buy);
-
-        // Protocol fee in sell token should be the fee converted from buy token
-        // fee_in_buy = 100 * 0.0002 = 0.02
-        // fee_in_sell = 0.02 * (sell_amount / buy_amount) = 0.02 * (100/100) = 0.02
-        let expected_fee = to_wei(100) / U256::from(5000);
-        assert_eq!(result.protocol_fee_sell_amount, Some(expected_fee));
     }
 
     #[test]
@@ -354,10 +316,6 @@ mod tests {
         // Expected: 100 + (100 * 0.0002) = 100 + 0.02 = 100.02
         let expected_sell = to_wei(100) + (to_wei(100) / U256::from(5000)); // 0.02% = 1/5000
         assert_eq!(result.sell_amount, expected_sell);
-
-        // Protocol fee in sell token is just the fee amount
-        let expected_fee = to_wei(100) / U256::from(5000);
-        assert_eq!(result.protocol_fee_sell_amount, Some(expected_fee));
     }
 
     #[test]
@@ -388,9 +346,6 @@ mod tests {
         let expected_protocol_fee = total_volume / U256::from(5000); // 0.021
         let expected_sell = to_wei(100) + expected_protocol_fee; // 100.021
         assert_eq!(result.sell_amount, expected_sell);
-
-        // Protocol fee in sell token
-        assert_eq!(result.protocol_fee_sell_amount, Some(expected_protocol_fee));
     }
 
     #[test]
@@ -413,12 +368,6 @@ mod tests {
         // buy_amount reduced by 0.1% of 200 = 0.2 tokens
         let expected_buy = to_wei(200) - (to_wei(200) / U256::from(1000));
         assert_eq!(result.buy_amount, expected_buy);
-
-        // fee_in_buy = 200 * 0.001 = 0.2
-        // fee_in_sell = 0.2 * (100 / 200) = 0.1
-        let fee_in_buy = to_wei(200) / U256::from(1000);
-        let expected_fee = fee_in_buy * to_wei(100) / to_wei(200);
-        assert_eq!(result.protocol_fee_sell_amount, Some(expected_fee));
     }
 
     #[test]

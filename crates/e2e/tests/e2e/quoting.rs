@@ -465,19 +465,6 @@ async fn volume_fee(web3: Web3) {
     // Verify protocol fee fields are present
     assert!(sell_quote.protocol_fee_bps.is_some());
     assert_eq!(sell_quote.protocol_fee_bps.as_ref().unwrap(), "2");
-    assert!(sell_quote.protocol_fee_sell_amount.is_some());
-
-    // For SELL orders: buy_amount should be reduced by the protocol fee
-    let protocol_fee_sell_amount = sell_quote
-        .protocol_fee_sell_amount
-        .unwrap()
-        .to_string()
-        .parse::<u128>()
-        .unwrap();
-    assert!(
-        protocol_fee_sell_amount > 0,
-        "Protocol fee should be non-zero"
-    );
 
     tracing::info!("Testing BUY quote with volume fee");
     let buy_request = OrderQuoteRequest {
@@ -495,17 +482,4 @@ async fn volume_fee(web3: Web3) {
     // Verify protocol fee fields are present
     assert!(buy_quote.protocol_fee_bps.is_some());
     assert_eq!(buy_quote.protocol_fee_bps.as_ref().unwrap(), "2");
-    assert!(buy_quote.protocol_fee_sell_amount.is_some());
-
-    // For BUY orders: sell_amount should be increased by the protocol fee
-    let protocol_fee_sell_amount_buy = buy_quote
-        .protocol_fee_sell_amount
-        .unwrap()
-        .to_string()
-        .parse::<u128>()
-        .unwrap();
-    assert!(
-        protocol_fee_sell_amount_buy > 0,
-        "Protocol fee should be non-zero for buy orders"
-    );
 }

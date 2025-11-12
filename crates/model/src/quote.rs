@@ -336,11 +336,6 @@ pub struct OrderQuoteResponse {
     /// Protocol fee in basis points (e.g., "2" for 0.02%)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_fee_bps: Option<String>,
-    /// Protocol fee amount in sell token, already included in sellAmount for
-    /// SELL orders, or applied before network fees for BUY orders
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub protocol_fee_sell_amount: Option<U256>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
