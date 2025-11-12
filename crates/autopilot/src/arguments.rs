@@ -266,6 +266,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_1271_order_sig_filter: bool,
 
+    /// Configures whether the autopilot skips balance checks for EIP-1271
+    /// orders.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub disable_1271_order_balance_filter: bool,
+
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
     /// and not cut any auctions.
@@ -402,6 +407,7 @@ impl std::fmt::Display for Arguments {
             max_solutions_per_solver,
             db_based_solver_participation_guard,
             disable_order_balance_filter,
+            disable_1271_order_balance_filter,
             disable_1271_order_sig_filter,
             enable_leader_lock,
         } = self;
@@ -481,6 +487,10 @@ impl std::fmt::Display for Arguments {
         writeln!(
             f,
             "disable_order_balance_filter: {disable_order_balance_filter}"
+        )?;
+        writeln!(
+            f,
+            "disable_1271_order_balance_filter: {disable_1271_order_balance_filter}"
         )?;
         writeln!(
             f,
