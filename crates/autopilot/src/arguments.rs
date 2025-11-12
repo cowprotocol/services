@@ -255,14 +255,16 @@ pub struct Arguments {
     #[clap(flatten)]
     pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
 
-    /// Configures whether the autopilot is supposed to do any non-trivial
-    /// order filtering (e.g. based on balances or EIP-1271 signature validity).
+    /// Configures whether the autopilot filters out orders with insufficient
+    /// balances.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_order_filtering: bool,
+    pub disable_order_balance_filter: bool,
 
-    // Filter out orders that have not been presigned even if disable_order_filtering is turned on.
+    // Configures whether the autopilot filters out EIP-1271 orders even if their signatures are
+    // invalid. This is useful as a workaround to let flashloan orders go through as they rely
+    // on preHooks behing executed to make the signatures valid.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub force_presign_order_filtering: bool,
+    pub disable_1271_order_sig_filter: bool,
 
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
@@ -399,9 +401,9 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             db_based_solver_participation_guard,
-            disable_order_filtering,
+            disable_order_balance_filter,
+            disable_1271_order_sig_filter,
             enable_leader_lock,
-            force_presign_order_filtering,
         } = self;
 
         write!(f, "{shared}")?;
@@ -476,10 +478,13 @@ impl std::fmt::Display for Arguments {
             f,
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
-        writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
         writeln!(
             f,
-            "force_presign_order_filtering: {force_presign_order_filtering}"
+            "disable_order_balance_filter: {disable_order_balance_filter}"
+        )?;
+        writeln!(
+            f,
+            "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
