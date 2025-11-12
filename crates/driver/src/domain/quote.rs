@@ -93,8 +93,8 @@ impl Order {
                 liquidity
                     .fetch(&pairs, infra::liquidity::AtBlock::Recent)
                     .await
-            },
-            _  => Default::default(),
+            }
+            _ => Default::default(),
         };
 
         let auction = self
@@ -227,7 +227,8 @@ impl Order {
     /// Returns the token pairs to fetch liquidity for.
     fn liquidity_pairs(&self) -> Option<HashSet<liquidity::TokenPair>> {
         liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
-            .map(|pair| iter::once(pair).collect()).ok()
+            .map(|pair| iter::once(pair).collect())
+            .ok()
     }
 }
 

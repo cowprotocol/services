@@ -2,12 +2,19 @@ use {
     ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
-    }, secp256k1::SecretKey, shared::ethrpc::Web3, std::ops::DerefMut, web3::signing::SecretKeyRef
+    },
+    secp256k1::SecretKey,
+    shared::ethrpc::Web3,
+    std::ops::DerefMut,
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -124,23 +131,8 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
         .await;
 
     token.mint(trader.address(), to_wei(10).into_alloy()).await;
-
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-    onchain
-        .contracts()
-        .weth
-        .deposit()
-        .from(trader.address())
-        .value(eth(3))
-        .send_and_watch()
-        .await
-        .unwrap();
-    token.approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address())
         .send_and_watch()
         .await

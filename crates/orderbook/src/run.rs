@@ -402,7 +402,6 @@ pub async fn run(args: Arguments) {
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(
-        native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             args.banned_users,
