@@ -1,6 +1,8 @@
 use {
     crate::interaction::EncodedInteraction,
+    alloy::primitives::Address,
     ethcontract::Bytes,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, SigningScheme},
@@ -34,12 +36,12 @@ pub fn encode_trade(
     (
         sell_token_index.into(),
         buy_token_index.into(),
-        order.receiver.unwrap_or_else(H160::zero),
-        order.sell_amount,
-        order.buy_amount,
+        order.receiver.unwrap_or(Address::ZERO).into_legacy(),
+        order.sell_amount.into_legacy(),
+        order.buy_amount.into_legacy(),
         order.valid_to,
         Bytes(order.app_data.0),
-        order.fee_amount,
+        order.fee_amount.into_legacy(),
         order_flags(order, signature),
         *executed_amount,
         Bytes(signature.encode_for_settlement(owner).to_vec()),

@@ -1,6 +1,7 @@
 use {
     app_data::AppDataHash,
     ethcontract::common::abi::ethereum_types::Address,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
@@ -25,14 +26,14 @@ pub struct JitOrder {
 impl JitOrder {
     fn data(&self) -> OrderData {
         OrderData {
-            sell_token: self.sell.token,
-            buy_token: self.buy.token,
-            receiver: self.receiver.into(),
-            sell_amount: self.sell.amount,
-            buy_amount: self.buy.amount,
+            sell_token: self.sell.token.into_alloy(),
+            buy_token: self.buy.token.into_alloy(),
+            receiver: Some(self.receiver.into_alloy()),
+            sell_amount: self.sell.amount.into_alloy(),
+            buy_amount: self.buy.amount.into_alloy(),
             valid_to: self.valid_to,
             app_data: AppDataHash(self.app_data.0),
-            fee_amount: 0.into(),
+            fee_amount: alloy::primitives::U256::ZERO,
             kind: self.kind,
             partially_fillable: self.partially_fillable,
             sell_token_balance: Default::default(),
@@ -67,11 +68,14 @@ impl JitOrder {
             model::signature::Signature::PreSign => panic!("Not supported PreSigned JIT orders"),
         };
         let order = solvers_dto::solution::JitOrder {
-            sell_token: data.sell_token,
-            buy_token: data.buy_token,
-            receiver: data.receiver.unwrap_or_default(),
-            sell_amount: data.sell_amount,
-            buy_amount: data.buy_amount,
+            sell_token: data.sell_token.into_legacy(),
+            buy_token: data.buy_token.into_legacy(),
+            receiver: data
+                .receiver
+                .map(IntoLegacy::into_legacy)
+                .unwrap_or_default(),
+            sell_amount: data.sell_amount.into_legacy(),
+            buy_amount: data.buy_amount.into_legacy(),
             partially_fillable: data.partially_fillable,
             valid_to: data.valid_to,
             app_data: data.app_data.0,

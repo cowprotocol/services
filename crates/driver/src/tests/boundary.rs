@@ -1,7 +1,12 @@
 //! Similar to [`crate::boundary`], but for test code.
 
 pub use model::{DomainSeparator, order::OrderUid};
-use {crate::domain::competition, secp256k1::SecretKey, web3::signing::SecretKeyRef};
+use {
+    crate::domain::competition,
+    ethrpc::alloy::conversions::IntoAlloy,
+    secp256k1::SecretKey,
+    web3::signing::SecretKeyRef,
+};
 
 /// Order data used for calculating the order UID and signing.
 #[derive(Debug)]
@@ -31,13 +36,13 @@ impl Order {
 
     fn build(&self) -> model::order::Order {
         model::order::OrderBuilder::default()
-            .with_sell_token(self.sell_token)
-            .with_buy_token(self.buy_token)
-            .with_sell_amount(self.sell_amount)
-            .with_buy_amount(self.buy_amount)
+            .with_sell_token(self.sell_token.into_alloy())
+            .with_buy_token(self.buy_token.into_alloy())
+            .with_sell_amount(self.sell_amount.into_alloy())
+            .with_buy_amount(self.buy_amount.into_alloy())
             .with_valid_to(self.valid_to)
-            .with_fee_amount(self.user_fee)
-            .with_receiver(self.receiver)
+            .with_fee_amount(self.user_fee.into_alloy())
+            .with_receiver(self.receiver.map(IntoAlloy::into_alloy))
             .with_kind(match self.side {
                 competition::order::Side::Buy => model::order::OrderKind::Buy,
                 competition::order::Side::Sell => model::order::OrderKind::Sell,

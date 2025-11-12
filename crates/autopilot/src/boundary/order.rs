@@ -1,5 +1,6 @@
 use {
-    crate::{domain, domain::eth},
+    crate::domain::{self, eth},
+    ethrpc::alloy::conversions::IntoLegacy,
     shared::remaining_amounts,
 };
 
@@ -14,18 +15,22 @@ pub fn to_domain(
     domain::Order {
         uid: order.metadata.uid.into(),
         sell: eth::Asset {
-            token: order.data.sell_token.into(),
-            amount: order.data.sell_amount.into(),
+            token: order.data.sell_token.into_legacy().into(),
+            amount: order.data.sell_amount.into_legacy().into(),
         },
         buy: eth::Asset {
-            token: order.data.buy_token.into(),
-            amount: order.data.buy_amount.into(),
+            token: order.data.buy_token.into_legacy().into(),
+            amount: order.data.buy_amount.into_legacy().into(),
         },
         protocol_fees,
         created: u32::try_from(order.metadata.creation_date.timestamp()).unwrap_or(u32::MIN),
         valid_to: order.data.valid_to,
         side: order.data.kind.into(),
-        receiver: order.data.receiver.map(Into::into),
+        receiver: order
+            .data
+            .receiver
+            .map(IntoLegacy::into_legacy)
+            .map(Into::into),
         owner: order.metadata.owner.into(),
         partially_fillable: order.data.partially_fillable,
         executed: remaining_order.executed_amount.into(),

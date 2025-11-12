@@ -98,6 +98,11 @@ pub mod alloy {
     pub fn u256_to_big_rational(input: &U256) -> BigRational {
         BigRational::new(u256_to_big_int(input), 1.into())
     }
+
+    pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
+        let big_uint = u256_to_big_uint(u256);
+        BigDecimal::from(BigInt::from(big_uint))
+    }
 }
 
 pub fn rational_to_big_decimal<T>(value: &Ratio<T>) -> BigDecimal

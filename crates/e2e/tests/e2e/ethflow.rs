@@ -600,10 +600,7 @@ async fn test_order_parameters(
         response.metadata.owner,
         ethflow_contract.address().into_legacy()
     );
-    assert_eq!(
-        response.data.sell_token,
-        contracts.weth.address().into_legacy()
-    );
+    assert_eq!(response.data.sell_token, *contracts.weth.address());
 
     // Specific parameters return the missing values
     assert_eq!(
@@ -667,12 +664,12 @@ impl ExtendedEthFlowOrder {
         // it as EIP1271 order with a different owner and valid_to
         OrderBuilder::default()
             .with_kind(OrderKind::Sell)
-            .with_sell_token(weth.address().into_legacy())
-            .with_sell_amount(self.0.sellAmount.into_legacy())
-            .with_fee_amount(self.0.feeAmount.into_legacy())
-            .with_receiver(Some(self.0.receiver.into_legacy()))
-            .with_buy_token(self.0.buyToken.into_legacy())
-            .with_buy_amount(self.0.buyAmount.into_legacy())
+            .with_sell_token(*weth.address())
+            .with_sell_amount(self.0.sellAmount)
+            .with_fee_amount(self.0.feeAmount)
+            .with_receiver(Some(self.0.receiver))
+            .with_buy_token(self.0.buyToken)
+            .with_buy_amount(self.0.buyAmount)
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.appData.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time

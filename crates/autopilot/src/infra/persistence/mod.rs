@@ -27,7 +27,7 @@ use {
         SigningScheme as DomainSigningScheme,
     },
     futures::{StreamExt, TryStreamExt},
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
+    number::conversions::{alloy::u256_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{

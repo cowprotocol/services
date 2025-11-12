@@ -628,14 +628,14 @@ fn encode_fake_trade(
         ),
     };
     let fake_order = OrderData {
-        sell_token: query.sell_token,
-        sell_amount,
-        buy_token: query.buy_token,
-        buy_amount,
-        receiver: Some(verification.receiver),
+        sell_token: query.sell_token.into_alloy(),
+        sell_amount: sell_amount.into_alloy(),
+        buy_token: query.buy_token.into_alloy(),
+        buy_amount: buy_amount.into_alloy(),
+        receiver: Some(verification.receiver.into_alloy()),
         valid_to: u32::MAX,
         app_data: Default::default(),
-        fee_amount: 0.into(),
+        fee_amount: alloy::primitives::U256::ZERO,
         kind: query.kind,
         partially_fillable: false,
         sell_token_balance: verification.sell_token_source,
@@ -671,14 +671,14 @@ fn encode_jit_orders(
         .iter()
         .map(|jit_order| {
             let order_data = OrderData {
-                sell_token: jit_order.sell_token,
-                buy_token: jit_order.buy_token,
-                receiver: Some(jit_order.receiver),
-                sell_amount: jit_order.sell_amount,
-                buy_amount: jit_order.buy_amount,
+                sell_token: jit_order.sell_token.into_alloy(),
+                buy_token: jit_order.buy_token.into_alloy(),
+                receiver: Some(jit_order.receiver.into_alloy()),
+                sell_amount: jit_order.sell_amount.into_alloy(),
+                buy_amount: jit_order.buy_amount.into_alloy(),
                 valid_to: jit_order.valid_to,
                 app_data: jit_order.app_data,
-                fee_amount: 0.into(),
+                fee_amount: alloy::primitives::U256::ZERO,
                 kind: match &jit_order.side {
                     dto::Side::Buy => OrderKind::Buy,
                     dto::Side::Sell => OrderKind::Sell,
