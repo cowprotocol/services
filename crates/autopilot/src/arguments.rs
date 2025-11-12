@@ -260,6 +260,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_filtering: bool,
 
+    // Filter out orders that have not been presigned even if disable_order_filtering is turned on.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub force_presign_order_filtering: bool,
+
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
     /// and not cut any auctions.
@@ -397,6 +401,7 @@ impl std::fmt::Display for Arguments {
             db_based_solver_participation_guard,
             disable_order_filtering,
             enable_leader_lock,
+            force_presign_order_filtering,
         } = self;
 
         write!(f, "{shared}")?;
@@ -472,6 +477,10 @@ impl std::fmt::Display for Arguments {
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
         writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
+        writeln!(
+            f,
+            "force_presign_order_filtering: {force_presign_order_filtering}"
+        )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
     }

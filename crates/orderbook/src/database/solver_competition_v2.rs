@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     crate::solver_competition::LoadSolverCompetitionError,
+    alloy::primitives::B256,
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, solver_competition_v2::SolverCompetition as DbResponse},
     model::{
@@ -32,7 +33,7 @@ impl Postgres {
 
     pub async fn load_competition_by_tx_hash(
         &self,
-        tx_hash: H256,
+        tx_hash: B256,
     ) -> Result<ApiResponse, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries

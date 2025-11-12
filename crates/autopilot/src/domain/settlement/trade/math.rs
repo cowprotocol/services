@@ -16,6 +16,7 @@ use {
         util::conv::U256Ext,
     },
     error::Math,
+    ethrpc::alloy::conversions::IntoLegacy,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
     std::collections::HashMap,
 };
@@ -383,9 +384,9 @@ impl Trade {
                 side: self.side,
             },
             Quote {
-                sell: quote.sell_amount.into(),
-                buy: quote.buy_amount.into(),
-                fee: quote.fee.into(),
+                sell: quote.sell_amount.into_legacy().into(),
+                buy: quote.buy_amount.into_legacy().into(),
+                fee: quote.fee.into_legacy().into(),
             },
         )?;
         self.surplus_over(&self.prices.custom, quote)

@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     crate::dto::TokenMetadata,
+    alloy::primitives::{Address, B256},
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -66,12 +67,12 @@ pub trait OrderStoring: Send + Sync {
         old_order: &OrderUid,
         new_order: &Order,
     ) -> Result<(), InsertionError>;
-    async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
+    async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
     /// orders first).
     async fn user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
@@ -315,7 +316,7 @@ impl OrderStoring for Postgres {
         .transpose()
     }
 
-    async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         tokio::try_join!(
             self.user_order_for_tx(tx_hash),
             self.jit_orders_for_tx(tx_hash)
@@ -328,7 +329,7 @@ impl OrderStoring for Postgres {
 
     async fn user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>> {
@@ -340,7 +341,7 @@ impl OrderStoring for Postgres {
         let mut ex = self.pool.acquire().await?;
         database::order_history::user_orders(
             &mut ex,
-            &ByteArray(owner.0),
+            &ByteArray(owner.0.0),
             i64::try_from(offset).unwrap_or(i64::MAX),
             limit.map(|l| i64::try_from(l).unwrap_or(i64::MAX)),
         )
@@ -367,7 +368,7 @@ impl OrderStoring for Postgres {
 
 impl Postgres {
     /// Retrieve all user posted orders for a given transaction.
-    pub async fn user_order_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn user_order_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["user_order_for_tx"])
@@ -384,7 +385,7 @@ impl Postgres {
     }
 
     /// Retrieve all JIT orders for a given transaction.
-    pub async fn jit_orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn jit_orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["jit_orders_for_tx"])
@@ -398,11 +399,11 @@ impl Postgres {
             .collect::<Result<Vec<_>>>()
     }
 
-    pub async fn token_metadata(&self, token: &H160) -> Result<TokenMetadata> {
+    pub async fn token_metadata(&self, token: &Address) -> Result<TokenMetadata> {
         let (first_trade_block, native_price): (Option<u32>, Option<U256>) = tokio::try_join!(
             self.execute_instrumented("token_first_trade_block", async {
                 let mut ex = self.pool.acquire().await?;
-                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0.0))
                     .await
                     .map_err(anyhow::Error::from)?
                     .map(u32::try_from)
@@ -411,12 +412,13 @@ impl Postgres {
             }),
             self.execute_instrumented("fetch_latest_token_price", async {
                 let mut ex = self.pool.acquire().await?;
-                Ok(
-                    database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
-                        .await
-                        .map_err(anyhow::Error::from)?
-                        .and_then(|price| big_decimal_to_u256(&price)),
+                Ok(database::auction_prices::fetch_latest_token_price(
+                    &mut ex,
+                    ByteArray(token.0.0),
                 )
+                .await
+                .map_err(anyhow::Error::from)?
+                .and_then(|price| big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -639,6 +641,7 @@ mod tests {
                 SigningScheme as DbSigningScheme,
             },
         },
+        ethrpc::alloy::conversions::IntoAlloy,
         model::{
             interaction::InteractionData,
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
@@ -902,7 +905,7 @@ mod tests {
             .unwrap();
 
         let order_statuses = db
-            .user_orders(&owner, 0, None)
+            .user_orders(&owner.into_alloy(), 0, None)
             .await
             .unwrap()
             .iter()

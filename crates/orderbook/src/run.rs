@@ -331,7 +331,13 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
-    let prices = postgres_write.fetch_latest_prices().await.unwrap();
+    let prices = postgres_write
+        .fetch_latest_prices()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(k, v)| (k.into_legacy(), v))
+        .collect();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory

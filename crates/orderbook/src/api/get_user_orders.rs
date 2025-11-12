@@ -1,7 +1,7 @@
 use {
     crate::{api::ApiReply, orderbook::Orderbook},
+    alloy::primitives::Address,
     anyhow::Result,
-    primitive_types::H160,
     serde::Deserialize,
     std::{convert::Infallible, sync::Arc},
     warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
@@ -13,8 +13,8 @@ struct Query {
     limit: Option<u64>,
 }
 
-fn request() -> impl Filter<Extract = (H160, Query), Error = Rejection> + Clone {
-    warp::path!("v1" / "account" / H160 / "orders")
+fn request() -> impl Filter<Extract = (Address, Query), Error = Rejection> + Clone {
+    warp::path!("v1" / "account" / Address / "orders")
         .and(warp::get())
         .and(warp::query::<Query>())
 }
@@ -22,7 +22,7 @@ fn request() -> impl Filter<Extract = (H160, Query), Error = Rejection> + Clone 
 pub fn get_user_orders(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    request().and_then(move |owner: H160, query: Query| {
+    request().and_then(move |owner: Address, query: Query| {
         let orderbook = orderbook.clone();
         async move {
             const DEFAULT_OFFSET: u64 = 0;
@@ -54,7 +54,7 @@ pub fn get_user_orders(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::addr};
+    use super::*;
 
     #[tokio::test]
     async fn request_() {
@@ -65,7 +65,7 @@ mod tests {
             .filter(&request())
             .await
             .unwrap();
-        assert_eq!(result.0, addr!("0000000000000000000000000000000000000001"));
+        assert_eq!(result.0, Address::with_last_byte(1));
         assert_eq!(result.1.offset, None);
         assert_eq!(result.1.limit, None);
 
