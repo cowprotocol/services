@@ -19,7 +19,7 @@ mempool = "public"
 [contracts]
 gp-v2-settlement = "0xb7f8bc63bbcad18155201308c8f3540b07f84f5e"
 weth = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
-balances = "0x65f63a74b9900c7dfe26ac0cf171a536b7509f56"
+balances = "0xbd5a6618df333f8f66702daadc9a953e2b52a65d"
 signatures = "0x7377795aa7b4a8fca5e4e194f54eaff667db45f0"
 
 [liquidity]

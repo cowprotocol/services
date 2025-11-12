@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {WETH} from "solmate/tokens/WETH.sol";
-import {TestERC20} from "../../src/tokens/TestERC20.sol";
+import {TestERC20} from "../src/tokens/TestERC20.sol";
 
 /// @title DeployTokens
 /// @notice Deploy WETH, USDC, and DAI for PoC
