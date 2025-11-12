@@ -101,8 +101,8 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: H160,
-    disable_order_filters: bool,
-    force_presign_order_filtering: bool,
+    disable_order_balance_filter: bool,
+    disable_1271_order_sig_filter: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -128,8 +128,8 @@ impl SolvableOrdersCache {
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
         settlement_contract: H160,
-        disable_order_filters: bool,
-        force_presign_order_filtering: bool,
+        disable_order_balance_filter: bool,
+        disable_1271_order_sig_filter: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -147,8 +147,8 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
-            disable_order_filters,
-            force_presign_order_filtering,
+            disable_order_balance_filter,
+            disable_1271_order_sig_filter,
         })
     }
 
@@ -194,7 +194,7 @@ impl SolvableOrdersCache {
             )
         };
 
-        let orders = if self.disable_order_filters {
+        let orders = if self.disable_order_balance_filter {
             orders
         } else {
             let orders = orders_with_balance(orders, &balances, self.settlement_contract);
@@ -326,7 +326,7 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
-        if self.disable_order_filters {
+        if self.disable_order_balance_filter {
             return Default::default();
         }
 
@@ -392,12 +392,11 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let filter_invalid_signatures = async {
-            if self.disable_order_filters && !self.force_presign_order_filtering {
-                return Default::default();
-            }
-            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
-        };
+        let filter_invalid_signatures = find_invalid_signature_orders(
+            &orders,
+            self.signature_validator.as_ref(),
+            self.disable_1271_order_sig_filter,
+        );
 
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
@@ -484,11 +483,17 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
+    disable_1271_order_sig_filter: bool,
 ) -> Vec<OrderUid> {
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
     for order in orders {
+        if let Signature::Eip1271(_) = &order.signature
+            && disable_1271_order_sig_filter
+        {
+            continue;
+        }
         if matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
@@ -1304,11 +1309,16 @@ mod tests {
             .returning(|_| Ok(()));
 
         let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator).await;
+            find_invalid_signature_orders(&orders, &signature_validator, false).await;
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4)]
         );
+        let invalid_signature_orders_with_1271_filter_disabled =
+            find_invalid_signature_orders(&orders, &signature_validator, true).await;
+        // if we switch off the 1271 filter no orders should be returned as containing
+        // invalid signatures
+        assert_eq!(invalid_signature_orders_with_1271_filter_disabled, vec![]);
     }
 
     #[test]
