@@ -594,17 +594,18 @@ impl Persistence {
 
     /// Returns the oldest settlement event for which the accociated auction is
     /// not yet populated in the database.
-    pub async fn get_settlement_without_auction(
+    pub async fn get_settlements_without_auction(
         &self,
-    ) -> Result<Option<domain::eth::SettlementEvent>, DatabaseError> {
+    ) -> Result<Vec<domain::eth::SettlementEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
             .start_timer();
 
         let mut ex = self.postgres.pool.acquire().await?;
-        let event = database::settlements::get_settlement_without_auction(&mut ex)
+        let events = database::settlements::get_settlements_without_auction(&mut ex)
             .await?
+            .into_iter()
             .map(|event| {
                 let event = domain::eth::SettlementEvent {
                     block: u64::try_from(event.block_number)
@@ -615,8 +616,8 @@ impl Persistence {
                 };
                 Ok::<_, DatabaseError>(event)
             })
-            .transpose()?;
-        Ok(event)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(events)
     }
 
     /// Returns the trade events that are associated with the settlement event
