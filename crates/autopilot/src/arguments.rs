@@ -591,14 +591,15 @@ pub struct FeePolicy {
 #[derive(clap::Parser, Debug, Clone)]
 pub struct UpcomingFeePolicies {
     #[clap(
-        long = "upcoming_fee_policies",
+        id = "upcoming_fee_policies",
+        long = "upcoming-fee-policies",
         env = "UPCOMING_FEE_POLICIES",
         use_value_delimiter = true
     )]
     pub fee_policies: Vec<FeePolicy>,
 
     #[clap(
-        long = "upcoming_fee_policies_timestamp",
+        long = "upcoming-fee-policies-timestamp",
         env = "UPCOMING_FEE_POLICIES_TIMESTAMP"
     )]
     pub effective_from_timestamp: DateTime<Utc>,
