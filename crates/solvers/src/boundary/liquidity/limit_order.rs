@@ -1,6 +1,6 @@
 use {
     crate::domain::liquidity::limit_order::LimitOrder,
-    contracts::ethcontract::{H160, U256},
+    ethcontract::{H160, U256},
     shared::{baseline_solver::BaselineSolvable, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
 };
 
@@ -50,7 +50,7 @@ mod tests {
     use {
         super::*,
         crate::domain::{eth, liquidity::limit_order::TakerAmount},
-        contracts::ethcontract::U256,
+        ethcontract::U256,
         shared::addr,
     };
 
