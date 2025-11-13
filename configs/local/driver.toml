@@ -2,6 +2,9 @@ app-data-fetching-enabled = true
 orderbook-url = "http://orderbook"
 tx-gas-limit = "45000000"
 
+[contracts]
+gp-v2-settlement = "0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9"
+
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique
 endpoint = "http://baseline"
