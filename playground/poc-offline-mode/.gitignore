@@ -7,7 +7,7 @@ contracts/cache/
 contracts/broadcast/
 contracts/lib/
 contracts/out-cow-protocol
-contracts/out-uniswap-v2-periphery
+contracts/out-uniswap-v2
 
 # State files (keep initial, ignore runtime)
 state/backups/
