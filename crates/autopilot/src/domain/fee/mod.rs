@@ -13,6 +13,7 @@ use {
         domain::{self, eth},
     },
     app_data::Validator,
+    chrono::{DateTime, Utc},
     derive_more::Into,
     primitive_types::{H160, U256},
     rust_decimal::Decimal,
@@ -51,25 +52,46 @@ impl From<arguments::FeePolicy> for ProtocolFee {
     }
 }
 
+pub struct UpcomingProtocolFees {
+    fee_policies: Vec<ProtocolFee>,
+    effective_from_timestamp: DateTime<Utc>,
+}
+
+impl From<arguments::UpcomingFeePolicies> for UpcomingProtocolFees {
+    fn from(value: arguments::UpcomingFeePolicies) -> Self {
+        Self {
+            fee_policies: value
+                .fee_policies
+                .into_iter()
+                .map(ProtocolFee::from)
+                .collect::<Vec<_>>(),
+            effective_from_timestamp: value.effective_from_timestamp,
+        }
+    }
+}
+
 pub type ProtocolFeeExemptAddresses = HashSet<H160>;
 
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
+    upcoming_fee_policies: Option<UpcomingProtocolFees>,
 }
 
 impl ProtocolFees {
-    pub fn new(
-        fee_policies: &[arguments::FeePolicy],
-        fee_policy_max_partner_fee: FeeFactor,
-    ) -> Self {
+    pub fn new(config: &arguments::FeePoliciesConfig) -> Self {
         Self {
-            fee_policies: fee_policies
+            fee_policies: config
+                .fee_policies
                 .iter()
                 .cloned()
                 .map(ProtocolFee::from)
                 .collect(),
-            max_partner_fee: fee_policy_max_partner_fee,
+            max_partner_fee: config.fee_policy_max_partner_fee,
+            upcoming_fee_policies: config
+                .upcoming_fee_policies
+                .clone()
+                .map(UpcomingProtocolFees::from),
         }
     }
 
@@ -228,13 +250,22 @@ impl ProtocolFees {
         quote: domain::Quote,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
-        let protocol_fees = self
-            .fee_policies
+        // Use new fee policies if the order creation date is after their effective
+        // timestamp.
+        let fee_policies = self
+            .upcoming_fee_policies
+            .as_ref()
+            .filter(|upcoming| order.metadata.creation_date >= upcoming.effective_from_timestamp)
+            .map(|upcoming| &upcoming.fee_policies)
+            .unwrap_or(&self.fee_policies);
+
+        let protocol_fees = fee_policies
             .iter()
             .filter_map(|fee_policy| Self::protocol_fee_into_policy(&order, &quote, fee_policy))
             .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
+
         boundary::order::to_domain(order, protocol_fees, Some(quote))
     }
 
