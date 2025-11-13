@@ -156,7 +156,7 @@ pub struct FeeFactor(f64);
 
 impl FeeFactor {
     /// Number of basis points that make up 100%.
-    const MAX_BPS: u32 = 10_000;
+    pub const MAX_BPS: u32 = 10_000;
 
     /// Converts the fee factor to basis points (BPS).
     /// For example, 0.0002 -> 2 BPS
