@@ -1531,7 +1531,7 @@ mod tests {
         let balances: Balances = Default::default();
 
         let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, true);
-        // 1721 filter is disabled, only the regular order is filtered out
+        // 1271 filter is disabled, only the regular order is filtered out
         assert_eq!(filtered.len(), 1);
         assert!(matches!(filtered[0].signature, Signature::Eip1271(_)));
 
