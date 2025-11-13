@@ -63,25 +63,50 @@ impl Persistence {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
-    /// There is always only one `current` auction.
-    ///
-    /// This method replaces the current auction with the given one.
-    ///
-    /// If the given auction is successfully saved, it is also archived.
-    pub async fn replace_current_auction(
-        &self,
-        auction: &domain::RawAuctionData,
-    ) -> Result<domain::auction::Id, DatabaseError> {
-        let _timer = observe::metrics::metrics()
-            .on_auction_overhead_start("autopilot", "replace_auction_in_db");
-        let auction = dto::auction::from_domain(auction.clone());
+    /// Fetches the ID that should be used for the next auction.
+    pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_next_auction_id"])
+            .start_timer();
         self.postgres
-            .replace_current_auction(&auction)
+            .get_next_auction_id()
             .await
-            .inspect(|&id| {
-                self.archive_auction(dto::auction::Auction { id, auction });
-            })
             .map_err(DatabaseError)
+    }
+
+    /// Spawns a background task that replaces the current auction in the DB
+    /// with the new one.
+    pub fn replace_current_auction_in_db(
+        &self,
+        id: domain::auction::Id,
+        auction: &domain::RawAuctionData,
+    ) {
+        let auction_dto = dto::auction::from_domain(auction.clone());
+        let db = self.postgres.clone();
+        tokio::task::spawn(async move {
+            let _ = db
+                .replace_current_auction(id, &auction_dto)
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to replace auction in DB"));
+        });
+    }
+
+    /// Spawns a background task that uploads the auction to S3.
+    pub fn upload_auction_to_s3(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        if auction.orders.is_empty() {
+            return;
+        }
+        let Some(s3) = self.s3.clone() else {
+            return;
+        };
+        let auction_dto = dto::auction::from_domain(auction.clone());
+        tokio::task::spawn(async move {
+            match s3.upload(id.to_string(), &auction_dto).await {
+                Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
+                Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
+            }
+        });
     }
 
     /// Finds solvable orders based on the order's min validity period.
@@ -93,35 +118,6 @@ impl Persistence {
             .all_solvable_orders(min_valid_to)
             .await
             .context("failed to fetch all solvable orders")
-    }
-
-    /// Saves the given auction to storage for debugging purposes.
-    ///
-    /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, instance: dto::auction::Auction) {
-        let Some(uploader) = self.s3.clone() else {
-            return;
-        };
-        if instance.auction.orders.is_empty() {
-            tracing::info!("skip upload of empty auction");
-            return;
-        }
-        tokio::spawn(
-            async move {
-                match uploader
-                    .upload(instance.id.to_string(), &instance.auction)
-                    .await
-                {
-                    Ok(key) => {
-                        tracing::info!(?key, "uploaded auction to s3");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to upload auction to s3");
-                    }
-                }
-            }
-            .instrument(tracing::Span::current()),
-        );
     }
 
     /// Saves the competition data to the DB
