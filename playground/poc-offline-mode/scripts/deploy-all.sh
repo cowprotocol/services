@@ -308,7 +308,7 @@ generate_configs() {
     SIGNATURES_CONTRACT_ADDRESS=${SIGNATURES_CONTRACT_ADDRESS}
 
     # driver.toml
-    cat > ./configs/driver.toml <<EOF
+    cat > ../../configs/offline/driver.toml <<EOF
 app-data-fetching-enabled = true
 orderbook-url = "http://orderbook"
 tx-gas-limit = "45000000"
@@ -347,7 +347,7 @@ missing-pool-cache-time = "1h"
 EOF
 
     # baseline.toml
-    cat > ./configs/baseline.toml <<EOF
+    cat > ../../configs/offline/baseline.toml <<EOF
 chain-id = "31337" # Anvil local chain
 base-tokens = [
     "${WETH_ADDRESS}", # WETH (auto-generated from deployment)

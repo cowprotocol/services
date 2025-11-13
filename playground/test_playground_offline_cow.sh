@@ -74,12 +74,26 @@ QUOTE_A_RESPONSE=$(curl -s -X POST "http://$HOST/api/v1/quote" \
     "from": "'$TRADER_A'"
   }')
 
+# Check if quote was successful
+if echo "$QUOTE_A_RESPONSE" | jq -e '.errorType' > /dev/null 2>&1; then
+  echo "❌ Quote request failed:"
+  echo "$QUOTE_A_RESPONSE" | jq .
+  exit 1
+fi
+
 # Extract quote parameters
 SELL_AMOUNT_A=$(echo "$QUOTE_A_RESPONSE" | jq -r '.quote.sellAmount')
 BUY_AMOUNT_A=$(echo "$QUOTE_A_RESPONSE" | jq -r '.quote.buyAmount')
 FEE_AMOUNT_A=$(echo "$QUOTE_A_RESPONSE" | jq -r '.quote.feeAmount')
 VALID_TO=$(echo "$QUOTE_A_RESPONSE" | jq -r '.quote.validTo')
 APP_DATA_HASH=$(echo "$QUOTE_A_RESPONSE" | jq -r '.quote.appData')
+
+# Validate that we got valid values
+if [ "$BUY_AMOUNT_A" = "null" ] || [ "$VALID_TO" = "null" ]; then
+  echo "❌ Quote returned null values:"
+  echo "$QUOTE_A_RESPONSE" | jq .
+  exit 1
+fi
 
 echo "  Quote received:"
 echo "    Sell amount: $(cast --from-wei $SELL_AMOUNT_A 2>/dev/null || echo $SELL_AMOUNT_A) WETH"
@@ -133,12 +147,26 @@ QUOTE_B_RESPONSE=$(curl -s -X POST "http://$HOST/api/v1/quote" \
     "from": "'$TRADER_B'"
   }')
 
+# Check if quote was successful
+if echo "$QUOTE_B_RESPONSE" | jq -e '.errorType' > /dev/null 2>&1; then
+  echo "❌ Quote request failed:"
+  echo "$QUOTE_B_RESPONSE" | jq .
+  exit 1
+fi
+
 # Extract quote parameters
 SELL_AMOUNT_B=$(echo "$QUOTE_B_RESPONSE" | jq -r '.quote.sellAmount')
 BUY_AMOUNT_B=$(echo "$QUOTE_B_RESPONSE" | jq -r '.quote.buyAmount')
 FEE_AMOUNT_B=$(echo "$QUOTE_B_RESPONSE" | jq -r '.quote.feeAmount')
 VALID_TO_B=$(echo "$QUOTE_B_RESPONSE" | jq -r '.quote.validTo')
 APP_DATA_HASH_B=$(echo "$QUOTE_B_RESPONSE" | jq -r '.quote.appData')
+
+# Validate that we got valid values
+if [ "$BUY_AMOUNT_B" = "null" ] || [ "$VALID_TO_B" = "null" ]; then
+  echo "❌ Quote returned null values:"
+  echo "$QUOTE_B_RESPONSE" | jq .
+  exit 1
+fi
 
 echo "  Quote received:"
 echo "    Sell amount: $(echo "scale=2; $SELL_AMOUNT_B / 1000000" | bc) USDC"
@@ -205,12 +233,12 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
 
   echo "  [$ELAPSED s] Order A: $ORDER_A_STATUS | Order B: $ORDER_B_STATUS"
 
-  # Check if at least one order is fulfilled/traded
-  if [ "$ORDER_A_STATUS" = "fulfilled" ] || [ "$ORDER_A_STATUS" = "traded" ] || \
-     [ "$ORDER_B_STATUS" = "fulfilled" ] || [ "$ORDER_B_STATUS" = "traded" ]; then
+  # Check if BOTH orders are fulfilled/traded (peer-to-peer matching)
+  if ([ "$ORDER_A_STATUS" = "fulfilled" ] || [ "$ORDER_A_STATUS" = "traded" ]) && \
+     ([ "$ORDER_B_STATUS" = "fulfilled" ] || [ "$ORDER_B_STATUS" = "traded" ]); then
     SETTLEMENT_FOUND=true
     echo ""
-    echo "✅ Orders settled successfully!"
+    echo "✅ Both orders settled successfully!"
     break
   fi
 
