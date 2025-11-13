@@ -455,7 +455,7 @@ pub async fn run(args: Arguments) {
             order_validator,
             optimal_quoter,
             app_data.clone(),
-            args.volume_fee,
+            args.volume_fee_config,
         )
         .with_fast_quoter(fast_quoter),
     );

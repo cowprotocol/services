@@ -1,5 +1,6 @@
 use {
     alloy::primitives::Address,
+    chrono::{DateTime, Utc},
     derive_more::Into,
     reqwest::Url,
     shared::{
@@ -143,12 +144,22 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
 
-    /// Volume-based protocol fee factor to be applied to quotes.
+    #[clap(flatten)]
+    pub volume_fee_config: Option<VolumeFeeConfig>,
+}
+
+/// Volume-based protocol fee factor to be applied to quotes.
+#[derive(clap::Parser, Debug, Clone)]
+pub struct VolumeFeeConfig {
     /// This is a decimal value (e.g., 0.0002 for 0.02% or 2 basis points).
     /// The fee is applied to the surplus token (buy token for sell orders,
     /// sell token for buy orders).
     #[clap(long, env)]
-    pub volume_fee: Option<FeeFactor>,
+    pub factor: FeeFactor,
+
+    /// The timestamp from which the volume fee becomes effective.
+    #[clap(long, env)]
+    pub effective_from_timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Into)]
@@ -216,7 +227,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
-            volume_fee,
+            volume_fee_config,
         } = self;
 
         write!(f, "{shared}")?;
@@ -270,7 +281,7 @@ impl std::fmt::Display for Arguments {
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
-        writeln!(f, "volume_fee: {volume_fee:?}")?;
+        writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
 
         Ok(())
     }
