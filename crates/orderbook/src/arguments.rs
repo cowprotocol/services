@@ -154,12 +154,15 @@ pub struct VolumeFeeConfig {
     /// This is a decimal value (e.g., 0.0002 for 0.02% or 2 basis points).
     /// The fee is applied to the surplus token (buy token for sell orders,
     /// sell token for buy orders).
-    #[clap(long, env)]
+    #[clap(long = "volume_fee_factor", env = "VOLUME_FEE_FACTOR")]
     pub factor: FeeFactor,
 
     /// The timestamp from which the volume fee becomes effective.
-    #[clap(long, env)]
-    pub effective_from_timestamp: DateTime<Utc>,
+    #[clap(
+        long = "volume_fee_effective_timestamp",
+        env = "VOLUME_FEE_EFFECTIVE_TIMESTAMP"
+    )]
+    pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Into)]

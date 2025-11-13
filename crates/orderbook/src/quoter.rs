@@ -165,7 +165,7 @@ fn get_adjusted_quote_data(
 ) -> anyhow::Result<AdjustedQuoteData> {
     let Some(factor) = volume_fee
         // Only apply volume fee if effective timestamp is in the past
-        .filter(|config| config.effective_from_timestamp <= Utc::now())
+        .filter(|config| config.effective_from_timestamp.is_none_or(|ts| ts <= Utc::now()))
         .map(|config| config.factor)
     else {
         return Ok(AdjustedQuoteData {
@@ -276,7 +276,7 @@ mod tests {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
         let volume_fee_config = VolumeFeeConfig {
             factor: volume_fee,
-            effective_from_timestamp: Utc::now(),
+            effective_from_timestamp: None,
         };
 
         // Selling 100 tokens, expecting to buy 100 tokens
@@ -307,7 +307,7 @@ mod tests {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
         let volume_fee_config = VolumeFeeConfig {
             factor: volume_fee,
-            effective_from_timestamp: Utc::now(),
+            effective_from_timestamp: None,
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
@@ -336,7 +336,7 @@ mod tests {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
         let volume_fee_config = VolumeFeeConfig {
             factor: volume_fee,
-            effective_from_timestamp: Utc::now(),
+            effective_from_timestamp: None,
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
@@ -370,7 +370,7 @@ mod tests {
         let volume_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1% = 10 bps
         let volume_fee_config = VolumeFeeConfig {
             factor: volume_fee,
-            effective_from_timestamp: Utc::now(),
+            effective_from_timestamp: None,
         };
 
         // Selling 100 tokens, expecting to buy 200 tokens (2:1 price ratio)
@@ -405,7 +405,7 @@ mod tests {
             let volume_fee = FeeFactor::try_from(factor).unwrap();
             let volume_fee_config = VolumeFeeConfig {
                 factor: volume_fee,
-                effective_from_timestamp: Utc::now(),
+                effective_from_timestamp: None,
             };
 
             let quote = create_test_quote(to_wei(100), to_wei(100));
@@ -419,5 +419,30 @@ mod tests {
 
             assert_eq!(result.protocol_fee_bps, Some(expected_bps.to_string()));
         }
+    }
+
+    #[test]
+    fn test_ignore_volume_fees_before_effective_date() {
+        let volume_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1% = 10 bps
+        let future_timestamp = Utc::now() + chrono::Duration::days(1);
+        let volume_fee_config = VolumeFeeConfig {
+            factor: volume_fee,
+            effective_from_timestamp: Some(future_timestamp),
+        };
+
+        // Selling 100 tokens, expecting to buy 100 tokens
+        let quote = create_test_quote(to_wei(100), to_wei(100));
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: number::nonzero::U256::try_from(to_wei(100)).unwrap(),
+            },
+        };
+
+        let result = get_adjusted_quote_data(&quote, Some(&volume_fee_config), &side).unwrap();
+
+        // Since the effective date is in the future, no volume fee should be applied
+        assert_eq!(result.sell_amount, to_wei(100));
+        assert_eq!(result.buy_amount, to_wei(100));
+        assert_eq!(result.protocol_fee_bps, None);
     }
 }
