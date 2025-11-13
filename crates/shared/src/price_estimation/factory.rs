@@ -228,7 +228,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             NativePriceEstimatorSource::CoinGecko => {
                 anyhow::ensure!(
                     self.args.coin_gecko.coin_gecko_api_key.is_some(),
-                    "coin_gecko_api_key must be set when CoinGecko is used as a native price estimator"
+                    "coin_gecko_api_key must be set when CoinGecko is used as native price                     estimator"
                 );
 
                 let name = "CoinGecko".to_string();
