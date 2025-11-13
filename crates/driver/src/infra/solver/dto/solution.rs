@@ -53,12 +53,9 @@ impl Solutions {
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
-                                    match fulfillment.fee {
-                                        Some(fee) => competition::solution::trade::Fee::Dynamic(
-                                            competition::order::SellAmount(fee),
-                                        ),
-                                        None => competition::solution::trade::Fee::Static,
-                                    },
+                                    competition::solution::trade::Fee(
+                                        competition::order::SellAmount(fulfillment.fee),
+                                    ),
                                 )
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
@@ -111,7 +108,7 @@ impl Solutions {
                                         )?,
                                     },
                                     jit.executed_amount.into(),
-                                    jit.fee.unwrap_or_default().into(),
+                                    jit.fee.into(),
                                 )
                                 .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
                             ))},

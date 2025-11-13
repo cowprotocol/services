@@ -138,18 +138,13 @@ impl Single {
             return None;
         }
 
-        let fee = if order.solver_determines_fee() {
-            Fee::Surplus(fee)
-        } else {
-            Fee::Protocol
-        };
-        let surplus_fee = fee.surplus().unwrap_or_default();
+        let fee = Fee(fee);
 
         // Compute total executed sell and buy amounts accounting for solver
         // fees. That is, the total amount of sell tokens transferred into the
         // contract and the total buy tokens transferred out of the contract.
         let (sell, buy) = match order.side {
-            order::Side::Buy => (input.amount.checked_add(surplus_fee)?, output.amount),
+            order::Side::Buy => (input.amount.checked_add(fee.0.0)?, output.amount),
             order::Side::Sell => {
                 // We want to collect fees in the sell token, so we need to sell
                 // `fee` more than the DEX swap. However, we don't allow
@@ -157,12 +152,9 @@ impl Single {
                 // Smart Contract), so we need to cap our executed amount to the
                 // order's limit sell amount and compute the executed buy amount
                 // accordingly.
-                let sell = input
-                    .amount
-                    .checked_add(surplus_fee)?
-                    .min(order.sell.amount);
+                let sell = input.amount.checked_add(fee.0.0)?.min(order.sell.amount);
                 let buy = sell
-                    .checked_sub(surplus_fee)?
+                    .checked_sub(fee.0.0)?
                     .checked_mul(output.amount)?
                     .checked_div(input.amount)?;
                 (sell, buy)
@@ -177,13 +169,13 @@ impl Single {
 
         let executed = match order.side {
             order::Side::Buy => buy,
-            order::Side::Sell => sell.checked_sub(surplus_fee)?,
+            order::Side::Sell => sell.checked_sub(fee.0.0)?,
         };
         Some(Solution {
             id: Default::default(),
             prices: ClearingPrices::new([
                 (order.sell.token, buy),
-                (order.buy.token, sell.checked_sub(surplus_fee)?),
+                (order.buy.token, sell.checked_sub(fee.0.0)?),
             ]),
             pre_interactions: Default::default(),
             interactions,
@@ -232,16 +224,9 @@ impl Fulfillment {
     /// Creates a new order filled to the specified amount. Returns `None` if
     /// the fill amount is incompatible with the order.
     pub fn new(order: order::Order, executed: U256, fee: Fee) -> Option<Self> {
-        if matches!(fee, Fee::Surplus(_)) != order.solver_determines_fee() {
-            return None;
-        }
-
         let (fill, full) = match order.side {
             order::Side::Buy => (order.buy.amount, executed),
-            order::Side::Sell => (
-                order.sell.amount,
-                executed.checked_add(fee.surplus().unwrap_or_default())?,
-            ),
+            order::Side::Sell => (order.sell.amount, executed.checked_add(fee.0.0)?),
         };
         if (!order.partially_fillable && full != fill) || (order.partially_fillable && full > fill)
         {
@@ -253,15 +238,6 @@ impl Fulfillment {
             executed,
             fee,
         })
-    }
-
-    /// Creates a new trade for a fully executed order.
-    pub fn fill(order: order::Order) -> Option<Self> {
-        let executed = match order.side {
-            order::Side::Buy => order.buy.amount,
-            order::Side::Sell => order.sell.amount,
-        };
-        Self::new(order, executed, Fee::Protocol)
     }
 
     /// Get a reference to the traded order.
@@ -283,38 +259,21 @@ impl Fulfillment {
     }
 
     /// Returns the solver computed fee that was charged to the order as an
-    /// asset (token address and amount). Returns `None` if the fulfillment
-    /// does not include a solver computed fee.
-    pub fn surplus_fee(&self) -> Option<eth::Asset> {
-        Some(eth::Asset {
+    /// asset (token address and amount).
+    pub fn surplus_fee(&self) -> eth::Asset {
+        eth::Asset {
             token: self.order.sell.token,
-            amount: self.fee.surplus()?,
-        })
+            amount: self.fee.0.0,
+        }
     }
 }
 
 /// The fee that is charged to a user for executing an order.
+///
+/// After CIP38, all orders have solver-determined fees, so this is a simple
+/// newtype wrapper around the surplus fee amount.
 #[derive(Clone, Copy, Debug)]
-pub enum Fee {
-    /// A protocol computed fee.
-    ///
-    /// That is, the fee is charged from the order's `fee_amount` that is
-    /// included in the auction being solved.
-    Protocol,
-
-    /// An additional surplus fee that is charged by the solver.
-    Surplus(eth::SellTokenAmount),
-}
-
-impl Fee {
-    /// Returns the dynamic component for the fee.
-    pub fn surplus(&self) -> Option<U256> {
-        match self {
-            Fee::Protocol => None,
-            Fee::Surplus(fee) => Some(fee.0),
-        }
-    }
-}
+pub struct Fee(pub eth::SellTokenAmount);
 
 /// A trade of an order that was created specifically for this solution
 /// providing just-in-time liquidity for other regular orders.

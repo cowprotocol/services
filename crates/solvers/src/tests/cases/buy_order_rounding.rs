@@ -99,7 +99,8 @@ async fn uniswap() {
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a",
-                        "executedAmount": "1000000000000000000"
+                        "executedAmount": "1000000000000000000",
+                        "fee": "4594554"
                     }
                 ],
                 "preInteractions": [],
@@ -270,7 +271,8 @@ async fn balancer_weighted() {
                         "order": "0x0000000000000000000000000000000000000000000000000000000000000000\
                                     0000000000000000000000000000000000000000\
                                     00000000",
-                        "executedAmount": "1000000000000000000"
+                        "executedAmount": "1000000000000000000",
+                        "fee": "4129931694751025"
                     }
                 ],
                 "preInteractions": [],
@@ -423,7 +425,8 @@ async fn balancer_weighted_v3plus() {
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a",
-                        "executedAmount": "1000000000000000000000"
+                        "executedAmount": "1000000000000000000000",
+                        "fee": "207115386062754"
                     }
                 ],
                 "preInteractions": [],
@@ -567,7 +570,8 @@ async fn distant_convergence() {
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a",
-                        "executedAmount": "999999999999999843119"
+                        "executedAmount": "999999999999999843119",
+                        "fee": "207115386062754"
                     }
                 ],
                 "preInteractions": [],
@@ -747,7 +751,8 @@ async fn same_path() {
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
                                     2a2a2a2a",
-                        "executedAmount": "9056454904357528"
+                        "executedAmount": "9056454904357528",
+                        "fee": "166974995045170"
                     }
                 ],
                 "preInteractions": [],
@@ -899,7 +904,8 @@ async fn balancer_stable() {
                             "order": "0x0101010101010101010101010101010101010101010101010101010101010101\
                                         0101010101010101010101010101010101010101\
                                         01010101",
-                            "executedAmount": "10000000000000000000"
+                            "executedAmount": "10000000000000000000",
+                            "fee": "265944403395415"
                         }
                     ],
                     "preInteractions": [],

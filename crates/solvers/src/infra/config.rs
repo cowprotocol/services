@@ -52,6 +52,7 @@ struct Config {
 
     /// If this is configured the solver will also use the Uniswap V3 liquidity
     /// sources that rely on RPC request.
+    #[serde(default)]
     uni_v3_node_url: Option<Url>,
 }
 
