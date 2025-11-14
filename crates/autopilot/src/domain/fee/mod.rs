@@ -57,16 +57,20 @@ pub struct UpcomingProtocolFees {
     effective_from_timestamp: DateTime<Utc>,
 }
 
-impl From<arguments::UpcomingFeePolicies> for UpcomingProtocolFees {
+impl From<arguments::UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
     fn from(value: arguments::UpcomingFeePolicies) -> Self {
-        Self {
-            fee_policies: value
-                .fee_policies
-                .into_iter()
-                .map(ProtocolFee::from)
-                .collect::<Vec<_>>(),
-            effective_from_timestamp: value.effective_from_timestamp,
-        }
+        value
+            // both config fields must be non-empty
+            .effective_from_timestamp
+            .filter(|_| !value.fee_policies.is_empty())
+            .map(|effective_from_timestamp| UpcomingProtocolFees {
+                fee_policies: value
+                    .fee_policies
+                    .into_iter()
+                    .map(ProtocolFee::from)
+                    .collect::<Vec<_>>(),
+                effective_from_timestamp,
+            })
     }
 }
 
@@ -88,10 +92,7 @@ impl ProtocolFees {
                 .map(ProtocolFee::from)
                 .collect(),
             max_partner_fee: config.fee_policy_max_partner_fee,
-            upcoming_fee_policies: config
-                .upcoming_fee_policies
-                .clone()
-                .map(UpcomingProtocolFees::from),
+            upcoming_fee_policies: config.upcoming_fee_policies.clone().into(),
         }
     }
 

@@ -565,7 +565,7 @@ pub struct FeePoliciesConfig {
 
     /// Volume fee policies that will become effective at a future timestamp.
     #[clap(flatten)]
-    pub upcoming_fee_policies: Option<UpcomingFeePolicies>,
+    pub upcoming_fee_policies: UpcomingFeePolicies,
 }
 
 /// A fee policy to be used for orders base on it's class.
@@ -602,7 +602,7 @@ pub struct UpcomingFeePolicies {
         long = "upcoming-fee-policies-timestamp",
         env = "UPCOMING_FEE_POLICIES_TIMESTAMP"
     )]
-    pub effective_from_timestamp: DateTime<Utc>,
+    pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
 #[derive(clap::Parser, Debug, Clone)]
