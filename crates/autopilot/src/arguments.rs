@@ -2,6 +2,7 @@ use {
     crate::{domain::fee::FeeFactor, infra},
     alloy::primitives::Address,
     anyhow::{Context, anyhow, ensure},
+    chrono::{DateTime, Utc},
     clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
@@ -194,13 +195,8 @@ pub struct Arguments {
     pub solve_deadline: Duration,
 
     /// Describes how the protocol fees should be calculated.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub fee_policies: Vec<FeePolicy>,
-
-    /// Maximum partner fee allow. If the partner fee specified is greater than
-    /// this maximum, the partner fee will be capped
-    #[clap(long, env, default_value = "0.01")]
-    pub fee_policy_max_partner_fee: FeeFactor,
+    #[clap(flatten)]
+    pub fee_policies_config: FeePoliciesConfig,
 
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
@@ -389,8 +385,7 @@ impl std::fmt::Display for Arguments {
             submission_deadline,
             shadow,
             solve_deadline,
-            fee_policies,
-            fee_policy_max_partner_fee,
+            fee_policies_config,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_write_url,
@@ -448,11 +443,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
-        writeln!(f, "fee_policies: {fee_policies:?}")?;
-        writeln!(
-            f,
-            "fee_policy_max_partner_fee: {fee_policy_max_partner_fee:?}"
-        )?;
+        writeln!(f, "fee_policies_config: {fee_policies_config:?}")?;
         writeln!(
             f,
             "order_events_cleanup_interval: {order_events_cleanup_interval:?}"
@@ -585,6 +576,22 @@ impl FromStr for Solver {
     }
 }
 
+#[derive(clap::Parser, Debug, Clone)]
+pub struct FeePoliciesConfig {
+    /// Describes how the protocol fees should be calculated.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub fee_policies: Vec<FeePolicy>,
+
+    /// Maximum partner fee allowed. If the partner fee specified is greater
+    /// than this maximum, the partner fee will be capped
+    #[clap(long, env, default_value = "0.01")]
+    pub fee_policy_max_partner_fee: FeeFactor,
+
+    /// Volume fee policies that will become effective at a future timestamp.
+    #[clap(flatten)]
+    pub upcoming_fee_policies: UpcomingFeePolicies,
+}
+
 /// A fee policy to be used for orders base on it's class.
 /// Examples:
 /// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
@@ -602,6 +609,24 @@ impl FromStr for Solver {
 pub struct FeePolicy {
     pub fee_policy_kind: FeePolicyKind,
     pub fee_policy_order_class: FeePolicyOrderClass,
+}
+
+/// Fee policies that will become effective at a future timestamp.
+#[derive(clap::Parser, Debug, Clone)]
+pub struct UpcomingFeePolicies {
+    #[clap(
+        id = "upcoming_fee_policies",
+        long = "upcoming-fee-policies",
+        env = "UPCOMING_FEE_POLICIES",
+        use_value_delimiter = true
+    )]
+    pub fee_policies: Vec<FeePolicy>,
+
+    #[clap(
+        long = "upcoming-fee-policies-timestamp",
+        env = "UPCOMING_FEE_POLICIES_TIMESTAMP"
+    )]
+    pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
 #[derive(clap::Parser, Debug, Clone)]

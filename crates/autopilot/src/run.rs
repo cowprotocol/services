@@ -538,7 +538,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
+        domain::ProtocolFees::new(&args.fee_policies_config),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         eth.contracts().settlement().address().into_legacy(),

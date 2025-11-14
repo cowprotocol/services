@@ -36,6 +36,12 @@ async fn local_node_volume_fee_buy_order() {
 
 #[tokio::test]
 #[ignore]
+async fn local_node_volume_fee_buy_upcoming_future_order() {
+    run_test(volume_fee_buy_order_upcoming_future_test).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn local_node_combined_protocol_fees() {
     run_test(combined_protocol_fees).await;
 }
@@ -134,10 +140,15 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
 
-    let autopilot_config = vec![
-        ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
-        "--fee-policy-max-partner-fee=0.02".to_string(),
-    ];
+    let autopilot_config = [
+        ProtocolFeesConfig {
+            protocol_fees: vec![limit_surplus_policy, market_price_improvement_policy],
+            ..Default::default()
+        }
+        .into_args(),
+        vec!["--fee-policy-max-partner-fee=0.02".to_string()],
+    ]
+    .concat();
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
@@ -623,16 +634,29 @@ fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
 
 async fn volume_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
+    let outdated_fee_policy = FeePolicyKind::Volume { factor: 0.0002 };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
         // The order is in-market, but specifying `Any` order class to make sure it is properly
         // applied
         policy_order_class: FeePolicyOrderClass::Any,
     };
+    let outdated_protocol_fee = ProtocolFee {
+        policy: outdated_fee_policy,
+        policy_order_class: FeePolicyOrderClass::Any,
+    };
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let protocol_fees_config =
-        ProtocolFeesConfig(vec![protocol_fee.clone(), protocol_fee]).to_string();
+    let protocol_fee_args = ProtocolFeesConfig {
+        protocol_fees: vec![outdated_protocol_fee.clone(), outdated_protocol_fee],
+        upcoming_protocol_fees: Some(UpcomingProtocolFees {
+            fee_policies: vec![protocol_fee.clone(), protocol_fee],
+            // Set the effective time to 10 minutes ago to make sure the new policy
+            // is applied
+            effective_from_timestamp: chrono::Utc::now() - chrono::Duration::minutes(10),
+        }),
+    }
+    .into_args();
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -702,7 +726,159 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![protocol_fees_config],
+                autopilot: protocol_fee_args,
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    let quote = get_quote(
+        &services,
+        token_gno.address().into_legacy(),
+        token_dai.address().into_legacy(),
+        OrderKind::Buy,
+        to_wei(5),
+        model::time::now_in_epoch_seconds() + 300,
+    )
+    .await
+    .unwrap()
+    .quote;
+
+    let order = OrderCreation {
+        sell_token: token_gno.address().into_legacy(),
+        sell_amount: quote.sell_amount * 3 / 2,
+        buy_token: token_dai.address().into_legacy(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Buy,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        let order = services.get_order(&uid).await.unwrap();
+        !order.metadata.executed_fee.is_zero()
+    };
+    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+
+    let order = services.get_order(&uid).await.unwrap();
+    let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
+    assert!(order.metadata.executed_fee >= fee_in_buy_token + quote.sell_amount / 10);
+
+    // Check settlement contract balance
+    let balance_after = token_gno
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap()
+        .into_legacy();
+    assert_eq!(order.metadata.executed_fee, balance_after);
+}
+
+async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
+    let future_fee_policy = FeePolicyKind::Volume { factor: 0.0002 };
+    let protocol_fee = ProtocolFee {
+        policy: fee_policy,
+        // The order is in-market, but specifying `Any` order class to make sure it is properly
+        // applied
+        policy_order_class: FeePolicyOrderClass::Any,
+    };
+    let future_protocol_fee = ProtocolFee {
+        policy: future_fee_policy,
+        policy_order_class: FeePolicyOrderClass::Any,
+    };
+    // Protocol fee set twice to test that only one policy will apply if the
+    // autopilot is not configured to support multiple fees
+    let protocol_fee_args = ProtocolFeesConfig {
+        protocol_fees: vec![protocol_fee.clone(), protocol_fee],
+        upcoming_protocol_fees: Some(UpcomingProtocolFees {
+            fee_policies: vec![future_protocol_fee.clone(), future_protocol_fee],
+            // Set the effective time to far in the future to make sure the new policy
+            // is NOT applied
+            effective_from_timestamp: chrono::Utc::now() + chrono::Duration::days(1),
+        }),
+    }
+    .into_args();
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token_gno, token_dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1000))
+        .await;
+
+    // Fund trader accounts
+    token_gno.mint(trader.address(), to_wei(100)).await;
+
+    // Create and fund Uniswap pool
+    token_gno.mint(solver.address(), to_wei(1000)).await;
+    token_dai.mint(solver.address(), to_wei(1000)).await;
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_gno.address(), *token_dai.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_gno
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_dai
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_gno.address(),
+            *token_dai.address(),
+            eth(1000),
+            eth(1000),
+            ::alloy::primitives::U256::ZERO,
+            ::alloy::primitives::U256::ZERO,
+            solver.address().into_alloy(),
+            ::alloy::primitives::U256::MAX,
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Approve GPv2 for trading
+
+    token_gno
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Place Orders
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: protocol_fee_args,
                 ..Default::default()
             },
             solver,
