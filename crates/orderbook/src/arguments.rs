@@ -1,6 +1,5 @@
 use {
     alloy::primitives::Address,
-    derive_more::Into,
     reqwest::Url,
     shared::{
         arguments::{display_option, display_secret_option},
@@ -151,7 +150,7 @@ pub struct Arguments {
     pub volume_fee: Option<FeeFactor>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Into)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeeFactor(f64);
 
 impl FeeFactor {
