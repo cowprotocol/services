@@ -208,13 +208,23 @@ impl Inner {
                     })
                     .collect();
 
+                let mut output = if route.is_empty() {
+                    order.sell
+                } else {
+                    route.output()
+                };
+                let input = if route.is_empty() {
+                    order.sell
+                } else {
+                    route.input()
+                };
+
                 // The baseline solver generates a path with swapping
                 // for exact output token amounts. This leads to
                 // potential rounding errors for buy orders, where we
                 // can buy slightly more than intended. Fix this by
                 // capping the output amount to the order's buy amount
                 // for buy orders.
-                let mut output = route.output();
                 if let order::Side::Buy = order.side {
                     output.amount = cmp::min(output.amount, order.buy.amount);
                 }
@@ -227,7 +237,7 @@ impl Inner {
                 Some(
                     solution::Single {
                         order: order.clone(),
-                        input: route.input(),
+                        input,
                         output,
                         interactions,
                         gas,
@@ -356,18 +366,25 @@ pub struct Segment<'a> {
 }
 
 impl<'a> Route<'a> {
-    pub fn new(segments: Vec<Segment<'a>>) -> Option<Self> {
-        if segments.is_empty() {
-            return None;
-        }
-        Some(Self { segments })
+    pub fn new(segments: Vec<Segment<'a>>) -> Self {
+        Self { segments }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.segments.is_empty()
     }
 
     fn input(&self) -> eth::Asset {
+        if self.is_empty() {
+            unreachable!("Output empty segment");
+        }
         self.segments[0].input
     }
 
     fn output(&self) -> eth::Asset {
+        if self.is_empty() {
+            unreachable!("Output empty segment");
+        }
         self.segments
             .last()
             .expect("route has at least one segment by construction")

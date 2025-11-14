@@ -141,6 +141,10 @@ pub struct Arguments {
     /// whether an order is actively being bid on.
     #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
+
+    /// Allow same sell and buy token
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub allow_same_sell_and_buy_token: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -172,6 +176,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
+            allow_same_sell_and_buy_token,
         } = self;
 
         write!(f, "{shared}")?;
@@ -224,6 +229,10 @@ impl std::fmt::Display for Arguments {
         writeln!(
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
+        )?;
+        writeln!(
+            f,
+            "allow_same_sell_and_buy_token: {allow_same_sell_and_buy_token}"
         )?;
 
         Ok(())
