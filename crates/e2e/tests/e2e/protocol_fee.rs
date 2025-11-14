@@ -804,7 +804,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
             fee_policies: vec![future_protocol_fee.clone(), future_protocol_fee],
             // Set the effective time to far in the future to make sure the new policy
             // is NOT applied
-            effective_from_timestamp: chrono::Utc::now() + chrono::Duration::days(30000),
+            effective_from_timestamp: chrono::Utc::now() + chrono::Duration::days(1),
         }),
     }
     .to_string();

@@ -169,7 +169,7 @@ fn get_adjusted_quote_data(
     let Some(factor) = volume_fee
         // Only apply volume fee if effective timestamp is in the past
         .filter(|config| config.effective_from_timestamp.is_none_or(|ts| ts <= Utc::now()))
-        .map(|config| config.factor)
+        .and_then(|config| config.factor)
     else {
         return Ok(AdjustedQuoteData {
             sell_amount: quote.sell_amount,
@@ -286,7 +286,7 @@ mod tests {
     fn test_volume_fee_sell_order() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
         let volume_fee_config = VolumeFeeConfig {
-            factor: volume_fee,
+            factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
 
@@ -316,9 +316,11 @@ mod tests {
     #[test]
     fn test_volume_fee_buy_order() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
+        let past_timestamp = Utc::now() - chrono::Duration::minutes(1);
         let volume_fee_config = VolumeFeeConfig {
-            factor: volume_fee,
-            effective_from_timestamp: None,
+            factor: Some(volume_fee),
+            // Effective date in the past to ensure fee is applied
+            effective_from_timestamp: Some(past_timestamp),
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
@@ -346,7 +348,7 @@ mod tests {
     fn test_volume_fee_buy_order_with_network_fee() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
         let volume_fee_config = VolumeFeeConfig {
-            factor: volume_fee,
+            factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
 
@@ -380,7 +382,7 @@ mod tests {
     fn test_volume_fee_different_prices() {
         let volume_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1% = 10 bps
         let volume_fee_config = VolumeFeeConfig {
-            factor: volume_fee,
+            factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
 
@@ -415,7 +417,7 @@ mod tests {
         for (factor, expected_bps) in test_cases {
             let volume_fee = FeeFactor::try_from(factor).unwrap();
             let volume_fee_config = VolumeFeeConfig {
-                factor: volume_fee,
+                factor: Some(volume_fee),
                 effective_from_timestamp: None,
             };
 
@@ -437,7 +439,7 @@ mod tests {
         let volume_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1% = 10 bps
         let future_timestamp = Utc::now() + chrono::Duration::days(1);
         let volume_fee_config = VolumeFeeConfig {
-            factor: volume_fee,
+            factor: Some(volume_fee),
             effective_from_timestamp: Some(future_timestamp),
         };
 
