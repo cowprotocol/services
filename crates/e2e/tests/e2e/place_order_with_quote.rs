@@ -29,6 +29,12 @@ async fn local_node_place_order_with_quote_same_token_pair() {
     run_test(place_order_with_quote_same_token_pair).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_place_order_with_quote_same_token_pair_error() {
+    run_test(place_order_with_quote_same_token_pair_error).await;
+}
+
 async fn place_order_with_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -121,7 +127,7 @@ async fn place_order_with_quote(web3: Web3) {
     assert_eq!(quote_metadata.unwrap().0, order_quote.metadata);
 }
 
-async fn place_order_with_quote_same_token_pair(web3: Web3) {
+async fn place_order_with_quote_same_token_pair_error(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(10).into_alloy()).await;
@@ -130,7 +136,7 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token.mint(trader.address(), to_wei(10)).await;
+    token.mint(trader.address(), eth(10)).await;
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
@@ -142,6 +148,58 @@ async fn place_order_with_quote_same_token_pair(web3: Web3) {
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
+
+    // Disable auto-mine so we don't accidentally mine a settlement
+    web3.api::<TestNodeApi<_>>()
+        .set_automine_enabled(false)
+        .await
+        .expect("Must be able to disable automine");
+
+    tracing::info!("Quoting");
+    let quote_sell_amount = to_wei(1);
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *token.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(quote_sell_amount).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+    assert!(services.submit_quote(&quote_request).await.is_err());
+}
+
+async fn place_order_with_quote_same_token_pair(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    token.mint(trader.address(), eth(10)).await;
+
+    token
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                api: vec!["--allow-same-sell-and-buy-token=true".to_string()],
+                ..Default::default()
+            },
+            solver.clone(),
+        )
+        .await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
     web3.api::<TestNodeApi<_>>()
