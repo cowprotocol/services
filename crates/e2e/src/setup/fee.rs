@@ -69,31 +69,31 @@ impl std::fmt::Display for ProtocolFee {
     }
 }
 
-impl std::fmt::Display for ProtocolFeesConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ProtocolFeesConfig {
+    pub fn into_args(self) -> Vec<String> {
+        let mut args = Vec::new();
         let fees_str = self
             .protocol_fees
             .iter()
             .map(|fee| fee.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        write!(f, "--fee-policies={fees_str}")?;
+        args.push(format!("--fee-policies={fees_str}"));
 
-        let Some(upcoming_protocol_fees) = &self.upcoming_protocol_fees else {
-            return Ok(());
-        };
+        if let Some(upcoming_protocol_fees) = &self.upcoming_protocol_fees {
+            let upcoming_fees_str = upcoming_protocol_fees
+                .fee_policies
+                .iter()
+                .map(|fee| fee.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            args.push(format!("--upcoming-fee-policies={}", upcoming_fees_str));
+            args.push(format!(
+                "--upcoming-fee-policies-timestamp={}",
+                upcoming_protocol_fees.effective_from_timestamp.to_rfc3339()
+            ));
+        }
 
-        let upcoming_fees_str = upcoming_protocol_fees
-            .fee_policies
-            .iter()
-            .map(|fee| fee.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        write!(f, "--upcoming-fee-policies={upcoming_fees_str}")?;
-        write!(
-            f,
-            "--upcoming-fee-policies-timestamp={}",
-            upcoming_protocol_fees.effective_from_timestamp.to_rfc3339()
-        )
+        args
     }
 }

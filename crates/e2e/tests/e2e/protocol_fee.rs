@@ -140,14 +140,15 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
 
-    let autopilot_config = vec![
+    let autopilot_config = [
         ProtocolFeesConfig {
             protocol_fees: vec![limit_surplus_policy, market_price_improvement_policy],
             ..Default::default()
         }
-        .to_string(),
-        "--fee-policy-max-partner-fee=0.02".to_string(),
-    ];
+        .into_args(),
+        vec!["--fee-policy-max-partner-fee=0.02".to_string()],
+    ]
+    .concat();
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
@@ -646,7 +647,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     };
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let protocol_fees_config = ProtocolFeesConfig {
+    let protocol_fee_args = ProtocolFeesConfig {
         protocol_fees: vec![outdated_protocol_fee.clone(), outdated_protocol_fee],
         upcoming_protocol_fees: Some(UpcomingProtocolFees {
             fee_policies: vec![protocol_fee.clone(), protocol_fee],
@@ -655,7 +656,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
             effective_from_timestamp: chrono::Utc::now() - chrono::Duration::minutes(10),
         }),
     }
-    .to_string();
+    .into_args();
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -725,7 +726,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![protocol_fees_config],
+                autopilot: protocol_fee_args,
                 ..Default::default()
             },
             solver,
@@ -798,7 +799,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     };
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let protocol_fees_config = ProtocolFeesConfig {
+    let protocol_fee_args = ProtocolFeesConfig {
         protocol_fees: vec![protocol_fee.clone(), protocol_fee],
         upcoming_protocol_fees: Some(UpcomingProtocolFees {
             fee_policies: vec![future_protocol_fee.clone(), future_protocol_fee],
@@ -807,7 +808,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
             effective_from_timestamp: chrono::Utc::now() + chrono::Duration::days(1),
         }),
     }
-    .to_string();
+    .into_args();
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -877,7 +878,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![protocol_fees_config],
+                autopilot: protocol_fee_args,
                 ..Default::default()
             },
             solver,
