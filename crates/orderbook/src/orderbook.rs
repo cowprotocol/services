@@ -7,13 +7,12 @@ use {
         dto,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethcontract::H256,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -496,7 +495,7 @@ impl Orderbook {
         self.database_replica.single_order(uid).await
     }
 
-    pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {
+    pub async fn get_orders_for_tx(&self, hash: &B256) -> Result<Vec<Order>> {
         self.database_replica.orders_for_tx(hash).await
     }
 
@@ -513,7 +512,7 @@ impl Orderbook {
 
     pub async fn get_user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>> {
@@ -576,7 +575,7 @@ impl Orderbook {
             Some(Some(tx_hash)) => {
                 let competition = self
                     .database
-                    .load_competition(Identifier::Transaction(tx_hash.into_legacy()))
+                    .load_competition(Identifier::Transaction(tx_hash))
                     .await?;
                 return Ok(dto::order::Status::Traded(solutions(competition)));
             }

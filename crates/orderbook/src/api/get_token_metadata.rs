@@ -1,19 +1,19 @@
 use {
     crate::database::Postgres,
+    alloy::primitives::Address,
     hyper::StatusCode,
-    primitive_types::H160,
     std::convert::Infallible,
     warp::{Filter, Rejection, reply},
 };
 
-fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
-    warp::path!("v1" / "token" / H160 / "metadata").and(warp::get())
+fn get_native_prices_request() -> impl Filter<Extract = (Address,), Error = Rejection> + Clone {
+    warp::path!("v1" / "token" / Address / "metadata").and(warp::get())
 }
 
 pub fn get_token_metadata(
     db: Postgres,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    get_native_prices_request().and_then(move |token: H160| {
+    get_native_prices_request().and_then(move |token: Address| {
         let db = db.clone();
         async move {
             let result = db.token_metadata(&token).await;

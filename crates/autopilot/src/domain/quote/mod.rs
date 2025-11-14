@@ -1,6 +1,7 @@
 use {
     super::OrderUid,
     crate::{boundary::Amounts, domain::eth},
+    alloy::primitives::Address,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -9,7 +10,7 @@ pub struct Quote {
     pub sell_amount: eth::SellTokenAmount,
     pub buy_amount: eth::TokenAmount,
     pub fee: eth::SellTokenAmount,
-    pub solver: eth::Address,
+    pub solver: Address,
 }
 
 impl From<&Quote> for Amounts {

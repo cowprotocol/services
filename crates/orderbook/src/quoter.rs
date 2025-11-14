@@ -177,12 +177,16 @@ fn get_adjusted_quote_data(
     // Calculate the volume (surplus token amount) to apply fee to
     // Following driver's logic in
     // crates/driver/src/domain/competition/solution/fee.rs:189-202:
-    let factor_f64: f64 = factor.into();
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
             // For SELL orders, fee is calculated on buy amount
-            let fee_f64 = quote.buy_amount.to_f64_lossy() * factor_f64;
-            let protocol_fee = U256::from_f64_lossy(fee_f64);
+            let protocol_fee = quote
+                .buy_amount
+                .full_mul(U256::from(factor.to_bps()))
+                .checked_div(U256::from(FeeFactor::MAX_BPS).into())
+                .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
             // Reduce buy amount by protocol fee
             let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
@@ -193,8 +197,12 @@ fn get_adjusted_quote_data(
             // For BUY orders, fee is calculated on sell amount + network fee.
             // Network fee is already in sell token, so it is added to get the total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
-            let fee_f64 = total_sell_volume.to_f64_lossy() * factor_f64;
-            let protocol_fee = U256::from_f64_lossy(fee_f64);
+            let protocol_fee = total_sell_volume
+                .full_mul(U256::from(factor.to_bps()))
+                .checked_div(U256::from(FeeFactor::MAX_BPS).into())
+                .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
             // Increase sell amount by protocol fee
             let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);

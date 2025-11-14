@@ -4,10 +4,10 @@ use {
         PriceEstimationError,
         native::{NativePriceEstimateResult, NativePriceEstimating, is_price_malformed},
     },
+    alloy::primitives::Address,
     anyhow::Context,
     futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
-    primitive_types::H160,
     std::{cmp::Ordering, sync::Arc, time::Duration},
     tracing::instrument,
 };
@@ -16,7 +16,7 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
     #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
-        token: H160,
+        token: Address,
         total_timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         let started_at = std::time::Instant::now();

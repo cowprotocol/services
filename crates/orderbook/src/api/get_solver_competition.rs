@@ -1,8 +1,8 @@
 use {
     crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+    alloy::primitives::B256,
     anyhow::Result,
     model::{AuctionId, solver_competition::SolverCompetitionAPI},
-    primitive_types::H256,
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
     warp::{
@@ -19,7 +19,7 @@ fn request_id() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clo
 }
 
 fn request_hash() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("v1" / "solver_competition" / "by_tx_hash" / H256)
+    warp::path!("v1" / "solver_competition" / "by_tx_hash" / B256)
         .and(warp::get())
         .map(Identifier::Transaction)
 }

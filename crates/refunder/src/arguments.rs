@@ -66,6 +66,16 @@ pub struct Arguments {
     /// The port at which we serve our metrics
     #[clap(long, env, default_value = "9590")]
     pub metrics_port: u16,
+
+    /// Maximum gas price (in wei) for submitting refund transactions
+    /// Default is 2000 Gwei (2_000_000_000_000 wei)
+    #[clap(long, env, default_value = "2000000000000")]
+    pub max_gas_price: u64,
+
+    /// Starting priority fee tip (in wei) for refund transactions
+    /// Default is 30 Gwei (30_000_000_000 wei)
+    #[clap(long, env, default_value = "30000000000")]
+    pub start_priority_fee_tip: u64,
 }
 
 impl std::fmt::Display for Arguments {
@@ -82,6 +92,8 @@ impl std::fmt::Display for Arguments {
             logging,
             db_url,
             refunder_pk,
+            max_gas_price,
+            start_priority_fee_tip,
         } = self;
 
         write!(f, "{http_client}")?;
@@ -97,6 +109,8 @@ impl std::fmt::Display for Arguments {
         let _intentionally_ignored = refunder_pk;
         writeln!(f, "refunder_pk: SECRET")?;
         writeln!(f, "metrics_port: {metrics_port}")?;
+        writeln!(f, "max_gas_price: {max_gas_price}")?;
+        writeln!(f, "start_priority_fee_tip: {start_priority_fee_tip}")?;
         Ok(())
     }
 }
