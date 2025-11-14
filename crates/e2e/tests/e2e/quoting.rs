@@ -78,7 +78,16 @@ async fn test(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    // Start API with 0.02% (2 bps) volume fee
+    let args = ExtraServiceArgs {
+        api: vec![
+            "--volume-fee-factor=0.0002".to_string(),
+            // Set a far future effective timestamp to ensure the fee is not applied
+            "--volume-fee-effective-timestamp=2099-01-01T10:00:00Z".to_string(),
+        ],
+        ..Default::default()
+    };
+    services.start_protocol_with_args(args, solver).await;
 
     tracing::info!("Quoting order");
     let request = OrderQuoteRequest {
@@ -442,7 +451,11 @@ async fn volume_fee(web3: Web3) {
     let services = Services::new(&onchain).await;
     // Start API with 0.02% (2 bps) volume fee
     let args = ExtraServiceArgs {
-        api: vec!["--volume-fee-factor=0.0002".to_string()],
+        api: vec![
+            "--volume-fee-factor=0.0002".to_string(),
+            // Set a past effective timestamp to ensure the fee is applied
+            "--volume-fee-effective-timestamp=2000-01-01T10:00:00Z".to_string(),
+        ],
         ..Default::default()
     };
     services.start_protocol_with_args(args, solver).await;
