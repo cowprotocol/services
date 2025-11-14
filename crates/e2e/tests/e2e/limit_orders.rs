@@ -1066,22 +1066,25 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .unwrap();
 
     // Setup services
-    let protocol_fees_config = ProtocolFeesConfig(vec![
-        ProtocolFee {
-            policy: fee::FeePolicyKind::Surplus {
-                factor: 0.5,
-                max_volume_factor: 0.01,
+    let protocol_fees_config = ProtocolFeesConfig {
+        protocol_fees: vec![
+            ProtocolFee {
+                policy: fee::FeePolicyKind::Surplus {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                },
+                policy_order_class: FeePolicyOrderClass::Limit,
             },
-            policy_order_class: FeePolicyOrderClass::Limit,
-        },
-        ProtocolFee {
-            policy: fee::FeePolicyKind::PriceImprovement {
-                factor: 0.5,
-                max_volume_factor: 0.01,
+            ProtocolFee {
+                policy: fee::FeePolicyKind::PriceImprovement {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                },
+                policy_order_class: FeePolicyOrderClass::Market,
             },
-            policy_order_class: FeePolicyOrderClass::Market,
-        },
-    ])
+        ],
+        ..Default::default()
+    }
     .to_string();
 
     let services = Services::new(&onchain).await;
