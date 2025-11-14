@@ -167,7 +167,7 @@ fn get_adjusted_quote_data(
     side: &OrderQuoteSide,
 ) -> anyhow::Result<AdjustedQuoteData> {
     let Some(factor) = volume_fee
-        // Only apply volume fee if effective timestamp is in the past
+        // Only apply volume fee if effective timestamp has come
         .filter(|config| config.effective_from_timestamp.is_none_or(|ts| ts <= Utc::now()))
         .and_then(|config| config.factor)
     else {

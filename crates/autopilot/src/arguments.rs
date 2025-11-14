@@ -582,8 +582,8 @@ pub struct FeePoliciesConfig {
     #[clap(long, env, use_value_delimiter = true)]
     pub fee_policies: Vec<FeePolicy>,
 
-    /// Maximum partner fee allow. If the partner fee specified is greater than
-    /// this maximum, the partner fee will be capped
+    /// Maximum partner fee allowed. If the partner fee specified is greater
+    /// than this maximum, the partner fee will be capped
     #[clap(long, env, default_value = "0.01")]
     pub fee_policy_max_partner_fee: FeeFactor,
 
