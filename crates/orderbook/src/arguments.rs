@@ -1,7 +1,6 @@
 use {
     alloy::primitives::Address,
     chrono::{DateTime, Utc},
-    derive_more::Into,
     reqwest::Url,
     shared::{
         arguments::{display_option, display_secret_option},
@@ -169,7 +168,7 @@ pub struct VolumeFeeConfig {
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Into)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeeFactor(f64);
 
 impl FeeFactor {
