@@ -147,7 +147,7 @@ pub struct Arguments {
     /// The fee is applied to the surplus token (buy token for sell orders,
     /// sell token for buy orders).
     #[clap(long, env)]
-    pub volume_fee: Option<FeeFactor>,
+    pub volume_fee_factor: Option<FeeFactor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -215,7 +215,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
-            volume_fee,
+            volume_fee_factor: volume_fee,
         } = self;
 
         write!(f, "{shared}")?;

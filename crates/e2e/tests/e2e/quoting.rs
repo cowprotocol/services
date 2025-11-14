@@ -442,7 +442,7 @@ async fn volume_fee(web3: Web3) {
     let services = Services::new(&onchain).await;
     // Start API with 0.02% (2 bps) volume fee
     let args = ExtraServiceArgs {
-        api: vec!["--volume-fee=0.0002".to_string()],
+        api: vec!["--volume-fee-factor=0.0002".to_string()],
         ..Default::default()
     };
     services.start_protocol_with_args(args, solver).await;
