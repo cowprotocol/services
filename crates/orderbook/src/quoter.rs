@@ -1,5 +1,8 @@
 use {
-    crate::{app_data, arguments::VolumeFeeConfig},
+    crate::{
+        app_data,
+        arguments::{FeeFactor, VolumeFeeConfig},
+    },
     chrono::{TimeZone, Utc},
     model::{
         order::OrderCreationAppData,
