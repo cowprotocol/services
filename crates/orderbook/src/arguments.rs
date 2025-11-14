@@ -7,7 +7,7 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
+    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
 };
 
 #[derive(clap::Parser)]
@@ -141,6 +141,49 @@ pub struct Arguments {
     /// whether an order is actively being bid on.
     #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
+
+    /// Volume-based protocol fee factor to be applied to quotes.
+    /// This is a decimal value (e.g., 0.0002 for 0.02% or 2 basis points).
+    /// The fee is applied to the surplus token (buy token for sell orders,
+    /// sell token for buy orders).
+    #[clap(long, env)]
+    pub volume_fee_factor: Option<FeeFactor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeeFactor(f64);
+
+impl FeeFactor {
+    /// Number of basis points that make up 100%.
+    pub const MAX_BPS: u32 = 10_000;
+
+    /// Converts the fee factor to basis points (BPS).
+    /// For example, 0.0002 -> 2 BPS
+    pub fn to_bps(&self) -> u64 {
+        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
+    }
+}
+
+/// TryFrom implementation for the cases we want to enforce the constraint [0,
+/// 1)
+impl TryFrom<f64> for FeeFactor {
+    type Error = anyhow::Error;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        anyhow::ensure!(
+            (0.0..1.0).contains(&value),
+            "Factor must be in the range [0, 1)"
+        );
+        Ok(FeeFactor(value))
+    }
+}
+
+impl FromStr for FeeFactor {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<f64>().map(FeeFactor::try_from)?
+    }
 }
 
 impl std::fmt::Display for Arguments {
@@ -172,6 +215,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
+            volume_fee_factor: volume_fee,
         } = self;
 
         write!(f, "{shared}")?;
@@ -225,6 +269,7 @@ impl std::fmt::Display for Arguments {
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
+        writeln!(f, "volume_fee: {volume_fee:?}")?;
 
         Ok(())
     }

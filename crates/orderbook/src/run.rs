@@ -457,8 +457,13 @@ pub async fn run(args: Arguments) {
 
     check_database_connection(orderbook.as_ref()).await;
     let quotes = Arc::new(
-        QuoteHandler::new(order_validator, optimal_quoter, app_data.clone())
-            .with_fast_quoter(fast_quoter),
+        QuoteHandler::new(
+            order_validator,
+            optimal_quoter,
+            app_data.clone(),
+            args.volume_fee_factor,
+        )
+        .with_fast_quoter(fast_quoter),
     );
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();

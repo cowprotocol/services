@@ -1682,6 +1682,20 @@ components:
             Whether it was possible to verify that the quoted amounts are
             accurate using a simulation.
           type: boolean
+        protocolFeeBps:
+          description: >
+            Protocol fee in basis points (e.g., "2" for 0.02%). This represents
+            the volume-based fee policy. Only present when configured.
+          type: string
+          example: "2"
+        protocolFeeSellAmount:
+          description: >
+            Protocol fee amount in sell token. For SELL orders, this amount is
+            already included in the returned sellAmount. For BUY orders, this
+            amount is applied before network fees are added to sellAmount. Only
+            present when a volume fee is configured.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - quote
         - expiration

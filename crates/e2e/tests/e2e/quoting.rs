@@ -39,6 +39,12 @@ async fn local_node_quote_timeout() {
     run_test(quote_timeout).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_volume_fee() {
+    run_test(volume_fee).await;
+}
+
 // Test that quoting works as expected, specifically, that we can quote for a
 // token pair and additional gas from ERC-1271 and hooks are included in the
 // quoted fee amount.
@@ -402,4 +408,78 @@ async fn quote_timeout(web3: Web3) {
     let res = services.create_order(&order).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
+}
+
+/// Test that volume fees are correctly applied to quotes.
+async fn volume_fee(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address().into_alloy())
+        .value(eth(3))
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services with volume fee.");
+    let services = Services::new(&onchain).await;
+    // Start API with 0.02% (2 bps) volume fee
+    let args = ExtraServiceArgs {
+        api: vec!["--volume-fee-factor=0.0002".to_string()],
+        ..Default::default()
+    };
+    services.start_protocol_with_args(args, solver).await;
+
+    tracing::info!("Testing SELL quote with volume fee");
+    let sell_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
+        buy_token: token.address().into_legacy(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    let sell_quote = services.submit_quote(&sell_request).await.unwrap();
+
+    // Verify protocol fee fields are present
+    assert!(sell_quote.protocol_fee_bps.is_some());
+    assert_eq!(sell_quote.protocol_fee_bps.as_ref().unwrap(), "2");
+
+    tracing::info!("Testing BUY quote with volume fee");
+    let buy_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: onchain.contracts().weth.address().into_legacy(),
+        buy_token: token.address().into_legacy(),
+        side: OrderQuoteSide::Buy {
+            buy_amount_after_fee: NonZeroU256::try_from(to_wei(1)).unwrap(),
+        },
+        ..Default::default()
+    };
+
+    let buy_quote = services.submit_quote(&buy_request).await.unwrap();
+
+    // Verify protocol fee fields are present
+    assert!(buy_quote.protocol_fee_bps.is_some());
+    assert_eq!(buy_quote.protocol_fee_bps.as_ref().unwrap(), "2");
 }
