@@ -231,9 +231,9 @@ impl ProtocolFees {
         // being considered out of market price.
         let reference_quote = quote.clone().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
-            sell_amount: order.data.sell_amount.into(),
+            sell_amount: order.data.sell_amount.into_legacy().into(),
             buy_amount: U256::ZERO.into_legacy().into(),
-            fee: order.data.fee_amount.into(),
+            fee: order.data.fee_amount.into_legacy().into(),
             solver: Address::ZERO,
         });
 

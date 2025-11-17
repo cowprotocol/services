@@ -347,7 +347,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let limit_quote_diff = partner_fee_quote_after
         .quote
         .buy_amount
-        .saturating_sub(partner_fee_order.data.buy_amount);
+        .saturating_sub(partner_fee_order.data.buy_amount.into_legacy());
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
@@ -357,7 +357,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let limit_quote_diff = limit_quote_after
         .quote
         .buy_amount
-        .saturating_sub(limit_surplus_order.data.buy_amount);
+        .saturating_sub(limit_surplus_order.data.buy_amount.into_legacy());
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(limit_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
