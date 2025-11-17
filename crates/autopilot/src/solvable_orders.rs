@@ -4,6 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -203,7 +204,7 @@ impl SolvableOrdersCache {
             let orders = orders_with_balance(
                 orders,
                 &balances,
-                self.settlement_contract,
+                self.settlement_contract.into_alloy(),
                 self.disable_1271_order_balance_filter,
             );
             let removed = counter.checkpoint("insufficient_balance", &orders);
@@ -543,7 +544,7 @@ async fn find_invalid_signature_orders(
 fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
-    settlement_contract: H160,
+    settlement_contract: Address,
     disable_1271_order_balance_filter: bool,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
@@ -1515,12 +1516,12 @@ mod tests {
 
     #[test]
     fn eip1271_orders_can_skip_balance_filtering() {
-        let settlement_contract = H160([1; 20]);
+        let settlement_contract = Address::repeat_byte(1);
         let eip1271_order = Order {
             data: OrderData {
-                sell_token: H160::from_low_u64_be(7),
-                sell_amount: 10.into(),
-                fee_amount: 5.into(),
+                sell_token: Address::with_last_byte(7),
+                sell_amount: alloy::primitives::U256::from(10),
+                fee_amount: alloy::primitives::U256::from(5),
                 partially_fillable: false,
                 ..Default::default()
             },
@@ -1529,9 +1530,9 @@ mod tests {
         };
         let regular_order = Order {
             data: OrderData {
-                sell_token: H160::from_low_u64_be(8),
-                sell_amount: 10.into(),
-                fee_amount: 5.into(),
+                sell_token: Address::with_last_byte(8),
+                sell_amount: alloy::primitives::U256::from(10),
+                fee_amount: alloy::primitives::U256::from(5),
                 partially_fillable: false,
                 ..Default::default()
             },
