@@ -63,7 +63,7 @@ crate::bindings!(
         MAINNET => (address!("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"), 12272147)
         // Not available on Sepolia (only version ≥ 4)
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -84,7 +84,7 @@ crate::bindings!(
         BNB => (address!("0x6e4cF292C5349c79cCd66349c3Ed56357dD11B46"), 25474982),
         // Not available on Sepolia (only version ≥ 4)
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -109,7 +109,7 @@ crate::bindings!(
         POLYGON => (address!("0xFc8a407Bba312ac761D8BFe04CE1201904842B76"), 40611103),
         // <https://bscscan.com/tx/0xc7fada60761e3240332c4cbd169633f1828b2a15de23f0148db9d121afebbb4b>
         BNB => (address!("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"), 26665331),
-        // Not available on Base and Lens
+        // Not available on Base, Lens, Linea and Plasma
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     }
 );
@@ -124,7 +124,7 @@ crate::bindings!(
         OPTIMISM => (address!("0xdAE7e32ADc5d490a43cCba1f0c736033F2b4eFca"), 7005512),
         // <https://polygonscan.com/tx/0xb8ac851249cc95bc0943ef0732d28bbd53b0b36c7dd808372666acd8c5f26e1c>
         POLYGON => (address!("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"), 15832998),
-        // Not available on Sepolia, Base, Avalanche, BNB and Lens
+        // Not available on Sepolia, Base, Avalanche, BNB, Lens, Linea and Plasma
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     }
@@ -142,7 +142,7 @@ crate::bindings!(
         OPTIMISM => (address!("0xeb151668006CD04DAdD098AFd0a82e78F77076c3"), 11088891),
         // <https://polygonscan.com/tx/0xa2c41d014791888a29a9491204446c1b9b2f5dee3f3eb31ad03f290259067b44>
         POLYGON => (address!("0xcA96C4f198d343E251b1a01F3EBA061ef3DA73C1"), 29371951),
-        // Not available on Sepolia, Base, Avalanche, BNB and Lens
+        // Not available on Sepolia, Base, Avalanche, BNB, Lens, Linea and Plasma
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     }
@@ -156,7 +156,7 @@ crate::bindings!(
         ARBITRUM_ONE => (address!("0x142B9666a0a3A30477b052962ddA81547E7029ab"), 222870),
         // <https://polygonscan.com/tx/0xd9b5b9a9e6ea17a87f85574e93577e3646c9c2f9c8f38644f936949e6c853288>
         POLYGON => (address!("0x751A0bC0e3f75b38e01Cf25bFCE7fF36DE1C87DE"), 17116402),
-        // Not available on Sepolia, Base, Avalanche, BNB, Optimism and Lens
+        // Not available on Sepolia, Base, Avalanche, BNB, Optimism, Lens, Linea and Plasma
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     }
@@ -184,7 +184,7 @@ crate::bindings!(
         OPTIMISM => (address!("0xf302f9F50958c5593770FDf4d4812309fF77414f"), 7005915),
         // <https://polygonscan.com/tx/0x125bc007a86d771f8dc8f5fa1017de6e5a11162a458a72f25814503404bbeb0b>
         POLYGON => (address!("0x41B953164995c11C81DA73D212ED8Af25741b7Ac"), 22067480),
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -199,7 +199,7 @@ crate::bindings!(
         OPTIMISM => (address!("0xf145caFB67081895EE80eB7c04A30Cf87f07b745"), 22182522),
         // <https://polygonscan.com/tx/0xe5d908be686056f1519663a407167c088924f60d29c799ec74438b9de891989e>
         POLYGON => (address!("0x136FD06Fa01eCF624C7F2B3CB15742c1339dC2c4"), 32774224),
-        // Not available on Sepolia, Gnosis Chain, Base, Avalanche and Lens
+        // Not available on Sepolia, Gnosis Chain, Base, Avalanche, Lens, Linea and Plasma
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     }
@@ -221,7 +221,7 @@ crate::bindings!(
         // Not available on Sepolia (only version ≥ 4) and on Base (only version ≥ 5)
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -243,7 +243,7 @@ crate::bindings!(
         OPTIMISM => (address!("0x1802953277FD955f9a254B80Aa0582f193cF1d77"), 82748180),
         // <https://polygonscan.com/tx/0x2cea6a0683e67ebdb7d4a1cf1ad303126c5f228f05f8c9e2ccafdb1f5a024376>
         POLYGON => (address!("0x6Ab5549bBd766A43aFb687776ad8466F8b42f777"), 40613553),
-        // Not available on Base and Lens
+        // Not available on Base, Lens, Linea and Plasma
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     }
 );
@@ -268,7 +268,7 @@ crate::bindings!(
         OPTIMISM => (address!("0x043A2daD730d585C44FB79D2614F295D2d625412"), 106752707),
         // <https://polygonscan.com/tx/0xa3d9a1cf00eaca469d6f9ec2fb836bbbfdfbc3b0eeadc07619bb9e695bfdecb8>
         POLYGON => (address!("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"), 44961548),
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -292,7 +292,7 @@ crate::bindings!(
         OPTIMISM => (address!("0x4bdCc2fb18AEb9e2d281b0278D946445070EAda7"), 116694338),
         // <https://polygonscan.com/tx/0x7b9678ad538b1cd3f3a03e63455e7d49a1bc716ea42310fbf99df4bf93ecfdfa>
         POLYGON => (address!("0xEAedc32a51c510d35ebC11088fD5fF2b47aACF2E"), 53996258),
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -318,7 +318,7 @@ crate::bindings!(
         OPTIMISM => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 7003431),
         // <https://polygonscan.com/tx/0x66f275a2ed102a5b679c0894ced62c4ebcb2a65336d086a916eb83bd1fe5c8d2>
         POLYGON => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 15832990),
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 crate::bindings!(
@@ -338,7 +338,9 @@ crate::bindings!(
         AVALANCHE => (address!("0xc9b36096f5201ea332Db35d6D195774ea0D5988f"), 59965747),
         // <https://optimistic.etherscan.io/tx/0xf370aab0d652f3e0f7c34e1a53e1afd98e86c487138300b0939d4e54b0088b67>
         OPTIMISM => (address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"), 133969588),
-        // Not available on Lens, Polygon, BNB
+        // <https://plasmascan.to/tx/0x7368609020622059d1061b4e3cc16aa448315956cace1e089f6876143cf2f90c?chainid=9745>
+        PLASMA => (address!("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"), 782312),
+        // Not available on Lens, Polygon, BNB and Linea
     }
 );
 
@@ -589,7 +591,7 @@ crate::bindings!(
         POLYGON => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 30988035),
         // <https://snowtrace.io/tx/0xf484e1efde47209bad5f72642bcb8d8e2a4092a5036434724ffa2d039e93a1bf?chainid=43114>
         AVALANCHE => (address!("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"), 26387068),
-        // Not available on Lens
+        // Not available on Lens, Linea and Plasma
     }
 );
 
@@ -985,5 +987,8 @@ mod tests {
             assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
             assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
+
+        // Plasma only has Balancer V3, not V2
+        assert!(BalancerV3BatchRouter::deployment_address(&PLASMA).is_some());
     }
 }
