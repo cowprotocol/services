@@ -481,6 +481,8 @@ crate::bindings!(
         POLYGON => address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
         LENS => address!("0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1"),
         LINEA => address!("0x42bE4D6527829FeFA1493e1fb9F3676d2425C3C1"),
+        // not official
+        PLASMA => address!("0xaa52bB8110fE38D0d2d2AF0B85C3A3eE622CA455"),
         // Not listed on Gnosis and Sepolia chains
     }
 );
@@ -497,6 +499,8 @@ crate::bindings!(
         BNB => address!("0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2"),
         LENS => address!("0x6ddD32cd941041D8b61df213B9f515A7D288Dc13"),
         LINEA => address!("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"),
+        // not official
+        PLASMA => address!("0x807F4E281B7A3B324825C64ca53c69F0b418dE40"),
         // Not available on Gnosis Chain
     }
 );
@@ -515,6 +519,7 @@ crate::bindings!(
         // not official
         LENS => address!( "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3"),
         LINEA => address!("0x31FAfd4889FA1269F7a13A66eE0fB458f27D72A9"),
+        PLASMA => address!("0xcb2436774C3e191c85056d248EF4260ce5f27A9D"), // Contract Name: BulbaV3Factory
         // Not available on Gnosis Chain
     }
 );
@@ -641,6 +646,8 @@ crate::bindings!(
         OPTIMISM => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 38854427),
         // <https://polygonscan.com/tx/0xe2a4d996de0d6a23108f701b37acba6c47ee34448bb51fec5c23f542a6f3ccc8>
         POLYGON => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 35701901),
+        // <https://plasmascan.to/tx/0x6d19057fb8b25b17fe9107be7726007d503dae50d1b0965b422fc3b512bf5dbe?chainid=9745>
+        PLASMA => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 7808),
     }
 );
 
@@ -988,7 +995,78 @@ mod tests {
             assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
 
-        // Plasma only has Balancer V3, not V2
-        assert!(BalancerV3BatchRouter::deployment_address(&PLASMA).is_some());
+        for chain_id in &[
+            MAINNET,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+            LENS,
+            LINEA,
+            PLASMA,
+        ] {
+            assert!(UniswapV3QuoterV2::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+            LENS,
+            LINEA,
+            PLASMA,
+        ] {
+            assert!(UniswapV3SwapRouterV2::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+            LENS,
+            LINEA,
+            PLASMA,
+        ] {
+            assert!(IUniswapV3Factory::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+            PLASMA,
+        ] {
+            assert!(Permit2::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            OPTIMISM,
+            PLASMA,
+        ] {
+            assert!(BalancerV3BatchRouter::deployment_address(chain_id).is_some());
+        }
     }
 }
