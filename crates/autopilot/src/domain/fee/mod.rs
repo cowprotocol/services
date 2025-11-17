@@ -253,12 +253,11 @@ impl ProtocolFees {
         quote: domain::Quote,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
-        // Use new fee policies if the order creation date is after their effective
-        // timestamp.
+        let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
             .as_ref()
-            .filter(|upcoming| order.metadata.creation_date >= upcoming.effective_from_timestamp)
+            .filter(|upcoming| upcoming.effective_from_timestamp <= now)
             .map(|upcoming| &upcoming.fee_policies)
             .unwrap_or(&self.fee_policies);
 
