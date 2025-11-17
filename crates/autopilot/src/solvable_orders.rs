@@ -101,7 +101,9 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: H160,
-    disable_order_filters: bool,
+    disable_order_balance_filter: bool,
+    disable_1271_order_sig_filter: bool,
+    disable_1271_order_balance_filter: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -127,7 +129,9 @@ impl SolvableOrdersCache {
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
         settlement_contract: H160,
-        disable_order_filters: bool,
+        disable_order_balance_filter: bool,
+        disable_1271_order_sig_filter: bool,
+        disable_1271_order_balance_filter: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -145,7 +149,9 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
-            disable_order_filters,
+            disable_order_balance_filter,
+            disable_1271_order_sig_filter,
+            disable_1271_order_balance_filter,
         })
     }
 
@@ -191,10 +197,15 @@ impl SolvableOrdersCache {
             )
         };
 
-        let orders = if self.disable_order_filters {
+        let orders = if self.disable_order_balance_filter {
             orders
         } else {
-            let orders = orders_with_balance(orders, &balances, self.settlement_contract);
+            let orders = orders_with_balance(
+                orders,
+                &balances,
+                self.settlement_contract,
+                self.disable_1271_order_balance_filter,
+            );
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
 
@@ -323,7 +334,7 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
-        if self.disable_order_filters {
+        if self.disable_order_balance_filter {
             return Default::default();
         }
 
@@ -389,12 +400,11 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let filter_invalid_signatures = async {
-            if self.disable_order_filters {
-                return Default::default();
-            }
-            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
-        };
+        let filter_invalid_signatures = find_invalid_signature_orders(
+            &orders,
+            self.signature_validator.as_ref(),
+            self.disable_1271_order_sig_filter,
+        );
 
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
@@ -478,11 +488,17 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
+    disable_1271_order_sig_filter: bool,
 ) -> Vec<OrderUid> {
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
     for order in orders {
+        if let Signature::Eip1271(_) = &order.signature
+            && disable_1271_order_sig_filter
+        {
+            continue;
+        }
         if matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
@@ -528,11 +544,16 @@ fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
     settlement_contract: H160,
+    disable_1271_order_balance_filter: bool,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        if order.data.receiver.as_ref() == Some(&settlement_contract.into_alloy()) {
+        if disable_1271_order_balance_filter && matches!(order.signature, Signature::Eip1271(_)) {
+            return true;
+        }
+
+        if order.data.receiver.as_ref() == Some(&settlement_contract) {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
             // as the receiver are flashloan orders which unlock the necessary
@@ -1312,11 +1333,16 @@ mod tests {
             .returning(|_| Ok(()));
 
         let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator).await;
+            find_invalid_signature_orders(&orders, &signature_validator, false).await;
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4)]
         );
+        let invalid_signature_orders_with_1271_filter_disabled =
+            find_invalid_signature_orders(&orders, &signature_validator, true).await;
+        // if we switch off the 1271 filter no orders should be returned as containing
+        // invalid signatures
+        assert_eq!(invalid_signature_orders_with_1271_filter_disabled, vec![]);
     }
 
     #[test]
@@ -1479,13 +1505,50 @@ mod tests {
         .collect();
         let expected = &[0, 2, 4];
 
-        let filtered =
-            orders_with_balance(orders.clone(), &balances, settlement_contract.into_legacy());
+        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, false);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);
             assert!(found, "{}", index);
         }
+    }
+
+    #[test]
+    fn eip1271_orders_can_skip_balance_filtering() {
+        let settlement_contract = H160([1; 20]);
+        let eip1271_order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(7),
+                sell_amount: 10.into(),
+                fee_amount: 5.into(),
+                partially_fillable: false,
+                ..Default::default()
+            },
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            ..Default::default()
+        };
+        let regular_order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(8),
+                sell_amount: 10.into(),
+                fee_amount: 5.into(),
+                partially_fillable: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let orders = vec![regular_order.clone(), eip1271_order.clone()];
+        let balances: Balances = Default::default();
+
+        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, true);
+        // 1271 filter is disabled, only the regular order is filtered out
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(filtered[0].signature, Signature::Eip1271(_)));
+
+        let filtered_without_override =
+            orders_with_balance(orders, &balances, settlement_contract, false);
+        assert!(filtered_without_override.is_empty());
     }
 
     #[test]
