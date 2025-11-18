@@ -130,13 +130,7 @@ impl Mempools {
             }
         }
 
-        // Fetch the pending nonce to avoid race conditions between concurrent
-        // transactions (e.g., settlement tx and cancellation tx) from the same
-        // solver address.
-        let nonce = mempool.get_pending_nonce(solver.address()).await?;
-        let hash = mempool
-            .submit(tx.clone(), settlement.gas, solver, nonce)
-            .await?;
+        let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
         let submitted_at_block = self.ethereum.current_block().borrow().number;
         tracing::debug!(
             ?hash,
@@ -177,7 +171,7 @@ impl Mempools {
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
                             let cancellation_tx_hash = self
-                                .cancel(mempool, settlement.gas.price, solver, blocks_elapsed, nonce)
+                                .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
                                 .await
                                 .context("cancellation tx due to deadline failed")?;
                             tracing::info!(
@@ -197,7 +191,7 @@ impl Mempools {
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
                                 let cancellation_tx_hash = self
-                                    .cancel(mempool, settlement.gas.price, solver, blocks_elapsed, nonce)
+                                    .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
                                     .await
                                     .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
@@ -252,7 +246,6 @@ impl Mempools {
         pending: eth::GasPrice,
         solver: &Solver,
         blocks_elapsed: u64,
-        nonce: eth::U256,
     ) -> Result<TxId, Error> {
         let cancellation = eth::Tx {
             from: solver.address(),
@@ -276,7 +269,7 @@ impl Mempools {
             "Cancelling transaction with adjusted gas price"
         );
 
-        mempool.submit(cancellation, gas, solver, nonce).await
+        mempool.submit(cancellation, gas, solver).await
     }
 }
 
