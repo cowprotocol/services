@@ -2,6 +2,7 @@ use {
     super::{Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
     anyhow::{Context as _, Result, ensure},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Either,
     model::{
         interaction::InteractionData,
@@ -169,18 +170,18 @@ impl SettlementEncoder {
         verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
             .clearing_prices
-            .get(&order.data.sell_token)
+            .get(&order.data.sell_token.into_legacy())
             .context("settlement missing sell token")?;
         let sell_token_index = self
-            .token_index(order.data.sell_token)
+            .token_index(order.data.sell_token.into_legacy())
             .expect("missing sell token with price");
 
         let buy_price = self
             .clearing_prices
-            .get(&order.data.buy_token)
+            .get(&order.data.buy_token.into_legacy())
             .context("settlement missing buy token")?;
         let buy_token_index = self
-            .token_index(order.data.buy_token)
+            .token_index(order.data.buy_token.into_legacy())
             .expect("missing buy token with price");
 
         let trade = EncoderTrade {
@@ -216,7 +217,13 @@ impl SettlementEncoder {
             OrderClass::Market => self.add_market_trade(order, executed_amount, fee)?,
             OrderClass::Liquidity => {
                 let (sell_price, buy_price) = (order.data.buy_amount, order.data.sell_amount);
-                self.add_custom_price_trade(order, executed_amount, fee, sell_price, buy_price)?
+                self.add_custom_price_trade(
+                    order,
+                    executed_amount,
+                    fee,
+                    sell_price.into_legacy(),
+                    buy_price.into_legacy(),
+                )?
             }
             OrderClass::Limit => {
                 let surplus_fee = fee;
@@ -264,8 +271,9 @@ impl SettlementEncoder {
             OrderKind::Sell => order.data.sell_amount,
         };
         anyhow::ensure!(
-            (order.data.partially_fillable && executed_amount <= target_amount)
-                || (!order.data.partially_fillable && executed_amount == target_amount),
+            (order.data.partially_fillable && executed_amount <= target_amount.into_legacy())
+                || (!order.data.partially_fillable
+                    && executed_amount == target_amount.into_legacy()),
             "this function should only be called with valid executed amounts"
         );
 
@@ -278,11 +286,11 @@ impl SettlementEncoder {
         // while pocketing the `surplus_fee` from the `sell_token`s.
         let uniform_buy_price = *self
             .clearing_prices
-            .get(&order.data.buy_token)
+            .get(&order.data.buy_token.into_legacy())
             .context("buy token price is missing")?;
         let uniform_sell_price = *self
             .clearing_prices
-            .get(&order.data.sell_token)
+            .get(&order.data.sell_token.into_legacy())
             .context("sell token price is missing")?;
 
         let (sell_amount, buy_amount) = match order.data.kind {
@@ -413,10 +421,10 @@ impl SettlementEncoder {
             self.trades[i].tokens = match self.trades[i].tokens {
                 TokenReference::Indexed { .. } => TokenReference::Indexed {
                     sell_token_index: self
-                        .token_index(self.trades[i].data.order.data.sell_token)
+                        .token_index(self.trades[i].data.order.data.sell_token.into_legacy())
                         .expect("missing sell token for existing trade"),
                     buy_token_index: self
-                        .token_index(self.trades[i].data.order.data.buy_token)
+                        .token_index(self.trades[i].data.order.data.buy_token.into_legacy())
                         .expect("missing buy token for existing trade"),
                 },
                 original @ TokenReference::CustomPrice { .. } => original,
@@ -449,9 +457,10 @@ impl SettlementEncoder {
             })
             .collect();
 
-        self.tokens.retain(|token| traded_tokens.contains(token));
+        self.tokens
+            .retain(|token| traded_tokens.contains(&token.into_alloy()));
         self.clearing_prices
-            .retain(|token, _| traded_tokens.contains(token));
+            .retain(|token, _| traded_tokens.contains(&token.into_alloy()));
 
         self.sort_tokens_and_update_indices();
     }
@@ -489,8 +498,14 @@ impl SettlementEncoder {
                         sell_token_price,
                         buy_token_price,
                     } => Some(vec![
-                        (trade.data.order.data.sell_token, sell_token_price),
-                        (trade.data.order.data.buy_token, buy_token_price),
+                        (
+                            trade.data.order.data.sell_token.into_legacy(),
+                            sell_token_price,
+                        ),
+                        (
+                            trade.data.order.data.buy_token.into_legacy(),
+                            buy_token_price,
+                        ),
                     ]),
                     _ => None,
                 })
@@ -570,10 +585,18 @@ impl PricedTrade<'_> {
 pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
     let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
-        (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
-        (true, OrderKind::Buy) => executed <= remaining.remaining(order.data.buy_amount)?,
-        (false, OrderKind::Sell) => executed == remaining.remaining(order.data.sell_amount)?,
-        (false, OrderKind::Buy) => executed == remaining.remaining(order.data.buy_amount)?,
+        (true, OrderKind::Sell) => {
+            executed <= remaining.remaining(order.data.sell_amount.into_legacy())?
+        }
+        (true, OrderKind::Buy) => {
+            executed <= remaining.remaining(order.data.buy_amount.into_legacy())?
+        }
+        (false, OrderKind::Sell) => {
+            executed == remaining.remaining(order.data.sell_amount.into_legacy())?
+        }
+        (false, OrderKind::Buy) => {
+            executed == remaining.remaining(order.data.buy_amount.into_legacy())?
+        }
     };
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())
@@ -593,14 +616,14 @@ pub mod tests {
 
     #[test]
     pub fn encode_trades_finds_token_index() {
-        let token0 = H160::from_low_u64_be(0);
-        let token1 = H160::from_low_u64_be(1);
+        let token0 = Address::with_last_byte(0);
+        let token1 = Address::with_last_byte(1);
         let order0 = Order {
             data: OrderData {
                 sell_token: token0,
-                sell_amount: 1.into(),
+                sell_amount: alloy::primitives::U256::ONE,
                 buy_token: token1,
-                buy_amount: 1.into(),
+                buy_amount: alloy::primitives::U256::ONE,
                 ..Default::default()
             },
             ..Default::default()
@@ -608,17 +631,17 @@ pub mod tests {
         let order1 = Order {
             data: OrderData {
                 sell_token: token1,
-                sell_amount: 1.into(),
+                sell_amount: alloy::primitives::U256::ONE,
                 buy_token: token0,
-                buy_amount: 1.into(),
+                buy_amount: alloy::primitives::U256::ONE,
                 ..Default::default()
             },
             ..Default::default()
         };
 
         let mut settlement = SettlementEncoder::new(maplit::hashmap! {
-            token0 => 1.into(),
-            token1 => 1.into(),
+            token0.into_legacy() => 1.into(),
+            token1.into_legacy() => 1.into(),
         });
 
         assert!(settlement.add_trade(order0, 1.into(), 1.into()).is_ok());
@@ -659,17 +682,17 @@ pub mod tests {
         });
 
         let order01 = OrderBuilder::default()
-            .with_sell_token(token(0))
-            .with_sell_amount(30.into())
-            .with_buy_token(token(1))
-            .with_buy_amount(10.into())
+            .with_sell_token(Address::with_last_byte(0))
+            .with_sell_amount(alloy::primitives::U256::from(30))
+            .with_buy_token(Address::with_last_byte(1))
+            .with_buy_amount(alloy::primitives::U256::from(10))
             .build();
 
         let order10 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(10.into())
-            .with_buy_token(token(0))
-            .with_buy_amount(20.into())
+            .with_sell_token(Address::with_last_byte(1))
+            .with_sell_amount(alloy::primitives::U256::from(10))
+            .with_buy_token(Address::with_last_byte(0))
+            .with_buy_amount(alloy::primitives::U256::from(20))
             .with_class(OrderClass::Liquidity)
             .build();
 
@@ -701,10 +724,10 @@ pub mod tests {
             token(1) => 9.into(),
         });
         let order01 = OrderBuilder::default()
-            .with_sell_token(token(0))
-            .with_sell_amount(30.into())
-            .with_buy_token(token(1))
-            .with_buy_amount(10.into())
+            .with_sell_token(Address::with_last_byte(0))
+            .with_sell_amount(alloy::primitives::U256::from(30))
+            .with_buy_token(Address::with_last_byte(1))
+            .with_buy_amount(alloy::primitives::U256::from(10))
             .with_class(OrderClass::Liquidity)
             .build();
         assert!(
@@ -724,7 +747,10 @@ pub mod tests {
         assert_eq!(finished_settlement.tokens, vec![token(0), token(1)]);
         assert_eq!(
             finished_settlement.clearing_prices,
-            vec![order01.data.buy_amount, order01.data.sell_amount]
+            vec![
+                order01.data.buy_amount.into_legacy(),
+                order01.data.sell_amount.into_legacy()
+            ]
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
@@ -797,10 +823,10 @@ pub mod tests {
             .add_trade(
                 Order {
                     data: OrderData {
-                        sell_token: token_a,
-                        sell_amount: 6.into(),
-                        buy_token: token_b,
-                        buy_amount: 3.into(),
+                        sell_token: token_a.into_alloy(),
+                        sell_amount: alloy::primitives::U256::from(6),
+                        buy_token: token_b.into_alloy(),
+                        buy_amount: alloy::primitives::U256::from(3),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -879,10 +905,10 @@ pub mod tests {
             .add_trade(
                 Order {
                     data: OrderData {
-                        sell_token: token(1),
-                        sell_amount: 33.into(),
-                        buy_token: token(3),
-                        buy_amount: 11.into(),
+                        sell_token: Address::with_last_byte(1),
+                        sell_amount: alloy::primitives::U256::from(33),
+                        buy_token: Address::with_last_byte(3),
+                        buy_amount: alloy::primitives::U256::from(11),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -902,10 +928,10 @@ pub mod tests {
             .add_trade(
                 Order {
                     data: OrderData {
-                        sell_token: token(1),
-                        sell_amount: 66.into(),
-                        buy_token: token(3),
-                        buy_amount: 22.into(),
+                        sell_token: Address::with_last_byte(1),
+                        sell_amount: alloy::primitives::U256::from(66),
+                        buy_token: Address::with_last_byte(3),
+                        buy_amount: alloy::primitives::U256::from(22),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -940,10 +966,10 @@ pub mod tests {
         let mut encoder = SettlementEncoder::new(prices);
 
         let order_1_3 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(33.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
+            .with_sell_token(Address::with_last_byte(1))
+            .with_sell_amount(alloy::primitives::U256::from(33))
+            .with_buy_token(Address::with_last_byte(3))
+            .with_buy_amount(alloy::primitives::U256::from(11))
             .build();
         encoder.add_trade(order_1_3, 11.into(), 0.into()).unwrap();
 
@@ -1017,11 +1043,11 @@ pub mod tests {
         // sell 1.01 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit)
-            .with_sell_token(weth)
-            .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
-            .with_buy_token(usdc)
-            .with_buy_amount(U256::exp10(9)) // 1_000 USDC
-            .with_fee_amount(0.into())
+            .with_sell_token(weth.into_alloy())
+            .with_sell_amount(alloy::primitives::U256::from(1_010_000_000_000_000_000u128)) // 1.01 WETH
+            .with_buy_token(usdc.into_alloy())
+            .with_buy_amount(alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(9))) // 1_000 USDC
+            .with_fee_amount(alloy::primitives::U256::ZERO)
             .with_kind(OrderKind::Sell)
             .build();
 
@@ -1071,11 +1097,11 @@ pub mod tests {
         // buy 1 WETH for 1_010 USDC with a fee of 10 USDC
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit)
-            .with_buy_token(weth)
-            .with_buy_amount(U256::exp10(18)) // 1 WETH
-            .with_sell_token(usdc)
-            .with_sell_amount(1_010_000_000u128.into()) // 1_010 USDC
-            .with_fee_amount(0.into())
+            .with_buy_token(weth.into_alloy())
+            .with_buy_amount(alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(18))) // 1 WETH
+            .with_sell_token(usdc.into_alloy())
+            .with_sell_amount(alloy::primitives::U256::from(1_010_000_000u128)) // 1_010 USDC
+            .with_fee_amount(alloy::primitives::U256::ZERO)
             .with_kind(OrderKind::Buy)
             .build();
 

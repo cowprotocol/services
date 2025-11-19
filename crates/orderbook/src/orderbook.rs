@@ -78,9 +78,9 @@ impl Metrics {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
+                    sell: order.data.sell_amount.into_legacy(),
+                    buy: order.data.buy_amount.into_legacy(),
+                    fee: order.data.fee_amount.into_legacy(),
                 },
                 &Amounts {
                     sell: quote.sell_amount,
