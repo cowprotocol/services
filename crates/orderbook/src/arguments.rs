@@ -1,6 +1,6 @@
 use {
     alloy::primitives::Address,
-    primitive_types::H160,
+    chrono::{DateTime, Utc},
     reqwest::Url,
     shared::{
         arguments::{display_option, display_secret_option},
@@ -8,7 +8,7 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
+    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
 };
 
 #[derive(clap::Parser)]
@@ -78,7 +78,7 @@ pub struct Arguments {
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
+    pub unsupported_tokens: Vec<Address>,
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
@@ -106,7 +106,7 @@ pub struct Arguments {
     /// bad token detector thinks they are bad. Base tokens are
     /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    pub allowed_tokens: Vec<Address>,
 
     /// Skip EIP-1271 order signature validation on creation.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -142,6 +142,66 @@ pub struct Arguments {
     /// whether an order is actively being bid on.
     #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
+
+    #[clap(flatten)]
+    pub volume_fee_config: Option<VolumeFeeConfig>,
+}
+
+/// Volume-based protocol fee factor to be applied to quotes.
+#[derive(clap::Parser, Debug, Clone)]
+pub struct VolumeFeeConfig {
+    /// This is a decimal value (e.g., 0.0002 for 0.02% or 2 basis points).
+    /// The fee is applied to the surplus token (buy token for sell orders,
+    /// sell token for buy orders).
+    #[clap(
+        id = "volume_fee_factor",
+        long = "volume-fee-factor",
+        env = "VOLUME_FEE_FACTOR"
+    )]
+    pub factor: Option<FeeFactor>,
+
+    /// The timestamp from which the volume fee becomes effective.
+    #[clap(
+        long = "volume-fee-effective-timestamp",
+        env = "VOLUME_FEE_EFFECTIVE_TIMESTAMP"
+    )]
+    pub effective_from_timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeeFactor(f64);
+
+impl FeeFactor {
+    /// Number of basis points that make up 100%.
+    pub const MAX_BPS: u32 = 10_000;
+
+    /// Converts the fee factor to basis points (BPS).
+    /// For example, 0.0002 -> 2 BPS
+    pub fn to_bps(&self) -> u64 {
+        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
+    }
+}
+
+/// TryFrom implementation for the cases we want to enforce the constraint [0,
+/// 1)
+impl TryFrom<f64> for FeeFactor {
+    type Error = anyhow::Error;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        anyhow::ensure!(
+            (0.0..1.0).contains(&value),
+            "Factor must be in the range [0, 1)"
+        );
+        Ok(FeeFactor(value))
+    }
+}
+
+impl FromStr for FeeFactor {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<f64>().map(FeeFactor::try_from)?
+    }
 }
 
 impl std::fmt::Display for Arguments {
@@ -173,6 +233,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
+            volume_fee_config,
         } = self;
 
         write!(f, "{shared}")?;
@@ -226,6 +287,7 @@ impl std::fmt::Display for Arguments {
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
+        writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
 
         Ok(())
     }

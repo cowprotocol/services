@@ -1,6 +1,7 @@
 use {
     crate::util::{Bytes, conv::u256::U256Ext},
     derive_more::{From, Into},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
     solvers_dto::auction::FlashloanHint,
     std::{
@@ -314,9 +315,9 @@ pub struct Interaction {
 impl From<Interaction> for model::interaction::InteractionData {
     fn from(interaction: Interaction) -> Self {
         Self {
-            target: interaction.target.into(),
-            value: interaction.value.into(),
-            call_data: interaction.call_data.into(),
+            target: interaction.target.0.into_alloy(),
+            value: interaction.value.0.into_alloy(),
+            call_data: interaction.call_data.0,
         }
     }
 }
@@ -324,8 +325,8 @@ impl From<Interaction> for model::interaction::InteractionData {
 impl From<model::interaction::InteractionData> for Interaction {
     fn from(interaction: model::interaction::InteractionData) -> Self {
         Self {
-            target: interaction.target.into(),
-            value: interaction.value.into(),
+            target: interaction.target.into_legacy().into(),
+            value: interaction.value.into_legacy().into(),
             call_data: interaction.call_data.into(),
         }
     }

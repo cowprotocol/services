@@ -16,7 +16,7 @@ use {
         },
     },
     chrono::Utc,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -426,7 +426,7 @@ impl Solution {
             let amount = normalized
                 .entry((allowance.0.token, allowance.0.spender))
                 .or_insert(eth::U256::zero());
-            *amount = amount.saturating_add(allowance.0.amount);
+            *amount = amount.saturating_add(allowance.0.amount.into_legacy());
         }
         normalized
             .into_iter()
@@ -434,7 +434,7 @@ impl Solution {
                 eth::Allowance {
                     token,
                     spender,
-                    amount,
+                    amount: amount.into_alloy(),
                 }
                 .into()
             })

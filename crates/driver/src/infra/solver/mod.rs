@@ -31,6 +31,7 @@ use {
     derivative::Derivative,
     derive_more::{From, Into},
     ethcontract::{Account, Account::Kms},
+    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     num::BigRational,
     observe::tracing::tracing_headers,
@@ -228,7 +229,7 @@ impl Solver {
         };
         let arbitrator = LocalArbitrator {
             max_winners: 10,
-            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(), //WrappedNativeToken is WETH
+            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(), /* WrappedNativeToken is WETH */
         };
         Ok(Self {
             client: reqwest::ClientBuilder::new()
@@ -425,11 +426,11 @@ impl Solver {
             .flat_map(|order| {
                 let hint = order.app_data.flashloan()?;
                 let flashloan = eth::Flashloan {
-                    liquidity_provider: hint.liquidity_provider.into(),
-                    protocol_adapter: hint.protocol_adapter.into(),
-                    receiver: hint.receiver.into(),
-                    token: hint.token.into(),
-                    amount: hint.amount.into(),
+                    liquidity_provider: hint.liquidity_provider.into_legacy().into(),
+                    protocol_adapter: hint.protocol_adapter.into_legacy().into(),
+                    receiver: hint.receiver.into_legacy().into(),
+                    token: hint.token.into_legacy().into(),
+                    amount: hint.amount.into_legacy().into(),
                 };
                 Some((order.uid, flashloan))
             })
@@ -448,7 +449,7 @@ impl Solver {
                 let wrapper_calls = wrappers
                     .iter()
                     .map(|w| solvers_dto::auction::WrapperCall {
-                        address: w.address,
+                        address: w.address.into_legacy(),
                         data: w.data.clone(),
                         is_omittable: w.is_omittable,
                     })

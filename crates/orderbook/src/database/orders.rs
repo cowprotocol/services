@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     crate::dto::TokenMetadata,
+    alloy::primitives::{Address, B256},
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -12,6 +13,7 @@ use {
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
         order::{
@@ -29,7 +31,15 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{
+        alloy::{
+            big_decimal_to_u256 as alloy_big_decimal_to_u256,
+            u256_to_big_decimal as alloy_u256_to_big_decimal,
+        },
+        big_decimal_to_big_uint,
+        big_decimal_to_u256,
+        u256_to_big_decimal,
+    },
     primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
@@ -65,12 +75,12 @@ pub trait OrderStoring: Send + Sync {
         old_order: &OrderUid,
         new_order: &Order,
     ) -> Result<(), InsertionError>;
-    async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
+    async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
     /// orders first).
     async fn user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
@@ -142,8 +152,8 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .enumerate()
         .map(
             |(index, (interaction, execution))| database::orders::Interaction {
-                target: ByteArray(interaction.target.0),
-                value: u256_to_big_decimal(&interaction.value),
+                target: ByteArray(*interaction.target.0),
+                value: u256_to_big_decimal(&interaction.value.into_legacy()),
                 data: interaction.call_data.clone(),
                 index: index
                     .try_into()
@@ -157,14 +167,14 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         uid: order_uid,
         owner: ByteArray(order.metadata.owner.0),
         creation_timestamp: order.metadata.creation_date,
-        sell_token: ByteArray(order.data.sell_token.0),
-        buy_token: ByteArray(order.data.buy_token.0),
-        receiver: order.data.receiver.map(|h160| ByteArray(h160.0)),
-        sell_amount: u256_to_big_decimal(&order.data.sell_amount),
-        buy_amount: u256_to_big_decimal(&order.data.buy_amount),
+        sell_token: ByteArray(order.data.sell_token.0.0),
+        buy_token: ByteArray(order.data.buy_token.0.0),
+        receiver: order.data.receiver.map(|addr| ByteArray(addr.0.0)),
+        sell_amount: alloy_u256_to_big_decimal(&order.data.sell_amount),
+        buy_amount: alloy_u256_to_big_decimal(&order.data.buy_amount),
         valid_to: order.data.valid_to as i64,
         app_data: ByteArray(order.data.app_data.0),
-        fee_amount: u256_to_big_decimal(&order.data.fee_amount),
+        fee_amount: alloy_u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
         class: order_class_into(&order.metadata.class),
         partially_fillable: order.data.partially_fillable,
@@ -314,7 +324,7 @@ impl OrderStoring for Postgres {
         .transpose()
     }
 
-    async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         tokio::try_join!(
             self.user_order_for_tx(tx_hash),
             self.jit_orders_for_tx(tx_hash)
@@ -327,7 +337,7 @@ impl OrderStoring for Postgres {
 
     async fn user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>> {
@@ -339,7 +349,7 @@ impl OrderStoring for Postgres {
         let mut ex = self.pool.acquire().await?;
         database::order_history::user_orders(
             &mut ex,
-            &ByteArray(owner.0),
+            &ByteArray(owner.0.0),
             i64::try_from(offset).unwrap_or(i64::MAX),
             limit.map(|l| i64::try_from(l).unwrap_or(i64::MAX)),
         )
@@ -366,7 +376,7 @@ impl OrderStoring for Postgres {
 
 impl Postgres {
     /// Retrieve all user posted orders for a given transaction.
-    pub async fn user_order_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn user_order_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["user_order_for_tx"])
@@ -383,7 +393,7 @@ impl Postgres {
     }
 
     /// Retrieve all JIT orders for a given transaction.
-    pub async fn jit_orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn jit_orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["jit_orders_for_tx"])
@@ -397,11 +407,11 @@ impl Postgres {
             .collect::<Result<Vec<_>>>()
     }
 
-    pub async fn token_metadata(&self, token: &H160) -> Result<TokenMetadata> {
+    pub async fn token_metadata(&self, token: &Address) -> Result<TokenMetadata> {
         let (first_trade_block, native_price): (Option<u32>, Option<U256>) = tokio::try_join!(
             self.execute_instrumented("token_first_trade_block", async {
                 let mut ex = self.pool.acquire().await?;
-                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0.0))
                     .await
                     .map_err(anyhow::Error::from)?
                     .map(u32::try_from)
@@ -410,12 +420,13 @@ impl Postgres {
             }),
             self.execute_instrumented("fetch_latest_token_price", async {
                 let mut ex = self.pool.acquire().await?;
-                Ok(
-                    database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
-                        .await
-                        .map_err(anyhow::Error::from)?
-                        .and_then(|price| big_decimal_to_u256(&price)),
+                Ok(database::auction_prices::fetch_latest_token_price(
+                    &mut ex,
+                    ByteArray(token.0.0),
                 )
+                .await
+                .map_err(anyhow::Error::from)?
+                .and_then(|price| big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -579,14 +590,17 @@ fn full_order_with_quote_into_model_order(
             .transpose()?,
     };
     let data = OrderData {
-        sell_token: H160(order.sell_token.0),
-        buy_token: H160(order.buy_token.0),
-        receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        sell_token: Address::new(order.sell_token.0),
+        buy_token: Address::new(order.buy_token.0),
+        receiver: order.receiver.map(|address| Address::new(address.0)),
+        sell_amount: alloy_big_decimal_to_u256(&order.sell_amount)
+            .context("sell_amount is not U256")?,
+        buy_amount: alloy_big_decimal_to_u256(&order.buy_amount)
+            .context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
+        fee_amount: alloy_big_decimal_to_u256(&order.fee_amount)
+            .context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
@@ -625,6 +639,7 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         chrono::Duration,
         database::{
             byte_array::ByteArray,
@@ -637,6 +652,7 @@ mod tests {
                 SigningScheme as DbSigningScheme,
             },
         },
+        ethrpc::alloy::conversions::IntoAlloy,
         model::{
             interaction::InteractionData,
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
@@ -900,7 +916,7 @@ mod tests {
             .unwrap();
 
         let order_statuses = db
-            .user_orders(&owner, 0, None)
+            .user_orders(&owner.into_alloy(), 0, None)
             .await
             .unwrap()
             .iter()
@@ -1101,8 +1117,8 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let interaction = |byte: u8| InteractionData {
-            target: H160([byte; 20]),
-            value: byte.into(),
+            target: Address::from_slice(&[byte; 20]),
+            value: alloy::primitives::U256::from(byte),
             call_data: vec![byte; byte as _],
         };
 
@@ -1165,19 +1181,19 @@ mod tests {
                 metadata: QuoteMetadataV1 {
                     interactions: vec![
                         InteractionData {
-                            target: H160([1; 20]),
-                            value: U256::from(100),
+                            target: Address::from_slice(&[1; 20]),
+                            value: alloy::primitives::U256::from(100),
                             call_data: vec![1, 20],
                         },
                         InteractionData {
-                            target: H160([2; 20]),
-                            value: U256::from(10),
+                            target: Address::from_slice(&[2; 20]),
+                            value: alloy::primitives::U256::from(10),
                             call_data: vec![2, 20],
                         },
                     ],
                     pre_interactions: vec![InteractionData {
-                        target: H160([3; 20]),
-                        value: U256::from(30),
+                        target: Address::from_slice(&[3; 20]),
+                        value: alloy::primitives::U256::from(30),
                         call_data: vec![3, 20],
                     }],
                     jit_orders: vec![],

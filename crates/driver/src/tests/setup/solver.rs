@@ -155,11 +155,11 @@ impl Solver {
             }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
-                    liquidity_provider: flashloan.liquidity_provider,
-                    protocol_adapter: flashloan.protocol_adapter,
-                    receiver: flashloan.receiver,
-                    token: flashloan.token,
-                    amount: flashloan.amount
+                    liquidity_provider: flashloan.liquidity_provider.into_legacy(),
+                    protocol_adapter: flashloan.protocol_adapter.into_legacy(),
+                    receiver: flashloan.receiver.into_legacy(),
+                    token: flashloan.token.into_legacy(),
+                    amount: flashloan.amount.into_legacy(),
                 });
             }
             if config.fee_handler == FeeHandler::Solver {
@@ -486,6 +486,10 @@ impl Solver {
             },
             gas,
             45_000_000.into(),
+            &shared::current_block::Arguments {
+                block_stream_poll_interval: None,
+                node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),
+            },
         )
         .await;
 

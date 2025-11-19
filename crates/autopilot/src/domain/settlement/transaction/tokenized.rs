@@ -22,17 +22,15 @@ pub fn order_uid(
 
     let order = model::order::OrderData {
         sell_token: tokens
-            [usize::try_from(trade.sellTokenIndex).expect("SC was able to look up this index")]
-        .into_legacy(),
+            [usize::try_from(trade.sellTokenIndex).expect("SC was able to look up this index")],
         buy_token: tokens
-            [usize::try_from(trade.buyTokenIndex).expect("SC was able to look up this index")]
-        .into_legacy(),
-        receiver: Some(trade.receiver.into_legacy()),
-        sell_amount: trade.sellAmount.into_legacy(),
-        buy_amount: trade.buyAmount.into_legacy(),
+            [usize::try_from(trade.buyTokenIndex).expect("SC was able to look up this index")],
+        receiver: Some(trade.receiver),
+        sell_amount: trade.sellAmount,
+        buy_amount: trade.buyAmount,
         valid_to: trade.validTo,
         app_data: AppDataHash(trade.appData.0),
-        fee_amount: trade.feeAmount.into_legacy(),
+        fee_amount: trade.feeAmount,
         kind: match flags.side() {
             domain::auction::order::Side::Buy => model::order::OrderKind::Buy,
             domain::auction::order::Side::Sell => model::order::OrderKind::Sell,

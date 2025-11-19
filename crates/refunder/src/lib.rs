@@ -1,13 +1,12 @@
 pub mod arguments;
-pub mod ethflow_order;
 pub mod refund_service;
 pub mod submitter;
 
 use {
     crate::arguments::Arguments,
+    alloy::signers::local::PrivateKeySigner,
     clap::Parser,
     contracts::alloy::CoWSwapEthFlow,
-    ethcontract::PrivateKey,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
@@ -62,6 +61,7 @@ pub async fn run(args: arguments::Arguments) {
         liveness.clone(),
         ([0, 0, 0, 0], args.metrics_port).into(),
         Default::default(),
+        Default::default(),
     );
 
     let ethflow_contracts = args
@@ -69,13 +69,10 @@ pub async fn run(args: arguments::Arguments) {
         .iter()
         .map(|contract| CoWSwapEthFlow::Instance::new(*contract, web3.alloy.clone()))
         .collect();
-    let refunder_pk = args
-        .refunder_pk
-        .parse::<PrivateKey>()
-        .expect("couldn't parse refunder private key");
     let refunder_account = Box::new(
-        alloy::signers::local::PrivateKeySigner::from_slice(&refunder_pk.secret_bytes())
-            .expect("invalid refunder private key bytes"),
+        args.refunder_pk
+            .parse::<PrivateKeySigner>()
+            .expect("couldn't parse refunder private key"),
     );
     let mut refunder = RefundService::new(
         pg_pool,
@@ -84,6 +81,8 @@ pub async fn run(args: arguments::Arguments) {
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
         args.min_price_deviation_bps,
         refunder_account,
+        args.max_gas_price,
+        args.start_priority_fee_tip,
     );
     loop {
         tracing::info!("Staring a new refunding loop");

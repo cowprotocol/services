@@ -1,6 +1,6 @@
 use {
-    self::contracts::ContractAt,
     crate::{boundary, domain::eth},
+    alloy::providers::Provider,
     chain::Chain,
     ethcontract::{U256, errors::ExecutionError},
     ethrpc::{Web3, alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
@@ -13,6 +13,7 @@ use {
     },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
+    tracing::{Level, instrument},
     url::Url,
     web3::{Transport, types::CallRequest},
 };
@@ -44,7 +45,7 @@ impl Rpc {
             args.max_batch_size,
             args.max_concurrent_requests,
         );
-        let chain = Chain::try_from(web3.eth().chain_id().await?)?;
+        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)?;
 
         Ok(Self { web3, chain, args })
     }
@@ -64,6 +65,8 @@ impl Rpc {
 pub enum RpcError {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("alloy transport error: {0:?}")]
+    Alloy(#[from] alloy::transports::TransportError),
     #[error("unsupported chain")]
     UnsupportedChain(#[from] chain::ChainIdNotSupported),
 }
@@ -97,15 +100,14 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         tx_gas_limit: U256,
+        current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
 
-        let current_block_stream = ethrpc::block_stream::current_block_stream(
-            args.url.clone(),
-            std::time::Duration::from_millis(500),
-        )
-        .await
-        .expect("couldn't initialize current block stream");
+        let current_block_stream = current_block_args
+            .stream(args.url.clone(), web3.alloy.clone())
+            .await
+            .expect("couldn't initialize current block stream");
 
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
@@ -159,11 +161,6 @@ impl Ethereum {
         &self.inner.contracts
     }
 
-    /// Create a contract instance at the specified address.
-    pub fn contract_at<T: ContractAt>(&self, address: eth::ContractAddress) -> T {
-        T::at(self, address)
-    }
-
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
         let code = self.web3.eth().code(address.into(), None).await?;
@@ -177,6 +174,7 @@ impl Ethereum {
     }
 
     /// Create access list used by a transaction.
+    #[instrument(skip_all)]
     pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
     where
         CallRequest: From<T>,
@@ -275,6 +273,7 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
+    #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code

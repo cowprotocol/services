@@ -63,7 +63,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     tracing::info!(%commit_hash, "running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let eth = ethereum(&config, ethrpc).await;
+    let eth = ethereum(&config, ethrpc, &args.current_block).await;
     let app_data_retriever = match &config.app_data_fetching {
         config::file::AppDataFetching::Enabled {
             orderbook_url,
@@ -160,13 +160,24 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
+async fn ethereum(
+    config: &infra::Config,
+    ethrpc: blockchain::Rpc,
+    current_block_args: &shared::current_block::Arguments,
+) -> Ethereum {
     let gas = Arc::new(
         blockchain::GasPriceEstimator::new(ethrpc.web3(), &config.gas_estimator, &config.mempools)
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts.clone(), gas, config.tx_gas_limit).await
+    Ethereum::new(
+        ethrpc,
+        config.contracts.clone(),
+        gas,
+        config.tx_gas_limit,
+        current_block_args,
+    )
+    .await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

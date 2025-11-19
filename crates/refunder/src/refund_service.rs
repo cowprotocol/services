@@ -1,9 +1,8 @@
 use {
-    super::ethflow_order::{EthflowOrder, order_to_ethflow_data},
     crate::submitter::Submitter,
     alloy::{
         network::TxSigner,
-        primitives::{Address, Signature, address},
+        primitives::{Address, B256, Signature, address},
     },
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
@@ -12,9 +11,9 @@ use {
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},
         orders::read_order as read_db_order,
     },
-    ethcontract::H256,
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
+    number::conversions::alloy::big_decimal_to_u256,
     sqlx::PgPool,
     std::collections::HashMap,
 };
@@ -32,6 +31,8 @@ pub struct RefundService {
     pub min_validity_duration: i64,
     pub min_price_deviation: f64,
     pub submitter: Submitter,
+    pub max_gas_price: u64,
+    pub start_priority_fee_tip: u64,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -42,6 +43,7 @@ enum RefundStatus {
 }
 
 impl RefundService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: PgPool,
         web3: Web3,
@@ -49,6 +51,8 @@ impl RefundService {
         min_validity_duration: i64,
         min_price_deviation_bps: i64,
         signer: Box<dyn TxSigner<Signature> + Send + Sync + 'static>,
+        max_gas_price: u64,
+        start_priority_fee_tip: u64,
     ) -> Self {
         let signer_address = signer.address();
         let gas_estimator = Box::new(web3.legacy.clone());
@@ -59,12 +63,16 @@ impl RefundService {
             ethflow_contracts,
             min_validity_duration,
             min_price_deviation: min_price_deviation_bps as f64 / 10000f64,
+            max_gas_price,
+            start_priority_fee_tip,
             submitter: Submitter {
                 web3,
                 signer_address,
                 gas_estimator,
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
+                max_gas_price,
+                start_priority_fee_tip,
             },
         }
     }
@@ -131,7 +139,7 @@ impl RefundService {
                     Ok(order) => Some(order.owner),
                     Err(err) => {
                         tracing::error!(
-                            uid =? H256(order_hash),
+                            uid =? B256::from(order_hash),
                             ?err,
                             "Error while getting the current onchain status ot the order"
                         );
@@ -176,7 +184,10 @@ impl RefundService {
         to_be_refunded_uids
     }
 
-    async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EthflowOrder> {
+    async fn get_ethflow_data_from_db(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<CoWSwapEthFlow::EthFlowOrder::Data> {
         let mut ex = self.db.acquire().await.context("acquire")?;
         let order = read_db_order(&mut ex, uid)
             .await
@@ -186,7 +197,19 @@ impl RefundService {
             .await
             .context("read ethflow order")?
             .context("missing ethflow order")?;
-        Ok(order_to_ethflow_data(order, ethflow_order))
+
+        Ok(CoWSwapEthFlow::EthFlowOrder::Data {
+            buyToken: Address::from(order.buy_token.0),
+            // ethflow orders have always a receiver. It's enforced by the contract.
+            receiver: Address::from(order.receiver.unwrap().0),
+            sellAmount: big_decimal_to_u256(&order.sell_amount).unwrap(),
+            buyAmount: big_decimal_to_u256(&order.buy_amount).unwrap(),
+            appData: order.app_data.0.into(),
+            feeAmount: big_decimal_to_u256(&order.fee_amount).unwrap(),
+            validTo: ethflow_order.valid_to as u32,
+            partiallyFillable: order.partially_fillable,
+            quoteId: 0i64, // quoteId is not important for refunding and will be ignored
+        })
     }
 
     async fn send_out_refunding_tx(
@@ -217,13 +240,9 @@ impl RefundService {
             let encoded_ethflow_orders: Vec<_> = stream::iter(futures)
                 .buffer_unordered(10)
                 .filter_map(|result| async {
-                    match result {
-                        Ok(order) => Some(CoWSwapEthFlow::EthFlowOrder::Data::from(order)),
-                        Err(err) => {
-                            tracing::error!(?err, "failed to get data from db");
-                            None
-                        }
-                    }
+                    result
+                        .inspect_err(|err| tracing::error!(?err, "failed to get data from db"))
+                        .ok()
                 })
                 .collect()
                 .await;

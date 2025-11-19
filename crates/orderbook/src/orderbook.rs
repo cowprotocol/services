@@ -7,12 +7,13 @@ use {
         dto,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethcontract::H256,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -78,9 +79,9 @@ impl Metrics {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
+                    sell: order.data.sell_amount.into_legacy(),
+                    buy: order.data.buy_amount.into_legacy(),
+                    fee: order.data.fee_amount.into_legacy(),
                 },
                 &Amounts {
                     sell: quote.sell_amount,
@@ -495,7 +496,7 @@ impl Orderbook {
         self.database_replica.single_order(uid).await
     }
 
-    pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {
+    pub async fn get_orders_for_tx(&self, hash: &B256) -> Result<Vec<Order>> {
         self.database_replica.orders_for_tx(hash).await
     }
 
@@ -512,7 +513,7 @@ impl Orderbook {
 
     pub async fn get_user_orders(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>> {

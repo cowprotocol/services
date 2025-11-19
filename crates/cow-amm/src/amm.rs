@@ -87,12 +87,12 @@ impl Amm {
     pub fn try_to_db_type(
         &self,
         block_number: u64,
-        helper: Address,
+        factory_address: Address,
         tx_hash: TxHash,
     ) -> Result<database::cow_amms::CowAmm> {
         Ok(database::cow_amms::CowAmm {
             address: ByteArray(self.address.0.0),
-            factory_address: ByteArray(helper.0.0),
+            factory_address: ByteArray(factory_address.0.0),
             tradeable_tokens: self
                 .tradeable_tokens
                 .iter()
@@ -110,14 +110,14 @@ impl Amm {
     /// helper interface.
     fn convert_orders_reponse(&self, order_return: orderReturn) -> Result<TemplateOrder> {
         let order = OrderData {
-            sell_token: order_return._order.sellToken.into_legacy(),
-            buy_token: order_return._order.buyToken.into_legacy(),
-            receiver: Some(order_return._order.receiver.into_legacy()),
-            sell_amount: order_return._order.sellAmount.into_legacy(),
-            buy_amount: order_return._order.buyAmount.into_legacy(),
+            sell_token: order_return._order.sellToken,
+            buy_token: order_return._order.buyToken,
+            receiver: Some(order_return._order.receiver),
+            sell_amount: order_return._order.sellAmount,
+            buy_amount: order_return._order.buyAmount,
             valid_to: order_return._order.validTo,
             app_data: AppDataHash(order_return._order.appData.0),
-            fee_amount: order_return._order.feeAmount.into_legacy(),
+            fee_amount: order_return._order.feeAmount,
             kind: convert_kind(&order_return._order.kind.0)?,
             partially_fillable: order_return._order.partiallyFillable,
             sell_token_balance: convert_sell_token_source(&order_return._order.sellTokenBalance.0)?,
@@ -167,9 +167,9 @@ fn convert_interactions(
     interactions
         .into_iter()
         .map(|interaction| InteractionData {
-            target: interaction.target.into_legacy(),
-            value: interaction.value.into_legacy(),
-            call_data: interaction.callData.into_legacy().0,
+            target: interaction.target,
+            value: interaction.value,
+            call_data: interaction.callData.to_vec(),
         })
         .collect()
 }

@@ -4,8 +4,10 @@ use {
         price_estimation::{PriceEstimationError, buffered::NativePriceBatchFetching},
         token_info::{TokenInfo, TokenInfoFetching},
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chain::Chain,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, future::BoxFuture},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
@@ -252,15 +254,15 @@ impl NativePriceEstimating for CoinGecko {
     #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
-        token: Token,
+        token: Address,
         timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self
-                .fetch_native_prices(HashSet::from([token]), timeout)
+                .fetch_native_prices(HashSet::from([token.into_legacy()]), timeout)
                 .await?;
             prices
-                .get(&token)
+                .get(&token.into_legacy())
                 .ok_or(PriceEstimationError::NoLiquidity)?
                 .clone()
         }
@@ -324,6 +326,7 @@ mod tests {
             price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
             token_info::{MockTokenInfoFetching, TokenInfo},
         },
+        alloy::primitives::address,
         std::env,
     };
 
@@ -402,7 +405,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn works() {
-        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+        let native_token = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_URL).unwrap(),
@@ -425,7 +428,7 @@ mod tests {
     #[ignore]
     async fn works_xdai() {
         // USDT
-        let native_token = addr!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
+        let native_token = address!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
@@ -505,14 +508,18 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn prices_adjusted_for_token_with_fewer_decimals() {
-        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
-        let wxdai = addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+        let usdc = address!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let wxdai = address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
         let mut mock = MockTokenInfoFetching::new();
         mock.expect_get_token_infos().returning(move |tokens| {
             tokens
                 .iter()
                 .map(|t| {
-                    let decimals = if *t == usdc { Some(6) } else { Some(18) };
+                    let decimals = if *t == usdc.into_legacy() {
+                        Some(6)
+                    } else {
+                        Some(18)
+                    };
                     let info = TokenInfo {
                         decimals,
                         symbol: None,
@@ -557,8 +564,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn prices_adjusted_for_token_with_more_decimals() {
-        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
-        let wxdai = addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+        let usdc = address!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let wxdai = address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
         let mut mock = MockTokenInfoFetching::new();
         mock.expect_get_token_infos().returning(move |tokens| {
             tokens
@@ -566,7 +573,11 @@ mod tests {
                 .map(|t| {
                     // Let's pretend USDC has 21 decimals to check if the price adjustment
                     // also works when the requested token has more decimals.
-                    let decimals = if *t == usdc { Some(21) } else { Some(18) };
+                    let decimals = if *t == usdc.into_legacy() {
+                        Some(21)
+                    } else {
+                        Some(18)
+                    };
                     let info = TokenInfo {
                         decimals,
                         symbol: None,

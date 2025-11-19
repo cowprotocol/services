@@ -324,6 +324,7 @@ pub struct OrderQuote {
 
 pub type QuoteId = i64;
 
+#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
@@ -332,6 +333,9 @@ pub struct OrderQuoteResponse {
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
     pub verified: bool,
+    /// Protocol fee in basis points (e.g., "2" for 0.02%)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_fee_bps: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

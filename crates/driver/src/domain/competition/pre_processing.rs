@@ -285,8 +285,8 @@ impl Utilities {
                             .pre_interactions
                             .iter()
                             .map(|i| InteractionData {
-                                target: i.target.0,
-                                value: i.value.0,
+                                target: i.target.0.into_alloy(),
+                                value: i.value.0.into_alloy(),
                                 call_data: i.call_data.0.clone(),
                             })
                             .collect()
@@ -298,9 +298,9 @@ impl Utilities {
                             .app_data
                             .flashloan()
                             .map(|loan| BalanceOverrideRequest {
-                                token: loan.token,
-                                amount: loan.amount,
-                                holder: loan.receiver,
+                                token: loan.token.into_legacy(),
+                                amount: loan.amount.into_legacy(),
+                                holder: loan.receiver.into_legacy(),
                             })
                     } else {
                         None
@@ -445,18 +445,21 @@ impl Utilities {
                         .uid(&domain_separator, &amm.into_legacy())
                         .0
                         .into(),
-                    receiver: template.order.receiver.map(|addr| addr.into()),
+                    receiver: template
+                        .order
+                        .receiver
+                        .map(|addr| addr.into_legacy().into()),
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
                         .into(),
                     valid_to: template.order.valid_to.into(),
                     buy: eth::Asset {
-                        amount: template.order.buy_amount.into(),
-                        token: template.order.buy_token.into(),
+                        amount: template.order.buy_amount.into_legacy().into(),
+                        token: template.order.buy_token.into_legacy().into(),
                     },
                     sell: eth::Asset {
-                        amount: template.order.sell_amount.into(),
-                        token: template.order.sell_token.into(),
+                        amount: template.order.sell_amount.into_legacy().into(),
+                        token: template.order.sell_token.into_legacy().into(),
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
@@ -466,8 +469,12 @@ impl Utilities {
                     partial: match template.order.partially_fillable {
                         true => order::Partial::Yes {
                             available: match template.order.kind {
-                                OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
-                                OrderKind::Buy => order::TargetAmount(template.order.buy_amount),
+                                OrderKind::Sell => {
+                                    order::TargetAmount(template.order.sell_amount.into_legacy())
+                                }
+                                OrderKind::Buy => {
+                                    order::TargetAmount(template.order.buy_amount.into_legacy())
+                                }
                             },
                         },
                         false => order::Partial::No,

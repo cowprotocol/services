@@ -23,7 +23,7 @@ use {
     },
     alloy::{consensus::private::alloy_primitives, hex},
     anyhow::bail,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
@@ -772,8 +772,13 @@ impl Competition {
             //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
-                        .unwrap_or_default(),
+                    math::mul_ratio(
+                        available.0.into_alloy(),
+                        allocated_balance.0.into_alloy(),
+                        max_sell.0.into_alloy(),
+                    )
+                    .unwrap_or_default()
+                    .into_legacy(),
                 );
             }
             if order.available().is_zero() {

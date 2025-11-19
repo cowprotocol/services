@@ -107,6 +107,7 @@ async fn refunder_tx(web3: Web3) {
 
     tracing::info!("Waiting for orders to be indexed.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services.get_order(&order_id).await.is_ok() && services.get_order(&order_id_2).await.is_ok()
     })
     .await
@@ -141,6 +142,8 @@ async fn refunder_tx(web3: Web3) {
         validity_duration as i64 / 2,
         10i64,
         refunder_signer,
+        2_000_000_000_000, // max_gas_price: 2000 Gwei
+        30_000_000_000,    // start_priority_fee_tip: 30 Gwei
     );
 
     assert_ne!(
@@ -174,6 +177,7 @@ async fn refunder_tx(web3: Web3) {
     tracing::info!("Waiting for autopilot to index refund tx hash.");
     for order in &[order_id, order_id_2] {
         let has_tx_hash = || async {
+            onchain.mint_block().await;
             services
                 .get_order(order)
                 .await

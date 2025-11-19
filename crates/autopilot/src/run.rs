@@ -123,9 +123,17 @@ async fn ethereum(
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
-    poll_interval: Duration,
+    current_block_args: &shared::current_block::Arguments,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, unbuffered_web3, chain, url, contracts, poll_interval).await
+    infra::Ethereum::new(
+        web3,
+        unbuffered_web3,
+        chain,
+        url,
+        contracts,
+        current_block_args,
+    )
+    .await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -224,7 +232,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         &chain,
         url,
         contracts.clone(),
-        args.shared.current_block.block_stream_poll_interval,
+        &args.shared.current_block,
     )
     .await;
 
@@ -318,8 +326,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter().copied());
-    allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
+    allowed_tokens.extend(base_tokens.tokens().iter().map(|t| t.into_alloy()));
+    allowed_tokens.push(model::order::BUY_ETH_ADDRESS.into_alloy());
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let finder = token_owner_finder::init(
@@ -367,7 +375,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
+    let block_retriever = Arc::new(web3.alloy.clone());
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
@@ -483,8 +491,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         cow_amm_registry
             .add_listener(
                 config.index_start,
-                config.factory.into_alloy(),
-                config.helper.into_alloy(),
+                config.factory,
+                config.helper,
                 db_write.pool.clone(),
             )
             .await;
@@ -530,16 +538,23 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
+        domain::ProtocolFees::new(&args.fee_policies_config),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         eth.contracts().settlement().address().into_legacy(),
-        args.disable_order_filtering,
+        args.disable_order_balance_filter,
+        args.disable_1271_order_sig_filter,
+        args.disable_1271_order_balance_filter,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    let readiness = Arc::new(Some(AtomicBool::new(false)));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, readiness.clone());
+    let startup = Arc::new(Some(AtomicBool::new(false)));
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        args.metrics_address,
+        Default::default(),
+        startup.clone(),
+    );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -691,8 +706,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         solver_participation_guard,
         solvable_orders_cache,
         trusted_tokens,
-        liveness.clone(),
-        readiness.clone(),
+        run_loop::Probes {
+            liveness: liveness.clone(),
+            startup,
+        },
         Arc::new(maintenance),
         competition_updates_sender,
     );
@@ -772,14 +789,19 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default());
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        args.metrics_address,
+        Default::default(),
+        Default::default(),
+    );
 
-    let current_block = ethrpc::block_stream::current_block_stream(
-        args.shared.node_url,
-        args.shared.current_block.block_stream_poll_interval,
-    )
-    .await
-    .expect("couldn't initialize current block stream");
+    let current_block = args
+        .shared
+        .current_block
+        .stream(args.shared.node_url, web3.alloy.clone())
+        .await
+        .expect("couldn't initialize current block stream");
 
     let shadow = shadow::RunLoop::new(
         orderbook,

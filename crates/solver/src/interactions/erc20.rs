@@ -6,8 +6,6 @@ use {
         sol_types::SolCall,
     },
     contracts::alloy::ERC20,
-    ethcontract::Bytes,
-    ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
@@ -21,15 +19,14 @@ pub struct Erc20ApproveInteraction {
 impl Erc20ApproveInteraction {
     pub fn as_encoded(&self) -> EncodedInteraction {
         (
-            self.token.into_legacy(),
-            0.into(),
-            Bytes(
-                ERC20::ERC20::approveCall {
-                    spender: self.spender,
-                    amount: self.amount,
-                }
-                .abi_encode(),
-            ),
+            self.token,
+            U256::ZERO,
+            ERC20::ERC20::approveCall {
+                spender: self.spender,
+                amount: self.amount,
+            }
+            .abi_encode()
+            .into(),
         )
     }
 }
@@ -42,7 +39,7 @@ impl Interaction for Erc20ApproveInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::alloy::conversions::IntoLegacy, hex_literal::hex};
+    use {super::*, hex_literal::hex};
 
     #[test]
     fn encode_erc20_approve() {
@@ -53,8 +50,8 @@ mod tests {
         };
 
         let (target, value, calldata) = approve.as_encoded();
-        assert_eq!(target, approve.token.into_legacy());
-        assert_eq!(value, 0.into());
+        assert_eq!(target, approve.token);
+        assert!(value.is_zero());
         assert_eq!(
             calldata.0,
             hex!(
@@ -62,6 +59,7 @@ mod tests {
                  0000000000000000000000000202020202020202020202020202020202020202
                  0303030303030303030303030303030303030303030303030303030303030303"
             )
+            .to_vec()
         );
     }
 }

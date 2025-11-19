@@ -199,6 +199,7 @@ fn absolute_slippage_amount(relative: &BigRational, amount: &BigInt) -> BigInt {
 mod tests {
     use {
         super::*,
+        ethrpc::alloy::conversions::IntoLegacy,
         shared::externalprices,
         testlib::tokens::{GNO, USDC, WETH},
     };
@@ -206,30 +207,36 @@ mod tests {
     #[test]
     fn amm_execution_slippage() {
         let calculator = SlippageCalculator::from_bps(100, Some(U256::exp10(18)));
-        let prices = externalprices! { native_token: WETH };
+        let prices = externalprices! { native_token: WETH.into_legacy() };
 
         let slippage = calculator.context(&prices);
         let cases = [
             (
                 AmmOrderExecution {
-                    input_max: TokenAmount::new(WETH, 1_000_000_000_000_000_000_u128),
-                    output: TokenAmount::new(GNO, 10_000_000_000_000_000_000_u128),
+                    input_max: TokenAmount::new(WETH.into_legacy(), 1_000_000_000_000_000_000_u128),
+                    output: TokenAmount::new(GNO.into_legacy(), 10_000_000_000_000_000_000_u128),
                     internalizable: false,
                 },
                 1_010_000_000_000_000_000_u128.into(),
             ),
             (
                 AmmOrderExecution {
-                    input_max: TokenAmount::new(GNO, 10_000_000_000_000_000_000_000_u128),
-                    output: TokenAmount::new(WETH, 1_000_000_000_000_000_000_000_u128),
+                    input_max: TokenAmount::new(
+                        GNO.into_legacy(),
+                        10_000_000_000_000_000_000_000_u128,
+                    ),
+                    output: TokenAmount::new(
+                        WETH.into_legacy(),
+                        1_000_000_000_000_000_000_000_u128,
+                    ),
                     internalizable: false,
                 },
                 10_010_000_000_000_000_000_000_u128.into(),
             ),
             (
                 AmmOrderExecution {
-                    input_max: TokenAmount::new(USDC, 200_000_000_u128),
-                    output: TokenAmount::new(GNO, 2_000_000_000_000_000_000_u128),
+                    input_max: TokenAmount::new(USDC.into_legacy(), 200_000_000_u128),
+                    output: TokenAmount::new(GNO.into_legacy(), 2_000_000_000_000_000_000_u128),
                     internalizable: false,
                 },
                 202_000_000_u128.into(),

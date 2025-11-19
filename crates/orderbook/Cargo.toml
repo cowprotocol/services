@@ -60,6 +60,7 @@ warp = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+shared = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }

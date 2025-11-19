@@ -1,5 +1,5 @@
 use {
-    crate::{domain::eth, infra::blockchain::Ethereum},
+    crate::domain::eth,
     chain::Chain,
     contracts::alloy::{
         BalancerV2Vault,
@@ -187,17 +187,6 @@ pub fn deployment_address(
             .address
             .into(),
     )
-}
-
-/// A trait for initializing contract instances with dynamic addresses.
-pub trait ContractAt {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
-}
-
-impl ContractAt for contracts::ERC20 {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.into())
-    }
 }
 
 #[derive(Debug, Error)]

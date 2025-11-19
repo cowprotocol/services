@@ -1,16 +1,11 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::sources::uniswap_v2::pool_fetching::{
-        DefaultPoolReader,
-        Pool,
-        PoolReading,
-        handle_alloy_contract_error,
-    },
+    crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
     contracts::alloy::ISwaprPair,
     ethcontract::BlockId,
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -46,7 +41,7 @@ fn handle_results(
     pool: Result<Option<Pool>>,
     fee: Result<u32, alloy::contract::Error>,
 ) -> Result<Option<Pool>> {
-    let fee = handle_alloy_contract_error(fee)?;
+    let fee = ignore_non_node_error(fee)?;
     Ok(pool?.and_then(|pool| {
         Some(Pool {
             fee: Ratio::new(fee?, FEE_BASE),
@@ -64,14 +59,16 @@ mod tests {
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
         },
-        contracts::errors::testing_alloy_contract_error,
+        alloy::primitives::{Address, address},
         ethcontract::H160,
+        ethrpc::alloy::errors::testing_alloy_contract_error,
         maplit::hashset,
     };
 
     #[test]
     fn sets_fee() {
-        let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let tokens =
+            TokenPair::new(Address::from_slice(&[1; 20]), Address::from_slice(&[2; 20])).unwrap();
         let address = H160::from_low_u64_be(1);
         assert_eq!(
             handle_results(
@@ -96,7 +93,8 @@ mod tests {
 
     #[test]
     fn ignores_contract_errors_when_reading_fee() {
-        let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let tokens =
+            TokenPair::new(Address::from_slice(&[1; 20]), Address::from_slice(&[2; 20])).unwrap();
         let address = H160::from_low_u64_be(1);
         assert!(
             handle_results(
@@ -126,8 +124,8 @@ mod tests {
             .fetch(
                 hashset! {
                     TokenPair::new(
-                        addr!("6A023CCd1ff6F2045C3309768eAd9E68F978f6e1"),
-                        addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
+                        address!("6A023CCd1ff6F2045C3309768eAd9E68F978f6e1"),
+                        address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
                     )
                     .unwrap(),
                 },

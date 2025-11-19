@@ -100,8 +100,8 @@ impl LiquidityCollecting for UniswapLikeLiquidity {
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
         for pool in self.pool_fetcher.fetch(pairs, at_block).await? {
-            tokens.insert(pool.tokens.get().0);
-            tokens.insert(pool.tokens.get().1);
+            tokens.insert(pool.tokens.get().0.into_legacy());
+            tokens.insert(pool.tokens.get().1.into_legacy());
 
             result.push(Liquidity::ConstantProduct(ConstantProductOrder {
                 address: pool.address,

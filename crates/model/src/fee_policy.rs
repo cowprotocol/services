@@ -1,6 +1,6 @@
 use {
+    alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
 };
@@ -57,5 +57,5 @@ pub struct ExecutedProtocolFee {
     pub policy: FeePolicy,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
-    pub token: H160,
+    pub token: Address,
 }

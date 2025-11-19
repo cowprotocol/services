@@ -232,8 +232,8 @@ pub async fn run(args: Arguments) {
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter().copied());
-    allowed_tokens.push(BUY_ETH_ADDRESS);
+    allowed_tokens.extend(base_tokens.tokens().iter().map(|t| t.into_alloy()));
+    allowed_tokens.push(BUY_ETH_ADDRESS.into_alloy());
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
@@ -285,7 +285,7 @@ pub async fn run(args: Arguments) {
     let current_block_stream = args
         .shared
         .current_block
-        .stream(args.shared.node_url.clone())
+        .stream(args.shared.node_url.clone(), web3.alloy.clone())
         .await
         .unwrap();
 
@@ -331,7 +331,13 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
-    let prices = postgres_write.fetch_latest_prices().await.unwrap();
+    let prices = postgres_write
+        .fetch_latest_prices()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(k, v)| (k.into_legacy(), v))
+        .collect();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
@@ -451,8 +457,13 @@ pub async fn run(args: Arguments) {
 
     check_database_connection(orderbook.as_ref()).await;
     let quotes = Arc::new(
-        QuoteHandler::new(order_validator, optimal_quoter, app_data.clone())
-            .with_fast_quoter(fast_quoter),
+        QuoteHandler::new(
+            order_validator,
+            optimal_quoter,
+            app_data.clone(),
+            args.volume_fee_config,
+        )
+        .with_fast_quoter(fast_quoter),
     );
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
@@ -473,7 +484,12 @@ pub async fn run(args: Arguments) {
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
     tracing::info!(%metrics_address, "serving metrics");
-    let metrics_task = serve_metrics(orderbook, metrics_address, Default::default());
+    let metrics_task = serve_metrics(
+        orderbook,
+        metrics_address,
+        Default::default(),
+        Default::default(),
+    );
 
     futures::pin_mut!(serve_api);
     tokio::select! {

@@ -2,8 +2,9 @@ use {
     super::Strategy,
     crate::tenderly_api::SimulationError,
     anyhow::Context,
-    contracts::ERC20,
+    contracts::alloy::ERC20,
     ethcontract::{Address, H256, U256, state_overrides::StateOverride},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     maplit::hashmap,
     std::{
         collections::HashMap,
@@ -100,23 +101,26 @@ impl Detector {
     /// Returns an `Err` if it cannot detect the strategy or an internal
     /// simulation fails.
     pub async fn detect(&self, token: Address) -> Result<Strategy, DetectionError> {
-        let token = ERC20::at(&self.web3, token);
+        let token = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
         let overrides = hashmap! {
-            token.address() => StateOverride {
+            token.address().into_legacy() => StateOverride {
                 state_diff: Some(self.state_overrides.clone()),
                 ..Default::default()
             },
         };
         let balance = token
-            .balance_of(self.holder)
-            .call_with_state_overrides(&overrides)
+            .balanceOf(self.holder.into_alloy())
+            .state(overrides.into_alloy())
+            .call()
             .await
             .context("eth_call with state overrides failed")
             .map_err(|e| DetectionError::Simulation(SimulationError::Other(e)))?;
 
         self.strategies
             .iter()
-            .find_map(|helper| (helper.balance == balance).then_some(helper.strategy.clone()))
+            .find_map(|helper| {
+                (helper.balance.into_alloy() == balance).then_some(helper.strategy.clone())
+            })
             .ok_or(DetectionError::NotFound)
     }
 }

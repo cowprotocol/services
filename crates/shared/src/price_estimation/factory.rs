@@ -30,7 +30,10 @@ use {
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
     ethcontract::H160,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -132,7 +135,8 @@ impl<'a> PriceEstimatorFactory<'a> {
                     Some(
                         self.network
                             .chain
-                            .default_amount_to_estimate_native_prices_with(),
+                            .default_amount_to_estimate_native_prices_with()
+                            .into_legacy(),
                     )
                 })
                 .context("No amount to estimate prices with set.")?,
@@ -222,6 +226,11 @@ impl<'a> PriceEstimatorFactory<'a> {
                 ))
             }
             NativePriceEstimatorSource::CoinGecko => {
+                anyhow::ensure!(
+                    self.args.coin_gecko.coin_gecko_api_key.is_some(),
+                    "coin_gecko_api_key must be set when CoinGecko is used as native price                     estimator"
+                );
+
                 let name = "CoinGecko".to_string();
                 let coin_gecko = native::CoinGecko::new(
                     self.components.http_factory.create(),
@@ -298,7 +307,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn sanitized(&self, estimator: Arc<dyn PriceEstimating>) -> SanitizedPriceEstimator {
         SanitizedPriceEstimator::new(
             estimator,
-            self.network.native_token,
+            self.network.native_token.into_alloy(),
             self.components.bad_token_detector.clone(),
         )
     }

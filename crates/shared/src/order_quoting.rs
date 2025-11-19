@@ -17,6 +17,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -66,8 +67,8 @@ impl QuoteParameters {
 
         price_estimation::Query {
             verification: self.verification.clone(),
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
+            sell_token: self.sell_token.into_alloy(),
+            buy_token: self.buy_token.into_alloy(),
             in_amount,
             kind,
             block_dependent: true,
@@ -468,13 +469,13 @@ impl OrderQuoter {
                 .estimate(trade_query.clone())
                 .map_err(|err| (EstimatorKind::Regular, err).into()),
             self.native_price_estimator
-                .estimate_native_price(parameters.sell_token, trade_query.timeout)
+                .estimate_native_price(parameters.sell_token.into_alloy(), trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeSell, err).into()),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
-                .estimate_native_price(parameters.buy_token, trade_query.timeout)
+                .estimate_native_price(parameters.buy_token.into_alloy(), trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
@@ -783,8 +784,10 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
+        alloy::primitives::Address,
         chrono::Utc,
         ethcontract::H160,
+        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
@@ -858,8 +861,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -884,14 +887,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -999,8 +1002,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -1025,14 +1028,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1135,8 +1138,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,
@@ -1161,14 +1164,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1282,14 +1285,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
 
@@ -1356,14 +1359,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
@@ -1735,25 +1738,25 @@ mod tests {
         let q: QuoteMetadata = QuoteMetadataV1 {
             interactions: vec![
                 InteractionData {
-                    target: H160::from([1; 20]),
-                    value: U256::one(),
+                    target: Address::from_slice(&[1; 20]),
+                    value: alloy::primitives::U256::ONE,
                     call_data: vec![1],
                 },
                 InteractionData {
-                    target: H160::from([2; 20]),
-                    value: U256::from(2),
+                    target: Address::from_slice(&[2; 20]),
+                    value: alloy::primitives::U256::from(2),
                     call_data: vec![2],
                 },
             ],
             pre_interactions: vec![
                 InteractionData {
-                    target: H160::from([3; 20]),
-                    value: U256::from(3),
+                    target: Address::from_slice(&[3; 20]),
+                    value: alloy::primitives::U256::from(3),
                     call_data: vec![3],
                 },
                 InteractionData {
-                    target: H160::from([4; 20]),
-                    value: U256::from(4),
+                    target: Address::from_slice(&[4; 20]),
+                    value: alloy::primitives::U256::from(4),
                     call_data: vec![4],
                 },
             ],

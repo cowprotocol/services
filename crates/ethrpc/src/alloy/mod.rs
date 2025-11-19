@@ -1,7 +1,7 @@
 mod buffering;
 pub mod conversions;
+pub mod errors;
 mod instrumentation;
-
 mod wallet;
 
 use {

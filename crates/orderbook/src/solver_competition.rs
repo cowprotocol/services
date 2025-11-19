@@ -1,16 +1,16 @@
 //! Manage solver competition data received by the driver through a private spi.
 
 use {
+    alloy::primitives::B256,
     anyhow::Result,
     database::auction::AuctionId,
     model::solver_competition::SolverCompetitionAPI,
-    primitive_types::H256,
     thiserror::Error,
 };
 
 pub enum Identifier {
     Id(AuctionId),
-    Transaction(H256),
+    Transaction(B256),
 }
 
 /// Component used for saving and loading past solver competitions.

@@ -1,13 +1,13 @@
 use {
     crate::database::Postgres,
-    primitive_types::H160,
+    alloy::primitives::Address,
     serde_json::json,
     std::convert::Infallible,
     warp::{Filter, Rejection, http::StatusCode, reply::with_status},
 };
 
 pub fn get(db: Postgres) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    warp::path!("v1" / "users" / H160 / "total_surplus")
+    warp::path!("v1" / "users" / Address / "total_surplus")
         .and(warp::get())
         .and_then(move |user| {
             let db = db.clone();

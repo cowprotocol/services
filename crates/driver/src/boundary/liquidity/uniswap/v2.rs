@@ -79,11 +79,11 @@ pub(in crate::boundary::liquidity) fn to_domain_pool(
         router: router(&pool),
         reserves: liquidity::uniswap::v2::Reserves::try_new(
             eth::Asset {
-                token: pool.tokens.get().0.into(),
+                token: pool.tokens.get().0.into_legacy().into(),
                 amount: pool.reserves.0.into(),
             },
             eth::Asset {
-                token: pool.tokens.get().1.into(),
+                token: pool.tokens.get().1.into_legacy().into(),
                 amount: pool.reserves.1.into(),
             },
         )
@@ -111,9 +111,9 @@ pub fn to_interaction(
     let (target, value, call_data) = interaction.encode_swap();
 
     eth::Interaction {
-        target: target.into(),
-        value: value.into(),
-        call_data: call_data.0.into(),
+        target: target.into_legacy().into(),
+        value: value.into_legacy().into(),
+        call_data: call_data.0.to_vec().into(),
     }
 }
 
