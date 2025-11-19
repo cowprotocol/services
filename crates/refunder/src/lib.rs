@@ -81,6 +81,8 @@ pub async fn run(args: arguments::Arguments) {
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
         args.min_price_deviation_bps,
         refunder_account,
+        args.max_gas_price,
+        args.start_priority_fee_tip,
     );
     loop {
         tracing::info!("Staring a new refunding loop");

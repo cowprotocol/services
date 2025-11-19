@@ -142,6 +142,8 @@ async fn refunder_tx(web3: Web3) {
         validity_duration as i64 / 2,
         10i64,
         refunder_signer,
+        2_000_000_000_000, // max_gas_price: 2000 Gwei
+        30_000_000_000,    // start_priority_fee_tip: 30 Gwei
     );
 
     assert_ne!(

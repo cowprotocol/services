@@ -5,6 +5,7 @@ use {
         util::{self, Bytes},
     },
     derive_more::{From, Into},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::order::{BuyTokenDestination, SellTokenSource},
 };
 pub use {fees::FeePolicy, signature::Signature};
@@ -149,14 +150,23 @@ impl Order {
         };
         let target = self.target();
 
-        amounts.sell.amount = util::math::mul_ratio(amounts.sell.amount.0, available.0, target.0)
-            .unwrap_or_default()
-            .into();
+        amounts.sell.amount = util::math::mul_ratio(
+            amounts.sell.amount.0.into_alloy(),
+            available.0.into_alloy(),
+            target.0.into_alloy(),
+        )
+        .unwrap_or_default()
+        .into_legacy()
+        .into();
 
-        amounts.buy.amount =
-            util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
-                .unwrap_or_default()
-                .into();
+        amounts.buy.amount = util::math::mul_ratio_ceil(
+            amounts.buy.amount.0.into_alloy(),
+            available.0.into_alloy(),
+            target.0.into_alloy(),
+        )
+        .unwrap_or_default()
+        .into_legacy()
+        .into();
 
         amounts
     }

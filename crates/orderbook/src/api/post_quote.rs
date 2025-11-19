@@ -318,6 +318,7 @@ mod tests {
             expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
             verified: false,
+            protocol_fee_bps: Some("2".to_string()),
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
             order_quote_response.clone(),

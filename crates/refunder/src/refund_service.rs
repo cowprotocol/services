@@ -31,6 +31,8 @@ pub struct RefundService {
     pub min_validity_duration: i64,
     pub min_price_deviation: f64,
     pub submitter: Submitter,
+    pub max_gas_price: u64,
+    pub start_priority_fee_tip: u64,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -41,6 +43,7 @@ enum RefundStatus {
 }
 
 impl RefundService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: PgPool,
         web3: Web3,
@@ -48,6 +51,8 @@ impl RefundService {
         min_validity_duration: i64,
         min_price_deviation_bps: i64,
         signer: Box<dyn TxSigner<Signature> + Send + Sync + 'static>,
+        max_gas_price: u64,
+        start_priority_fee_tip: u64,
     ) -> Self {
         let signer_address = signer.address();
         let gas_estimator = Box::new(web3.legacy.clone());
@@ -58,12 +63,16 @@ impl RefundService {
             ethflow_contracts,
             min_validity_duration,
             min_price_deviation: min_price_deviation_bps as f64 / 10000f64,
+            max_gas_price,
+            start_priority_fee_tip,
             submitter: Submitter {
                 web3,
                 signer_address,
                 gas_estimator,
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
+                max_gas_price,
+                start_priority_fee_tip,
             },
         }
     }
