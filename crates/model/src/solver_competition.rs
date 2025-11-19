@@ -1,7 +1,8 @@
 use {
     crate::{AuctionId, order::OrderUid},
+    alloy::primitives::B256,
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -24,7 +25,7 @@ pub struct SolverCompetitionDB {
 pub struct SolverCompetitionAPI {
     #[serde(default)]
     pub auction_id: AuctionId,
-    pub transaction_hashes: Vec<H256>,
+    pub transaction_hashes: Vec<B256>,
     #[serde(flatten)]
     pub common: SolverCompetitionDB,
 }
@@ -177,7 +178,7 @@ mod tests {
 
         let orig = SolverCompetitionAPI {
             auction_id: 0,
-            transaction_hashes: vec![H256([0x11; 32])],
+            transaction_hashes: vec![B256::new([0x11; 32])],
             common: SolverCompetitionDB {
                 auction_start_block: 13,
                 competition_simulation_block: 15,
