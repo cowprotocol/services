@@ -101,6 +101,16 @@ impl RunLoop {
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
+        for driver in &drivers {
+            tracing::info!(
+                name = %driver.name,
+                url = %driver.url,
+                fairness_threshold = ?driver.fairness_threshold,
+                submission_address = %driver.submission_address,
+                requested_timeout_on_problems = driver.requested_timeout_on_problems,
+                "[pod] RunLoop loaded driver"
+            );
+        }
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 

@@ -5,6 +5,7 @@ use {
             competition::{
                 auction::{self, Auction},
                 bad_tokens,
+                local_selection_winner::LocalArbitrator,
                 order,
                 solution::{self, Solution},
             },
@@ -17,13 +18,27 @@ use {
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
+            pod,
         },
         util,
     },
+    alloy::{
+        network::{EthereumWallet, TxSigner},
+        primitives::Signature,
+        signers::{Signer, aws::AwsSigner, k256, local::LocalSigner},
+    },
     anyhow::Result,
+    derivative::Derivative,
     derive_more::{From, Into},
+    ethcontract::{Account, Account::Kms},
+    hex_literal::hex,
     num::BigRational,
     observe::tracing::tracing_headers,
+    pod_sdk::{
+        Provider,
+        provider::{PodProvider, PodProviderBuilder},
+    },
+    primitive_types::H160,
     reqwest::header::HeaderName,
     std::{
         collections::HashMap,
@@ -92,12 +107,17 @@ pub struct ManageNativeToken {
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
-#[derive(Debug, Clone)]
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
+    #[derivative(Debug = "ignore")]
+    pod_provider: Option<PodProvider>,
+    #[derivative(Debug = "ignore")]
+    arbitrator: LocalArbitrator,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +157,8 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
+    /// Pod configuration
+    pub pod: Option<pod::config::Config>,
 }
 
 impl Solver {
@@ -155,6 +177,59 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
+        let pod_provider = if let Some(pod_config) = config.pod.clone() {
+            let signer = Self::make_signer(config.account.clone())
+                .inspect_err(|e| {
+                    tracing::error!(error = %e, "[pod] failed to create signer for pod provider");
+                })
+                .ok();
+
+            if let Some(signer) = signer {
+                let signer_address = signer.address();
+                let wallet = EthereumWallet::from(signer);
+
+                let pod_provider = PodProviderBuilder::with_recommended_settings()
+                    .wallet(wallet)
+                    .on_url(pod_config.endpoint)
+                    .await
+                    .inspect_err(|e| {
+                        tracing::error!(error = %e, "[pod] failed to initialize pod provider");
+                    })
+                    .ok();
+
+                if let Some(provider) = pod_provider {
+                    match provider.get_balance(signer_address).await {
+                        Ok(balance) => {
+                            tracing::info!(
+                                "[pod] pod provider built with associated wallet:{} balance:{:?}",
+                                signer_address,
+                                balance
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                "[pod] pod provider built but failed to fetch balance for {}",
+                                signer_address
+                            );
+                        }
+                    }
+
+                    Some(provider)
+                } else {
+                    tracing::info!("[pod] pod provider not built");
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let arbitrator = LocalArbitrator {
+            max_winners: 10,
+            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(), //WrappedNativeToken is WETH
+        };
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
@@ -162,6 +237,8 @@ impl Solver {
             config,
             eth,
             persistence,
+            pod_provider,
+            arbitrator,
         })
     }
 
@@ -225,6 +302,21 @@ impl Solver {
 
     pub fn fetch_liquidity_at_block(&self) -> infra::liquidity::AtBlock {
         self.config.fetch_liquidity_at_block.clone()
+    }
+
+    pub fn pod(&self) -> Option<&PodProvider> {
+        self.pod_provider.as_ref()
+    }
+
+    pub fn pod_auction_contract(&self) -> Option<eth::H160> {
+        self.config
+            .pod
+            .as_ref()
+            .map(|pod| pod.auction_contract_address)
+    }
+
+    pub fn arbitrator(&self) -> &LocalArbitrator {
+        &self.arbitrator
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -392,6 +484,46 @@ impl Solver {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    fn make_signer(
+        eth_account: ethcontract::Account,
+    ) -> std::result::Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error>
+    {
+        match eth_account {
+            Account::Offline(pk, chain_id) => {
+                tracing::info!("[pod] make_signer Offline variant");
+                let bytes = pk.as_ref();
+                let key = k256::ecdsa::SigningKey::from_slice(bytes).map_err(|e| {
+                    infra::pod::error::Error::FailedToConnect(format!(
+                        "[pod] invalid signing key: {e}"
+                    ))
+                })?;
+
+                let signer = LocalSigner::from(key).with_chain_id(chain_id);
+                Ok(Box::new(signer))
+            }
+            Kms(kms_account, _) => {
+                tracing::info!("[pod] make_signer Kms variant");
+                let signer = tokio::runtime::Handle::current().block_on(async {
+                    AwsSigner::new(
+                        kms_account.client().clone(),
+                        kms_account.key_id().to_string(),
+                        None,
+                    )
+                    .await
+                    .map_err(|e| {
+                        infra::pod::error::Error::FailedToConnect(format!(
+                            "[pod] failed to create AwsSigner: {e}"
+                        ))
+                    })
+                })?;
+                Ok(Box::new(signer))
+            }
+            other => Err(infra::pod::error::Error::FailedToConnect(format!(
+                "[pod] unsupported ethcontract::account variant: {other:?}"
+            ))),
+        }
     }
 }
 

@@ -2827,6 +2827,7 @@ dependencies = [
  "anyhow",
  "app-data",
  "async-trait",
+ "autopilot",
  "axum",
  "bigdecimal",
  "bytes-hex",
@@ -2837,6 +2838,7 @@ dependencies = [
  "contracts",
  "cow-amm",
  "dashmap",
+ "derivative",
  "derive_more 1.0.0",
  "ethcontract",
  "ethereum-types",
@@ -2857,7 +2859,6 @@ dependencies = [
  "number",
  "observe",
  "pod-sdk",
- "pod-types",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -5357,9 +5358,9 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "pod-examples-solidity"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef344a4e0bbaf6925a21f35acc1af36fdc30d271b497185f24d5eb7d5a9495b9"
+checksum = "9044614f9884e39efd4cb6857db8f4b2a7bf326fc266259bd05679da41310a8f"
 dependencies = [
  "alloy",
  "serde",
@@ -5367,9 +5368,9 @@ dependencies = [
 
 [[package]]
 name = "pod-sdk"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7477b4cd4aaefd4760800c092abcd917326aa1f1aff2596c3209de2ca4683a9b"
+checksum = "ab26b7860a13633497c86d1029becdb4b11a4f2f89d5e02279bf6d973f2589d5"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -5395,9 +5396,9 @@ dependencies = [
 
 [[package]]
 name = "pod-types"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5288d95d3a43d1e8c6e6ac416a50f54640cb20f552dca971eaf1ebd80d92995a"
+checksum = "899bf6d620584c09887742582328b8b180d02bab2e39af2c0616d8f48a80e422"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

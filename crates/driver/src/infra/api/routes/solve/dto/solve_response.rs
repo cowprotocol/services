@@ -4,7 +4,7 @@ use {
         infra::Solver,
         util::serialize,
     },
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
 };
@@ -20,10 +20,10 @@ impl SolveResponse {
 }
 
 #[serde_as]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolveResponse {
-    solutions: Vec<Solution>,
+    pub solutions: Vec<Solution>,
 }
 
 impl Solution {
@@ -65,23 +65,23 @@ impl Solution {
 type OrderId = [u8; order::UID_LEN];
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify it
     /// in subsequent requests (reveal, settle).
-    solution_id: u64,
+    pub solution_id: u64,
     #[serde_as(as = "serialize::U256")]
-    score: eth::U256,
-    submission_address: eth::H160,
+    pub score: eth::U256,
+    pub submission_address: eth::H160,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
-    orders: HashMap<OrderId, TradedOrder>,
+    pub orders: HashMap<OrderId, TradedOrder>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    clearing_prices: HashMap<eth::H160, eth::U256>,
+    pub clearing_prices: HashMap<eth::H160, eth::U256>,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TradedOrder {
     pub side: Side,
@@ -102,7 +102,7 @@ pub struct TradedOrder {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
     Buy,

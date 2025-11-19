@@ -12,7 +12,6 @@ use {
             config::file::OrderPriorityStrategy,
             liquidity,
             notify,
-            pod::api::Pod,
             solver::Solver,
             tokens,
         },
@@ -38,7 +37,6 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
-    pub pod: Option<Arc<Pod>>,
     pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -129,7 +127,6 @@ impl Api {
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                pod: self.pod.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -204,10 +201,6 @@ impl State {
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
     }
-
-    fn pod(&self) -> &Option<Arc<Pod>> {
-        &self.0.pod
-    }
 }
 
 struct Inner {
@@ -216,5 +209,4 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    pod: Option<Arc<Pod>>,
 }

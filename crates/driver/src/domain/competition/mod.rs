@@ -21,10 +21,13 @@ use {
         },
         util::{Bytes, math},
     },
+    alloy::{consensus::private::alloy_primitives, hex},
+    anyhow::bail,
     ethrpc::alloy::conversions::IntoLegacy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
+    pod_sdk::auctions::client::AuctionClient,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -40,6 +43,7 @@ use {
 
 pub mod auction;
 pub mod bad_tokens;
+pub mod local_selection_winner;
 pub mod order;
 mod pre_processing;
 pub mod solution;
@@ -47,7 +51,17 @@ pub mod sorting;
 
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
-use crate::{domain::BlockNo, infra::notify::liquidity_sources::LiquiditySourceNotifying};
+use crate::{
+    domain::{
+        BlockNo,
+        competition::local_selection_winner::{LocalArbitrator, ParticipantDetached, Unranked},
+    },
+    infra::{
+        api::routes::solve::dto,
+        notify::liquidity_sources::LiquiditySourceNotifying,
+        pod::utils::to_pod_u256,
+    },
+};
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
@@ -113,7 +127,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: Arc<String>) -> Result<(Option<Solved>, Auction), Error> {
+    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
@@ -342,7 +356,7 @@ impl Competition {
 
         let Some(settlement) = settlement else {
             // Don't wait for the deadline because we can't produce a solution anyway.
-            return Ok((score, auction.clone()));
+            return Ok(score);
         };
         let solution_id = settlement.solution().get();
 
@@ -353,6 +367,79 @@ impl Competition {
             /// Number of solutions that may be cached at most.
             const MAX_SOLUTION_STORAGE: usize = 5;
             lock.truncate(MAX_SOLUTION_STORAGE);
+        }
+
+        // pod submission - winning auction calculation
+        if let Some((pod, pod_auction_contract_address)) =
+            self.solver.pod().zip(self.solver.pod_auction_contract())
+        {
+            let auction_clone = auction.clone();
+            let score_clone = score.clone();
+            let solver_clone = self.solver.clone();
+            let pod_clone = pod.clone();
+
+            tokio::spawn(async move {
+                let pod_auction_client = AuctionClient::new(
+                    pod_clone,
+                    alloy_primitives::Address::from_slice(pod_auction_contract_address.as_bytes()),
+                );
+
+                if let Err(e) = Self::pod_solution_submission(
+                    &pod_auction_client,
+                    &auction_clone,
+                    deadline,
+                    score_clone,
+                    &solver_clone,
+                )
+                .await
+                {
+                    let auction_id = auction_clone.id().map(|id| id.0).unwrap_or_default();
+                    tracing::error!(
+                        error = %e,
+                        auction_id = %auction_id,
+                        deadline = ?deadline,
+                        solver_address = %solver_clone.address().0.to_string(),
+                        "[pod] solution submission failed, aborting"
+                    );
+                    return;
+                }
+
+                let participants_result =
+                    Self::pod_fetch_participants(&pod_auction_client, &auction_clone, deadline)
+                        .await;
+
+                if let Ok(participants) = participants_result {
+                    let auction_id = auction_clone.id().map(|id| id.0).unwrap_or_default();
+                    tracing::info!(
+                        num_participants = participants.len(),
+                        auction_id = %auction_id,
+                        deadline = ?deadline,
+                        solver_address = %solver_clone.address().0.to_string(),
+                        "[pod] fetched bids"
+                    );
+                    let arbitrator = solver_clone.arbitrator();
+                    if let Err(e) =
+                        Self::local_winner_selection(&auction_clone, participants, arbitrator).await
+                    {
+                        let auction_id = auction_clone.id().map(|id| id.0).unwrap_or_default();
+                        tracing::error!(
+                            error = %e,
+                            auction_id = %auction_id,
+                            deadline = ?deadline,
+                            solver_address = %solver_clone.address().0.to_string(),
+                            "[pod] winner selection failed, aborting"
+                        );
+                    }
+                } else if let Err(e) = participants_result {
+                    tracing::error!(
+                        error = %e,
+                        auction_id = ?auction_clone.id(),
+                        deadline = ?deadline,
+                        solver_address = %solver_clone.address().0.to_string(),
+                        "[pod] failed to fetch participants, aborting"
+                    );
+                }
+            });
         }
 
         // Re-simulate the solution on every new block until the deadline ends to make
@@ -387,7 +474,197 @@ impl Competition {
             let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
-        Ok((score, auction.clone()))
+        Ok(score)
+    }
+
+    pub async fn pod_solution_submission(
+        pod_auction_client: &AuctionClient,
+        auction: &Auction,
+        deadline: chrono::DateTime<chrono::Utc>,
+        score: Option<Solved>,
+        solver: &Solver,
+    ) -> Result<(), anyhow::Error> {
+        let pod_auction_id = match u64::try_from(auction.id().map(|id| id.0).unwrap_or_default()) {
+            Ok(id) => pod_sdk::U256::from(id),
+            Err(e) => {
+                tracing::error!(error = %e, "[pod] invalid auction id");
+                return Err(anyhow::Error::new(e));
+            }
+        };
+
+        let solve_response = dto::SolveResponse::new(score.clone(), solver);
+        let solution_data = match serde_json::to_string(&solve_response) {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    auction_id = %pod_auction_id,
+                    deadline = %deadline,
+                    "[pod] ffailed to serialize SolveResponse"
+                );
+                return Err(anyhow::Error::new(e));
+            }
+        };
+
+        let pod_auction_value = to_pod_u256(match &score {
+            Some(s) => s.score.0,
+            None => {
+                tracing::error!(
+                    auction_id = %pod_auction_id,
+                    deadline = %deadline,
+                    "[pod] missing score value, skipping bid submission"
+                );
+                bail!("[pod] missing score value, skipping bid submission");
+            }
+        });
+
+        tracing::info!(
+            pod_auction_id = ?pod_auction_id,
+            deadline = ?deadline,
+            pod_auction_value = ?pod_auction_value,
+            solution_data_len = solution_data.len(),
+            solution_data_hex = %hex::encode(solution_data.clone().into_bytes()),
+            "[pod] preparing bid submission payload"
+        );
+
+        match pod_auction_client
+            .submit_bid(
+                pod_auction_id,
+                deadline.into(),
+                pod_auction_value,
+                solution_data.into_bytes(),
+            )
+            .await
+        {
+            Ok(_) => tracing::info!(
+                auction_id = %pod_auction_id,
+                deadline = %deadline,
+                "[pod] bid submission succeeded"
+            ),
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    auction_id = %pod_auction_id,
+                    deadline = %deadline,
+                    "[pod] bid submission failed"
+                );
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn pod_fetch_participants(
+        pod_auction_client: &AuctionClient,
+        auction: &Auction,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<ParticipantDetached<Unranked>>, anyhow::Error> {
+        let pod_auction_id = match u64::try_from(auction.id().map(|id| id.0).unwrap_or_default()) {
+            Ok(id) => pod_sdk::U256::from(id),
+            Err(e) => {
+                tracing::error!(error = %e, "[pod] invalid auction id");
+                return Err(anyhow::Error::new(e));
+            }
+        };
+
+        if let Err(e) = pod_auction_client
+            .wait_for_auction_end(deadline.into())
+            .await
+        {
+            tracing::error!(
+                error = %e,
+                auction_id = %pod_auction_id,
+                deadline = %deadline,
+                "[pod] wait_for_auction_end failed"
+            );
+            return Err(e);
+        }
+        tracing::info!(
+            auction_id = %pod_auction_id,
+            deadline = %deadline,
+            "[pod] auction ended"
+        );
+
+        let bids = match pod_auction_client.fetch_bids(pod_auction_id).await {
+            Ok(bids) => bids,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    auction_id = %pod_auction_id,
+                    deadline = %deadline,
+                    "[pod] fetch bids failed"
+                );
+                return Err(e);
+            }
+        };
+
+        let mut participants = Vec::new();
+        for bid in bids {
+            let bidder_solve_response: dto::SolveResponse =
+                match serde_json::from_slice(bid.data.as_slice()) {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            auction_id = %pod_auction_id,
+                            deadline = %deadline,
+                            "[pod] failed to deserialize SolveResponse"
+                        );
+                        return Err(anyhow::Error::new(e));
+                    }
+                };
+
+            for solution in bidder_solve_response.solutions {
+                participants.push(ParticipantDetached::new(solution));
+            }
+        }
+
+        Ok(participants)
+    }
+
+    pub async fn local_winner_selection(
+        auction: &Auction,
+        participants: Vec<ParticipantDetached<Unranked>>,
+        arbitrator: &LocalArbitrator,
+    ) -> Result<(), anyhow::Error> {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            arbitrator.arbitrate(participants, auction)
+        }));
+
+        let auction_id = auction.id().map(|id| id.0).unwrap_or_default();
+        match result {
+            Ok(rank) => {
+                let winners = rank.winners().collect::<Vec<_>>();
+                let non_winners = rank.non_winners().collect::<Vec<_>>();
+                tracing::info!(
+                    num_winners = winners.len(),
+                    num_non_winners = non_winners.len(),
+                    "[pod] local arbitration completed"
+                );
+                for winner in winners {
+                    tracing::info!(
+                        auction_id = ?auction_id,
+                        submission_address = %winner.submission_address().to_string(),
+                        computed_score = ?winner.computed_score(),
+                        "[pod] local winner selected"
+                    );
+                }
+            }
+            Err(e) => {
+                let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic payload".to_string()
+                };
+
+                return Err(anyhow::anyhow!("panic during arbitration: {}", panic_msg));
+            }
+        }
+
+        Ok(())
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that
@@ -838,7 +1115,7 @@ struct SettleRequest {
 
 /// Solution information sent to the protocol by the driver before the solution
 /// ranking happens.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Solved {
     pub id: solution::Id,
     pub score: eth::Ether,
@@ -847,7 +1124,7 @@ pub struct Solved {
     pub gas: Option<eth::Gas>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Amounts {
     pub side: order::Side,
     /// The sell token and limit sell amount of sell token.

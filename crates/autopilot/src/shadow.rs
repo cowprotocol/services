@@ -55,6 +55,16 @@ impl RunLoop {
         max_winners_per_auction: NonZeroUsize,
         weth: WrappedNativeToken,
     ) -> Self {
+        for driver in &drivers {
+            tracing::info!(
+                name = %driver.name,
+                url = %driver.url,
+                fairness_threshold = ?driver.fairness_threshold,
+                submission_address = %driver.submission_address,
+                requested_timeout_on_problems = driver.requested_timeout_on_problems,
+                "[pod] RunLoop Shadow loaded driver"
+            );
+        }
         Self {
             winner_selection: winner_selection::Arbitrator {
                 max_winners: max_winners_per_auction.get(),
