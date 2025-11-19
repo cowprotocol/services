@@ -1,5 +1,6 @@
 use {
     crate::util::{Bytes, conv::u256::U256Ext},
+    alloy::consensus::private::alloy_primitives,
     derive_more::{From, Into},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
@@ -219,6 +220,14 @@ impl num::Zero for TokenAmount {
 impl std::fmt::Display for TokenAmount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl From<TokenAmount> for alloy_primitives::U256 {
+    fn from(t: TokenAmount) -> Self {
+        let mut b = [0u8; 32];
+        t.0.to_big_endian(&mut b);
+        alloy_primitives::U256::from_be_bytes(b)
     }
 }
 

@@ -1,5 +1,5 @@
 use {
-    alloy::signers::Either,
+    alloy::{consensus::private::alloy_primitives, signers::Either},
     anyhow::Context,
     derive_more::{Display, From, Into},
     itertools::Itertools,
@@ -296,10 +296,12 @@ impl From<&crate::domain::competition::Auction> for OptimizedAuction {
                         quote,
                     } => {
                         let q = autopilot::domain::fee::Quote {
-                            sell_amount: quote.sell.amount.0,
-                            buy_amount: quote.buy.amount.0,
-                            fee: quote.fee.amount.0,
-                            solver: quote.solver.0,
+                            sell_amount: quote.sell.amount.into(),
+                            buy_amount: quote.buy.amount.into(),
+                            fee: quote.fee.amount.into(),
+                            solver: alloy_primitives::Address::from(
+                                quote.solver.0.to_fixed_bytes(),
+                            ),
                         };
                         autopilot::domain::fee::Policy::PriceImprovement {
                             factor: autopilot::domain::fee::FeeFactor::try_from(factor)
