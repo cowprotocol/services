@@ -185,9 +185,9 @@ services:
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
-      - TOKIO_CONSOLE_BIND=0.0.0.0:6678   # 🔥 unique
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6678
     volumes:
-      - ./driver2.toml:/driver2.toml      # 🔥 separate config
+      - ./driver2.toml:/driver2.toml
     ports:
       - 9003:80
       - 6678:6669
