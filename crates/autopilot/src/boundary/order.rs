@@ -31,7 +31,7 @@ pub fn to_domain(
             .receiver
             .map(IntoLegacy::into_legacy)
             .map(Into::into),
-        owner: order.metadata.owner.into(),
+        owner: order.metadata.owner.into_legacy().into(),
         partially_fillable: order.data.partially_fillable,
         executed: remaining_order.executed_amount.into(),
         pre_interactions: if order_is_untouched {

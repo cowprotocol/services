@@ -654,7 +654,6 @@ mod tests {
                 SigningScheme as DbSigningScheme,
             },
         },
-        ethrpc::alloy::conversions::IntoAlloy,
         model::{
             interaction::InteractionData,
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
@@ -918,7 +917,7 @@ mod tests {
             .unwrap();
 
         let order_statuses = db
-            .user_orders(&owner.into_alloy(), 0, None)
+            .user_orders(&owner, 0, None)
             .await
             .unwrap()
             .iter()
