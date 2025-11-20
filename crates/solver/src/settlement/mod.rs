@@ -36,7 +36,7 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/GPv2Settlement.sol#L383-L385
     fn executed_fee(&self) -> Option<U256> {
-        self.scale_amount(self.order.data.fee_amount)
+        self.scale_amount(self.order.data.fee_amount.into_legacy())
     }
 
     /// Scales the passed `amount` based on the `executed_amount`.
@@ -44,10 +44,10 @@ impl Trade {
         match self.order.data.kind {
             model::order::OrderKind::Buy => amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.data.buy_amount),
+                .checked_div(self.order.data.buy_amount.into_legacy()),
             model::order::OrderKind::Sell => amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.data.sell_amount),
+                .checked_div(self.order.data.sell_amount.into_legacy()),
         }
     }
 
@@ -75,8 +75,8 @@ impl Trade {
         };
 
         Some(TradeExecution {
-            sell_token: order.sell_token,
-            buy_token: order.buy_token,
+            sell_token: order.sell_token.into_legacy(),
+            buy_token: order.buy_token.into_legacy(),
             sell_amount,
             buy_amount,
             fee_amount: self.executed_fee()?,
@@ -157,6 +157,7 @@ pub mod tests {
     use {
         super::*,
         crate::liquidity::SettlementHandling,
+        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashmap,
         model::order::{OrderClass, OrderData, OrderKind, OrderMetadata},
     };
@@ -198,8 +199,8 @@ pub mod tests {
             order: Order {
                 data: OrderData {
                     kind: OrderKind::Sell,
-                    sell_amount: 10.into(),
-                    buy_amount: 6.into(),
+                    sell_amount: alloy::primitives::U256::from(10),
+                    buy_amount: alloy::primitives::U256::from(6),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -221,8 +222,8 @@ pub mod tests {
             order: Order {
                 data: OrderData {
                     kind: OrderKind::Buy,
-                    sell_amount: 10.into(),
-                    buy_amount: 6.into(),
+                    sell_amount: alloy::primitives::U256::from(10),
+                    buy_amount: alloy::primitives::U256::from(6),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -281,10 +282,10 @@ pub mod tests {
 
         let order = Order {
             data: OrderData {
-                sell_token: token0,
-                buy_token: token1,
-                sell_amount: 10.into(),
-                buy_amount: 9.into(),
+                sell_token: token0.into_alloy(),
+                buy_token: token1.into_alloy(),
+                sell_amount: alloy::primitives::U256::from(10),
+                buy_amount: alloy::primitives::U256::from(9),
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
@@ -319,8 +320,8 @@ pub mod tests {
         let fully_filled_sell = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    sell_amount: alloy::primitives::U256::from(100),
+                    fee_amount: alloy::primitives::U256::from(5),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -334,8 +335,8 @@ pub mod tests {
         let partially_filled_sell = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    sell_amount: alloy::primitives::U256::from(100),
+                    fee_amount: alloy::primitives::U256::from(5),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -349,8 +350,8 @@ pub mod tests {
         let fully_filled_buy = Trade {
             order: Order {
                 data: OrderData {
-                    buy_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    buy_amount: alloy::primitives::U256::from(100),
+                    fee_amount: alloy::primitives::U256::from(5),
                     kind: OrderKind::Buy,
                     ..Default::default()
                 },
@@ -364,8 +365,8 @@ pub mod tests {
         let partially_filled_buy = Trade {
             order: Order {
                 data: OrderData {
-                    buy_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    buy_amount: alloy::primitives::U256::from(100),
+                    fee_amount: alloy::primitives::U256::from(5),
                     kind: OrderKind::Buy,
                     ..Default::default()
                 },
@@ -382,8 +383,8 @@ pub mod tests {
         let large_amounts = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: U256::max_value(),
-                    fee_amount: U256::max_value(),
+                    sell_amount: alloy::primitives::U256::MAX,
+                    fee_amount: alloy::primitives::U256::MAX,
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -397,8 +398,8 @@ pub mod tests {
         let zero_amounts = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: U256::zero(),
-                    fee_amount: U256::zero(),
+                    sell_amount: alloy::primitives::U256::ZERO,
+                    fee_amount: alloy::primitives::U256::ZERO,
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -423,10 +424,10 @@ pub mod tests {
             vec![Trade {
                 order: Order {
                     data: OrderData {
-                        sell_token,
-                        buy_token,
-                        sell_amount: 100_000_u128.into(),
-                        buy_amount: 99_000_u128.into(),
+                        sell_token: sell_token.into_alloy(),
+                        buy_token: buy_token.into_alloy(),
+                        sell_amount: alloy::primitives::U256::from(100_000_u128),
+                        buy_amount: alloy::primitives::U256::from(99_000_u128),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },

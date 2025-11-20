@@ -2,6 +2,7 @@ use {
     crate::{domain::fee::FeeFactor, infra},
     alloy::primitives::Address,
     anyhow::{Context, anyhow, ensure},
+    chrono::{DateTime, Utc},
     clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
@@ -194,13 +195,8 @@ pub struct Arguments {
     pub solve_deadline: Duration,
 
     /// Describes how the protocol fees should be calculated.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub fee_policies: Vec<FeePolicy>,
-
-    /// Maximum partner fee allow. If the partner fee specified is greater than
-    /// this maximum, the partner fee will be capped
-    #[clap(long, env, default_value = "0.01")]
-    pub fee_policy_max_partner_fee: FeeFactor,
+    #[clap(flatten)]
+    pub fee_policies_config: FeePoliciesConfig,
 
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
@@ -255,10 +251,21 @@ pub struct Arguments {
     #[clap(flatten)]
     pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
 
-    /// Configures whether the autopilot is supposed to do any non-trivial
-    /// order filtering (e.g. based on balances or EIP-1271 signature validity).
+    /// Configures whether the autopilot filters out orders with insufficient
+    /// balances.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_order_filtering: bool,
+    pub disable_order_balance_filter: bool,
+
+    // Configures whether the autopilot filters out EIP-1271 orders even if their signatures are
+    // invalid. This is useful as a workaround to let flashloan orders go through as they rely
+    // on preHooks behing executed to make the signatures valid.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub disable_1271_order_sig_filter: bool,
+
+    /// Configures whether the autopilot skips balance checks for EIP-1271
+    /// orders.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub disable_1271_order_balance_filter: bool,
 
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
@@ -378,8 +385,7 @@ impl std::fmt::Display for Arguments {
             submission_deadline,
             shadow,
             solve_deadline,
-            fee_policies,
-            fee_policy_max_partner_fee,
+            fee_policies_config,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_write_url,
@@ -395,7 +401,9 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             db_based_solver_participation_guard,
-            disable_order_filtering,
+            disable_order_balance_filter,
+            disable_1271_order_balance_filter,
+            disable_1271_order_sig_filter,
             enable_leader_lock,
         } = self;
 
@@ -435,11 +443,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
-        writeln!(f, "fee_policies: {fee_policies:?}")?;
-        writeln!(
-            f,
-            "fee_policy_max_partner_fee: {fee_policy_max_partner_fee:?}"
-        )?;
+        writeln!(f, "fee_policies_config: {fee_policies_config:?}")?;
         writeln!(
             f,
             "order_events_cleanup_interval: {order_events_cleanup_interval:?}"
@@ -471,7 +475,18 @@ impl std::fmt::Display for Arguments {
             f,
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
-        writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
+        writeln!(
+            f,
+            "disable_order_balance_filter: {disable_order_balance_filter}"
+        )?;
+        writeln!(
+            f,
+            "disable_1271_order_balance_filter: {disable_1271_order_balance_filter}"
+        )?;
+        writeln!(
+            f,
+            "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
+        )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
     }
@@ -561,6 +576,22 @@ impl FromStr for Solver {
     }
 }
 
+#[derive(clap::Parser, Debug, Clone)]
+pub struct FeePoliciesConfig {
+    /// Describes how the protocol fees should be calculated.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub fee_policies: Vec<FeePolicy>,
+
+    /// Maximum partner fee allowed. If the partner fee specified is greater
+    /// than this maximum, the partner fee will be capped
+    #[clap(long, env, default_value = "0.01")]
+    pub fee_policy_max_partner_fee: FeeFactor,
+
+    /// Volume fee policies that will become effective at a future timestamp.
+    #[clap(flatten)]
+    pub upcoming_fee_policies: UpcomingFeePolicies,
+}
+
 /// A fee policy to be used for orders base on it's class.
 /// Examples:
 /// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
@@ -578,6 +609,24 @@ impl FromStr for Solver {
 pub struct FeePolicy {
     pub fee_policy_kind: FeePolicyKind,
     pub fee_policy_order_class: FeePolicyOrderClass,
+}
+
+/// Fee policies that will become effective at a future timestamp.
+#[derive(clap::Parser, Debug, Clone)]
+pub struct UpcomingFeePolicies {
+    #[clap(
+        id = "upcoming_fee_policies",
+        long = "upcoming-fee-policies",
+        env = "UPCOMING_FEE_POLICIES",
+        use_value_delimiter = true
+    )]
+    pub fee_policies: Vec<FeePolicy>,
+
+    #[clap(
+        long = "upcoming-fee-policies-timestamp",
+        env = "UPCOMING_FEE_POLICIES_TIMESTAMP"
+    )]
+    pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
 #[derive(clap::Parser, Debug, Clone)]

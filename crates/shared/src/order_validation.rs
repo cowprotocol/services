@@ -252,10 +252,10 @@ pub struct PreOrderData {
 
 fn actual_receiver(owner: H160, order: &OrderData) -> H160 {
     let receiver = order.receiver.unwrap_or_default();
-    if receiver == H160::zero() {
+    if receiver.is_zero() {
         owner
     } else {
-        receiver
+        receiver.into_legacy()
     }
 }
 
@@ -267,8 +267,8 @@ impl PreOrderData {
     ) -> Self {
         Self {
             owner,
-            sell_token: order.sell_token,
-            buy_token: order.buy_token,
+            sell_token: order.sell_token.into_legacy(),
+            buy_token: order.buy_token.into_legacy(),
             receiver: actual_receiver(owner, order),
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
@@ -398,7 +398,7 @@ impl OrderValidator {
                 .balance_fetcher
                 .can_transfer(
                     &account_balances::Query {
-                        token: order.data().sell_token,
+                        token: order.data().sell_token.into_legacy(),
                         owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
@@ -645,11 +645,11 @@ impl OrderValidating for OrderValidator {
         };
 
         let quote_parameters = QuoteSearchParameters {
-            sell_token: data.sell_token,
-            buy_token: data.buy_token,
-            sell_amount: data.sell_amount,
-            buy_amount: data.buy_amount,
-            fee_amount: data.fee_amount,
+            sell_token: data.sell_token.into_legacy(),
+            buy_token: data.buy_token.into_legacy(),
+            sell_amount: data.sell_amount.into_legacy(),
+            buy_amount: data.buy_amount.into_legacy(),
+            fee_amount: data.fee_amount.into_legacy(),
             kind: data.kind,
             signing_scheme: convert_signing_scheme_into_quote_signing_scheme(
                 order.signature.scheme(),
@@ -674,7 +674,7 @@ impl OrderValidating for OrderValidator {
                     &*self.quoter,
                     &quote_parameters,
                     order.quote_id,
-                    Some(data.fee_amount),
+                    Some(data.fee_amount.into_legacy()),
                 )
                 .await?;
                 tracing::debug!(
@@ -685,9 +685,9 @@ impl OrderValidating for OrderValidator {
                 );
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: data.sell_amount.into_legacy(),
+                        buy: data.buy_amount.into_legacy(),
+                        fee: data.fee_amount.into_legacy(),
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -715,9 +715,9 @@ impl OrderValidating for OrderValidator {
                         // If the order is not "In-Market", check for the limit orders
                         if is_order_outside_market_price(
                             &Amounts {
-                                sell: data.sell_amount,
-                                buy: data.buy_amount,
-                                fee: data.fee_amount,
+                                sell: data.sell_amount.into_legacy(),
+                                buy: data.buy_amount.into_legacy(),
+                                fee: data.fee_amount.into_legacy(),
                             },
                             &Amounts {
                                 sell: quote.sell_amount,
@@ -746,9 +746,9 @@ impl OrderValidating for OrderValidator {
                 // If the order is not "In-Market", check for the limit orders
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: data.sell_amount.into_legacy(),
+                        buy: data.buy_amount.into_legacy(),
+                        fee: data.fee_amount.into_legacy(),
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -952,9 +952,9 @@ pub struct Amounts {
 impl From<&model::order::Order> for Amounts {
     fn from(order: &model::order::Order) -> Self {
         Self {
-            sell: order.data.sell_amount,
-            buy: order.data.buy_amount,
-            fee: order.data.fee_amount,
+            sell: order.data.sell_amount.into_legacy(),
+            buy: order.data.buy_amount.into_legacy(),
+            fee: order.data.fee_amount.into_legacy(),
         }
     }
 }

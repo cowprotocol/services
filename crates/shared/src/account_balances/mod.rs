@@ -36,7 +36,7 @@ impl Query {
     pub fn from_order(o: &Order) -> Self {
         Self {
             owner: o.metadata.owner.into_legacy(),
-            token: o.data.sell_token,
+            token: o.data.sell_token.into_legacy(),
             source: o.data.sell_token_balance,
             interactions: o.interactions.pre.clone(),
             // TODO eventually delete together with the balance
