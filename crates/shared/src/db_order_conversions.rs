@@ -61,7 +61,9 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     } else {
         None
     };
-    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
+    let onchain_user = order
+        .onchain_user
+        .map(|onchain_user| Address::new(onchain_user.0));
     let class = order_class_from(&order);
     let onchain_placement_error = onchain_order_placement_error_from(&order);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
@@ -71,7 +73,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
-        owner: H160(order.owner.0),
+        owner: Address::new(order.owner.0),
         uid: OrderUid(order.uid.0),
         available_balance: Default::default(),
         executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
@@ -89,12 +91,12 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context("executed fee amount is not a valid u256")?,
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
-        executed_fee_token: H160(order.executed_fee_token.0),
+        executed_fee_token: Address::new(order.executed_fee_token.0),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
-        settlement_contract: H160(order.settlement_contract.0),
+        settlement_contract: Address::new(order.settlement_contract.0),
         ethflow_data,
         onchain_user,
         onchain_order_data,

@@ -240,7 +240,7 @@ impl ProtocolFees {
         let partner_fee =
             Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.into());
 
-        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
+        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into_legacy().into()) {
             return boundary::order::to_domain(order, partner_fee, quote);
         }
 

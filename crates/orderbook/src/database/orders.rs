@@ -165,7 +165,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
 
     let db_order = database::orders::Order {
         uid: order_uid,
-        owner: ByteArray(order.metadata.owner.0),
+        owner: ByteArray(order.metadata.owner.0.0),
         creation_timestamp: order.metadata.creation_date,
         sell_token: ByteArray(order.data.sell_token.0.0),
         buy_token: ByteArray(order.data.buy_token.0.0),
@@ -180,7 +180,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
-        settlement_contract: ByteArray(order.metadata.settlement_contract.0),
+        settlement_contract: ByteArray(order.metadata.settlement_contract.0.0),
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         cancellation_timestamp: None,
@@ -543,7 +543,9 @@ fn full_order_with_quote_into_model_order(
     } else {
         None
     };
-    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
+    let onchain_user = order
+        .onchain_user
+        .map(|onchain_user| Address::new(onchain_user.0));
     let class = order_class_from(&order);
     let onchain_placement_error = onchain_order_placement_error_from(&order);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
@@ -553,7 +555,7 @@ fn full_order_with_quote_into_model_order(
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
-        owner: H160(order.owner.0),
+        owner: Address::new(order.owner.0),
         uid: OrderUid(order.uid.0),
         available_balance: Default::default(),
         executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
@@ -571,12 +573,12 @@ fn full_order_with_quote_into_model_order(
             .context("executed fee amount is not a valid u256")?,
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
-        executed_fee_token: H160(order.executed_fee_token.0),
+        executed_fee_token: Address::new(order.executed_fee_token.0),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
-        settlement_contract: H160(order.settlement_contract.0),
+        settlement_contract: Address::new(order.settlement_contract.0),
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -652,7 +654,6 @@ mod tests {
                 SigningScheme as DbSigningScheme,
             },
         },
-        ethrpc::alloy::conversions::IntoAlloy,
         model::{
             interaction::InteractionData,
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
@@ -879,7 +880,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_replace_order() {
-        let owner = H160([0x77; 20]);
+        let owner = Address::repeat_byte(0x77);
 
         let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
@@ -916,7 +917,7 @@ mod tests {
             .unwrap();
 
         let order_statuses = db
-            .user_orders(&owner.into_alloy(), 0, None)
+            .user_orders(&owner, 0, None)
             .await
             .unwrap()
             .iter()
@@ -945,7 +946,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_replace_order_no_cancellation_on_error() {
-        let owner = H160([0x77; 20]);
+        let owner = Address::repeat_byte(0x77);
 
         let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
@@ -1020,7 +1021,7 @@ mod tests {
         let insert_presignature = |signed: bool| {
             let db = db.clone();
             let block_number = &block_number;
-            let owner = order.metadata.owner.as_bytes();
+            let owner = order.metadata.owner.as_slice();
             async move {
                 sqlx::query(
                     "INSERT INTO presignature_events (block_number, log_index, owner, order_uid, \

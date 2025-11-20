@@ -453,14 +453,16 @@ impl SolvableOrdersCache {
 /// users.
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
-        .banned(orders.iter().flat_map(|order| {
-            std::iter::once(order.metadata.owner.into_alloy()).chain(order.data.receiver)
-        }))
+        .banned(
+            orders
+                .iter()
+                .flat_map(|order| std::iter::once(order.metadata.owner).chain(order.data.receiver)),
+        )
         .await;
     orders
         .iter()
         .filter_map(|order| {
-            std::iter::once(order.metadata.owner.into_alloy())
+            std::iter::once(order.metadata.owner)
                 .chain(order.data.receiver)
                 .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
@@ -1206,7 +1208,7 @@ mod tests {
         .enumerate()
         .map(|(i, owner)| Order {
             metadata: OrderMetadata {
-                owner,
+                owner: owner.into_alloy(),
                 uid: OrderUid([i as u8; 56]),
                 ..Default::default()
             },

@@ -91,7 +91,7 @@ impl Trade {
         encode_trade(
             &self.order.data,
             &self.order.signature,
-            self.order.metadata.owner,
+            self.order.metadata.owner.into_legacy(),
             sell_token_index,
             buy_token_index,
             &self.executed_amount,
