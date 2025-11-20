@@ -188,7 +188,7 @@ impl Ethereum {
             .transport()
             .execute(
                 "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap()],
+                vec![serde_json::to_value(&tx).unwrap(), "latest".into()],
             )
             .await?;
         if let Some(err) = json.get("error") {
