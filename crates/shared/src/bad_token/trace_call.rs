@@ -399,7 +399,7 @@ mod tests {
         },
         alloy::primitives::address,
         chain::Chain,
-        contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt},
+        contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory},
         ethrpc::{Web3, alloy::conversions::IntoLegacy},
         std::{env, time::Duration},
         web3::types::{

@@ -18,7 +18,6 @@ use {
         },
         infra::metrics,
     },
-    contracts::alloy::InstanceExt,
     ethereum_types::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},

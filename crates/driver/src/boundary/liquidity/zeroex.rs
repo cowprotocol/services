@@ -7,7 +7,6 @@ use {
         infra::{self, Ethereum},
     },
     anyhow::anyhow,
-    contracts::alloy::InstanceExt,
     ethrpc::block_stream::CurrentBlockWatcher,
     shared::{
         http_client::HttpClientFactory,
