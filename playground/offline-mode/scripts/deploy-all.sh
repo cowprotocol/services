@@ -31,19 +31,26 @@ echo "✅ Tokens deployed!"
 echo ""
 
 # Extract token addresses from broadcast - using array indexing for TestERC20
-WETH_ADDRESS=$(jq -r '.transactions[] | select(.contractName == "WETH" and .transactionType == "CREATE") | .contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
-USDC_ADDRESS=$(jq -r '[.transactions[] | select(.contractName == "TestERC20" and .transactionType == "CREATE")] | .[0].contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
-DAI_ADDRESS=$(jq -r '[.transactions[] | select(.contractName == "TestERC20" and .transactionType == "CREATE")] | .[1].contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
+# Note: With CREATE2, transactionType is "CREATE2" instead of "CREATE"
+WETH_ADDRESS=$(jq -r '.transactions[] | select(.contractName == "WETH" and .transactionType == "CREATE2") | .contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
+USDC_ADDRESS=$(jq -r '[.transactions[] | select(.contractName == "TestERC20" and .transactionType == "CREATE2")] | .[0].contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
+DAI_ADDRESS=$(jq -r '[.transactions[] | select(.contractName == "TestERC20" and .transactionType == "CREATE2")] | .[1].contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
+USDT_ADDRESS=$(jq -r '[.transactions[] | select(.contractName == "TestERC20" and .transactionType == "CREATE2")] | .[2].contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
+GNO_ADDRESS=$(jq -r '[.transactions[] | select(.contractName == "TestERC20" and .transactionType == "CREATE2")] | .[3].contractAddress' broadcast/DeployTokens.s.sol/31337/run-latest.json)
 
 # Export for next scripts
 export WETH_ADDRESS
 export USDC_ADDRESS
 export DAI_ADDRESS
+export USDT_ADDRESS
+export GNO_ADDRESS
 
 echo "📝 Deployed token addresses:"
 echo "  WETH: $WETH_ADDRESS"
 echo "  USDC: $USDC_ADDRESS"
 echo "  DAI: $DAI_ADDRESS"
+echo "  USDT: $USDT_ADDRESS"
+echo "  GNO: $GNO_ADDRESS"
 echo ""
 
 # Step 2: Deploy Uniswap V2
@@ -62,15 +69,24 @@ echo "✅ Uniswap V2 deployed!"
 echo ""
 
 # Extract Uniswap addresses from broadcast
-# Factory and Router are deployed via deployCode (transactionType CREATE)
-UNISWAP_FACTORY=$(jq -r '[.transactions[] | select(.transactionType == "CREATE" and .contractName == null)] | .[0].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
-UNISWAP_ROUTER=$(jq -r '[.transactions[] | select(.transactionType == "CREATE" and .contractName == null)] | .[1].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
+# Factory and Router are deployed via CREATE2
+# Note: CREATE2 deployments show up with transactionType "CREATE2"
+UNISWAP_FACTORY=$(jq -r '[.transactions[] | select(.transactionType == "CREATE2" and .contractName == null)] | .[0].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
+UNISWAP_ROUTER=$(jq -r '[.transactions[] | select(.transactionType == "CREATE2" and .contractName == null)] | .[1].contractAddress' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json)
 
 # Get pair addresses from PairCreated event logs
 # The pair address is in the data field (first 32 bytes, prefixed with 0x followed by 24 zeros)
 PAIR_WETH_USDC=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[0].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
 PAIR_WETH_DAI=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[1].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
-PAIR_USDC_DAI=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[2].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_USDC_DAI=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[4].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+# TODO: Uncomment when ready to deploy USDT and GNO pairs
+PAIR_WETH_USDT=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[2].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_WETH_GNO=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[3].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_USDC_USDT=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[5].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_USDC_GNO=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[6].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_DAI_USDT=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[7].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_DAI_GNO=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[8].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
+PAIR_USDT_GNO=$(jq -r '[.receipts[].logs[] | select(.topics[0] == "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9")] | .[9].data' broadcast/DeployUniswapV2.s.sol/31337/run-latest.json | cut -c 1-66 | sed 's/^0x000000000000000000000000/0x/')
 
 # Export for next scripts - CRITICAL: Must export these for AddLiquidityDirect and InitializeUniswapRouter
 export UNISWAP_FACTORY
@@ -78,6 +94,13 @@ export UNISWAP_ROUTER
 export PAIR_WETH_USDC
 export PAIR_WETH_DAI
 export PAIR_USDC_DAI
+export PAIR_WETH_USDT
+export PAIR_WETH_GNO
+export PAIR_USDC_USDT
+export PAIR_USDC_GNO
+export PAIR_DAI_USDT
+export PAIR_DAI_GNO
+export PAIR_USDT_GNO
 
 echo "📝 Deployed Uniswap addresses:"
 echo "  Factory: $UNISWAP_FACTORY"
@@ -85,6 +108,13 @@ echo "  Router: $UNISWAP_ROUTER"
 echo "  WETH-USDC Pair: $PAIR_WETH_USDC"
 echo "  WETH-DAI Pair: $PAIR_WETH_DAI"
 echo "  USDC-DAI Pair: $PAIR_USDC_DAI"
+echo "  WETH-USDT Pair: $PAIR_WETH_USDT"
+echo "  WETH-GNO Pair: $PAIR_WETH_GNO"
+echo "  USDC-USDT Pair: $PAIR_USDC_USDT"
+echo "  USDC-GNO Pair: $PAIR_USDC_GNO"
+echo "  DAI-USDT Pair: $PAIR_DAI_USDT"
+echo "  DAI-GNO Pair: $PAIR_DAI_GNO"
+echo "  USDT-GNO Pair: $PAIR_USDT_GNO"
 echo ""
 
 # Step 3: Deploy CoW Protocol
@@ -92,14 +122,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "STEP 3: Deploying CoW Protocol (Settlement + Auth)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Deploy MockBalancerVault first
-echo "Deploying MockBalancerVault..."
-BALANCER_VAULT=$(forge create contracts/src/MockBalancerVault.sol:MockBalancerVault \
-    --private-key $DEPLOYER_PRIVATE_KEY \
+# Deploy MockBalancerVault first using CREATE2
+echo "Deploying MockBalancerVault with CREATE2..."
+forge script contracts/script/DeployBalancerVault.s.sol:DeployBalancerVault \
     --rpc-url $RPC_URL \
-    --legacy \
     --broadcast \
-    -vvv 2>&1 | grep "Deployed to:" | awk '{print $NF}')
+    --private-key $DEPLOYER_PRIVATE_KEY \
+    --skip-simulation \
+    -vvv
+
+# Extract MockBalancerVault address from broadcast (CREATE2 deployment)
+BALANCER_VAULT=$(jq -r '.transactions[] | select(.contractName == "MockBalancerVault" and .transactionType == "CREATE2") | .contractAddress' broadcast/DeployBalancerVault.s.sol/31337/run-latest.json)
 
 echo "MockBalancerVault deployed at: $BALANCER_VAULT"
 
@@ -120,9 +153,9 @@ echo ""
 # Extract CoW Protocol addresses from broadcast
 # Now that MockBalancerVault is deployed separately, DeployCowProtocol only has 2 contracts:
 # Authenticator is first (index 0)
-COW_AUTHENTICATOR=$(jq -r '[.transactions[] | select(.transactionType == "CREATE")] | .[0].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
+COW_AUTHENTICATOR=$(jq -r '[.transactions[] | select(.transactionType == "CREATE2")] | .[0].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
 # Settlement is second (index 1)
-COW_SETTLEMENT=$(jq -r '[.transactions[] | select(.transactionType == "CREATE")] | .[1].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
+COW_SETTLEMENT=$(jq -r '[.transactions[] | select(.transactionType == "CREATE2")] | .[1].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
 # VaultRelayer is created by Settlement contract, need to read it from chain
 # cast call returns bytes32, we need to extract the address (last 20 bytes = 40 hex chars)
 COW_VAULT_RELAYER=$(cast call $COW_SETTLEMENT "vaultRelayer()" --rpc-url $RPC_URL | xargs | cut -c 27-66)
@@ -298,6 +331,8 @@ generate_configs() {
     WETH_ADDRESS=${WETH_ADDRESS}
     DAI_ADDRESS=${DAI_ADDRESS}
     USDC_ADDRESS=${USDC_ADDRESS}
+    USDT_ADDRESS=${USDT_ADDRESS}
+    GNO_ADDRESS=${GNO_ADDRESS}
     UNISWAP_V2_ROUTER_ADDRESS=${UNISWAP_V2_ROUTER_ADDRESS}
     UNISWAP_V2_FACTORY_ADDRESS=${UNISWAP_V2_FACTORY_ADDRESS}
     SETTLEMENT_CONTRACT_ADDRESS=${SETTLEMENT_CONTRACT_ADDRESS}
@@ -338,6 +373,8 @@ base-tokens = [
     "${WETH_ADDRESS}", # WETH (auto-generated from deployment)
     "${DAI_ADDRESS}", # DAI (auto-generated from deployment)
     "${USDC_ADDRESS}", # USDC (auto-generated from deployment)
+    "${USDT_ADDRESS}", # USDT (auto-generated from deployment)
+    "${GNO_ADDRESS}", # GNO (auto-generated from deployment)
 ]
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)
@@ -353,6 +390,8 @@ base-tokens = [
     "${WETH_ADDRESS}", # WETH (auto-generated from deployment)
     "${DAI_ADDRESS}", # DAI (auto-generated from deployment)
     "${USDC_ADDRESS}", # USDC (auto-generated from deployment)
+    "${USDT_ADDRESS}", # USDT (auto-generated from deployment)
+    "${GNO_ADDRESS}", # GNO (auto-generated from deployment)
 ]
 max-hops = 2
 max-partial-attempts = 5
@@ -373,6 +412,8 @@ SIMULATION_NODE_URL=http://chain:8545
 WETH_ADDRESS=${WETH_ADDRESS}
 DAI_ADDRESS=${DAI_ADDRESS}
 USDC_ADDRESS=${USDC_ADDRESS}
+USDT_ADDRESS=${USDT_ADDRESS}
+GNO_ADDRESS=${GNO_ADDRESS}
 NATIVE_TOKEN_ADDRESS=${WETH_ADDRESS}
 
 # Uniswap V2 Addresses (from deployment)
@@ -403,7 +444,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "📋 Deployment Summary:"
 echo "  ✅ Step 1: Tokens deployed (WETH, USDC, DAI)"
-echo "  ✅ Step 2: Uniswap V2 deployed (Factory, Router, Pairs)"
+echo "  ✅ Step 2: Uniswap V2 deployed (Factory, Router, 3 Pairs)"
 echo "  ✅ Step 3: CoW Protocol deployed (Settlement, Auth, VaultRelayer)"
 echo "  ✅ Step 3.5: Balances contract deployed"
 echo "  ✅ Step 3.6: Signatures contract deployed"

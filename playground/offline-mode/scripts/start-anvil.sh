@@ -17,7 +17,7 @@ else
 fi
 
 # Use absolute path for state file
-STATE_FILE="$PROJECT_ROOT/state/poc-state.json"
+STATE_FILE="$PROJECT_ROOT/state/anvil-state.json"
 
 # Create state directory if it doesn't exist
 mkdir -p "$PROJECT_ROOT/state"

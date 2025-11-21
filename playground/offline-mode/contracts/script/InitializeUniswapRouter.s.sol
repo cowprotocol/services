@@ -26,6 +26,8 @@ contract InitializeUniswapRouter is Script {
         address weth = vm.envAddress("WETH_ADDRESS");
         address usdc = vm.envAddress("USDC_ADDRESS");
         address dai = vm.envAddress("DAI_ADDRESS");
+        address usdt = vm.envAddress("USDT_ADDRESS");
+        address gno = vm.envAddress("GNO_ADDRESS");
         address router = vm.envAddress("UNISWAP_ROUTER");
         address settlement = vm.envAddress("COW_SETTLEMENT");
 
@@ -40,6 +42,8 @@ contract InitializeUniswapRouter is Script {
         console.log("  WETH:", weth);
         console.log("  USDC:", usdc);
         console.log("  DAI:", dai);
+        console.log("  USDT:", usdt);
+        console.log("  GNO:", gno);
         console.log("");
 
         // Verify router can access WETH and factory
@@ -83,6 +87,16 @@ contract InitializeUniswapRouter is Script {
         bytes32 daiSlot = keccak256(abi.encode(router, keccak256(abi.encode(settlement, uint256(1)))));
         vm.store(dai, daiSlot, maxAmountBytes);
         console.log("  DAI approved to router from settlement");
+
+        // For USDT: allowance slot
+        bytes32 usdtSlot = keccak256(abi.encode(router, keccak256(abi.encode(settlement, uint256(1)))));
+        vm.store(usdt, usdtSlot, maxAmountBytes);
+        console.log("  USDT approved to router from settlement");
+
+        // For GNO: allowance slot
+        bytes32 gnoSlot = keccak256(abi.encode(router, keccak256(abi.encode(settlement, uint256(1)))));
+        vm.store(gno, gnoSlot, maxAmountBytes);
+        console.log("  GNO approved to router from settlement");
 
         console.log("");
         console.log("===========================================");

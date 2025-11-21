@@ -7,17 +7,17 @@ services:
     command:
       - -c
       - |
-        if [ -f /state/poc-state.json ]; then
+        if [ -f ./state/anvil-state.json ]; then
           echo "📂 Loading existing blockchain state..."
-          anvil --load-state ./state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
+          anvil --load-state ./state/anvil-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
         else
-          echo "Error: No state file found at /state/poc-state.json. Please run locally with start-anvil.sh and deploy-all.sh scripts to create the state first."
+          echo "Error: No state file found at /state/anvil-state.json. Please run locally with start-anvil.sh and deploy-all.sh scripts to create the state first."
           exit 1
         fi
     environment:
       - ANVIL_IP_ADDR=0.0.0.0
     volumes:
-      - ./poc-offline-mode/state:/state
+      - ./offline-mode/state:/state
     ports:
       - 8545:8545
     healthcheck:
@@ -120,7 +120,8 @@ services:
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/api/v1/version || exit 1"]
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:80/api/v1/version || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -146,7 +147,7 @@ services:
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=trace,autopilot=trace,shared=debug,shared::price_estimation=trace,autopilot::solvable_orders=trace,autopilot::run=trace
+      - LOG_FILTER=info,autopilot=trace,shared=debug,shared::price_estimation=trace,autopilot::solvable_orders=trace,autopilot::run=trace
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
@@ -204,7 +205,7 @@ services:
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
-      - RUST_LOG=driver=trace,shared=trace
+      - RUST_LOG=driver=info,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
@@ -240,7 +241,7 @@ services:
     env_file: .env.offline
     environment:
       - ADDR=0.0.0.0:80
-      - LOG=solvers=trace,shared=trace
+      - LOG=solvers=info,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TOKIO_CONSOLE=true
