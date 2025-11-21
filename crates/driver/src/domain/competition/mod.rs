@@ -185,6 +185,11 @@ impl Competition {
         drop(timer);
         tracing::debug!(?elapsed, "auction task execution time");
 
+        if auction.orders.is_empty() {
+            tracing::info!("no orders left after pre-processing; skipping solving");
+            return Ok(None);
+        }
+
         let auction = &auction;
 
         // Fetch the solutions from the solver.
