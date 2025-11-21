@@ -114,10 +114,36 @@ struct SubmissionConfig {
     #[serde(with = "humantime_serde", default = "default_retry_interval")]
     retry_interval: Duration,
 
+    /// Block number to use when fetching nonces. Options: "pending",
+    /// "latest", "earliest", or a specific block number. If not specified,
+    /// uses the web3 lib's default behavior.
+    #[serde(default)]
+    nonce_block_number: Option<BlockNumber>,
+
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum BlockNumber {
+    Pending,
+    Latest,
+    Earliest,
+    Number(u64),
+}
+
+impl From<BlockNumber> for web3::types::BlockNumber {
+    fn from(bn: BlockNumber) -> Self {
+        match bn {
+            BlockNumber::Pending => web3::types::BlockNumber::Pending,
+            BlockNumber::Latest => web3::types::BlockNumber::Latest,
+            BlockNumber::Earliest => web3::types::BlockNumber::Earliest,
+            BlockNumber::Number(n) => web3::types::BlockNumber::Number(n.into()),
+        }
+    }
 }
 
 #[serde_as]

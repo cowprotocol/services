@@ -14,6 +14,9 @@ pub struct Config {
     pub target_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     pub kind: Kind,
+    /// Optional block number to use when fetching nonces. If None, uses the
+    /// web3 lib's default behavior, which is `latest`.
+    pub nonce_block_number: Option<web3::types::BlockNumber>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,21 +79,16 @@ impl Mempool {
         Self { config, transport }
     }
 
-    /// Fetches the pending transaction count (nonce) for the given address.
-    /// This includes both mined transactions and pending transactions in the
-    /// mempool.
-    pub async fn get_pending_nonce(
-        &self,
-        address: eth::Address,
-    ) -> Result<eth::U256, mempools::Error> {
+    /// Fetches the transaction count (nonce) for the given address at the
+    /// specified block number. If no block number is provided in the config,
+    /// uses the web3 lib's default behavior.
+    pub async fn get_nonce(&self, address: eth::Address) -> Result<eth::U256, mempools::Error> {
         self.transport
             .eth()
-            .transaction_count(address.into(), Some(web3::types::BlockNumber::Pending))
+            .transaction_count(address.into(), self.config.nonce_block_number)
             .await
             .map_err(|err| {
-                mempools::Error::Other(
-                    anyhow::Error::from(err).context("failed to fetch pending nonce"),
-                )
+                mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
             })
     }
 
