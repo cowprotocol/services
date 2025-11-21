@@ -126,7 +126,7 @@ struct SubmissionConfig {
     mempools: Vec<Mempool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum BlockNumber {
     Pending,
