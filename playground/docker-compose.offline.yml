@@ -9,10 +9,10 @@ services:
       - |
         if [ -f /state/poc-state.json ]; then
           echo "📂 Loading existing blockchain state..."
-          anvil --load-state ./state/poc-state.json --dump-state ./state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
+          anvil --load-state ./state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
         else
-          echo "🆕 Starting fresh Anvil node (no state file found)..."
-          anvil --dump-state /state/poc-state.json --host 0.0.0.0 --port 8545 --chain-id 31337 --block-time 1 --gas-limit 30000000 --code-size-limit 50000 --accounts 10
+          echo "Error: No state file found at /state/poc-state.json. Please run locally with start-anvil.sh and deploy-all.sh scripts to create the state first."
+          exit 1
         fi
     environment:
       - ANVIL_IP_ADDR=0.0.0.0
@@ -119,6 +119,12 @@ services:
       - 8080:80 # API
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/api/v1/version || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
 
   autopilot:
     build:
@@ -171,7 +177,7 @@ services:
       - ../:/src
     depends_on:
       orderbook:
-        condition: service_started
+        condition: service_healthy
       chain:
         condition: service_healthy
     ports:
