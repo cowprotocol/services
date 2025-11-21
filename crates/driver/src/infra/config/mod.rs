@@ -7,6 +7,7 @@ use {
             liquidity,
             mempool,
             notify,
+            pod,
             simulator,
             solver,
         },
@@ -32,4 +33,5 @@ pub struct Config {
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
     pub tx_gas_limit: eth::U256,
+    pub pod: Option<pod::config::Config>,
 }

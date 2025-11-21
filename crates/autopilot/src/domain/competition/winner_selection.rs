@@ -76,10 +76,26 @@ impl Arbitrator {
                 std::cmp::Reverse(participant.solution().computed_score().cloned()),
             )
         });
-        Ranking {
+        let rank = Ranking {
             filtered_out,
             ranked,
+        };
+        let winners = rank.winners().collect::<Vec<_>>();
+        let non_winners = rank.non_winners().collect::<Vec<_>>();
+        tracing::info!(
+            num_winners = winners.len(),
+            num_non_winners = non_winners.len(),
+            "[pod] CoW arbitration completed"
+        );
+        for winner in winners {
+            tracing::info!(
+                auction_id = ?auction.id,
+                submission_address = %winner.driver().submission_address.to_string(),
+                computed_score = ?winner.solution().computed_score,
+                "[pod] CoW winner selected"
+            );
         }
+        rank
     }
 
     /// Removes unfair solutions from the set of all solutions.
@@ -337,6 +353,17 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
         let score = trade
             .score(&auction.fee_policies, auction.native_prices)
             .context("failed to compute score")?;
+
+        tracing::info!(
+            uniform_sell_price = ?uniform_sell_price,
+            uniform_buy_price = ?uniform_buy_price,
+            trade = ?trade,
+            fee_policies = ?auction.fee_policies,
+            native_prices = ?auction.native_prices,
+            solver = %solution.solver.to_string(),
+            score = ?score,
+            "[pod] Cow score_by_token_pair"
+        );
 
         let token_pair = DirectedTokenPair {
             sell: trade.sell.token,
