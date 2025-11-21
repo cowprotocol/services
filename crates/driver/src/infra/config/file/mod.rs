@@ -115,8 +115,8 @@ struct SubmissionConfig {
     retry_interval: Duration,
 
     /// Block number to use when fetching nonces. Options: "pending",
-    /// "latest", "earliest", or a specific block number. If not specified,
-    /// uses the web3 lib's default behavior.
+    /// "latest", "earliest". If not specified, uses the web3 lib's default
+    /// behavior.
     #[serde(default)]
     nonce_block_number: Option<BlockNumber>,
 
@@ -132,7 +132,6 @@ enum BlockNumber {
     Pending,
     Latest,
     Earliest,
-    Number(u64),
 }
 
 impl From<BlockNumber> for web3::types::BlockNumber {
@@ -141,7 +140,6 @@ impl From<BlockNumber> for web3::types::BlockNumber {
             BlockNumber::Pending => web3::types::BlockNumber::Pending,
             BlockNumber::Latest => web3::types::BlockNumber::Latest,
             BlockNumber::Earliest => web3::types::BlockNumber::Earliest,
-            BlockNumber::Number(n) => web3::types::BlockNumber::Number(n.into()),
         }
     }
 }
