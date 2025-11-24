@@ -13,11 +13,12 @@ use {
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -311,11 +312,11 @@ pub enum FindQuoteError {
 /// Fields for searching stored quotes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuoteSearchParameters {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub fee_amount: U256,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: alloy::primitives::U256,
+    pub buy_amount: alloy::primitives::U256,
+    pub fee_amount: alloy::primitives::U256,
     pub kind: OrderKind,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
@@ -327,16 +328,16 @@ impl QuoteSearchParameters {
     /// quote data.
     fn matches(&self, data: &QuoteData) -> bool {
         let amounts_match = match self.kind {
-            OrderKind::Buy => self.buy_amount == data.quoted_buy_amount,
+            OrderKind::Buy => self.buy_amount == data.quoted_buy_amount.into_alloy(),
             OrderKind::Sell => {
-                self.sell_amount == data.quoted_sell_amount
-                    || self.sell_amount + self.fee_amount == data.quoted_sell_amount
+                self.sell_amount == data.quoted_sell_amount.into_alloy()
+                    || self.sell_amount + self.fee_amount == data.quoted_sell_amount.into_alloy()
             }
         };
 
         amounts_match
             && (self.sell_token, self.buy_token, self.kind)
-                == (data.sell_token, data.buy_token, data.kind)
+                == (data.sell_token.into_alloy(), data.buy_token.into_alloy(), data.kind)
     }
 
     /// Returns additional gas costs incurred by the quote.
@@ -669,7 +670,7 @@ impl OrderQuoting for OrderQuoter {
         .with_additional_cost(additional_cost);
 
         let quote = match scaled_sell_amount {
-            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
+            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount.into_legacy()),
             None => quote,
         };
 
@@ -861,7 +862,7 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: Address::new([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
@@ -1002,7 +1003,7 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: Address::new([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
@@ -1138,7 +1139,7 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: Address::new([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
@@ -1398,11 +1399,11 @@ mod tests {
         let now = Utc::now();
         let quote_id = 42;
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 85.into(),
-            buy_amount: 40.into(),
-            fee_amount: 15.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(85),
+            buy_amount: alloy::primitives::U256::from(40),
+            fee_amount: alloy::primitives::U256::from(15),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1481,11 +1482,11 @@ mod tests {
         let now = Utc::now();
         let quote_id = 42;
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 100.into(),
-            buy_amount: 40.into(),
-            fee_amount: 30.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_amount: alloy::primitives::U256::from(40),
+            fee_amount: alloy::primitives::U256::from(30),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1560,11 +1561,11 @@ mod tests {
     async fn finds_quote_by_parameters() {
         let now = Utc::now();
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 110.into(),
-            buy_amount: 42.into(),
-            fee_amount: 30.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(110),
+            buy_amount: alloy::primitives::U256::from(42),
+            fee_amount: alloy::primitives::U256::from(30),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1645,7 +1646,7 @@ mod tests {
     async fn find_invalid_quote_error() {
         let now = Utc::now();
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
+            sell_token: Address::repeat_byte(1),
             ..Default::default()
         };
 

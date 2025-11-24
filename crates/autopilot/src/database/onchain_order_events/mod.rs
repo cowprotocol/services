@@ -550,11 +550,11 @@ async fn get_quote(
     .map_err(|_| OnchainOrderPlacementError::Other)?;
 
     let parameters = QuoteSearchParameters {
-        sell_token: order_data.sell_token.into_legacy(),
-        buy_token: order_data.buy_token.into_legacy(),
-        sell_amount: order_data.sell_amount.into_legacy(),
-        buy_amount: order_data.buy_amount.into_legacy(),
-        fee_amount: order_data.fee_amount.into_legacy(),
+        sell_token: order_data.sell_token,
+        buy_token: order_data.buy_token,
+        sell_amount: order_data.sell_amount,
+        buy_amount: order_data.buy_amount,
+        fee_amount: order_data.fee_amount,
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
         additional_gas: 0,
