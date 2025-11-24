@@ -3,7 +3,7 @@ use {
         app_data,
         arguments::{FeeFactor, VolumeFeeConfig},
     },
-    alloy::primitives::{U256, U512, ruint::UintTryFrom},
+    alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     chrono::{TimeZone, Utc},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
@@ -203,11 +203,11 @@ fn get_adjusted_quote_data(
             // For BUY orders, fee is calculated on sell amount + network fee.
             // Network fee is already in sell token, so it is added to get the total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
+            let factor = U256::from(factor.to_bps());
+            let volume_bps: Uint<512, 8> = total_sell_volume.into_alloy().widening_mul(factor);
             let protocol_fee = U256::uint_try_from(
-                total_sell_volume
-                    .into_alloy()
-                    .widening_mul(U256::from(factor.to_bps()))
-                    .checked_div(U256::from(FeeFactor::MAX_BPS))
+                volume_bps
+                    .checked_div(U512::from(FeeFactor::MAX_BPS))
                     .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
             )
             .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
