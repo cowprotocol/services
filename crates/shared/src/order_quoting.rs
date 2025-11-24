@@ -337,7 +337,11 @@ impl QuoteSearchParameters {
 
         amounts_match
             && (self.sell_token, self.buy_token, self.kind)
-                == (data.sell_token.into_alloy(), data.buy_token.into_alloy(), data.kind)
+                == (
+                    data.sell_token.into_alloy(),
+                    data.buy_token.into_alloy(),
+                    data.kind,
+                )
     }
 
     /// Returns additional gas costs incurred by the quote.
