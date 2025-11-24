@@ -501,7 +501,7 @@ where
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
                     sell_amount: u256_to_big_decimal(&quote.sell_amount),
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                    solver: ByteArray(quote.data.solver.0),
+                    solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.try_into()?,
                 }),
@@ -1212,13 +1212,10 @@ mod test {
         let quote = Quote {
             id: Some(0i64),
             data: QuoteData {
-                sell_token: sell_token.into_legacy(),
-                buy_token: buy_token.into_legacy(),
-                quoted_sell_amount: sell_amount
-                    .checked_sub(U256::from(1))
-                    .unwrap()
-                    .into_legacy(),
-                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap().into_legacy(),
+                sell_token,
+                buy_token,
+                quoted_sell_amount: sell_amount.checked_sub(U256::from(1)).unwrap(),
+                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap(),
                 fee_parameters: FeeParameters {
                     gas_amount: 2.0f64,
                     gas_price: 3.0f64,
@@ -1306,7 +1303,7 @@ mod test {
             sell_token_price: quote.data.fee_parameters.sell_token_price,
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            solver: ByteArray(quote.data.solver.0),
+            solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.try_into().unwrap(),
         };

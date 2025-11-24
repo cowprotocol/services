@@ -271,8 +271,8 @@ mod tests {
             data: QuoteData {
                 sell_token: Default::default(),
                 buy_token: Default::default(),
-                quoted_sell_amount: sell_amount.into_legacy(),
-                quoted_buy_amount: buy_amount.into_legacy(),
+                quoted_sell_amount: sell_amount,
+                quoted_buy_amount: buy_amount,
                 fee_parameters: Default::default(),
                 kind: model::order::OrderKind::Sell,
                 expiration: chrono::Utc::now(),
