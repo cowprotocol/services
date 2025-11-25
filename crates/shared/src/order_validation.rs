@@ -645,11 +645,11 @@ impl OrderValidating for OrderValidator {
         };
 
         let quote_parameters = QuoteSearchParameters {
-            sell_token: data.sell_token.into_legacy(),
-            buy_token: data.buy_token.into_legacy(),
-            sell_amount: data.sell_amount.into_legacy(),
-            buy_amount: data.buy_amount.into_legacy(),
-            fee_amount: data.fee_amount.into_legacy(),
+            sell_token: data.sell_token,
+            buy_token: data.buy_token,
+            sell_amount: data.sell_amount,
+            buy_amount: data.buy_amount,
+            fee_amount: data.fee_amount,
             kind: data.kind,
             signing_scheme: convert_signing_scheme_into_quote_signing_scheme(
                 order.signature.scheme(),
@@ -903,12 +903,13 @@ async fn get_or_create_quote(
         Err(err) => {
             tracing::debug!(?err, "failed to find quote for order creation");
             let parameters = QuoteParameters {
-                sell_token: quote_search_parameters.sell_token,
-                buy_token: quote_search_parameters.buy_token,
+                sell_token: quote_search_parameters.sell_token.into_legacy(),
+                buy_token: quote_search_parameters.buy_token.into_legacy(),
                 side: match quote_search_parameters.kind {
                     OrderKind::Buy => OrderQuoteSide::Buy {
                         buy_amount_after_fee: quote_search_parameters
                             .buy_amount
+                            .into_legacy()
                             .try_into()
                             .map_err(|_| ValidationError::ZeroAmount)?,
                     },
@@ -916,6 +917,7 @@ async fn get_or_create_quote(
                         sell_amount: SellAmount::AfterFee {
                             value: quote_search_parameters
                                 .sell_amount
+                                .into_legacy()
                                 .try_into()
                                 .map_err(|_| ValidationError::ZeroAmount)?,
                         },
@@ -2242,11 +2244,11 @@ mod tests {
     async fn get_quote_find_by_id() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            fee_amount: 0.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
+            buy_amount: alloy::primitives::U256::from(4),
+            fee_amount: alloy::primitives::U256::from(0),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -2300,9 +2302,9 @@ mod tests {
             .with(eq(None), always())
             .returning(|_, _| Err(FindQuoteError::NotFound(None)));
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
             kind: OrderKind::Sell,
             verification: verification.clone(),
             ..Default::default()
@@ -2315,11 +2317,14 @@ mod tests {
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
-                sell_token: quote_search_parameters.sell_token,
-                buy_token: quote_search_parameters.buy_token,
+                sell_token: quote_search_parameters.sell_token.into_legacy(),
+                buy_token: quote_search_parameters.buy_token.into_legacy(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(quote_search_parameters.sell_amount).unwrap(),
+                        value: NonZeroU256::try_from(
+                            quote_search_parameters.sell_amount.into_legacy(),
+                        )
+                        .unwrap(),
                     },
                 },
                 verification,
@@ -2471,11 +2476,11 @@ mod tests {
     async fn validate_quote_find_by_id() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            fee_amount: 0.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
+            buy_amount: alloy::primitives::U256::from(4),
+            fee_amount: alloy::primitives::U256::from(0),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: false,

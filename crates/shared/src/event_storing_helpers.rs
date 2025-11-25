@@ -9,6 +9,7 @@ use {
         byte_array::ByteArray,
         quotes::{Quote as DbQuote, QuoteSearchParameters as DbQuoteSearchParameters},
     },
+    ethrpc::alloy::conversions::IntoLegacy,
     number::conversions::u256_to_big_decimal,
 };
 
@@ -36,11 +37,11 @@ pub fn create_db_search_parameters(
     expiration: DateTime<Utc>,
 ) -> DbQuoteSearchParameters {
     DbQuoteSearchParameters {
-        sell_token: ByteArray(params.sell_token.0),
-        buy_token: ByteArray(params.buy_token.0),
-        sell_amount_0: u256_to_big_decimal(&params.sell_amount),
-        sell_amount_1: u256_to_big_decimal(&(params.sell_amount + params.fee_amount)),
-        buy_amount: u256_to_big_decimal(&params.buy_amount),
+        sell_token: ByteArray(*params.sell_token.0),
+        buy_token: ByteArray(*params.buy_token.0),
+        sell_amount_0: u256_to_big_decimal(&params.sell_amount.into_legacy()),
+        sell_amount_1: u256_to_big_decimal(&(params.sell_amount + params.fee_amount).into_legacy()),
+        buy_amount: u256_to_big_decimal(&params.buy_amount.into_legacy()),
         kind: order_kind_into(params.kind),
         expiration,
         quote_kind: quote_kind_from_signing_scheme(&params.signing_scheme),
