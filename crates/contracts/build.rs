@@ -550,8 +550,7 @@ fn main() {
             OPTIMISM => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             POLYGON => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             LENS => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
-            // compiled with an older, linea-compatible evm version
-            LINEA => "0xeFcf0d30DB41Ae0b136c5E3B4340dFeE2D099Ada",
+            LINEA => "0x60bf78233f48ec42ee3f101b9a05ec7878728006",
             PLASMA => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
         ]))
         .add_contract(Contract::new("CoWSwapEthFlow").with_networks(networks![
