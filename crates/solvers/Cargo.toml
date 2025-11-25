@@ -29,6 +29,7 @@ hyper = { workspace = true }
 ethcontract = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -64,3 +65,6 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true
+
+[features]
+jemalloc-profiling = ["dep:tikv-jemallocator"]

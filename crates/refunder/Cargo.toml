@@ -18,6 +18,7 @@ gas-estimation = { workspace = true }
 const-hex = { workspace = true }
 humantime = { workspace = true }
 mimalloc = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
@@ -30,3 +31,6 @@ url = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+jemalloc-profiling = ["dep:tikv-jemallocator"]

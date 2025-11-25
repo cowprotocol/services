@@ -40,6 +40,7 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
 mimalloc = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
@@ -74,3 +75,6 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true
+
+[features]
+jemalloc-profiling = ["dep:tikv-jemallocator"]

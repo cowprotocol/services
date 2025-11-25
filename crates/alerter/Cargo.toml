@@ -12,6 +12,7 @@ clap = { workspace = true }
 humantime = { workspace = true }
 observe = { workspace = true }
 mimalloc = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 model = { workspace = true }
 number = { workspace = true }
 prometheus = { workspace = true }
@@ -26,3 +27,6 @@ warp = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+jemalloc-profiling = ["dep:tikv-jemallocator"]

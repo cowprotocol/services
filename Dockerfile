@@ -5,6 +5,9 @@ CMD ["migrate"]
 FROM docker.io/rust:1-slim-bookworm AS cargo-build
 WORKDIR /src/
 
+# Accept build arguments for enabling features
+ARG CARGO_BUILD_FEATURES=""
+
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
@@ -14,7 +17,7 @@ RUN rustup install stable && rustup default stable
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release ${CARGO_BUILD_FEATURES} && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
