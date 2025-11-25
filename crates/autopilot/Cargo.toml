@@ -41,6 +41,7 @@ itertools = { workspace = true }
 maplit = { workspace = true }
 mimalloc = { workspace = true }
 tikv-jemallocator = { workspace = true, optional = true }
+jemalloc_pprof = { workspace = true, optional = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
@@ -77,4 +78,4 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 workspace = true
 
 [features]
-jemalloc-profiling = ["dep:tikv-jemallocator"]
+jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]

@@ -13,6 +13,7 @@ humantime = { workspace = true }
 observe = { workspace = true }
 mimalloc = { workspace = true }
 tikv-jemallocator = { workspace = true, optional = true }
+jemalloc_pprof = { workspace = true, optional = true }
 model = { workspace = true }
 number = { workspace = true }
 prometheus = { workspace = true }
@@ -29,4 +30,4 @@ warp = { workspace = true }
 workspace = true
 
 [features]
-jemalloc-profiling = ["dep:tikv-jemallocator"]
+jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]

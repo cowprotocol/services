@@ -27,6 +27,8 @@ use {
 /// driver from multiple binaries.
 pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
+    #[cfg(all(unix, feature = "jemalloc-profiling"))]
+    observe::heap_dump_handler::spawn_heap_dump_handler();
     let args = cli::Args::parse_from(args);
     run_with(args, None).await
 }

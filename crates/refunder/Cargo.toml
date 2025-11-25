@@ -19,6 +19,7 @@ const-hex = { workspace = true }
 humantime = { workspace = true }
 mimalloc = { workspace = true }
 tikv-jemallocator = { workspace = true, optional = true }
+jemalloc_pprof = { workspace = true, optional = true }
 number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
@@ -33,4 +34,4 @@ url = { workspace = true }
 workspace = true
 
 [features]
-jemalloc-profiling = ["dep:tikv-jemallocator"]
+jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]
