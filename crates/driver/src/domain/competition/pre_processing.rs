@@ -60,7 +60,7 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
-    cow_amm_cache: cow_amm::Cache,
+    cow_amm_cache: Option<cow_amm::Cache>,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -133,7 +133,7 @@ impl DataAggregator {
             eth.balance_overrider(),
         );
 
-        let cow_amm_helper_by_factory = eth
+        let cow_amm_helper_by_factory: HashMap<_, _> = eth
             .contracts()
             .cow_amm_helper_by_factory()
             .iter()
@@ -394,8 +394,12 @@ impl Utilities {
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
 
-        let cow_amms = self
-            .cow_amm_cache
+        let Some(ref cow_amm_cache) = self.cow_amm_cache else {
+            // CoW AMM is not configured, return empty vec
+            return Arc::new(Default::default());
+        };
+
+        let cow_amms = cow_amm_cache
             .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
             .await;
 

@@ -24,7 +24,11 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(web3: DynProvider, factory_mapping: HashMap<Address, Address>) -> Self {
+    pub fn new(web3: DynProvider, factory_mapping: HashMap<Address, Address>) -> Option<Self> {
+        if factory_mapping.is_empty() {
+            return None;
+        }
+
         let helper_by_factory = factory_mapping
             .into_iter()
             .map(|(factory, helper)| {
@@ -34,11 +38,11 @@ impl Cache {
                 )
             })
             .collect();
-        Self {
+        Some(Self {
             inner: RwLock::new(HashMap::new()),
             web3: web3.clone(),
             helper_by_factory,
-        }
+        })
     }
 
     /// Gets or creates AMM instances for the given surplus capturing JIT order
