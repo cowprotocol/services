@@ -15,17 +15,7 @@ services:
       # with simple bytecode that always returns a solidity `true` value, alleviating
       # the requirement to register a solver's private key for the sake of testing on
       # a fork.
-      test: [ "CMD-SHELL", "
-          response=$$(wget -qO- --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545);
-          block=$$(echo $$response | sed -n 's/.*\"result\":\"\\([^\"\\]*\\)\".*/\\1/p');
-          if [ -n \"$$block\" ] && [ \"$$block\" != \"0x0\" ] && [ \"$$block\" != \"null\" ]; then
-            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3 &&
-            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x79bfED30344291b33c3B2637b6F8C50c9ba35259 0x600160005260206000F3 &&
-            exit 0;
-          else
-            exit 1;
-          fi;
-        " ]
+      test: [ "CMD-SHELL", " response=$$(wget -qO- --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545); block=$$(echo $$response | sed -n 's/.*\"result\":\"\\([^\"\\]*\\)\".*/\\1/p'); if [ -n \"$$block\" ] && [ \"$$block\" != \"0x0\" ] && [ \"$$block\" != \"null\" ]; then /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3 && /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x79bfED30344291b33c3B2637b6F8C50c9ba35259 0x600160005260206000F3 && exit 0; else exit 1; fi; " ]
       interval: 60s
       timeout: 30s
       retries: 5
@@ -69,7 +59,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin orderbook"]
+    command: [ "cargo", "watch", "-x", "run --bin orderbook" ]
     environment:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -80,9 +70,9 @@ services:
       - EIP1271_SKIP_CREATION_VALIDATION=true
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
-      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline
+      - PRICE_ESTIMATION_DRIVERS=euler-solver|http://driver/euler-solver
+      - NATIVE_PRICE_ESTIMATORS=euler-solver|http://driver/euler-solver
+      - DRIVERS=euler-solver|http://driver/euler-solver
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
       - BASELINE_SOURCES=None
@@ -108,7 +98,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin autopilot"]
+    command: [ "cargo", "watch", "-x", "run --bin autopilot" ]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -153,13 +143,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     restart: always
-    command:
-      [
-        "cargo",
-        "watch",
-        "-x",
-        "run --bin driver -- --config configs/${ENV}/driver.toml",
-      ]
+    command: [ "cargo", "watch", "-x", "run --bin driver -- --config configs/${ENV}/driver.toml" ]
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
@@ -179,34 +163,57 @@ services:
       chain:
         condition: service_healthy
 
-  # baseline (solver engine)
-  baseline:
+  euler-solver:
     build:
       context: ../
       target: localdev
       dockerfile: ./playground/Dockerfile
+    command: [ "cargo", "watch", "-x", "run --bin euler-solver" ]
     restart: always
-    command:
-      [
-        "cargo",
-        "watch",
-        "-x",
-        "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
-      ]
     environment:
       - ADDR=0.0.0.0:80
-      - LOG=solvers=trace,shared=trace
+      - RPC_URL=http://chain:8545
+      - CHAIN_ID=1
+      - LOG=euler_solver=trace,debug,info
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
-      - TOKIO_CONSOLE=true
-      - TOKIO_CONSOLE_RETENTION=600sec
-      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
       - SETTLEMENT_CONTRACT_ADDRESS=0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9
     volumes:
       - ../:/src
     ports:
-      - 9001:80 # API & metrics
-      - 6672:6669 # tokio console
+      - 9001:80 # API
+    depends_on:
+      chain:
+        condition: service_healthy
+
+  # baseline (solver engine)
+  #baseline:
+  #  build:
+  #    context: ../
+  #    target: localdev
+  #    dockerfile: ./playground/Dockerfile
+  #  restart: always
+  #  command:
+  #    [
+  #      "cargo",
+  #      "watch",
+  #      "-x",
+  #      "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
+  #    ]
+  #  environment:
+  #    - ADDR=0.0.0.0:80
+  #    - LOG=solvers=trace,shared=trace
+  #    - RUST_BACKTRACE=1
+  #    - TOML_TRACE_ERROR=1
+  #    - TOKIO_CONSOLE=true
+  #    - TOKIO_CONSOLE_RETENTION=600sec
+  #    - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+  #    - SETTLEMENT_CONTRACT_ADDRESS=0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9
+  #  volumes:
+  #    - ../:/src
+  #  ports:
+  #    - 9001:80 # API & metrics
+  #    - 6672:6669 # tokio console
 
   frontend:
     build:
@@ -232,7 +239,7 @@ services:
     image: grafana/tempo:latest
     ports:
       - "4317:4317" # OTLP gRPC
-    command: ["-config.file=/etc/tempo.yaml"]
+    command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
       - ./tempo.yaml:/etc/tempo.yaml
 
@@ -252,7 +259,7 @@ services:
     container_name: prometheus
     restart: always
     ports:
-      - "9090:9090"
+      - "19090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
 

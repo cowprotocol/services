@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+#set -x
 
 #WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x751871E9cA28B441Bb6d3b7C4255cf2B5873d56a}
 
@@ -16,10 +16,25 @@ appDataHash=$(cast keccak "$appDataUnescaped")
 validTo=$(date -d "5 minutes" +%s)
 
 # first, turn some ETH into WETH (we can just throw ETH at the WETH contract and it will auto wrap to sender)
-cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 --value 1000000000000000000 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+echo 'convert to WETH...'
+cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 --value 1000000000000000000 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
+
+echo 'approve eWETH deposit...'
+cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 'approve(address,uint256)' 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
+
+# Then, deposit into the eWETH vault
+echo 'convert to eWETH...'
+cast send 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'deposit(uint256,address)' 1000000000000000000 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
 
 # then, approve max
-cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 'approve(address,uint256)' 0xD5D7ae3dD0C1c79DB7B0307e0d36AEf14eEee205 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+echo 'approve settlement spending...'
+cast send 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'approve(address,uint256)' 0xD5D7ae3dD0C1c79DB7B0307e0d36AEf14eEee205 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
+
+echo "query balance: $(cast call 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'balanceOf(address) returns (uint256)' 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266)"
+
+sellAmount=$(cast call 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'balanceOf(address) returns (uint256)' 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --json | jq -r '.[0]')
+
+echo "ready to sell $sellAmount"
 
 signData='
 {
@@ -65,10 +80,10 @@ signData='
     "verifyingContract": "0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9"
   },
   "message": {
-    "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-    "buyToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "sellToken": "0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2",
+    "buyToken": "0x1e548CfcE5FCF17247E024eF06d32A01841fF404",
     "receiver": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-    "sellAmount": "1000000000000000000",
+    "sellAmount": "'${sellAmount}'",
     "buyAmount": "1",
     "validTo": '${validTo}',
     "appData": "'${appDataHash}'",
@@ -81,15 +96,19 @@ signData='
 }
 '
 
+echo 'sign...'
 sig=$(cast wallet sign --data "${signData}" --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80)
 
+# EWETH to EUSDS
+echo 'order...'
+set -x
 curl --fail-with-body -s --show-error -X 'POST' \
   "http://localhost:8080/api/v1/orders" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{
-  "sellToken": "'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'",
-  "buyToken": "'0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'",
+  "sellToken": "'0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2'",
+  "buyToken": "'0x1e548CfcE5FCF17247E024eF06d32A01841fF404'",
   "from": "'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'",
   "receiver": "'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'",
   "sellTokenBalance": "erc20",
@@ -101,7 +120,7 @@ curl --fail-with-body -s --show-error -X 'POST' \
   "validTo": '${validTo}',
   "feeAmount": "0",
   "signature": "'${sig}'",
-  "sellAmount": "'1000000000000000000'", 
+  "sellAmount": "'${sellAmount}'", 
   "buyAmount": "'1'", 
   "appData": "'$appData'",
   "appDataHash": "'$appDataHash'"

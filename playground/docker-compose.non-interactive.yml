@@ -192,6 +192,21 @@ services:
       - 9001:80 # API & metrics
       - 6672:6669 # tokio console
 
+  euler-solver:
+    build:
+      context: ../
+      target: euler-solver
+      dockerfile: ./Dockerfile
+    restart: always
+    environment:
+      - ADDR=0.0.0.0:80
+      - RPC_URL=http://chain:8545
+      - CHAIN_ID=1
+      - LOG=euler_solver=debug,info
+      - RUST_BACKTRACE=1
+    ports:
+      - 9002:80 # API
+
   frontend:
     build:
       context: .

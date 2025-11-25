@@ -1,0 +1,93 @@
+{
+  "types": {
+    "EIP712Domain": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "name": "verifyingContract",
+        "type": "address"
+      }
+    ],
+    "Order": [
+      {
+        "name": "sellToken",
+        "type": "address"
+      },
+      {
+        "name": "buyToken",
+        "type": "address"
+      },
+      {
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "name": "sellAmount",
+        "type": "uint256"
+      },
+      {
+        "name": "buyAmount",
+        "type": "uint256"
+      },
+      {
+        "name": "validTo",
+        "type": "uint32"
+      },
+      {
+        "name": "appData",
+        "type": "bytes32"
+      },
+      {
+        "name": "feeAmount",
+        "type": "uint256"
+      },
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "partiallyFillable",
+        "type": "bool"
+      },
+      {
+        "name": "sellTokenBalance",
+        "type": "string"
+      },
+      {
+        "name": "buyTokenBalance",
+        "type": "string"
+      }
+    ]
+  },
+  "primaryType": "Order",
+  "domain": {
+    "name": "Gnosis Protocol",
+    "version": "v2",
+    "chainId": 1,
+    "verifyingContract": "0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9"
+  },
+  "message": {
+    "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+    "buyToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "receiver": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "sellAmount": "1000000000000000000",
+    "buyAmount": "0",
+    "validTo": 2672531199,
+    "appData": "0x56a42a5c0d57567e91410292f397d51e704a2599723528b80b2d6a5c1e550c6d",
+    "feeAmount": "318618140473705",
+    "kind": "sell",
+    "partiallyFillable": true,
+    "sellTokenBalance": "erc20",
+    "buyTokenBalance": "erc20"
+  }
+}

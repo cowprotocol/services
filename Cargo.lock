@@ -3063,6 +3063,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "euler-solver"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "axum",
+ "bigdecimal",
+ "chain",
+ "chrono",
+ "clap",
+ "const-hex",
+ "contracts",
+ "ethereum-types",
+ "ethrpc",
+ "futures",
+ "observe",
+ "serde",
+ "serde_json",
+ "solvers-dto",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
 name = "event-listener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
