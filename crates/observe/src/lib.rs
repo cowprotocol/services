@@ -4,13 +4,13 @@
 pub mod config;
 pub mod distributed_tracing;
 pub mod future;
+#[cfg(all(unix, feature = "jemalloc-profiling"))]
+pub mod heap_dump_handler;
 pub mod metrics;
 pub mod panic_hook;
 pub mod tracing;
 #[cfg(unix)]
 mod tracing_reload_handler;
-#[cfg(all(unix, feature = "jemalloc-profiling"))]
-pub mod heap_dump_handler;
 
 pub use {
     config::{Config, TracingConfig},

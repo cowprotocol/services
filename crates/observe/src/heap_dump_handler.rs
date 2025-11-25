@@ -1,29 +1,26 @@
-use {
-    tokio::{
-        io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-        net::{UnixListener, UnixStream},
-    },
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::{UnixListener, UnixStream},
 };
 
 /// Spawns a new thread that listens for connections to a UNIX socket
-/// at "/tmp/heap_dump_<process_name>_<pid>.sock".
-/// When "dump" command is sent, it generates a heap profile using jemalloc_pprof
-/// and streams the binary protobuf data back through the socket.
+/// at "/tmp/heap_dump_<process_name>.sock".
+/// When "dump" command is sent, it generates a heap profile using
+/// jemalloc_pprof and streams the binary protobuf data back through the socket.
 ///
 /// Usage:
 /// ```bash
 /// # From your local machine (one-liner):
-/// kubectl exec orderbook-pod -- sh -c "echo dump | nc -U /tmp/heap_dump_orderbook_*.sock" > heap.pb
+/// kubectl exec orderbook-pod -- sh -c "echo dump | nc -U /tmp/heap_dump_orderbook.sock" > heap.pprof
 ///
 /// # Analyze with pprof:
-/// go tool pprof -http=:8080 heap.pb
+/// go tool pprof -http=:8080 heap.pprof
 /// ```
 pub fn spawn_heap_dump_handler() {
     tokio::spawn(async move {
-        let id = std::process::id();
         let name = binary_name().unwrap_or_default();
 
-        let socket_path = format!("/tmp/heap_dump_{name}_{id}.sock");
+        let socket_path = format!("/tmp/heap_dump_{name}.sock");
         tracing::warn!(file = socket_path, "open heap dump socket");
         let _ = tokio::fs::remove_file(&socket_path).await;
         let handle = SocketHandle {
