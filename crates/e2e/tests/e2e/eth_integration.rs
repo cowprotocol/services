@@ -62,7 +62,7 @@ async fn eth_integration(web3: Web3) {
             let request = OrderQuoteRequest {
                 sell_token,
                 buy_token,
-                from: Address::default(),
+                from: Address::default().into_alloy(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(to_wei(43)).unwrap(),
@@ -73,11 +73,11 @@ async fn eth_integration(web3: Web3) {
             services.submit_quote(&request).await
         }
     };
-    quote(token.address().into_legacy(), BUY_ETH_ADDRESS)
+    quote(*token.address(), BUY_ETH_ADDRESS.into_alloy())
         .await
         .unwrap();
     // Eth is only supported as the buy token
-    let (status, body) = quote(BUY_ETH_ADDRESS, token.address().into_legacy())
+    let (status, body) = quote(BUY_ETH_ADDRESS.into_alloy(), *token.address())
         .await
         .unwrap_err();
     assert_eq!(status, 400, "{body}");

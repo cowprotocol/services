@@ -734,9 +734,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         .await;
 
     let quote_request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: token.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(5)).unwrap(),
@@ -894,8 +894,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_usdc.address().into_legacy(),
-            buy_token: token_usdt.address().into_legacy(),
+            sell_token: *token_usdc.address(),
+            buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),

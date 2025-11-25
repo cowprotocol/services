@@ -621,8 +621,8 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: usdc.address().into_legacy(),
-            buy_token: usdt.address().into_legacy(),
+            sell_token: *usdc.address(),
+            buy_token: *usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -1008,9 +1008,9 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     mock_solver.configure_solution(Some(mocked_quote_solution));
 
     let quote_request = OrderQuoteRequest {
-        from: bob.address(),
-        sell_token: dai.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
+        from: bob.address().into_alloy(),
+        sell_token: *dai.address(),
+        buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
                 value: NonZeroU256::try_from(executed_amount).unwrap(),

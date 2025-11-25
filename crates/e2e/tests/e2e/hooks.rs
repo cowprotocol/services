@@ -647,9 +647,9 @@ async fn quote_verification(web3: Web3) {
 
     let quote = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *token.address(),
+            buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: NonZeroU256::try_from(to_wei(5)).unwrap(),

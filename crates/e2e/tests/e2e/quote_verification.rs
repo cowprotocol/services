@@ -18,7 +18,6 @@ use {
     number::nonzero::U256 as NonZeroU256,
     serde_json::json,
     shared::{
-        addr,
         price_estimation::{
             Estimate,
             Verification,
@@ -109,9 +108,9 @@ async fn standard_verified_quote(web3: Web3) {
     // quote where the trader has sufficient balance and an approval set.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *token.address(),
+            buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -270,9 +269,9 @@ async fn verified_quote_eth_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -311,8 +310,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     let request = OrderQuoteRequest {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: to_wei(3).try_into().unwrap(),
@@ -324,7 +323,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and implicit receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address().into_legacy(),
+            from: *onchain.contracts().gp_settlement.address(),
             receiver: None,
             ..request.clone()
         })
@@ -335,8 +334,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and explicit receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address().into_legacy(),
-            receiver: Some(onchain.contracts().gp_settlement.address().into_legacy()),
+            from: *onchain.contracts().gp_settlement.address(),
+            receiver: Some(*onchain.contracts().gp_settlement.address()),
             ..request.clone()
         })
         .await
@@ -346,8 +345,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and not the receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address().into_legacy(),
-            receiver: Some(trader.address()),
+            from: *onchain.contracts().gp_settlement.address(),
+            receiver: Some(trader.address().into_alloy()),
             ..request.clone()
         })
         .await
@@ -357,8 +356,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where a random trader sends funds to the settlement contract
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            receiver: Some(onchain.contracts().gp_settlement.address().into_legacy()),
+            from: trader.address().into_alloy(),
+            receiver: Some(*onchain.contracts().gp_settlement.address()),
             ..request.clone()
         })
         .await
@@ -422,9 +421,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: token.address().into_legacy(),
-            buy_token: weth.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *token.address(),
+            buy_token: *weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -465,9 +464,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -483,9 +482,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // which is used when no wallet is connected in the frontend
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: H160::zero().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -501,9 +500,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // if the user provided pre-interactions. This works now.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: H160::zero().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -539,8 +538,8 @@ async fn usdt_quote_verification(web3: Web3) {
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
-    let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
-    let usdt = addr!("dac17f958d2ee523a2206206994597c13d831ec7");
+    let usdc = address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
+    let usdt = address!("dac17f958d2ee523a2206206994597c13d831ec7");
 
     // Place Orders
     let services = Services::new(&onchain).await;
