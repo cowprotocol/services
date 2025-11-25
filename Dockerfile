@@ -74,5 +74,15 @@ COPY --from=cargo-build /solvers /usr/local/bin/solvers
 COPY ./entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Default jemalloc profiling configuration for profiling-enabled builds
+# This is only used when the image is built with --features jemalloc-profiling
+# Can be overridden at runtime via MALLOC_CONF environment variable
+# Parameters:
+#   prof:true - Enable heap profiling
+#   lg_prof_sample:23 - Sample allocations every ~8MB (2^23 bytes)
+#   prof_prefix:/tmp/jeprof.out - Prefix for dump files (dumps triggered manually or on exit)
+# Note: Auto-dumps are disabled. Use prof_final:true to dump on exit or trigger manually via jemalloc API
+ENV MALLOC_CONF="prof:true,lg_prof_sample:23,prof_prefix:/tmp/jeprof.out"
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/entrypoint.sh"]
