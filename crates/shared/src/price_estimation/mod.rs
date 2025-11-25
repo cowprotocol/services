@@ -512,9 +512,9 @@ pub struct Query {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Verification {
     /// This address needs to have the `sell_token`.
-    pub from: H160,
+    pub from: Address,
     /// This address will receive the `buy_token`.
-    pub receiver: H160,
+    pub receiver: Address,
     /// These interactions will be executed before the trade.
     pub pre_interactions: Vec<Interaction>,
     /// These interactions will be executed after the trade.
