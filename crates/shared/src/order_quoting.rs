@@ -334,16 +334,20 @@ impl QuoteSearchParameters {
     /// quote data.
     fn matches(&self, data: &QuoteData) -> bool {
         let amounts_match = match self.kind {
-            OrderKind::Buy => self.buy_amount == data.quoted_buy_amount,
+            OrderKind::Buy => self.buy_amount == data.quoted_buy_amount.into_alloy(),
             OrderKind::Sell => {
-                self.sell_amount == data.quoted_sell_amount
-                    || self.sell_amount + self.fee_amount == data.quoted_sell_amount
+                self.sell_amount == data.quoted_sell_amount.into_alloy()
+                    || self.sell_amount + self.fee_amount == data.quoted_sell_amount.into_alloy()
             }
         };
 
         amounts_match
             && (self.sell_token, self.buy_token, self.kind)
-                == (data.sell_token, data.buy_token, data.kind)
+                == (
+                    data.sell_token.into_alloy(),
+                    data.buy_token.into_alloy(),
+                    data.kind,
+                )
     }
 
     /// Returns additional gas costs incurred by the quote.

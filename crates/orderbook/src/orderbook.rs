@@ -13,7 +13,7 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{
@@ -223,7 +223,7 @@ impl From<&Quote> for QuoteMetadata {
     fn from(value: &Quote) -> Self {
         Self {
             id: value.id,
-            solver: value.data.solver,
+            solver: value.data.solver.into_alloy(),
         }
     }
 }
