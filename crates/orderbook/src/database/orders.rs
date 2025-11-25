@@ -12,7 +12,6 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
-    ethcontract::H256,
     ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
@@ -538,7 +537,7 @@ fn full_order_with_quote_into_model_order(
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            refund_tx_hash: refund_tx.map(|hash| H256(hash.0)),
+            refund_tx_hash: refund_tx.map(|hash| B256::new(hash.0)),
         })
     } else {
         None
