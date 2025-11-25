@@ -64,9 +64,8 @@ impl Maintaining for EmptyPoolRemoval {
             .map(|amm| {
                 let amm = amm.clone();
                 async move {
-                    self.has_zero_balance(amm.clone())
-                        .await
-                        .then_some(*amm.address())
+                    let address = *amm.address();
+                    self.has_zero_balance(amm).await.then_some(address)
                 }
             })
             .collect::<FuturesUnordered<_>>()
