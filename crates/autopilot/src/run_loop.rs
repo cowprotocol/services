@@ -510,7 +510,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| ((*key).0.into_alloy(), value.get().0.into_alloy()))
+                    .map(|(key, value)| (key.0.into_alloy(), value.get().0.into_alloy()))
                     .collect(),
             },
             solutions,
