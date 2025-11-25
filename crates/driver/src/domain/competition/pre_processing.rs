@@ -133,7 +133,7 @@ impl DataAggregator {
             eth.balance_overrider(),
         );
 
-        let cow_amm_helper_by_factory: HashMap<_, _> = eth
+        let cow_amm_helper_by_factory = eth
             .contracts()
             .cow_amm_helper_by_factory()
             .iter()
