@@ -825,15 +825,103 @@ pub fn open_orders_by_time_or_uids<'a>(
     uids: &'a [OrderUid],
     after_timestamp: DateTime<Utc>,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
+    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins
     #[rustfmt::skip]
-    const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
-        "SELECT ", SELECT,
-        " FROM ", FROM,
-        " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
-        " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))",
-    );
+    const QUERY: &str = r#"
+WITH selected_orders AS (
+    SELECT o.*
+    FROM   orders o
+    WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
+),
+trades_agg AS (
+     SELECT t.order_uid,
+            SUM(t.buy_amount) AS sum_buy,
+            SUM(t.sell_amount) AS sum_sell,
+            SUM(t.fee_amount) AS sum_fee
+     FROM trades t
+     JOIN selected_orders so ON so.uid = t.order_uid
+     GROUP BY t.order_uid
+)
+SELECT
+    so.uid,
+    so.owner,
+    so.creation_timestamp,
+    so.sell_token,
+    so.buy_token,
+    so.sell_amount,
+    so.buy_amount,
+    so.valid_to,
+    so.app_data,
+    so.fee_amount,
+    so.kind,
+    so.partially_fillable,
+    so.signature,
+    so.receiver,
+    so.signing_scheme,
+    so.settlement_contract,
+    so.sell_token_balance,
+    so.buy_token_balance,
+    so.class,
 
-    sqlx::query_as(OPEN_ORDERS_AFTER)
+    COALESCE(ta.sum_buy, 0) AS sum_buy,
+    COALESCE(ta.sum_sell, 0) AS sum_sell,
+    COALESCE(ta.sum_fee, 0) AS sum_fee,
+    (so.cancellation_timestamp IS NOT NULL OR
+        EXISTS (SELECT 1 FROM invalidations WHERE order_uid = so.uid) OR
+        EXISTS (SELECT 1 FROM onchain_order_invalidations WHERE uid = so.uid)
+    ) AS invalidated,
+    (so.signing_scheme = 'presign' AND COALESCE(pe.unsigned, TRUE)) AS presignature_pending,
+    ARRAY(
+            SELECT (p.target, p.value, p.data)
+            FROM   interactions p
+            WHERE  p.order_uid = so.uid AND p.execution = 'pre'
+            ORDER  BY p.index
+    ) AS pre_interactions,
+    ARRAY(
+            SELECT (p.target, p.value, p.data)
+            FROM   interactions p
+            WHERE  p.order_uid = so.uid AND p.execution = 'post'
+            ORDER  BY p.index
+    ) AS post_interactions,
+    ed.ethflow_data,
+    opo.onchain_user,
+    opo.onchain_placement_error,
+    COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
+    COALESCE(fee_agg.executed_fee_token, so.sell_token) AS executed_fee_token,
+    ad.full_app_data
+FROM selected_orders so
+LEFT JOIN LATERAL (
+    SELECT NOT signed AS unsigned
+    FROM   presignature_events
+    WHERE  order_uid = so.uid
+    ORDER  BY block_number DESC, log_index DESC
+    LIMIT  1
+    ) pe ON TRUE
+LEFT JOIN LATERAL (
+    SELECT sender AS onchain_user,
+           placement_error AS onchain_placement_error
+    FROM   onchain_placed_orders
+    WHERE  uid = so.uid
+    ORDER  BY block_number DESC
+    LIMIT  1
+    ) opo ON TRUE
+LEFT JOIN LATERAL (
+    SELECT ROW(tx_hash, eo.valid_to) AS ethflow_data
+    FROM   ethflow_orders  eo
+    LEFT JOIN ethflow_refunds r ON r.order_uid = eo.uid
+    WHERE  eo.uid = so.uid
+    ) ed ON TRUE
+LEFT JOIN LATERAL (
+    SELECT SUM(executed_fee) AS executed_fee,
+           (ARRAY_AGG(executed_fee_token))[1] AS executed_fee_token
+    FROM   order_execution
+    WHERE  order_uid = so.uid
+) fee_agg ON TRUE
+LEFT JOIN app_data ad ON ad.contract_app_data = so.app_data
+LEFT JOIN trades_agg ta ON  ta.order_uid = so.uid
+"#;
+
+    sqlx::query_as(QUERY)
         .bind(after_timestamp)
         .bind(uids)
         .fetch(ex)
@@ -866,41 +954,47 @@ pub async fn user_orders_with_quote(
     min_valid_to: i64,
     owner: &Address,
 ) -> Result<Vec<OrderWithQuote>, sqlx::Error> {
-    // Same functionality as OPEN_ORDERS but not optimized to fetch all live orders
-    // at once. Performs better when used with filtering by user.
+    // Optimized version following the same pattern as OPEN_ORDERS
     #[rustfmt::skip]
-    const OPEN_ORDERS_EMBEDDABLE: &str = const_format::concatcp!(
-    "SELECT * FROM ( ",
-        "SELECT ", SELECT,
-        " FROM ", FROM,
-        " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
-        " WHERE o.valid_to >= $1",
-        " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
-    r#") AS unfiltered
-    WHERE
-        CASE kind
-            WHEN 'sell' THEN sum_sell < sell_amount
-            WHEN 'buy' THEN sum_buy < buy_amount
-        END AND
-        (NOT invalidated) AND
-        (onchain_placement_error IS NULL)
-    "#);
-
-    #[rustfmt::skip]
-    const QUERY: &str = const_format::concatcp!(
-        "SELECT o_quotes.sell_amount as quote_sell_amount, o.sell_amount as order_sell_amount,",
-        " o_quotes.buy_amount as quote_buy_amount, o.buy_amount as order_buy_amount,",
-        " o.kind as order_kind, o_quotes.gas_amount as quote_gas_amount,",
-        " o_quotes.gas_price as quote_gas_price, o_quotes.sell_token_price as quote_sell_token_price",
-        " FROM (",
-            " SELECT *",
-            " FROM (", OPEN_ORDERS_EMBEDDABLE,
-            " AND owner = $2",
-            " AND class = 'limit'",
-            " ) AS subquery",
-        " ) AS o",
-        " INNER JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid"
-    );
+    const QUERY: &str = r#"
+WITH live_orders AS (
+    SELECT o.*
+    FROM   orders o
+    LEFT   JOIN ethflow_orders e ON e.uid = o.uid
+    WHERE  o.cancellation_timestamp IS NULL
+      AND  o.valid_to >= $1
+      AND (e.valid_to IS NULL OR e.valid_to >= $1)
+      AND NOT EXISTS (SELECT 1 FROM invalidations               i  WHERE i.order_uid = o.uid)
+      AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid      = o.uid)
+      AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders       op WHERE op.uid      = o.uid
+                                                                     AND op.placement_error IS NOT NULL)
+      AND  o.owner = $2
+      AND  o.class = 'limit'
+),
+trades_agg AS (
+     SELECT t.order_uid,
+            SUM(t.buy_amount) AS sum_buy,
+            SUM(t.sell_amount) AS sum_sell,
+            SUM(t.fee_amount) AS sum_fee
+     FROM trades t
+     JOIN live_orders lo ON lo.uid = t.order_uid
+     GROUP BY t.order_uid
+)
+SELECT
+    o_quotes.sell_amount as quote_sell_amount,
+    lo.sell_amount as order_sell_amount,
+    o_quotes.buy_amount as quote_buy_amount,
+    lo.buy_amount as order_buy_amount,
+    lo.kind as order_kind,
+    o_quotes.gas_amount as quote_gas_amount,
+    o_quotes.gas_price as quote_gas_price,
+    o_quotes.sell_token_price as quote_sell_token_price
+FROM live_orders lo
+LEFT JOIN trades_agg ta ON  ta.order_uid = lo.uid
+INNER JOIN order_quotes o_quotes ON lo.uid = o_quotes.order_uid
+WHERE ((lo.kind = 'sell' AND COALESCE(ta.sum_sell,0) < lo.sell_amount) OR
+       (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
+"#;
     sqlx::query_as::<_, OrderWithQuote>(QUERY)
         .bind(min_valid_to)
         .bind(owner)

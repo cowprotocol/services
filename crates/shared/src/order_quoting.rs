@@ -13,11 +13,12 @@ use {
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -110,8 +111,8 @@ impl Quote {
     pub fn new(id: Option<QuoteId>, data: QuoteData) -> Self {
         Self {
             id,
-            sell_amount: data.quoted_sell_amount,
-            buy_amount: data.quoted_buy_amount,
+            sell_amount: data.quoted_sell_amount.into_legacy(),
+            buy_amount: data.quoted_buy_amount.into_legacy(),
             fee_amount: data.fee_parameters.fee(),
             data,
         }
@@ -144,10 +145,14 @@ impl Quote {
         self.sell_amount = sell_amount;
         // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
         // errors computing the initial product.
-        self.buy_amount = (self.data.quoted_buy_amount.full_mul(sell_amount)
-            / self.data.quoted_sell_amount)
-            .try_into()
-            .unwrap_or(U256::MAX);
+        self.buy_amount = (self
+            .data
+            .quoted_buy_amount
+            .into_legacy()
+            .full_mul(sell_amount)
+            / self.data.quoted_sell_amount.into_legacy())
+        .try_into()
+        .unwrap_or(U256::MAX);
 
         self
     }
@@ -165,7 +170,7 @@ impl Quote {
             .context("sell token price is not a valid BigDecimal")?,
             sell_amount: self.sell_amount,
             buy_amount: self.buy_amount,
-            solver: self.data.solver,
+            solver: self.data.solver.into_legacy(),
             verified: self.data.verified,
             metadata: serde_json::to_value(&self.data.metadata)?,
         })
@@ -175,8 +180,8 @@ impl Quote {
 /// Detailed data for a computed order quote.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteData {
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     /// The sell amount used when computing the exchange rate for this quote.
     ///
     /// For buy orders, this will be the expected sell amount for some fixed
@@ -184,7 +189,7 @@ pub struct QuoteData {
     /// will be the total `sell_amount + fee_amount`. For sell orders of the
     /// `SellAmount::AfterFee` variant, this will be the fixed sell amount of
     /// the order used for price estimates.
-    pub quoted_sell_amount: U256,
+    pub quoted_sell_amount: alloy::primitives::U256,
     /// The buy amount used when computing the exchange rate for this quote.
     ///
     /// For buy orders, this will be the fixed buy amount. For sell order of the
@@ -192,7 +197,7 @@ pub struct QuoteData {
     /// `sell_amount + fee_amount` were traded. For sell orders of the
     /// `SellAmount::AfterFee` variant, this will be the expected sell amount if
     /// exactly `sell_amount` were traded.
-    pub quoted_buy_amount: U256,
+    pub quoted_buy_amount: alloy::primitives::U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
@@ -200,7 +205,7 @@ pub struct QuoteData {
     /// we need to store the quote kind to prevent missuse of quotes.
     pub quote_kind: QuoteKind,
     /// The address of the solver that provided the quote.
-    pub solver: H160,
+    pub solver: Address,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
     /// Additional data associated with the quote.
@@ -212,12 +217,14 @@ impl TryFrom<QuoteRow> for QuoteData {
 
     fn try_from(row: QuoteRow) -> Result<QuoteData> {
         Ok(QuoteData {
-            sell_token: H160(row.sell_token.0),
-            buy_token: H160(row.buy_token.0),
+            sell_token: Address::from_slice(&row.sell_token.0),
+            buy_token: Address::from_slice(&row.buy_token.0),
             quoted_sell_amount: big_decimal_to_u256(&row.sell_amount)
-                .context("quoted sell amount is not a valid U256")?,
+                .context("quoted sell amount is not a valid U256")?
+                .into_alloy(),
             quoted_buy_amount: big_decimal_to_u256(&row.buy_amount)
-                .context("quoted buy amount is not a valid U256")?,
+                .context("quoted buy amount is not a valid U256")?
+                .into_alloy(),
             fee_parameters: FeeParameters {
                 gas_amount: row.gas_amount,
                 gas_price: row.gas_price,
@@ -226,7 +233,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             kind: order_kind_from(row.order_kind),
             expiration: row.expiration_timestamp,
             quote_kind: row.quote_kind,
-            solver: H160(row.solver.0),
+            solver: Address::from_slice(&row.solver.0),
             verified: row.verified,
             metadata: row.metadata.try_into()?,
         })
@@ -311,11 +318,11 @@ pub enum FindQuoteError {
 /// Fields for searching stored quotes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuoteSearchParameters {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub fee_amount: U256,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: alloy::primitives::U256,
+    pub buy_amount: alloy::primitives::U256,
+    pub fee_amount: alloy::primitives::U256,
     pub kind: OrderKind,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
@@ -501,15 +508,15 @@ impl OrderQuoter {
 
         let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
-            sell_token: parameters.sell_token,
-            buy_token: parameters.buy_token,
-            quoted_sell_amount,
-            quoted_buy_amount,
+            sell_token: parameters.sell_token.into_alloy(),
+            buy_token: parameters.buy_token.into_alloy(),
+            quoted_sell_amount: quoted_sell_amount.into_alloy(),
+            quoted_buy_amount: quoted_buy_amount.into_alloy(),
             fee_parameters,
             kind: trade_query.kind,
             expiration,
             quote_kind,
-            solver: trade_estimate.solver,
+            solver: trade_estimate.solver.into_alloy(),
             verified: trade_estimate.verified,
             metadata: QuoteMetadataV1 {
                 interactions: trade_estimate.execution.interactions,
@@ -669,7 +676,7 @@ impl OrderQuoting for OrderQuoter {
         .with_additional_cost(additional_cost);
 
         let quote = match scaled_sell_amount {
-            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
+            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount.into_legacy()),
             None => quote,
         };
 
@@ -861,7 +868,7 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: Address::new([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
@@ -904,10 +911,10 @@ mod tests {
         storage
             .expect_save()
             .with(eq(QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                quoted_sell_amount: 100.into(),
-                quoted_buy_amount: 42.into(),
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                quoted_sell_amount: alloy::primitives::U256::from(100),
+                quoted_buy_amount: alloy::primitives::U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -916,7 +923,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
-                solver: H160([1; 20]),
+                solver: Address::repeat_byte(1),
                 verified: false,
                 metadata: Default::default(),
             }))
@@ -942,10 +949,10 @@ mod tests {
             Quote {
                 id: Some(1337),
                 data: QuoteData {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    quoted_sell_amount: 100.into(),
-                    quoted_buy_amount: 42.into(),
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    quoted_sell_amount: alloy::primitives::U256::from(100),
+                    quoted_buy_amount: alloy::primitives::U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -954,7 +961,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     metadata: Default::default(),
                 },
@@ -1002,7 +1009,7 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: Address::new([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
@@ -1045,10 +1052,10 @@ mod tests {
         storage
             .expect_save()
             .with(eq(QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                quoted_sell_amount: 100.into(),
-                quoted_buy_amount: 42.into(),
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                quoted_sell_amount: alloy::primitives::U256::from(100),
+                quoted_buy_amount: alloy::primitives::U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1057,7 +1064,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
-                solver: H160([1; 20]),
+                solver: Address::repeat_byte(1),
                 verified: false,
                 metadata: Default::default(),
             }))
@@ -1083,10 +1090,10 @@ mod tests {
             Quote {
                 id: Some(1337),
                 data: QuoteData {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    quoted_sell_amount: 100.into(),
-                    quoted_buy_amount: 42.into(),
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    quoted_sell_amount: alloy::primitives::U256::from(100),
+                    quoted_buy_amount: alloy::primitives::U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1095,7 +1102,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     metadata: Default::default(),
                 },
@@ -1138,7 +1145,7 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: Address::new([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
@@ -1181,10 +1188,10 @@ mod tests {
         storage
             .expect_save()
             .with(eq(QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                quoted_sell_amount: 100.into(),
-                quoted_buy_amount: 42.into(),
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                quoted_sell_amount: alloy::primitives::U256::from(100),
+                quoted_buy_amount: alloy::primitives::U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1193,7 +1200,7 @@ mod tests {
                 kind: OrderKind::Buy,
                 expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
-                solver: H160([1; 20]),
+                solver: Address::repeat_byte(1),
                 verified: false,
                 metadata: Default::default(),
             }))
@@ -1219,10 +1226,10 @@ mod tests {
             Quote {
                 id: Some(1337),
                 data: QuoteData {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    quoted_sell_amount: 100.into(),
-                    quoted_buy_amount: 42.into(),
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    quoted_sell_amount: alloy::primitives::U256::from(100),
+                    quoted_buy_amount: alloy::primitives::U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1231,7 +1238,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     metadata: Default::default(),
                 },
@@ -1398,11 +1405,11 @@ mod tests {
         let now = Utc::now();
         let quote_id = 42;
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 85.into(),
-            buy_amount: 40.into(),
-            fee_amount: 15.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(85),
+            buy_amount: alloy::primitives::U256::from(40),
+            fee_amount: alloy::primitives::U256::from(15),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1415,10 +1422,10 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage.expect_get().with(eq(42)).returning(move |_| {
             Ok(Some(QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                quoted_sell_amount: 100.into(),
-                quoted_buy_amount: 42.into(),
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                quoted_sell_amount: alloy::primitives::U256::from(100),
+                quoted_buy_amount: alloy::primitives::U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1427,7 +1434,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
-                solver: H160([1; 20]),
+                solver: Address::repeat_byte(1),
                 verified: false,
                 metadata: Default::default(),
             }))
@@ -1450,10 +1457,10 @@ mod tests {
             Quote {
                 id: Some(42),
                 data: QuoteData {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    quoted_sell_amount: 100.into(),
-                    quoted_buy_amount: 42.into(),
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    quoted_sell_amount: alloy::primitives::U256::from(100),
+                    quoted_buy_amount: alloy::primitives::U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1462,7 +1469,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     metadata: Default::default(),
                 },
@@ -1481,11 +1488,11 @@ mod tests {
         let now = Utc::now();
         let quote_id = 42;
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 100.into(),
-            buy_amount: 40.into(),
-            fee_amount: 30.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_amount: alloy::primitives::U256::from(40),
+            fee_amount: alloy::primitives::U256::from(30),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1498,10 +1505,10 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage.expect_get().with(eq(42)).returning(move |_| {
             Ok(Some(QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                quoted_sell_amount: 100.into(),
-                quoted_buy_amount: 42.into(),
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                quoted_sell_amount: alloy::primitives::U256::from(100),
+                quoted_buy_amount: alloy::primitives::U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1510,7 +1517,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
-                solver: H160([1; 20]),
+                solver: Address::repeat_byte(1),
                 verified: false,
                 metadata: Default::default(),
             }))
@@ -1533,10 +1540,10 @@ mod tests {
             Quote {
                 id: Some(42),
                 data: QuoteData {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    quoted_sell_amount: 100.into(),
-                    quoted_buy_amount: 42.into(),
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    quoted_sell_amount: alloy::primitives::U256::from(100),
+                    quoted_buy_amount: alloy::primitives::U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1545,7 +1552,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     metadata: Default::default(),
                 },
@@ -1560,11 +1567,11 @@ mod tests {
     async fn finds_quote_by_parameters() {
         let now = Utc::now();
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 110.into(),
-            buy_amount: 42.into(),
-            fee_amount: 30.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(110),
+            buy_amount: alloy::primitives::U256::from(42),
+            fee_amount: alloy::primitives::U256::from(30),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1582,10 +1589,10 @@ mod tests {
                 Ok(Some((
                     42,
                     QuoteData {
-                        sell_token: H160([1; 20]),
-                        buy_token: H160([2; 20]),
-                        quoted_sell_amount: 100.into(),
-                        quoted_buy_amount: 42.into(),
+                        sell_token: Address::repeat_byte(1),
+                        buy_token: Address::repeat_byte(2),
+                        quoted_sell_amount: alloy::primitives::U256::from(100),
+                        quoted_buy_amount: alloy::primitives::U256::from(42),
                         fee_parameters: FeeParameters {
                             gas_amount: 3.,
                             gas_price: 2.,
@@ -1594,7 +1601,7 @@ mod tests {
                         kind: OrderKind::Buy,
                         expiration: now + chrono::Duration::seconds(10),
                         quote_kind: QuoteKind::Standard,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         metadata: Default::default(),
                     },
@@ -1618,10 +1625,10 @@ mod tests {
             Quote {
                 id: Some(42),
                 data: QuoteData {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    quoted_sell_amount: 100.into(),
-                    quoted_buy_amount: 42.into(),
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    quoted_sell_amount: alloy::primitives::U256::from(100),
+                    quoted_buy_amount: alloy::primitives::U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1630,7 +1637,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     metadata: Default::default(),
                 },
@@ -1645,7 +1652,7 @@ mod tests {
     async fn find_invalid_quote_error() {
         let now = Utc::now();
         let parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
+            sell_token: Address::repeat_byte(1),
             ..Default::default()
         };
 
@@ -1657,7 +1664,7 @@ mod tests {
             .in_sequence(&mut sequence)
             .returning(move |_| {
                 Ok(Some(QuoteData {
-                    sell_token: H160([2; 20]),
+                    sell_token: Address::repeat_byte(2),
                     expiration: now,
                     ..Default::default()
                 }))
@@ -1668,7 +1675,7 @@ mod tests {
             .in_sequence(&mut sequence)
             .returning(move |_| {
                 Ok(Some(QuoteData {
-                    sell_token: H160([1; 20]),
+                    sell_token: Address::repeat_byte(1),
                     expiration: now - chrono::Duration::seconds(1),
                     ..Default::default()
                 }))

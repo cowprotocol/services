@@ -252,10 +252,10 @@ pub struct PreOrderData {
 
 fn actual_receiver(owner: H160, order: &OrderData) -> H160 {
     let receiver = order.receiver.unwrap_or_default();
-    if receiver == H160::zero() {
+    if receiver.is_zero() {
         owner
     } else {
-        receiver
+        receiver.into_legacy()
     }
 }
 
@@ -267,8 +267,8 @@ impl PreOrderData {
     ) -> Self {
         Self {
             owner,
-            sell_token: order.sell_token,
-            buy_token: order.buy_token,
+            sell_token: order.sell_token.into_legacy(),
+            buy_token: order.buy_token.into_legacy(),
             receiver: actual_receiver(owner, order),
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
@@ -398,7 +398,7 @@ impl OrderValidator {
                 .balance_fetcher
                 .can_transfer(
                     &account_balances::Query {
-                        token: order.data().sell_token,
+                        token: order.data().sell_token.into_legacy(),
                         owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
@@ -674,7 +674,7 @@ impl OrderValidating for OrderValidator {
                     &*self.quoter,
                     &quote_parameters,
                     order.quote_id,
-                    Some(data.fee_amount),
+                    Some(data.fee_amount.into_legacy()),
                 )
                 .await?;
                 tracing::debug!(
@@ -685,9 +685,9 @@ impl OrderValidating for OrderValidator {
                 );
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: data.sell_amount.into_legacy(),
+                        buy: data.buy_amount.into_legacy(),
+                        fee: data.fee_amount.into_legacy(),
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -715,9 +715,9 @@ impl OrderValidating for OrderValidator {
                         // If the order is not "In-Market", check for the limit orders
                         if is_order_outside_market_price(
                             &Amounts {
-                                sell: data.sell_amount,
-                                buy: data.buy_amount,
-                                fee: data.fee_amount,
+                                sell: data.sell_amount.into_legacy(),
+                                buy: data.buy_amount.into_legacy(),
+                                fee: data.fee_amount.into_legacy(),
                             },
                             &Amounts {
                                 sell: quote.sell_amount,
@@ -746,9 +746,9 @@ impl OrderValidating for OrderValidator {
                 // If the order is not "In-Market", check for the limit orders
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: data.sell_amount.into_legacy(),
+                        buy: data.buy_amount.into_legacy(),
+                        fee: data.fee_amount.into_legacy(),
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -773,10 +773,10 @@ impl OrderValidating for OrderValidator {
 
         let order = Order {
             metadata: OrderMetadata {
-                owner,
+                owner: owner.into_alloy(),
                 creation_date: chrono::offset::Utc::now(),
                 uid,
-                settlement_contract,
+                settlement_contract: settlement_contract.into_alloy(),
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
@@ -903,12 +903,13 @@ async fn get_or_create_quote(
         Err(err) => {
             tracing::debug!(?err, "failed to find quote for order creation");
             let parameters = QuoteParameters {
-                sell_token: quote_search_parameters.sell_token,
-                buy_token: quote_search_parameters.buy_token,
+                sell_token: quote_search_parameters.sell_token.into_legacy(),
+                buy_token: quote_search_parameters.buy_token.into_legacy(),
                 side: match quote_search_parameters.kind {
                     OrderKind::Buy => OrderQuoteSide::Buy {
                         buy_amount_after_fee: quote_search_parameters
                             .buy_amount
+                            .into_legacy()
                             .try_into()
                             .map_err(|_| ValidationError::ZeroAmount)?,
                     },
@@ -916,6 +917,7 @@ async fn get_or_create_quote(
                         sell_amount: SellAmount::AfterFee {
                             value: quote_search_parameters
                                 .sell_amount
+                                .into_legacy()
                                 .try_into()
                                 .map_err(|_| ValidationError::ZeroAmount)?,
                         },
@@ -952,9 +954,9 @@ pub struct Amounts {
 impl From<&model::order::Order> for Amounts {
     fn from(order: &model::order::Order) -> Self {
         Self {
-            sell: order.data.sell_amount,
-            buy: order.data.buy_amount,
-            fee: order.data.fee_amount,
+            sell: order.data.sell_amount.into_legacy(),
+            buy: order.data.buy_amount.into_legacy(),
+            fee: order.data.fee_amount.into_legacy(),
         }
     }
 }
@@ -2242,11 +2244,11 @@ mod tests {
     async fn get_quote_find_by_id() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            fee_amount: 0.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
+            buy_amount: alloy::primitives::U256::from(4),
+            fee_amount: alloy::primitives::U256::from(0),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -2300,9 +2302,9 @@ mod tests {
             .with(eq(None), always())
             .returning(|_, _| Err(FindQuoteError::NotFound(None)));
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
             kind: OrderKind::Sell,
             verification: verification.clone(),
             ..Default::default()
@@ -2315,11 +2317,14 @@ mod tests {
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
-                sell_token: quote_search_parameters.sell_token,
-                buy_token: quote_search_parameters.buy_token,
+                sell_token: quote_search_parameters.sell_token.into_legacy(),
+                buy_token: quote_search_parameters.buy_token.into_legacy(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(quote_search_parameters.sell_amount).unwrap(),
+                        value: NonZeroU256::try_from(
+                            quote_search_parameters.sell_amount.into_legacy(),
+                        )
+                        .unwrap(),
                     },
                 },
                 verification,
@@ -2471,11 +2476,11 @@ mod tests {
     async fn validate_quote_find_by_id() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            fee_amount: 0.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
+            buy_amount: alloy::primitives::U256::from(4),
+            fee_amount: alloy::primitives::U256::from(0),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: false,

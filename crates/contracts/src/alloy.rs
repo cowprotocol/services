@@ -532,8 +532,7 @@ crate::bindings!(
         OPTIMISM  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
         POLYGON  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
         LENS  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-        // compiled with an older, linea-compatible evm version
-        LINEA => address!("0xeFcf0d30DB41Ae0b136c5E3B4340dFeE2D099Ada"),
+        LINEA => address!("0x60bf78233f48ec42ee3f101b9a05ec7878728006"),
         PLASMA => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
     }
 );

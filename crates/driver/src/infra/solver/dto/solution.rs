@@ -256,14 +256,14 @@ pub struct JitOrder(solvers_dto::solution::JitOrder);
 impl JitOrder {
     fn raw_order_data(&self) -> OrderData {
         OrderData {
-            sell_token: self.0.sell_token,
-            buy_token: self.0.buy_token,
-            receiver: Some(self.0.receiver),
-            sell_amount: self.0.sell_amount,
-            buy_amount: self.0.buy_amount,
+            sell_token: self.0.sell_token.into_alloy(),
+            buy_token: self.0.buy_token.into_alloy(),
+            receiver: Some(self.0.receiver.into_alloy()),
+            sell_amount: self.0.sell_amount.into_alloy(),
+            buy_amount: self.0.buy_amount.into_alloy(),
             valid_to: self.0.valid_to,
             app_data: AppDataHash(self.0.app_data),
-            fee_amount: 0.into(),
+            fee_amount: alloy::primitives::U256::ZERO,
             kind: match self.0.kind {
                 solvers_dto::solution::Kind::Sell => OrderKind::Sell,
                 solvers_dto::solution::Kind::Buy => OrderKind::Buy,

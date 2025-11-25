@@ -13,6 +13,7 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -28,7 +29,6 @@ use {
         solver_competition::{self, SolverCompetitionAPI},
     },
     observe::metrics::LivenessChecking,
-    primitive_types::H160,
     shared::{
         fee::FeeParameters,
         order_quoting::Quote,
@@ -78,9 +78,9 @@ impl Metrics {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
+                    sell: order.data.sell_amount.into_legacy(),
+                    buy: order.data.buy_amount.into_legacy(),
+                    fee: order.data.fee_amount.into_legacy(),
                 },
                 &Amounts {
                     sell: quote.sell_amount,
@@ -216,7 +216,7 @@ pub enum OrderReplacementError {
 #[derive(Debug)]
 pub struct QuoteMetadata {
     pub id: Option<QuoteId>,
-    pub solver: H160,
+    pub solver: Address,
 }
 
 impl From<&Quote> for QuoteMetadata {
@@ -230,7 +230,7 @@ impl From<&Quote> for QuoteMetadata {
 
 pub struct Orderbook {
     domain_separator: DomainSeparator,
-    settlement_contract: H160,
+    settlement_contract: Address,
     database: crate::database::Postgres,
     database_replica: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
@@ -241,7 +241,7 @@ pub struct Orderbook {
 impl Orderbook {
     pub fn new(
         domain_separator: DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         database: crate::database::Postgres,
         database_replica: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
@@ -286,7 +286,7 @@ impl Orderbook {
             .validate_and_construct_order(
                 payload,
                 &self.domain_separator,
-                self.settlement_contract,
+                self.settlement_contract.into_legacy(),
                 full_app_data_override,
             )
             .await?;
@@ -348,7 +348,10 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if orders.iter().any(|order| signer != order.metadata.owner) {
+        if orders
+            .iter()
+            .any(|order| signer != order.metadata.owner.into_legacy())
+        {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -378,7 +381,7 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if signer != order.metadata.owner {
+        if signer != order.metadata.owner.into_legacy() {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -632,6 +635,7 @@ mod tests {
         super::*,
         crate::database::orders::MockOrderStoring,
         ethcontract::H160,
+        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         mockall::predicate::eq,
         model::{
             order::{OrderData, OrderMetadata},
@@ -646,7 +650,7 @@ mod tests {
         let old_order = Order {
             metadata: OrderMetadata {
                 uid: OrderUid([1; 56]),
-                owner: H160([1; 20]),
+                owner: Address::new([1; 20]),
                 ..Default::default()
             },
             data: OrderData {
@@ -674,7 +678,7 @@ mod tests {
                 Ok((
                     Order {
                         metadata: OrderMetadata {
-                            owner: creation.from.unwrap(),
+                            owner: creation.from.unwrap().into_alloy(),
                             uid: new_order_uid,
                             ..Default::default()
                         },
@@ -701,7 +705,7 @@ mod tests {
             database_replica,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
-            settlement_contract: H160([0xba; 20]),
+            settlement_contract: Address::repeat_byte(0xba),
             app_data,
             active_order_competition_threshold: Default::default(),
         };
@@ -750,7 +754,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(old_order.metadata.owner),
+                    from: Some(old_order.metadata.owner.into_legacy()),
                     signature: Signature::PreSign,
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -769,7 +773,7 @@ mod tests {
         // Stars align...
         let (order_id, _) = orderbook
             .add_order(OrderCreation {
-                from: Some(old_order.metadata.owner),
+                from: Some(old_order.metadata.owner.into_legacy()),
                 signature: Signature::Eip712(Default::default()),
                 app_data: OrderCreationAppData::Full {
                     full: format!(

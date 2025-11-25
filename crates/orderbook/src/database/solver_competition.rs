@@ -1,20 +1,20 @@
 use {
     super::Postgres,
     crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+    alloy::primitives::B256,
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
     model::{
         AuctionId,
         solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
     },
-    primitive_types::H256,
     sqlx::types::JsonValue,
 };
 
 fn deserialize_solver_competition(
     json: JsonValue,
     auction_id: AuctionId,
-    transaction_hashes: Vec<H256>,
+    transaction_hashes: Vec<B256>,
 ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
     let common: SolverCompetitionDB =
         serde_json::from_value(json).context("deserialize SolverCompetitionDB")?;
@@ -45,7 +45,7 @@ impl SolverCompetitionStoring for Postgres {
                     deserialize_solver_competition(
                         row.json,
                         row.id,
-                        row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+                        row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
                     )
                 }),
             Identifier::Transaction(hash) => {
@@ -56,7 +56,7 @@ impl SolverCompetitionStoring for Postgres {
                         deserialize_solver_competition(
                             row.json,
                             row.id,
-                            row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+                            row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
                         )
                     })
             }
@@ -80,7 +80,7 @@ impl SolverCompetitionStoring for Postgres {
                 deserialize_solver_competition(
                     row.json,
                     row.id,
-                    row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+                    row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
                 )
             })
             .ok_or(LoadSolverCompetitionError::NotFound)?
@@ -108,7 +108,7 @@ impl SolverCompetitionStoring for Postgres {
             deserialize_solver_competition(
                 row.json,
                 row.id,
-                row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+                row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
