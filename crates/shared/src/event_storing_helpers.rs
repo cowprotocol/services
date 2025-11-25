@@ -16,17 +16,17 @@ use {
 pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
     Ok(DbQuote {
         id: Default::default(),
-        sell_token: ByteArray(data.sell_token.0),
-        buy_token: ByteArray(data.buy_token.0),
-        sell_amount: u256_to_big_decimal(&data.quoted_sell_amount),
-        buy_amount: u256_to_big_decimal(&data.quoted_buy_amount),
+        sell_token: ByteArray(*data.sell_token.0),
+        buy_token: ByteArray(*data.buy_token.0),
+        sell_amount: u256_to_big_decimal(&data.quoted_sell_amount.into_legacy()),
+        buy_amount: u256_to_big_decimal(&data.quoted_buy_amount.into_legacy()),
         gas_amount: data.fee_parameters.gas_amount,
         gas_price: data.fee_parameters.gas_price,
         sell_token_price: data.fee_parameters.sell_token_price,
         order_kind: order_kind_into(data.kind),
         expiration_timestamp: data.expiration,
         quote_kind: data.quote_kind,
-        solver: ByteArray(data.solver.0),
+        solver: ByteArray(*data.solver.0),
         verified: data.verified,
         metadata: data.metadata.try_into()?,
     })
