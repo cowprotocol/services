@@ -69,7 +69,7 @@ impl Maintaining for EmptyPoolRemoval {
                 }
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|addr| async move { addr })
+            .filter_map(std::future::ready)
             .collect()
             .await;
         if !empty_amms.is_empty() {
