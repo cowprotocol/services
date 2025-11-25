@@ -29,7 +29,10 @@ use {
     ::observe::metrics,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::BlockInfo},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::BlockInfo,
+    },
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -468,7 +471,7 @@ impl RunLoop {
             .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
-                solver_address: participant.solution().solver().0,
+                solver_address: participant.solution().solver().0.into_alloy(),
                 score: Some(Score::Solver(participant.solution().score().get().0)),
                 ranking: index + 1,
                 orders: participant
@@ -477,15 +480,15 @@ impl RunLoop {
                     .iter()
                     .map(|(id, order)| Order::Colocated {
                         id: (*id).into(),
-                        sell_amount: order.executed_sell.into(),
-                        buy_amount: order.executed_buy.into(),
+                        sell_amount: order.executed_sell.0.into_alloy(),
+                        buy_amount: order.executed_buy.0.into_alloy(),
                     })
                     .collect(),
                 clearing_prices: participant
                     .solution()
                     .prices()
                     .iter()
-                    .map(|(token, price)| (token.0, price.get().into()))
+                    .map(|(token, price)| (token.0.into_alloy(), price.get().0.into_alloy()))
                     .collect(),
                 is_winner: participant.is_winner(),
                 filtered_out: participant.filtered_out(),
@@ -507,7 +510,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| ((*key).into(), value.get().into()))
+                    .map(|(key, value)| ((*key).0.into_alloy(), value.get().0.into_alloy()))
                     .collect(),
             },
             solutions,

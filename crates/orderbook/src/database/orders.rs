@@ -39,7 +39,6 @@ use {
         big_decimal_to_u256,
         u256_to_big_decimal,
     },
-    primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -407,7 +406,7 @@ impl Postgres {
     }
 
     pub async fn token_metadata(&self, token: &Address) -> Result<TokenMetadata> {
-        let (first_trade_block, native_price): (Option<u32>, Option<U256>) = tokio::try_join!(
+        let (first_trade_block, native_price): (Option<u32>, Option<alloy::primitives::U256>) = tokio::try_join!(
             self.execute_instrumented("token_first_trade_block", async {
                 let mut ex = self.pool.acquire().await?;
                 database::trades::token_first_trade_block(&mut ex, ByteArray(token.0.0))
@@ -425,7 +424,7 @@ impl Postgres {
                 )
                 .await
                 .map_err(anyhow::Error::from)?
-                .and_then(|price| big_decimal_to_u256(&price)))
+                .and_then(|price| number::conversions::alloy::big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -454,7 +453,7 @@ impl Postgres {
 
 #[async_trait]
 impl LimitOrderCounting for Postgres {
-    async fn count(&self, owner: H160) -> Result<u64> {
+    async fn count(&self, owner: Address) -> Result<u64> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["count_limit_orders_by_owner"])
@@ -464,7 +463,7 @@ impl LimitOrderCounting for Postgres {
         Ok(database::orders::user_orders_with_quote(
             &mut ex,
             now_in_epoch_seconds().into(),
-            &ByteArray(owner.0),
+            &ByteArray(owner.0.0),
         )
         .await?
         .into_iter()

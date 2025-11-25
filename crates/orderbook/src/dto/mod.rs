@@ -1,15 +1,15 @@
 pub mod auction;
 pub mod order;
 
+use {
+    alloy::primitives::U256,
+    number::serialization::HexOrDecimalU256,
+    serde::Serialize,
+    serde_with::serde_as,
+};
 pub use {
     auction::{Auction, AuctionId, AuctionWithId},
     order::Order,
-};
-use {
-    number::serialization::HexOrDecimalU256,
-    primitive_types::U256,
-    serde::Serialize,
-    serde_with::serde_as,
 };
 
 #[serde_as]
