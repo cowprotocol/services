@@ -31,6 +31,23 @@ services:
       retries: 10
       start_period: 2s
 
+  # Mock Coingecko API for price fetching in offline mode
+  coingecko-mock:
+    build:
+      context: ./mocks/coingecko
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - PORT=3000
+    ports:
+      - 3001:3000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   db:
     image: postgres:16
     restart: always
@@ -87,7 +104,7 @@ services:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=orderbook=trace,shared=trace
+      - LOG_FILTER=orderbook=trace,shared=trace,shared::price_estimation=trace,shared::price_estimation::native=trace
       - ACCOUNT_BALANCES_SIMULATION=false
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -95,7 +112,8 @@ services:
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline,CoinGecko
+      - COIN_GECKO_URL=http://coingecko-mock:3000/api/v3/simple/token_price
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - BASELINE_SOURCES=UniswapV2
@@ -114,6 +132,8 @@ services:
       db-migrations:
         condition: service_completed_successfully
       chain:
+        condition: service_healthy
+      coingecko-mock:
         condition: service_healthy
     ports:
       - 8080:80 # API
@@ -153,14 +173,14 @@ services:
       - SETTLE_INTERVAL=15s
       - GAS_ESTIMATORS=Native,Web3
       - PRICE_ESTIMATORS=None
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline,CoinGecko
+      - COIN_GECKO_URL=http://coingecko-mock:3000/api/v3/simple/token_price
       - BLOCK_STREAM_POLL_INTERVAL=1s
       - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - RUN_LOOP_NATIVE_PRICE_TIMEOUT=5s
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
       - NATIVE_PRICE_ESTIMATION_RESULTS_REQUIRED=1
       - DRIVERS=baseline|http://driver/baseline|0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
       - BASELINE_SOURCES=UniswapV2
@@ -180,6 +200,8 @@ services:
       orderbook:
         condition: service_healthy
       chain:
+        condition: service_healthy
+      coingecko-mock:
         condition: service_healthy
     ports:
       - 9589:9589 # metrics

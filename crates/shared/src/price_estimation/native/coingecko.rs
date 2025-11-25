@@ -83,7 +83,9 @@ impl CoinGecko {
             Chain::Lens => "lens".to_string(),
             Chain::Linea => "linea".to_string(),
             Chain::Plasma => "plasma".to_string(),
-            Chain::Sepolia | Chain::Goerli | Chain::Hardhat => {
+            // Hardhat/Anvil is a local Ethereum fork, use ethereum pricing for offline development
+            Chain::Hardhat => "ethereum".to_string(),
+            Chain::Sepolia | Chain::Goerli => {
                 anyhow::bail!("unsupported network {}", chain.name())
             }
         };
