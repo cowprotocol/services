@@ -125,7 +125,10 @@ async fn test(web3: Web3) {
         .unwrap();
 
     let tx_hash = services.get_trades(&uid).await.unwrap()[0].tx_hash.unwrap();
-    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+    let competition = services
+        .get_solver_competition(tx_hash.into_legacy())
+        .await
+        .unwrap();
     assert!(!competition.solutions.is_empty());
     assert!(competition.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();

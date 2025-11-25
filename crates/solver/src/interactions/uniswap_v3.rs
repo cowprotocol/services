@@ -1,11 +1,12 @@
 use {
-    alloy::{primitives::Address, sol_types::SolCall},
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
     contracts::alloy::UniswapV3SwapRouterV2::{
         IV3SwapRouter::ExactOutputSingleParams,
         UniswapV3SwapRouterV2::exactOutputSingleCall,
     },
-    ethcontract::Bytes,
-    ethrpc::alloy::conversions::IntoLegacy,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
@@ -18,14 +19,13 @@ pub struct UniswapV3Interaction {
 impl Interaction for UniswapV3Interaction {
     fn encode(&self) -> EncodedInteraction {
         (
-            self.router.into_legacy(),
-            0.into(),
-            Bytes(
-                exactOutputSingleCall {
-                    params: self.params.clone(),
-                }
-                .abi_encode(),
-            ),
+            self.router,
+            U256::ZERO,
+            exactOutputSingleCall {
+                params: self.params.clone(),
+            }
+            .abi_encode()
+            .into(),
         )
     }
 }

@@ -46,7 +46,7 @@ impl Erc20 {
         Ok(eth::Allowance {
             token: self.token.address().into_legacy().into(),
             spender,
-            amount: amount.into_legacy(),
+            amount,
         }
         .into())
     }

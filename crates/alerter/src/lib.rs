@@ -92,7 +92,7 @@ impl OrderBookApi {
 // untouched.
 fn convert_eth_to_weth(token: Address) -> Address {
     const WETH: Address = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-    if token == Address::from_slice(&BUY_ETH_ADDRESS.0) {
+    if token.as_slice() == BUY_ETH_ADDRESS.as_bytes() {
         WETH
     } else {
         token

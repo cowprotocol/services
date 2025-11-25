@@ -1,9 +1,9 @@
 use {
     super::{BadTokenDetecting, TokenQuality},
+    alloy::primitives::Address,
     anyhow::Result,
     dashmap::DashMap,
     futures::future::join_all,
-    primitive_types::H160,
     std::{
         ops::Div,
         sync::Arc,
@@ -14,7 +14,7 @@ use {
 
 pub struct CachingDetector {
     inner: Box<dyn BadTokenDetecting>,
-    cache: DashMap<H160, (Instant, TokenQuality)>,
+    cache: DashMap<Address, (Instant, TokenQuality)>,
     cache_expiry: Duration,
     prefetch_time: Duration,
 }
@@ -22,7 +22,7 @@ pub struct CachingDetector {
 #[async_trait::async_trait]
 impl BadTokenDetecting for CachingDetector {
     #[instrument(skip_all)]
-    async fn detect(&self, token: H160) -> Result<TokenQuality> {
+    async fn detect(&self, token: Address) -> Result<TokenQuality> {
         if let Some(quality) = self.get_from_cache(&token, Instant::now()) {
             return Ok(quality);
         }
@@ -53,13 +53,13 @@ impl CachingDetector {
         detector
     }
 
-    fn get_from_cache(&self, token: &H160, now: Instant) -> Option<TokenQuality> {
+    fn get_from_cache(&self, token: &Address, now: Instant) -> Option<TokenQuality> {
         let (instant, quality) = self.cache.get(token)?.value().clone();
         let still_valid = now.saturating_duration_since(instant) < self.cache_expiry;
         still_valid.then_some(quality)
     }
 
-    fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
+    fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (Address, TokenQuality)>) {
         let now = Instant::now();
         tokens.into_iter().for_each(|(token, quality)| {
             self.cache.insert(token, (now, quality));
@@ -134,7 +134,7 @@ mod tests {
 
         for _ in 0..2 {
             let result = detector
-                .detect(H160::from_low_u64_le(0))
+                .detect(Address::with_last_byte(0))
                 .now_or_never()
                 .unwrap();
             assert!(result.unwrap().is_good());
@@ -144,7 +144,7 @@ mod tests {
     #[tokio::test]
     async fn cache_expires() {
         let inner = MockBadTokenDetecting::new();
-        let token = H160::from_low_u64_le(0);
+        let token = Address::with_last_byte(0);
         let detector = CachingDetector::new(
             Box::new(inner),
             Duration::from_secs(2),
@@ -193,7 +193,7 @@ mod tests {
         );
 
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(result.unwrap().is_good());
@@ -201,14 +201,14 @@ mod tests {
         // time yet
         tokio::time::sleep(Duration::from_millis(100)).await;
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(result.unwrap().is_good());
         // We wait so the prefetch fetches the data
         tokio::time::sleep(Duration::from_millis(70)).await;
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(!result.unwrap().is_good());

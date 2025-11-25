@@ -29,7 +29,7 @@ use {
     ::observe::metrics,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::block_stream::BlockInfo,
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::BlockInfo},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -580,7 +580,12 @@ impl RunLoop {
     ) -> Vec<competition::Participant<Unranked>> {
         let request = solve::Request::new(
             auction,
-            &self.trusted_tokens.all(),
+            &self
+                .trusted_tokens
+                .all()
+                .into_iter()
+                .map(IntoLegacy::into_legacy)
+                .collect(),
             self.config.solve_deadline,
         );
 

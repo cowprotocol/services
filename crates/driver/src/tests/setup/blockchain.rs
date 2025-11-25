@@ -51,6 +51,7 @@ pub struct Blockchain {
     pub trader_secret_key: SecretKey,
     pub web3: Web3,
     pub web3_url: String,
+    pub web3_ws_url: String,
     pub tokens: HashMap<&'static str, ERC20Mintable::Instance>,
     pub weth: WETH9::Instance,
     pub settlement: GPv2Settlement::Instance,
@@ -656,6 +657,7 @@ impl Blockchain {
             weth,
             web3,
             web3_url: node.url(),
+            web3_ws_url: node.ws_url(),
             node,
             pairs,
             flashloan_router,
@@ -902,6 +904,7 @@ async fn primary_account(web3: &Web3) -> ethcontract::Account {
 pub struct Node {
     process: tokio::process::Child,
     url: String,
+    ws_url: String,
 }
 
 impl std::fmt::Debug for Node {
@@ -951,11 +954,22 @@ impl Node {
             .await
             .expect("finding anvil URL timed out")
             .unwrap();
-        Self { process, url }
+
+        let ws_url = url.replace("http://", "ws://");
+
+        Self {
+            process,
+            url,
+            ws_url,
+        }
     }
 
     fn url(&self) -> String {
         self.url.clone()
+    }
+
+    fn ws_url(&self) -> String {
+        self.ws_url.clone()
     }
 }
 

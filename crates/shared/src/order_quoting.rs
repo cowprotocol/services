@@ -67,8 +67,8 @@ impl QuoteParameters {
 
         price_estimation::Query {
             verification: self.verification.clone(),
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
+            sell_token: self.sell_token.into_alloy(),
+            buy_token: self.buy_token.into_alloy(),
             in_amount,
             kind,
             block_dependent: true,
@@ -469,13 +469,13 @@ impl OrderQuoter {
                 .estimate(trade_query.clone())
                 .map_err(|err| (EstimatorKind::Regular, err).into()),
             self.native_price_estimator
-                .estimate_native_price(parameters.sell_token, trade_query.timeout)
+                .estimate_native_price(parameters.sell_token.into_alloy(), trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeSell, err).into()),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
-                .estimate_native_price(parameters.buy_token, trade_query.timeout)
+                .estimate_native_price(parameters.buy_token.into_alloy(), trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
@@ -568,8 +568,8 @@ impl OrderQuoter {
                 .pre_interactions
                 .iter()
                 .map(|i| InteractionData {
-                    target: i.target.into_alloy(),
-                    value: i.value.into_alloy(),
+                    target: i.target,
+                    value: i.value,
                     call_data: i.data.clone(),
                 })
                 .collect(),
@@ -787,6 +787,7 @@ mod tests {
         alloy::primitives::Address,
         chrono::Utc,
         ethcontract::H160,
+        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
@@ -860,8 +861,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -886,14 +887,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1001,8 +1002,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
@@ -1027,14 +1028,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1137,8 +1138,8 @@ mod tests {
                         from: H160([3; 20]),
                         ..Default::default()
                     },
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
+                    sell_token: Address::new([1; 20]),
+                    buy_token: Address::new([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,
@@ -1163,14 +1164,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1284,14 +1285,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
 
@@ -1358,14 +1359,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q == &sell_token
+                move |q, _| q.into_legacy() == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q == &buy_token
+                move |q, _| q.into_legacy() == buy_token
             })
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 

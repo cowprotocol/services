@@ -1,5 +1,6 @@
 use {
     anyhow::{Context, Result},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::order::{Order as ModelOrder, OrderKind},
     num::rational::Ratio,
     primitive_types::U256,
@@ -51,15 +52,15 @@ impl From<&ModelOrder> for Order {
     fn from(o: &ModelOrder) -> Self {
         Self {
             kind: o.data.kind,
-            buy_amount: o.data.buy_amount,
-            sell_amount: o.data.sell_amount,
-            fee_amount: o.data.fee_amount,
+            buy_amount: o.data.buy_amount.into_legacy(),
+            sell_amount: o.data.sell_amount.into_legacy(),
+            fee_amount: o.data.fee_amount.into_legacy(),
             executed_amount: match o.data.kind {
                 // A real buy order cannot execute more than U256::MAX so in order to make this
                 // function infallible we treat a larger amount as a full execution.
                 OrderKind::Buy => {
                     number::conversions::big_uint_to_u256(&o.metadata.executed_buy_amount)
-                        .unwrap_or(o.data.buy_amount)
+                        .unwrap_or(o.data.buy_amount.into_legacy())
                 }
                 OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,
             },
@@ -189,9 +190,9 @@ mod tests {
         // orders (where `{sell,fee}_amount * buy_amount` would overflow).
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1000.into(),
-                buy_amount: U256::MAX,
-                fee_amount: 337.into(),
+                sell_amount: alloy::primitives::U256::from(1000),
+                buy_amount: alloy::primitives::U256::MAX,
+                fee_amount: alloy::primitives::U256::from(337),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 ..Default::default()
@@ -207,9 +208,9 @@ mod tests {
         // order amounts.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 10.into(),
-                buy_amount: 11.into(),
-                fee_amount: 12.into(),
+                sell_amount: alloy::primitives::U256::from(10),
+                buy_amount: alloy::primitives::U256::from(11),
+                fee_amount: alloy::primitives::U256::from(12),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -229,9 +230,9 @@ mod tests {
         // settlement contract.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                fee_amount: 101.into(),
+                sell_amount: alloy::primitives::U256::from(100),
+                buy_amount: alloy::primitives::U256::from(100),
+                fee_amount: alloy::primitives::U256::from(101),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -250,9 +251,9 @@ mod tests {
 
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 10.into(),
-                fee_amount: 101.into(),
+                sell_amount: alloy::primitives::U256::from(100),
+                buy_amount: alloy::primitives::U256::from(10),
+                fee_amount: alloy::primitives::U256::from(101),
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()
@@ -276,9 +277,9 @@ mod tests {
         // Partially fillable order overflow when computing fill ratio.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1000.into(),
-                fee_amount: 337.into(),
-                buy_amount: U256::MAX,
+                sell_amount: alloy::primitives::U256::from(1000),
+                fee_amount: alloy::primitives::U256::from(337),
+                buy_amount: alloy::primitives::U256::MAX,
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()
@@ -291,7 +292,7 @@ mod tests {
         // Partially filled order overflowing executed amount.
         let order = ModelOrder {
             data: OrderData {
-                buy_amount: U256::MAX,
+                buy_amount: alloy::primitives::U256::MAX,
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()
@@ -308,7 +309,7 @@ mod tests {
         // Partially filled order that has executed more than its maximum.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1.into(),
+                sell_amount: alloy::primitives::U256::ONE,
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -325,7 +326,7 @@ mod tests {
         // Partially fillable order with zero amount.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 0.into(),
+                sell_amount: alloy::primitives::U256::ZERO,
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -342,9 +343,9 @@ mod tests {
         // insufficient balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1000.into(),
-                buy_amount: 2000.into(),
-                fee_amount: 337.into(),
+                sell_amount: alloy::primitives::U256::from(1000),
+                buy_amount: alloy::primitives::U256::from(2000),
+                fee_amount: alloy::primitives::U256::from(337),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
@@ -359,9 +360,9 @@ mod tests {
         // to the available balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 800.into(),
-                buy_amount: 2000.into(),
-                fee_amount: 200.into(),
+                sell_amount: alloy::primitives::U256::from(800),
+                buy_amount: alloy::primitives::U256::from(2000),
+                fee_amount: alloy::primitives::U256::from(200),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -384,9 +385,9 @@ mod tests {
         // to the remaining execution and available balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 800.into(),
-                buy_amount: 2000.into(),
-                fee_amount: 200.into(),
+                sell_amount: alloy::primitives::U256::from(800),
+                buy_amount: alloy::primitives::U256::from(2000),
+                fee_amount: alloy::primitives::U256::from(200),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -414,8 +415,9 @@ mod tests {
     fn support_scaling_for_large_orders_with_partial_balance() {
         let order: Order = ModelOrder {
             data: OrderData {
-                sell_amount: U256::exp10(30),
-                buy_amount: 1.into(),
+                sell_amount: alloy::primitives::U256::from(10)
+                    .pow(alloy::primitives::U256::from(30)),
+                buy_amount: alloy::primitives::U256::ONE,
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()

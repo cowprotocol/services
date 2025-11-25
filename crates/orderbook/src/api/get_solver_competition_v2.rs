@@ -3,9 +3,9 @@ use {
         database::Postgres,
         solver_competition::{Identifier, LoadSolverCompetitionError},
     },
+    alloy::primitives::B256,
     anyhow::Result,
     model::{AuctionId, solver_competition_v2::Response},
-    primitive_types::H256,
     reqwest::StatusCode,
     std::convert::Infallible,
     warp::{
@@ -22,7 +22,7 @@ fn request_id() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clo
 }
 
 fn request_hash() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("v2" / "solver_competition" / "by_tx_hash" / H256)
+    warp::path!("v2" / "solver_competition" / "by_tx_hash" / B256)
         .and(warp::get())
         .map(Identifier::Transaction)
 }

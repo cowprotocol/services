@@ -13,6 +13,7 @@ use {
     },
     crate::trade_finding::{TradeError, TradeFinding},
     anyhow::{Result, anyhow},
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,
@@ -71,8 +72,8 @@ impl Inner {
         if let Some(verifier) = &self.verifier {
             let trade = self.finder.get_trade(&query).await?;
             let price_query = PriceQuery {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
+                sell_token: query.sell_token.into_legacy(),
+                buy_token: query.buy_token.into_legacy(),
                 in_amount: query.in_amount,
                 kind: query.kind,
             };
@@ -85,9 +86,9 @@ impl Inner {
 
         let quote = self.finder.get_quote(&query).await?;
         Ok(Estimate {
-            out_amount: quote.out_amount,
+            out_amount: quote.out_amount.into_legacy(),
             gas: quote.gas_estimate,
-            solver: quote.solver,
+            solver: quote.solver.into_legacy(),
             verified: false,
             execution: quote.execution,
         })

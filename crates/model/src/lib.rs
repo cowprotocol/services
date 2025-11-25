@@ -11,6 +11,7 @@ pub mod time;
 pub mod trade;
 
 use {
+    alloy::primitives::Address,
     const_hex::{FromHex, FromHexError},
     primitive_types::H160,
     std::{fmt, sync::LazyLock},
@@ -24,12 +25,12 @@ pub type AuctionId = i64;
 
 /// Erc20 token pair specified by two contract addresses.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TokenPair(H160, H160);
+pub struct TokenPair(Address, Address);
 
 impl TokenPair {
     /// Create a new token pair from two addresses.
     /// The addresses must not be the equal.
-    pub fn new(token_a: H160, token_b: H160) -> Option<Self> {
+    pub fn new(token_a: Address, token_b: Address) -> Option<Self> {
         match token_a.cmp(&token_b) {
             std::cmp::Ordering::Less => Some(Self(token_a, token_b)),
             std::cmp::Ordering::Equal => None,
@@ -38,13 +39,13 @@ impl TokenPair {
     }
 
     /// Used to determine if `token` is among the pair.
-    pub fn contains(&self, token: &H160) -> bool {
+    pub fn contains(&self, token: &Address) -> bool {
         self.0 == *token || self.1 == *token
     }
 
     /// Returns the token in the pair which is not the one passed in, or None if
     /// token passed in is not part of the pair
-    pub fn other(&self, token: &H160) -> Option<H160> {
+    pub fn other(&self, token: &Address) -> Option<Address> {
         if &self.0 == token {
             Some(self.1)
         } else if &self.1 == token {
@@ -56,28 +57,28 @@ impl TokenPair {
 
     /// The first address is always the lower one.
     /// The addresses are never equal.
-    pub fn get(&self) -> (H160, H160) {
+    pub fn get(&self) -> (Address, Address) {
         (self.0, self.1)
     }
 
     /// Lowest element according to Ord trait.
     pub fn first_ord() -> Self {
         Self(
-            H160([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-            H160([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+            Address::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            Address::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
         )
     }
 }
 
 impl Default for TokenPair {
     fn default() -> Self {
-        Self::new(H160::from_low_u64_be(0), H160::from_low_u64_be(1)).unwrap()
+        Self::new(Address::with_last_byte(0), Address::with_last_byte(1)).unwrap()
     }
 }
 
 impl IntoIterator for TokenPair {
-    type IntoIter = std::iter::Chain<std::iter::Once<H160>, std::iter::Once<H160>>;
-    type Item = H160;
+    type IntoIter = std::iter::Chain<std::iter::Once<Address>, std::iter::Once<Address>>;
+    type Item = Address;
 
     fn into_iter(self) -> Self::IntoIter {
         std::iter::once(self.0).chain(std::iter::once(self.1))
@@ -85,8 +86,8 @@ impl IntoIterator for TokenPair {
 }
 
 impl<'a> IntoIterator for &'a TokenPair {
-    type IntoIter = std::iter::Chain<std::iter::Once<&'a H160>, std::iter::Once<&'a H160>>;
-    type Item = &'a H160;
+    type IntoIter = std::iter::Chain<std::iter::Once<&'a Address>, std::iter::Once<&'a Address>>;
+    type Item = &'a Address;
 
     fn into_iter(self) -> Self::IntoIter {
         std::iter::once(&self.0).chain(std::iter::once(&self.1))
@@ -175,9 +176,9 @@ mod tests {
 
     #[test]
     fn token_pair_contains() {
-        let token_a = H160::from_low_u64_be(0);
-        let token_b = H160::from_low_u64_be(1);
-        let token_c = H160::from_low_u64_be(2);
+        let token_a = Address::with_last_byte(0);
+        let token_b = Address::with_last_byte(1);
+        let token_c = Address::with_last_byte(2);
         let pair = TokenPair::new(token_a, token_b).unwrap();
 
         assert!(pair.contains(&token_a));
@@ -187,9 +188,9 @@ mod tests {
 
     #[test]
     fn token_pair_other() {
-        let token_a = H160::from_low_u64_be(0);
-        let token_b = H160::from_low_u64_be(1);
-        let token_c = H160::from_low_u64_be(2);
+        let token_a = Address::with_last_byte(0);
+        let token_b = Address::with_last_byte(1);
+        let token_c = Address::with_last_byte(2);
         let pair = TokenPair::new(token_a, token_b).unwrap();
 
         assert_eq!(pair.other(&token_a), Some(token_b));
@@ -199,8 +200,8 @@ mod tests {
 
     #[test]
     fn token_pair_is_sorted() {
-        let token_a = H160::from_low_u64_be(0);
-        let token_b = H160::from_low_u64_be(1);
+        let token_a = Address::with_last_byte(0);
+        let token_b = Address::with_last_byte(1);
         let pair_0 = TokenPair::new(token_a, token_b).unwrap();
         let pair_1 = TokenPair::new(token_b, token_a).unwrap();
         assert_eq!(pair_0, pair_1);
@@ -210,14 +211,14 @@ mod tests {
 
     #[test]
     fn token_pair_cannot_be_equal() {
-        let token = H160::from_low_u64_be(1);
+        let token = Address::with_last_byte(1);
         assert_eq!(TokenPair::new(token, token), None);
     }
 
     #[test]
     fn token_pair_iterator() {
-        let token_a = H160::from_low_u64_be(0);
-        let token_b = H160::from_low_u64_be(1);
+        let token_a = Address::with_last_byte(0);
+        let token_b = Address::with_last_byte(1);
         let pair = TokenPair::new(token_a, token_b).unwrap();
 
         let mut iter = (&pair).into_iter();
@@ -233,9 +234,9 @@ mod tests {
 
     #[test]
     fn token_pair_ordering() {
-        let token_a = H160::from_low_u64_be(0);
-        let token_b = H160::from_low_u64_be(1);
-        let token_c = H160::from_low_u64_be(2);
+        let token_a = Address::with_last_byte(0);
+        let token_b = Address::with_last_byte(1);
+        let token_c = Address::with_last_byte(2);
         let pair_ab = TokenPair::new(token_a, token_b).unwrap();
         let pair_bc = TokenPair::new(token_b, token_c).unwrap();
         let pair_ca = TokenPair::new(token_c, token_a).unwrap();

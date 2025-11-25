@@ -9,6 +9,7 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
+    alloy::primitives::{Address, U512},
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -68,7 +69,7 @@ pub enum OrderStatus {
 }
 
 impl Order {
-    pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
+    pub fn contains_token_from(&self, token_list: &HashSet<Address>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
 
@@ -88,22 +89,22 @@ impl Order {
 pub struct OrderBuilder(Order);
 
 impl OrderBuilder {
-    pub fn with_sell_token(mut self, sell_token: H160) -> Self {
+    pub fn with_sell_token(mut self, sell_token: Address) -> Self {
         self.0.data.sell_token = sell_token;
         self
     }
 
-    pub fn with_buy_token(mut self, buy_token: H160) -> Self {
+    pub fn with_buy_token(mut self, buy_token: Address) -> Self {
         self.0.data.buy_token = buy_token;
         self
     }
 
-    pub fn with_sell_amount(mut self, sell_amount: U256) -> Self {
+    pub fn with_sell_amount(mut self, sell_amount: alloy::primitives::U256) -> Self {
         self.0.data.sell_amount = sell_amount;
         self
     }
 
-    pub fn with_buy_amount(mut self, buy_amount: U256) -> Self {
+    pub fn with_buy_amount(mut self, buy_amount: alloy::primitives::U256) -> Self {
         self.0.data.buy_amount = buy_amount;
         self
     }
@@ -118,12 +119,12 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_receiver(mut self, receiver: Option<H160>) -> Self {
+    pub fn with_receiver(mut self, receiver: Option<Address>) -> Self {
         self.0.data.receiver = receiver;
         self
     }
 
-    pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
+    pub fn with_fee_amount(mut self, fee_amount: alloy::primitives::U256) -> Self {
         self.0.data.fee_amount = fee_amount;
         self
     }
@@ -160,7 +161,7 @@ impl OrderBuilder {
         domain: &DomainSeparator,
         key: SecretKeyRef,
     ) -> Self {
-        self.0.metadata.owner = key.address();
+        self.0.metadata.owner = Address::new(key.address().0);
         self.0.metadata.uid = self.0.data.uid(domain, &key.address());
         self.0.signature =
             EcdsaSignature::sign(signing_scheme, domain, &self.0.data.hash_struct(), key)
@@ -169,13 +170,13 @@ impl OrderBuilder {
     }
 
     pub fn with_eip1271(mut self, owner: H160, signature: Vec<u8>) -> Self {
-        self.0.metadata.owner = owner;
+        self.0.metadata.owner = Address::new(owner.0);
         self.0.signature = Signature::Eip1271(signature);
         self
     }
 
     pub fn with_presign(mut self, owner: H160) -> Self {
-        self.0.metadata.owner = owner;
+        self.0.metadata.owner = Address::new(owner.0);
         self.0.signature = Signature::PreSign;
         self
     }
@@ -198,14 +199,14 @@ impl OrderBuilder {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderData {
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     #[serde(default)]
-    pub receiver: Option<H160>,
+    pub receiver: Option<Address>,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
+    pub sell_amount: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub buy_amount: alloy::primitives::U256,
     pub valid_to: u32,
     pub app_data: AppDataHash,
     /// Fees that will be taken in terms of `sell_token`.
@@ -214,7 +215,7 @@ pub struct OrderData {
     /// and should not be settled on their own.
     /// This is 0 for limit orders as their fee gets taken from the surplus.
     #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
+    pub fee_amount: alloy::primitives::U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     #[serde(default)]
@@ -237,15 +238,14 @@ impl OrderData {
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
         // Some slots are not assigned (stay 0) because all values are extended to 256
         // bits.
-        hash_data[44..64].copy_from_slice(self.sell_token.as_fixed_bytes());
-        hash_data[76..96].copy_from_slice(self.buy_token.as_fixed_bytes());
-        hash_data[108..128]
-            .copy_from_slice(self.receiver.unwrap_or_else(H160::zero).as_fixed_bytes());
-        self.sell_amount.to_big_endian(&mut hash_data[128..160]);
-        self.buy_amount.to_big_endian(&mut hash_data[160..192]);
+        hash_data[44..64].copy_from_slice(self.sell_token.as_slice());
+        hash_data[76..96].copy_from_slice(self.buy_token.as_slice());
+        hash_data[108..128].copy_from_slice(self.receiver.unwrap_or(Address::ZERO).as_slice());
+        hash_data[128..160].copy_from_slice(&self.sell_amount.to_be_bytes::<32>());
+        hash_data[160..192].copy_from_slice(&self.buy_amount.to_be_bytes::<32>());
         hash_data[220..224].copy_from_slice(&self.valid_to.to_be_bytes());
         hash_data[224..256].copy_from_slice(&self.app_data.0);
-        self.fee_amount.to_big_endian(&mut hash_data[256..288]);
+        hash_data[256..288].copy_from_slice(&self.fee_amount.to_be_bytes::<32>());
         hash_data[288..320].copy_from_slice(match self.kind {
             OrderKind::Sell => &OrderKind::SELL,
             OrderKind::Buy => &OrderKind::BUY,
@@ -273,8 +273,23 @@ impl OrderData {
 
     /// Checks if the order is a market order.
     pub fn within_market(&self, quote: QuoteAmounts) -> bool {
-        (self.sell_amount + self.fee_amount).full_mul(quote.buy)
-            >= (quote.sell + quote.fee).full_mul(self.buy_amount)
+        // Manual transformation because this crate doesn't have the conversiont trait
+        let mut buy_buffer = [0; 32];
+        quote.buy.to_big_endian(&mut buy_buffer);
+        let quote_buy = alloy::primitives::U256::from_be_bytes(buy_buffer);
+
+        let mut sell_buffer = [0; 32];
+        quote.sell.to_big_endian(&mut sell_buffer);
+        let quote_sell = alloy::primitives::U256::from_be_bytes(sell_buffer);
+
+        let mut fee_buffer = [0; 32];
+        quote.fee.to_big_endian(&mut fee_buffer);
+        let quote_fee = alloy::primitives::U256::from_be_bytes(fee_buffer);
+
+        // Using let here because widening_mul isn't able to infer the result size
+        let lhs: U512 = (self.sell_amount + self.fee_amount).widening_mul(quote_buy);
+        let rhs: U512 = (quote_sell + quote_fee).widening_mul(self.buy_amount);
+        lhs >= rhs
     }
 }
 
@@ -349,15 +364,24 @@ impl OrderCreation {
     /// Returns the order's data — i.e. the [`OrderCreation`] without
     /// the metadata: `signature`, `quote_id` and with the `app_data`'s hash.
     pub fn data(&self) -> OrderData {
+        let mut sell_amount_buffer = [0; 32];
+        self.sell_amount.to_big_endian(&mut sell_amount_buffer);
+
+        let mut buy_amount_buffer = [0; 32];
+        self.buy_amount.to_big_endian(&mut buy_amount_buffer);
+
+        let mut fee_amount_buffer = [0; 32];
+        self.fee_amount.to_big_endian(&mut fee_amount_buffer);
+
         OrderData {
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
-            receiver: self.receiver,
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
+            sell_token: Address::new(self.sell_token.0),
+            buy_token: Address::new(self.buy_token.0),
+            receiver: self.receiver.map(|receiver| Address::new(receiver.0)),
+            sell_amount: alloy::primitives::U256::from_be_slice(&sell_amount_buffer),
+            buy_amount: alloy::primitives::U256::from_be_slice(&buy_amount_buffer),
             valid_to: self.valid_to,
             app_data: self.app_data.hash(),
-            fee_amount: self.fee_amount,
+            fee_amount: alloy::primitives::U256::from_be_slice(&fee_amount_buffer),
             kind: self.kind,
             partially_fillable: self.partially_fillable,
             sell_token_balance: self.sell_token_balance,
@@ -683,7 +707,7 @@ pub enum OnchainOrderPlacementError {
 #[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OnchainOrderData {
-    pub sender: H160,
+    pub sender: Address,
     pub placement_error: Option<OnchainOrderPlacementError>,
 }
 
@@ -693,7 +717,7 @@ pub struct OnchainOrderData {
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
-    pub owner: H160,
+    pub owner: Address,
     pub uid: OrderUid,
     /// deprecated, always set to null
     #[serde_as(as = "Option<HexOrDecimalU256>")]
@@ -710,18 +734,18 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee: U256,
-    pub executed_fee_token: H160,
+    pub executed_fee_token: Address,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]
     pub class: OrderClass,
-    pub settlement_contract: H160,
+    pub settlement_contract: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_order_data: Option<OnchainOrderData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub onchain_user: Option<H160>,
+    pub onchain_user: Option<Address>,
     pub is_liquidity_order: bool,
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
@@ -1115,7 +1139,7 @@ mod tests {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
                 class: OrderClass::Limit,
-                owner: H160::from_low_u64_be(1),
+                owner: Address::with_last_byte(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: None,
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
@@ -1123,24 +1147,24 @@ mod tests {
                 executed_sell_amount_before_fees: 4.into(),
                 executed_fee_amount: 1.into(),
                 executed_fee: 1.into(),
-                executed_fee_token: H160::from_low_u64_be(10),
+                executed_fee_token: Address::with_last_byte(10),
                 invalidated: true,
                 status: OrderStatus::Open,
-                settlement_contract: H160::from_low_u64_be(2),
+                settlement_contract: Address::with_last_byte(2),
                 full_app_data: Some("123".to_string()),
                 ..Default::default()
             },
             data: OrderData {
-                sell_token: H160::from_low_u64_be(10),
-                buy_token: H160::from_low_u64_be(9),
-                receiver: Some(H160::from_low_u64_be(11)),
-                sell_amount: 1.into(),
-                buy_amount: 0.into(),
+                sell_token: Address::with_last_byte(10),
+                buy_token: Address::with_last_byte(9),
+                receiver: Some(Address::with_last_byte(11)),
+                sell_amount: alloy::primitives::U256::ONE,
+                buy_amount: alloy::primitives::U256::ZERO,
                 valid_to: u32::MAX,
                 app_data: AppDataHash(hex!(
                     "6000000000000000000000000000000000000000000000000000000000000007"
                 )),
-                fee_amount: U256::MAX,
+                fee_amount: alloy::primitives::U256::MAX,
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
@@ -1306,13 +1330,13 @@ mod tests {
                 sell_token: hex!("0101010101010101010101010101010101010101").into(),
                 buy_token: hex!("0202020202020202020202020202020202020202").into(),
                 receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
-                sell_amount: 0x0246ddf97976680000_u128.into(),
-                buy_amount: 0xb98bc829a6f90000_u128.into(),
+                sell_amount: alloy::primitives::U256::from(0x0246ddf97976680000_u128),
+                buy_amount: alloy::primitives::U256::from(0xb98bc829a6f90000_u128),
                 valid_to: 0xffffffff,
                 app_data: AppDataHash(hex!(
                     "0000000000000000000000000000000000000000000000000000000000000000"
                 )),
-                fee_amount: 0x0de0b6b3a7640000_u128.into(),
+                fee_amount: alloy::primitives::U256::from(0x0de0b6b3a7640000_u128),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
@@ -1340,13 +1364,13 @@ mod tests {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
             receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
-            sell_amount: 0x0246ddf97976680000_u128.into(),
-            buy_amount: 0xb98bc829a6f90000_u128.into(),
+            sell_amount: alloy::primitives::U256::from(0x0246ddf97976680000_u128),
+            buy_amount: alloy::primitives::U256::from(0xb98bc829a6f90000_u128),
             valid_to: 0xffffffff,
             app_data: AppDataHash(hex!(
                 "0000000000000000000000000000000000000000000000000000000000000000"
             )),
-            fee_amount: 0x0de0b6b3a7640000_u128.into(),
+            fee_amount: alloy::primitives::U256::from(0x0de0b6b3a7640000_u128),
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1415,7 +1439,7 @@ mod tests {
         assert!(order.contains_token_from(&hashset!(order.data.sell_token)),);
         assert!(order.contains_token_from(&hashset!(order.data.buy_token)),);
         assert!(!order.contains_token_from(&HashSet::new()));
-        let other_token = H160::from_low_u64_be(1);
+        let other_token = Address::with_last_byte(1);
         assert_ne!(other_token, order.data.sell_token);
         assert_ne!(other_token, order.data.buy_token);
         assert!(!order.contains_token_from(&hashset!(other_token)));
@@ -1433,13 +1457,13 @@ mod tests {
         let sk = SecretKey::from_slice(&PRIVATE_KEY).unwrap();
         let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
         let order = OrderBuilder::default()
-            .with_sell_token(H160::zero())
-            .with_sell_amount(100.into())
-            .with_buy_token(H160::zero())
-            .with_buy_amount(80.into())
+            .with_sell_token(Address::ZERO)
+            .with_sell_amount(alloy::primitives::U256::from(100))
+            .with_buy_token(Address::ZERO)
+            .with_buy_amount(alloy::primitives::U256::from(80))
             .with_valid_to(u32::MAX)
             .with_app_data([1u8; 32])
-            .with_fee_amount(U256::from(1337))
+            .with_fee_amount(alloy::primitives::U256::from(1337))
             .with_partially_fillable(true)
             .with_sell_token_balance(SellTokenSource::External)
             .with_buy_token_balance(BuyTokenDestination::Internal)

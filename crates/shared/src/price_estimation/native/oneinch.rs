@@ -1,8 +1,12 @@
 use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
+    alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
-    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
+    ethrpc::{
+        alloy::conversions::IntoAlloy,
+        block_stream::{CurrentBlockWatcher, into_stream},
+    },
     futures::{FutureExt, StreamExt, future::BoxFuture},
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
@@ -23,7 +27,7 @@ use {
 #[derive(Debug, Deserialize)]
 struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<H160, U256>);
 
-type Token = H160;
+type Token = Address;
 
 pub struct OneInch {
     prices: Arc<Mutex<HashMap<Token, NativePrice>>>,
@@ -93,7 +97,7 @@ impl NativePriceEstimating for OneInch {
     #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
-        token: Token,
+        token: Address,
         _timeout: Duration, // ignored since cache lookup take ms anyway
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
@@ -151,7 +155,7 @@ async fn get_current_prices(
             let unit =
                 num::BigRational::from_integer(num::BigInt::from(10u64).pow(decimals.into()));
             let normalized_price = u256_to_big_rational(&price) / unit;
-            Some((token, normalized_price.to_f64()?))
+            Some((token.into_alloy(), normalized_price.to_f64()?))
         })
         .collect();
     Ok(normalized_prices)
@@ -165,7 +169,8 @@ mod tests {
             price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
             token_info::{MockTokenInfoFetching, TokenInfo},
         },
-        std::{env, str::FromStr},
+        alloy::primitives::address,
+        std::env,
     };
 
     const BASE_URL: &str = "https://api.1inch.dev/";
@@ -203,7 +208,7 @@ mod tests {
         .unwrap();
         assert!(!prices.is_empty());
 
-        let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
+        let native_token = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let instance = OneInch {
             prices: Arc::new(Mutex::new(prices)),
         };
@@ -220,7 +225,7 @@ mod tests {
         assert!(
             1. / instance
                 .estimate_native_price(
-                    H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
+                    address!("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
                     HEALTHY_PRICE_ESTIMATION_TIME,
                 )
                 .await

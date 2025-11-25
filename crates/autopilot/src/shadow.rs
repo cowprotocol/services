@@ -23,7 +23,7 @@ use {
     },
     ::observe::metrics,
     anyhow::Context,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     itertools::Itertools,
     num::{CheckedSub, Saturating},
     shared::token_list::AutoUpdatingTokenList,
@@ -178,7 +178,16 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
-        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
+        let request = solve::Request::new(
+            auction,
+            &self
+                .trusted_tokens
+                .all()
+                .into_iter()
+                .map(IntoLegacy::into_legacy)
+                .collect(),
+            self.solve_deadline,
+        );
 
         futures::future::join_all(
             self.drivers

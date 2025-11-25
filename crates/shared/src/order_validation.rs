@@ -187,9 +187,10 @@ impl From<CalculateQuoteError> for ValidationError {
             CalculateQuoteError::Price {
                 source: PriceEstimationError::UnsupportedToken { token, reason },
                 ..
-            } => {
-                ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
-            }
+            } => ValidationError::Partial(PartialValidationError::UnsupportedToken {
+                token: token.into_legacy(),
+                reason,
+            }),
             CalculateQuoteError::Price {
                 source: PriceEstimationError::ProtocolInternal(err),
                 ..
@@ -251,10 +252,10 @@ pub struct PreOrderData {
 
 fn actual_receiver(owner: H160, order: &OrderData) -> H160 {
     let receiver = order.receiver.unwrap_or_default();
-    if receiver == H160::zero() {
+    if receiver.is_zero() {
         owner
     } else {
-        receiver
+        receiver.into_legacy()
     }
 }
 
@@ -266,8 +267,8 @@ impl PreOrderData {
     ) -> Self {
         Self {
             owner,
-            sell_token: order.sell_token,
-            buy_token: order.buy_token,
+            sell_token: order.sell_token.into_legacy(),
+            buy_token: order.buy_token.into_legacy(),
             receiver: actual_receiver(owner, order),
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
@@ -397,7 +398,7 @@ impl OrderValidator {
                 .balance_fetcher
                 .can_transfer(
                     &account_balances::Query {
-                        token: order.data().sell_token,
+                        token: order.data().sell_token.into_legacy(),
                         owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
@@ -488,14 +489,14 @@ impl OrderValidating for OrderValidator {
         if has_same_buy_and_sell_token(&order, self.native_token.address()) {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
-        if order.sell_token == BUY_ETH_ADDRESS {
+        if order.sell_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy() {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
 
         for &token in &[order.sell_token, order.buy_token] {
             if let TokenQuality::Bad { reason } = self
                 .bad_token_detector
-                .detect(token)
+                .detect(token.into_alloy())
                 .await
                 .map_err(PartialValidationError::Other)?
             {
@@ -644,11 +645,11 @@ impl OrderValidating for OrderValidator {
         };
 
         let quote_parameters = QuoteSearchParameters {
-            sell_token: data.sell_token,
-            buy_token: data.buy_token,
-            sell_amount: data.sell_amount,
-            buy_amount: data.buy_amount,
-            fee_amount: data.fee_amount,
+            sell_token: data.sell_token.into_legacy(),
+            buy_token: data.buy_token.into_legacy(),
+            sell_amount: data.sell_amount.into_legacy(),
+            buy_amount: data.buy_amount.into_legacy(),
+            fee_amount: data.fee_amount.into_legacy(),
             kind: data.kind,
             signing_scheme: convert_signing_scheme_into_quote_signing_scheme(
                 order.signature.scheme(),
@@ -673,7 +674,7 @@ impl OrderValidating for OrderValidator {
                     &*self.quoter,
                     &quote_parameters,
                     order.quote_id,
-                    Some(data.fee_amount),
+                    Some(data.fee_amount.into_legacy()),
                 )
                 .await?;
                 tracing::debug!(
@@ -684,9 +685,9 @@ impl OrderValidating for OrderValidator {
                 );
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: data.sell_amount.into_legacy(),
+                        buy: data.buy_amount.into_legacy(),
+                        fee: data.fee_amount.into_legacy(),
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -714,9 +715,9 @@ impl OrderValidating for OrderValidator {
                         // If the order is not "In-Market", check for the limit orders
                         if is_order_outside_market_price(
                             &Amounts {
-                                sell: data.sell_amount,
-                                buy: data.buy_amount,
-                                fee: data.fee_amount,
+                                sell: data.sell_amount.into_legacy(),
+                                buy: data.buy_amount.into_legacy(),
+                                fee: data.fee_amount.into_legacy(),
                             },
                             &Amounts {
                                 sell: quote.sell_amount,
@@ -745,9 +746,9 @@ impl OrderValidating for OrderValidator {
                 // If the order is not "In-Market", check for the limit orders
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: data.sell_amount.into_legacy(),
+                        buy: data.buy_amount.into_legacy(),
+                        fee: data.fee_amount.into_legacy(),
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -772,10 +773,10 @@ impl OrderValidating for OrderValidator {
 
         let order = Order {
             metadata: OrderMetadata {
-                owner,
+                owner: owner.into_alloy(),
                 creation_date: chrono::offset::Utc::now(),
                 uid,
-                settlement_contract,
+                settlement_contract: settlement_contract.into_alloy(),
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
@@ -857,7 +858,8 @@ pub enum OrderValidToError {
 /// This also checks for orders selling wrapped native token for native token.
 fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &Address) -> bool {
     order.sell_token == order.buy_token
-        || (order.sell_token == native_token.into_legacy() && order.buy_token == BUY_ETH_ADDRESS)
+        || (order.sell_token == native_token.into_legacy()
+            && order.buy_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy())
 }
 
 /// Retrieves the quote for an order that is being created and verify that its
@@ -950,9 +952,9 @@ pub struct Amounts {
 impl From<&model::order::Order> for Amounts {
     fn from(order: &model::order::Order) -> Self {
         Self {
-            sell: order.data.sell_amount,
-            buy: order.data.buy_amount,
-            fee: order.data.fee_amount,
+            sell: order.data.sell_amount.into_legacy(),
+            buy: order.data.buy_amount.into_legacy(),
+            fee: order.data.fee_amount.into_legacy(),
         }
     }
 }
@@ -1232,11 +1234,11 @@ mod tests {
         let mut bad_token_detector = MockBadTokenDetecting::new();
         bad_token_detector
             .expect_detect()
-            .with(eq(H160::from_low_u64_be(1)))
+            .with(eq(Address::with_last_byte(1)))
             .returning(|_| Ok(TokenQuality::Good));
         bad_token_detector
             .expect_detect()
-            .with(eq(H160::from_low_u64_be(2)))
+            .with(eq(Address::with_last_byte(2)))
             .returning(|_| Ok(TokenQuality::Good));
 
         let mut limit_order_counter = MockLimitOrderCounting::new();

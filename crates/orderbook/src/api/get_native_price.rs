@@ -1,22 +1,22 @@
 use {
     crate::api::{ApiReply, IntoWarpReply},
+    alloy::primitives::Address,
     anyhow::Result,
-    ethcontract::H160,
     model::quote::NativeTokenPrice,
     shared::price_estimation::native::NativePriceEstimating,
     std::{convert::Infallible, sync::Arc, time::Duration},
     warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
 };
 
-fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
-    warp::path!("v1" / "token" / H160 / "native_price").and(warp::get())
+fn get_native_prices_request() -> impl Filter<Extract = (Address,), Error = Rejection> + Clone {
+    warp::path!("v1" / "token" / Address / "native_price").and(warp::get())
 }
 
 pub fn get_native_price(
     estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    get_native_prices_request().and_then(move |token: H160| {
+    get_native_prices_request().and_then(move |token: Address| {
         let estimator = estimator.clone();
         async move {
             let result = estimator.estimate_native_price(token, quote_timeout).await;
@@ -34,7 +34,7 @@ pub fn get_native_price(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, futures::FutureExt, hex_literal::hex, warp::test::request};
+    use {super::*, alloy::primitives::address, futures::FutureExt, warp::test::request};
 
     #[test]
     fn native_prices_query() {
@@ -45,9 +45,6 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result,
-            H160(hex!("dac17f958d2ee523a2206206994597c13d831ec7"))
-        );
+        assert_eq!(result, address!("dac17f958d2ee523a2206206994597c13d831ec7"));
     }
 }

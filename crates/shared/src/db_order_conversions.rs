@@ -38,7 +38,11 @@ use {
         signature::{Signature, SigningScheme},
     },
     num::FromPrimitive,
-    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
+    number::conversions::{
+        alloy::big_decimal_to_u256 as alloy_big_decimal_to_u256,
+        big_decimal_to_big_uint,
+        big_decimal_to_u256,
+    },
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
@@ -57,18 +61,19 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     } else {
         None
     };
-    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
+    let onchain_user = order
+        .onchain_user
+        .map(|onchain_user| Address::new(onchain_user.0));
     let class = order_class_from(&order);
     let onchain_placement_error = onchain_order_placement_error_from(&order);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
-    let fee_amount = big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?;
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
-        owner: H160(order.owner.0),
+        owner: Address::new(order.owner.0),
         uid: OrderUid(order.uid.0),
         available_balance: Default::default(),
         executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
@@ -86,12 +91,12 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context("executed fee amount is not a valid u256")?,
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
-        executed_fee_token: H160(order.executed_fee_token.0),
+        executed_fee_token: Address::new(order.executed_fee_token.0),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
-        settlement_contract: H160(order.settlement_contract.0),
+        settlement_contract: Address::new(order.settlement_contract.0),
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -103,14 +108,17 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         quote: None,
     };
     let data = OrderData {
-        sell_token: H160(order.sell_token.0),
-        buy_token: H160(order.buy_token.0),
-        receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        sell_token: Address::new(order.sell_token.0),
+        buy_token: Address::new(order.buy_token.0),
+        receiver: order.receiver.map(|address| Address::new(address.0)),
+        sell_amount: alloy_big_decimal_to_u256(&order.sell_amount)
+            .context("sell_amount is not U256")?,
+        buy_amount: alloy_big_decimal_to_u256(&order.buy_amount)
+            .context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount,
+        fee_amount: alloy_big_decimal_to_u256(&order.fee_amount)
+            .context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),

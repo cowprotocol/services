@@ -224,7 +224,7 @@ mod tests {
             .into_source(web3)
             .await
             .unwrap();
-        let pair = TokenPair::new(token0, token1).unwrap();
+        let pair = TokenPair::new(token0.into_alloy(), token1.into_alloy()).unwrap();
         let pool = source.pair_provider.pair_address(&pair);
         assert_eq!(pool, expected_pool_address);
     }
@@ -327,8 +327,8 @@ mod tests {
             .fetch(
                 hashset! {
                     TokenPair::new(
-                        GNOSIS_CHAIN_WETH.into_legacy(),
-                        GNOSIS_CHAIN_WXDAI.into_legacy(),
+                        GNOSIS_CHAIN_WETH,
+                        GNOSIS_CHAIN_WXDAI,
                     )
                     .unwrap(),
                 },
@@ -365,8 +365,8 @@ mod tests {
             .fetch(
                 hashset! {
                     TokenPair::new(
-                        GNOSIS_CHAIN_WETH.into_legacy(),
-                        GNOSIS_CHAIN_WXDAI.into_legacy(),
+                        GNOSIS_CHAIN_WETH,
+                        GNOSIS_CHAIN_WXDAI,
                     )
                     .unwrap(),
                 },

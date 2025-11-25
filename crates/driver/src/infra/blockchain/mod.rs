@@ -13,6 +13,7 @@ use {
     },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
+    tracing::{Level, instrument},
     url::Url,
     web3::{Transport, types::CallRequest},
 };
@@ -99,15 +100,14 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         tx_gas_limit: U256,
+        current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
 
-        let current_block_stream = ethrpc::block_stream::current_block_stream(
-            args.url.clone(),
-            std::time::Duration::from_millis(500),
-        )
-        .await
-        .expect("couldn't initialize current block stream");
+        let current_block_stream = current_block_args
+            .stream(args.url.clone(), web3.alloy.clone())
+            .await
+            .expect("couldn't initialize current block stream");
 
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
@@ -174,6 +174,7 @@ impl Ethereum {
     }
 
     /// Create access list used by a transaction.
+    #[instrument(skip_all)]
     pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
     where
         CallRequest: From<T>,
@@ -187,7 +188,7 @@ impl Ethereum {
             .transport()
             .execute(
                 "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap()],
+                vec![serde_json::to_value(&tx).unwrap(), "latest".into()],
             )
             .await?;
         if let Some(err) = json.get("error") {
@@ -272,6 +273,7 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
+    #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
