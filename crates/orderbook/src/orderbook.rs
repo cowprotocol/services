@@ -13,7 +13,7 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{
@@ -29,7 +29,6 @@ use {
         solver_competition::{self, SolverCompetitionAPI},
     },
     observe::metrics::LivenessChecking,
-    primitive_types::H160,
     shared::{
         fee::FeeParameters,
         order_quoting::Quote,
@@ -217,21 +216,21 @@ pub enum OrderReplacementError {
 #[derive(Debug)]
 pub struct QuoteMetadata {
     pub id: Option<QuoteId>,
-    pub solver: H160,
+    pub solver: Address,
 }
 
 impl From<&Quote> for QuoteMetadata {
     fn from(value: &Quote) -> Self {
         Self {
             id: value.id,
-            solver: value.data.solver,
+            solver: value.data.solver.into_alloy(),
         }
     }
 }
 
 pub struct Orderbook {
     domain_separator: DomainSeparator,
-    settlement_contract: H160,
+    settlement_contract: Address,
     database: crate::database::Postgres,
     database_replica: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
@@ -242,7 +241,7 @@ pub struct Orderbook {
 impl Orderbook {
     pub fn new(
         domain_separator: DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         database: crate::database::Postgres,
         database_replica: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
@@ -287,7 +286,7 @@ impl Orderbook {
             .validate_and_construct_order(
                 payload,
                 &self.domain_separator,
-                self.settlement_contract,
+                self.settlement_contract.into_legacy(),
                 full_app_data_override,
             )
             .await?;
@@ -706,7 +705,7 @@ mod tests {
             database_replica,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
-            settlement_contract: H160([0xba; 20]),
+            settlement_contract: Address::repeat_byte(0xba),
             app_data,
             active_order_competition_threshold: Default::default(),
         };
