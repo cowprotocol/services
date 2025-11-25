@@ -10,7 +10,10 @@ ARG CARGO_BUILD_FEATURES=""
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config
+    apt-get install -y git libssl-dev pkg-config && \
+    if echo "${CARGO_BUILD_FEATURES}" | grep -q "jemalloc-profiling"; then \
+        apt-get install -y build-essential; \
+    fi
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
 
