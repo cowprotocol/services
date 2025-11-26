@@ -16,7 +16,6 @@
     "@openzeppelin/contracts": "^5.0.2",
     "@openzeppelin/contracts-old": "npm:@openzeppelin/contracts@^3.4.0",
     "@cowprotocol/contracts": "^1.6.0",
-    "@cowprotocol/hooks-trampoline": "github:cowprotocol/cow-hooks-trampoline",
     "forge-std": "github:foundry-rs/forge-std",
     "solmate": "github:transmissions11/solmate",
     "@uniswap/v2-core": "^1.0.1",
