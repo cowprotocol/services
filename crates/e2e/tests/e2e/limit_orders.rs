@@ -749,9 +749,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Place "in-market" order
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
-        sell_amount: quote.quote.sell_amount,
+        sell_amount: quote.quote.sell_amount.into_legacy(),
         buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4)),
+        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4).into_alloy()).into_legacy(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -785,9 +785,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Place another "in-market" order in order to check it is not limited
     let order = OrderCreation {
         sell_token: token.address().into_legacy(),
-        sell_amount: quote.quote.sell_amount,
+        sell_amount: quote.quote.sell_amount.into_legacy(),
         buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2)),
+        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2).into_alloy()).into_legacy(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()

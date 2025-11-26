@@ -1022,16 +1022,16 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // Must align with the mocked_solutions.
     let quote_response = services.submit_quote(&quote_request).await.unwrap();
     assert!(quote_response.verified);
-    assert_eq!(quote_response.quote.sell_token, dai.address().into_legacy());
+    assert_eq!(quote_response.quote.sell_token, *dai.address());
     assert_eq!(
         quote_response.quote.buy_token,
-        onchain.contracts().weth.address().into_legacy()
+        *onchain.contracts().weth.address()
     );
     // Ensure the amounts are the same as the solution proposes.
-    assert_eq!(quote_response.quote.sell_amount, executed_amount);
+    assert_eq!(quote_response.quote.sell_amount, executed_amount.into_alloy());
     assert_eq!(
         quote_response.quote.buy_amount,
-        ethcontract::U256::exp10(17)
+        ethcontract::U256::exp10(17).into_alloy()
     );
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)

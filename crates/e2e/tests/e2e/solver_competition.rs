@@ -530,7 +530,7 @@ async fn store_filtered_solutions(web3: Web3) {
         competition
             .reference_scores
             .get(&good_solver_account.address().into_alloy()),
-        Some(&0.into())
+        Some(&U256::ZERO)
     );
 
     assert_eq!(competition.solutions.len(), 2);
@@ -557,7 +557,7 @@ async fn store_filtered_solutions(web3: Web3) {
     );
     assert_eq!(good_solution.tx_hash.unwrap(), trade.tx_hash.unwrap());
     // since the only other solutions were unfair the reference score is zero
-    assert_eq!(good_solution.reference_score, Some(0.into()));
+    assert_eq!(good_solution.reference_score, Some(U256::ZERO));
 
     // check that new DB tables contain the filtered solution
     let mut db = services.db().acquire().await.unwrap();

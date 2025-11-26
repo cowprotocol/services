@@ -1,4 +1,5 @@
 use {
+    ::alloy::primitives::U256 as AlloyU256,
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
@@ -189,7 +190,9 @@ async fn combined_protocol_fees(web3: Web3) {
     let market_price_improvement_order = OrderCreation {
         sell_amount,
         // to make sure the order is in-market
-        buy_amount: market_quote_before.quote.buy_amount * 2 / 3,
+        buy_amount: (market_quote_before.quote.buy_amount * AlloyU256::from(2)
+            / AlloyU256::from(3))
+        .into_legacy(),
         ..sell_order_from_quote(&market_quote_before)
     }
     .sign(
@@ -200,7 +203,8 @@ async fn combined_protocol_fees(web3: Web3) {
     let limit_surplus_order = OrderCreation {
         sell_amount,
         // to make sure the order is out-of-market
-        buy_amount: limit_quote_before.quote.buy_amount * 3 / 2,
+        buy_amount: (limit_quote_before.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2))
+            .into_legacy(),
         ..sell_order_from_quote(&limit_quote_before)
     }
     .sign(
@@ -211,7 +215,8 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_order = OrderCreation {
         sell_amount,
         // to make sure the order is out-of-market
-        buy_amount: partner_fee_quote.quote.buy_amount * 3 / 2,
+        buy_amount: (partner_fee_quote.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2))
+            .into_legacy(),
         app_data: partner_fee_app_data.clone(),
         ..sell_order_from_quote(&partner_fee_quote)
     }
@@ -249,7 +254,8 @@ async fn combined_protocol_fees(web3: Web3) {
         // Only proceed with test once the quote changes significantly (2x) to avoid
         // progressing due to tiny fluctuations in gas price which would lead to
         // errors down the line.
-        new_market_order_quote.quote.buy_amount > market_quote_before.quote.buy_amount * 2
+        new_market_order_quote.quote.buy_amount
+            > market_quote_before.quote.buy_amount * AlloyU256::from(2)
     })
     .await
     .expect("Timeout waiting for eviction of the cached liquidity");
@@ -335,31 +341,45 @@ async fn combined_protocol_fees(web3: Web3) {
         .buy_amount
         .saturating_sub(market_quote_before.quote.buy_amount);
     // see `market_price_improvement_policy.factor`, which is 0.3
-    assert!(market_executed_fee_in_buy_token >= market_quote_diff * 3 / 10);
+    assert!(
+        market_executed_fee_in_buy_token
+            >= (market_quote_diff * AlloyU256::from(3) / AlloyU256::from(10)).into_legacy()
+    );
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     let partner_fee_executed_fee_in_buy_token =
         fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
-        partner_fee_executed_fee_in_buy_token >= partner_fee_quote.quote.buy_amount * 2 / 100
+        partner_fee_executed_fee_in_buy_token
+            >= (partner_fee_quote.quote.buy_amount * AlloyU256::from(2) / AlloyU256::from(100))
+                .into_legacy()
     );
     let limit_quote_diff = partner_fee_quote_after
         .quote
         .buy_amount
-        .saturating_sub(partner_fee_order.data.buy_amount.into_legacy());
+        .saturating_sub(partner_fee_order.data.buy_amount.into_legacy().into_alloy());
     // see `limit_surplus_policy.factor`, which is 0.3
-    assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+    assert!(
+        partner_fee_executed_fee_in_buy_token
+            >= (limit_quote_diff * AlloyU256::from(3) / AlloyU256::from(10)).into_legacy()
+    );
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
     let limit_executed_fee_in_buy_token =
         fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
-    let limit_quote_diff = limit_quote_after
-        .quote
-        .buy_amount
-        .saturating_sub(limit_surplus_order.data.buy_amount.into_legacy());
+    let limit_quote_diff = limit_quote_after.quote.buy_amount.saturating_sub(
+        limit_surplus_order
+            .data
+            .buy_amount
+            .into_legacy()
+            .into_alloy(),
+    );
     // see `limit_surplus_policy.factor`, which is 0.3
-    assert!(limit_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+    assert!(
+        limit_executed_fee_in_buy_token
+            >= (limit_quote_diff * AlloyU256::from(3) / AlloyU256::from(10)).into_legacy()
+    );
 
     let [
         market_order_token_balance,
@@ -616,15 +636,15 @@ async fn get_quote(
 }
 
 fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
-    order.metadata.executed_fee * quote.buy_amount / quote.sell_amount
+    (order.metadata.executed_fee.into_alloy() * quote.buy_amount / quote.sell_amount).into_legacy()
 }
 
 fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
     OrderCreation {
-        sell_token: quote.quote.sell_token,
-        sell_amount: quote.quote.sell_amount,
-        buy_token: quote.quote.buy_token,
-        buy_amount: quote.quote.buy_amount,
+        sell_token: quote.quote.sell_token.into_legacy(),
+        sell_amount: quote.quote.sell_amount.into_legacy(),
+        buy_token: quote.quote.buy_token.into_legacy(),
+        buy_amount: quote.quote.buy_amount.into_legacy(),
         valid_to: quote.quote.valid_to,
         kind: OrderKind::Sell,
         quote_id: quote.id,
@@ -747,7 +767,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_gno.address().into_legacy(),
-        sell_amount: quote.sell_amount * 3 / 2,
+        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)).into_legacy(),
         buy_token: token_dai.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -771,8 +791,11 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
     let order = services.get_order(&uid).await.unwrap();
-    let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(order.metadata.executed_fee >= fee_in_buy_token + quote.sell_amount / 10);
+    let fee_in_buy_token = (quote.fee_amount * quote.buy_amount / quote.sell_amount).into_legacy();
+    assert!(
+        order.metadata.executed_fee
+            >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10)).into_legacy()
+    );
 
     // Check settlement contract balance
     let balance_after = token_gno
@@ -899,7 +922,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_gno.address().into_legacy(),
-        sell_amount: quote.sell_amount * 3 / 2,
+        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)).into_legacy(),
         buy_token: token_dai.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -923,8 +946,11 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
     let order = services.get_order(&uid).await.unwrap();
-    let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(order.metadata.executed_fee >= fee_in_buy_token + quote.sell_amount / 10);
+    let fee_in_buy_token = (quote.fee_amount * quote.buy_amount / quote.sell_amount).into_legacy();
+    assert!(
+        order.metadata.executed_fee
+            >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10)).into_legacy()
+    );
 
     // Check settlement contract balance
     let balance_after = token_gno

@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, Bytes},
+        primitives::{Address, Bytes, U256 as AlloyU256},
         rpc::types::TransactionReceipt,
     },
     anyhow::bail,
@@ -414,9 +414,9 @@ async fn test_submit_quote(
     // Ideally the fee would be nonzero, but this is not the case in the test
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
-    let approx_output: U256 = response.quote.sell_amount * DAI_PER_ETH;
-    assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
-    assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
+    let approx_output: AlloyU256 = response.quote.sell_amount * AlloyU256::from(DAI_PER_ETH);
+    assert!(response.quote.buy_amount.gt(&(approx_output * AlloyU256::from(9u64) / AlloyU256::from(10))));
+    assert!(response.quote.buy_amount.lt(&(approx_output * AlloyU256::from(11u64) / AlloyU256::from(10))));
 
     let OrderQuoteSide::Sell {
         sell_amount:
@@ -428,7 +428,7 @@ async fn test_submit_quote(
         panic!("untested!");
     };
 
-    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get());
+    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get().into_alloy());
 
     response
 }
@@ -643,13 +643,12 @@ impl ExtendedEthFlowOrder {
     pub fn from_quote(quote_response: &OrderQuoteResponse, valid_to: u32) -> Self {
         let quote = &quote_response.quote;
         ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
-            buyToken: quote.buy_token.into_alloy(),
+            buyToken: quote.buy_token,
             receiver: quote
                 .receiver
-                .expect("eth-flow order without receiver")
-                .into_alloy(),
-            sellAmount: quote.sell_amount.into_alloy(),
-            buyAmount: quote.buy_amount.into_alloy(),
+                .expect("eth-flow order without receiver"),
+            sellAmount: quote.sell_amount,
+            buyAmount: quote.buy_amount,
             appData: quote.app_data.hash().0.into(),
             feeAmount: alloy::primitives::U256::ZERO,
             validTo: valid_to, // note: valid to in the quote is always unlimited

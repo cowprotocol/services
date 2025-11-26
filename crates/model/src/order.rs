@@ -273,22 +273,9 @@ impl OrderData {
 
     /// Checks if the order is a market order.
     pub fn within_market(&self, quote: QuoteAmounts) -> bool {
-        // Manual transformation because this crate doesn't have the conversiont trait
-        let mut buy_buffer = [0; 32];
-        quote.buy.to_big_endian(&mut buy_buffer);
-        let quote_buy = alloy::primitives::U256::from_be_bytes(buy_buffer);
-
-        let mut sell_buffer = [0; 32];
-        quote.sell.to_big_endian(&mut sell_buffer);
-        let quote_sell = alloy::primitives::U256::from_be_bytes(sell_buffer);
-
-        let mut fee_buffer = [0; 32];
-        quote.fee.to_big_endian(&mut fee_buffer);
-        let quote_fee = alloy::primitives::U256::from_be_bytes(fee_buffer);
-
         // Using let here because widening_mul isn't able to infer the result size
-        let lhs: U512 = (self.sell_amount + self.fee_amount).widening_mul(quote_buy);
-        let rhs: U512 = (quote_sell + quote_fee).widening_mul(self.buy_amount);
+        let lhs: U512 = (self.sell_amount + self.fee_amount).widening_mul(quote.buy);
+        let rhs: U512 = (quote.sell + quote.fee).widening_mul(self.buy_amount);
         lhs >= rhs
     }
 }
@@ -297,9 +284,9 @@ impl OrderData {
 /// sell token and buy `buy` amount of buy token. Additionally, `fee``
 /// denominated in the sell token needs to be payed.
 pub struct QuoteAmounts {
-    pub sell: U256,
-    pub buy: U256,
-    pub fee: U256,
+    pub sell: alloy::primitives::U256,
+    pub buy: alloy::primitives::U256,
+    pub fee: alloy::primitives::U256,
 }
 
 /// An order as provided to the POST order endpoint.

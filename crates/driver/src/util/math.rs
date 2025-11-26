@@ -28,14 +28,14 @@ pub fn mul_ratio_ceil(x: U256, q: U256, d: U256) -> Option<U256> {
 
     // fast path when math in U256 doesn't overflow
     if let Some(p) = x.checked_mul(q) {
-        let (div, rem) = (p / d, p % d);
+        let (div, rem) = p.div_rem(d);
         return div.checked_add(U256::from(!rem.is_zero()));
     }
 
     let p = x.widening_mul(q);
     let d = U512::from(d);
     // SAFETY: at this point !d.is_zero() upholds
-    let (div, rem) = (p / d, p % d);
+    let (div, rem) = p.div_rem(d);
 
     let result = U256::uint_try_from(div).ok()?;
     result.checked_add(U256::from(!rem.is_zero()))

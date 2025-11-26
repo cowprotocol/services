@@ -598,9 +598,9 @@ fn convert_onchain_order_placement(
     // executed fast (we don't want to reserve the user's ETH for too long)
     if quote.as_ref().is_ok_and(|quote| {
         !order_data.within_market(QuoteAmounts {
-            sell: quote.sell_amount.into_legacy(),
-            buy: quote.buy_amount.into_legacy(),
-            fee: quote.fee_amount.into_legacy(),
+            sell: quote.sell_amount,
+            buy: quote.buy_amount,
+            fee: quote.fee_amount,
         })
     }) {
         tracing::debug!(%order_uid, ?owner, "order is outside market price");

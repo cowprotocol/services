@@ -95,7 +95,7 @@ async fn place_order_with_quote(web3: Web3) {
         sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: quote_sell_amount,
         buy_token: token.address().into_legacy(),
-        buy_amount: quote_response.quote.buy_amount,
+        buy_amount: quote_response.quote.buy_amount.into_legacy(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()

@@ -92,7 +92,6 @@ mod tests {
         anyhow::anyhow,
         app_data::AppDataHash,
         chrono::{TimeZone, Utc},
-        ethcontract::H160,
         model::{
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
@@ -315,7 +314,7 @@ mod tests {
         };
         let order_quote_response = OrderQuoteResponse {
             quote,
-            from: H160::zero(),
+            from: Address::ZERO,
             expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
             verified: false,
