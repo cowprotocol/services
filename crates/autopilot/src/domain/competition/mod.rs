@@ -1,6 +1,7 @@
 use {
     super::auction::order,
     crate::domain::{self, auction, eth},
+    alloy::primitives::keccak256,
     derive_more::Display,
     num::Saturating,
     std::collections::HashMap,
@@ -76,6 +77,18 @@ impl Solution {
 
     pub fn prices(&self) -> &HashMap<eth::TokenAddress, auction::Price> {
         &self.prices
+    }
+
+    fn sort_key(&self) -> [u8; 32] {
+        const ADDR_LEN: usize = 20;
+        const ID_LEN: usize = 8;
+
+        let mut buf = [0u8; ADDR_LEN + ID_LEN];
+
+        buf[..ADDR_LEN].copy_from_slice(self.solver.0.as_bytes());
+        buf[ADDR_LEN..ADDR_LEN + ID_LEN].copy_from_slice(&self.id.to_be_bytes());
+
+        keccak256(buf).0
     }
 }
 

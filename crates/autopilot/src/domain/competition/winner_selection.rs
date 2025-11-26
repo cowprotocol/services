@@ -60,6 +60,13 @@ impl Arbitrator {
         participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
     ) -> Ranking {
+        let mut participants = participants;
+        participants.sort_by(|a, b| {
+            let ha = a.solution().sort_key();
+            let hb = b.solution().sort_key();
+            ha.cmp(&hb)
+        });
+
         let partitioned = self.partition_unfair_solutions(participants, auction);
         let filtered_out = partitioned
             .discarded
