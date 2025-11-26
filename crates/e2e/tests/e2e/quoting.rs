@@ -91,9 +91,9 @@ async fn test(web3: Web3) {
 
     tracing::info!("Quoting order");
     let request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -229,9 +229,9 @@ async fn uses_stale_liquidity(web3: Web3) {
     services.start_protocol(solver).await;
 
     let quote = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
                 value: NonZeroU256::new(to_wei(1)).unwrap(),
@@ -330,9 +330,9 @@ async fn quote_timeout(web3: Web3) {
     }));
 
     let quote_request = |timeout| OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: sell_token.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *sell_token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -462,9 +462,9 @@ async fn volume_fee(web3: Web3) {
 
     tracing::info!("Testing SELL quote with volume fee");
     let sell_request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -481,9 +481,9 @@ async fn volume_fee(web3: Web3) {
 
     tracing::info!("Testing BUY quote with volume fee");
     let buy_request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Buy {
             buy_amount_after_fee: NonZeroU256::try_from(to_wei(1)).unwrap(),
         },

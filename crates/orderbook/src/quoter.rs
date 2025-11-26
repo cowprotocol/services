@@ -5,7 +5,7 @@ use {
     },
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     chrono::{TimeZone, Utc},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
@@ -90,12 +90,12 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let params = QuoteParameters {
-            sell_token: request.sell_token.into_alloy(),
-            buy_token: request.buy_token.into_alloy(),
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
             side: request.side,
             verification: Verification {
-                from: request.from.into_alloy(),
-                receiver: request.receiver.unwrap_or(request.from).into_alloy(),
+                from: request.from,
+                receiver: request.receiver.unwrap_or(request.from),
                 sell_token_source: request.sell_token_balance,
                 buy_token_destination: request.buy_token_balance,
                 pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
@@ -129,9 +129,9 @@ impl QuoteHandler {
                 .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
         let response = OrderQuoteResponse {
             quote: OrderQuote {
-                sell_token: request.sell_token,
-                buy_token: request.buy_token,
-                receiver: request.receiver,
+                sell_token: request.sell_token.into_legacy(),
+                buy_token: request.buy_token.into_legacy(),
+                receiver: request.receiver.map(IntoLegacy::into_legacy),
                 sell_amount: adjusted_quote.sell_amount.into_legacy(),
                 buy_amount: adjusted_quote.buy_amount.into_legacy(),
                 valid_to,
@@ -149,7 +149,7 @@ impl QuoteHandler {
                 buy_token_balance: request.buy_token_balance,
                 signing_scheme: request.signing_scheme.into(),
             },
-            from: request.from,
+            from: request.from.into_legacy(),
             expiration: quote.data.expiration,
             id: quote.id,
             verified: quote.data.verified,

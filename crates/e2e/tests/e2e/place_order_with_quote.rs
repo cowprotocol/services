@@ -63,9 +63,9 @@ async fn place_order_with_quote(web3: Web3) {
     tracing::info!("Quoting");
     let quote_sell_amount = to_wei(1);
     let quote_request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(quote_sell_amount).unwrap(),

@@ -136,8 +136,8 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     // Warm up co-located driver by quoting the order
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_weth.address().into_legacy(),
-            buy_token: token_usdc.address().into_legacy(),
+            sell_token: *token_weth.address(),
+            buy_token: *token_usdc.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
