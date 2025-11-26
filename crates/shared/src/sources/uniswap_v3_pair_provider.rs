@@ -7,8 +7,8 @@ pub fn pair_address(factory: &H160, pair: &TokenPair, fee: u32) -> H160 {
 
     let (token0, token1) = pair.get();
     let mut buffer = [0u8; 32 * 3];
-    buffer[12..32].copy_from_slice(&token0.0);
-    buffer[44..64].copy_from_slice(&token1.0);
+    buffer[12..32].copy_from_slice(token0.as_slice());
+    buffer[44..64].copy_from_slice(token1.as_slice());
     buffer[92..96].copy_from_slice(&fee.to_be_bytes());
     let hash = keccak256(&buffer);
 
@@ -24,18 +24,14 @@ pub fn pair_address(factory: &H160, pair: &TokenPair, fee: u32) -> H160 {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::alloy::conversions::IntoLegacy};
+    use super::*;
 
     #[test]
     fn mainnet_pool() {
         // https://v3.info.uniswap.org/home#/pools/0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8
         let result = pair_address(
             &addr!("1F98431c8aD98523631AE4a59f267346ea31F984"),
-            &TokenPair::new(
-                testlib::tokens::WETH.into_legacy(),
-                testlib::tokens::USDC.into_legacy(),
-            )
-            .unwrap(),
+            &TokenPair::new(testlib::tokens::WETH, testlib::tokens::USDC).unwrap(),
             3000,
         );
         assert_eq!(result, addr!("8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"));

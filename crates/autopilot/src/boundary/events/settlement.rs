@@ -28,7 +28,7 @@ impl AlloyEventRetrieving for GPv2SettlementContract {
         Filter::new().address(self.address)
     }
 
-    fn provider(&self) -> &contracts::alloy::Provider {
+    fn provider(&self) -> &alloy::providers::DynProvider {
         &self.provider
     }
 }

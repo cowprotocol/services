@@ -1,7 +1,7 @@
 use {
     super::{BadTokenDetecting, TokenQuality},
+    alloy::primitives::Address,
     anyhow::Result,
-    primitive_types::H160,
     std::sync::Arc,
     tracing::instrument,
 };
@@ -15,16 +15,16 @@ pub enum UnknownTokenStrategy {
 
 /// Classify tokens with explicit allow and deny lists.
 pub struct ListBasedDetector {
-    allow_list: Vec<H160>,
-    deny_list: Vec<H160>,
+    allow_list: Vec<Address>,
+    deny_list: Vec<Address>,
     strategy: UnknownTokenStrategy,
 }
 
 impl ListBasedDetector {
     /// Panics if same token is both allowed and denied.
     pub fn new(
-        allow_list: Vec<H160>,
-        deny_list: Vec<H160>,
+        allow_list: Vec<Address>,
+        deny_list: Vec<Address>,
         strategy: UnknownTokenStrategy,
     ) -> Self {
         assert!(
@@ -38,7 +38,7 @@ impl ListBasedDetector {
         }
     }
 
-    pub fn deny_list(list: Vec<H160>) -> Self {
+    pub fn deny_list(list: Vec<Address>) -> Self {
         Self {
             allow_list: Vec::new(),
             deny_list: list,
@@ -50,7 +50,7 @@ impl ListBasedDetector {
 #[async_trait::async_trait]
 impl BadTokenDetecting for ListBasedDetector {
     #[instrument(skip_all)]
-    async fn detect(&self, token: ethcontract::H160) -> Result<TokenQuality> {
+    async fn detect(&self, token: Address) -> Result<TokenQuality> {
         if self.allow_list.contains(&token) {
             return Ok(TokenQuality::Good);
         }
@@ -80,19 +80,19 @@ mod tests {
         // Would panic if used.
         let inner = MockBadTokenDetecting::new();
         let detector = ListBasedDetector {
-            allow_list: vec![H160::from_low_u64_le(0)],
-            deny_list: vec![H160::from_low_u64_le(1)],
+            allow_list: vec![Address::with_last_byte(0)],
+            deny_list: vec![Address::with_last_byte(1)],
             strategy: UnknownTokenStrategy::Forward(Arc::new(inner)),
         };
 
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(result.unwrap().is_good());
 
         let result = detector
-            .detect(H160::from_low_u64_le(1))
+            .detect(Address::with_last_byte(1))
             .now_or_never()
             .unwrap();
         assert!(!result.unwrap().is_good());
@@ -106,7 +106,7 @@ mod tests {
             strategy: UnknownTokenStrategy::Allow,
         };
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(result.unwrap().is_good());
@@ -117,7 +117,7 @@ mod tests {
             strategy: UnknownTokenStrategy::Deny,
         };
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(!result.unwrap().is_good());
@@ -138,7 +138,7 @@ mod tests {
         };
 
         let result = detector
-            .detect(H160::from_low_u64_le(0))
+            .detect(Address::with_last_byte(0))
             .now_or_never()
             .unwrap();
         assert!(result.unwrap().is_good());

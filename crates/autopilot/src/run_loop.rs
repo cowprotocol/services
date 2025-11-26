@@ -20,6 +20,7 @@ use {
             self,
             solvers::dto::{settle, solve},
         },
+        leader_lock_tracker::LeaderLockTracker,
         maintenance::Maintenance,
         run::Liveness,
         shutdown_controller::ShutdownController,
@@ -28,7 +29,10 @@ use {
     ::observe::metrics,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::block_stream::BlockInfo,
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::BlockInfo,
+    },
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -68,6 +72,11 @@ pub struct Config {
     pub enable_leader_lock: bool,
 }
 
+pub struct Probes {
+    pub liveness: Arc<Liveness>,
+    pub startup: Arc<Option<AtomicBool>>,
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
@@ -77,8 +86,7 @@ pub struct RunLoop {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
-    liveness: Arc<Liveness>,
-    readiness: Arc<Option<AtomicBool>>,
+    probes: Probes,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
@@ -96,8 +104,7 @@ impl RunLoop {
         solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
-        liveness: Arc<Liveness>,
-        readiness: Arc<Option<AtomicBool>>,
+        probes: Probes,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
@@ -113,8 +120,7 @@ impl RunLoop {
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
-            liveness,
-            readiness,
+            probes,
             maintenance,
             competition_updates_sender,
             winner_selection: winner_selection::Arbitrator { max_winners, weth },
@@ -131,7 +137,7 @@ impl RunLoop {
         let mut last_block = None;
 
         let self_arc = Arc::new(self);
-        let mut leader = if self_arc.config.enable_leader_lock {
+        let leader = if self_arc.config.enable_leader_lock {
             Some(
                 self_arc
                     .persistence
@@ -141,35 +147,24 @@ impl RunLoop {
         } else {
             None
         };
-        let mut was_leader = false;
+        let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
-            let is_leader = if let Some(ref mut leader) = leader {
-                leader.try_acquire().await.unwrap_or_else(|err| {
-                    tracing::error!(?err, "failed to become leader");
-                    Metrics::leader_lock_error();
-                    false
-                })
-            } else {
-                true
-            };
+            leader_lock_tracker.try_acquire().await;
 
-            if leader.is_some() && is_leader && !was_leader {
-                tracing::info!("Stepped up as a leader");
-                Metrics::leader_step_up();
+            let start_block = self_arc
+                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
+                .await;
+
+            // caches are warmed up, we're ready to do leader work
+            if let Some(startup) = self_arc.probes.startup.as_ref() {
+                startup.store(true, Ordering::Release);
             }
-            was_leader = is_leader;
 
-            let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
-            if !is_leader {
+            if !leader_lock_tracker.is_leader() {
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
-            }
-
-            // caches are warmed up, we're ready to do leader work
-            if let Some(readiness) = self_arc.readiness.as_ref() {
-                readiness.store(true, Ordering::Release);
             }
 
             if let Some(auction) = self_arc
@@ -183,12 +178,7 @@ impl RunLoop {
                     .await
             }
         }
-
-        if let Some(mut leader) = leader {
-            tracing::info!("Shutdown received, stepping down as the leader");
-            leader.release().await;
-            Metrics::leader_step_down();
-        }
+        leader_lock_tracker.release().await;
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
@@ -248,7 +238,7 @@ impl RunLoop {
         }
 
         observe::log_auction_delta(&previous, &auction);
-        self.liveness.auction();
+        self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
@@ -284,7 +274,7 @@ impl RunLoop {
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
-            self.liveness.auction();
+            self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
         }
@@ -481,7 +471,7 @@ impl RunLoop {
             .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
-                solver_address: participant.solution().solver().0,
+                solver_address: participant.solution().solver().0.into_alloy(),
                 score: Some(Score::Solver(participant.solution().score().get().0)),
                 ranking: index + 1,
                 orders: participant
@@ -490,15 +480,15 @@ impl RunLoop {
                     .iter()
                     .map(|(id, order)| Order::Colocated {
                         id: (*id).into(),
-                        sell_amount: order.executed_sell.into(),
-                        buy_amount: order.executed_buy.into(),
+                        sell_amount: order.executed_sell.0.into_alloy(),
+                        buy_amount: order.executed_buy.0.into_alloy(),
                     })
                     .collect(),
                 clearing_prices: participant
                     .solution()
                     .prices()
                     .iter()
-                    .map(|(token, price)| (token.0, price.get().into()))
+                    .map(|(token, price)| (token.0.into_alloy(), price.get().0.into_alloy()))
                     .collect(),
                 is_winner: participant.is_winner(),
                 filtered_out: participant.filtered_out(),
@@ -520,7 +510,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| ((*key).into(), value.get().into()))
+                    .map(|(key, value)| (key.0.into_alloy(), value.get().0.into_alloy()))
                     .collect(),
             },
             solutions,
@@ -593,7 +583,12 @@ impl RunLoop {
     ) -> Vec<competition::Participant<Unranked>> {
         let request = solve::Request::new(
             auction,
-            &self.trusted_tokens.all(),
+            &self
+                .trusted_tokens
+                .all()
+                .into_iter()
+                .map(IntoLegacy::into_legacy)
+                .collect(),
             self.config.solve_deadline,
         );
 
@@ -1003,14 +998,6 @@ struct Metrics {
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
-
-    /// Tracks the current leader status
-    /// 1 - is currently autopilot leader
-    /// 0 - is currently autopilot follower
-    is_leader: prometheus::IntGauge,
-
-    /// Trackes the count of errors acquiring leader lock (should never happen)
-    leader_lock_error: prometheus::IntCounter,
 }
 
 impl Metrics {
@@ -1110,18 +1097,6 @@ impl Metrics {
         Self::get()
             .current_block_delay
             .observe(init_block_timestamp.elapsed().as_secs_f64())
-    }
-
-    fn leader_step_up() {
-        Self::get().is_leader.set(1)
-    }
-
-    fn leader_step_down() {
-        Self::get().is_leader.set(0)
-    }
-
-    fn leader_lock_error() {
-        Self::get().leader_lock_error.inc()
     }
 }
 

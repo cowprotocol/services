@@ -232,7 +232,6 @@ mod tests {
         super::*,
         alloy::sol_types::SolCall,
         ethcontract::{
-            Bytes,
             common::abi::{self, Token},
             web3::types::CallRequest,
         },
@@ -359,16 +358,14 @@ mod tests {
         assert_eq!(
             Approval { token, spender }.encode(),
             (
-                token,
-                0.into(),
-                Bytes(
-                    const_hex::decode(
-                        "095ea7b3\
-                         0000000000000000000000000202020202020202020202020202020202020202\
-                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                    )
-                    .unwrap()
+                token.into_alloy(),
+                alloy::primitives::U256::ZERO,
+                const_hex::decode(
+                    "095ea7b3\
+                    0000000000000000000000000202020202020202020202020202020202020202\
+                    ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 )
+                .unwrap().into()
             )
         );
     }

@@ -60,7 +60,7 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
-    cow_amm_cache: cow_amm::Cache,
+    cow_amm_cache: Option<cow_amm::Cache>,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -390,12 +390,16 @@ impl Utilities {
     }
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
+        let Some(ref cow_amm_cache) = self.cow_amm_cache else {
+            // CoW AMMs are not configured, return empty vec
+            return Default::default();
+        };
+
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
 
-        let cow_amms = self
-            .cow_amm_cache
+        let cow_amms = cow_amm_cache
             .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
             .await;
 
@@ -445,18 +449,21 @@ impl Utilities {
                         .uid(&domain_separator, &amm.into_legacy())
                         .0
                         .into(),
-                    receiver: template.order.receiver.map(|addr| addr.into()),
+                    receiver: template
+                        .order
+                        .receiver
+                        .map(|addr| addr.into_legacy().into()),
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
                         .into(),
                     valid_to: template.order.valid_to.into(),
                     buy: eth::Asset {
-                        amount: template.order.buy_amount.into(),
-                        token: template.order.buy_token.into(),
+                        amount: template.order.buy_amount.into_legacy().into(),
+                        token: template.order.buy_token.into_legacy().into(),
                     },
                     sell: eth::Asset {
-                        amount: template.order.sell_amount.into(),
-                        token: template.order.sell_token.into(),
+                        amount: template.order.sell_amount.into_legacy().into(),
+                        token: template.order.sell_token.into_legacy().into(),
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
@@ -466,8 +473,12 @@ impl Utilities {
                     partial: match template.order.partially_fillable {
                         true => order::Partial::Yes {
                             available: match template.order.kind {
-                                OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
-                                OrderKind::Buy => order::TargetAmount(template.order.buy_amount),
+                                OrderKind::Sell => {
+                                    order::TargetAmount(template.order.sell_amount.into_legacy())
+                                }
+                                OrderKind::Buy => {
+                                    order::TargetAmount(template.order.buy_amount.into_legacy())
+                                }
                             },
                         },
                         false => order::Partial::No,

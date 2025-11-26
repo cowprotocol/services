@@ -1,5 +1,6 @@
 use {
     super::{BadTokenDetecting, TokenQuality},
+    alloy::primitives::Address,
     anyhow::Result,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
@@ -33,7 +34,7 @@ pub struct InstrumentedBadTokenDetector {
 
 #[async_trait::async_trait]
 impl BadTokenDetecting for InstrumentedBadTokenDetector {
-    async fn detect(&self, token: ethcontract::H160) -> Result<TokenQuality> {
+    async fn detect(&self, token: Address) -> Result<TokenQuality> {
         let result = self
             .inner
             .detect(token)

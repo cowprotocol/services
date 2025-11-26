@@ -1,4 +1,4 @@
-use ethcontract::U256;
+use alloy::primitives::U256;
 
 /// Everything required to compute the fee amount in sell token
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,6 +41,6 @@ impl FeeParameters {
         // 1. For final amounts that end up close to 0 atoms we always take a fee so we
         //    are not attackable through low decimal tokens.
         // 2. When validating fees this consistently picks the same amount.
-        U256::from_f64_lossy((fee_in_eth / self.sell_token_price).ceil())
+        U256::from((fee_in_eth / self.sell_token_price).ceil())
     }
 }

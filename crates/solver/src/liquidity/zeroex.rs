@@ -14,7 +14,7 @@ use {
     arc_swap::ArcSwap,
     contracts::alloy::IZeroex,
     ethrpc::{
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{CurrentBlockWatcher, into_stream},
     },
     futures::StreamExt,
@@ -166,7 +166,11 @@ fn group_by_token_pair(
 ) -> HashMap<(H160, H160), Vec<OrderRecord>> {
     orders
         .filter_map(|record| {
-            TokenPair::new(record.order().taker_token, record.order().maker_token).map(|_| {
+            TokenPair::new(
+                record.order().taker_token.into_alloy(),
+                record.order().maker_token.into_alloy(),
+            )
+            .map(|_| {
                 (
                     (record.order().taker_token, record.order().maker_token),
                     record,
@@ -186,7 +190,7 @@ fn get_useful_orders(
     for orders in order_buckets
         .iter()
         .filter_map(|((token_a, token_b), record)| {
-            TokenPair::new(*token_a, *token_b)
+            TokenPair::new(token_a.into_alloy(), token_b.into_alloy())
                 .is_some_and(|pair| relevant_pairs.contains(&pair))
                 .then_some(record)
         })
@@ -266,7 +270,8 @@ pub mod tests {
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
-        let fake_order = [TokenPair::new(token_a, token_b).unwrap()].into_iter();
+        let fake_order =
+            [TokenPair::new(token_a.into_alloy(), token_b.into_alloy()).unwrap()].into_iter();
         base_tokens.relevant_pairs(fake_order)
     }
 

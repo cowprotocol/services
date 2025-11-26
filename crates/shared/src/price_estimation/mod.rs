@@ -4,6 +4,7 @@ use {
         arguments::{self, display_option, display_secret_option},
         trade_finding::{Interaction, QuoteExecution},
     },
+    alloy::primitives::Address,
     anyhow::{Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
@@ -443,7 +444,7 @@ impl Display for Arguments {
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
     #[error("token {token:?} is not supported: {reason:}")]
-    UnsupportedToken { token: H160, reason: String },
+    UnsupportedToken { token: Address, reason: String },
 
     #[error("No liquidity")]
     NoLiquidity,
@@ -492,8 +493,8 @@ impl Clone for PriceEstimationError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Query {
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in
     /// buy_token.
     pub in_amount: NonZeroU256,
@@ -511,9 +512,9 @@ pub struct Query {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Verification {
     /// This address needs to have the `sell_token`.
-    pub from: H160,
+    pub from: Address,
     /// This address will receive the `buy_token`.
-    pub receiver: H160,
+    pub receiver: Address,
     /// These interactions will be executed before the trade.
     pub pre_interactions: Vec<Interaction>,
     /// These interactions will be executed after the trade.

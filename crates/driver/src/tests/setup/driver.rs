@@ -52,6 +52,8 @@ impl Driver {
             "0.0.0.0:0".to_owned(),
             "--ethrpc".to_owned(),
             blockchain.web3_url.clone(),
+            "--node-ws-url".to_owned(),
+            blockchain.web3_ws_url.clone(),
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];

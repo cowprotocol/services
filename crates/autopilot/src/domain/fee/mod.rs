@@ -12,9 +12,12 @@ use {
         boundary::{self},
         domain::{self, eth},
     },
+    alloy::primitives::{Address, U256},
     app_data::Validator,
+    chrono::{DateTime, Utc},
     derive_more::Into,
-    primitive_types::{H160, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    primitive_types::H160,
     rust_decimal::Decimal,
     std::{collections::HashSet, str::FromStr},
 };
@@ -51,25 +54,47 @@ impl From<arguments::FeePolicy> for ProtocolFee {
     }
 }
 
+pub struct UpcomingProtocolFees {
+    fee_policies: Vec<ProtocolFee>,
+    effective_from_timestamp: DateTime<Utc>,
+}
+
+impl From<arguments::UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
+    fn from(value: arguments::UpcomingFeePolicies) -> Self {
+        value
+            // both config fields must be non-empty
+            .effective_from_timestamp
+            .filter(|_| !value.fee_policies.is_empty())
+            .map(|effective_from_timestamp| UpcomingProtocolFees {
+                fee_policies: value
+                    .fee_policies
+                    .into_iter()
+                    .map(ProtocolFee::from)
+                    .collect::<Vec<_>>(),
+                effective_from_timestamp,
+            })
+    }
+}
+
 pub type ProtocolFeeExemptAddresses = HashSet<H160>;
 
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
+    upcoming_fee_policies: Option<UpcomingProtocolFees>,
 }
 
 impl ProtocolFees {
-    pub fn new(
-        fee_policies: &[arguments::FeePolicy],
-        fee_policy_max_partner_fee: FeeFactor,
-    ) -> Self {
+    pub fn new(config: &arguments::FeePoliciesConfig) -> Self {
         Self {
-            fee_policies: fee_policies
+            fee_policies: config
+                .fee_policies
                 .iter()
                 .cloned()
                 .map(ProtocolFee::from)
                 .collect(),
-            max_partner_fee: fee_policy_max_partner_fee,
+            max_partner_fee: config.fee_policy_max_partner_fee,
+            upcoming_fee_policies: config.upcoming_fee_policies.clone().into(),
         }
     }
 
@@ -182,10 +207,10 @@ impl ProtocolFees {
                             factor,
                             max_volume_factor,
                             quote: Quote {
-                                sell_amount: quote.sell_amount.into(),
-                                buy_amount: quote.buy_amount.into(),
-                                fee: quote.fee.into(),
-                                solver: quote.solver.into(),
+                                sell_amount: quote.sell_amount.0.into_alloy(),
+                                buy_amount: quote.buy_amount.0.into_alloy(),
+                                fee: quote.fee.0.into_alloy(),
+                                solver: quote.solver,
                             },
                         }
                     }
@@ -206,16 +231,16 @@ impl ProtocolFees {
         // being considered out of market price.
         let reference_quote = quote.clone().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
-            sell_amount: order.data.sell_amount.into(),
-            buy_amount: U256::zero().into(),
-            fee: order.data.fee_amount.into(),
-            solver: H160::zero().into(),
+            sell_amount: order.data.sell_amount.into_legacy().into(),
+            buy_amount: U256::ZERO.into_legacy().into(),
+            fee: order.data.fee_amount.into_legacy().into(),
+            solver: Address::ZERO,
         });
 
         let partner_fee =
             Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.into());
 
-        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
+        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into_legacy().into()) {
             return boundary::order::to_domain(order, partner_fee, quote);
         }
 
@@ -228,13 +253,21 @@ impl ProtocolFees {
         quote: domain::Quote,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
-        let protocol_fees = self
-            .fee_policies
+        let now = Utc::now();
+        let fee_policies = self
+            .upcoming_fee_policies
+            .as_ref()
+            .filter(|upcoming| upcoming.effective_from_timestamp <= now)
+            .map(|upcoming| &upcoming.fee_policies)
+            .unwrap_or(&self.fee_policies);
+
+        let protocol_fees = fee_policies
             .iter()
             .filter_map(|fee_policy| Self::protocol_fee_into_policy(&order, &quote, fee_policy))
             .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
+
         boundary::order::to_domain(order, protocol_fees, Some(quote))
     }
 
@@ -333,16 +366,16 @@ pub struct Quote {
     pub buy_amount: U256,
     /// The amount that needs to be paid, denominated in the sell token.
     pub fee: U256,
-    pub solver: H160,
+    pub solver: Address,
 }
 
 impl Quote {
     fn from_domain(value: &domain::Quote) -> Self {
         Self {
-            sell_amount: value.sell_amount.into(),
-            buy_amount: value.buy_amount.into(),
-            fee: value.fee.into(),
-            solver: value.solver.into(),
+            sell_amount: value.sell_amount.0.into_alloy(),
+            buy_amount: value.buy_amount.0.into_alloy(),
+            fee: value.fee.0.into_alloy(),
+            solver: value.solver,
         }
     }
 }

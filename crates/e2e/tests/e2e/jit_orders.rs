@@ -230,7 +230,10 @@ async fn single_limit_order_test(web3: Web3) {
             .tx_hash?;
 
         // jit order can be found on /api/v1/transactions/{tx_hash}/orders
-        let orders_by_tx = services.get_orders_for_tx(&tx_hash).await.ok()?;
+        let orders_by_tx = services
+            .get_orders_for_tx(&tx_hash.into_legacy())
+            .await
+            .ok()?;
 
         // jit order can be found on /api/v1/account/{owner}/orders
         let orders_by_owner = services

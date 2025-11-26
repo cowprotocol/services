@@ -17,7 +17,7 @@ use {
         BalancerV2WeightedPoolFactoryV3,
     },
     ethrpc::{
-        alloy::conversions::IntoAlloy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{BlockRetrieving, CurrentBlockWatcher},
     },
     shared::{
@@ -68,9 +68,9 @@ fn to_interaction(
     let (target, value, call_data) = interaction.encode_swap();
 
     eth::Interaction {
-        target: target.into(),
-        value: value.into(),
-        call_data: call_data.0.into(),
+        target: target.into_legacy().into(),
+        value: value.into_legacy().into(),
+        call_data: call_data.0.to_vec().into(),
     }
 }
 

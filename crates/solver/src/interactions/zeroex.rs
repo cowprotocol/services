@@ -1,7 +1,6 @@
 use {
     contracts::alloy::IZeroex,
-    ethcontract::Bytes,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     shared::{
         interaction::{EncodedInteraction, Interaction},
         zeroex_api::Order,
@@ -44,9 +43,9 @@ impl Interaction for ZeroExInteraction {
         );
         let calldata = method.calldata();
         (
-            self.zeroex.address().into_legacy(),
-            0.into(),
-            Bytes(calldata.to_vec()),
+            *self.zeroex.address(),
+            alloy::primitives::U256::ZERO,
+            calldata.to_vec().into(),
         )
     }
 }

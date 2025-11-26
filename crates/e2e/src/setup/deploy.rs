@@ -7,7 +7,6 @@ use {
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
-        InstanceExt,
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,

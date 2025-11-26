@@ -5,7 +5,7 @@ use {
         signers::{SignerSync, local::PrivateKeySigner},
     },
     chrono::Utc,
-    contracts::alloy::{ERC20, InstanceExt, LiquoriceSettlement},
+    contracts::alloy::{ERC20, LiquoriceSettlement},
     driver::infra,
     e2e::{
         api,
@@ -348,7 +348,7 @@ http-timeout = "10s"
         let trade = services.get_trades(&order_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?)
+                .get_solver_competition(trade.tx_hash?.into_legacy())
                 .await
                 .is_ok(),
         )

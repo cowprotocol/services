@@ -12,10 +12,7 @@ use {
         to_wei,
         to_wei_with_exp,
     },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::conversions::IntoAlloy},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     reqwest::StatusCode,
 };
@@ -96,14 +93,14 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
 
     let result = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_dai.address().into_legacy(),
-            buy_token: token_usdt.address().into_legacy(),
+            sell_token: *token_dai.address(),
+            buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 18).try_into().unwrap(),
                 },
             },
-            from: BANNED_USER.into_legacy(),
+            from: BANNED_USER,
             ..Default::default()
         })
         .await;

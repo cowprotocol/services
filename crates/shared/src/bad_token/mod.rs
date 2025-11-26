@@ -4,7 +4,7 @@ pub mod list_based;
 pub mod token_owner_finder;
 pub mod trace_call;
 
-use {anyhow::Result, primitive_types::H160};
+use {alloy::primitives::Address, anyhow::Result};
 
 /// How well behaved a token is.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -29,5 +29,5 @@ impl TokenQuality {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BadTokenDetecting: Send + Sync {
-    async fn detect(&self, token: H160) -> Result<TokenQuality>;
+    async fn detect(&self, token: Address) -> Result<TokenQuality>;
 }

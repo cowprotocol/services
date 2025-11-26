@@ -1,11 +1,12 @@
 use {
     crate::ethflow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    ::alloy::primitives::Address,
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+        alloy::conversions::{IntoAlloy, TryIntoAlloyAsync},
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
@@ -33,14 +34,14 @@ async fn refunder_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Get quote id for order placement
-    let buy_token = token.address().into_legacy();
-    let receiver = Some(H160([42; 20]));
+    let buy_token = *token.address();
+    let receiver = Some(Address::repeat_byte(42));
     let sell_amount = U256::from("3000000000000000");
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
-        from: ethflow_contract.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
+        from: *ethflow_contract.address(),
+        sell_token: *onchain.contracts().weth.address(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -71,8 +72,8 @@ async fn refunder_tx(web3: Web3) {
     let ethflow_contract_2 = onchain.contracts().ethflows.get(1).unwrap();
 
     let quote = OrderQuoteRequest {
-        from: ethflow_contract_2.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
+        from: *ethflow_contract_2.address(),
+        sell_token: *onchain.contracts().weth.address(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -107,6 +108,7 @@ async fn refunder_tx(web3: Web3) {
 
     tracing::info!("Waiting for orders to be indexed.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services.get_order(&order_id).await.is_ok() && services.get_order(&order_id_2).await.is_ok()
     })
     .await
@@ -141,6 +143,8 @@ async fn refunder_tx(web3: Web3) {
         validity_duration as i64 / 2,
         10i64,
         refunder_signer,
+        2_000_000_000_000, // max_gas_price: 2000 Gwei
+        30_000_000_000,    // start_priority_fee_tip: 30 Gwei
     );
 
     assert_ne!(
@@ -174,6 +178,7 @@ async fn refunder_tx(web3: Web3) {
     tracing::info!("Waiting for autopilot to index refund tx hash.");
     for order in &[order_id, order_id_2] {
         let has_tx_hash = || async {
+            onchain.mint_block().await;
             services
                 .get_order(order)
                 .await

@@ -499,9 +499,11 @@ where
                     gas_amount: quote.data.fee_parameters.gas_amount,
                     gas_price: quote.data.fee_parameters.gas_price,
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
-                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                    solver: ByteArray(quote.data.solver.0),
+                    sell_amount: number::conversions::alloy::u256_to_big_decimal(
+                        &quote.sell_amount,
+                    ),
+                    buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+                    solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.try_into()?,
                 }),
@@ -550,8 +552,8 @@ async fn get_quote(
     .map_err(|_| OnchainOrderPlacementError::Other)?;
 
     let parameters = QuoteSearchParameters {
-        sell_token: H160::from(order_data.sell_token.0),
-        buy_token: H160::from(order_data.buy_token.0),
+        sell_token: order_data.sell_token,
+        buy_token: order_data.buy_token,
         sell_amount: order_data.sell_amount,
         buy_amount: order_data.buy_amount,
         fee_amount: order_data.fee_amount,
@@ -572,7 +574,7 @@ async fn get_quote(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
-        Some(order_data.fee_amount),
+        Some(order_data.fee_amount.into_legacy()),
     )
     .await
     .map_err(|err| match err {
@@ -598,9 +600,9 @@ fn convert_onchain_order_placement(
     // executed fast (we don't want to reserve the user's ETH for too long)
     if quote.as_ref().is_ok_and(|quote| {
         !order_data.within_market(QuoteAmounts {
-            sell: quote.sell_amount,
-            buy: quote.buy_amount,
-            fee: quote.fee_amount,
+            sell: quote.sell_amount.into_legacy(),
+            buy: quote.buy_amount.into_legacy(),
+            fee: quote.fee_amount.into_legacy(),
         })
     }) {
         tracing::debug!(%order_uid, ?owner, "order is outside market price");
@@ -611,14 +613,14 @@ fn convert_onchain_order_placement(
         uid: ByteArray(order_uid.0),
         owner: ByteArray(owner.0),
         creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
-        sell_token: ByteArray(order_data.sell_token.0),
-        buy_token: ByteArray(order_data.buy_token.0),
-        receiver: order_data.receiver.map(|h160| ByteArray(h160.0)),
-        sell_amount: u256_to_big_decimal(&order_data.sell_amount),
-        buy_amount: u256_to_big_decimal(&order_data.buy_amount),
+        sell_token: ByteArray(order_data.sell_token.0.0),
+        buy_token: ByteArray(order_data.buy_token.0.0),
+        receiver: order_data.receiver.map(|addr| ByteArray(addr.0.0)),
+        sell_amount: u256_to_big_decimal(&order_data.sell_amount.into_legacy()),
+        buy_amount: u256_to_big_decimal(&order_data.buy_amount.into_legacy()),
         valid_to: order_data.valid_to as i64,
         app_data: ByteArray(order_data.app_data.0),
-        fee_amount: u256_to_big_decimal(&order_data.fee_amount),
+        fee_amount: u256_to_big_decimal(&order_data.fee_amount.into_legacy()),
         kind: order_kind_into(order_data.kind),
         partially_fillable: order_data.partially_fillable,
         signature: order_placement.signature.data.to_vec(),
@@ -662,14 +664,14 @@ fn extract_order_data_from_onchain_order_placement_event(
     };
 
     let order_data = OrderData {
-        sell_token: order_placement.order.sellToken.into_legacy(),
-        buy_token: order_placement.order.buyToken.into_legacy(),
-        receiver: receiver.map(IntoLegacy::into_legacy),
-        sell_amount: order_placement.order.sellAmount.into_legacy(),
-        buy_amount: order_placement.order.buyAmount.into_legacy(),
+        sell_token: order_placement.order.sellToken,
+        buy_token: order_placement.order.buyToken,
+        receiver,
+        sell_amount: order_placement.order.sellAmount,
+        buy_amount: order_placement.order.buyAmount,
         valid_to: order_placement.order.validTo,
         app_data: AppDataHash(order_placement.order.appData.0),
-        fee_amount: order_placement.order.feeAmount.into_legacy(),
+        fee_amount: order_placement.order.feeAmount,
         kind: OrderKind::from_contract_bytes(order_placement.order.kind.0)?,
         partially_fillable: order_placement.order.partiallyFillable,
         sell_token_balance: SellTokenSource::from_contract_bytes(
@@ -784,7 +786,7 @@ mod test {
         super::*,
         crate::database::Config,
         alloy::primitives::U256,
-        contracts::alloy::{CoWSwapOnchainOrders, InstanceExt},
+        contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::H160,
         ethrpc::Web3,
@@ -793,7 +795,10 @@ mod test {
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
             signature::SigningScheme,
         },
-        number::conversions::u256_to_big_decimal,
+        number::conversions::{
+            alloy::u256_to_big_decimal as alloy_u256_to_big_decimal,
+            u256_to_big_decimal,
+        },
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,
@@ -856,14 +861,14 @@ mod test {
             )
             .unwrap();
         let expected_order_data = OrderData {
-            sell_token: sellToken.into_legacy(),
-            buy_token: buyToken.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
-            sell_amount: sellAmount.into_legacy(),
-            buy_amount: buyAmount.into_legacy(),
+            sell_token: sellToken,
+            buy_token: buyToken,
+            receiver: Some(receiver),
+            sell_amount: sellAmount,
+            buy_amount: buyAmount,
             valid_to: validTo,
             app_data: AppDataHash(appData.0),
-            fee_amount: feeAmount.into_legacy(),
+            fee_amount: feeAmount,
             kind: OrderKind::Sell,
             partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
@@ -906,14 +911,14 @@ mod test {
             )
             .unwrap();
         let expected_order_data = OrderData {
-            sell_token: sellToken.into_legacy(),
-            buy_token: buyToken.into_legacy(),
+            sell_token: sellToken,
+            buy_token: buyToken,
             receiver: None,
-            sell_amount: sellAmount.into_legacy(),
-            buy_amount: buyAmount.into_legacy(),
+            sell_amount: sellAmount,
+            buy_amount: buyAmount,
             valid_to: validTo,
             app_data: AppDataHash(appData.0),
-            fee_amount: feeAmount.into_legacy(),
+            fee_amount: feeAmount,
             kind: OrderKind::Sell,
             partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
@@ -938,14 +943,14 @@ mod test {
         let owner = Address::from([5; 20]);
 
         let order_data = OrderData {
-            sell_token: sell_token.into_legacy(),
-            buy_token: buy_token.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
+            sell_token,
+            buy_token,
+            receiver: Some(receiver),
+            sell_amount,
+            buy_amount,
             valid_to,
             app_data: AppDataHash(app_data),
-            fee_amount: fee_amount.into_legacy(),
+            fee_amount,
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
@@ -992,14 +997,14 @@ mod test {
             Metrics::get(),
         );
         let expected_order_data = OrderData {
-            sell_token: sell_token.into_legacy(),
-            buy_token: buy_token.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
+            sell_token,
+            buy_token,
+            receiver: Some(receiver),
+            sell_amount,
+            buy_amount,
             valid_to,
             app_data: AppDataHash(app_data),
-            fee_amount: fee_amount.into_legacy(),
+            fee_amount,
             kind: OrderKind::Sell,
             partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1015,14 +1020,14 @@ mod test {
             owner: ByteArray(owner.into_legacy().0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
-            sell_token: ByteArray(expected_order_data.sell_token.0),
-            buy_token: ByteArray(expected_order_data.buy_token.0),
-            receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),
-            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
+            sell_token: ByteArray(expected_order_data.sell_token.0.0),
+            buy_token: ByteArray(expected_order_data.buy_token.0.0),
+            receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
+            sell_amount: alloy_u256_to_big_decimal(&expected_order_data.sell_amount),
+            buy_amount: alloy_u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
+            fee_amount: alloy_u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
@@ -1050,14 +1055,14 @@ mod test {
         let fee_amount = U256::from(0);
         let owner = Address::from([5; 20]);
         let order_data = OrderData {
-            sell_token: sell_token.into_legacy(),
-            buy_token: buy_token.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
+            sell_token,
+            buy_token,
+            receiver: Some(receiver),
+            sell_amount,
+            buy_amount,
             valid_to,
             app_data: AppDataHash(app_data),
-            fee_amount: fee_amount.into_legacy(),
+            fee_amount,
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1088,8 +1093,8 @@ mod test {
         };
         let settlement_contract = H160::from([8u8; 20]);
         let quote = Quote {
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: (buy_amount / U256::from(2)).into_legacy(),
+            sell_amount,
+            buy_amount: buy_amount / U256::from(2),
             ..Default::default()
         };
         let order_uid = OrderUid([9u8; 56]);
@@ -1106,14 +1111,14 @@ mod test {
             Metrics::get(),
         );
         let expected_order_data = OrderData {
-            sell_token: sell_token.into_legacy(),
-            buy_token: buy_token.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
+            sell_token,
+            buy_token,
+            receiver: Some(receiver),
+            sell_amount,
+            buy_amount,
             valid_to,
             app_data: AppDataHash(app_data),
-            fee_amount: 0.into(),
+            fee_amount: alloy::primitives::U256::ZERO,
             kind: OrderKind::Sell,
             partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1129,11 +1134,11 @@ mod test {
             owner: ByteArray(owner.into_legacy().0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
-            sell_token: ByteArray(expected_order_data.sell_token.0),
-            buy_token: ByteArray(expected_order_data.buy_token.0),
-            receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),
-            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
+            sell_token: ByteArray(expected_order_data.sell_token.0.0),
+            buy_token: ByteArray(expected_order_data.buy_token.0.0),
+            receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
+            sell_amount: alloy_u256_to_big_decimal(&expected_order_data.sell_amount),
+            buy_amount: alloy_u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&fee_amount.into_legacy()),
@@ -1209,13 +1214,10 @@ mod test {
         let quote = Quote {
             id: Some(0i64),
             data: QuoteData {
-                sell_token: sell_token.into_legacy(),
-                buy_token: buy_token.into_legacy(),
-                quoted_sell_amount: sell_amount
-                    .checked_sub(U256::from(1))
-                    .unwrap()
-                    .into_legacy(),
-                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap().into_legacy(),
+                sell_token,
+                buy_token,
+                quoted_sell_amount: sell_amount.checked_sub(U256::from(1)).unwrap(),
+                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap(),
                 fee_parameters: FeeParameters {
                     gas_amount: 2.0f64,
                     gas_price: 3.0f64,
@@ -1223,9 +1225,9 @@ mod test {
                 },
                 ..Default::default()
             },
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
-            fee_amount: fee_amount.into_legacy(),
+            sell_amount,
+            buy_amount,
+            fee_amount,
         };
         let cloned_quote = quote.clone();
         order_quoter
@@ -1278,14 +1280,14 @@ mod test {
             .await
             .unwrap();
         let expected_order_data = OrderData {
-            sell_token: sell_token.into_legacy(),
-            buy_token: buy_token.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
+            sell_token,
+            buy_token,
+            receiver: Some(receiver),
+            sell_amount,
+            buy_amount,
             valid_to,
             app_data: AppDataHash(app_data),
-            fee_amount: fee_amount.into_legacy(),
+            fee_amount,
             kind: OrderKind::Sell,
             partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1301,9 +1303,9 @@ mod test {
             gas_amount: quote.data.fee_parameters.gas_amount,
             gas_price: quote.data.fee_parameters.gas_price,
             sell_token_price: quote.data.fee_parameters.sell_token_price,
-            sell_amount: u256_to_big_decimal(&quote.sell_amount),
-            buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            solver: ByteArray(quote.data.solver.0),
+            sell_amount: number::conversions::alloy::u256_to_big_decimal(&quote.sell_amount),
+            buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+            solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.try_into().unwrap(),
         };
