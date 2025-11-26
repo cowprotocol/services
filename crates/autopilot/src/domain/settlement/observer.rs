@@ -48,10 +48,15 @@ impl Observer {
     /// prod vs. staging).
     pub async fn post_process_outstanding_settlement_transactions(&self) {
         let settlements =
-            Self::retry_with_sleep(|| self.persistence.get_settlements_without_auction())
+            match Self::retry_with_sleep(|| self.persistence.get_settlements_without_auction())
                 .await
-                .inspect_err(|errs| tracing::debug!(?errs, "failed to fetch settlements"))
-                .unwrap_or_default();
+            {
+                Ok(settlements) => settlements,
+                Err(errs) => {
+                    tracing::warn!(?errs, "failed to fetch unprocessed settlements");
+                    return;
+                }
+            };
 
         if settlements.is_empty() {
             tracing::debug!("no unprocessed settlements found");
