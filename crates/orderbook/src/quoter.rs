@@ -90,12 +90,12 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let params = QuoteParameters {
-            sell_token: request.sell_token,
-            buy_token: request.buy_token,
+            sell_token: request.sell_token.into_alloy(),
+            buy_token: request.buy_token.into_alloy(),
             side: request.side,
             verification: Verification {
-                from: request.from,
-                receiver: request.receiver.unwrap_or(request.from),
+                from: request.from.into_alloy(),
+                receiver: request.receiver.unwrap_or(request.from).into_alloy(),
                 sell_token_source: request.sell_token_balance,
                 buy_token_destination: request.buy_token_balance,
                 pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
