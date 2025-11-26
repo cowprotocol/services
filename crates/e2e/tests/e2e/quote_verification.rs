@@ -174,9 +174,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         in_amount: NonZeroU256::new(12.into()).unwrap(),
                     },
                     &Verification {
-                        from: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a").unwrap().into_alloy(),
-                        receiver: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a")
-                            .unwrap().into_alloy(),
+                        from: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
+                        receiver: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
                         pre_interactions: vec![],
                         post_interactions: vec![],
                         sell_token_source: SellTokenSource::Erc20,
@@ -466,7 +465,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // which is used when no wallet is connected in the frontend
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero().into_alloy(),
+            from: Address::ZERO,
             sell_token: *weth.address(),
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
@@ -484,7 +483,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // if the user provided pre-interactions. This works now.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero().into_alloy(),
+            from: Address::ZERO,
             sell_token: *weth.address(),
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
