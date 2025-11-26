@@ -61,32 +61,25 @@ async fn handle_connection(listener: &UnixListener) {
         return;
     };
 
-    let _ = socket
-        .write_all(b"heap dump handler ready. send 'dump' to generate profile\n")
-        .await;
-
     loop {
         let message = read_line(&mut socket).await;
 
         match message.as_deref() {
             Some("") => {
-                log(&mut socket, "client terminated connection".into()).await;
+                tracing::debug!("client terminated connection");
                 break;
             }
             None => {
-                log(&mut socket, "failed to read message from socket".into()).await;
-                continue;
+                tracing::warn!("failed to read message from socket");
+                break;
             }
             Some("dump") => {
                 generate_and_stream_dump(&mut socket).await;
                 break; // Close connection after sending dump
             }
             Some(unknown) => {
-                log(
-                    &mut socket,
-                    format!("unknown command: {unknown:?}. use 'dump'"),
-                )
-                .await;
+                tracing::warn!(?unknown, "unknown command received");
+                break;
             }
         }
     }
@@ -99,9 +92,7 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
     let prof_ctl = match jemalloc_pprof::PROF_CTL.as_ref() {
         Some(ctl) => ctl,
         None => {
-            let error_msg = "jemalloc profiling not initialized\n";
-            tracing::error!(error_msg);
-            let _ = socket.write_all(error_msg.as_bytes()).await;
+            tracing::error!("jemalloc profiling not initialized");
             return;
         }
     };
@@ -120,9 +111,7 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
             }
         }
         Err(e) => {
-            let error_msg = format!("error generating heap dump: {e:?}\n");
             tracing::error!(error = ?e, "failed to generate heap dump");
-            let _ = socket.write_all(error_msg.as_bytes()).await;
         }
     }
 }
@@ -132,12 +121,4 @@ async fn read_line(socket: &mut UnixStream) -> Option<String> {
     let mut buffer = String::new();
     reader.read_line(&mut buffer).await.ok()?;
     Some(buffer.trim().to_owned())
-}
-
-/// Logs the message in this process' logs and reports it back to the
-/// connected socket.
-async fn log(socket: &mut UnixStream, message: String) {
-    tracing::warn!(message);
-    let _ = socket.write_all(message.as_bytes()).await;
-    let _ = socket.write_all(b"\n").await;
 }
