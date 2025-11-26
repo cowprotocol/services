@@ -61,28 +61,22 @@ async fn handle_connection(listener: &UnixListener) {
         return;
     };
 
-    loop {
-        let message = read_line(&mut socket).await;
-
-        match message.as_deref() {
-            Some("") => {
-                tracing::debug!("client terminated connection");
-                break;
-            }
-            None => {
-                tracing::warn!("failed to read message from socket");
-                break;
-            }
-            Some("dump") => {
-                generate_and_stream_dump(&mut socket).await;
-                break; // Close connection after sending dump
-            }
-            Some(unknown) => {
-                tracing::warn!(?unknown, "unknown command received");
-                break;
-            }
+    let message = read_line(&mut socket).await;
+    match message.as_deref() {
+        Some("") => {
+            tracing::debug!("client terminated connection");
+        }
+        None => {
+            tracing::warn!("failed to read message from socket");
+        }
+        Some("dump") => {
+            generate_and_stream_dump(&mut socket).await;
+        }
+        Some(unknown) => {
+            tracing::warn!(?unknown, "unknown command received");
         }
     }
+    // Connection automatically closed when socket is dropped
 }
 
 async fn generate_and_stream_dump(socket: &mut UnixStream) {
