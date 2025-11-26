@@ -60,7 +60,7 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
-    cow_amm_cache: cow_amm::Cache,
+    cow_amm_cache: Option<cow_amm::Cache>,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -390,12 +390,16 @@ impl Utilities {
     }
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
+        let Some(ref cow_amm_cache) = self.cow_amm_cache else {
+            // CoW AMMs are not configured, return empty vec
+            return Default::default();
+        };
+
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
 
-        let cow_amms = self
-            .cow_amm_cache
+        let cow_amms = cow_amm_cache
             .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
             .await;
 
