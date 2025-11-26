@@ -377,7 +377,10 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token: buy_token.into_alloy(),
                 receiver,
             })
-            .to_quote_request(trader.account().address().into_alloy(), &onchain.contracts().weth),
+            .to_quote_request(
+                trader.account().address().into_alloy(),
+                &onchain.contracts().weth,
+            ),
         )
         .await,
         valid_to,
@@ -466,11 +469,21 @@ async fn test_order_availability_in_api(
     let is_available = || async { services.get_order(&uid).await.is_ok() };
     wait_for_condition(TIMEOUT, is_available).await.unwrap();
 
-    test_orders_query(services, order, &owner.into_legacy(), contracts, ethflow_contract).await;
+    test_orders_query(
+        services,
+        order,
+        &owner.into_legacy(),
+        contracts,
+        ethflow_contract,
+    )
+    .await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [&owner.into_legacy(), &ethflow_contract.address().into_legacy()] {
+    for address in [
+        &owner.into_legacy(),
+        &ethflow_contract.address().into_legacy(),
+    ] {
         test_account_query(
             address,
             services.client(),
