@@ -97,7 +97,10 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
             return;
         }
         Err(_) => {
-            tracing::error!("jemalloc profiling not available - service not built with jemalloc-profiling feature or allocator not configured");
+            tracing::error!(
+                "jemalloc profiling not available - service not built with jemalloc-profiling \
+                 feature or allocator not configured"
+            );
             return;
         }
     };
