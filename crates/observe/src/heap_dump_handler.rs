@@ -89,10 +89,15 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
     tracing::info!("generating heap dump via jemalloc_pprof");
 
     // Access the global profiling controller
-    let prof_ctl = match jemalloc_pprof::PROF_CTL.as_ref() {
-        Some(ctl) => ctl,
-        None => {
+    // Catch panic if jemalloc profiling is not available
+    let prof_ctl = match std::panic::catch_unwind(|| jemalloc_pprof::PROF_CTL.as_ref()) {
+        Ok(Some(ctl)) => ctl,
+        Ok(None) => {
             tracing::error!("jemalloc profiling not initialized");
+            return;
+        }
+        Err(_) => {
+            tracing::error!("jemalloc profiling not available - service not built with jemalloc-profiling feature or allocator not configured");
             return;
         }
     };

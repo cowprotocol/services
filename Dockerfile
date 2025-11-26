@@ -60,6 +60,13 @@ ENTRYPOINT [ "solvers" ]
 
 # Extract Binary
 FROM intermediate
+
+# Configure jemalloc profiling (only affects services built with jemalloc-profiling feature)
+# prof:true - Enable profiling
+# prof_active:true - Start profiling immediately
+# lg_prof_sample:19 - Sample every 2^19 bytes (~524KB)
+ENV MALLOC_CONF="prof:true,prof_active:true,lg_prof_sample:19"
+
 RUN apt-get update && \
     apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev git netcat-openbsd
 RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
