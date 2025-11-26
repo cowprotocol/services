@@ -90,12 +90,12 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let params = QuoteParameters {
-            sell_token: request.sell_token,
-            buy_token: request.buy_token,
+            sell_token: request.sell_token.into_alloy(),
+            buy_token: request.buy_token.into_alloy(),
             side: request.side,
             verification: Verification {
-                from: request.from,
-                receiver: request.receiver.unwrap_or(request.from),
+                from: request.from.into_alloy(),
+                receiver: request.receiver.unwrap_or(request.from).into_alloy(),
                 sell_token_source: request.sell_token_balance,
                 buy_token_destination: request.buy_token_balance,
                 pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
@@ -142,7 +142,7 @@ impl QuoteHandler {
                     },
                     app_data => app_data.clone(),
                 },
-                fee_amount: quote.fee_amount,
+                fee_amount: quote.fee_amount.into_legacy(),
                 kind: quote.data.kind,
                 partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
@@ -173,8 +173,8 @@ fn get_adjusted_quote_data(
         .and_then(|config| config.factor)
     else {
         return Ok(AdjustedQuoteData {
-            sell_amount: quote.sell_amount.into_alloy(),
-            buy_amount: quote.buy_amount.into_alloy(),
+            sell_amount: quote.sell_amount,
+            buy_amount: quote.buy_amount,
             protocol_fee_bps: None,
         });
     };
@@ -187,7 +187,6 @@ fn get_adjusted_quote_data(
             let protocol_fee = U256::uint_try_from(
                 quote
                     .buy_amount
-                    .into_alloy()
                     .widening_mul(U256::from(factor.to_bps()))
                     .checked_div(U512::from(FeeFactor::MAX_BPS))
                     .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
@@ -195,16 +194,16 @@ fn get_adjusted_quote_data(
             .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
             // Reduce buy amount by protocol fee
-            let adjusted_buy = quote.buy_amount.into_alloy().saturating_sub(protocol_fee);
+            let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
 
-            (quote.sell_amount.into_alloy(), adjusted_buy)
+            (quote.sell_amount, adjusted_buy)
         }
         OrderQuoteSide::Buy { .. } => {
             // For BUY orders, fee is calculated on sell amount + network fee.
             // Network fee is already in sell token, so it is added to get the total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
             let factor = U256::from(factor.to_bps());
-            let volume_bps: Uint<512, 8> = total_sell_volume.into_alloy().widening_mul(factor);
+            let volume_bps: Uint<512, 8> = total_sell_volume.widening_mul(factor);
             let protocol_fee = U256::uint_try_from(
                 volume_bps
                     .checked_div(U512::from(FeeFactor::MAX_BPS))
@@ -213,9 +212,9 @@ fn get_adjusted_quote_data(
             .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
             // Increase sell amount by protocol fee
-            let adjusted_sell = quote.sell_amount.into_alloy().saturating_add(protocol_fee);
+            let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
 
-            (adjusted_sell, quote.buy_amount.into_alloy())
+            (adjusted_sell, quote.buy_amount)
         }
     };
 
@@ -271,8 +270,8 @@ mod tests {
             data: QuoteData {
                 sell_token: Default::default(),
                 buy_token: Default::default(),
-                quoted_sell_amount: sell_amount.into_legacy(),
-                quoted_buy_amount: buy_amount.into_legacy(),
+                quoted_sell_amount: sell_amount,
+                quoted_buy_amount: buy_amount,
                 fee_parameters: Default::default(),
                 kind: model::order::OrderKind::Sell,
                 expiration: chrono::Utc::now(),
@@ -281,9 +280,9 @@ mod tests {
                 verified: false,
                 metadata: Default::default(),
             },
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
-            fee_amount: U256::ZERO.into_legacy(),
+            sell_amount,
+            buy_amount,
+            fee_amount: U256::ZERO,
         }
     }
 
@@ -360,7 +359,7 @@ mod tests {
 
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
         let mut quote = create_test_quote(to_wei(100), to_wei(100));
-        quote.fee_amount = to_wei(5).into_legacy(); // Network fee in sell token
+        quote.fee_amount = to_wei(5); // Network fee in sell token
         let side = OrderQuoteSide::Buy {
             buy_amount_after_fee: number::nonzero::U256::try_from(to_wei(100).into_legacy())
                 .unwrap(),

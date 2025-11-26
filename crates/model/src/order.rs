@@ -9,7 +9,7 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
-    alloy::primitives::{Address, U512},
+    alloy::primitives::{Address, B256, U512},
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -647,7 +647,7 @@ pub struct CancellationPayload {
 #[serde(rename_all = "camelCase")]
 pub struct EthflowData {
     pub user_valid_to: i64,
-    pub refund_tx_hash: Option<H256>,
+    pub refund_tx_hash: Option<B256>,
 }
 
 // We still want to have the `is_refunded` field in the JSON response to stay
@@ -663,7 +663,7 @@ impl ::serde::Serialize for EthflowData {
         #[serde(rename_all = "camelCase")]
         struct Extended {
             user_valid_to: i64,
-            refund_tx_hash: Option<H256>,
+            refund_tx_hash: Option<B256>,
             is_refunded: bool,
         }
 

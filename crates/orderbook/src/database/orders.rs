@@ -12,8 +12,7 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
-    ethcontract::H256,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
         order::{
@@ -40,7 +39,6 @@ use {
         big_decimal_to_u256,
         u256_to_big_decimal,
     },
-    primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -408,7 +406,7 @@ impl Postgres {
     }
 
     pub async fn token_metadata(&self, token: &Address) -> Result<TokenMetadata> {
-        let (first_trade_block, native_price): (Option<u32>, Option<U256>) = tokio::try_join!(
+        let (first_trade_block, native_price): (Option<u32>, Option<alloy::primitives::U256>) = tokio::try_join!(
             self.execute_instrumented("token_first_trade_block", async {
                 let mut ex = self.pool.acquire().await?;
                 database::trades::token_first_trade_block(&mut ex, ByteArray(token.0.0))
@@ -426,7 +424,7 @@ impl Postgres {
                 )
                 .await
                 .map_err(anyhow::Error::from)?
-                .and_then(|price| big_decimal_to_u256(&price)))
+                .and_then(|price| number::conversions::alloy::big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -455,7 +453,7 @@ impl Postgres {
 
 #[async_trait]
 impl LimitOrderCounting for Postgres {
-    async fn count(&self, owner: H160) -> Result<u64> {
+    async fn count(&self, owner: Address) -> Result<u64> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["count_limit_orders_by_owner"])
@@ -465,20 +463,28 @@ impl LimitOrderCounting for Postgres {
         Ok(database::orders::user_orders_with_quote(
             &mut ex,
             now_in_epoch_seconds().into(),
-            &ByteArray(owner.0),
+            &ByteArray(owner.0.0),
         )
         .await?
         .into_iter()
         .filter(|order_with_quote| {
             is_order_outside_market_price(
                 &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
-                    fee: 0.into(),
+                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount)
+                        .unwrap()
+                        .into_alloy(),
+                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount)
+                        .unwrap()
+                        .into_alloy(),
+                    fee: alloy::primitives::U256::from(0),
                 },
                 &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
+                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount)
+                        .unwrap()
+                        .into_alloy(),
+                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount)
+                        .unwrap()
+                        .into_alloy(),
                     fee: FeeParameters {
                         gas_amount: order_with_quote.quote_gas_amount,
                         gas_price: order_with_quote.quote_gas_price,
@@ -538,7 +544,7 @@ fn full_order_with_quote_into_model_order(
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            refund_tx_hash: refund_tx.map(|hash| H256(hash.0)),
+            refund_tx_hash: refund_tx.map(|hash| B256::new(hash.0)),
         })
     } else {
         None
@@ -659,7 +665,6 @@ mod tests {
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
-        primitive_types::U256,
         shared::order_quoting::{Quote, QuoteData, QuoteMetadataV1},
         std::sync::atomic::{AtomicI64, Ordering},
     };
@@ -1125,8 +1130,8 @@ mod tests {
 
         let quote = Quote {
             id: Some(5),
-            sell_amount: U256::from(1),
-            buy_amount: U256::from(2),
+            sell_amount: alloy::primitives::U256::from(1),
+            buy_amount: alloy::primitives::U256::from(2),
             data: QuoteData {
                 fee_parameters: FeeParameters {
                     sell_token_price: 2.5,
@@ -1175,8 +1180,8 @@ mod tests {
 
         let quote = Quote {
             id: Some(5),
-            sell_amount: U256::from(1),
-            buy_amount: U256::from(2),
+            sell_amount: alloy::primitives::U256::from(1),
+            buy_amount: alloy::primitives::U256::from(2),
             data: QuoteData {
                 verified: true,
                 metadata: QuoteMetadataV1 {

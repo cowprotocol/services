@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
@@ -15,7 +15,7 @@ use {
             SigningScheme as DbSigningScheme,
         },
     },
-    ethcontract::{H160, H256},
+    ethcontract::H160,
     ethrpc::alloy::conversions::IntoAlloy,
     model::{
         interaction::InteractionData,
@@ -56,7 +56,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            refund_tx_hash: refund_tx.map(|hash| H256::from(hash.0)),
+            refund_tx_hash: refund_tx.map(|hash| B256::from(hash.0)),
         })
     } else {
         None
