@@ -1,5 +1,6 @@
 use {
-    super::{Address, TokenAddress, U256},
+    super::{Address, TokenAddress},
+    alloy::primitives::U256,
     derive_more::{From, Into},
 };
 
@@ -47,7 +48,7 @@ impl Approval {
     /// [`U256::max_value`].
     pub fn max(self) -> Self {
         Self(Allowance {
-            amount: U256::max_value(),
+            amount: U256::MAX,
             ..self.0
         })
     }
@@ -55,7 +56,7 @@ impl Approval {
     /// Revoke the approval, i.e. set the approved amount to [`U256::zero`].
     pub fn revoke(self) -> Self {
         Self(Allowance {
-            amount: U256::zero(),
+            amount: U256::ZERO,
             ..self.0
         })
     }

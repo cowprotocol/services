@@ -4,6 +4,7 @@ use {
         signature::SigningScheme,
         time,
     },
+    alloy::primitives::Address,
     anyhow::bail,
     app_data::AppDataHash,
     chrono::{DateTime, Utc},
@@ -120,11 +121,11 @@ impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteRequest {
-    pub from: H160,
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub from: Address,
+    pub sell_token: Address,
+    pub buy_token: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<H160>,
+    pub receiver: Option<Address>,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
     #[serde(flatten)]
@@ -324,6 +325,7 @@ pub struct OrderQuote {
 
 pub type QuoteId = i64;
 
+#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
@@ -332,6 +334,9 @@ pub struct OrderQuoteResponse {
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
     pub verified: bool,
+    /// Protocol fee in basis points (e.g., "2" for 0.02%)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_fee_bps: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -462,8 +467,8 @@ mod tests {
             }),
         ];
         let expected_standard_response = OrderQuoteRequest {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
             ..Default::default()
         };
         let modify_signing_scheme = |signing_scheme: QuoteSigningScheme| {

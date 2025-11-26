@@ -6,7 +6,6 @@ use {
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
-        InstanceExt,
         WETH9,
         support::Balances,
     },

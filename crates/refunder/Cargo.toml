@@ -12,7 +12,6 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }

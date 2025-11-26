@@ -11,7 +11,10 @@ use {
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, H160, U256, errors::MethodError},
-    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
+    ethrpc::alloy::{
+        conversions::{IntoAlloy, IntoLegacy},
+        errors::ignore_non_node_error,
+    },
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
@@ -100,18 +103,22 @@ impl Pool {
     ///   shuffling values in `get_amount_in` and `get_amount_out`
     fn get_relative_reserves(&self, token: H160) -> RelativeReserves {
         // https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/libraries/UniswapV2Library.sol#L53
-        if token == self.tokens.get().0 {
+        if token == self.tokens.get().0.into_legacy() {
             (
                 U256::from(self.reserves.0),
                 U256::from(self.reserves.1),
-                self.tokens.get().1,
+                self.tokens.get().1.into_legacy(),
             )
         } else {
-            assert_eq!(token, self.tokens.get().1, "Token not part of pool");
+            assert_eq!(
+                token,
+                self.tokens.get().1.into_legacy(),
+                "Token not part of pool"
+            );
             (
                 U256::from(self.reserves.1),
                 U256::from(self.reserves.0),
-                self.tokens.get().0,
+                self.tokens.get().0.into_legacy(),
             )
         }
     }
@@ -275,8 +282,8 @@ impl PoolReading for DefaultPoolReader {
         let pair_address = self.pair_provider.pair_address(&pair);
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
-        let token0 = ERC20::Instance::new(pair.get().0.into_alloy(), self.web3.alloy.clone());
-        let token1 = ERC20::Instance::new(pair.get().1.into_alloy(), self.web3.alloy.clone());
+        let token0 = ERC20::Instance::new(pair.get().0, self.web3.alloy.clone());
+        let token1 = ERC20::Instance::new(pair.get().1, self.web3.alloy.clone());
 
         async move {
             let fetch_token0_balance = token0
@@ -402,7 +409,7 @@ mod tests {
         // Even Pool
         let pool = Pool::uniswap(
             H160::from_low_u64_be(1),
-            TokenPair::new(sell_token, buy_token).unwrap(),
+            TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap(),
             (100, 100),
         );
         assert_eq!(
@@ -421,7 +428,7 @@ mod tests {
         //Uneven Pool
         let pool = Pool::uniswap(
             H160::from_low_u64_be(2),
-            TokenPair::new(sell_token, buy_token).unwrap(),
+            TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap(),
             (200, 50),
         );
         assert_eq!(
@@ -440,7 +447,7 @@ mod tests {
         // Large Numbers
         let pool = Pool::uniswap(
             H160::from_low_u64_be(3),
-            TokenPair::new(sell_token, buy_token).unwrap(),
+            TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap(),
             (1u128 << 90, 1u128 << 90),
         );
         assert_eq!(
@@ -460,7 +467,7 @@ mod tests {
         // Even Pool
         let pool = Pool::uniswap(
             H160::from_low_u64_be(1),
-            TokenPair::new(sell_token, buy_token).unwrap(),
+            TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap(),
             (100, 100),
         );
         assert_eq!(
@@ -479,7 +486,7 @@ mod tests {
         //Uneven Pool
         let pool = Pool::uniswap(
             H160::from_low_u64_be(2),
-            TokenPair::new(sell_token, buy_token).unwrap(),
+            TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap(),
             (200, 50),
         );
         assert_eq!(
@@ -494,7 +501,7 @@ mod tests {
         // Large Numbers
         let pool = Pool::uniswap(
             H160::from_low_u64_be(3),
-            TokenPair::new(sell_token, buy_token).unwrap(),
+            TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap(),
             (1u128 << 90, 1u128 << 90),
         );
         assert_eq!(

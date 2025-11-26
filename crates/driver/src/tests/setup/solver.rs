@@ -462,6 +462,7 @@ impl Solver {
                         additional_tip_percentage: 0.,
                         revert_protection: infra::mempool::RevertProtection::Disabled,
                     },
+                    nonce_block_number: None,
                 }],
             )
             .await
@@ -486,6 +487,10 @@ impl Solver {
             },
             gas,
             45_000_000.into(),
+            &shared::current_block::Arguments {
+                block_stream_poll_interval: None,
+                node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),
+            },
         )
         .await;
 

@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     crate::solver_competition::LoadSolverCompetitionError,
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, solver_competition_v2::SolverCompetition as DbResponse},
     model::{
@@ -8,7 +9,6 @@ use {
         solver_competition_v2::{Auction, Order, Response as ApiResponse, Solution},
     },
     number::conversions::big_decimal_to_u256,
-    primitive_types::{H160, H256},
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -32,7 +32,7 @@ impl Postgres {
 
     pub async fn load_competition_by_tx_hash(
         &self,
-        tx_hash: H256,
+        tx_hash: B256,
     ) -> Result<ApiResponse, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -70,7 +70,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
         .zip(value.auction.price_values)
         .map(|(token, price)| {
             Ok((
-                H160(token.0),
+                Address::new(token.0),
                 big_decimal_to_u256(&price).context("could not convert native price to U256")?,
             ))
         })
@@ -79,7 +79,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
     let settlements: HashMap<_, _> = value
         .settlements
         .into_iter()
-        .map(|row| (row.solution_uid, H256(row.tx_hash.0)))
+        .map(|row| (row.solution_uid, B256::new(row.tx_hash.0)))
         .collect();
 
     let reference_scores: BTreeMap<_, _> = value
@@ -87,7 +87,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
         .into_iter()
         .map(|row| {
             Ok((
-                H160(row.solver.0),
+                Address::new(row.solver.0),
                 big_decimal_to_u256(&row.reference_score)
                     .context("could not convert reference score to U256")?,
             ))
@@ -106,8 +106,8 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                         .context("could not convert sell amount to U256")?,
                     buy_amount: big_decimal_to_u256(&trade.executed_buy)
                         .context("could not convert buy amount to U256")?,
-                    sell_token: H160(trade.sell_token.0),
-                    buy_token: H160(trade.buy_token.0),
+                    sell_token: Address::new(trade.sell_token.0),
+                    buy_token: Address::new(trade.buy_token.0),
                 });
         }
         grouped_trades
@@ -123,7 +123,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                 .zip(solution.price_values)
                 .map(|(token, price)| {
                     Ok((
-                        H160(token.0),
+                        Address::new(token.0),
                         big_decimal_to_u256(&price)
                             .context("could not convert clearing price to U256")?,
                     ))
@@ -131,7 +131,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                 .collect::<Result<_>>()?;
 
             Ok(Solution {
-                solver_address: H160(solution.solver.0),
+                solver_address: Address::new(solution.solver.0),
                 score: big_decimal_to_u256(&solution.score)
                     .context("could not convert score to U256")?,
                 ranking: solution.ranking,
@@ -140,7 +140,9 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                 is_winner: solution.is_winner,
                 filtered_out: solution.filtered_out,
                 tx_hash: settlements.get(&solution.uid).cloned(),
-                reference_score: reference_scores.get(&H160(solution.solver.0)).copied(),
+                reference_score: reference_scores
+                    .get(&Address::new(solution.solver.0))
+                    .copied(),
             })
         })
         .collect::<Result<_>>()?;

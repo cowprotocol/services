@@ -248,11 +248,11 @@ mod tests {
             PriceEstimating,
             Query,
         },
+        alloy::primitives::Address,
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
-        primitive_types::H160,
         std::time::Duration,
         tokio::time::sleep,
     };
@@ -262,8 +262,8 @@ mod tests {
         let queries = [
             Arc::new(Query {
                 verification: Default::default(),
-                sell_token: H160::from_low_u64_le(0),
-                buy_token: H160::from_low_u64_le(1),
+                sell_token: Address::with_last_byte(0),
+                buy_token: Address::with_last_byte(1),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
@@ -271,8 +271,8 @@ mod tests {
             }),
             Arc::new(Query {
                 verification: Default::default(),
-                sell_token: H160::from_low_u64_le(2),
-                buy_token: H160::from_low_u64_le(3),
+                sell_token: Address::with_last_byte(2),
+                buy_token: Address::with_last_byte(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
                 block_dependent: false,
@@ -280,8 +280,8 @@ mod tests {
             }),
             Arc::new(Query {
                 verification: Default::default(),
-                sell_token: H160::from_low_u64_le(2),
-                buy_token: H160::from_low_u64_le(3),
+                sell_token: Address::with_last_byte(2),
+                buy_token: Address::with_last_byte(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
@@ -289,8 +289,8 @@ mod tests {
             }),
             Arc::new(Query {
                 verification: Default::default(),
-                sell_token: H160::from_low_u64_le(3),
-                buy_token: H160::from_low_u64_le(4),
+                sell_token: Address::with_last_byte(3),
+                buy_token: Address::with_last_byte(4),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
@@ -298,8 +298,8 @@ mod tests {
             }),
             Arc::new(Query {
                 verification: Default::default(),
-                sell_token: H160::from_low_u64_le(5),
-                buy_token: H160::from_low_u64_le(6),
+                sell_token: Address::with_last_byte(5),
+                buy_token: Address::with_last_byte(6),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
@@ -344,7 +344,7 @@ mod tests {
             Ok(estimates[1].clone()),
             Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
             Err(PriceEstimationError::UnsupportedToken {
-                token: H160([0; 20]),
+                token: Address::new([0; 20]),
                 reason: "".to_string(),
             }),
         ]);
@@ -388,8 +388,8 @@ mod tests {
     async fn racing_estimator_returns_early() {
         let query = Arc::new(Query {
             verification: Default::default(),
-            sell_token: H160::from_low_u64_le(0),
-            buy_token: H160::from_low_u64_le(1),
+            sell_token: Address::with_last_byte(0),
+            buy_token: Address::with_last_byte(1),
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Buy,
             block_dependent: false,
@@ -449,8 +449,8 @@ mod tests {
     async fn queries_stages_sequentially() {
         let query = Arc::new(Query {
             verification: Default::default(),
-            sell_token: H160::from_low_u64_le(0),
-            buy_token: H160::from_low_u64_le(1),
+            sell_token: Address::with_last_byte(0),
+            buy_token: Address::with_last_byte(1),
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
@@ -526,8 +526,8 @@ mod tests {
     async fn combines_stages_if_threshold_bigger_than_next_stage_length() {
         let query = Arc::new(Query {
             verification: Default::default(),
-            sell_token: H160::from_low_u64_le(0),
-            buy_token: H160::from_low_u64_le(1),
+            sell_token: Address::with_last_byte(0),
+            buy_token: Address::with_last_byte(1),
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,

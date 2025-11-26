@@ -88,6 +88,7 @@ mod tests {
     use {
         super::*,
         crate::api::response_body,
+        alloy::primitives::Address,
         anyhow::anyhow,
         app_data::AppDataHash,
         chrono::{TimeZone, Utc},
@@ -130,9 +131,9 @@ mod tests {
             }))
             .unwrap(),
             OrderQuoteRequest {
-                from: H160([0x01; 20]),
-                sell_token: H160([0x02; 20]),
-                buy_token: H160([0x03; 20]),
+                from: Address::repeat_byte(0x01),
+                sell_token: Address::repeat_byte(0x02),
+                buy_token: Address::repeat_byte(0x03),
                 receiver: None,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
@@ -169,9 +170,9 @@ mod tests {
             }))
             .unwrap(),
             OrderQuoteRequest {
-                from: H160([0x01; 20]),
-                sell_token: H160([0x02; 20]),
-                buy_token: H160([0x03; 20]),
+                from: Address::repeat_byte(0x01),
+                sell_token: Address::repeat_byte(0x02),
+                buy_token: Address::repeat_byte(0x03),
                 receiver: None,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee {
@@ -203,10 +204,10 @@ mod tests {
             }))
             .unwrap(),
             OrderQuoteRequest {
-                from: H160([0x01; 20]),
-                sell_token: H160([0x02; 20]),
-                buy_token: H160([0x03; 20]),
-                receiver: Some(H160([0x04; 20])),
+                from: Address::repeat_byte(0x01),
+                sell_token: Address::repeat_byte(0x02),
+                buy_token: Address::repeat_byte(0x03),
+                receiver: Some(Address::repeat_byte(0x04)),
                 side: OrderQuoteSide::Buy {
                     buy_amount_after_fee: NonZeroU256::try_from(1337).unwrap(),
                 },
@@ -229,9 +230,9 @@ mod tests {
             }))
             .unwrap(),
             OrderQuoteRequest {
-                from: H160([0x01; 20]),
-                sell_token: H160([0x02; 20]),
-                buy_token: H160([0x03; 20]),
+                from: Address::repeat_byte(0x01),
+                sell_token: Address::repeat_byte(0x02),
+                buy_token: Address::repeat_byte(0x03),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(1337).unwrap()
@@ -255,9 +256,9 @@ mod tests {
             }))
             .unwrap(),
             OrderQuoteRequest {
-                from: H160([0x01; 20]),
-                sell_token: H160([0x02; 20]),
-                buy_token: H160([0x03; 20]),
+                from: Address::repeat_byte(0x01),
+                sell_token: Address::repeat_byte(0x02),
+                buy_token: Address::repeat_byte(0x03),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(1337).unwrap()
@@ -318,6 +319,7 @@ mod tests {
             expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
             verified: false,
+            protocol_fee_bps: Some("2".to_string()),
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
             order_quote_response.clone(),

@@ -56,7 +56,7 @@ impl Interaction {
                     eth::Allowance {
                         token: interaction.input.token,
                         spender: address.into(),
-                        amount: eth::U256::max_value(),
+                        amount: alloy::primitives::U256::MAX,
                     }
                     .into(),
                 ]

@@ -84,8 +84,8 @@ where
     ) -> impl Iterator<Item = H256> + '_ + use<'_, Factory> {
         let (token0, token1) = token_pair.get();
 
-        let pools0 = self.pools_by_token.get(&token0);
-        let pools1 = self.pools_by_token.get(&token1);
+        let pools0 = self.pools_by_token.get(&token0.into_legacy());
+        let pools1 = self.pools_by_token.get(&token1.into_legacy());
 
         pools0
             .zip(pools1)
@@ -534,7 +534,9 @@ mod tests {
         let n = 3;
         let (pool_ids, pool_addresses, tokens, _, _) = pool_init_data(0, n);
         let token_pairs: Vec<TokenPair> = (0..n)
-            .map(|i| TokenPair::new(tokens[i], tokens[(i + 1) % n]).unwrap())
+            .map(|i| {
+                TokenPair::new(tokens[i].into_alloy(), tokens[(i + 1) % n].into_alloy()).unwrap()
+            })
             .collect();
 
         let mut registry = PoolStorage::new(

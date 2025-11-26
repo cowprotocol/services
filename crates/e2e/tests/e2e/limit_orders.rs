@@ -496,10 +496,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 matches!(
                     (
                         services
-                            .get_solver_competition(trade_a.tx_hash.unwrap())
+                            .get_solver_competition(trade_a.tx_hash.unwrap().into_legacy())
                             .await,
                         services
-                            .get_solver_competition(trade_b.tx_hash.unwrap())
+                            .get_solver_competition(trade_b.tx_hash.unwrap().into_legacy())
                             .await
                     ),
                     (Ok(_), Ok(_))
@@ -512,7 +512,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
     // Verify that both transactions were properly indexed
@@ -734,9 +734,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         .await;
 
     let quote_request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: token.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
+        from: trader.address().into_alloy(),
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(5)).unwrap(),
@@ -894,8 +894,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_usdc.address().into_legacy(),
-            buy_token: token_usdt.address().into_legacy(),
+            sell_token: *token_usdc.address(),
+            buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -1066,32 +1066,36 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .unwrap();
 
     // Setup services
-    let protocol_fees_config = ProtocolFeesConfig(vec![
-        ProtocolFee {
-            policy: fee::FeePolicyKind::Surplus {
-                factor: 0.5,
-                max_volume_factor: 0.01,
+    let protocol_fee_args = ProtocolFeesConfig {
+        protocol_fees: vec![
+            ProtocolFee {
+                policy: fee::FeePolicyKind::Surplus {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                },
+                policy_order_class: FeePolicyOrderClass::Limit,
             },
-            policy_order_class: FeePolicyOrderClass::Limit,
-        },
-        ProtocolFee {
-            policy: fee::FeePolicyKind::PriceImprovement {
-                factor: 0.5,
-                max_volume_factor: 0.01,
+            ProtocolFee {
+                policy: fee::FeePolicyKind::PriceImprovement {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                },
+                policy_order_class: FeePolicyOrderClass::Market,
             },
-            policy_order_class: FeePolicyOrderClass::Market,
-        },
-    ])
-    .to_string();
+        ],
+        ..Default::default()
+    }
+    .into_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![
-                    protocol_fees_config,
-                    format!("--unsupported-tokens={:#x}", unsupported.address()),
-                ],
+                autopilot: [
+                    protocol_fee_args,
+                    vec![format!("--unsupported-tokens={:#x}", unsupported.address())],
+                ]
+                .concat(),
                 ..Default::default()
             },
             solver,
@@ -1170,8 +1174,8 @@ async fn no_liquidity_limit_order(web3: Web3) {
             max_volume_factor: 0.01
         }
     );
-    assert_eq!(fee.token, onchain.contracts().weth.address().into_legacy());
-    assert!(fee.amount > 0.into());
+    assert_eq!(fee.token, *onchain.contracts().weth.address());
+    assert!(fee.amount > ::alloy::primitives::U256::ZERO);
 
     let balance_after = onchain
         .contracts()

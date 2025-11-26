@@ -376,9 +376,8 @@ pub fn liquidity_interaction(
 }
 
 pub fn approve(allowance: &Allowance) -> eth::Interaction {
-    let mut amount = [0u8; 32];
     let selector = hex_literal::hex!("095ea7b3");
-    allowance.amount.to_big_endian(&mut amount);
+    let amount: [_; 32] = allowance.amount.to_be_bytes();
     eth::Interaction {
         target: allowance.token.0.into(),
         value: eth::U256::zero().into(),
@@ -520,7 +519,7 @@ mod test {
             token: eth::H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
             spender: eth::H160::from_slice(&hex!("000000000022D473030F116dDEE9F6B43aC78BA3"))
                 .into(),
-            amount: eth::U256::max_value(),
+            amount: alloy::primitives::U256::MAX,
         };
         let interaction = approve(&allowance);
         assert_eq!(

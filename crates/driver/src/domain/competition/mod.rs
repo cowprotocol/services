@@ -21,7 +21,7 @@ use {
         },
         util::{Bytes, math},
     },
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
@@ -184,6 +184,11 @@ impl Competition {
             .observe(elapsed.as_secs_f64());
         drop(timer);
         tracing::debug!(?elapsed, "auction task execution time");
+
+        if auction.orders.is_empty() {
+            tracing::info!("no orders left after pre-processing; skipping solving");
+            return Ok(None);
+        }
 
         let auction = &auction;
 
@@ -495,8 +500,13 @@ impl Competition {
             //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
-                        .unwrap_or_default(),
+                    math::mul_ratio(
+                        available.0.into_alloy(),
+                        allocated_balance.0.into_alloy(),
+                        max_sell.0.into_alloy(),
+                    )
+                    .unwrap_or_default()
+                    .into_legacy(),
                 );
             }
             if order.available().is_zero() {

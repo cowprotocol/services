@@ -130,15 +130,21 @@ impl Mempools {
             }
         }
 
-        // Fetch the pending nonce to avoid race conditions between concurrent
+        // Fetch the nonce to avoid race conditions between concurrent
         // transactions (e.g., settlement tx and cancellation tx) from the same
         // solver address.
-        let nonce = mempool.get_pending_nonce(solver.address()).await?;
+        let nonce = mempool.get_nonce(solver.address()).await?;
         let hash = mempool
             .submit(tx.clone(), settlement.gas, solver, nonce)
             .await?;
         let submitted_at_block = self.ethereum.current_block().borrow().number;
-        tracing::debug!(?hash, current_block = ?submitted_at_block, "submitted tx to the mempool");
+        tracing::debug!(
+            ?hash,
+            current_block = ?submitted_at_block,
+            max_fee_per_gas = ?settlement.gas.price.max(),
+            priority_fee_per_gas = ?settlement.gas.price.tip(),
+            "submitted tx to the mempool"
+        );
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {

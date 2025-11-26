@@ -5,8 +5,9 @@ use {
     },
     alloy::{
         eips::{BlockId, BlockNumberOrTag},
-        providers::Provider,
+        providers::{Provider, ProviderBuilder},
         rpc::types::Block,
+        transports::ws::WsConnect,
     },
     anyhow::{Context as _, Result, anyhow, ensure},
     futures::{StreamExt, TryStreamExt, stream::FuturesUnordered},
@@ -107,6 +108,121 @@ impl TryFrom<Block> for BlockInfo {
     }
 }
 
+impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: alloy::rpc::types::Header) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            number: value.number,
+            hash: value.hash.into_legacy(),
+            parent_hash: value.parent_hash.into_legacy(),
+            timestamp: value.timestamp,
+            gas_limit: primitive_types::U256::from(value.gas_limit),
+            gas_price: value
+                .base_fee_per_gas
+                .map(primitive_types::U256::from)
+                .context("no gas price")?,
+            observed_at: Instant::now(),
+        })
+    }
+}
+
+/// Creates a cloneable stream that yields the current block whenever it
+/// changes.
+///
+/// Uses websocket subscriptions for real-time block updates. The stream is not
+/// guaranteed to yield *every* block individually without gaps but it does
+/// yield the newest block whenever it detects a block number increase.
+///
+/// The stream is cloneable so that we only have to subscribe once while being
+/// able to share the result with several consumers. Calling this function
+/// again would create a new subscription so it is preferable to clone an
+/// existing stream instead.
+///
+/// The websocket reconnection is handled by the alloy lib.
+pub async fn current_block_ws_stream(
+    alloy_provider: AlloyProvider,
+    ws_url: Url,
+) -> Result<CurrentBlockWatcher> {
+    tracing::info!(?ws_url, "initializing block stream");
+
+    // Create a WS transport, which implements an automatic reconnection mechanism
+    let ws_connect = WsConnect::new(ws_url.as_str());
+    let ws_provider = ProviderBuilder::new()
+        .connect_ws(ws_connect)
+        .await
+        .context("failed to connect to websocket")?;
+
+    // Init the block subscription stream before fetching the first block to reduce
+    // chance of missing blocks due to race conditions
+    let mut stream = ws_provider
+        .subscribe_blocks()
+        .await
+        .context("failed to subscribe to blocks")?
+        .into_stream();
+
+    // Fetch the current block immediately via HTTP instead of waiting for WebSocket
+    tracing::info!("fetching initial block via HTTP");
+    let first_block = alloy_provider
+        .get_block(BlockId::Number(BlockNumberOrTag::Latest))
+        .await
+        .context("failed to fetch latest block via HTTP")?
+        .context("latest block not found")?;
+
+    let first_block = BlockInfo::try_from(first_block).context("failed to parse initial block")?;
+
+    let (sender, receiver) = watch::channel(first_block);
+    let update_future = async move {
+        // Keep WebSocket provider alive to maintain connection
+        let _ws_provider = ws_provider;
+        let mut previous_block = first_block;
+
+        // Process incoming blocks. WsConnect handles reconnection automatically,
+        // so we don't need manual reconnection logic here.
+        while let Some(block) = stream.next().await {
+            let block_info = match BlockInfo::try_from(block.clone()) {
+                Ok(info) => info,
+                Err(err) => {
+                    tracing::error!(?err, ?block, "failed to parse block, skipping");
+                    continue;
+                }
+            };
+
+            update_current_block_metrics(block_info.number);
+
+            // If the block is exactly the same as the previous one, ignore it.
+            if previous_block.hash == block_info.hash {
+                continue;
+            }
+
+            tracing::debug!(number=%block_info.number, hash=?block_info.hash, "received block");
+            update_block_metrics(previous_block.number, block_info.number);
+
+            // Only update the stream if the number has increased.
+            if block_info.number <= previous_block.number {
+                continue;
+            }
+
+            tracing::info!(number=%block_info.number, hash=?block_info.hash, "noticed a new block");
+            if let Err(err) = sender.send(block_info) {
+                tracing::error!(
+                    ?err,
+                    "failed to send block to stream, aborting subscription loop"
+                );
+                panic!("subscription loop terminated due to sender failure");
+            }
+
+            previous_block = block_info;
+        }
+
+        // If we reach here, the stream ended permanently
+        tracing::error!("block stream ended after max reconnection attempts");
+    };
+
+    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    Ok(receiver)
+}
+
 /// Creates a cloneable stream that yields the current block whenever it
 /// changes.
 ///
@@ -120,6 +236,9 @@ impl TryFrom<Block> for BlockInfo {
 /// being able to share the result with several consumers. Calling this function
 /// again would create a new poller so it is preferable to clone an existing
 /// stream instead.
+#[deprecated(
+    note = "Use `current_block_ws_stream` instead for real-time WebSocket-based block updates"
+)]
 pub async fn current_block_stream(
     url: Url,
     poll_interval: Duration,
@@ -415,8 +534,9 @@ mod tests {
     async fn mainnet() {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
 
-        let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
-        let receiver = current_block_stream(node, Duration::from_secs(1))
+        let alloy_provider = Web3::new_from_env();
+        let ws_node = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
+        let receiver = current_block_ws_stream(alloy_provider.alloy, ws_node)
             .await
             .unwrap();
         let mut stream = into_stream(receiver);

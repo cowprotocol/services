@@ -139,13 +139,14 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
             if let Some(trade) = services.get_trades(&uid).await.unwrap().first() {
                 services
-                    .get_solver_competition(trade.tx_hash.unwrap())
+                    .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
                     .await
                     .ok()
                     .as_ref()
                     .and_then(|competition| competition.solutions.first())
                     .map(|solution| {
-                        solution.is_winner && solution.solver_address == solver1.address()
+                        solution.is_winner
+                            && solution.solver_address == solver1.address().into_alloy()
                     })
             } else {
                 None
@@ -175,13 +176,14 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
             if let Some(trade) = services.get_trades(&uid).await.unwrap().first() {
                 services
-                    .get_solver_competition(trade.tx_hash.unwrap())
+                    .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
                     .await
                     .ok()
                     .as_ref()
                     .and_then(|competition| competition.solutions.first())
                     .map(|solution| {
-                        solution.is_winner && solution.solver_address == solver2.address()
+                        solution.is_winner
+                            && solution.solver_address == solver2.address().into_alloy()
                     })
             } else {
                 None

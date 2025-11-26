@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::address,
+    ::alloy::primitives::{Address, U256, address},
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::{eth, *},
     ethcontract::H160,
@@ -18,7 +18,6 @@ use {
     number::nonzero::U256 as NonZeroU256,
     serde_json::json,
     shared::{
-        addr,
         price_estimation::{
             Estimate,
             Verification,
@@ -109,9 +108,9 @@ async fn standard_verified_quote(web3: Web3) {
     // quote where the trader has sufficient balance and an approval set.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *token.address(),
+            buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -132,14 +131,19 @@ const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// integrations. Based on an RFQ quote we saw on prod:
 /// https://www.tdly.co/shared/simulation/7402de5e-e524-4e24-9af8-50d0a38c105b
 async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
-    let url = std::env::var("FORK_URL_MAINNET")
+    // This RPC node should support websockets
+    let mut url: url::Url = std::env::var("FORK_URL_MAINNET")
         .expect("FORK_URL_MAINNET must be set to run forked tests")
         .parse()
         .unwrap();
-    let block_stream =
-        ethrpc::block_stream::current_block_stream(url, std::time::Duration::from_millis(1_000))
-            .await
-            .unwrap();
+    match url.scheme() {
+        "http" => url.set_scheme("ws").unwrap(),
+        "https" => url.set_scheme("wss").unwrap(),
+        _ => unreachable!("unexpected scheme"),
+    }
+    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.alloy.clone(), url)
+        .await
+        .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let verifier = TradeVerifier::new(
@@ -170,25 +174,24 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         in_amount: NonZeroU256::new(12.into()).unwrap(),
                     },
                     &Verification {
-                        from: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a").unwrap(),
+                        from: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a").unwrap().into_alloy(),
                         receiver: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a")
-                            .unwrap(),
+                            .unwrap().into_alloy(),
                         pre_interactions: vec![],
                         post_interactions: vec![],
                         sell_token_source: SellTokenSource::Erc20,
                         buy_token_destination: BuyTokenDestination::Erc20,
                     },
                     TradeKind::Legacy(LegacyTrade {
-                        out_amount: 16380122291179526144u128.into(),
+                        out_amount: U256::from(16380122291179526144u128),
                         gas_estimate: Some(225000),
                         interactions: vec![Interaction {
-                            target: H160::from_str("0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-                                .unwrap(),
+                            target: address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
                             data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap(),
-                            value: 0.into(),
+                            value: U256::ZERO,
                         }],
-                        solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
-                            .unwrap(),
+                        solver: address!("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
+                            ,
                         tx_origin,
                     }),
                 )
@@ -215,7 +218,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     // `tx_origin: 0x0000` is currently used to bypass quote verification due to an
     // implementation detail of zeroex RFQ orders.
     // TODO: remove with #2693
-    let verification = verify_trade(Some(H160::zero())).await;
+    let verification = verify_trade(Some(Address::ZERO)).await;
     assert_eq!(&verification.unwrap(), &verified_quote);
 
     // Trades using any other `tx_origin` can not bypass the verification.
@@ -266,9 +269,9 @@ async fn verified_quote_eth_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -307,8 +310,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     let request = OrderQuoteRequest {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: to_wei(3).try_into().unwrap(),
@@ -320,7 +323,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and implicit receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address().into_legacy(),
+            from: *onchain.contracts().gp_settlement.address(),
             receiver: None,
             ..request.clone()
         })
@@ -331,8 +334,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and explicit receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address().into_legacy(),
-            receiver: Some(onchain.contracts().gp_settlement.address().into_legacy()),
+            from: *onchain.contracts().gp_settlement.address(),
+            receiver: Some(*onchain.contracts().gp_settlement.address()),
             ..request.clone()
         })
         .await
@@ -342,8 +345,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where settlement contract is trader and not the receiver
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: onchain.contracts().gp_settlement.address().into_legacy(),
-            receiver: Some(trader.address()),
+            from: *onchain.contracts().gp_settlement.address(),
+            receiver: Some(trader.address().into_alloy()),
             ..request.clone()
         })
         .await
@@ -353,8 +356,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where a random trader sends funds to the settlement contract
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            receiver: Some(onchain.contracts().gp_settlement.address().into_legacy()),
+            from: trader.address().into_alloy(),
+            receiver: Some(*onchain.contracts().gp_settlement.address()),
             ..request.clone()
         })
         .await
@@ -418,9 +421,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: token.address().into_legacy(),
-            buy_token: weth.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *token.address(),
+            buy_token: *weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -461,9 +464,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -479,9 +482,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // which is used when no wallet is connected in the frontend
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: H160::zero().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -497,9 +500,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // if the user provided pre-interactions. This works now.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero(),
-            sell_token: weth.address().into_legacy(),
-            buy_token: token.address().into_legacy(),
+            from: H160::zero().into_alloy(),
+            sell_token: *weth.address(),
+            buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -535,8 +538,8 @@ async fn usdt_quote_verification(web3: Web3) {
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
-    let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
-    let usdt = addr!("dac17f958d2ee523a2206206994597c13d831ec7");
+    let usdc = address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
+    let usdt = address!("dac17f958d2ee523a2206206994597c13d831ec7");
 
     // Place Orders
     let services = Services::new(&onchain).await;

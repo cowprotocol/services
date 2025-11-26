@@ -110,14 +110,14 @@ impl Amm {
     /// helper interface.
     fn convert_orders_reponse(&self, order_return: orderReturn) -> Result<TemplateOrder> {
         let order = OrderData {
-            sell_token: order_return._order.sellToken.into_legacy(),
-            buy_token: order_return._order.buyToken.into_legacy(),
-            receiver: Some(order_return._order.receiver.into_legacy()),
-            sell_amount: order_return._order.sellAmount.into_legacy(),
-            buy_amount: order_return._order.buyAmount.into_legacy(),
+            sell_token: order_return._order.sellToken,
+            buy_token: order_return._order.buyToken,
+            receiver: Some(order_return._order.receiver),
+            sell_amount: order_return._order.sellAmount,
+            buy_amount: order_return._order.buyAmount,
             valid_to: order_return._order.validTo,
             app_data: AppDataHash(order_return._order.appData.0),
-            fee_amount: order_return._order.feeAmount.into_legacy(),
+            fee_amount: order_return._order.feeAmount,
             kind: convert_kind(&order_return._order.kind.0)?,
             partially_fillable: order_return._order.partiallyFillable,
             sell_token_balance: convert_sell_token_source(&order_return._order.sellTokenBalance.0)?,

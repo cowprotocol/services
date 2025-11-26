@@ -129,7 +129,7 @@ async fn solver_competition(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap())
+                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
                 .await
                 .is_ok(),
             None => false,
@@ -139,7 +139,7 @@ async fn solver_competition(web3: Web3) {
 
     let trades = services.get_trades(&uid).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
 
@@ -278,7 +278,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid_a).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap())
+                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
                 .await
                 .is_ok(),
             None => false,
@@ -289,13 +289,13 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // Verify that test_solver was excluded due to wrong driver address
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
     assert_eq!(
         competition.solutions.last().unwrap().solver_address,
-        solver.address()
+        solver.address().into_alloy()
     );
     assert_eq!(competition.solutions.len(), 1);
 }
@@ -501,7 +501,7 @@ async fn store_filtered_solutions(web3: Web3) {
         let trade = services.get_trades(&order_ab_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?)
+                .get_solver_competition(trade.tx_hash?.into_legacy())
                 .await
                 .is_ok(),
         )
@@ -517,7 +517,7 @@ async fn store_filtered_solutions(web3: Web3) {
         .unwrap();
 
     let competition = services
-        .get_solver_competition(trade.tx_hash.unwrap())
+        .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
         .await
         .unwrap();
 
@@ -529,7 +529,7 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(
         competition
             .reference_scores
-            .get(&good_solver_account.address()),
+            .get(&good_solver_account.address().into_alloy()),
         Some(&0.into())
     );
 
@@ -540,7 +540,10 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(bad_solution.ranking, 2);
     assert!(bad_solution.filtered_out);
     assert!(!bad_solution.is_winner);
-    assert_eq!(bad_solution.solver_address, bad_solver_account.address());
+    assert_eq!(
+        bad_solution.solver_address,
+        bad_solver_account.address().into_alloy()
+    );
     assert!(bad_solution.tx_hash.is_none());
     assert!(bad_solution.reference_score.is_none());
 
@@ -548,7 +551,10 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(good_solution.ranking, 1);
     assert!(!good_solution.filtered_out);
     assert!(good_solution.is_winner);
-    assert_eq!(good_solution.solver_address, good_solver_account.address());
+    assert_eq!(
+        good_solution.solver_address,
+        good_solver_account.address().into_alloy()
+    );
     assert_eq!(good_solution.tx_hash.unwrap(), trade.tx_hash.unwrap());
     // since the only other solutions were unfair the reference score is zero
     assert_eq!(good_solution.reference_score, Some(0.into()));
