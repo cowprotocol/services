@@ -5,6 +5,7 @@ use {
         boundary,
         domain::{eth, liquidity, order, solver},
     },
+    alloy::primitives::Address,
     contracts::alloy::UniswapV3QuoterV2,
     ethereum_types::{H160, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -45,8 +46,8 @@ impl<'a> Solver<'a> {
         max_hops: usize,
     ) -> Option<solver::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
-            request.sell.token.0,
-            request.buy.token.0,
+            request.sell.token.0.into_alloy(),
+            request.buy.token.0.into_alloy(),
             max_hops,
         );
 
@@ -134,7 +135,7 @@ impl<'a> Solver<'a> {
                 .other(&sell_token.into_alloy())
                 .expect("Inconsistent path");
             let buy_amount = liquidity
-                .get_amount_out(buy_token.into_legacy(), (sell_amount, sell_token))
+                .get_amount_out(buy_token, (sell_amount, sell_token.into_alloy()))
                 .await?;
 
             segments.push(solver::Segment {
@@ -278,7 +279,7 @@ enum LiquiditySource {
 }
 
 impl BaselineSolvable for OnchainLiquidity {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
         match &self.source {
             LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input).await,
             LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input).await,
@@ -290,7 +291,7 @@ impl BaselineSolvable for OnchainLiquidity {
         }
     }
 
-    async fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: Address, out: (U256, Address)) -> Option<U256> {
         match &self.source {
             LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out).await,
             LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out).await,
@@ -317,8 +318,11 @@ fn to_boundary_base_tokens(
     weth: &eth::WethAddress,
     base_tokens: &HashSet<eth::TokenAddress>,
 ) -> BaseTokens {
-    let base_tokens = base_tokens.iter().map(|token| token.0).collect::<Vec<_>>();
-    BaseTokens::new(weth.0, &base_tokens)
+    let base_tokens = base_tokens
+        .iter()
+        .map(|token| token.0.into_alloy())
+        .collect::<Vec<_>>();
+    BaseTokens::new(weth.0.into_alloy(), &base_tokens)
 }
 
 fn to_boundary_token_pair(pair: &liquidity::TokenPair) -> TokenPair {

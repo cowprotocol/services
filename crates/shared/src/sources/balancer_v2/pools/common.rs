@@ -9,9 +9,10 @@ use {
         },
         token_info::TokenInfoFetching,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result, anyhow, ensure},
     contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
-    ethcontract::{BlockId, H160, H256, U256},
+    ethcontract::{BlockId, H256, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
@@ -27,7 +28,7 @@ where
 {
     async fn fetch_pool_info(
         &self,
-        pool_address: H160,
+        pool_address: Address,
         block_created: u64,
     ) -> Result<Factory::PoolInfo>;
 
@@ -60,13 +61,13 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Returns a Balancer base pool contract instance at the specified address.
-    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool::Instance {
+    fn base_pool_at(&self, pool_address: Address) -> BalancerV2BasePool::Instance {
         let provider = self.vault.provider().clone();
-        BalancerV2BasePool::Instance::new(pool_address.into_alloy(), provider)
+        BalancerV2BasePool::Instance::new(pool_address, provider)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
-    async fn scaling_factors(&self, tokens: &[H160]) -> Result<Vec<Bfp>> {
+    async fn scaling_factors(&self, tokens: &[Address]) -> Result<Vec<Bfp>> {
         let token_infos = self.token_infos.get_token_infos(tokens).await;
         tokens
             .iter()
@@ -83,7 +84,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
 
     async fn fetch_common_pool_info(
         &self,
-        pool_address: H160,
+        pool_address: Address,
         block_created: u64,
     ) -> Result<PoolInfo> {
         let pool = self.base_pool_at(pool_address);
@@ -94,10 +95,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
             .getPoolTokens(pool_id.0.into())
             .call()
             .await?
-            .tokens
-            .into_iter()
-            .map(IntoLegacy::into_legacy)
-            .collect::<Vec<_>>();
+            .tokens;
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
@@ -155,11 +153,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
             let swap_fee = Bfp::from_wei(swap_fee.into_legacy());
 
             let balances = pool_tokens.balances;
-            let tokens = pool_tokens
-                .tokens
-                .into_iter()
-                .map(IntoLegacy::into_legacy)
-                .collect::<Vec<_>>();
+            let tokens = pool_tokens.tokens.into_iter().collect::<Vec<_>>();
             ensure!(pool.tokens == tokens, "pool token mismatch");
             let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_factors)
                 .map(|(&address, balance, &scaling_factor)| {
@@ -190,7 +184,7 @@ where
 {
     async fn fetch_pool_info(
         &self,
-        pool_address: H160,
+        pool_address: Address,
         block_created: u64,
     ) -> Result<Factory::PoolInfo> {
         let common_pool_info = self
@@ -234,8 +228,8 @@ where
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
     pub id: H256,
-    pub address: H160,
-    pub tokens: Vec<H160>,
+    pub address: Address,
+    pub tokens: Vec<Address>,
     pub scaling_factors: Vec<Bfp>,
     pub block_created: u64,
 }
@@ -276,7 +270,7 @@ impl PoolInfo {
 pub struct PoolState {
     pub paused: bool,
     pub swap_fee: Bfp,
-    pub tokens: BTreeMap<H160, TokenState>,
+    pub tokens: BTreeMap<Address, TokenState>,
 }
 
 /// Common pool token state information that is shared among all pool types.
@@ -387,21 +381,25 @@ mod tests {
     #[tokio::test]
     async fn fetch_common_pool_info() {
         let pool_id = alloy::primitives::FixedBytes([0x90; 32]);
-        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+        let tokens = [
+            Address::repeat_byte(1),
+            Address::repeat_byte(2),
+            Address::repeat_byte(3),
+        ];
 
         let asserter = Asserter::new();
         let provider = ProviderBuilder::new()
             .connect_mocked_client(asserter.clone())
             .erased();
 
-        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
-        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        let pool = BalancerV2BasePool::Instance::new(Address::random(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(Address::random(), provider.clone());
         asserter.push_success(&pool_id);
 
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: tokens.iter().copied().map(|t| t.into_alloy()).collect(),
+                    tokens: tokens.iter().copied().map(|t| t).collect(),
                     balances: vec![],
                     lastChangeBlock: U256::zero().into_alloy(),
                 },
@@ -426,7 +424,7 @@ mod tests {
             token_infos: Arc::new(token_infos),
         };
         let pool_info = pool_info_fetcher
-            .fetch_common_pool_info(pool.address().into_legacy(), 1337)
+            .fetch_common_pool_info(*pool.address(), 1337)
             .await
             .unwrap();
 
@@ -434,7 +432,7 @@ mod tests {
             pool_info,
             PoolInfo {
                 id: pool_id.into_legacy(),
-                address: pool.address().into_legacy(),
+                address: *pool.address(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
@@ -445,7 +443,11 @@ mod tests {
     #[tokio::test]
     async fn fetch_common_pool_state() {
         let pool_id = H256([0x90; 32]);
-        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+        let tokens = [
+            Address::repeat_byte(1),
+            Address::repeat_byte(2),
+            Address::repeat_byte(3),
+        ];
         let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
         let scaling_factors = [Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)];
 
@@ -454,8 +456,8 @@ mod tests {
             .connect_mocked_client(asserter.clone())
             .erased();
 
-        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
-        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        let pool = BalancerV2BasePool::Instance::new(Address::random(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(Address::random(), provider.clone());
 
         let get_paused_state_response =
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
@@ -475,7 +477,7 @@ mod tests {
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: tokens.iter().copied().map(|t| t.into_alloy()).collect(),
+                    tokens: tokens.iter().copied().map(|t| t).collect(),
                     balances: balances
                         .iter()
                         .map(|b| b.as_uint256().into_alloy())
@@ -494,7 +496,7 @@ mod tests {
         };
         let pool_info = PoolInfo {
             id: pool_id,
-            address: pool.address().into_legacy(),
+            address: *pool.address(),
             tokens: tokens.to_vec(),
             scaling_factors: scaling_factors.to_vec(),
             block_created: 1337,
@@ -534,15 +536,19 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_state_errors_on_token_mismatch() {
-        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+        let tokens = [
+            Address::repeat_byte(1),
+            Address::repeat_byte(2),
+            Address::repeat_byte(3),
+        ];
 
         let asserter = Asserter::new();
         let provider = ProviderBuilder::new()
             .connect_mocked_client(asserter.clone())
             .erased();
 
-        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
-        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        let pool = BalancerV2BasePool::Instance::new(Address::random(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(Address::random(), provider.clone());
 
         let get_paused_state_response =
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
@@ -563,7 +569,7 @@ mod tests {
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: vec![H160([1; 20]).into_alloy(), H160([4; 20]).into_alloy()],
+                    tokens: vec![Address::repeat_byte(1), Address::repeat_byte(4)],
                     balances: vec![U256::zero().into_alloy(), U256::zero().into_alloy()],
                     lastChangeBlock: U256::zero().into_alloy(),
                 },
@@ -579,7 +585,7 @@ mod tests {
         };
         let pool_info = PoolInfo {
             id: Default::default(),
-            address: pool.address().into_legacy(),
+            address: *pool.address(),
             tokens: tokens.to_vec(),
             scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
             block_created: 1337,
@@ -606,8 +612,8 @@ mod tests {
             .connect_mocked_client(asserter.clone())
             .erased();
 
-        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
-        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        let pool = BalancerV2BasePool::Instance::new(Address::random(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(Address::random(), provider.clone());
 
         let get_paused_state_response =
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
@@ -627,8 +633,12 @@ mod tests {
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
                 id: H256([0x90; 32]),
-                address: pool.address().into_legacy(),
-                tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
+                address: *pool.address(),
+                tokens: vec![
+                    Address::repeat_byte(1),
+                    Address::repeat_byte(2),
+                    Address::repeat_byte(3),
+                ],
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
             },
@@ -665,13 +675,7 @@ mod tests {
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: pool_info
-                        .common
-                        .tokens
-                        .iter()
-                        .copied()
-                        .map(|t| t.into_alloy())
-                        .collect(),
+                    tokens: pool_info.common.tokens.iter().copied().collect(),
                     balances: pool_state
                         .tokens
                         .values()
@@ -723,8 +727,8 @@ mod tests {
             .connect_mocked_client(asserter.clone())
             .erased();
 
-        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
-        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        let pool = BalancerV2BasePool::Instance::new(Address::random(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(Address::random(), provider.clone());
 
         let get_paused_state_response =
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
@@ -777,7 +781,7 @@ mod tests {
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
                 id: Default::default(),
-                address: pool.address().into_legacy(),
+                address: *pool.address(),
                 tokens: Default::default(),
                 scaling_factors: Default::default(),
                 block_created: Default::default(),
@@ -802,8 +806,8 @@ mod tests {
             .connect_mocked_client(asserter.clone())
             .erased();
 
-        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
-        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        let pool = BalancerV2BasePool::Instance::new(Address::random(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(Address::random(), provider.clone());
 
         let get_paused_state_response =
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
@@ -849,7 +853,7 @@ mod tests {
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
                 id: Default::default(),
-                address: pool.address().into_legacy(),
+                address: *pool.address(),
                 tokens: Default::default(),
                 scaling_factors: Default::default(),
                 block_created: Default::default(),
@@ -876,7 +880,7 @@ mod tests {
 
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::Instance::new(
-                H160([0xba; 20]).into_alloy(),
+                Address::repeat_byte(0xba),
                 ethrpc::mock::web3().alloy,
             ),
             factory: MockFactoryIndexing::new(),
@@ -884,7 +888,7 @@ mod tests {
         };
         assert!(
             pool_info_fetcher
-                .scaling_factors(&[H160([0xff; 20])])
+                .scaling_factors(&[Address::repeat_byte(0xff)])
                 .await
                 .is_err()
         );
@@ -892,7 +896,7 @@ mod tests {
 
     #[tokio::test]
     async fn scaling_factor_error_on_missing_decimals() {
-        let token = H160([0xff; 20]);
+        let token = Address::repeat_byte(0xff);
         let mut token_infos = MockTokenInfoFetching::new();
         token_infos.expect_get_token_infos().returning(move |_| {
             hashmap! {
@@ -902,7 +906,7 @@ mod tests {
 
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::Instance::new(
-                H160([0xba; 20]).into_alloy(),
+                Address::repeat_byte(0xba),
                 ethrpc::mock::web3().alloy,
             ),
             factory: MockFactoryIndexing::new(),
@@ -916,17 +920,17 @@ mod tests {
         let pool = PoolData {
             pool_type: PoolType::Stable,
             id: H256([4; 32]),
-            address: H160([3; 20]),
-            factory: H160([0xfb; 20]),
+            address: Address::repeat_byte(3),
+            factory: Address::repeat_byte(0xfb),
             swap_enabled: true,
             tokens: vec![
                 Token {
-                    address: H160([0x33; 20]),
+                    address: Address::repeat_byte(0x33),
                     decimals: 3,
                     weight: None,
                 },
                 Token {
-                    address: H160([0x44; 20]),
+                    address: Address::repeat_byte(0x44),
                     decimals: 18,
                     weight: None,
                 },
@@ -937,8 +941,8 @@ mod tests {
             PoolInfo::from_graph_data(&pool, 42).unwrap(),
             PoolInfo {
                 id: H256([4; 32]),
-                address: H160([3; 20]),
-                tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
+                address: Address::repeat_byte(3),
+                tokens: vec![Address::repeat_byte(0x33), Address::repeat_byte(0x44)],
                 scaling_factors: vec![Bfp::exp10(15), Bfp::exp10(0)],
                 block_created: 42,
             }
@@ -950,11 +954,11 @@ mod tests {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
             id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0; 20]),
+            address: Address::repeat_byte(1),
+            factory: Address::repeat_byte(0),
             swap_enabled: true,
             tokens: vec![Token {
-                address: H160([2; 20]),
+                address: Address::repeat_byte(2),
                 decimals: 18,
                 weight: Some("1.337".parse().unwrap()),
             }],
@@ -967,17 +971,17 @@ mod tests {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
             id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0; 20]),
+            address: Address::repeat_byte(1),
+            factory: Address::repeat_byte(0),
             swap_enabled: true,
             tokens: vec![
                 Token {
-                    address: H160([2; 20]),
+                    address: Address::repeat_byte(2),
                     decimals: 19,
                     weight: Some("1.337".parse().unwrap()),
                 },
                 Token {
-                    address: H160([3; 20]),
+                    address: Address::repeat_byte(3),
                     decimals: 18,
                     weight: Some("1.337".parse().unwrap()),
                 },

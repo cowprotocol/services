@@ -216,14 +216,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
-        weth: args
-            .shared
-            .native_token_address
-            .map(IntoLegacy::into_legacy),
-        balances: args
-            .shared
-            .balances_contract_address
-            .map(IntoLegacy::into_legacy),
+        weth: args.shared.native_token_address,
+        balances: args.shared.balances_contract_address,
         trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(
@@ -322,11 +316,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        eth.contracts().weth().address().into_legacy(),
+        *eth.contracts().weth().address(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter().map(|t| t.into_alloy()));
+    allowed_tokens.extend(base_tokens.tokens().iter());
     allowed_tokens.push(model::order::BUY_ETH_ADDRESS.into_alloy());
     let unsupported_tokens = args.unsupported_tokens.clone();
 
@@ -339,7 +333,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
-        eth.contracts().settlement().address().into_legacy(),
+        *eth.contracts().settlement().address(),
     )
     .instrument(info_span!("token_owner_finder_init"))
     .await
@@ -354,7 +348,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                     tracing_node_url,
                     "trace",
                 ),
-                eth.contracts().settlement().address().into_legacy(),
+                *eth.contracts().settlement().address(),
                 finder,
             )),
             args.shared.token_quality_cache_expiry,

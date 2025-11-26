@@ -1,5 +1,6 @@
 use {
     crate::domain,
+    alloy::primitives::Address,
     chain::Chain,
     contracts::alloy::{
         ChainalysisOracle,
@@ -9,11 +10,7 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
-    primitive_types::H160,
+    ethrpc::{Web3, alloy::conversions::IntoLegacy},
 };
 
 #[derive(Debug, Clone)]
@@ -34,11 +31,11 @@ pub struct Contracts {
 
 #[derive(Debug, Clone)]
 pub struct Addresses {
-    pub settlement: Option<H160>,
-    pub signatures: Option<H160>,
-    pub weth: Option<H160>,
-    pub balances: Option<H160>,
-    pub trampoline: Option<H160>,
+    pub settlement: Option<Address>,
+    pub signatures: Option<Address>,
+    pub weth: Option<Address>,
+    pub balances: Option<Address>,
+    pub trampoline: Option<Address>,
 }
 
 impl Contracts {
@@ -46,7 +43,6 @@ impl Contracts {
         let settlement = GPv2Settlement::Instance::new(
             addresses
                 .settlement
-                .map(IntoAlloy::into_alloy)
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -55,7 +51,6 @@ impl Contracts {
         let signatures = contracts::alloy::support::Signatures::Instance::new(
             addresses
                 .signatures
-                .map(IntoAlloy::into_alloy)
                 .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -64,7 +59,6 @@ impl Contracts {
         let weth = WETH9::Instance::new(
             addresses
                 .weth
-                .map(IntoAlloy::into_alloy)
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -73,7 +67,6 @@ impl Contracts {
         let balances = Balances::Instance::new(
             addresses
                 .balances
-                .map(IntoAlloy::into_alloy)
                 .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -82,7 +75,6 @@ impl Contracts {
         let trampoline = HooksTrampoline::Instance::new(
             addresses
                 .trampoline
-                .map(IntoAlloy::into_alloy)
                 .or_else(|| HooksTrampoline::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -159,13 +151,4 @@ impl Contracts {
     pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {
         &self.authenticator
     }
-}
-
-/// Returns the address of a contract for the specified chain, or `None` if
-/// there is no known deployment for the contract on that chain.
-pub fn deployment_address(contract: &ethcontract::Contract, chain: &Chain) -> Option<H160> {
-    contract
-        .networks
-        .get(&chain.id().to_string())
-        .map(|network| network.address)
 }

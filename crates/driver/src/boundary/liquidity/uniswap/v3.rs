@@ -83,13 +83,19 @@ pub fn to_interaction(
     let handler = UniswapV3SettlementHandler::new(
         pool.router.0.into_alloy(),
         receiver.0.into_alloy(),
-        Mutex::new(Allowances::empty(receiver.0)),
+        Mutex::new(Allowances::empty(receiver.0.into_alloy())),
         pool.fee.0,
     );
 
     let (_, interaction) = handler.settle(
-        TokenAmount::new(input.0.token.into(), input.0.amount),
-        TokenAmount::new(output.0.token.into(), output.0.amount),
+        TokenAmount::new(
+            input.0.token.0.0.into_alloy(),
+            input.0.amount.0.into_alloy(),
+        ),
+        TokenAmount::new(
+            output.0.token.0.0.into_alloy(),
+            output.0.amount.0.into_alloy(),
+        ),
     );
 
     let encoded = interaction.encode();

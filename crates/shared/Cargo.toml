@@ -61,14 +61,15 @@ web3 = { workspace = true }
 mockall = { workspace = true, optional = true }
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["rand"] }
+app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
 ethcontract-mock = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] }
+mockall = { workspace = true }
 regex = { workspace = true }
 testlib = { workspace = true }
-app-data = { workspace = true, features = ["test_helpers"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-mockall = { workspace = true }
-ethrpc = {workspace = true, features = ["test-util"]}
 
 [features]
 test-util = ["dep:mockall"]

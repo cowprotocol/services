@@ -4,11 +4,10 @@
 
 use {
     crate::interactions::Erc20ApproveInteraction,
-    ::alloy::sol_types::SolCall,
+    alloy::primitives::Address,
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::alloy::ERC20,
-    ethcontract::{H160, U256},
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::Web3,
     maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
@@ -18,7 +17,6 @@ use {
         collections::{HashMap, HashSet},
         slice,
     },
-    web3::types::CallRequest,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -28,7 +26,11 @@ pub trait AllowanceManaging: Send + Sync {
     ///
     /// This can be used to cache allowances for a bunch of tokens so that they
     /// can be used within a context that doesn't allow `async` or errors.
-    async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances>;
+    async fn get_allowances(
+        &self,
+        tokens: HashSet<Address>,
+        spender: Address,
+    ) -> Result<Allowances>;
 
     /// Returns the approval interaction for the specified token and spender for
     /// at least the specified amount, if an approval is required.
@@ -43,26 +45,26 @@ pub trait AllowanceManaging: Send + Sync {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ApprovalRequest {
-    pub token: H160,
-    pub spender: H160,
-    pub amount: U256,
+    pub token: Address,
+    pub spender: Address,
+    pub amount: alloy::primitives::U256,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Allowances {
-    spender: H160,
-    allowances: HashMap<H160, U256>,
+    spender: Address,
+    allowances: HashMap<Address, alloy::primitives::U256>,
 }
 
 impl Allowances {
-    pub fn new(spender: H160, allowances: HashMap<H160, U256>) -> Self {
+    pub fn new(spender: Address, allowances: HashMap<Address, alloy::primitives::U256>) -> Self {
         Self {
             spender,
             allowances,
         }
     }
 
-    pub fn empty(spender: H160) -> Self {
+    pub fn empty(spender: Address) -> Self {
         Self::new(spender, HashMap::new())
     }
 
@@ -110,15 +112,15 @@ impl Allowances {
 /// An ERC20 approval interaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Approval {
-    pub token: H160,
-    pub spender: H160,
+    pub token: Address,
+    pub spender: Address,
 }
 
 impl Interaction for Approval {
     fn encode(&self) -> EncodedInteraction {
         let approve = Erc20ApproveInteraction {
-            token: self.token.into_alloy(),
-            spender: self.spender.into_alloy(),
+            token: self.token,
+            spender: self.spender,
             amount: alloy::primitives::U256::MAX,
         };
 
@@ -130,18 +132,22 @@ impl Interaction for Approval {
 /// address.
 pub struct AllowanceManager {
     web3: Web3,
-    owner: H160,
+    owner: Address,
 }
 
 impl AllowanceManager {
-    pub fn new(web3: Web3, owner: H160) -> Self {
+    pub fn new(web3: Web3, owner: Address) -> Self {
         Self { web3, owner }
     }
 }
 
 #[async_trait::async_trait]
 impl AllowanceManaging for AllowanceManager {
-    async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances> {
+    async fn get_allowances(
+        &self,
+        tokens: HashSet<Address>,
+        spender: Address,
+    ) -> Result<Allowances> {
         Ok(fetch_allowances(
             self.web3.clone(),
             self.owner,
@@ -176,9 +182,9 @@ impl AllowanceManaging for AllowanceManager {
 
 async fn fetch_allowances<T>(
     web3: Web3<T>,
-    owner: H160,
-    spender_tokens: HashMap<H160, HashSet<H160>>,
-) -> Result<HashMap<H160, Allowances>>
+    owner: Address,
+    spender_tokens: HashMap<Address, HashSet<Address>>,
+) -> Result<HashMap<Address, Allowances>>
 where
     T: ethcontract::web3::BatchTransport + Send + Sync + 'static,
     T::Batch: Send,
@@ -191,16 +197,10 @@ where
             let web3 = web3.clone();
 
             async move {
-                let calldata = ERC20::ERC20::allowanceCall {
-                    owner: owner.into_alloy(),
-                    spender: spender.into_alloy(),
-                }
-                .abi_encode();
-                let req = CallRequest::builder()
-                    .to(token)
-                    .data(calldata.into())
-                    .build();
-                let allowance = web3.eth().call(req, None).await;
+                let allowance = ERC20::Instance::new(token, web3.alloy.clone())
+                    .allowance(owner, spender)
+                    .call()
+                    .await;
                 (spender, token, allowance)
             }
         });
@@ -209,7 +209,7 @@ where
     let mut allowances = HashMap::new();
     for (spender, token, allowance) in results {
         let allowance = match allowance {
-            Ok(value) => U256::from(value.0.as_slice()),
+            Ok(allowance) => allowance,
             Err(err) => {
                 tracing::warn!("error retrieving allowance for token {:?}: {}", token, err);
                 continue;
@@ -243,23 +243,23 @@ mod tests {
 
     #[test]
     fn approval_when_allowance_is_sufficient() {
-        let token = H160([0x02; 20]);
+        let token = Address::repeat_byte(0x02);
         let allowances = Allowances::new(
-            H160([0x01; 20]),
+            Address::repeat_byte(0x01),
             hashmap! {
-                token => U256::from(100),
+                token => alloy::primitives::U256::from(100),
             },
         );
 
         assert_eq!(
             allowances
-                .approve_token(TokenAmount::new(token, 42))
+                .approve_token(TokenAmount::new(token, alloy::primitives::U256::from(42)))
                 .unwrap(),
             None
         );
         assert_eq!(
             allowances
-                .approve_token(TokenAmount::new(token, 100))
+                .approve_token(TokenAmount::new(token, alloy::primitives::U256::from(100)))
                 .unwrap(),
             None
         );
@@ -267,18 +267,18 @@ mod tests {
 
     #[test]
     fn approval_when_allowance_is_insufficient() {
-        let spender = H160([0x01; 20]);
-        let token = H160([0x02; 20]);
+        let spender = Address::repeat_byte(0x01);
+        let token = Address::repeat_byte(0x02);
         let allowances = Allowances::new(
             spender,
             hashmap! {
-                token => U256::from(100),
+                token => alloy::primitives::U256::from(100),
             },
         );
 
         assert_eq!(
             allowances
-                .approve_token(TokenAmount::new(token, 1337))
+                .approve_token(TokenAmount::new(token, alloy::primitives::U256::from(1337)))
                 .unwrap(),
             Some(Approval { token, spender })
         );
@@ -287,27 +287,33 @@ mod tests {
     #[test]
     fn approval_for_missing_token() {
         let allowances = Allowances::new(
-            H160([0x01; 20]),
+            Address::repeat_byte(0x01),
             hashmap! {
-                H160([0x02; 20]) => U256::from(100),
+                Address::repeat_byte(0x02) => alloy::primitives::U256::from(100),
             },
         );
 
         assert!(
             allowances
-                .approve_token(TokenAmount::new(H160([0x03; 20]), 0))
+                .approve_token(TokenAmount::new(
+                    Address::repeat_byte(0x03),
+                    alloy::primitives::U256::ZERO
+                ))
                 .is_err()
         );
     }
 
     #[test]
     fn approval_or_default_for_missing_token() {
-        let spender = H160([0x01; 20]);
-        let token = H160([0x02; 20]);
+        let spender = Address::repeat_byte(0x01);
+        let token = Address::repeat_byte(0x02);
         let allowances = Allowances::new(spender, hashmap! {});
 
         assert_eq!(
-            allowances.approve_token_or_default(TokenAmount::new(token, 1337)),
+            allowances.approve_token_or_default(TokenAmount::new(
+                token,
+                alloy::primitives::U256::from(1337)
+            )),
             Some(Approval { token, spender })
         );
     }
@@ -315,18 +321,18 @@ mod tests {
     #[test]
     fn extend_allowances_cache() {
         let mut allowances = Allowances::new(
-            H160([0x01; 20]),
+            Address::repeat_byte(0x01),
             hashmap! {
-                H160([0x11; 20]) => U256::from(1),
-                H160([0x12; 20]) => U256::from(2),
+                Address::repeat_byte(0x11) => alloy::primitives::U256::from(1),
+                Address::repeat_byte(0x12) => alloy::primitives::U256::from(2),
             },
         );
         allowances
             .extend(Allowances::new(
-                H160([0x01; 20]),
+                Address::repeat_byte(0x01),
                 hashmap! {
-                    H160([0x11; 20]) => U256::from(42),
-                    H160([0x13; 20]) => U256::from(3),
+                    Address::repeat_byte(0x11) => alloy::primitives::U256::from(42),
+                    Address::repeat_byte(0x13) => alloy::primitives::U256::from(3),
                 },
             ))
             .unwrap();
@@ -334,31 +340,31 @@ mod tests {
         assert_eq!(
             allowances.allowances,
             hashmap! {
-                H160([0x11; 20]) => U256::from(42),
-                H160([0x12; 20]) => U256::from(2),
-                H160([0x13; 20]) => U256::from(3),
+                Address::repeat_byte(0x11) => alloy::primitives::U256::from(42),
+                Address::repeat_byte(0x12) => alloy::primitives::U256::from(2),
+                Address::repeat_byte(0x13) => alloy::primitives::U256::from(3),
             },
         );
     }
 
     #[test]
     fn error_extending_allowances_for_different_spenders() {
-        let mut allowances = Allowances::empty(H160([0x01; 20]));
+        let mut allowances = Allowances::empty(Address::repeat_byte(0x01));
         assert!(
             allowances
-                .extend(Allowances::empty(H160([0x02; 20])))
+                .extend(Allowances::empty(Address::repeat_byte(0x02)))
                 .is_err()
         );
     }
 
     #[test]
     fn approval_encode_interaction() {
-        let token = H160([0x01; 20]);
-        let spender = H160([0x02; 20]);
+        let token = Address::repeat_byte(0x01);
+        let spender = Address::repeat_byte(0x02);
         assert_eq!(
             Approval { token, spender }.encode(),
             (
-                token.into_alloy(),
+                token,
                 alloy::primitives::U256::ZERO,
                 const_hex::decode(
                     "095ea7b3\
@@ -370,23 +376,14 @@ mod tests {
         );
     }
 
-    fn allowance_call_data(owner: H160, spender: H160) -> web3::types::Bytes {
-        contracts::alloy::ERC20::ERC20::allowanceCall {
-            owner: owner.into_alloy(),
-            spender: spender.into_alloy(),
-        }
-        .abi_encode()
-        .into()
-    }
-
-    fn allowance_return_data(value: U256) -> Value {
+    fn allowance_return_data(value: ethcontract::U256) -> Value {
         json!(web3::types::Bytes(abi::encode(&[Token::Uint(value)])))
     }
 
     #[tokio::test]
     async fn fetch_skips_failed_allowance_calls() {
-        let owner = H160([1; 20]);
-        let spender = H160([2; 20]);
+        let owner = Address::repeat_byte(1);
+        let spender = Address::repeat_byte(2);
 
         let web3 = mock::web3();
         web3.transport()
@@ -396,7 +393,12 @@ mod tests {
                 assert_eq!(method, "eth_call");
 
                 let call = serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
-                assert_eq!(call.data.unwrap(), allowance_call_data(owner, spender));
+                assert_eq!(
+                    call.data.unwrap(),
+                    contracts::alloy::ERC20::ERC20::allowanceCall { owner, spender }
+                        .abi_encode()
+                        .into()
+                );
                 let to = call.to.unwrap();
 
                 if to == addr!("1111111111111111111111111111111111111111") {
@@ -412,7 +414,7 @@ mod tests {
             web3,
             owner,
             hashmap! {
-                spender => hashset![H160([0x11; 20]), H160([0x22; 20])],
+                spender => hashset![Address::repeat_byte(0x11), Address::repeat_byte(0x22)],
             },
         )
         .await
@@ -423,7 +425,7 @@ mod tests {
             hashmap! {
                 spender => Allowances {
                     spender,
-                    allowances: hashmap! { H160([0x11; 20]) => 1337.into() },
+                    allowances: hashmap! { Address::repeat_byte(0x11) => alloy::primitives::U256::from(1337) },
                 },
             },
         );

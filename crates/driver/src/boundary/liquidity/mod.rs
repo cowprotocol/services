@@ -4,10 +4,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     futures::future,
     model::TokenPair,
     shared::{
@@ -103,12 +100,11 @@ impl Fetcher {
         .await?;
 
         let base_tokens = BaseTokens::new(
-            eth.contracts().weth().address().into_legacy(),
+            *eth.contracts().weth().address(),
             &config
                 .base_tokens
                 .iter()
-                .copied()
-                .map(eth::H160::from)
+                .map(|t| t.0.0.into_alloy())
                 .collect::<Vec<_>>(),
         );
 

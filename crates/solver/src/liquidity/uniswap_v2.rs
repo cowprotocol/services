@@ -13,7 +13,6 @@ use {
     anyhow::Result,
     ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
-    primitive_types::H160,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
@@ -48,8 +47,7 @@ impl UniswapLikeLiquidity {
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
-        let settlement_allowances =
-            Box::new(AllowanceManager::new(web3, gpv2_settlement.into_legacy()));
+        let settlement_allowances = Box::new(AllowanceManager::new(web3, gpv2_settlement));
         Self::with_allowances(router, gpv2_settlement, settlement_allowances, pool_fetcher)
     }
 
@@ -63,18 +61,17 @@ impl UniswapLikeLiquidity {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router.into_legacy())),
+                allowances: Mutex::new(Allowances::empty(router)),
             }),
             pool_fetcher,
             settlement_allowances,
         }
     }
 
-    async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
-        let router = self.inner.router.into_legacy();
+    async fn cache_allowances(&self, tokens: HashSet<Address>) -> Result<()> {
         let allowances = self
             .settlement_allowances
-            .get_allowances(tokens, router)
+            .get_allowances(tokens, self.inner.router)
             .await?;
 
         self.inner
@@ -100,8 +97,8 @@ impl LiquidityCollecting for UniswapLikeLiquidity {
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
         for pool in self.pool_fetcher.fetch(pairs, at_block).await? {
-            tokens.insert(pool.tokens.get().0.into_legacy());
-            tokens.insert(pool.tokens.get().1.into_legacy());
+            tokens.insert(pool.tokens.get().0);
+            tokens.insert(pool.tokens.get().1);
 
             result.push(Liquidity::ConstantProduct(ConstantProductOrder {
                 address: pool.address,
@@ -141,10 +138,10 @@ impl Inner {
             UniswapInteraction {
                 router: self.router,
                 settlement: self.gpv2_settlement,
-                amount_out: token_amount_out.amount,
-                amount_in_max: token_amount_in_max.amount,
-                token_in: token_amount_in_max.token,
-                token_out: token_amount_out.token,
+                amount_out: token_amount_out.amount.into_legacy(),
+                amount_in_max: token_amount_in_max.amount.into_legacy(),
+                token_in: token_amount_in_max.token.into_legacy(),
+                token_out: token_amount_out.token.into_legacy(),
             },
         )
     }
@@ -176,59 +173,63 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::Address, primitive_types::U256, std::collections::HashMap};
+    use {
+        super::*,
+        alloy::primitives::{Address, U256},
+        std::collections::HashMap,
+    };
 
     impl Inner {
-        fn new_dummy(allowances: HashMap<H160, U256>) -> Self {
+        fn new_dummy(allowances: HashMap<Address, U256>) -> Self {
             Self {
                 router: Address::default(),
                 gpv2_settlement: Default::default(),
-                allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
+                allowances: Mutex::new(Allowances::new(Address::ZERO, allowances)),
             }
         }
     }
 
     #[test]
     fn test_should_set_allowance() {
-        let token_a = H160::from_low_u64_be(1);
-        let token_b = H160::from_low_u64_be(2);
+        let token_a = Address::with_last_byte(1);
+        let token_b = Address::with_last_byte(2);
         let allowances = maplit::hashmap! {
-            token_a => 100.into(),
-            token_b => 200.into(),
+            token_a => U256::from(100),
+            token_b => U256::from(200),
         };
 
         let inner = Inner::new_dummy(allowances);
 
         // Token A below, equal, above
         let (approval, _) = inner.settle(
-            TokenAmount::new(token_a, 50),
-            TokenAmount::new(token_b, 100),
+            TokenAmount::new(token_a, U256::from(50)),
+            TokenAmount::new(token_b, U256::from(100)),
         );
         assert_eq!(approval, None);
 
         let (approval, _) = inner.settle(
-            TokenAmount::new(token_a, 99),
-            TokenAmount::new(token_b, 100),
+            TokenAmount::new(token_a, U256::from(99)),
+            TokenAmount::new(token_b, U256::from(100)),
         );
         assert_eq!(approval, None);
 
         // Token B below, equal, above
         let (approval, _) = inner.settle(
-            TokenAmount::new(token_b, 150),
-            TokenAmount::new(token_a, 100),
+            TokenAmount::new(token_b, U256::from(150)),
+            TokenAmount::new(token_a, U256::from(100)),
         );
         assert_eq!(approval, None);
 
         let (approval, _) = inner.settle(
-            TokenAmount::new(token_b, 199),
-            TokenAmount::new(token_a, 100),
+            TokenAmount::new(token_b, U256::from(199)),
+            TokenAmount::new(token_a, U256::from(100)),
         );
         assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) = inner.settle(
-            TokenAmount::new(H160::from_low_u64_be(3), 1),
-            TokenAmount::new(token_a, 100),
+            TokenAmount::new(Address::with_last_byte(3), U256::from(1)),
+            TokenAmount::new(token_a, U256::from(100)),
         );
         assert_ne!(approval, None);
     }
