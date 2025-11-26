@@ -46,16 +46,11 @@ impl Observer {
     /// belongs to an auction that was arbitrated in another environment (i.e.
     /// prod vs. staging).
     pub async fn post_process_outstanding_settlement_transactions(&self) {
-        let settlements = Self::retry_with_sleep(|| async move {
-            self.persistence
-                .get_settlements_without_auction()
+        let settlements =
+            Self::retry_with_sleep(|| self.persistence.get_settlements_without_auction())
                 .await
-                .inspect_err(|err| {
-                    tracing::warn!(?err, "failed to fetch unprocessed settlements from DB")
-                })
-        })
-        .await
-        .unwrap_or_default();
+                .inspect_err(|errs| tracing::debug!(?errs, "failed to fetch settlements"))
+                .unwrap_or_default();
 
         if settlements.is_empty() {
             tracing::debug!("no unprocessed settlements found");
@@ -70,8 +65,15 @@ impl Observer {
             .for_each_concurrent(MAX_CONCURRENCY, |settlement| async move {
                 tracing::debug!(tx = ?settlement.transaction, "start post processing of settlement");
                 match Self::retry_with_sleep(|| self.post_process_settlement(settlement)).await {
-                    Some(_) =>  tracing::debug!(tx = ?settlement.transaction, "successfully post-processed settlement"),
-                    None => tracing::warn!(tx = ?settlement.transaction, "gave up on post-processing settlement"),
+                    Ok(_) =>  tracing::debug!(
+                        tx = ?settlement.transaction,
+                        "successfully post-processed settlement"
+                    ),
+                    Err(errs) => tracing::warn!(
+                        tx = ?settlement.transaction,
+                        ?errs,
+                        "gave up on post-processing settlement"
+                    ),
                 }
             })
             .await;
@@ -162,19 +164,20 @@ impl Observer {
         }
     }
 
-    async fn retry_with_sleep<F, OK, ERR>(future: impl Fn() -> F) -> Option<OK>
+    async fn retry_with_sleep<F, OK, ERR>(future: impl Fn() -> F) -> Result<OK, Vec<ERR>>
     where
         F: Future<Output = Result<OK, ERR>>,
         ERR: std::fmt::Debug,
     {
         const MAX_RETRIES: usize = 5;
 
+        let mut errors = Vec::new();
         let mut tries = 0;
         while tries < MAX_RETRIES {
             match future().await {
-                Ok(res) => return Some(res),
+                Ok(res) => return Ok(res),
                 Err(err) => {
-                    tracing::warn!(try = tries, ?err, "failed to execute future");
+                    errors.push(err);
                     tries += 1;
                     // wait a little to give temporary errors a chance to resolve themselves
                     const TEMP_ERROR_BACK_OFF: Duration = Duration::from_millis(100);
@@ -182,6 +185,6 @@ impl Observer {
                 }
             }
         }
-        None
+        Err(errors)
     }
 }
