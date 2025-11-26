@@ -29,7 +29,8 @@ contract ExportAddresses is Script {
         address cowVaultRelayer = vm.envAddress("COW_VAULT_RELAYER");
         address cowSettlement = vm.envAddress("COW_SETTLEMENT");
         address balancerVault = vm.envAddress("BALANCER_VAULT");
-        
+        address hooksTrampoline = vm.envAddress("HOOKS_TRAMPOLINE");
+
         console.log("Exporting addresses to JSON...");
         console.log("");
         
@@ -81,7 +82,8 @@ contract ExportAddresses is Script {
             '    "settlement": "', vm.toString(cowSettlement), '",\n',
             '    "authenticator": "', vm.toString(cowAuthenticator), '",\n',
             '    "vaultRelayer": "', vm.toString(cowVaultRelayer), '",\n',
-            '    "balancerVault": "', vm.toString(balancerVault), '"\n',
+            '    "balancerVault": "', vm.toString(balancerVault), '",\n',
+            '    "hooksTrampoline": "', vm.toString(hooksTrampoline), '"\n',
             '  }'
         ));
 
