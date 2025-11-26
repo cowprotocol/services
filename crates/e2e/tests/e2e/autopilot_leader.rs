@@ -33,22 +33,22 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // TODO: Implement test that checks auction creation frequency against db
     // to see that only one autopilot produces auctions
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
-    let [solver1, solver2] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver1, solver2] = onchain.make_solvers(eth(1)).await;
     let [token_a] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader, settlement accounts, and pool creation
-    token_a.mint(solver1.address(), to_wei(1000)).await;
-    token_a.mint(solver2.address(), to_wei(1000)).await;
+    token_a.mint(solver1.address(), eth(1000)).await;
+    token_a.mint(solver2.address(), eth(1000)).await;
 
-    token_a.mint(trader.address(), to_wei(200)).await;
+    token_a.mint(trader.address(), eth(200)).await;
 
     // Approve GPv2 for trading
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                     .and_then(|competition| competition.solutions.first())
                     .map(|solution| {
                         solution.is_winner
-                            && solution.solver_address == solver1.address().into_alloy()
+                            && solution.solver_address == solver1.address()
                     })
             } else {
                 None
@@ -183,7 +183,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                     .and_then(|competition| competition.solutions.first())
                     .map(|solution| {
                         solution.is_winner
-                            && solution.solver_address == solver2.address().into_alloy()
+                            && solution.solver_address == solver2.address()
                     })
             } else {
                 None

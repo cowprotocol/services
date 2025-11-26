@@ -31,25 +31,25 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     let safe = Safe::deploy(trader.clone(), web3.alloy.clone()).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
         .await;
 
-    token.mint(trader.address(), to_wei(4)).await;
+    token.mint(trader.address(), eth(4)).await;
     safe.exec_alloy_call(
         token
             .approve(onchain.contracts().allowance.into_alloy(), eth(4))
             .into_transaction_request(),
     )
     .await;
-    token.mint(safe.address().into_legacy(), to_wei(4)).await;
+    token.mint(safe.address(), eth(4)).await;
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(4))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();

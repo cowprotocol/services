@@ -33,19 +33,19 @@ async fn local_node_order_cancellation() {
 async fn order_cancellation(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token.mint(trader.address(), to_wei(10)).await;
+    token.mint(trader.address(), eth(10)).await;
 
     // Approve GPv2 for trading
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -90,7 +90,7 @@ async fn order_cancellation(web3: Web3) {
         let trader = &trader;
 
         let request = OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             sell_token: *token.address(),
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {

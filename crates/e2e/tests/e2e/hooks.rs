@@ -62,16 +62,16 @@ async fn local_node_quote_verification() {
 async fn gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let cow = onchain
         .deploy_cow_weth_pool(to_wei(1_000_000), to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader accounts and approve relayer
-    cow.fund(trader.address(), to_wei(5)).await;
+    cow.fund(trader.address(), eth(5)).await;
     cow.approve(onchain.contracts().allowance.into_alloy(), eth(5))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -91,7 +91,7 @@ async fn gas_limit(web3: Web3) {
                 "metadata": {
                     "hooks": {
                         "pre": [Hook {
-                            target: trader.address().into_alloy(),
+                            target: trader.address(),
                             call_data: Default::default(),
                             gas_limit: 8_000_000,
                         }],
@@ -116,14 +116,14 @@ async fn gas_limit(web3: Web3) {
 async fn allowance(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let cow = onchain
         .deploy_cow_weth_pool(to_wei(1_000_000), to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader accounts
-    cow.fund(trader.address(), to_wei(5)).await;
+    cow.fund(trader.address(), eth(5)).await;
 
     // Sign a permit pre-interaction for trading.
     let permit = cow
@@ -133,8 +133,8 @@ async fn allowance(web3: Web3) {
     // the settlement contract.
     let steal_cow = {
         let tx = cow
-            .approve(trader.address().into_alloy(), alloy::primitives::U256::MAX)
-            .from(solver.address().into_alloy());
+            .approve(trader.address(), alloy::primitives::U256::MAX)
+            .from(solver.address());
         Hook {
             target: *cow.address(),
             call_data: tx.calldata().to_vec(),
@@ -143,7 +143,7 @@ async fn allowance(web3: Web3) {
     };
     let steal_weth = {
         let approve = onchain.contracts().weth.approve(
-            trader.address().into_alloy(),
+            trader.address(),
             ::alloy::primitives::U256::MAX,
         );
         Hook {
@@ -185,7 +185,7 @@ async fn allowance(web3: Web3) {
     onchain.mint_block().await;
 
     let balance = cow
-        .balanceOf(trader.address().into_alloy())
+        .balanceOf(trader.address())
         .call()
         .await
         .unwrap();
@@ -193,7 +193,7 @@ async fn allowance(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        cow.balanceOf(trader.address().into_alloy())
+        cow.balanceOf(trader.address())
             .call()
             .await
             .unwrap()
@@ -205,7 +205,7 @@ async fn allowance(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balanceOf(trader.address().into_alloy())
+        .balanceOf(trader.address())
         .call()
         .await
         .unwrap();
@@ -219,7 +219,7 @@ async fn allowance(web3: Web3) {
     let allowance = cow
         .allowance(
             *onchain.contracts().gp_settlement.address(),
-            trader.address().into_alloy(),
+            trader.address(),
         )
         .call()
         .await
@@ -230,7 +230,7 @@ async fn allowance(web3: Web3) {
         .weth
         .allowance(
             *onchain.contracts().gp_settlement.address(),
-            trader.address().into_alloy(),
+            trader.address(),
         )
         .call()
         .await
@@ -243,7 +243,7 @@ async fn allowance(web3: Web3) {
     let allowance = cow
         .allowance(
             *onchain.contracts().hooks.address(),
-            trader.address().into_alloy(),
+            trader.address(),
         )
         .call()
         .await
@@ -254,7 +254,7 @@ async fn allowance(web3: Web3) {
         .weth
         .allowance(
             *onchain.contracts().hooks.address(),
-            trader.address().into_alloy(),
+            trader.address(),
         )
         .call()
         .await
@@ -267,8 +267,8 @@ async fn signature(web3: Web3) {
 
     let chain_id = alloy::primitives::U256::from(web3.alloy.get_chain_id().await.unwrap());
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
 
     let safe_infra = onchain_components::safe::Infrastructure::new(web3.alloy.clone()).await;
 
@@ -279,7 +279,7 @@ async fn signature(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address().into_alloy()],   // owners
+                vec![trader.address()],   // owners
                 alloy::primitives::U256::ONE,          // threshold
                 alloy::primitives::Address::default(), // delegate call
                 alloy::primitives::Bytes::default(),   // delegate call bytes
@@ -308,7 +308,7 @@ async fn signature(web3: Web3) {
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address().into_legacy(), to_wei(5)).await;
+    token.mint(safe.address(), eth(5)).await;
 
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
@@ -429,8 +429,8 @@ async fn signature(web3: Web3) {
 async fn partial_fills(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(3)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(3)).await;
 
     let counter = contracts::alloy::test::Counter::Instance::deploy(web3.alloy.clone())
         .await
@@ -443,20 +443,20 @@ async fn partial_fills(web3: Web3) {
     let sell_token = onchain.contracts().weth.clone();
     sell_token
         .approve(onchain.contracts().allowance.into_alloy(), eth(2))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
     sell_token
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(1))
         .send_and_watch()
         .await
         .unwrap();
 
     let balance_before_first_trade = sell_token
-        .balanceOf(trader.address().into_alloy())
+        .balanceOf(trader.address())
         .call()
         .await
         .unwrap();
@@ -468,7 +468,7 @@ async fn partial_fills(web3: Web3) {
     let pre_inc = counter.setCounterToBalance(
         "pre".to_string(),
         *sell_token.address(),
-        trader.address().into_alloy(),
+        trader.address(),
     );
     let pre_hook = Hook {
         target: *counter.address(),
@@ -479,7 +479,7 @@ async fn partial_fills(web3: Web3) {
     let post_inc = counter.setCounterToBalance(
         "post".to_string(),
         *sell_token.address(),
-        trader.address().into_alloy(),
+        trader.address(),
     );
     let post_hook = Hook {
         target: *counter.address(),
@@ -520,7 +520,7 @@ async fn partial_fills(web3: Web3) {
     tracing::info!("Waiting for first trade.");
     let trade_happened = || async {
         sell_token
-            .balanceOf(trader.address().into_alloy())
+            .balanceOf(trader.address())
             .call()
             .await
             .unwrap()
@@ -532,7 +532,7 @@ async fn partial_fills(web3: Web3) {
         balance_before_first_trade
     );
     let post_balance_after_first_trade = sell_token
-        .balanceOf(trader.address().into_alloy())
+        .balanceOf(trader.address())
         .call()
         .await
         .unwrap();
@@ -544,7 +544,7 @@ async fn partial_fills(web3: Web3) {
     tracing::info!("Fund remaining sell balance.");
     sell_token
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(1))
         .send_and_watch()
         .await
@@ -559,7 +559,7 @@ async fn partial_fills(web3: Web3) {
     assert_eq!(
         counter.counters("post".to_string()).call().await.unwrap(),
         sell_token
-            .balanceOf(trader.address().into_alloy())
+            .balanceOf(trader.address())
             .call()
             .await
             .unwrap()
@@ -573,8 +573,8 @@ async fn quote_verification(web3: Web3) {
 
     let chain_id = alloy::primitives::U256::from(web3.alloy.get_chain_id().await.unwrap());
 
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
 
     let safe_infra = onchain_components::safe::Infrastructure::new(web3.alloy.clone()).await;
 
@@ -585,7 +585,7 @@ async fn quote_verification(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address().into_alloy()],   // owners
+                vec![trader.address()],   // owners
                 alloy::primitives::U256::ONE,          // threshold
                 alloy::primitives::Address::default(), // delegate call
                 alloy::primitives::Bytes::default(),   // delegate call bytes
@@ -609,11 +609,11 @@ async fn quote_verification(web3: Web3) {
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address().into_legacy(), to_wei(5)).await;
+    token.mint(safe.address(), eth(5)).await;
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(5))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -623,7 +623,7 @@ async fn quote_verification(web3: Web3) {
     let transfer_builder = safe.sign_transaction(
         *token.address(),
         token
-            .transfer(trader.address().into_alloy(), eth(5))
+            .transfer(trader.address(), eth(5))
             .calldata()
             .to_vec(),
         alloy::primitives::U256::ZERO,
@@ -647,7 +647,7 @@ async fn quote_verification(web3: Web3) {
 
     let quote = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             sell_token: *token.address(),
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {

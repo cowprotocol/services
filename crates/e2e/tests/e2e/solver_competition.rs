@@ -37,21 +37,25 @@ async fn local_node_store_filtered_solutions() {
 async fn solver_competition(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let [token_a] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader, settlement accounts, and pool creation
-    token_a.mint(trader.address(), to_wei(10)).await;
-    token_a.mint(solver.address(), to_wei(1000)).await;
+    token_a
+        .mint(trader.address(), eth(10))
+        .await;
+    token_a
+        .mint(solver.address(), eth(1000))
+        .await;
 
     // Approve GPv2 for trading
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(100))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -115,14 +119,8 @@ async fn solver_competition(web3: Web3) {
     onchain.mint_block().await;
 
     tracing::info!("waiting for trade");
-    let trade_happened = || async {
-        token_a
-            .balanceOf(trader.address().into_alloy())
-            .call()
-            .await
-            .unwrap()
-            == U256::ZERO
-    };
+    let trade_happened =
+        || async { token_a.balanceOf(trader.address()).call().await.unwrap() == U256::ZERO };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     let indexed_trades = || async {
@@ -156,15 +154,19 @@ async fn solver_competition(web3: Web3) {
 async fn wrong_solution_submission_address(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund traders
-    token_a.mint(trader_a.address(), to_wei(10)).await;
-    token_b.mint(trader_b.address(), to_wei(10)).await;
+    token_a
+        .mint(trader_a.address(), eth(10))
+        .await;
+    token_b
+        .mint(trader_b.address(), eth(10))
+        .await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
     // (base_b). base_a has more liquidity then base_b, leading to the solver that
@@ -173,24 +175,24 @@ async fn wrong_solution_submission_address(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
         .await;
     onchain
-        .seed_uni_v2_pool((&token_a, to_wei(100_000)), (&base_a, to_wei(100_000)))
+        .seed_uni_v2_pool((&token_a, eth(100_000)), (&base_a, eth(100_000)))
         .await;
     onchain
-        .seed_uni_v2_pool((&token_b, to_wei(10_000)), (&base_b, to_wei(10_000)))
+        .seed_uni_v2_pool((&token_b, eth(10_000)), (&base_b, eth(10_000)))
         .await;
 
     // Approve GPv2 for trading
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(100))
-        .from(trader_a.address().into_alloy())
+        .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
         .approve(onchain.contracts().allowance.into_alloy(), eth(100))
-        .from(trader_b.address().into_alloy())
+        .from(trader_b.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -295,7 +297,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     tracing::info!(?competition, "competition");
     assert_eq!(
         competition.solutions.last().unwrap().solver_address,
-        solver.address().into_alloy()
+        solver.address()
     );
     assert_eq!(competition.solutions.len(), 1);
 }
@@ -303,8 +305,9 @@ async fn wrong_solution_submission_address(web3: Web3) {
 async fn store_filtered_solutions(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [good_solver_account, bad_solver_account] = onchain.make_solvers(to_wei(100)).await;
-    let [trader] = onchain.make_accounts(to_wei(100)).await;
+    let [good_solver_account, bad_solver_account] =
+        onchain.make_solvers(eth(100)).await;
+    let [trader] = onchain.make_accounts(eth(100)).await;
     let [token_a, token_b, token_c] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(1_000))
         .await;
@@ -312,24 +315,18 @@ async fn store_filtered_solutions(web3: Web3) {
     // give the settlement contract a ton of the traded tokens so that the mocked
     // solver solutions can simply give money away to make the trade execute
     token_b
-        .mint(
-            onchain.contracts().gp_settlement.address().into_legacy(),
-            to_wei(50),
-        )
+        .mint(*onchain.contracts().gp_settlement.address(), eth(50))
         .await;
     token_c
-        .mint(
-            onchain.contracts().gp_settlement.address().into_legacy(),
-            to_wei(50),
-        )
+        .mint(*onchain.contracts().gp_settlement.address(), eth(50))
         .await;
 
     // set up trader for their order
-    token_a.mint(trader.address(), to_wei(2)).await;
+    token_a.mint(trader.address(), eth(2)).await;
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(2))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -529,7 +526,7 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(
         competition
             .reference_scores
-            .get(&good_solver_account.address().into_alloy()),
+            .get(&good_solver_account.address()),
         Some(&U256::ZERO)
     );
 
@@ -540,10 +537,7 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(bad_solution.ranking, 2);
     assert!(bad_solution.filtered_out);
     assert!(!bad_solution.is_winner);
-    assert_eq!(
-        bad_solution.solver_address,
-        bad_solver_account.address().into_alloy()
-    );
+    assert_eq!(bad_solution.solver_address, bad_solver_account.address());
     assert!(bad_solution.tx_hash.is_none());
     assert!(bad_solution.reference_score.is_none());
 
@@ -551,10 +545,7 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(good_solution.ranking, 1);
     assert!(!good_solution.filtered_out);
     assert!(good_solution.is_winner);
-    assert_eq!(
-        good_solution.solver_address,
-        good_solver_account.address().into_alloy()
-    );
+    assert_eq!(good_solution.solver_address, good_solver_account.address());
     assert_eq!(good_solution.tx_hash.unwrap(), trade.tx_hash.unwrap());
     // since the only other solutions were unfair the reference score is zero
     assert_eq!(good_solution.reference_score, Some(U256::ZERO));

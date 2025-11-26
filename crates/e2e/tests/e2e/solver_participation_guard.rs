@@ -51,7 +51,7 @@ async fn local_node_not_allowed_solver() {
 async fn non_settling_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver, solver_b] = onchain.make_solvers(to_wei(1)).await;
+    let [solver, solver_b] = onchain.make_solvers(eth(1)).await;
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let services = Services::new(&onchain).await;
@@ -90,7 +90,7 @@ async fn non_settling_solver(web3: Web3) {
         .take(3)
         .cloned()
         .collect::<Vec<_>>();
-    replace_solver_for_auction_ids(pool, &last_auctions, &solver_b.address()).await;
+    replace_solver_for_auction_ids(pool, &last_auctions, &solver_b.address().into_legacy()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
     let now = Instant::now();
@@ -122,7 +122,7 @@ async fn non_settling_solver(web3: Web3) {
 async fn low_settling_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver, solver_b] = onchain.make_solvers(to_wei(1)).await;
+    let [solver, solver_b] = onchain.make_solvers(eth(1)).await;
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let services = Services::new(&onchain).await;
@@ -162,7 +162,7 @@ async fn low_settling_solver(web3: Web3) {
         .enumerate()
         .filter_map(|(i, id)| (i % 2 == 0).then_some(*id))
         .collect::<Vec<_>>();
-    replace_solver_for_auction_ids(pool, &random_auctions, &solver_b.address()).await;
+    replace_solver_for_auction_ids(pool, &random_auctions, &solver_b.address().into_legacy()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
     let now = Instant::now();
@@ -194,7 +194,7 @@ async fn low_settling_solver(web3: Web3) {
 async fn not_allowed_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let solver_address = solver.address();
@@ -209,7 +209,7 @@ async fn not_allowed_solver(web3: Web3) {
     onchain
         .contracts()
         .gp_authenticator
-        .removeSolver(solver_address.into_alloy())
+        .removeSolver(solver_address)
         .send_and_watch()
         .await
         .unwrap();
@@ -224,7 +224,7 @@ async fn not_allowed_solver(web3: Web3) {
     onchain
         .contracts()
         .gp_authenticator
-        .addSolver(solver_address.into_alloy())
+        .addSolver(solver_address)
         .send_and_watch()
         .await
         .unwrap();
@@ -238,36 +238,42 @@ async fn setup(
     onchain: &mut OnchainComponents,
     solver: &TestAccount,
 ) -> (TestAccount, MintableToken, MintableToken) {
-    let [trader_a] = onchain.make_accounts(to_wei(1)).await;
+    let [trader_a] = onchain.make_accounts(eth(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader accounts
-    token_a.mint(trader_a.address(), to_wei(1000)).await;
+    token_a
+        .mint(trader_a.address(), eth(1000))
+        .await;
 
     // Create and fund Uniswap pool
-    token_a.mint(solver.address(), to_wei(1000)).await;
-    token_b.mint(solver.address(), to_wei(1000)).await;
+    token_a
+        .mint(solver.address(), eth(1000))
+        .await;
+    token_b
+        .mint(solver.address(), eth(1000))
+        .await;
     onchain
         .contracts()
         .uniswap_v2_factory
         .createPair(*token_a.address(), *token_b.address())
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
         .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
         .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -281,10 +287,10 @@ async fn setup(
             eth(1000),
             U256::ZERO,
             U256::ZERO,
-            solver.address().into_alloy(),
+            solver.address(),
             U256::MAX,
         )
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -293,7 +299,7 @@ async fn setup(
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
-        .from(trader_a.address().into_alloy())
+        .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -346,11 +352,7 @@ async fn execute_order(
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
-    let balance_before = token_b
-        .balanceOf(trader_a.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -360,11 +362,7 @@ async fn execute_order(
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_b
-            .balanceOf(trader_a.address().into_alloy())
-            .call()
-            .await
-            .unwrap();
+        let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= eth(5);
         let auction_ids_after =
             fetch_last_settled_auction_ids(services.db()).await.len() > auction_ids_before;
