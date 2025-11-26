@@ -175,9 +175,9 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         in_amount: NonZeroU256::new(12.into()).unwrap(),
                     },
                     &Verification {
-                        from: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a").unwrap(),
+                        from: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a").unwrap().into_alloy(),
                         receiver: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a")
-                            .unwrap(),
+                            .unwrap().into_alloy(),
                         pre_interactions: vec![],
                         post_interactions: vec![],
                         sell_token_source: SellTokenSource::Erc20,

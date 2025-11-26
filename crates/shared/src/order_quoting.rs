@@ -13,7 +13,7 @@ use {
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
@@ -36,8 +36,8 @@ use {
 /// Order parameters for quoting.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuoteParameters {
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     pub side: OrderQuoteSide,
     pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
@@ -68,8 +68,8 @@ impl QuoteParameters {
 
         price_estimation::Query {
             verification: self.verification.clone(),
-            sell_token: self.sell_token.into_alloy(),
-            buy_token: self.buy_token.into_alloy(),
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
             in_amount,
             kind,
             block_dependent: true,
@@ -94,16 +94,16 @@ pub struct Quote {
     /// Note that this is different than the `QuoteData::quoted_sell_amount` for
     /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
     /// `quoted_sell_amount - fee_amount` in those cases).
-    pub sell_amount: U256,
+    pub sell_amount: alloy::primitives::U256,
     /// The final computed buy amount for the quote.
     ///
     /// Note that this is different than the `QuoteData::quoted_buy_amount` for
     /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
     /// scaled down to account for the computed `fee_amount`).
-    pub buy_amount: U256,
+    pub buy_amount: alloy::primitives::U256,
     /// The fee amount for any order created for this quote. The fee is
     /// denoted in the sell token.
-    pub fee_amount: U256,
+    pub fee_amount: alloy::primitives::U256,
 }
 
 impl Quote {
@@ -111,8 +111,8 @@ impl Quote {
     pub fn new(id: Option<QuoteId>, data: QuoteData) -> Self {
         Self {
             id,
-            sell_amount: data.quoted_sell_amount.into_legacy(),
-            buy_amount: data.quoted_buy_amount.into_legacy(),
+            sell_amount: data.quoted_sell_amount,
+            buy_amount: data.quoted_buy_amount,
             fee_amount: data.fee_parameters.fee(),
             data,
         }
@@ -141,18 +141,18 @@ impl Quote {
     /// it assumes that the final buy amount will never overflow a `U256` and
     /// _will saturate_ to `U256::MAX` if this is used to scale up past the
     /// maximum value.
-    pub fn with_scaled_sell_amount(mut self, sell_amount: U256) -> Self {
+    pub fn with_scaled_sell_amount(mut self, sell_amount: alloy::primitives::U256) -> Self {
         self.sell_amount = sell_amount;
         // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
         // errors computing the initial product.
-        self.buy_amount = (self
-            .data
-            .quoted_buy_amount
-            .into_legacy()
-            .full_mul(sell_amount)
-            / self.data.quoted_sell_amount.into_legacy())
-        .try_into()
-        .unwrap_or(U256::MAX);
+
+        self.buy_amount = alloy::primitives::U256::uint_try_from(
+            self.data
+                .quoted_buy_amount
+                .widening_mul::<_, _, 512, 8>(sell_amount)
+                / U512::from(self.data.quoted_sell_amount),
+        )
+        .unwrap_or(alloy::primitives::U256::MAX);
 
         self
     }
@@ -168,8 +168,8 @@ impl Quote {
                 self.data.fee_parameters.sell_token_price,
             )
             .context("sell token price is not a valid BigDecimal")?,
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
+            sell_amount: self.sell_amount.into_legacy(),
+            buy_amount: self.buy_amount.into_legacy(),
             solver: self.data.solver.into_legacy(),
             verified: self.data.verified,
             metadata: serde_json::to_value(&self.data.metadata)?,
@@ -476,13 +476,13 @@ impl OrderQuoter {
                 .estimate(trade_query.clone())
                 .map_err(|err| (EstimatorKind::Regular, err).into()),
             self.native_price_estimator
-                .estimate_native_price(parameters.sell_token.into_alloy(), trade_query.timeout)
+                .estimate_native_price(parameters.sell_token, trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeSell, err).into()),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
-                .estimate_native_price(parameters.buy_token.into_alloy(), trade_query.timeout)
+                .estimate_native_price(parameters.buy_token, trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
@@ -508,8 +508,8 @@ impl OrderQuoter {
 
         let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
-            sell_token: parameters.sell_token.into_alloy(),
-            buy_token: parameters.buy_token.into_alloy(),
+            sell_token: parameters.sell_token,
+            buy_token: parameters.buy_token,
             quoted_sell_amount: quoted_sell_amount.into_alloy(),
             quoted_buy_amount: quoted_buy_amount.into_alloy(),
             fee_parameters,
@@ -547,7 +547,10 @@ impl OrderQuoter {
         }
 
         let balance = match self
-            .get_balance(&parameters.verification, parameters.sell_token)
+            .get_balance(
+                &parameters.verification,
+                parameters.sell_token.into_legacy(),
+            )
             .await
         {
             Ok(balance) => balance,
@@ -568,7 +571,7 @@ impl OrderQuoter {
 
     async fn get_balance(&self, verification: &Verification, token: H160) -> Result<U256> {
         let query = Query {
-            owner: verification.from,
+            owner: verification.from.into_legacy(),
             token,
             source: verification.sell_token_source,
             interactions: verification
@@ -608,12 +611,14 @@ impl OrderQuoting for OrderQuoter {
                 },
         } = &parameters.side
         {
-            let sell_amount =
-                Into::<U256>::into(*sell_amount_before_fee).saturating_sub(quote.fee_amount);
-            if sell_amount == U256::zero() {
+            let sell_amount = sell_amount_before_fee
+                .get()
+                .into_alloy()
+                .saturating_sub(quote.fee_amount);
+            if sell_amount.is_zero() {
                 // We want a sell_amount of at least 1!
                 return Err(CalculateQuoteError::SellAmountDoesNotCoverFee {
-                    fee_amount: quote.fee_amount,
+                    fee_amount: quote.fee_amount.into_legacy(),
                 });
             }
 
@@ -676,7 +681,7 @@ impl OrderQuoting for OrderQuoter {
         .with_additional_cost(additional_cost);
 
         let quote = match scaled_sell_amount {
-            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount.into_legacy()),
+            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
             None => quote,
         };
 
@@ -794,7 +799,6 @@ mod tests {
         alloy::primitives::Address,
         chrono::Utc,
         ethcontract::H160,
-        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
@@ -838,15 +842,15 @@ mod tests {
     async fn compute_sell_before_fee_quote() {
         let now = Utc::now();
         let parameters = QuoteParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
+            sell_token: Address::from([1; 20]),
+            buy_token: Address::from([2; 20]),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: NonZeroU256::try_from(100).unwrap(),
                 },
             },
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
@@ -865,7 +869,7 @@ mod tests {
             .withf(|q| {
                 **q == price_estimation::Query {
                     verification: Verification {
-                        from: H160([3; 20]),
+                        from: Address::from([3; 20]),
                         ..Default::default()
                     },
                     sell_token: Address::repeat_byte(1),
@@ -894,14 +898,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q.into_legacy() == sell_token
+                move |q, _| *q == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q.into_legacy() == buy_token
+                move |q, _| *q == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -965,9 +969,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: 70.into(),
-                buy_amount: 29.into(),
-                fee_amount: 30.into(),
+                sell_amount: alloy::primitives::U256::from(70),
+                buy_amount: alloy::primitives::U256::from(29),
+                fee_amount: alloy::primitives::U256::from(30),
             }
         );
     }
@@ -976,15 +980,15 @@ mod tests {
     async fn compute_sell_after_fee_quote() {
         let now = Utc::now();
         let parameters = QuoteParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
+            sell_token: Address::from([1; 20]),
+            buy_token: Address::from([2; 20]),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
                     value: NonZeroU256::try_from(100).unwrap(),
                 },
             },
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip1271 {
@@ -1006,7 +1010,7 @@ mod tests {
             .withf(|q| {
                 **q == price_estimation::Query {
                     verification: Verification {
-                        from: H160([3; 20]),
+                        from: Address::from([3; 20]),
                         ..Default::default()
                     },
                     sell_token: Address::repeat_byte(1),
@@ -1035,14 +1039,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q.into_legacy() == sell_token
+                move |q, _| *q == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q.into_legacy() == buy_token
+                move |q, _| *q == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1106,9 +1110,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: 100.into(),
-                buy_amount: 42.into(),
-                fee_amount: 60.into(),
+                sell_amount: alloy::primitives::U256::from(100),
+                buy_amount: alloy::primitives::U256::from(42),
+                fee_amount: alloy::primitives::U256::from(60),
             }
         );
     }
@@ -1117,13 +1121,13 @@ mod tests {
     async fn compute_buy_quote() {
         let now = Utc::now();
         let parameters = QuoteParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
+            sell_token: Address::from([1; 20]),
+            buy_token: Address::from([2; 20]),
             side: OrderQuoteSide::Buy {
                 buy_amount_after_fee: NonZeroU256::try_from(42).unwrap(),
             },
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
@@ -1142,7 +1146,7 @@ mod tests {
             .withf(|q| {
                 **q == price_estimation::Query {
                     verification: Verification {
-                        from: H160([3; 20]),
+                        from: Address::from([3; 20]),
                         ..Default::default()
                     },
                     sell_token: Address::repeat_byte(1),
@@ -1171,14 +1175,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q.into_legacy() == sell_token
+                move |q, _| *q == sell_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q.into_legacy() == buy_token
+                move |q, _| *q == buy_token
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
@@ -1242,9 +1246,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: 100.into(),
-                buy_amount: 42.into(),
-                fee_amount: 30.into(),
+                sell_amount: alloy::primitives::U256::from(100),
+                buy_amount: alloy::primitives::U256::from(42),
+                fee_amount: alloy::primitives::U256::from(30),
             }
         );
     }
@@ -1252,15 +1256,15 @@ mod tests {
     #[tokio::test]
     async fn compute_sell_before_fee_quote_insufficient_amount_error() {
         let parameters = QuoteParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
+            sell_token: Address::from([1; 20]),
+            buy_token: Address::from([2; 20]),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: NonZeroU256::try_from(100).unwrap(),
                 },
             },
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
@@ -1292,14 +1296,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q.into_legacy() == sell_token
+                move |q, _| *q == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q.into_legacy() == buy_token
+                move |q, _| *q == buy_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
 
@@ -1326,15 +1330,15 @@ mod tests {
     #[tokio::test]
     async fn require_native_price_for_buy_token() {
         let parameters = QuoteParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
+            sell_token: Address::from([1; 20]),
+            buy_token: Address::from([2; 20]),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: NonZeroU256::try_from(100_000).unwrap(),
                 },
             },
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
@@ -1366,14 +1370,14 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q, _| q.into_legacy() == sell_token
+                move |q, _| *q == sell_token
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q, _| q.into_legacy() == buy_token
+                move |q, _| *q == buy_token
             })
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
@@ -1414,7 +1418,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
         };
@@ -1473,12 +1477,12 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: 85.into(),
+                sell_amount: alloy::primitives::U256::from(85),
                 // Allows for "out-of-price" buy amounts. This means that order
                 // be used for providing liquidity at a premium over current
                 // market price.
-                buy_amount: 35.into(),
-                fee_amount: 30.into(),
+                buy_amount: alloy::primitives::U256::from(35),
+                fee_amount: alloy::primitives::U256::from(30),
             }
         );
     }
@@ -1497,7 +1501,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
         };
@@ -1556,9 +1560,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: 100.into(),
-                buy_amount: 42.into(),
-                fee_amount: 30.into(),
+                sell_amount: alloy::primitives::U256::from(100),
+                buy_amount: alloy::primitives::U256::from(42),
+                fee_amount: alloy::primitives::U256::from(30),
             }
         );
     }
@@ -1576,7 +1580,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
             verification: Verification {
-                from: H160([3; 20]),
+                from: Address::from([3; 20]),
                 ..Default::default()
             },
         };
@@ -1641,9 +1645,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: 100.into(),
-                buy_amount: 42.into(),
-                fee_amount: 30.into(),
+                sell_amount: alloy::primitives::U256::from(100),
+                buy_amount: alloy::primitives::U256::from(42),
+                fee_amount: alloy::primitives::U256::from(30),
             }
         );
     }

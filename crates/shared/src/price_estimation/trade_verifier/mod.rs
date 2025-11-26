@@ -168,7 +168,7 @@ impl TradeVerifier {
         let swap_simulation = solver.swap(
                 *self.settlement.address(),
                 tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
-                verification.receiver.into_alloy(),
+                verification.receiver,
                 settle_call.into(),
             )
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
@@ -242,7 +242,7 @@ impl TradeVerifier {
 
             // It looks like the contract lost a lot of sell tokens but only because it was
             // the trader and had to pay for the trade. Adjust tokens lost downward.
-            if verification.from == self.settlement.address().into_legacy() {
+            if verification.from == *self.settlement.address() {
                 summary
                     .tokens_lost
                     .entry(query.sell_token)
@@ -251,7 +251,7 @@ impl TradeVerifier {
             // It looks like the contract gained a lot of buy tokens (negative loss) but
             // only because it was the receiver and got the payout. Adjust the tokens lost
             // upward.
-            if verification.receiver == self.settlement.address().into_legacy() {
+            if verification.receiver == *self.settlement.address() {
                 summary
                     .tokens_lost
                     .entry(query.buy_token)
@@ -319,7 +319,7 @@ impl TradeVerifier {
                 overrides.insert(token, solver_balance_override);
 
                 if verification.from.is_zero() {
-                    verification.from = H160::random();
+                    verification.from = H160::random().into_alloy();
                     tracing::debug!(
                         trader = ?verification.from,
                         "use random trader address with fake balances"
@@ -335,7 +335,7 @@ impl TradeVerifier {
 
         // Set up mocked trader.
         overrides.insert(
-            verification.from,
+            verification.from.into_legacy(),
             StateOverride {
                 code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone().into_legacy()),
                 ..Default::default()
@@ -346,7 +346,7 @@ impl TradeVerifier {
         // to proxy into it during the simulation.
         let trader_impl = self
             .code_fetcher
-            .code(verification.from)
+            .code(verification.from.into_legacy())
             .await
             .context("failed to fetch trader code")?;
         if !trader_impl.0.is_empty() {
@@ -577,7 +577,7 @@ fn encode_settlement(
         };
         let solver_address = trade.solver();
         let setup_call = Solver::Solver::ensureTradePreconditionsCall {
-            trader: verification.from.into_alloy(),
+            trader: verification.from,
             settlementContract: settlement.into_alloy(),
             sellToken: query.sell_token.into_alloy(),
             sellAmount: sell_amount.into_alloy(),
@@ -632,7 +632,7 @@ fn encode_fake_trade(
         sell_amount: sell_amount.into_alloy(),
         buy_token: query.buy_token.into_alloy(),
         buy_amount: buy_amount.into_alloy(),
-        receiver: Some(verification.receiver.into_alloy()),
+        receiver: Some(verification.receiver),
         valid_to: u32::MAX,
         app_data: Default::default(),
         fee_amount: alloy::primitives::U256::ZERO,
@@ -646,7 +646,7 @@ fn encode_fake_trade(
     let encoded_trade = encode_trade(
         &fake_order,
         &fake_signature,
-        verification.from,
+        verification.from.into_legacy(),
         // the tokens set length is small so the linear search is acceptable
         tokens
             .iter()
@@ -751,7 +751,7 @@ fn add_balance_queries(
     let (token, owner) = match query.kind {
         // track how much `buy_token` the `receiver` actually got
         OrderKind::Sell => {
-            let receiver = match verification.receiver == H160::zero() {
+            let receiver = match verification.receiver.is_zero() {
                 // Settlement contract sends fund to owner if receiver is the 0 address.
                 true => verification.from,
                 false => verification.receiver,
@@ -764,7 +764,7 @@ fn add_balance_queries(
     };
     let query_balance_call = Solver::Solver::storeBalanceCall {
         token: token.into_alloy(),
-        owner: owner.into_alloy(),
+        owner,
         countGas: true,
     }
     .abi_encode();
