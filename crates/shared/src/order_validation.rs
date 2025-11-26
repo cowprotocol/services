@@ -212,7 +212,7 @@ impl From<CalculateQuoteError> for ValidationError {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait]
 pub trait LimitOrderCounting: Send + Sync {
-    async fn count(&self, owner: H160) -> Result<u64>;
+    async fn count(&self, owner: Address) -> Result<u64>;
 }
 
 #[derive(Clone)]
@@ -324,7 +324,7 @@ impl OrderValidator {
         }
     }
 
-    async fn check_max_limit_orders(&self, owner: H160) -> Result<(), ValidationError> {
+    async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
         let num_limit_orders = self
             .limit_order_counter
             .count(owner)
@@ -726,7 +726,7 @@ impl OrderValidating for OrderValidator {
                             },
                             data.kind,
                         ) {
-                            self.check_max_limit_orders(owner).await?;
+                            self.check_max_limit_orders(owner.into_alloy()).await?;
                         }
                         (class, Some(quote))
                     }
@@ -757,7 +757,7 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
-                    self.check_max_limit_orders(owner).await?;
+                    self.check_max_limit_orders(owner.into_alloy()).await?;
                 }
                 (OrderClass::Limit, None)
             }

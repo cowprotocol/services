@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     app_data::AppDataHash,
     model::{
         interaction::InteractionData,
@@ -6,7 +7,6 @@ use {
         signature::Signature,
     },
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -16,21 +16,21 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     pub uid: OrderUid,
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
+    pub sell_amount: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub buy_amount: alloy::primitives::U256,
     pub protocol_fees: Vec<FeePolicy>,
     pub created: u32,
     pub valid_to: u32,
     pub kind: OrderKind,
-    pub receiver: Option<H160>,
-    pub owner: H160,
+    pub receiver: Option<Address>,
+    pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub executed: U256,
+    pub executed: alloy::primitives::U256,
     pub pre_interactions: Vec<InteractionData>,
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_balance: SellTokenSource,
@@ -48,12 +48,12 @@ pub struct Order {
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
+    pub sell_amount: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub buy_amount: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub fee: U256,
-    pub solver: H160,
+    pub fee: alloy::primitives::U256,
+    pub solver: Address,
 }
 
 #[serde_as]
@@ -78,9 +78,9 @@ pub enum FeePolicy {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutedAmounts {
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell: U256,
+    pub sell: alloy::primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy: U256,
+    pub buy: alloy::primitives::U256,
 }
 
 /// Indicates that a solver has provided a solution, with `executed_amounts`
