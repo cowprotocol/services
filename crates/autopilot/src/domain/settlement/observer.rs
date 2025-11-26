@@ -21,6 +21,7 @@ use {
     anyhow::{Context, Result, anyhow},
     ethrpc::alloy::conversions::IntoLegacy,
     futures::StreamExt,
+    rand::Rng,
     std::time::Duration,
 };
 
@@ -180,8 +181,8 @@ impl Observer {
                     errors.push(err);
                     tries += 1;
                     // wait a little to give temporary errors a chance to resolve themselves
-                    const TEMP_ERROR_BACK_OFF: Duration = Duration::from_millis(100);
-                    tokio::time::sleep(TEMP_ERROR_BACK_OFF).await;
+                    let timeout_with_jitter = 50u64 + rand::thread_rng().gen_range(0..=50);
+                    tokio::time::sleep(Duration::from_millis(timeout_with_jitter)).await;
                 }
             }
         }
