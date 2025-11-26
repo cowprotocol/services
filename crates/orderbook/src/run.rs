@@ -446,7 +446,7 @@ pub async fn run(args: Arguments) {
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        settlement_contract.address().into_legacy(),
+        *settlement_contract.address(),
         postgres_write.clone(),
         postgres_read.clone(),
         order_validator.clone(),

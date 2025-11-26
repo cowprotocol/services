@@ -1,11 +1,12 @@
 use {
     crate::ethflow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    ::alloy::primitives::Address,
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+        alloy::conversions::{IntoAlloy, TryIntoAlloyAsync},
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
@@ -33,14 +34,14 @@ async fn refunder_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Get quote id for order placement
-    let buy_token = token.address().into_legacy();
-    let receiver = Some(H160([42; 20]));
+    let buy_token = *token.address();
+    let receiver = Some(Address::repeat_byte(42));
     let sell_amount = U256::from("3000000000000000");
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
-        from: ethflow_contract.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
+        from: *ethflow_contract.address(),
+        sell_token: *onchain.contracts().weth.address(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -71,8 +72,8 @@ async fn refunder_tx(web3: Web3) {
     let ethflow_contract_2 = onchain.contracts().ethflows.get(1).unwrap();
 
     let quote = OrderQuoteRequest {
-        from: ethflow_contract_2.address().into_legacy(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
+        from: *ethflow_contract_2.address(),
+        sell_token: *onchain.contracts().weth.address(),
         buy_token,
         receiver,
         validity: Validity::For(3600),

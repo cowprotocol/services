@@ -212,7 +212,7 @@ impl From<CalculateQuoteError> for ValidationError {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait]
 pub trait LimitOrderCounting: Send + Sync {
-    async fn count(&self, owner: H160) -> Result<u64>;
+    async fn count(&self, owner: Address) -> Result<u64>;
 }
 
 #[derive(Clone)]
@@ -324,7 +324,7 @@ impl OrderValidator {
         }
     }
 
-    async fn check_max_limit_orders(&self, owner: H160) -> Result<(), ValidationError> {
+    async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
         let num_limit_orders = self
             .limit_order_counter
             .count(owner)
@@ -636,8 +636,8 @@ impl OrderValidating for OrderValidator {
             .map_err(ValidationError::Partial)?;
 
         let verification = Verification {
-            from: owner,
-            receiver: order.receiver.unwrap_or(owner),
+            from: owner.into_alloy(),
+            receiver: order.receiver.unwrap_or(owner).into_alloy(),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
             pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
@@ -645,11 +645,11 @@ impl OrderValidating for OrderValidator {
         };
 
         let quote_parameters = QuoteSearchParameters {
-            sell_token: data.sell_token.into_legacy(),
-            buy_token: data.buy_token.into_legacy(),
-            sell_amount: data.sell_amount.into_legacy(),
-            buy_amount: data.buy_amount.into_legacy(),
-            fee_amount: data.fee_amount.into_legacy(),
+            sell_token: data.sell_token,
+            buy_token: data.buy_token,
+            sell_amount: data.sell_amount,
+            buy_amount: data.buy_amount,
+            fee_amount: data.fee_amount,
             kind: data.kind,
             signing_scheme: convert_signing_scheme_into_quote_signing_scheme(
                 order.signature.scheme(),
@@ -685,9 +685,9 @@ impl OrderValidating for OrderValidator {
                 );
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount.into_legacy(),
-                        buy: data.buy_amount.into_legacy(),
-                        fee: data.fee_amount.into_legacy(),
+                        sell: data.sell_amount,
+                        buy: data.buy_amount,
+                        fee: data.fee_amount,
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -715,9 +715,9 @@ impl OrderValidating for OrderValidator {
                         // If the order is not "In-Market", check for the limit orders
                         if is_order_outside_market_price(
                             &Amounts {
-                                sell: data.sell_amount.into_legacy(),
-                                buy: data.buy_amount.into_legacy(),
-                                fee: data.fee_amount.into_legacy(),
+                                sell: data.sell_amount,
+                                buy: data.buy_amount,
+                                fee: data.fee_amount,
                             },
                             &Amounts {
                                 sell: quote.sell_amount,
@@ -726,7 +726,7 @@ impl OrderValidating for OrderValidator {
                             },
                             data.kind,
                         ) {
-                            self.check_max_limit_orders(owner).await?;
+                            self.check_max_limit_orders(owner.into_alloy()).await?;
                         }
                         (class, Some(quote))
                     }
@@ -746,9 +746,9 @@ impl OrderValidating for OrderValidator {
                 // If the order is not "In-Market", check for the limit orders
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount.into_legacy(),
-                        buy: data.buy_amount.into_legacy(),
-                        fee: data.fee_amount.into_legacy(),
+                        sell: data.sell_amount,
+                        buy: data.buy_amount,
+                        fee: data.fee_amount,
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -757,7 +757,7 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
-                    self.check_max_limit_orders(owner).await?;
+                    self.check_max_limit_orders(owner.into_alloy()).await?;
                 }
                 (OrderClass::Limit, None)
             }
@@ -909,6 +909,7 @@ async fn get_or_create_quote(
                     OrderKind::Buy => OrderQuoteSide::Buy {
                         buy_amount_after_fee: quote_search_parameters
                             .buy_amount
+                            .into_legacy()
                             .try_into()
                             .map_err(|_| ValidationError::ZeroAmount)?,
                     },
@@ -916,6 +917,7 @@ async fn get_or_create_quote(
                         sell_amount: SellAmount::AfterFee {
                             value: quote_search_parameters
                                 .sell_amount
+                                .into_legacy()
                                 .try_into()
                                 .map_err(|_| ValidationError::ZeroAmount)?,
                         },
@@ -944,17 +946,17 @@ async fn get_or_create_quote(
 /// Amounts used for market price checker.
 #[derive(Debug)]
 pub struct Amounts {
-    pub sell: U256,
-    pub buy: U256,
-    pub fee: U256,
+    pub sell: alloy::primitives::U256,
+    pub buy: alloy::primitives::U256,
+    pub fee: alloy::primitives::U256,
 }
 
 impl From<&model::order::Order> for Amounts {
     fn from(order: &model::order::Order) -> Self {
         Self {
-            sell: order.data.sell_amount.into_legacy(),
-            buy: order.data.buy_amount.into_legacy(),
-            fee: order.data.fee_amount.into_legacy(),
+            sell: order.data.sell_amount,
+            buy: order.data.buy_amount,
+            fee: order.data.fee_amount,
         }
     }
 }
@@ -967,14 +969,18 @@ pub fn is_order_outside_market_price(
     kind: model::order::OrderKind,
 ) -> bool {
     let check = move || match kind {
-        OrderKind::Buy => {
-            Some(order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy))
-        }
+        OrderKind::Buy => Some(
+            order.sell.widening_mul::<256, 4, 512, 8>(quote.buy)
+                < (quote.sell + quote.fee).widening_mul::<256, 4, 512, 8>(order.buy),
+        ),
         OrderKind::Sell => {
             let quote_buy = quote
                 .buy
                 .checked_sub(quote.fee.checked_mul(quote.buy)?.checked_div(quote.sell)?)?;
-            Some(order.sell.full_mul(quote_buy) < quote.sell.full_mul(order.buy))
+            Some(
+                order.sell.widening_mul::<256, 4, 512, 8>(quote_buy)
+                    < quote.sell.widening_mul::<256, 4, 512, 8>(order.buy),
+            )
         }
     };
 
@@ -1530,8 +1536,8 @@ mod tests {
             Ok(Quote {
                 id: None,
                 data: Default::default(),
-                sell_amount: U256::from(1),
-                buy_amount: U256::from(1),
+                sell_amount: alloy::primitives::U256::from(1),
+                buy_amount: alloy::primitives::U256::from(1),
                 fee_amount: Default::default(),
             })
         });
@@ -2242,11 +2248,11 @@ mod tests {
     async fn get_quote_find_by_id() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            fee_amount: 0.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
+            buy_amount: alloy::primitives::U256::from(4),
+            fee_amount: alloy::primitives::U256::from(0),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -2254,12 +2260,12 @@ mod tests {
             },
             additional_gas: 0,
             verification: Verification {
-                from: H160([0xf0; 20]),
+                from: Address::from([0xf0; 20]),
                 ..Default::default()
             },
         };
         let quote_data = Quote {
-            fee_amount: 6.into(),
+            fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
         let fee_amount = 0.into();
@@ -2281,7 +2287,7 @@ mod tests {
         assert_eq!(
             quote,
             Quote {
-                fee_amount: 6.into(),
+                fee_amount: alloy::primitives::U256::from(6),
                 ..Default::default()
             }
         );
@@ -2290,7 +2296,7 @@ mod tests {
     #[tokio::test]
     async fn get_quote_calculates_fresh_quote_when_not_found() {
         let verification = Verification {
-            from: H160([0xf0; 20]),
+            from: Address::from([0xf0; 20]),
             ..Default::default()
         };
 
@@ -2300,15 +2306,15 @@ mod tests {
             .with(eq(None), always())
             .returning(|_, _| Err(FindQuoteError::NotFound(None)));
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
             kind: OrderKind::Sell,
             verification: verification.clone(),
             ..Default::default()
         };
         let quote_data = Quote {
-            fee_amount: 6.into(),
+            fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
         let fee_amount = 0.into();
@@ -2319,7 +2325,10 @@ mod tests {
                 buy_token: quote_search_parameters.buy_token,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(quote_search_parameters.sell_amount).unwrap(),
+                        value: NonZeroU256::try_from(
+                            quote_search_parameters.sell_amount.into_legacy(),
+                        )
+                        .unwrap(),
                     },
                 },
                 verification,
@@ -2354,7 +2363,7 @@ mod tests {
             quote,
             Quote {
                 id: Some(42),
-                fee_amount: 6.into(),
+                fee_amount: alloy::primitives::U256::from(6),
                 ..Default::default()
             }
         );
@@ -2363,18 +2372,18 @@ mod tests {
     #[test]
     fn detects_market_orders_buy() {
         let quote = Quote {
-            sell_amount: 90.into(),
-            buy_amount: 100.into(),
-            fee_amount: 10.into(),
+            sell_amount: alloy::primitives::U256::from(90),
+            buy_amount: alloy::primitives::U256::from(100),
+            fee_amount: alloy::primitives::U256::from(10),
             ..Default::default()
         };
 
         // at market price
         assert!(!is_order_outside_market_price(
             &Amounts {
-                sell: 100.into(),
-                buy: 100.into(),
-                fee: 0.into(),
+                sell: alloy::primitives::U256::from(100),
+                buy: alloy::primitives::U256::from(100),
+                fee: alloy::primitives::U256::from(0),
             },
             &Amounts {
                 sell: quote.sell_amount,
@@ -2386,9 +2395,9 @@ mod tests {
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
             &Amounts {
-                sell: 100.into(),
-                buy: 90.into(),
-                fee: 0.into(),
+                sell: alloy::primitives::U256::from(100),
+                buy: alloy::primitives::U256::from(90),
+                fee: alloy::primitives::U256::from(0),
             },
             &Amounts {
                 sell: quote.sell_amount,
@@ -2400,9 +2409,9 @@ mod tests {
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
             &Amounts {
-                sell: 100.into(),
-                buy: 1000.into(),
-                fee: 0.into(),
+                sell: alloy::primitives::U256::from(100),
+                buy: alloy::primitives::U256::from(1000),
+                fee: alloy::primitives::U256::from(0),
             },
             &Amounts {
                 sell: quote.sell_amount,
@@ -2417,18 +2426,18 @@ mod tests {
     fn detects_market_orders_sell() {
         // 1 to 1 conversion
         let quote = Quote {
-            sell_amount: 100.into(),
-            buy_amount: 100.into(),
-            fee_amount: 10.into(),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_amount: alloy::primitives::U256::from(100),
+            fee_amount: alloy::primitives::U256::from(10),
             ..Default::default()
         };
 
         // at market price
         assert!(!is_order_outside_market_price(
             &Amounts {
-                sell: 100.into(),
-                buy: 90.into(),
-                fee: 0.into(),
+                sell: alloy::primitives::U256::from(100),
+                buy: alloy::primitives::U256::from(90),
+                fee: alloy::primitives::U256::from(0),
             },
             &Amounts {
                 sell: quote.sell_amount,
@@ -2440,9 +2449,9 @@ mod tests {
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
             &Amounts {
-                sell: 100.into(),
-                buy: 80.into(),
-                fee: 0.into(),
+                sell: alloy::primitives::U256::from(100),
+                buy: alloy::primitives::U256::from(80),
+                fee: alloy::primitives::U256::from(0),
             },
             &Amounts {
                 sell: quote.sell_amount,
@@ -2454,9 +2463,9 @@ mod tests {
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
             &Amounts {
-                sell: 100.into(),
-                buy: 1000.into(),
-                fee: 0.into(),
+                sell: alloy::primitives::U256::from(100),
+                buy: alloy::primitives::U256::from(1000),
+                fee: alloy::primitives::U256::from(0),
             },
             &Amounts {
                 sell: quote.sell_amount,
@@ -2471,11 +2480,11 @@ mod tests {
     async fn validate_quote_find_by_id() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            fee_amount: 0.into(),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            sell_amount: alloy::primitives::U256::from(3),
+            buy_amount: alloy::primitives::U256::from(4),
+            fee_amount: alloy::primitives::U256::from(0),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
@@ -2483,8 +2492,8 @@ mod tests {
             },
             additional_gas: 0,
             verification: Verification {
-                from: H160([0xf0; 20]),
-                receiver: H160([0xf0; 20]),
+                from: Address::from([0xf0; 20]),
+                receiver: Address::from([0xf0; 20]),
                 ..Default::default()
             },
         };

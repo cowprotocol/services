@@ -114,8 +114,8 @@ async fn app_data(web3: Web3) {
     });
     services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: order3.sell_token,
-            buy_token: order3.buy_token,
+            sell_token: order3.sell_token.into_alloy(),
+            buy_token: order3.buy_token.into_alloy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
                     value: order3.sell_amount.try_into().unwrap(),

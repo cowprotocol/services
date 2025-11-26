@@ -1,10 +1,7 @@
 use {
     database::order_events::OrderEventLabel,
     e2e::setup::{eth, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{
             CancellationPayload,
@@ -92,9 +89,9 @@ async fn order_cancellation(web3: Web3) {
         let trader = &trader;
 
         let request = OrderQuoteRequest {
-            from: trader.address(),
-            sell_token: token.address().into_legacy(),
-            buy_token: onchain.contracts().weth.address().into_legacy(),
+            from: trader.address().into_alloy(),
+            sell_token: *token.address(),
+            buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
                     value: NonZeroU256::try_from(to_wei(1)).unwrap(),

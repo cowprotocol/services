@@ -606,8 +606,8 @@ async fn get_quote(
         },
     };
     let quote_request = OrderQuoteRequest {
-        sell_token,
-        buy_token,
+        sell_token: sell_token.into_alloy(),
+        buy_token: buy_token.into_alloy(),
         side,
         validity: Validity::To(valid_to),
         ..Default::default()

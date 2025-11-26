@@ -499,9 +499,11 @@ where
                     gas_amount: quote.data.fee_parameters.gas_amount,
                     gas_price: quote.data.fee_parameters.gas_price,
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
-                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                    solver: ByteArray(quote.data.solver.0),
+                    sell_amount: number::conversions::alloy::u256_to_big_decimal(
+                        &quote.sell_amount,
+                    ),
+                    buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+                    solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.try_into()?,
                 }),
@@ -550,11 +552,11 @@ async fn get_quote(
     .map_err(|_| OnchainOrderPlacementError::Other)?;
 
     let parameters = QuoteSearchParameters {
-        sell_token: order_data.sell_token.into_legacy(),
-        buy_token: order_data.buy_token.into_legacy(),
-        sell_amount: order_data.sell_amount.into_legacy(),
-        buy_amount: order_data.buy_amount.into_legacy(),
-        fee_amount: order_data.fee_amount.into_legacy(),
+        sell_token: order_data.sell_token,
+        buy_token: order_data.buy_token,
+        sell_amount: order_data.sell_amount,
+        buy_amount: order_data.buy_amount,
+        fee_amount: order_data.fee_amount,
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
         additional_gas: 0,
@@ -598,9 +600,9 @@ fn convert_onchain_order_placement(
     // executed fast (we don't want to reserve the user's ETH for too long)
     if quote.as_ref().is_ok_and(|quote| {
         !order_data.within_market(QuoteAmounts {
-            sell: quote.sell_amount,
-            buy: quote.buy_amount,
-            fee: quote.fee_amount,
+            sell: quote.sell_amount.into_legacy(),
+            buy: quote.buy_amount.into_legacy(),
+            fee: quote.fee_amount.into_legacy(),
         })
     }) {
         tracing::debug!(%order_uid, ?owner, "order is outside market price");
@@ -1091,8 +1093,8 @@ mod test {
         };
         let settlement_contract = H160::from([8u8; 20]);
         let quote = Quote {
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: (buy_amount / U256::from(2)).into_legacy(),
+            sell_amount,
+            buy_amount: buy_amount / U256::from(2),
             ..Default::default()
         };
         let order_uid = OrderUid([9u8; 56]);
@@ -1212,13 +1214,10 @@ mod test {
         let quote = Quote {
             id: Some(0i64),
             data: QuoteData {
-                sell_token: sell_token.into_legacy(),
-                buy_token: buy_token.into_legacy(),
-                quoted_sell_amount: sell_amount
-                    .checked_sub(U256::from(1))
-                    .unwrap()
-                    .into_legacy(),
-                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap().into_legacy(),
+                sell_token,
+                buy_token,
+                quoted_sell_amount: sell_amount.checked_sub(U256::from(1)).unwrap(),
+                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap(),
                 fee_parameters: FeeParameters {
                     gas_amount: 2.0f64,
                     gas_price: 3.0f64,
@@ -1226,9 +1225,9 @@ mod test {
                 },
                 ..Default::default()
             },
-            sell_amount: sell_amount.into_legacy(),
-            buy_amount: buy_amount.into_legacy(),
-            fee_amount: fee_amount.into_legacy(),
+            sell_amount,
+            buy_amount,
+            fee_amount,
         };
         let cloned_quote = quote.clone();
         order_quoter
@@ -1304,9 +1303,9 @@ mod test {
             gas_amount: quote.data.fee_parameters.gas_amount,
             gas_price: quote.data.fee_parameters.gas_price,
             sell_token_price: quote.data.fee_parameters.sell_token_price,
-            sell_amount: u256_to_big_decimal(&quote.sell_amount),
-            buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            solver: ByteArray(quote.data.solver.0),
+            sell_amount: number::conversions::alloy::u256_to_big_decimal(&quote.sell_amount),
+            buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+            solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.try_into().unwrap(),
         };
