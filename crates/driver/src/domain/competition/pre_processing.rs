@@ -390,14 +390,14 @@ impl Utilities {
     }
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
+        let Some(ref cow_amm_cache) = self.cow_amm_cache else {
+            // CoW AMMs are not configured, return empty vec
+            return Default::default();
+        };
+
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
         let _timer2 =
             observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
-
-        let Some(ref cow_amm_cache) = self.cow_amm_cache else {
-            // CoW AMM is not configured, return empty vec
-            return Arc::new(Default::default());
-        };
 
         let cow_amms = cow_amm_cache
             .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
