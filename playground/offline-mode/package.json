@@ -1,0 +1,36 @@
+{
+  "name": "cow-protocol-offline-mode",
+  "version": "1.0.0",
+  "description": "CoW Protocol offline development environment with deployed contracts",
+  "scripts": {
+    "start-anvil:fresh": "rm -rf state/anvil-state.json & ./scripts/start-anvil.sh",
+    "deploy:all": "./scripts/deploy-all.sh",
+    "build": "forge build",
+    "build:default": "FOUNDRY_PROFILE=default forge build",
+    "build:uniswap-v2": "FOUNDRY_PROFILE=uniswap-v2 forge build",
+    "build:uniswap-v2-periphery": "FOUNDRY_PROFILE=uniswap-v2-periphery forge build",
+    "build:cow-protocol": "FOUNDRY_PROFILE=cow-protocol forge build",
+    "build:all": "npm run build:default ; npm run build:uniswap-v2 ; npm run build:uniswap-v2-periphery ; npm run build:cow-protocol"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "@openzeppelin/contracts-old": "npm:@openzeppelin/contracts@^3.4.0",
+    "@cowprotocol/contracts": "^1.6.0",
+    "@cowprotocol/hooks-trampoline": "github:cowprotocol/cow-hooks-trampoline",
+    "forge-std": "github:foundry-rs/forge-std",
+    "solmate": "github:transmissions11/solmate",
+    "@uniswap/v2-core": "^1.0.1",
+    "@uniswap/v2-periphery": "^1.1.0-beta.0",
+    "@uniswap/lib": "^4.0.1-alpha"
+  },
+  "keywords": [
+    "cow-protocol",
+    "ethereum",
+    "foundry",
+    "anvil",
+    "offline",
+    "development"
+  ],
+  "author": "CoW Protocol Team",
+  "license": "MIT"
+}

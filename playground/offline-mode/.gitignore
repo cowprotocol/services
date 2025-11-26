@@ -8,6 +8,7 @@ contracts/broadcast/
 contracts/lib/
 contracts/out-cow-protocol
 contracts/out-uniswap-v2
+contracts/out-uniswap-v2-periphery
 
 # State files (keep initial, ignore runtime)
 state/backups/
@@ -32,3 +33,6 @@ temp/
 
 cache/
 broadcast/
+
+#Node modules
+node_modules/
