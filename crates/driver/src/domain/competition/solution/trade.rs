@@ -161,6 +161,11 @@ impl Fulfillment {
                     .checked_add(fee.0)
                     .ok_or(error::Trade::InvalidExecutedAmount)?,
             );
+            println!(
+                "executed_with_fee: {}, matched target: {}",
+                executed_with_fee.0,
+                order.target().0
+            );
             match order.partial {
                 order::Partial::Yes { available } => executed_with_fee <= available,
                 order::Partial::No => executed_with_fee == order.target(),
@@ -173,6 +178,11 @@ impl Fulfillment {
             Fee::Static => !order.solver_determines_fee(),
             Fee::Dynamic(_) => order.solver_determines_fee(),
         };
+
+        println!(
+            "the end! fee valid: {}, execution valid: {}",
+            valid_fee, valid_execution
+        );
 
         if valid_execution && valid_fee {
             Ok(Self {
