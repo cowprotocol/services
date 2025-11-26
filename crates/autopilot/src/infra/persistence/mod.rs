@@ -3,7 +3,7 @@ use {
         boundary,
         database::{Postgres, order_events::store_order_events},
         domain::{self, eth, settlement::transaction::EncodedTrade},
-        infra::persistence::dto::AuctionId,
+        infra::persistence::dto::{AuctionId, RawAuctionData},
     },
     anyhow::Context,
     bigdecimal::ToPrimitive,
@@ -36,6 +36,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    tokio::sync::mpsc,
     tracing::Instrument,
 };
 
@@ -46,16 +47,34 @@ pub mod dto;
 pub struct Persistence {
     s3: Option<s3::Uploader>,
     postgres: Arc<Postgres>,
+    upload_queue: mpsc::UnboundedSender<AuctionUpload>,
+}
+
+struct AuctionUpload {
+    id: domain::auction::Id,
+    data: RawAuctionData,
 }
 
 impl Persistence {
     pub async fn new(config: Option<s3::Config>, postgres: Arc<Postgres>) -> Self {
+        let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
+        let db = postgres.clone();
+        tokio::task::spawn(async move {
+            while let Some(upload) = receiver.recv().await {
+                if let Err(err) = db.replace_current_auction(upload.id, &upload.data).await {
+                    tracing::warn!(?err, "failed to replace auction in DB");
+                }
+            }
+            tracing::error!("auction upload task terminated unexpectedly");
+        });
+
         Self {
             s3: match config {
                 Some(config) => Some(s3::Uploader::new(config).await),
                 None => None,
             },
             postgres,
+            upload_queue: sender,
         }
     }
 
@@ -82,14 +101,12 @@ impl Persistence {
         id: domain::auction::Id,
         auction: &domain::RawAuctionData,
     ) {
-        let auction_dto = dto::auction::from_domain(auction.clone());
-        let db = self.postgres.clone();
-        tokio::task::spawn(async move {
-            let _ = db
-                .replace_current_auction(id, &auction_dto)
-                .await
-                .inspect_err(|err| tracing::warn!(?err, "failed to replace auction in DB"));
-        });
+        self.upload_queue
+            .send(AuctionUpload {
+                id,
+                data: dto::auction::from_domain(auction.clone()),
+            })
+            .expect("upload queue should be alive at all times");
     }
 
     /// Spawns a background task that uploads the auction to S3.
