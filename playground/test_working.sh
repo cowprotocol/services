@@ -17,19 +17,31 @@ validTo=$(date -d "5 minutes" +%s)
 
 # first, turn some ETH into WETH (we can just throw ETH at the WETH contract and it will auto wrap to sender)
 echo 'convert to WETH...'
-cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 --value 1000000000000000000 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
+cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 --value 1000000000000000000 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+sleep 0.1
+cast rpc evm_mine
+wait
 
 echo 'approve eWETH deposit...'
-cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 'approve(address,uint256)' 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
+cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 'approve(address,uint256)' 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+sleep 0.1
+cast rpc evm_mine
+wait
 
 # Then, deposit into the eWETH vault
 echo 'convert to eWETH...'
-cast send 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'deposit(uint256,address)' 1000000000000000000 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
+cast send 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'deposit(uint256,address)' 1000000000000000000 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+sleep 0.1
+cast rpc evm_mine
+wait
 
 # then, approve max
 echo 'approve settlement spending...'
-cast send 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'approve(address,uint256)' 0xD5D7ae3dD0C1c79DB7B0307e0d36AEf14eEee205 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 > /dev/null
-
+cast send 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'approve(address,uint256)' 0xD5D7ae3dD0C1c79DB7B0307e0d36AEf14eEee205 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+sleep 0.1
+cast rpc evm_mine
+wait
+sleep 0.1
 echo "query balance: $(cast call 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'balanceOf(address) returns (uint256)' 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266)"
 
 sellAmount=$(cast call 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 'balanceOf(address) returns (uint256)' 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --json | jq -r '.[0]')
@@ -81,7 +93,7 @@ signData='
   },
   "message": {
     "sellToken": "0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2",
-    "buyToken": "0x1e548CfcE5FCF17247E024eF06d32A01841fF404",
+    "buyToken": "0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9",
     "receiver": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "sellAmount": "'${sellAmount}'",
     "buyAmount": "1",
@@ -108,7 +120,7 @@ curl --fail-with-body -s --show-error -X 'POST' \
   -H 'Content-Type: application/json' \
   -d '{
   "sellToken": "'0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2'",
-  "buyToken": "'0x1e548CfcE5FCF17247E024eF06d32A01841fF404'",
+  "buyToken": "'0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9'",
   "from": "'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'",
   "receiver": "'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'",
   "sellTokenBalance": "erc20",
