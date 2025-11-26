@@ -176,11 +176,7 @@ async fn single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
-    let balance_before = token_b
-        .balanceOf(trader_a.address())
-        .call()
-        .await
-        .unwrap();
+    let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
 
     // we hide the quote's execution plan while the order is still fillable
@@ -197,11 +193,7 @@ async fn single_limit_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_b
-            .balanceOf(trader_a.address())
-            .call()
-            .await
-            .unwrap();
+        let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         balance_after.checked_sub(balance_before).unwrap() >= eth(5)
     })
     .await
@@ -308,16 +300,8 @@ async fn two_limit_orders_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
 
-    let balance_before_a = token_b
-        .balanceOf(trader_a.address())
-        .call()
-        .await
-        .unwrap();
-    let balance_before_b = token_a
-        .balanceOf(trader_b.address())
-        .call()
-        .await
-        .unwrap();
+    let balance_before_a = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let balance_before_b = token_a.balanceOf(trader_b.address()).call().await.unwrap();
 
     let order_id = services.create_order(&order_a).await.unwrap();
     onchain.mint_block().await;
@@ -347,16 +331,8 @@ async fn two_limit_orders_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after_a = token_b
-            .balanceOf(trader_a.address())
-            .call()
-            .await
-            .unwrap();
-        let balance_after_b = token_a
-            .balanceOf(trader_b.address())
-            .call()
-            .await
-            .unwrap();
+        let balance_after_a = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+        let balance_after_b = token_a.balanceOf(trader_b.address()).call().await.unwrap();
         let order_a_settled = balance_after_a.saturating_sub(balance_before_a) >= eth(5);
         let order_b_settled = balance_after_b.saturating_sub(balance_before_b) >= eth(2);
         order_a_settled && order_b_settled
@@ -841,10 +817,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(
-                    trader.address(),
-                    to_wei_with_exp(1000, 6).into_alloy(),
-                )
+                .transfer(trader.address(), to_wei_with_exp(1000, 6).into_alloy())
                 .from(USDC_WHALE_MAINNET)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -905,16 +878,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         })
         .await;
 
-    let sell_token_balance_before = token_usdc
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
-    let buy_token_balance_before = token_usdt
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let sell_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
+    let buy_token_balance_before = token_usdt.balanceOf(trader.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
@@ -924,16 +889,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        let sell_token_balance_after = token_usdc
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
-        let buy_token_balance_after = token_usdt
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
+        let sell_token_balance_after = token_usdc.balanceOf(trader.address()).call().await.unwrap();
+        let buy_token_balance_after = token_usdt.balanceOf(trader.address()).call().await.unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
             && (buy_token_balance_after
@@ -964,10 +921,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(
-                    trader.address(),
-                    to_wei_with_exp(1000, 6).into_alloy(),
-                )
+                .transfer(trader.address(), to_wei_with_exp(1000, 6).into_alloy())
                 .from(USDC_WHALE_GNOSIS)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -1010,11 +964,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    let sell_token_balance_before = token_usdc
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let sell_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let buy_token_balance_before = token_wxdai
         .balanceOf(trader.address())
         .call()
@@ -1028,11 +978,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let sell_token_balance_after = token_usdc
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
+        let sell_token_balance_after = token_usdc.balanceOf(trader.address()).call().await.unwrap();
         let buy_token_balance_after = token_wxdai
             .balanceOf(trader.address())
             .call()

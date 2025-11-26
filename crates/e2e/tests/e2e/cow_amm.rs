@@ -67,11 +67,8 @@ async fn cow_amm_jit(web3: Web3) {
     // Fund the buffers with a lot of buy tokens so we can pay out the required
     // tokens for 2 orders in the same direction without having to worry about
     // getting the liquidity on-chain.
-    dai.mint(
-        *onchain.contracts().gp_settlement.address(),
-        eth(100_000),
-    )
-    .await;
+    dai.mint(*onchain.contracts().gp_settlement.address(), eth(100_000))
+        .await;
 
     // set up cow_amm
     let oracle =
@@ -307,11 +304,7 @@ async fn cow_amm_jit(web3: Web3) {
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
     let amm_balance_before = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
-    let bob_balance_before = dai
-        .balanceOf(bob.address())
-        .call()
-        .await
-        .unwrap();
+    let bob_balance_before = dai.balanceOf(bob.address()).call().await.unwrap();
 
     let fee = ethcontract::U256::exp10(16); // 0.01 WETH
 
@@ -364,11 +357,7 @@ async fn cow_amm_jit(web3: Web3) {
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let amm_balance = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
-        let bob_balance = dai
-            .balanceOf(bob.address())
-            .call()
-            .await
-            .unwrap();
+        let bob_balance = dai.balanceOf(bob.address()).call().await.unwrap();
 
         let amm_received = amm_balance - amm_balance_before;
         let bob_received = bob_balance - bob_balance_before;
@@ -480,12 +469,9 @@ async fn cow_amm_driver_support(web3: Web3) {
     // Give trader some USDC
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            usdc.transfer(
-                trader.address(),
-                to_wei_with_exp(1000, 6).into_alloy(),
-            )
-            .from(USDC_WHALE_MAINNET)
-            .into_transaction_request(),
+            usdc.transfer(trader.address(), to_wei_with_exp(1000, 6).into_alloy())
+                .from(USDC_WHALE_MAINNET)
+                .into_transaction_request(),
             ImpersonateConfig {
                 fund_amount: None,
                 stop_impersonate: true,
@@ -1028,7 +1014,10 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         *onchain.contracts().weth.address()
     );
     // Ensure the amounts are the same as the solution proposes.
-    assert_eq!(quote_response.quote.sell_amount, executed_amount.into_alloy());
+    assert_eq!(
+        quote_response.quote.sell_amount,
+        executed_amount.into_alloy()
+    );
     assert_eq!(
         quote_response.quote.buy_amount,
         ethcontract::U256::exp10(17).into_alloy()

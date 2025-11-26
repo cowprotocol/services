@@ -142,10 +142,10 @@ async fn allowance(web3: Web3) {
         }
     };
     let steal_weth = {
-        let approve = onchain.contracts().weth.approve(
-            trader.address(),
-            ::alloy::primitives::U256::MAX,
-        );
+        let approve = onchain
+            .contracts()
+            .weth
+            .approve(trader.address(), ::alloy::primitives::U256::MAX);
         Hook {
             target: *onchain.contracts().weth.address(),
             call_data: approve.calldata().to_vec(),
@@ -184,11 +184,7 @@ async fn allowance(web3: Web3) {
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
 
-    let balance = cow
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let balance = cow.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, eth(5));
 
     tracing::info!("Waiting for trade.");
@@ -241,10 +237,7 @@ async fn allowance(web3: Web3) {
     // This is OK since the `HooksTrampoline` contract is not used for holding
     // any funds.
     let allowance = cow
-        .allowance(
-            *onchain.contracts().hooks.address(),
-            trader.address(),
-        )
+        .allowance(*onchain.contracts().hooks.address(), trader.address())
         .call()
         .await
         .unwrap();
@@ -252,10 +245,7 @@ async fn allowance(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(
-            *onchain.contracts().hooks.address(),
-            trader.address(),
-        )
+        .allowance(*onchain.contracts().hooks.address(), trader.address())
         .call()
         .await
         .unwrap();
@@ -279,7 +269,7 @@ async fn signature(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address()],   // owners
+                vec![trader.address()],                // owners
                 alloy::primitives::U256::ONE,          // threshold
                 alloy::primitives::Address::default(), // delegate call
                 alloy::primitives::Bytes::default(),   // delegate call bytes
@@ -455,32 +445,22 @@ async fn partial_fills(web3: Web3) {
         .await
         .unwrap();
 
-    let balance_before_first_trade = sell_token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let balance_before_first_trade = sell_token.balanceOf(trader.address()).call().await.unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    let pre_inc = counter.setCounterToBalance(
-        "pre".to_string(),
-        *sell_token.address(),
-        trader.address(),
-    );
+    let pre_inc =
+        counter.setCounterToBalance("pre".to_string(), *sell_token.address(), trader.address());
     let pre_hook = Hook {
         target: *counter.address(),
         call_data: pre_inc.calldata().to_vec(),
         gas_limit: pre_inc.estimate_gas().await.unwrap(),
     };
 
-    let post_inc = counter.setCounterToBalance(
-        "post".to_string(),
-        *sell_token.address(),
-        trader.address(),
-    );
+    let post_inc =
+        counter.setCounterToBalance("post".to_string(), *sell_token.address(), trader.address());
     let post_hook = Hook {
         target: *counter.address(),
         call_data: post_inc.calldata().to_vec(),
@@ -531,11 +511,8 @@ async fn partial_fills(web3: Web3) {
         counter.counters("pre".to_string()).call().await.unwrap(),
         balance_before_first_trade
     );
-    let post_balance_after_first_trade = sell_token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let post_balance_after_first_trade =
+        sell_token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(
         counter.counters("post".to_string()).call().await.unwrap(),
         post_balance_after_first_trade
@@ -558,11 +535,7 @@ async fn partial_fills(web3: Web3) {
     );
     assert_eq!(
         counter.counters("post".to_string()).call().await.unwrap(),
-        sell_token
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap()
+        sell_token.balanceOf(trader.address()).call().await.unwrap()
     );
 }
 
@@ -585,7 +558,7 @@ async fn quote_verification(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address()],   // owners
+                vec![trader.address()],                // owners
                 alloy::primitives::U256::ONE,          // threshold
                 alloy::primitives::Address::default(), // delegate call
                 alloy::primitives::Bytes::default(),   // delegate call bytes
@@ -622,10 +595,7 @@ async fn quote_verification(web3: Web3) {
     // to fund the trade in a pre-hook.
     let transfer_builder = safe.sign_transaction(
         *token.address(),
-        token
-            .transfer(trader.address(), eth(5))
-            .calldata()
-            .to_vec(),
+        token.transfer(trader.address(), eth(5)).calldata().to_vec(),
         alloy::primitives::U256::ZERO,
     );
     let call_data = transfer_builder.calldata().to_vec();

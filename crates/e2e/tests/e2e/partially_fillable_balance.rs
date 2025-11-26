@@ -106,11 +106,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance = token_b
-            .balanceOf(trader_a.address())
-            .call()
-            .await
-            .unwrap();
+        let balance = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         !balance.is_zero()
     })
     .await
@@ -118,18 +114,10 @@ async fn test(web3: Web3) {
 
     // Expecting a partial fill because order sells 100 but user only has balance of
     // 50.
-    let sell_balance = token_a
-        .balanceOf(trader_a.address())
-        .call()
-        .await
-        .unwrap();
+    let sell_balance = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     // Depending on how the solver works might not have sold all balance.
     assert!(U256::ZERO <= sell_balance && sell_balance < U256::from(10u64.pow(18)));
-    let buy_balance = token_b
-        .balanceOf(trader_a.address())
-        .call()
-        .await
-        .unwrap();
+    let buy_balance = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     // We don't know exact buy balance because of the fee.
     assert!(
         U256::from(45) * U256::from(10u64.pow(18)) <= buy_balance

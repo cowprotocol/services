@@ -105,11 +105,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance = token_b
-            .balanceOf(trader_a.address())
-            .call()
-            .await
-            .unwrap();
+        let balance = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         onchain.mint_block().await;
         !balance.is_zero()
     })
@@ -117,21 +113,13 @@ async fn test(web3: Web3) {
     .unwrap();
 
     // Expecting a partial fill because the pool cannot trade the full amount.
-    let sell_balance = token_a
-        .balanceOf(trader_a.address())
-        .call()
-        .await
-        .unwrap();
+    let sell_balance = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     assert!(
         // Sell balance is strictly less than 250.0 because of the fee.
         (249_999_000_000_000_000_000_u128..250_000_000_000_000_000_000_u128)
             .contains(&u128::try_from(sell_balance).unwrap())
     );
-    let buy_balance = token_b
-        .balanceOf(trader_a.address())
-        .call()
-        .await
-        .unwrap();
+    let buy_balance = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     assert!(
         (199_000_000_000_000_000_000_u128..201_000_000_000_000_000_000_u128)
             .contains(&u128::try_from(buy_balance).unwrap())

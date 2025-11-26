@@ -377,7 +377,10 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token: buy_token.into_alloy(),
                 receiver,
             })
-            .to_quote_request(trader.account().address().into_alloy(), &onchain.contracts().weth),
+            .to_quote_request(
+                trader.account().address().into_alloy(),
+                &onchain.contracts().weth,
+            ),
         )
         .await,
         valid_to,
@@ -415,8 +418,18 @@ async fn test_submit_quote(
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
     let approx_output: AlloyU256 = response.quote.sell_amount * AlloyU256::from(DAI_PER_ETH);
-    assert!(response.quote.buy_amount.gt(&(approx_output * AlloyU256::from(9u64) / AlloyU256::from(10))));
-    assert!(response.quote.buy_amount.lt(&(approx_output * AlloyU256::from(11u64) / AlloyU256::from(10))));
+    assert!(
+        response
+            .quote
+            .buy_amount
+            .gt(&(approx_output * AlloyU256::from(9u64) / AlloyU256::from(10)))
+    );
+    assert!(
+        response
+            .quote
+            .buy_amount
+            .lt(&(approx_output * AlloyU256::from(11u64) / AlloyU256::from(10)))
+    );
 
     let OrderQuoteSide::Sell {
         sell_amount:
@@ -428,7 +441,10 @@ async fn test_submit_quote(
         panic!("untested!");
     };
 
-    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get().into_alloy());
+    assert_eq!(
+        response.quote.sell_amount,
+        sell_amount_after_fees.get().into_alloy()
+    );
 
     response
 }
@@ -466,11 +482,21 @@ async fn test_order_availability_in_api(
     let is_available = || async { services.get_order(&uid).await.is_ok() };
     wait_for_condition(TIMEOUT, is_available).await.unwrap();
 
-    test_orders_query(services, order, &owner.into_legacy(), contracts, ethflow_contract).await;
+    test_orders_query(
+        services,
+        order,
+        &owner.into_legacy(),
+        contracts,
+        ethflow_contract,
+    )
+    .await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [&owner.into_legacy(), &ethflow_contract.address().into_legacy()] {
+    for address in [
+        &owner.into_legacy(),
+        &ethflow_contract.address().into_legacy(),
+    ] {
         test_account_query(
             address,
             services.client(),
@@ -644,9 +670,7 @@ impl ExtendedEthFlowOrder {
         let quote = &quote_response.quote;
         ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
             buyToken: quote.buy_token,
-            receiver: quote
-                .receiver
-                .expect("eth-flow order without receiver"),
+            receiver: quote.receiver.expect("eth-flow order without receiver"),
             sellAmount: quote.sell_amount,
             buyAmount: quote.buy_amount,
             appData: quote.app_data.hash().0.into(),

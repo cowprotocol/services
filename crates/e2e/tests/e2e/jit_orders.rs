@@ -125,16 +125,8 @@ async fn single_limit_order_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let trader_balance_before = token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
-    let solver_balance_before = token
-        .balanceOf(solver.address())
-        .call()
-        .await
-        .unwrap();
+    let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
+    let solver_balance_before = token.balanceOf(solver.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     onchain.mint_block().await;
@@ -194,16 +186,8 @@ async fn single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
-        let trader_balance_after = token
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
-        let solver_balance_after = token
-            .balanceOf(solver.address())
-            .call()
-            .await
-            .unwrap();
+        let trader_balance_after = token.balanceOf(trader.address()).call().await.unwrap();
+        let solver_balance_after = token.balanceOf(solver.address()).call().await.unwrap();
 
         let trader_balance_increased =
             trader_balance_after.saturating_sub(trader_balance_before) >= eth(5);

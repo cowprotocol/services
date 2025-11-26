@@ -62,11 +62,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address().into_legacy(),

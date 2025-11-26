@@ -2,7 +2,10 @@ use {
     ::alloy::primitives::U256 as AlloyU256,
     database::order_events::OrderEventLabel,
     e2e::setup::{eth, *},
-    ethrpc::alloy::{CallBuilderExt, conversions::{IntoAlloy, IntoLegacy}},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{
             CancellationPayload,
@@ -112,7 +115,8 @@ async fn order_cancellation(web3: Web3) {
                 sell_amount: quote.sell_amount.into_legacy(),
                 fee_amount: 0.into(),
                 buy_token: quote.buy_token.into_legacy(),
-                buy_amount: ((quote.buy_amount * AlloyU256::from(99)) / AlloyU256::from(100)).into_legacy(),
+                buy_amount: ((quote.buy_amount * AlloyU256::from(99)) / AlloyU256::from(100))
+                    .into_legacy(),
                 valid_to: quote.valid_to,
                 app_data: quote.app_data,
                 ..Default::default()

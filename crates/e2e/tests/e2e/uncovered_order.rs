@@ -85,11 +85,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = weth
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
+        let balance_after = weth.balanceOf(trader.address()).call().await.unwrap();
         !balance_after.is_zero()
     })
     .await

@@ -32,10 +32,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     // Fund trader, settlement accounts, and pool creation
     token_a.mint(trader.address(), eth(100)).await;
     token_b
-        .mint(
-            *onchain.contracts().gp_settlement.address(),
-            eth(5),
-        )
+        .mint(*onchain.contracts().gp_settlement.address(), eth(5))
         .await;
     token_a.mint(solver.address(), eth(1000)).await;
     token_b.mint(solver.address(), eth(1000)).await;
@@ -112,12 +109,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     tracing::info!("waiting for first trade");
     onchain.mint_block().await;
     let trade_happened = || async {
-        token_b
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap()
-            == order.buy_amount.into_alloy()
+        token_b.balanceOf(trader.address()).call().await.unwrap() == order.buy_amount.into_alloy()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
@@ -145,11 +137,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     tracing::info!("waiting for second trade");
     let trade_happened = || async {
         onchain.mint_block().await;
-        token_b
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap()
+        token_b.balanceOf(trader.address()).call().await.unwrap()
             == (order.buy_amount.into_alloy() * U256::from(2))
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

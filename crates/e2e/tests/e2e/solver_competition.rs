@@ -44,12 +44,8 @@ async fn solver_competition(web3: Web3) {
         .await;
 
     // Fund trader, settlement accounts, and pool creation
-    token_a
-        .mint(trader.address(), eth(10))
-        .await;
-    token_a
-        .mint(solver.address(), eth(1000))
-        .await;
+    token_a.mint(trader.address(), eth(10)).await;
+    token_a.mint(solver.address(), eth(1000)).await;
 
     // Approve GPv2 for trading
 
@@ -161,12 +157,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
         .await;
 
     // Fund traders
-    token_a
-        .mint(trader_a.address(), eth(10))
-        .await;
-    token_b
-        .mint(trader_b.address(), eth(10))
-        .await;
+    token_a.mint(trader_a.address(), eth(10)).await;
+    token_b.mint(trader_b.address(), eth(10)).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
     // (base_b). base_a has more liquidity then base_b, leading to the solver that
@@ -305,8 +297,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
 async fn store_filtered_solutions(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [good_solver_account, bad_solver_account] =
-        onchain.make_solvers(eth(100)).await;
+    let [good_solver_account, bad_solver_account] = onchain.make_solvers(eth(100)).await;
     let [trader] = onchain.make_accounts(eth(100)).await;
     let [token_a, token_b, token_c] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(1_000))

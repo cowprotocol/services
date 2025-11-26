@@ -55,11 +55,7 @@ async fn test(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address().into_legacy(),
@@ -102,21 +98,11 @@ async fn test(web3: Web3) {
         .unwrap();
 
     tracing::info!("Waiting for trade.");
-    let trade_happened = || async {
-        token
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap()
-            != U256::ZERO
-    };
+    let trade_happened =
+        || async { token.balanceOf(trader.address()).call().await.unwrap() != U256::ZERO };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    let balance = token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, eth(1));
 
     let all_events_registered = || async {

@@ -258,14 +258,11 @@ async fn verified_quote_eth_balance(web3: Web3) {
             .is_zero()
     );
     assert!(
-        weth.allowance(
-            trader.address(),
-            onchain.contracts().allowance.into_alloy()
-        )
-        .call()
-        .await
-        .unwrap()
-        .is_zero()
+        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
@@ -299,10 +296,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // Send 3 ETH to the settlement contract so we can get verified quotes for
     // selling WETH.
     onchain
-        .send_wei(
-            *onchain.contracts().gp_settlement.address(),
-            eth(3),
-        )
+        .send_wei(*onchain.contracts().gp_settlement.address(), eth(3))
         .await;
 
     tracing::info!("Starting services.");
@@ -400,16 +394,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // quote where the trader has no balances or approval set from TOKEN->WETH
     assert_eq!(
         (
+            token.balanceOf(trader.address()).call().await.unwrap(),
             token
-                .balanceOf(trader.address())
-                .call()
-                .await
-                .unwrap(),
-            token
-                .allowance(
-                    trader.address(),
-                    onchain.contracts().allowance.into_alloy()
-                )
+                .allowance(trader.address(), onchain.contracts().allowance.into_alloy())
                 .call()
                 .await
                 .unwrap(),
@@ -453,14 +440,11 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             .is_zero()
     );
     assert!(
-        weth.allowance(
-            trader.address(),
-            onchain.contracts().allowance.into_alloy()
-        )
-        .call()
-        .await
-        .unwrap()
-        .is_zero()
+        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {

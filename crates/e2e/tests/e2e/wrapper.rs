@@ -96,10 +96,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_weth
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            eth(1),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
         .from(trader.address())
         .send_and_watch()
         .await
@@ -171,16 +168,8 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let sell_token_balance_before = token_weth
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
-    let buy_token_balance_before = token_usdc
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let sell_token_balance_before = token_weth.balanceOf(trader.address()).call().await.unwrap();
+    let buy_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
 
     // Create the order
     let order_uid = services.create_order(&order).await.unwrap();
@@ -203,16 +192,8 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        let sell_token_balance_after = token_weth
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
-        let buy_token_balance_after = token_usdc
-            .balanceOf(trader.address())
-            .call()
-            .await
-            .unwrap();
+        let sell_token_balance_after = token_weth.balanceOf(trader.address()).call().await.unwrap();
+        let buy_token_balance_after = token_usdc.balanceOf(trader.address()).call().await.unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
             && (buy_token_balance_after > buy_token_balance_before)

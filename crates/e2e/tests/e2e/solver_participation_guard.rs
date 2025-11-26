@@ -244,17 +244,11 @@ async fn setup(
         .await;
 
     // Fund trader accounts
-    token_a
-        .mint(trader_a.address(), eth(1000))
-        .await;
+    token_a.mint(trader_a.address(), eth(1000)).await;
 
     // Create and fund Uniswap pool
-    token_a
-        .mint(solver.address(), eth(1000))
-        .await;
-    token_b
-        .mint(solver.address(), eth(1000))
-        .await;
+    token_a.mint(solver.address(), eth(1000)).await;
+    token_b.mint(solver.address(), eth(1000)).await;
     onchain
         .contracts()
         .uniswap_v2_factory

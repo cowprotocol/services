@@ -84,11 +84,7 @@ async fn place_order_with_quote(web3: Web3) {
     tracing::debug!(?quote_metadata);
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,

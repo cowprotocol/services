@@ -51,7 +51,11 @@ async fn eth_integration(web3: Web3) {
         .await
         .unwrap();
 
-    let trader_a_eth_balance_before = web3.eth().balance(trader_a.address().into_legacy(), None).await.unwrap();
+    let trader_a_eth_balance_before = web3
+        .eth()
+        .balance(trader_a.address().into_legacy(), None)
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -121,8 +125,16 @@ async fn eth_integration(web3: Web3) {
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     let trade_happened = || async {
-        let balance_a = web3.eth().balance(trader_a.address().into_legacy(), None).await.unwrap();
-        let balance_b = web3.eth().balance(trader_b.address().into_legacy(), None).await.unwrap();
+        let balance_a = web3
+            .eth()
+            .balance(trader_a.address().into_legacy(), None)
+            .await
+            .unwrap();
+        let balance_b = web3
+            .eth()
+            .balance(trader_b.address().into_legacy(), None)
+            .await
+            .unwrap();
 
         let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == to_wei(49);
         let trader_b_eth_increased = balance_b >= to_wei(49);
