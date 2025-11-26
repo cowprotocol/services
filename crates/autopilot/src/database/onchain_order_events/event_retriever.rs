@@ -42,7 +42,7 @@ impl AlloyEventRetrieving for CoWSwapOnchainOrdersContract {
             ]))
     }
 
-    fn provider(&self) -> &contracts::alloy::Provider {
+    fn provider(&self) -> &alloy::providers::DynProvider {
         &self.web3.alloy
     }
 }

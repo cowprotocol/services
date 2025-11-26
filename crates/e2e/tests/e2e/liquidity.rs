@@ -4,7 +4,7 @@ use {
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     chrono::{NaiveDateTime, Utc},
-    contracts::alloy::{ERC20, IZeroex, InstanceExt},
+    contracts::alloy::{ERC20, IZeroex},
     driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},

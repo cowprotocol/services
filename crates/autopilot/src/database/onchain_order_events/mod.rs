@@ -786,7 +786,7 @@ mod test {
         super::*,
         crate::database::Config,
         alloy::primitives::U256,
-        contracts::alloy::{CoWSwapOnchainOrders, InstanceExt},
+        contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::H160,
         ethrpc::Web3,
