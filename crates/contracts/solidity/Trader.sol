@@ -115,7 +115,7 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
                 // The trader does not have sufficient sell token balance, and the
                 // piggy bank pre-fund failed, as balance overrides are not available.
                 // Revert with a helpful message.
-                revert("trader does not have enough sell token");
+                revert("spardose could not fund trader with sell token; balance override failed");
             }
         }
     }
