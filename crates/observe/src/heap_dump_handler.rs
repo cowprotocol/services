@@ -17,6 +17,19 @@ use tokio::{
 /// go tool pprof -http=:8080 heap.pprof
 /// ```
 pub fn spawn_heap_dump_handler() {
+    // Check if jemalloc profiling is available before spawning the handler
+    // This prevents panics that would crash the entire process
+    let profiling_available =
+        std::panic::catch_unwind(|| jemalloc_pprof::PROF_CTL.as_ref().is_some()).unwrap_or(false);
+
+    if !profiling_available {
+        tracing::warn!(
+            "jemalloc profiling not available - heap dump handler not started. Ensure service is \
+             built with jemalloc-profiling feature and MALLOC_CONF is set."
+        );
+        return;
+    }
+
     tokio::spawn(async move {
         let name = binary_name().unwrap_or_default();
 
@@ -82,22 +95,11 @@ async fn handle_connection(listener: &UnixListener) {
 async fn generate_and_stream_dump(socket: &mut UnixStream) {
     tracing::info!("generating heap dump via jemalloc_pprof");
 
-    // Access the global profiling controller
-    // Catch panic if jemalloc profiling is not available
-    let prof_ctl = match std::panic::catch_unwind(|| jemalloc_pprof::PROF_CTL.as_ref()) {
-        Ok(Some(ctl)) => ctl,
-        Ok(None) => {
-            tracing::error!("jemalloc profiling not initialized");
-            return;
-        }
-        Err(_) => {
-            tracing::error!(
-                "jemalloc profiling not available - service not built with jemalloc-profiling \
-                 feature or allocator not configured"
-            );
-            return;
-        }
-    };
+    // PROF_CTL was already verified to be available in spawn_heap_dump_handler
+    // so we can safely unwrap here. If this panics, it means there's a serious bug.
+    let prof_ctl = jemalloc_pprof::PROF_CTL
+        .as_ref()
+        .expect("PROF_CTL should be available - checked at handler spawn");
 
     let mut prof_ctl = prof_ctl.lock().await;
 
