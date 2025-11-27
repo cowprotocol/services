@@ -4,12 +4,11 @@ use {
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, solver_competition_v2::SolverCompetition as DbResponse},
-    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         order::OrderUid,
         solver_competition_v2::{Auction, Order, Response as ApiResponse, Solution},
     },
-    number::conversions::big_decimal_to_u256,
+    number::conversions::alloy::big_decimal_to_u256,
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -72,9 +71,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
         .map(|(token, price)| {
             Ok((
                 Address::new(token.0),
-                big_decimal_to_u256(&price)
-                    .context("could not convert native price to U256")?
-                    .into_alloy(),
+                big_decimal_to_u256(&price).context("could not convert native price to U256")?,
             ))
         })
         .collect::<Result<_>>()?;
@@ -92,8 +89,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
             Ok((
                 Address::new(row.solver.0),
                 big_decimal_to_u256(&row.reference_score)
-                    .context("could not convert reference score to U256")?
-                    .into_alloy(),
+                    .context("could not convert reference score to U256")?,
             ))
         })
         .collect::<Result<_>>()?;
@@ -107,11 +103,9 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                 .push(Order {
                     id: OrderUid(trade.order_uid.0),
                     sell_amount: big_decimal_to_u256(&trade.executed_sell)
-                        .context("could not convert sell amount to U256")?
-                        .into_alloy(),
+                        .context("could not convert sell amount to U256")?,
                     buy_amount: big_decimal_to_u256(&trade.executed_buy)
-                        .context("could not convert buy amount to U256")?
-                        .into_alloy(),
+                        .context("could not convert buy amount to U256")?,
                     sell_token: Address::new(trade.sell_token.0),
                     buy_token: Address::new(trade.buy_token.0),
                 });
@@ -131,8 +125,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                     Ok((
                         Address::new(token.0),
                         big_decimal_to_u256(&price)
-                            .context("could not convert clearing price to U256")?
-                            .into_alloy(),
+                            .context("could not convert clearing price to U256")?,
                     ))
                 })
                 .collect::<Result<_>>()?;
@@ -140,8 +133,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
             Ok(Solution {
                 solver_address: Address::new(solution.solver.0),
                 score: big_decimal_to_u256(&solution.score)
-                    .context("could not convert score to U256")?
-                    .into_alloy(),
+                    .context("could not convert score to U256")?,
                 ranking: solution.ranking,
                 clearing_prices,
                 orders: trades.remove(&solution.uid).unwrap_or_default(),

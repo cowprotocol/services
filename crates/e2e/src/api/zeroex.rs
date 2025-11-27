@@ -139,7 +139,7 @@ impl Eip712TypedZeroExOrder {
         hash_data[300..320].copy_from_slice(self.fee_recipient.as_slice());
         hash_data[320..352].copy_from_slice(self.pool.as_slice());
         hash_data[376..384].copy_from_slice(&self.expiry.to_be_bytes());
-        hash_data[384..416].copy_from_slice(&self.salt.as_le_bytes());
+        hash_data[384..416].copy_from_slice(&self.salt.to_be_bytes::<32>());
         signing::keccak256(&hash_data)
     }
 }

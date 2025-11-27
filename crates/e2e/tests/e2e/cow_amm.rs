@@ -1020,7 +1020,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     );
     assert_eq!(
         quote_response.quote.buy_amount,
-        ethcontract::U256::exp10(17).into_alloy()
+        U256::from(10).pow(U256::from(17))
     );
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)
