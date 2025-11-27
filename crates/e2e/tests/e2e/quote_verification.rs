@@ -86,17 +86,17 @@ async fn standard_verified_quote(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token.mint(trader.address(), to_wei(1)).await;
+    token.mint(trader.address(), eth(1)).await;
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(1))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -108,7 +108,7 @@ async fn standard_verified_quote(web3: Web3) {
     // quote where the trader has sufficient balance and an approval set.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             sell_token: *token.address(),
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
@@ -174,9 +174,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         in_amount: NonZeroU256::new(12.into()).unwrap(),
                     },
                     &Verification {
-                        from: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a").unwrap().into_alloy(),
-                        receiver: H160::from_str("0x73688c2b34bf6c09c125fed02fe92d17a94b897a")
-                            .unwrap().into_alloy(),
+                        from: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
+                        receiver: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
                         pre_interactions: vec![],
                         post_interactions: vec![],
                         sell_token_source: SellTokenSource::Erc20,
@@ -237,8 +236,8 @@ async fn verified_quote_eth_balance(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -251,25 +250,22 @@ async fn verified_quote_eth_balance(web3: Web3) {
     // quote where the trader has no WETH balances or approval set, but
     // sufficient ETH for the trade
     assert!(
-        weth.balanceOf(trader.address().into_alloy())
+        weth.balanceOf(trader.address())
             .call()
             .await
             .unwrap()
             .is_zero()
     );
     assert!(
-        weth.allowance(
-            trader.address().into_alloy(),
-            onchain.contracts().allowance.into_alloy()
-        )
-        .call()
-        .await
-        .unwrap()
-        .is_zero()
+        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             sell_token: *weth.address(),
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
@@ -290,8 +286,8 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(3)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(3)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -299,10 +295,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // Send 3 ETH to the settlement contract so we can get verified quotes for
     // selling WETH.
     onchain
-        .send_wei(
-            onchain.contracts().gp_settlement.address().into_legacy(),
-            to_wei(3),
-        )
+        .send_wei(*onchain.contracts().gp_settlement.address(), eth(3))
         .await;
 
     tracing::info!("Starting services.");
@@ -346,7 +339,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: Some(trader.address().into_alloy()),
+            receiver: Some(trader.address()),
             ..request.clone()
         })
         .await
@@ -356,7 +349,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     // quote where a random trader sends funds to the settlement contract
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             receiver: Some(*onchain.contracts().gp_settlement.address()),
             ..request.clone()
         })
@@ -371,8 +364,8 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(0)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(0)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -400,16 +393,9 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // quote where the trader has no balances or approval set from TOKEN->WETH
     assert_eq!(
         (
+            token.balanceOf(trader.address()).call().await.unwrap(),
             token
-                .balanceOf(trader.address().into_alloy())
-                .call()
-                .await
-                .unwrap(),
-            token
-                .allowance(
-                    trader.address().into_alloy(),
-                    onchain.contracts().allowance.into_alloy()
-                )
+                .allowance(trader.address(), onchain.contracts().allowance.into_alloy())
                 .call()
                 .await
                 .unwrap(),
@@ -421,7 +407,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             sell_token: *token.address(),
             buy_token: *weth.address(),
             side: OrderQuoteSide::Sell {
@@ -440,31 +426,28 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         onchain
             .web3()
             .eth()
-            .balance(trader.address(), None)
+            .balance(trader.address().into_legacy(), None)
             .await
             .unwrap()
             .is_zero()
     );
     assert!(
-        weth.balanceOf(trader.address().into_alloy())
+        weth.balanceOf(trader.address())
             .call()
             .await
             .unwrap()
             .is_zero()
     );
     assert!(
-        weth.allowance(
-            trader.address().into_alloy(),
-            onchain.contracts().allowance.into_alloy()
-        )
-        .call()
-        .await
-        .unwrap()
-        .is_zero()
+        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: trader.address().into_alloy(),
+            from: trader.address(),
             sell_token: *weth.address(),
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
@@ -482,7 +465,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // which is used when no wallet is connected in the frontend
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero().into_alloy(),
+            from: Address::ZERO,
             sell_token: *weth.address(),
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
@@ -500,7 +483,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // if the user provided pre-interactions. This works now.
     let response = services
         .submit_quote(&OrderQuoteRequest {
-            from: H160::zero().into_alloy(),
+            from: Address::ZERO,
             sell_token: *weth.address(),
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
@@ -536,7 +519,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 async fn usdt_quote_verification(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [solver] = onchain.make_solvers_forked(eth(1)).await;
 
     let usdc = address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
     let usdt = address!("dac17f958d2ee523a2206206994597c13d831ec7");

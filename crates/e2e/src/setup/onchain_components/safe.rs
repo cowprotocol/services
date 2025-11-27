@@ -69,10 +69,7 @@ impl Infrastructure {
         let safe = GnosisSafe::Instance::new(safe_proxy, self.provider.clone());
 
         safe.setup(
-            owners
-                .into_iter()
-                .map(|owner| owner.address().into_alloy())
-                .collect(),
+            owners.into_iter().map(|owner| owner.address()).collect(),
             U256::from(threshold),
             Address::default(), // delegate call
             Bytes::default(),   // delegate call bytes
@@ -134,11 +131,9 @@ impl Safe {
                 Default::default(),
                 Default::default(),
                 Default::default(),
-                crate::setup::safe::gnosis_safe_prevalidated_signature(
-                    self.owner.address().into_alloy(),
-                ),
+                crate::setup::safe::gnosis_safe_prevalidated_signature(self.owner.address()),
             )
-            .from(self.owner.address().into_alloy())
+            .from(self.owner.address())
             .send_and_watch()
             .await
             .unwrap();

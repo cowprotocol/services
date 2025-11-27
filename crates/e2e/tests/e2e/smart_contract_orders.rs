@@ -28,15 +28,15 @@ async fn local_node_max_gas_limit() {
 async fn smart_contract_orders(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
 
     let safe = Safe::deploy(trader, web3.alloy.clone()).await;
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address().into_legacy(), to_wei(10)).await;
+    token.mint(safe.address(), eth(10)).await;
 
     // Approve GPv2 for trading
     safe.exec_alloy_call(
@@ -156,7 +156,7 @@ async fn smart_contract_orders(web3: Web3) {
 async fn erc1271_gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
     let trader = contracts::alloy::test::GasHog::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
@@ -166,14 +166,14 @@ async fn erc1271_gas_limit(web3: Web3) {
         .await;
 
     // Fund trader accounts and approve relayer
-    cow.fund(trader.address().into_legacy(), to_wei(5)).await;
+    cow.fund(*trader.address(), eth(5)).await;
     trader
         .approve(
             *cow.address(),
             onchain.contracts().allowance.into_alloy(),
             eth(10),
         )
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();

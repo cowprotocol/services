@@ -1,8 +1,7 @@
 use {
     crate::{AuctionId, order::OrderUid},
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::U256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -121,32 +120,32 @@ mod tests {
             auction_start_block: 13,
             transaction_hashes: vec![tx],
             reference_scores: btreemap! {
-                solver => 0.into()
+                solver => U256::ZERO
             },
             auction: Auction {
                 orders: vec![OrderUid([0x11; 56])],
                 prices: btreemap! {
-                    Address::new([0x22; 20]) => 2000.into(),
+                    Address::new([0x22; 20]) => U256::from(2000),
                 },
             },
             solutions: vec![Solution {
                 solver_address: solver,
-                score: 123.into(),
+                score: U256::from(123),
                 ranking: 1,
                 clearing_prices: btreemap! {
-                    Address::new([0x22; 20]) => 8.into(),
+                    Address::new([0x22; 20]) => U256::from(8),
                 },
                 orders: vec![Order {
                     id: OrderUid([0x11; 56]),
-                    sell_amount: 12.into(),
-                    buy_amount: 13.into(),
+                    sell_amount: U256::from(12),
+                    buy_amount: U256::from(13),
                     buy_token: Address::new([0x22; 20]),
                     sell_token: Address::new([0x22; 20]),
                 }],
                 is_winner: true,
                 filtered_out: false,
                 tx_hash: Some(tx),
-                reference_score: Some(10.into()),
+                reference_score: Some(U256::from(10)),
             }],
         };
 

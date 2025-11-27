@@ -22,25 +22,25 @@ async fn local_node_order_creation_checks_metadata_signer() {
 
 async fn order_creation_checks_metadata_signer(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader, adversary, safe_owner] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader, adversary, safe_owner] = onchain.make_accounts(eth(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token_a.mint(trader.address(), to_wei(10)).await;
+    token_a.mint(trader.address(), eth(10)).await;
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
-    token_a.mint(adversary.address(), to_wei(10)).await;
+    token_a.mint(adversary.address(), eth(10)).await;
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
-        .from(adversary.address().into_alloy())
+        .from(adversary.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -73,13 +73,13 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Rejected: app data with different signer.
-    let full_app_data = full_app_data_with_signer(adversary.address().into_alloy());
+    let full_app_data = full_app_data_with_signer(adversary.address());
     let order1 = sign(create_order(full_app_data), &trader);
     let err = services.create_order(&order1).await.unwrap_err();
     assert!(dbg!(err).1.contains("WrongOwner"));
 
     // Accepted: app data with correct signer.
-    let full_app_data = full_app_data_with_signer(trader.address().into_alloy());
+    let full_app_data = full_app_data_with_signer(trader.address());
     let order2 = sign(create_order(full_app_data.clone()), &trader);
     let uid = services.create_order(&order2).await.unwrap();
     assert!(matches!(services.get_order(&uid).await, Ok(..)));
@@ -99,7 +99,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     // EIP-1271
 
     let safe = Safe::deploy(safe_owner.clone(), web3.alloy.clone()).await;
-    token_a.mint(safe.address().into_legacy(), to_wei(10)).await;
+    token_a.mint(safe.address(), eth(10)).await;
     safe.exec_alloy_call(
         token_a
             .approve(onchain.contracts().allowance.into_alloy(), eth(10))
@@ -114,7 +114,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     assert!(matches!(services.create_order(&order4).await, Ok(..)));
 
     // Rejected: from and signer are inconsistent.
-    let full_app_data = full_app_data_with_signer(adversary.address().into_alloy());
+    let full_app_data = full_app_data_with_signer(adversary.address());
     let mut order5 = create_order(full_app_data);
     order5.from = Some(safe.address().into_legacy());
     safe.sign_order(&mut order5, &onchain);

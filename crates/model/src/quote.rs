@@ -4,12 +4,11 @@ use {
         signature::SigningScheme,
         time,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::bail,
     app_data::AppDataHash,
     chrono::{DateTime, Utc},
     number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
-    primitive_types::{H160, U256},
     serde::{
         Deserialize,
         Deserializer,
@@ -304,9 +303,9 @@ pub enum SellAmount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub receiver: Option<H160>,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub receiver: Option<Address>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -330,7 +329,7 @@ pub type QuoteId = i64;
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,
-    pub from: H160,
+    pub from: Address,
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
     pub verified: bool,

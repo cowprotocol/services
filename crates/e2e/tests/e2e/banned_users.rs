@@ -9,7 +9,6 @@ use {
         Services,
         eth,
         run_forked_test_with_block_number,
-        to_wei,
         to_wei_with_exp,
     },
     ethrpc::{Web3, alloy::conversions::IntoAlloy},
@@ -37,7 +36,7 @@ const BANNED_USER: Address = address!("7F367cC41522cE07553e823bf3be79A889DEbe1B"
 
 async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [solver] = onchain.make_solvers_forked(eth(1)).await;
 
     let token_dai = ERC20::Instance::new(
         address!("6b175474e89094c44da98b954eedeac495271d0f"),
