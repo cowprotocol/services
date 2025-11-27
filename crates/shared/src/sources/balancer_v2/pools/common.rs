@@ -399,7 +399,7 @@ mod tests {
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: tokens.iter().copied().map(|t| t).collect(),
+                    tokens: tokens.to_vec(),
                     balances: vec![],
                     lastChangeBlock: U256::zero().into_alloy(),
                 },
@@ -477,7 +477,7 @@ mod tests {
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: tokens.iter().copied().map(|t| t).collect(),
+                    tokens: tokens.to_vec(),
                     balances: balances
                         .iter()
                         .map(|b| b.as_uint256().into_alloy())
@@ -675,7 +675,7 @@ mod tests {
         let get_pool_tokens_response =
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
-                    tokens: pool_info.common.tokens.iter().copied().collect(),
+                    tokens: pool_info.common.tokens.clone(),
                     balances: pool_state
                         .tokens
                         .values()
