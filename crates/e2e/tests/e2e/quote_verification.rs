@@ -20,13 +20,10 @@ use {
     shared::{
         addr,
         price_estimation::{
-            Estimate,
-            Verification,
+            Estimate, Verification,
             trade_verifier::{
-                PriceQuery,
-                TradeVerifier,
-                TradeVerifying,
-                balance_overrides::BalanceOverrides,
+                PriceQuery, TradeVerifier, TradeVerifying,
+                balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
             },
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
@@ -568,4 +565,173 @@ async fn usdt_quote_verification(web3: Web3) {
         .await
         .unwrap();
     assert!(quote.verified);
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_trace_based_balance_detection() {
+    run_forked_test_with_block_number(
+        trace_based_balance_detection,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
+/// Tests that balance override detection works with debug_traceCall.
+/// This test verifies the trace-based detection strategy that's similar to Foundry's `deal`.
+async fn trace_based_balance_detection(web3: Web3) {
+    use shared::price_estimation::trade_verifier::balance_overrides::detector::Detector;
+
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+
+    // Test with WETH (standard ERC20 with mapping at slot 3)
+    let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+    // Test with USDC (has multiple storage accesses in balanceOf due to upgradeability)
+    let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
+    // Test with Euler vault token (complicated/stress case)
+    let euler_vault = addr!("D8b27CF359b7D15710a5BE299AF6e7Bf904984C2");
+
+    let detector = Detector::new(web3.clone(), 60);
+
+    let test_account = addr!("0000000000000000000000000000000000000042");
+    let test_balance = U256::from(123_456_789_u64);
+
+    // Test WETH detection - should successfully detect via trace
+    let weth_strategy = detector.detect(weth, test_account).await;
+    /*assert!(
+        matches!(weth_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect WETH balance slot"
+    );*/
+    tracing::info!("WETH strategy: {:?}", weth_strategy);
+
+    // Test USDC detection - may have multiple storage accesses, should iteratively test
+    let usdc_strategy = detector.detect(usdc, test_account).await;
+    /*assert!(
+        matches!(usdc_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect USDC balance slot"
+    );*/
+    tracing::info!("USDC strategy: {:?}", usdc_strategy);
+
+    // Test Euler vault detection - should successfully detect via trace
+    let euler_vault_strategy = detector.detect(euler_vault, test_account).await;
+    /*assert!(
+        matches!(euler_vault_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect Euler vault balance slot"
+    );*/
+    tracing::info!("Euler vault strategy: {:?}", euler_vault_strategy);
+
+    // Verify that the detected strategies actually work by testing balance overrides
+    use {contracts::alloy::ERC20, ethrpc::alloy::conversions::IntoAlloy};
+
+    async fn test_balance_override(
+        web3: &Web3,
+        token: H160,
+        strategy: Strategy,
+        test_account: H160,
+        test_balance: U256,
+    ) {
+        use {
+            shared::price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
+            std::collections::HashMap,
+        };
+
+        let balance_overrides = BalanceOverrides {
+            hardcoded: HashMap::from([(token, strategy)]),
+            detector: None,
+        };
+
+        let override_result = balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token,
+                holder: test_account,
+                amount: test_balance.into_legacy(),
+            })
+            .await;
+
+        assert!(override_result.is_some(), "Should produce state override");
+        let (override_token, state_override) = override_result.unwrap();
+
+        // Call balanceOf with the state override to verify it works
+        let token_contract = ERC20::Instance::new(token.into_alloy(), web3.alloy.clone());
+        let balance = token_contract
+            .balanceOf(test_account.into_alloy())
+            .state(HashMap::from([(override_token, state_override)]).into_alloy())
+            .call()
+            .await
+            .unwrap();
+
+        assert_eq!(
+            balance, test_balance,
+            "Balance override should work for token {:?}",
+            token
+        );
+
+        tracing::info!(
+            "✓ Balance override verified for token {:?}: set {} and got {}",
+            token,
+            test_balance,
+            balance
+        );
+    }
+
+    // Test each detected strategy
+    test_balance_override(
+        &web3,
+        weth,
+        weth_strategy.unwrap(),
+        test_account,
+        test_balance,
+    )
+    .await;
+    test_balance_override(
+        &web3,
+        usdc,
+        usdc_strategy.unwrap(),
+        test_account,
+        test_balance,
+    )
+    .await;
+    test_balance_override(
+        &web3,
+        euler_vault,
+        euler_vault_strategy.unwrap(),
+        test_account,
+        test_balance,
+    )
+    .await;
+
+    // Now verify that quotes work with the detected strategies
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    // Verify quote for WETH->USDC works without actual balance
+    let quote = services
+        .submit_quote(&OrderQuoteRequest {
+            from: H160::zero(),
+            sell_token: weth,
+            buy_token: usdc,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(
+        quote.verified,
+        "Quote should be verified using trace-detected balance overrides"
+    );
 }

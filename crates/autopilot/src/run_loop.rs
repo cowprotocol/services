@@ -2,15 +2,10 @@ use {
     crate::{
         database::competition::Competition,
         domain::{
-            self,
-            OrderUid,
+            self, OrderUid,
             auction::Id,
             competition::{
-                self,
-                Solution,
-                SolutionError,
-                SolverParticipationGuard,
-                Unranked,
+                self, Solution, SolutionError, SolverParticipationGuard, Unranked,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -33,11 +28,7 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     num::ToPrimitive,
     primitive_types::H256,
@@ -125,6 +116,7 @@ impl RunLoop {
     }
 
     pub async fn run_forever(self, mut control: ShutdownController) {
+        println!("RUNNING FOREVER!");
         Maintenance::spawn_cow_amm_indexing_task(
             self.maintenance.clone(),
             self.eth.current_block().clone(),
@@ -147,6 +139,9 @@ impl RunLoop {
         let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
+            // this loop should ideally run once per block (if a new order comes in, perhaps we want to initiate the loop late?)
+            ethrpc::block_stream::next_block(self_arc.eth.current_block()).await;
+
             leader_lock_tracker.try_acquire().await;
 
             let start_block = self_arc
@@ -179,6 +174,7 @@ impl RunLoop {
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
+        tracing::debug!("updating caches");
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
         let auction_block = if time_since_last_block > self.config.max_run_loop_delay {

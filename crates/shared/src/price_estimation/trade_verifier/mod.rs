@@ -9,9 +9,7 @@ use {
         interaction::EncodedInteraction,
         tenderly_api::TenderlyCodeSimulator,
         trade_finding::{
-            Interaction,
-            QuoteExecution,
-            TradeKind,
+            Interaction, QuoteExecution, TradeKind,
             external::dto::{self, JitOrder},
             map_interactions_data,
         },
@@ -21,8 +19,7 @@ use {
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::alloy::{
-        GPv2Settlement,
-        WETH9,
+        GPv2Settlement, WETH9,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
     ethcontract::{H160, U256, state_overrides::StateOverride},
@@ -295,6 +292,7 @@ impl TradeVerifier {
         // not alter solver balances which may be used during settlement. We use
         // a similar strategy for determining whether or not to set approvals on
         // behalf of the trader.
+        println!("TRYING BALANCE OVERRIDE");
         match self
             .balance_overrides
             .state_override(BalanceOverrideRequest {
@@ -316,6 +314,10 @@ impl TradeVerifier {
         {
             Some((token, solver_balance_override)) => {
                 tracing::trace!(?solver_balance_override, "solver balance override enabled");
+                println!(
+                    "SPARDOSE BALANCE OVERRIDE {:?}, {:?}",
+                    token, solver_balance_override
+                );
                 overrides.insert(token, solver_balance_override);
 
                 if verification.from.is_zero() {
@@ -327,6 +329,7 @@ impl TradeVerifier {
                 }
             }
             _ => {
+                println!("SPARDOSE BALANCE OVERRIDE NOT APPLIED");
                 if verification.from.is_zero() {
                     anyhow::bail!("trader is zero address and balances can not be faked");
                 }

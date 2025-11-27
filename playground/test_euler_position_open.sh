@@ -5,19 +5,21 @@
 WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x74399a40D9FE2478e82058480F426D7e5783167c}
 
 # length of the wrapper data in hex with 0x at the beginning
-WRAPPER_LEN=0x0120
+#WRAPPER_LEN=0x0120
 
 # this wrapper data is more or less just hardcoded from some tests for speed
 # information on how it is encoded can be found on the GW page
 # it includes collateral vault, borrow vault, and amount to borrow in hex
+# 0x797... is eUSDC
+# 0xD8b... is eWETH
 WRAPPER_DATA=\
 000000000000000000000000f39Fd6e51aad88F6F4ce6aB8827279cffFb92266\
 000000000000000000000000f39Fd6e51aad88F6F4ce6aB8827279cffFb92266\
-00000000000000000000000000000000000000000000000000000000ffffffff\
-000000000000000000000000797DD80692c3b2dAdabCe8e30C07fDE5307D48a9\
+00000000000000000000000000000000000000000000000000000000ff$(openssl rand -hex 3)\
 000000000000000000000000D8b27CF359b7D15710a5BE299AF6e7Bf904984C2\
+000000000000000000000000797DD80692c3b2dAdabCe8e30C07fDE5307D48a9\
 0000000000000000000000000000000000000000000000000de0b6b3a7640000\
-000000000000000000000000000000000000000000000000000000003b9aca00
+0000000000000000000000000000000000000000000000000000000005f5e100
 
 WRAPPER_APPROVAL_HASH=$(cast call $WRAPPER_CONTRACT 0x4fedcdbf$WRAPPER_DATA)
 
@@ -28,11 +30,12 @@ SIG_DATA=\
 0000000000000000000000000000000000000000000000000000000000000100\
 0000000000000000000000000000000000000000000000000000000000000000
 
-appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"'${WRAPPER_CONTRACT}'\",\"data\":\"'${WRAPPER_LEN}${WRAPPER_DATA}${SIG_DATA}'\",\"isOmittable\":false}]}}'
-appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"${WRAPPER_CONTRACT}\",\"data\":\"${WRAPPER_LEN}${WRAPPER_DATA}${SIG_DATA}\",\"isOmittable\":false}]}}"
+appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"'${WRAPPER_CONTRACT}'\",\"data\":\"'0x${WRAPPER_DATA}${SIG_DATA}'\",\"isOmittable\":false}]}}'
+appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"${WRAPPER_CONTRACT}\",\"data\":\"0x${WRAPPER_DATA}${SIG_DATA}\",\"isOmittable\":false}]}}"
 #appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
 #appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
 
+echo "computed app data: $appData"
 
 appDataHash=$(cast keccak "$appDataUnescaped")
 #appDataHash="0x0000000000000000000000000000000000000000000000000000000000000000"
@@ -48,7 +51,19 @@ cast rpc evm_mine
 wait
 
 echo 'approve eWETH deposit...'
-cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 'approve(address,uint256)' $WRAPPER_CONTRACT 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+cast send 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 'approve(address,uint256)' 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+sleep 0.1
+cast rpc evm_mine
+wait
+
+echo 'approve USDC to settlement...'
+cast send 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 'approve(address,uint256)' 0xD5D7ae3dD0C1c79DB7B0307e0d36AEf14eEee205 115792089237316195423570985008687907853269984665640564039457584007913129639935 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
+sleep 0.1
+cast rpc evm_mine
+wait
+
+echo 'set operator...'
+cast send 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383 'setAccountOperator(address account, address operator, bool authorized)' 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 $WRAPPER_CONTRACT true --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 &
 sleep 0.1
 cast rpc evm_mine
 wait
@@ -74,9 +89,11 @@ sleep 0.1
 cast rpc evm_mine
 wait
 
-sellAmount=1000000000
+sellAmount=100000000
+#buyAmount=10000000000000
+buyAmount=1
 
-echo "ready to sell $sellAmount"
+echo "ready to sell $sellAmount to at least $buyAmount"
 
 signData='
 {
@@ -122,11 +139,11 @@ signData='
     "verifyingContract": "0x99B14b6C733a8E2196d5C561e6B5F6f083F4a7f9"
   },
   "message": {
-    "sellToken": "0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2",
-    "buyToken": "0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9",
+    "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "buyToken": "0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2",
     "receiver": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "sellAmount": "'${sellAmount}'",
-    "buyAmount": "1",
+    "buyAmount": "'${buyAmount}'",
     "validTo": '${validTo}',
     "appData": "'${appDataHash}'",
     "feeAmount": "0",
@@ -149,8 +166,8 @@ curl --fail-with-body -s --show-error -X 'POST' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{
-  "sellToken": "'0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2'",
-  "buyToken": "'0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9'",
+  "sellToken": "'0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'",
+  "buyToken": "'0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2'",
   "from": "'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'",
   "receiver": "'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'",
   "sellTokenBalance": "erc20",
@@ -163,7 +180,7 @@ curl --fail-with-body -s --show-error -X 'POST' \
   "feeAmount": "0",
   "signature": "'${sig}'",
   "sellAmount": "'${sellAmount}'", 
-  "buyAmount": "'1'", 
+  "buyAmount": "'${buyAmount}'", 
   "appData": "'$appData'",
   "appDataHash": "'$appDataHash'"
 }'

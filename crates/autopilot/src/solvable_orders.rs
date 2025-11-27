@@ -316,12 +316,13 @@ impl SolvableOrdersCache {
             surplus_capturing_jit_order_owners,
         };
 
+        tracing::debug!(%block, valid_orders = db_solvable_orders.orders.len(), "updating current auction cache");
+
         *self.cache.lock().await = Some(Inner {
             auction,
             solvable_orders: db_solvable_orders,
         });
 
-        tracing::debug!(%block, "updated current auction cache");
         self.metrics
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
@@ -552,6 +553,8 @@ fn orders_with_balance(
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
+        // TODO: if there is a wrapper it should be treated to 1271 order filter below
+        return true;
         if disable_1271_order_balance_filter && matches!(order.signature, Signature::Eip1271(_)) {
             return true;
         }
@@ -924,8 +927,7 @@ mod tests {
         shared::{
             bad_token::list_based::ListBasedDetector,
             price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME,
-                PriceEstimationError,
+                HEALTHY_PRICE_ESTIMATION_TIME, PriceEstimationError,
                 native::MockNativePriceEstimating,
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},

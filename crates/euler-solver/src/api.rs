@@ -30,6 +30,7 @@ impl Api {
             .route("/solve", post(solve))
             .route("/reveal", post(reveal))
             .route("/settle", post(settle))
+            .route("/notify", post(notify))
             .route("/healthz", get(healthz))
             .layer(
                 TraceLayer::new_for_http()
@@ -134,6 +135,32 @@ async fn settle(Json(request): Json<SettleRequest>) -> impl IntoResponse {
     );
 
     // Acknowledge the settle request
+    StatusCode::OK
+}
+
+// POST /notify
+// Receives notifications about solution outcomes and auction events
+#[derive(Debug, Deserialize)]
+struct NotifyRequest {
+    #[serde(rename = "auctionId")]
+    auction_id: Option<String>,
+    #[serde(rename = "solutionId")]
+    solution_id: Option<u64>,
+    kind: String,
+    #[serde(flatten)]
+    metadata: serde_json::Value,
+}
+
+async fn notify(Json(request): Json<NotifyRequest>) -> impl IntoResponse {
+    tracing::info!(
+        "Notification received - kind: {}, auction: {:?}, solution: {:?}, metadata: {}",
+        request.kind,
+        request.auction_id,
+        request.solution_id,
+        request.metadata
+    );
+
+    // Acknowledge the notification
     StatusCode::OK
 }
 

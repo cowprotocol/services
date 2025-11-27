@@ -1,6 +1,7 @@
 use {
     crate::ethrpc::Web3,
     anyhow::{Context, Result},
+    ethcontract::state_overrides::StateOverrides,
     web3::{
         Error,
         Transport,
@@ -12,6 +13,15 @@ use {
 // api to simulate these call requests applied together one after another.
 // Err if communication with the node failed.
 pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<BlockTrace>, Error> {
+    trace_many_with_state_overrides(requests, web3, None).await
+}
+
+// Use the trace_callMany api with state overrides support.
+pub async fn trace_many_with_state_overrides(
+    requests: Vec<CallRequest>,
+    web3: &Web3,
+    state_overrides: Option<StateOverrides>,
+) -> Result<Vec<BlockTrace>, Error> {
     let transport = web3.transport();
     let requests = requests
         .into_iter()
@@ -24,10 +34,13 @@ pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<B
         .collect::<Result<Vec<_>>>()
         .map_err(|e| Error::Decoder(e.to_string()))?;
     let block = BlockNumber::Latest;
-    let params = vec![
+    let mut params = vec![
         serde_json::to_value(requests)?,
         serde_json::to_value(block)?,
     ];
+    if let Some(overrides) = state_overrides {
+        params.push(serde_json::to_value(overrides)?);
+    }
     let response = transport.execute("trace_callMany", params).await?;
     serde_json::from_value(response).map_err(|e| Error::Decoder(e.to_string()))
 }
