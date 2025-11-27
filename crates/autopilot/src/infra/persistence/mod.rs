@@ -72,8 +72,9 @@ impl Persistence {
         }
     }
 
-    /// Spawns a task that writes the most recent auction to the DB. Uploads happen
-    /// on a FIFO basis so the last write will always be the most recent auction.
+    /// Spawns a task that writes the most recent auction to the DB. Uploads
+    /// happen on a FIFO basis so the last write will always be the most
+    /// recent auction.
     fn spawn_db_upload_task(db: Arc<Postgres>) -> mpsc::UnboundedSender<AuctionUpload> {
         let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
         tokio::task::spawn(async move {
