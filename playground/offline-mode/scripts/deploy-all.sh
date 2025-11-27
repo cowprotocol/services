@@ -211,11 +211,11 @@ echo ""
 echo "✅ Solver authentication configured!"
 echo ""
 
-# Step 3.5: Deploy Balances Contract
+# Step 3.5: Deploy GPv2TradeSimulator Contract
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "STEP 3.5: Deploying Balances Contract"
+echo "STEP 3.5: Deploying GPv2TradeSimulator Contract"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-forge script contracts/script/DeployBalances.s.sol:DeployBalances \
+forge script contracts/script/DeployTradeSimulator.s.sol:DeployTradeSimulator \
     --rpc-url $RPC_URL \
     --broadcast \
     --private-key $DEPLOYER_PRIVATE_KEY \
@@ -223,17 +223,18 @@ forge script contracts/script/DeployBalances.s.sol:DeployBalances \
     -vvv
 
 echo ""
-echo "✅ Balances contract deployed!"
+echo "✅ GPv2TradeSimulator contract deployed!"
 echo ""
 
-# Extract Balances address from broadcast (CREATE2 transaction)
-BALANCES_CONTRACT=$(jq -r '.transactions[] | select(.contractName == "Balances") | .contractAddress' broadcast/DeployBalances.s.sol/31337/run-latest.json)
+# Extract GPv2TradeSimulator address from broadcast run-latest.json
+TRADE_SIMULATOR_ADDRESS=$(jq -r '.transactions[] | select(.transactionType == "CREATE2") | .contractAddress' broadcast/DeployTradeSimulator.s.sol/31337/run-latest.json 2>/dev/null || echo "")
 
-# Export for next scripts
-export BALANCES_CONTRACT
+# Export for next scripts (keep BALANCES_CONTRACT for backwards compatibility)
+export TRADE_SIMULATOR_ADDRESS
+export BALANCES_CONTRACT=$TRADE_SIMULATOR_ADDRESS
 
-echo "📝 Deployed Balances address:"
-echo "  Balances: $BALANCES_CONTRACT"
+echo "📝 Deployed GPv2TradeSimulator address:"
+echo "  GPv2TradeSimulator: $TRADE_SIMULATOR_ADDRESS"
 echo ""
 
 # Step 3.6: Deploy Signatures Contract
@@ -400,7 +401,7 @@ mempool = "public"
 [contracts]
 gp-v2-settlement = "${SETTLEMENT_CONTRACT_ADDRESS}"
 weth = "${WETH_ADDRESS}"
-balances = "${BALANCES_CONTRACT_ADDRESS}"
+balances = "${BALANCES_CONTRACT_ADDRESS}"  # GPv2TradeSimulator
 signatures = "${SIGNATURES_CONTRACT_ADDRESS}"
 
 [liquidity]
