@@ -414,7 +414,7 @@ base-tokens = [
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration (auto-generated from deployment)
 router = "${UNISWAP_V2_ROUTER_ADDRESS}"
-pool-code = "0xb6912aa8f91da604bdd903b3484a9f6bb569baa993085fc590133487ff27f91e" # Uniswap V2 init code hash
+pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" # Uniswap V2 init code hash
 missing-pool-cache-time = "1h"
 EOF
 
