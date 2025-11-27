@@ -470,12 +470,12 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
 #[cfg(test)]
 mod test {
-    use {super::*, clap::Parser};
+    use {super::*, alloy::primitives::address, clap::Parser};
 
-    const TOKEN1: H160 = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-    const TOKEN2: H160 = addr!("7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9");
-    const OWNER1: H160 = addr!("06920c9fc643de77b99cb7670a944ad31eaaa260");
-    const OWNER2: H160 = addr!("06601571aa9d3e8f5f7cdd5b993192618964bab5");
+    const TOKEN1: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+    const TOKEN2: Address = address!("7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9");
+    const OWNER1: Address = address!("06920c9fc643de77b99cb7670a944ad31eaaa260");
+    const OWNER2: Address = address!("06601571aa9d3e8f5f7cdd5b993192618964bab5");
 
     #[test]
     fn parse_owners_empty() {
