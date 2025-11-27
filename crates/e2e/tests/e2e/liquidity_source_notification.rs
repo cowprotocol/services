@@ -14,6 +14,7 @@ use {
             Services,
             TIMEOUT,
             colocation::{self, SolverEngine},
+            eth,
             mock::Mock,
             run_forked_test_with_block_number,
             to_wei,
@@ -65,11 +66,11 @@ async fn liquidity_source_notification(web3: Web3) {
     // Create parties accounts
     // solver - represents both baseline solver engine for quoting and liquorice
     // solver engine for solving
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [solver] = onchain.make_solvers_forked(eth(1)).await;
     // trader - the account that will place CoW order
     // liquorice_maker - the account that will place Liquorice order to fill CoW
     // order with
-    let [trader, liquorice_maker] = onchain.make_accounts(to_wei(1)).await;
+    let [trader, liquorice_maker] = onchain.make_accounts(eth(1)).await;
 
     // Access trade tokens contracts
     let token_usdc = ERC20::Instance::new(
@@ -87,7 +88,7 @@ async fn liquidity_source_notification(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(trader.address().into_alloy(), trade_amount.into_alloy())
+                .transfer(trader.address(), trade_amount.into_alloy())
                 .from(USDC_WHALE)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -105,7 +106,7 @@ async fn liquidity_source_notification(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(solver.address().into_alloy(), trade_amount.into_alloy())
+                .transfer(solver.address(), trade_amount.into_alloy())
                 .from(USDC_WHALE)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -125,7 +126,7 @@ async fn liquidity_source_notification(web3: Web3) {
             onchain.contracts().allowance.into_alloy(),
             alloy::primitives::U256::MAX,
         )
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -149,10 +150,7 @@ async fn liquidity_source_notification(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdt
-                .transfer(
-                    liquorice_maker.address().into_alloy(),
-                    trade_amount.into_alloy(),
-                )
+                .transfer(liquorice_maker.address(), trade_amount.into_alloy())
                 .from(USDT_WHALE)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -172,7 +170,7 @@ async fn liquidity_source_notification(web3: Web3) {
             liquorice_balance_manager_address.into_alloy(),
             alloy::primitives::U256::MAX,
         )
-        .from(liquorice_maker.address().into_alloy())
+        .from(liquorice_maker.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -269,7 +267,7 @@ http-timeout = "10s"
         quoteTokenAmount: trade_amount.into_alloy(),
         minFillAmount: U256::from(1),
         quoteExpiry: U256::from(Utc::now().timestamp() as u64 + 10),
-        recipient: liquorice_maker.address().into_alloy(),
+        recipient: liquorice_maker.address(),
     };
 
     // Create calldata
@@ -287,7 +285,7 @@ http-timeout = "10s"
         // Create Liquorice settlement calldata
         liquorice_settlement
             .settleSingle(
-                liquorice_maker.address().into_alloy(),
+                liquorice_maker.address(),
                 liquorice_order.clone(),
                 LiquoriceSettlement::Signature::TypedSignature {
                     signatureType: 3,   // EIP712

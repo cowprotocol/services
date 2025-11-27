@@ -6,7 +6,7 @@ use {
     ethcontract::U256,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, TryIntoAlloyAsync},
+        alloy::conversions::TryIntoAlloyAsync,
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
@@ -24,8 +24,8 @@ async fn local_node_refunder_tx() {
 async fn refunder_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [user, refunder] = onchain.make_accounts(eth(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -93,10 +93,10 @@ async fn refunder_tx(web3: Web3) {
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
 
     ethflow_order
-        .mine_order_creation(user.address().into_alloy(), ethflow_contract)
+        .mine_order_creation(user.address(), ethflow_contract)
         .await;
     ethflow_order_2
-        .mine_order_creation(user.address().into_alloy(), ethflow_contract_2)
+        .mine_order_creation(user.address(), ethflow_contract_2)
         .await;
 
     let order_id = ethflow_order

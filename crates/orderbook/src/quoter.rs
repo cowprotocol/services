@@ -5,7 +5,6 @@ use {
     },
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     chrono::{TimeZone, Utc},
-    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
@@ -129,11 +128,11 @@ impl QuoteHandler {
                 .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
         let response = OrderQuoteResponse {
             quote: OrderQuote {
-                sell_token: request.sell_token.into_legacy(),
-                buy_token: request.buy_token.into_legacy(),
-                receiver: request.receiver.map(IntoLegacy::into_legacy),
-                sell_amount: adjusted_quote.sell_amount.into_legacy(),
-                buy_amount: adjusted_quote.buy_amount.into_legacy(),
+                sell_token: request.sell_token,
+                buy_token: request.buy_token,
+                receiver: request.receiver,
+                sell_amount: adjusted_quote.sell_amount,
+                buy_amount: adjusted_quote.buy_amount,
                 valid_to,
                 app_data: match &request.app_data {
                     OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
@@ -142,14 +141,14 @@ impl QuoteHandler {
                     },
                     app_data => app_data.clone(),
                 },
-                fee_amount: quote.fee_amount.into_legacy(),
+                fee_amount: quote.fee_amount,
                 kind: quote.data.kind,
                 partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
                 buy_token_balance: request.buy_token_balance,
                 signing_scheme: request.signing_scheme.into(),
             },
-            from: request.from.into_legacy(),
+            from: request.from,
             expiration: quote.data.expiration,
             id: quote.id,
             verified: quote.data.verified,
@@ -256,6 +255,7 @@ mod tests {
         super::*,
         crate::arguments::FeeFactor,
         alloy::primitives::U256,
+        ethrpc::alloy::conversions::IntoLegacy,
         model::quote::OrderQuoteSide,
         shared::order_quoting::{Quote, QuoteData},
     };
