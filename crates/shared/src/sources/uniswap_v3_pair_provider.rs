@@ -14,7 +14,7 @@ pub fn pair_address(factory: &Address, pair: &TokenPair, fee: u32) -> Address {
 
     let mut buffer = [0u8; 1 + 20 + 32 + 32];
     buffer[0] = 0xff;
-    buffer[1..21].copy_from_slice(&factory.as_slice());
+    buffer[1..21].copy_from_slice(factory.as_slice());
     buffer[21..53].copy_from_slice(&hash);
     buffer[53..85].copy_from_slice(&INIT);
     let hash = keccak256(&buffer);

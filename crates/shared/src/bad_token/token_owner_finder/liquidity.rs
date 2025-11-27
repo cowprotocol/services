@@ -106,7 +106,7 @@ impl TokenOwnerProposing for UniswapV3Finder {
             .filter_map(|base_token| TokenPair::new(*base_token, token))
             .flat_map(|pair| self.fee_values.iter().map(move |fee| (pair, *fee)))
             .map(|(pair, fee)| {
-                uniswap_v3_pair_provider::pair_address(&self.factory.address(), &pair, fee)
+                uniswap_v3_pair_provider::pair_address(self.factory.address(), &pair, fee)
             })
             .collect())
     }
