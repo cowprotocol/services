@@ -17,10 +17,31 @@ use tokio::{
 /// go tool pprof -http=:8080 heap.pprof
 /// ```
 pub fn spawn_heap_dump_handler() {
+    // Check MALLOC_CONF environment variable
+    match std::env::var("MALLOC_CONF") {
+        Ok(conf) => tracing::info!("MALLOC_CONF is set: {}", conf),
+        Err(_) => tracing::warn!("MALLOC_CONF environment variable is NOT set"),
+    }
+
     // Check if jemalloc profiling is available before spawning the handler
     // This prevents panics that would crash the entire process
-    let profiling_available =
-        std::panic::catch_unwind(|| jemalloc_pprof::PROF_CTL.as_ref().is_some()).unwrap_or(false);
+    let profiling_check = std::panic::catch_unwind(|| {
+        tracing::info!("Attempting to access jemalloc PROF_CTL...");
+        let result = jemalloc_pprof::PROF_CTL.as_ref();
+        tracing::info!("PROF_CTL access result: {:?}", result.is_some());
+        result.is_some()
+    });
+
+    let profiling_available = match profiling_check {
+        Ok(available) => {
+            tracing::info!("PROF_CTL check completed successfully: {}", available);
+            available
+        }
+        Err(e) => {
+            tracing::warn!("PROF_CTL check panicked: {:?}", e);
+            false
+        }
+    };
 
     if !profiling_available {
         tracing::warn!(
