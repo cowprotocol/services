@@ -161,8 +161,8 @@ COW_AUTHENTICATOR=$(jq -r '[.transactions[] | select(.transactionType == "CREATE
 # Settlement is second (index 1)
 COW_SETTLEMENT=$(jq -r '[.transactions[] | select(.transactionType == "CREATE2")] | .[1].contractAddress' broadcast/DeployCowProtocol.s.sol/31337/run-latest.json)
 # VaultRelayer is created by Settlement contract, need to read it from chain
-# cast call returns bytes32, we need to extract the address (last 20 bytes = 40 hex chars)
-COW_VAULT_RELAYER=$(cast call $COW_SETTLEMENT "vaultRelayer()" --rpc-url $RPC_URL | xargs | cut -c 27-66)
+# cast call returns bytes32, we need to extract the address (last 20 bytes = 40 hex chars) and add 0x prefix
+COW_VAULT_RELAYER="0x$(cast call $COW_SETTLEMENT "vaultRelayer()" --rpc-url $RPC_URL | xargs | cut -c 27-66)"
 
 # Export for next scripts
 export COW_AUTHENTICATOR
@@ -354,7 +354,7 @@ export VAULT_RELAYER_ADDRESS=${COW_VAULT_RELAYER}
 export BALANCER_VAULT_ADDRESS=${BALANCER_VAULT}
 export BALANCES_CONTRACT_ADDRESS=${BALANCES_CONTRACT}
 export SIGNATURES_CONTRACT_ADDRESS=${SIGNATURES_CONTRACT}
-export HOOKS_TRAMPOLINE_ADDRESS=${HOOKS_TRAMPOLINE}
+export HOOKS_CONTRACT_ADDRESS=${HOOKS_TRAMPOLINE}
 
 # Generate configuration files using bash (avoid running solidity script which causes "stack too deep" errors)
 generate_configs() {
@@ -375,7 +375,7 @@ generate_configs() {
     BALANCER_VAULT_ADDRESS=${BALANCER_VAULT_ADDRESS}
     BALANCES_CONTRACT_ADDRESS=${BALANCES_CONTRACT_ADDRESS}
     SIGNATURES_CONTRACT_ADDRESS=${SIGNATURES_CONTRACT_ADDRESS}
-    HOOKS_TRAMPOLINE_ADDRESS=${HOOKS_TRAMPOLINE_ADDRESS}
+    HOOKS_CONTRACT_ADDRESS=${HOOKS_CONTRACT_ADDRESS}
 
     # driver.toml
     cat > ../../configs/offline/driver.toml <<EOF
@@ -462,7 +462,7 @@ VAULT_RELAYER_ADDRESS=${VAULT_RELAYER_ADDRESS}
 BALANCER_VAULT_ADDRESS=${BALANCER_VAULT_ADDRESS}
 BALANCES_CONTRACT_ADDRESS=${BALANCES_CONTRACT_ADDRESS}
 SIGNATURES_CONTRACT_ADDRESS=${SIGNATURES_CONTRACT_ADDRESS}
-HOOKS_TRAMPOLINE_ADDRESS=${HOOKS_TRAMPOLINE_ADDRESS}
+HOOKS_CONTRACT_ADDRESS=${HOOKS_CONTRACT_ADDRESS}
 EOF
 
     echo "Wrote ./configs/driver.toml, ./configs/baseline.toml, and ../.env.offline"

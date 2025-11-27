@@ -1,10 +1,10 @@
 chain-id = "31337" # Anvil local chain
 base-tokens = [
-    "0x786cab982f69a055a9d08ac2e3e9a8c3c9ec184a", # WETH (auto-generated from deployment)
-    "0x470c43112b93f96980b3100034852b5187c81a4a", # DAI (auto-generated from deployment)
-    "0x2195f5c2dc29235c4f79c671f84a616f17eddd17", # USDC (auto-generated from deployment)
-    "0xf933c090bd235d2b54642c2ad78d36b168386d09", # USDT (auto-generated from deployment)
-    "0x7e347942bece146555998242624a27e0cfb12c8d", # GNO (auto-generated from deployment)
+    "0xa704ea4640d91a9c1823172d8e1e8be7a137b465", # WETH (auto-generated from deployment)
+    "0xd6289b8bfbd913bce31de03e6f5694bd502a2f81", # DAI (auto-generated from deployment)
+    "0xbf0e313a70b853f8505ad38ddbcad6f552de61fe", # USDC (auto-generated from deployment)
+    "0x43893a9c3d1b513ef8ffdd209ba76af829298647", # USDT (auto-generated from deployment)
+    "0x9168d2ec32cddd21da7945b53993cc583c4bf562", # GNO (auto-generated from deployment)
 ]
 max-hops = 2
 max-partial-attempts = 5
