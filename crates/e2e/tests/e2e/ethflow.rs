@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, Bytes},
+        primitives::{Address, Bytes, U256 as AlloyU256},
         rpc::types::TransactionReceipt,
     },
     anyhow::bail,
@@ -93,8 +93,8 @@ async fn local_node_eth_flow_zero_buy_amount() {
 async fn eth_flow_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [trader] = onchain.make_accounts(to_wei(2)).await;
+    let [solver] = onchain.make_solvers(eth(2)).await;
+    let [trader] = onchain.make_accounts(eth(2)).await;
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
@@ -102,9 +102,9 @@ async fn eth_flow_tx(web3: Web3) {
         .await;
 
     // Get a quote from the services
-    let buy_token = dai.address().into_legacy();
-    let receiver = H160([0x42; 20]);
-    let sell_amount = to_wei(1);
+    let buy_token = *dai.address();
+    let receiver = Address::repeat_byte(0x42);
+    let sell_amount = eth(1);
     let intent = EthFlowTradeIntent {
         sell_amount,
         buy_token,
@@ -115,7 +115,7 @@ async fn eth_flow_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     let approve_call_data = {
-        let call_builder = dai.approve(trader.address().into_alloy(), eth(10));
+        let call_builder = dai.approve(trader.address(), eth(10));
         let calldata = call_builder.calldata();
         const_hex::encode_prefixed(calldata)
     };
@@ -157,7 +157,10 @@ async fn eth_flow_tx(web3: Web3) {
         app_data: OrderCreationAppData::Hash {
             hash: app_data::AppDataHash(const_hex::decode(&hash[2..]).unwrap().try_into().unwrap()),
         },
-        ..intent.to_quote_request(trader.account().address(), &onchain.contracts().weth)
+        ..intent.to_quote_request(
+            trader.account().address().into_alloy(),
+            &onchain.contracts().weth,
+        )
     };
 
     let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
@@ -210,7 +213,7 @@ async fn eth_flow_tx(web3: Web3) {
     test_trade_availability_in_api(
         services.client(),
         &ethflow_order,
-        &trader.address(),
+        &trader.address().into_legacy(),
         onchain.contracts(),
         ethflow_contract,
     )
@@ -221,7 +224,7 @@ async fn eth_flow_tx(web3: Web3) {
     // which proofs that the interactions were correctly sandboxed.
     let trampoline = *onchain.contracts().hooks.address();
     let allowance = dai
-        .allowance(trampoline, trader.address().into_alloy())
+        .allowance(trampoline, trader.address())
         .call()
         .await
         .unwrap();
@@ -230,7 +233,7 @@ async fn eth_flow_tx(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(trampoline, trader.address().into_alloy())
+        .allowance(trampoline, trader.address())
         .call()
         .await
         .unwrap();
@@ -240,7 +243,7 @@ async fn eth_flow_tx(web3: Web3) {
     // able to set an allowance on behalf of the settlement contract.
     let settlement = onchain.contracts().gp_settlement.address();
     let allowance = dai
-        .allowance(*settlement, trader.address().into_alloy())
+        .allowance(*settlement, trader.address())
         .call()
         .await
         .unwrap();
@@ -249,7 +252,7 @@ async fn eth_flow_tx(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(*settlement, trader.address().into_alloy())
+        .allowance(*settlement, trader.address())
         .call()
         .await
         .unwrap();
@@ -259,8 +262,8 @@ async fn eth_flow_tx(web3: Web3) {
 async fn eth_flow_without_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [trader] = onchain.make_accounts(to_wei(2)).await;
+    let [solver] = onchain.make_solvers(eth(2)).await;
+    let [trader] = onchain.make_accounts(eth(2)).await;
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
@@ -312,8 +315,8 @@ async fn eth_flow_without_quote(web3: Web3) {
 async fn eth_flow_indexing_after_refund(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
+    let [solver] = onchain.make_solvers(eth(2)).await;
+    let [trader, dummy_trader] = onchain.make_accounts(eth(2)).await;
     let [dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
@@ -330,11 +333,14 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         &test_submit_quote(
             &services,
             &(EthFlowTradeIntent {
-                sell_amount: 42.into(),
-                buy_token: dai.address().into_legacy(),
-                receiver: H160([42; 20]),
+                sell_amount: alloy::primitives::U256::from(42),
+                buy_token: *dai.address(),
+                receiver: Address::repeat_byte(42),
             })
-            .to_quote_request(dummy_trader.account().address(), &onchain.contracts().weth),
+            .to_quote_request(
+                dummy_trader.account().address().into_alloy(),
+                &onchain.contracts().weth,
+            ),
         )
         .await,
         valid_to,
@@ -351,12 +357,12 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     onchain.mint_block().await;
 
     dummy_order
-        .mine_order_invalidation(dummy_trader.address().into_alloy(), ethflow_contract)
+        .mine_order_invalidation(dummy_trader.address(), ethflow_contract)
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
     let buy_token = dai.address().into_legacy();
-    let receiver = H160([0x42; 20]);
+    let receiver = Address::repeat_byte(0x42);
     let sell_amount = to_wei(1);
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3.alloy)
@@ -367,11 +373,14 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         &test_submit_quote(
             &services,
             &(EthFlowTradeIntent {
-                sell_amount,
-                buy_token,
+                sell_amount: sell_amount.into_alloy(),
+                buy_token: buy_token.into_alloy(),
                 receiver,
             })
-            .to_quote_request(trader.account().address(), &onchain.contracts().weth),
+            .to_quote_request(
+                trader.account().address().into_alloy(),
+                &onchain.contracts().weth,
+            ),
         )
         .await,
         valid_to,
@@ -408,9 +417,13 @@ async fn test_submit_quote(
     // Ideally the fee would be nonzero, but this is not the case in the test
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
-    let approx_output: U256 = response.quote.sell_amount * DAI_PER_ETH;
-    assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
-    assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
+    let approx_output: AlloyU256 = response.quote.sell_amount * AlloyU256::from(DAI_PER_ETH);
+    assert!(
+        response.quote.buy_amount > (approx_output * AlloyU256::from(9u64) / AlloyU256::from(10))
+    );
+    assert!(
+        response.quote.buy_amount < (approx_output * AlloyU256::from(11u64) / AlloyU256::from(10))
+    );
 
     let OrderQuoteSide::Sell {
         sell_amount:
@@ -422,7 +435,10 @@ async fn test_submit_quote(
         panic!("untested!");
     };
 
-    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get());
+    assert_eq!(
+        response.quote.sell_amount,
+        sell_amount_after_fees.get().into_alloy()
+    );
 
     response
 }
@@ -451,7 +467,7 @@ async fn submit_order(
 async fn test_order_availability_in_api(
     services: &Services<'_>,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
+    owner: &Address,
     contracts: &Contracts,
     ethflow_contract: &CoWSwapEthFlow::Instance,
 ) {
@@ -460,16 +476,26 @@ async fn test_order_availability_in_api(
     let is_available = || async { services.get_order(&uid).await.is_ok() };
     wait_for_condition(TIMEOUT, is_available).await.unwrap();
 
-    test_orders_query(services, order, owner, contracts, ethflow_contract).await;
+    test_orders_query(
+        services,
+        order,
+        &owner.into_legacy(),
+        contracts,
+        ethflow_contract,
+    )
+    .await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [owner, &ethflow_contract.address().into_legacy()] {
+    for address in [
+        &owner.into_legacy(),
+        &ethflow_contract.address().into_legacy(),
+    ] {
         test_account_query(
             address,
             services.client(),
             order,
-            owner,
+            &owner.into_legacy(),
             contracts,
             ethflow_contract,
         )
@@ -637,13 +663,10 @@ impl ExtendedEthFlowOrder {
     pub fn from_quote(quote_response: &OrderQuoteResponse, valid_to: u32) -> Self {
         let quote = &quote_response.quote;
         ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
-            buyToken: quote.buy_token.into_alloy(),
-            receiver: quote
-                .receiver
-                .expect("eth-flow order without receiver")
-                .into_alloy(),
-            sellAmount: quote.sell_amount.into_alloy(),
-            buyAmount: quote.buy_amount.into_alloy(),
+            buyToken: quote.buy_token,
+            receiver: quote.receiver.expect("eth-flow order without receiver"),
+            sellAmount: quote.sell_amount,
+            buyAmount: quote.buy_amount,
             appData: quote.app_data.hash().0.into(),
             feeAmount: alloy::primitives::U256::ZERO,
             validTo: valid_to, // note: valid to in the quote is always unlimited
@@ -821,18 +844,18 @@ impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for EthFlowOrderOnchainS
 }
 
 pub struct EthFlowTradeIntent {
-    pub sell_amount: U256,
-    pub buy_token: H160,
-    pub receiver: H160,
+    pub sell_amount: alloy::primitives::U256,
+    pub buy_token: Address,
+    pub receiver: Address,
 }
 
 impl EthFlowTradeIntent {
     // How a user trade intent is converted into a quote request by the frontend
-    pub fn to_quote_request(&self, from: H160, weth: &WETH9::Instance) -> OrderQuoteRequest {
+    pub fn to_quote_request(&self, from: Address, weth: &WETH9::Instance) -> OrderQuoteRequest {
         OrderQuoteRequest {
             from,
             // Even if the user sells ETH, we request a quote for WETH
-            sell_token: weth.address().into_legacy(),
+            sell_token: *weth.address(),
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
             validity: Validity::For(3600),
@@ -843,7 +866,7 @@ impl EthFlowTradeIntent {
             },
             side: OrderQuoteSide::Sell {
                 sell_amount: model::quote::SellAmount::AfterFee {
-                    value: NonZeroU256::try_from(self.sell_amount).unwrap(),
+                    value: NonZeroU256::try_from(self.sell_amount.into_legacy()).unwrap(),
                 },
             },
             buy_token_balance: BuyTokenDestination::Erc20,
@@ -857,8 +880,8 @@ impl EthFlowTradeIntent {
 async fn eth_flow_zero_buy_amount(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(to_wei(2)).await;
+    let [solver] = onchain.make_solvers(eth(2)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(eth(2)).await;
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain

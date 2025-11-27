@@ -26,8 +26,8 @@ async fn local_node_test() {
 async fn place_order_with_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -36,7 +36,7 @@ async fn place_order_with_quote(web3: Web3) {
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -44,7 +44,7 @@ async fn place_order_with_quote(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(3))
         .send_and_watch()
         .await
@@ -64,8 +64,8 @@ async fn place_order_with_quote(web3: Web3) {
     let quote_sell_amount = to_wei(1);
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(quote_sell_amount).unwrap(),
@@ -84,18 +84,14 @@ async fn place_order_with_quote(web3: Web3) {
     tracing::debug!(?quote_metadata);
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
         sell_token: onchain.contracts().weth.address().into_legacy(),
         sell_amount: quote_sell_amount,
         buy_token: token.address().into_legacy(),
-        buy_amount: quote_response.quote.buy_amount,
+        buy_amount: quote_response.quote.buy_amount.into_legacy(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()

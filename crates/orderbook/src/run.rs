@@ -19,7 +19,6 @@ use {
         GPv2Settlement,
         HooksTrampoline,
         IUniswapV3Factory,
-        InstanceExt,
         WETH9,
         support::Balances,
     },

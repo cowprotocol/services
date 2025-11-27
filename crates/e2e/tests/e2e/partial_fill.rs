@@ -25,8 +25,8 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     // Use a shallow pool to make partial fills easier to setup.
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
@@ -36,7 +36,7 @@ async fn test(web3: Web3) {
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(4))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -44,7 +44,7 @@ async fn test(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(4))
         .send_and_watch()
         .await
@@ -55,11 +55,7 @@ async fn test(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address().into_legacy(),
@@ -83,12 +79,12 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        token
-            .balanceOf(trader.address().into_alloy())
+        !token
+            .balanceOf(trader.address())
             .call()
             .await
             .unwrap()
-            != U256::ZERO
+            .is_zero()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
@@ -96,7 +92,7 @@ async fn test(web3: Web3) {
     let sell_balance = onchain
         .contracts()
         .weth
-        .balanceOf(trader.address().into_alloy())
+        .balanceOf(trader.address())
         .call()
         .await
         .unwrap();
@@ -105,11 +101,7 @@ async fn test(web3: Web3) {
         (1_999_000_000_000_000_000_u128..2_000_000_000_000_000_000_u128)
             .contains(&u128::try_from(sell_balance).unwrap())
     );
-    let buy_balance = token
-        .balanceOf(trader.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let buy_balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert!(
         (1_650_000_000_000_000_000_u128..1_670_000_000_000_000_000_u128)
             .contains(&u128::try_from(buy_balance).unwrap())

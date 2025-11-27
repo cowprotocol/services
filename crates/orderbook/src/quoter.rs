@@ -5,7 +5,6 @@ use {
     },
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     chrono::{TimeZone, Utc},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
@@ -90,12 +89,12 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let params = QuoteParameters {
-            sell_token: request.sell_token.into_alloy(),
-            buy_token: request.buy_token.into_alloy(),
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
             side: request.side,
             verification: Verification {
-                from: request.from.into_alloy(),
-                receiver: request.receiver.unwrap_or(request.from).into_alloy(),
+                from: request.from,
+                receiver: request.receiver.unwrap_or(request.from),
                 sell_token_source: request.sell_token_balance,
                 buy_token_destination: request.buy_token_balance,
                 pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
@@ -132,8 +131,8 @@ impl QuoteHandler {
                 sell_token: request.sell_token,
                 buy_token: request.buy_token,
                 receiver: request.receiver,
-                sell_amount: adjusted_quote.sell_amount.into_legacy(),
-                buy_amount: adjusted_quote.buy_amount.into_legacy(),
+                sell_amount: adjusted_quote.sell_amount,
+                buy_amount: adjusted_quote.buy_amount,
                 valid_to,
                 app_data: match &request.app_data {
                     OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
@@ -142,7 +141,7 @@ impl QuoteHandler {
                     },
                     app_data => app_data.clone(),
                 },
-                fee_amount: quote.fee_amount.into_legacy(),
+                fee_amount: quote.fee_amount,
                 kind: quote.data.kind,
                 partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
@@ -256,6 +255,7 @@ mod tests {
         super::*,
         crate::arguments::FeeFactor,
         alloy::primitives::U256,
+        ethrpc::alloy::conversions::IntoLegacy,
         model::quote::OrderQuoteSide,
         shared::order_quoting::{Quote, QuoteData},
     };

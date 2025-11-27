@@ -4,11 +4,11 @@ use {
         signature::SigningScheme,
         time,
     },
+    alloy::primitives::{Address, U256},
     anyhow::bail,
     app_data::AppDataHash,
     chrono::{DateTime, Utc},
     number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
-    primitive_types::{H160, U256},
     serde::{
         Deserialize,
         Deserializer,
@@ -120,11 +120,11 @@ impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteRequest {
-    pub from: H160,
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub from: Address,
+    pub sell_token: Address,
+    pub buy_token: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<H160>,
+    pub receiver: Option<Address>,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
     #[serde(flatten)]
@@ -303,9 +303,9 @@ pub enum SellAmount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub receiver: Option<H160>,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub receiver: Option<Address>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -329,7 +329,7 @@ pub type QuoteId = i64;
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,
-    pub from: H160,
+    pub from: Address,
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
     pub verified: bool,
@@ -466,8 +466,8 @@ mod tests {
             }),
         ];
         let expected_standard_response = OrderQuoteRequest {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
             ..Default::default()
         };
         let modify_signing_scheme = |signing_scheme: QuoteSigningScheme| {

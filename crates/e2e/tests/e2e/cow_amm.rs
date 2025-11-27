@@ -57,8 +57,8 @@ async fn local_node_cow_amm_jit() {
 async fn cow_amm_jit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(100)).await;
-    let [bob, cow_amm_owner] = onchain.make_accounts(to_wei(1000)).await;
+    let [solver] = onchain.make_solvers(eth(100)).await;
+    let [bob, cow_amm_owner] = onchain.make_accounts(eth(1000)).await;
 
     let [dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(100))
@@ -67,11 +67,8 @@ async fn cow_amm_jit(web3: Web3) {
     // Fund the buffers with a lot of buy tokens so we can pay out the required
     // tokens for 2 orders in the same direction without having to worry about
     // getting the liquidity on-chain.
-    dai.mint(
-        onchain.contracts().gp_settlement.address().into_legacy(),
-        to_wei(100_000),
-    )
-    .await;
+    dai.mint(*onchain.contracts().gp_settlement.address(), eth(100_000))
+        .await;
 
     // set up cow_amm
     let oracle =
@@ -88,10 +85,10 @@ async fn cow_amm_jit(web3: Web3) {
         .unwrap();
 
     // Fund cow amm owner with 2_000 dai and allow factory take them
-    dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
+    dai.mint(cow_amm_owner.address(), eth(2_000)).await;
 
     dai.approve(*cow_amm_factory.address(), eth(2_000))
-        .from(cow_amm_owner.address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -101,7 +98,7 @@ async fn cow_amm_jit(web3: Web3) {
         .weth
         .deposit()
         .value(eth(1))
-        .from(cow_amm_owner.address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -109,7 +106,7 @@ async fn cow_amm_jit(web3: Web3) {
         .contracts()
         .weth
         .approve(*cow_amm_factory.address(), eth(1))
-        .from(cow_amm_owner.address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -124,7 +121,7 @@ async fn cow_amm_jit(web3: Web3) {
 
     let cow_amm = cow_amm_factory
         .ammDeterministicAddress(
-            cow_amm_owner.address().into_alloy(),
+            cow_amm_owner.address(),
             *dai.address(),
             *onchain.contracts().weth.address(),
         )
@@ -139,9 +136,9 @@ async fn cow_amm_jit(web3: Web3) {
     cow_amm_factory
         .create(
             *dai.address(),
-            to_wei(2_000).into_alloy(),
+            eth(2_000),
             *onchain.contracts().weth.address(),
-            to_wei(1).into_alloy(),
+            eth(1),
             U256::ZERO, // min traded token
             *oracle.address(),
             Bytes::copy_from_slice(&oracle_data),
@@ -223,7 +220,7 @@ async fn cow_amm_jit(web3: Web3) {
         buyToken: *dai.address(),
         receiver: Default::default(),
         sellAmount: U256::from(10).pow(U256::from(17)),
-        buyAmount: to_wei(230).into_alloy(),
+        buyAmount: eth(230),
         validTo: valid_to,
         appData: FixedBytes(APP_DATA),
         feeAmount: U256::ZERO,
@@ -272,7 +269,7 @@ async fn cow_amm_jit(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(bob.address().into_alloy())
+        .from(bob.address())
         .value(alloy::primitives::U256::from(10u64.pow(17)))
         .send_and_watch()
         .await
@@ -284,7 +281,7 @@ async fn cow_amm_jit(web3: Web3) {
             onchain.contracts().allowance.into_alloy(),
             alloy::primitives::U256::MAX,
         )
-        .from(bob.address().into_alloy())
+        .from(bob.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -307,11 +304,7 @@ async fn cow_amm_jit(web3: Web3) {
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
     let amm_balance_before = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
-    let bob_balance_before = dai
-        .balanceOf(bob.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let bob_balance_before = dai.balanceOf(bob.address()).call().await.unwrap();
 
     let fee = ethcontract::U256::exp10(16); // 0.01 WETH
 
@@ -364,11 +357,7 @@ async fn cow_amm_jit(web3: Web3) {
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let amm_balance = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
-        let bob_balance = dai
-            .balanceOf(bob.address().into_alloy())
-            .call()
-            .await
-            .unwrap();
+        let bob_balance = dai.balanceOf(bob.address()).call().await.unwrap();
 
         let amm_received = amm_balance - amm_balance_before;
         let bob_received = bob_balance - bob_balance_before;
@@ -413,8 +402,8 @@ async fn cow_amm_driver_support(web3: Web3) {
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
 
-    let [solver] = onchain.make_solvers_forked(to_wei(11)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers_forked(eth(11)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
 
     // find some USDC available onchain
     const USDC_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
@@ -453,7 +442,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .value(weth_to_send)
         .send_and_watch()
         .await
@@ -462,7 +451,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         .contracts()
         .weth
         .transfer(USDC_WETH_COW_AMM.into_alloy(), weth_to_send)
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -480,12 +469,9 @@ async fn cow_amm_driver_support(web3: Web3) {
     // Give trader some USDC
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            usdc.transfer(
-                trader.address().into_alloy(),
-                to_wei_with_exp(1000, 6).into_alloy(),
-            )
-            .from(USDC_WHALE_MAINNET)
-            .into_transaction_request(),
+            usdc.transfer(trader.address(), to_wei_with_exp(1000, 6).into_alloy())
+                .from(USDC_WHALE_MAINNET)
+                .into_transaction_request(),
             ImpersonateConfig {
                 fund_amount: None,
                 stop_impersonate: true,
@@ -502,7 +488,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         onchain.contracts().allowance.into_alloy(),
         to_wei_with_exp(1000, 6).into_alloy(),
     )
-    .from(trader.address().into_alloy())
+    .from(trader.address())
     .send_and_watch()
     .await
     .unwrap();
@@ -621,8 +607,8 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: usdc.address().into_legacy(),
-            buy_token: usdt.address().into_legacy(),
+            sell_token: *usdc.address(),
+            buy_token: *usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -714,8 +700,8 @@ async fn local_node_cow_amm_opposite_direction() {
 async fn cow_amm_opposite_direction(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(100)).await;
-    let [bob, cow_amm_owner] = onchain.make_accounts(to_wei(1000)).await;
+    let [solver] = onchain.make_solvers(eth(100)).await;
+    let [bob, cow_amm_owner] = onchain.make_accounts(eth(1000)).await;
 
     let [dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(100))
@@ -740,10 +726,10 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Fund the CoW AMM owner with DAI and WETH and approve the factory to transfer
     // them
-    dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
+    dai.mint(cow_amm_owner.address(), eth(2_000)).await;
 
     dai.approve(*cow_amm_factory.address(), eth(2_000))
-        .from(cow_amm_owner.address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -752,7 +738,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(cow_amm_owner.address().into_alloy())
+        .from(cow_amm_owner.address())
         .value(eth(1))
         .send_and_watch()
         .await
@@ -761,7 +747,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .contracts()
         .weth
         .approve(*cow_amm_factory.address(), eth(1))
-        .from(cow_amm_owner.address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -770,7 +756,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .value(eth(1))
         .send_and_watch()
         .await
@@ -786,7 +772,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     let cow_amm_address = cow_amm_factory
         .ammDeterministicAddress(
-            cow_amm_owner.address().into_alloy(),
+            cow_amm_owner.address(),
             *dai.address(),
             *onchain.contracts().weth.address(),
         )
@@ -802,9 +788,9 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     cow_amm_factory
         .create(
             *dai.address(),
-            to_wei(2_000).into_alloy(),
+            eth(2_000),
             *onchain.contracts().weth.address(),
-            to_wei(1).into_alloy(),
+            eth(1),
             U256::ZERO, // min traded token
             *oracle.address(),
             Bytes::copy_from_slice(&oracle_data),
@@ -923,13 +909,13 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     };
 
     // Fund trader "bob" with DAI and approve allowance
-    dai.mint(bob.address(), to_wei(250)).await;
+    dai.mint(bob.address(), eth(250)).await;
 
     dai.approve(
         onchain.contracts().allowance.into_alloy(),
         alloy::primitives::U256::MAX,
     )
-    .from(bob.address().into_alloy())
+    .from(bob.address())
     .send_and_watch()
     .await
     .unwrap();
@@ -945,7 +931,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let bob_weth_balance_before = onchain
         .contracts()
         .weth
-        .balanceOf(bob.address().into_alloy())
+        .balanceOf(bob.address())
         .call()
         .await
         .unwrap();
@@ -1009,8 +995,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     let quote_request = OrderQuoteRequest {
         from: bob.address(),
-        sell_token: dai.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
+        sell_token: *dai.address(),
+        buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
                 value: NonZeroU256::try_from(executed_amount).unwrap(),
@@ -1022,16 +1008,19 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // Must align with the mocked_solutions.
     let quote_response = services.submit_quote(&quote_request).await.unwrap();
     assert!(quote_response.verified);
-    assert_eq!(quote_response.quote.sell_token, dai.address().into_legacy());
+    assert_eq!(quote_response.quote.sell_token, *dai.address());
     assert_eq!(
         quote_response.quote.buy_token,
-        onchain.contracts().weth.address().into_legacy()
+        *onchain.contracts().weth.address()
     );
     // Ensure the amounts are the same as the solution proposes.
-    assert_eq!(quote_response.quote.sell_amount, executed_amount);
+    assert_eq!(
+        quote_response.quote.sell_amount,
+        executed_amount.into_alloy()
+    );
     assert_eq!(
         quote_response.quote.buy_amount,
-        ethcontract::U256::exp10(17)
+        U256::from(10).pow(U256::from(17))
     );
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)
@@ -1070,7 +1059,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         let bob_weth_balance_after = onchain
             .contracts()
             .weth
-            .balanceOf(bob.address().into_alloy())
+            .balanceOf(bob.address())
             .call()
             .await
             .unwrap();
