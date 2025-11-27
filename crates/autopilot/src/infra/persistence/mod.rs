@@ -47,26 +47,19 @@ pub mod dto;
 pub struct Persistence {
     s3: Option<s3::Uploader>,
     postgres: Arc<Postgres>,
+    /// Writing into this channel will cause the auction to be written to the
+    /// DB in an orderly manner (FIFO).
     upload_queue: mpsc::UnboundedSender<AuctionUpload>,
 }
 
 struct AuctionUpload {
-    id: domain::auction::Id,
-    data: RawAuctionData,
+    auction_id: domain::auction::Id,
+    auction_data: RawAuctionData,
 }
 
 impl Persistence {
     pub async fn new(config: Option<s3::Config>, postgres: Arc<Postgres>) -> Self {
-        let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
-        let db = postgres.clone();
-        tokio::task::spawn(async move {
-            while let Some(upload) = receiver.recv().await {
-                if let Err(err) = db.replace_current_auction(upload.id, &upload.data).await {
-                    tracing::warn!(?err, "failed to replace auction in DB");
-                }
-            }
-            tracing::error!("auction upload task terminated unexpectedly");
-        });
+        let sender = Self::spawn_db_upload_task(postgres.clone());
 
         Self {
             s3: match config {
@@ -76,6 +69,24 @@ impl Persistence {
             postgres,
             upload_queue: sender,
         }
+    }
+
+    /// Spawns a task that writes the most recent auction to the DB. Uploads happen
+    /// on a FIFO basis so the last write will always be the most recent auction.
+    fn spawn_db_upload_task(db: Arc<Postgres>) -> mpsc::UnboundedSender<AuctionUpload> {
+        let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
+        tokio::task::spawn(async move {
+            while let Some(upload) = receiver.recv().await {
+                if let Err(err) = db
+                    .replace_current_auction(upload.auction_id, &upload.auction_data)
+                    .await
+                {
+                    tracing::error!(?err, "failed to replace auction in DB");
+                }
+            }
+            tracing::error!("auction upload task terminated unexpectedly");
+        });
+        sender
     }
 
     pub async fn leader(&self, key: String) -> LeaderLock {
@@ -98,13 +109,13 @@ impl Persistence {
     /// with the new one.
     pub fn replace_current_auction_in_db(
         &self,
-        id: domain::auction::Id,
-        auction: &domain::RawAuctionData,
+        auction_id: domain::auction::Id,
+        auction_data: &domain::RawAuctionData,
     ) {
         self.upload_queue
             .send(AuctionUpload {
-                id,
-                data: dto::auction::from_domain(auction.clone()),
+                auction_id,
+                auction_data: dto::auction::from_domain(auction_data.clone()),
             })
             .expect("upload queue should be alive at all times");
     }
