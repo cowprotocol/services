@@ -4,10 +4,13 @@
 
 use {
     crate::interactions::Erc20ApproveInteraction,
-    alloy::primitives::Address,
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::alloy::ERC20,
-    ethrpc::Web3,
+    ethrpc::{Web3, alloy::conversions::IntoLegacy},
     maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
@@ -17,6 +20,7 @@ use {
         collections::{HashMap, HashSet},
         slice,
     },
+    web3::types::CallRequest,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -197,10 +201,12 @@ where
             let web3 = web3.clone();
 
             async move {
-                let allowance = ERC20::Instance::new(token, web3.alloy.clone())
-                    .allowance(owner, spender)
-                    .call()
-                    .await;
+                let calldata = ERC20::ERC20::allowanceCall { owner, spender }.abi_encode();
+                let req = CallRequest::builder()
+                    .to(token.into_legacy())
+                    .data(calldata.into())
+                    .build();
+                let allowance = web3.eth().call(req, None).await;
                 (spender, token, allowance)
             }
         });
@@ -209,7 +215,7 @@ where
     let mut allowances = HashMap::new();
     for (spender, token, allowance) in results {
         let allowance = match allowance {
-            Ok(allowance) => allowance,
+            Ok(allowance) => U256::from_be_slice(&allowance.0),
             Err(err) => {
                 tracing::warn!("error retrieving allowance for token {:?}: {}", token, err);
                 continue;
