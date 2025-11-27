@@ -26,8 +26,8 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -36,7 +36,7 @@ async fn test(web3: Web3) {
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -44,7 +44,7 @@ async fn test(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(3))
         .send_and_watch()
         .await
@@ -55,11 +55,7 @@ async fn test(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
-    let balance = token
-        .balanceOf(trader.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address().into_legacy(),
@@ -88,7 +84,7 @@ async fn test(web3: Web3) {
             Default::default(),
             [
                 vec![GPv2Settlement::GPv2Interaction::Data {
-                    target: trader.address().into_alloy(),
+                    target: trader.address(),
                     value: U256::ZERO,
                     callData: Default::default(),
                 }],
@@ -96,27 +92,23 @@ async fn test(web3: Web3) {
                 Default::default(),
             ],
         )
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        token
-            .balanceOf(trader.address().into_alloy())
+        !token
+            .balanceOf(trader.address())
             .call()
             .await
             .unwrap()
-            != U256::ZERO
+            .is_zero()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    let balance = token
-        .balanceOf(trader.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, eth(1));
 
     let all_events_registered = || async {

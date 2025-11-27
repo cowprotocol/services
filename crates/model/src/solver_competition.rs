@@ -1,8 +1,7 @@
 use {
     crate::{AuctionId, order::OrderUid},
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::U256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -36,7 +35,7 @@ pub struct SolverCompetitionAPI {
 pub struct CompetitionAuction {
     pub orders: Vec<OrderUid>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub prices: BTreeMap<Address, alloy::primitives::U256>,
+    pub prices: BTreeMap<Address, U256>,
 }
 
 #[serde_as]
@@ -51,7 +50,7 @@ pub struct SolverSettlement {
     #[serde(default)]
     pub ranking: usize,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub clearing_prices: BTreeMap<Address, alloy::primitives::U256>,
+    pub clearing_prices: BTreeMap<Address, U256>,
     pub orders: Vec<Order>,
     #[serde(default)]
     pub is_winner: bool,
@@ -189,28 +188,28 @@ mod tests {
                         OrderUid([0x33; 56]),
                     ],
                     prices: btreemap! {
-                        Address::repeat_byte(0x11) => alloy::primitives::U256::from(1000),
-                        Address::repeat_byte(0x22) => alloy::primitives::U256::from(2000),
-                        Address::repeat_byte(0x33) => alloy::primitives::U256::from(3000),
+                        Address::repeat_byte(0x11) => U256::from(1000),
+                        Address::repeat_byte(0x22) => U256::from(2000),
+                        Address::repeat_byte(0x33) => U256::from(3000),
                     },
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
                     solver_address: Address::repeat_byte(0x22),
-                    score: Some(Score::Solver(1.into())),
+                    score: Some(Score::Solver(U256::ONE)),
                     ranking: 1,
                     clearing_prices: btreemap! {
-                        Address::repeat_byte(0x22) => alloy::primitives::U256::from(8),
+                        Address::repeat_byte(0x22) => U256::from(8),
                     },
                     orders: vec![
                         Order::Colocated {
                             id: OrderUid([0x33; 56]),
-                            sell_amount: alloy::primitives::U256::from(12),
-                            buy_amount: alloy::primitives::U256::from(13),
+                            sell_amount: U256::from(12),
+                            buy_amount: U256::from(13),
                         },
                         Order::Legacy {
                             id: OrderUid([0x44; 56]),
-                            executed_amount: alloy::primitives::U256::from(14),
+                            executed_amount: U256::from(14),
                         },
                     ],
                     is_winner: true,

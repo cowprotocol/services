@@ -25,33 +25,37 @@ async fn local_node_eth_integration() {
 async fn eth_integration(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(trader_a.address(), to_wei(51)).await;
-    token.mint(trader_b.address(), to_wei(51)).await;
+    token.mint(trader_a.address(), eth(51)).await;
+    token.mint(trader_b.address(), eth(51)).await;
 
     // Approve GPv2 for trading
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(51))
-        .from(trader_a.address().into_alloy())
+        .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
         .approve(onchain.contracts().allowance.into_alloy(), eth(51))
-        .from(trader_b.address().into_alloy())
+        .from(trader_b.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
+    let trader_a_eth_balance_before = web3
+        .eth()
+        .balance(trader_a.address().into_legacy(), None)
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -121,8 +125,16 @@ async fn eth_integration(web3: Web3) {
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     let trade_happened = || async {
-        let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
-        let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();
+        let balance_a = web3
+            .eth()
+            .balance(trader_a.address().into_legacy(), None)
+            .await
+            .unwrap();
+        let balance_b = web3
+            .eth()
+            .balance(trader_b.address().into_legacy(), None)
+            .await
+            .unwrap();
 
         let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == to_wei(49);
         let trader_b_eth_increased = balance_b >= to_wei(49);

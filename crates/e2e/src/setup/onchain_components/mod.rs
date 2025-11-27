@@ -4,7 +4,10 @@ use {
         setup::{DeployedContracts, deploy::Contracts},
     },
     ::alloy::{
-        network::{Ethereum, NetworkWallet},
+        network::{Ethereum, NetworkWallet, TransactionBuilder},
+        primitives::Address,
+        providers::Provider,
+        rpc::types::TransactionRequest,
         signers::local::PrivateKeySigner,
     },
     app_data::Hook,
@@ -13,14 +16,7 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
-    core::panic,
-    ethcontract::{
-        Account,
-        H160,
-        PrivateKey,
-        U256,
-        transaction::{TransactionBuilder, TransactionResult},
-    },
+    ethcontract::{Account, H160, PrivateKey, U256},
     ethrpc::alloy::{
         CallBuilderExt,
         ProviderSignerExt,
@@ -93,23 +89,6 @@ pub fn eth(amount: u32) -> ::alloy::primitives::U256 {
     ::alloy::primitives::U256::from(amount) * ::alloy::primitives::utils::Unit::ETHER.wei()
 }
 
-pub async fn hook_for_transaction<T>(tx: TransactionBuilder<T>) -> Hook
-where
-    T: web3::Transport,
-{
-    let gas_limit = tx
-        .clone()
-        .estimate_gas()
-        .await
-        .expect("transaction reverted when estimating gas")
-        .as_u64();
-    Hook {
-        target: tx.to.map(IntoAlloy::into_alloy).unwrap(),
-        call_data: tx.data.unwrap().0,
-        gas_limit,
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct TestAccount {
     account: Account,
@@ -121,8 +100,8 @@ impl TestAccount {
         &self.account
     }
 
-    pub fn address(&self) -> H160 {
-        self.account.address()
+    pub fn address(&self) -> Address {
+        self.account.address().into_alloy()
     }
 
     pub fn private_key(&self) -> &[u8; 32] {
@@ -142,9 +121,9 @@ impl TestAccount {
         )
     }
 
-    pub async fn nonce(&self, web3: &Web3) -> U256 {
-        web3.eth()
-            .transaction_count(self.address(), None)
+    pub async fn nonce(&self, web3: &Web3) -> u64 {
+        web3.alloy
+            .get_transaction_count(self.address())
             .await
             .unwrap()
     }
@@ -192,9 +171,9 @@ pub struct MintableToken {
 }
 
 impl MintableToken {
-    pub async fn mint(&self, to: H160, amount: U256) {
+    pub async fn mint(&self, to: Address, amount: ::alloy::primitives::U256) {
         self.contract
-            .mint(to.into_alloy(), amount.into_alloy())
+            .mint(to, amount)
             .from(self.minter.address().into_alloy())
             .send_and_watch()
             .await
@@ -217,9 +196,9 @@ pub struct CowToken {
 }
 
 impl CowToken {
-    pub async fn fund(&self, to: H160, amount: U256) {
+    pub async fn fund(&self, to: Address, amount: ::alloy::primitives::U256) {
         self.contract
-            .transfer(to.into_alloy(), amount.into_alloy())
+            .transfer(to, amount)
             .from(self.holder.address().into_alloy())
             .send_and_watch()
             .await
@@ -230,7 +209,7 @@ impl CowToken {
         let domain = self.contract.DOMAIN_SEPARATOR().call().await.unwrap();
         let nonce = self
             .contract
-            .nonces(owner.address().into_alloy())
+            .nonces(owner.address())
             .call()
             .await
             .unwrap()
@@ -242,7 +221,7 @@ impl CowToken {
             buffer[0..32].copy_from_slice(&hex!(
                 "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9"
             ));
-            buffer[44..64].copy_from_slice(owner.address().as_bytes());
+            buffer[44..64].copy_from_slice(owner.address().as_slice());
             buffer[76..96].copy_from_slice(spender.as_bytes());
             value.to_big_endian(&mut buffer[96..128]);
             nonce.to_big_endian(&mut buffer[128..160]);
@@ -254,7 +233,7 @@ impl CowToken {
         let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);
 
         let permit = self.contract.permit(
-            owner.address().into_alloy(),
+            owner.address(),
             spender.into_alloy(),
             value.into_alloy(),
             deadline.into_alloy(),
@@ -320,7 +299,10 @@ impl OnchainComponents {
     }
 
     /// Generate next `N` accounts with the given initial balance.
-    pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
+    pub async fn make_accounts<const N: usize>(
+        &mut self,
+        with_wei: ::alloy::primitives::U256,
+    ) -> [TestAccount; N] {
         let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
         assert_eq!(res.len(), N);
 
@@ -336,7 +318,10 @@ impl OnchainComponents {
 
     /// Generate next `N` accounts with the given initial balance and
     /// authenticate them as solvers.
-    pub async fn make_solvers<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
+    pub async fn make_solvers<const N: usize>(
+        &mut self,
+        with_wei: ::alloy::primitives::U256,
+    ) -> [TestAccount; N] {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
@@ -346,7 +331,7 @@ impl OnchainComponents {
 
             self.contracts
                 .gp_authenticator
-                .addSolver(solver.address().into_alloy())
+                .addSolver(solver.address())
                 .send_and_watch()
                 .await
                 .expect("failed to add solver");
@@ -355,18 +340,18 @@ impl OnchainComponents {
         solvers
     }
 
-    pub async fn set_solver_allowed(&self, solver: H160, allowed: bool) {
+    pub async fn set_solver_allowed(&self, solver: Address, allowed: bool) {
         if allowed {
             self.contracts
                 .gp_authenticator
-                .addSolver(solver.into_alloy())
+                .addSolver(solver)
                 .send_and_watch()
                 .await
                 .expect("failed to add solver");
         } else {
             self.contracts
                 .gp_authenticator
-                .removeSolver(solver.into_alloy())
+                .removeSolver(solver)
                 .send_and_watch()
                 .await
                 .expect("failed to remove solver");
@@ -377,7 +362,7 @@ impl OnchainComponents {
     /// authenticate them as solvers on a forked network.
     pub async fn make_solvers_forked<const N: usize>(
         &mut self,
-        with_wei: U256,
+        with_wei: ::alloy::primitives::U256,
     ) -> [TestAccount; N] {
         let authenticator = &self.contracts.gp_authenticator;
 
@@ -408,7 +393,7 @@ impl OnchainComponents {
 
         for solver in &solvers {
             impersonated_authenticator
-                .addSolver(solver.address().into_alloy())
+                .addSolver(solver.address())
                 .from(auth_manager.into_alloy())
                 .send_and_watch()
                 .await
@@ -542,12 +527,12 @@ impl OnchainComponents {
 
     pub async fn seed_uni_v2_pool(
         &self,
-        asset_a: (&MintableToken, U256),
-        asset_b: (&MintableToken, U256),
+        asset_a: (&MintableToken, ::alloy::primitives::U256),
+        asset_b: (&MintableToken, ::alloy::primitives::U256),
     ) {
         let lp = &asset_a.0.minter;
-        asset_a.0.mint(lp.address(), asset_a.1).await;
-        asset_b.0.mint(lp.address(), asset_b.1).await;
+        asset_a.0.mint(lp.address().into_alloy(), asset_a.1).await;
+        asset_b.0.mint(lp.address().into_alloy(), asset_b.1).await;
 
         self.contracts
             .uniswap_v2_factory
@@ -559,10 +544,7 @@ impl OnchainComponents {
 
         asset_a
             .0
-            .approve(
-                *self.contracts.uniswap_v2_router.address(),
-                asset_a.1.into_alloy(),
-            )
+            .approve(*self.contracts.uniswap_v2_router.address(), asset_a.1)
             .from(lp.address().into_alloy())
             .send_and_watch()
             .await
@@ -570,10 +552,7 @@ impl OnchainComponents {
 
         asset_b
             .0
-            .approve(
-                *self.contracts.uniswap_v2_router.address(),
-                asset_b.1.into_alloy(),
-            )
+            .approve(*self.contracts.uniswap_v2_router.address(), asset_b.1)
             .from(lp.address().into_alloy())
             .send_and_watch()
             .await
@@ -583,8 +562,8 @@ impl OnchainComponents {
             .addLiquidity(
                 *asset_a.0.address(),
                 *asset_b.0.address(),
-                asset_a.1.into_alloy(),
-                asset_b.1.into_alloy(),
+                asset_a.1,
+                asset_b.1,
                 ::alloy::primitives::U256::ZERO,
                 ::alloy::primitives::U256::ZERO,
                 lp.address().into_alloy(),
@@ -599,7 +578,11 @@ impl OnchainComponents {
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
     ///
     /// This can be used to modify the pool reserves during a test.
-    pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
+    pub async fn mint_token_to_weth_uni_v2_pool(
+        &self,
+        token: &MintableToken,
+        amount: ::alloy::primitives::U256,
+    ) {
         let pair = contracts::alloy::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
@@ -613,7 +596,9 @@ impl OnchainComponents {
 
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
-        token.mint(pair.address().into_legacy(), amount + 1).await;
+        token
+            .mint(*pair.address(), amount + ::alloy::primitives::U256::ONE)
+            .await;
         let (out0, out1) = if self.contracts.weth.address() < token.address() {
             (1, 0)
         } else {
@@ -707,25 +692,23 @@ impl OnchainComponents {
         cow
     }
 
-    pub async fn send_wei(&self, to: H160, amount: U256) {
-        let balance_before = self.web3.eth().balance(to, None).await.unwrap();
-        let receipt = TransactionBuilder::new(self.web3.legacy.clone())
-            .value(amount)
-            .to(to)
-            .send()
+    pub async fn send_wei(&self, to: Address, amount: ::alloy::primitives::U256) {
+        let balance_before = self.web3.alloy.get_balance(to).await.unwrap();
+        self.web3
+            .alloy
+            .send_transaction(TransactionRequest::default().with_to(to).with_value(amount))
+            .await
+            .unwrap()
+            .watch()
             .await
             .unwrap();
-        let TransactionResult::Receipt(receipt) = receipt else {
-            panic!("expected to get a transaction receipt");
-        };
-        assert_eq!(receipt.status, Some(1.into()));
 
         // There seems to be a bug in anvil where sending ETH does not work
         // reliably with a forked node. On some block numbers the transaction
         // supposedly succeeds but the balances still don't get changed.
         // If you hit this assert try using a different block number for your
         // forked test.
-        let balance_after = self.web3.eth().balance(to, None).await.unwrap();
+        let balance_after = self.web3.alloy.get_balance(to).await.unwrap();
         assert_eq!(balance_after, balance_before + amount);
     }
 

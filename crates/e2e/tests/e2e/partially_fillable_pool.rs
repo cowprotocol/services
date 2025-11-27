@@ -22,35 +22,35 @@ async fn local_node_partially_fillable_pool() {
 async fn test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader_a] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader_a] = onchain.make_accounts(eth(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token_a.mint(trader_a.address(), to_wei(500)).await;
-    token_a.mint(solver.address(), to_wei(1000)).await;
-    token_b.mint(solver.address(), to_wei(1000)).await;
+    token_a.mint(trader_a.address(), eth(500)).await;
+    token_a.mint(solver.address(), eth(1000)).await;
+    token_b.mint(solver.address(), eth(1000)).await;
 
     onchain
         .contracts()
         .uniswap_v2_factory
         .createPair(*token_a.address(), *token_b.address())
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
         .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
         .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -64,17 +64,17 @@ async fn test(web3: Web3) {
             eth(1000),
             U256::ZERO,
             U256::ZERO,
-            solver.address().into_alloy(),
+            solver.address(),
             U256::MAX,
         )
-        .from(solver.address().into_alloy())
+        .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(500))
-        .from(trader_a.address().into_alloy())
+        .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -105,11 +105,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance = token_b
-            .balanceOf(trader_a.address().into_alloy())
-            .call()
-            .await
-            .unwrap();
+        let balance = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         onchain.mint_block().await;
         !balance.is_zero()
     })
@@ -117,21 +113,13 @@ async fn test(web3: Web3) {
     .unwrap();
 
     // Expecting a partial fill because the pool cannot trade the full amount.
-    let sell_balance = token_a
-        .balanceOf(trader_a.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let sell_balance = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     assert!(
         // Sell balance is strictly less than 250.0 because of the fee.
         (249_999_000_000_000_000_000_u128..250_000_000_000_000_000_000_u128)
             .contains(&u128::try_from(sell_balance).unwrap())
     );
-    let buy_balance = token_b
-        .balanceOf(trader_a.address().into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let buy_balance = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     assert!(
         (199_000_000_000_000_000_000_u128..201_000_000_000_000_000_000_u128)
             .contains(&u128::try_from(buy_balance).unwrap())
