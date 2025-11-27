@@ -19,10 +19,8 @@ use tokio::{
 pub fn spawn_heap_dump_handler() {
     // Check if jemalloc profiling is available before spawning the handler
     // This prevents panics that would crash the entire process
-    let profiling_available = std::panic::catch_unwind(|| {
-        jemalloc_pprof::PROF_CTL.as_ref().is_some()
-    })
-    .unwrap_or(false);
+    let profiling_available =
+        std::panic::catch_unwind(|| jemalloc_pprof::PROF_CTL.as_ref().is_some()).unwrap_or(false);
 
     if !profiling_available {
         tracing::warn!(
