@@ -54,6 +54,7 @@ pub struct Persistence {
 
 struct AuctionUpload {
     auction_id: domain::auction::Id,
+    /// Contains everything buy the auction_id.
     auction_data: RawAuctionData,
 }
 
@@ -109,13 +110,13 @@ impl Persistence {
     /// with the new one.
     pub fn replace_current_auction_in_db(
         &self,
-        auction_id: domain::auction::Id,
-        auction_data: &domain::RawAuctionData,
+        new_auction_id: domain::auction::Id,
+        new_auction_data: &domain::RawAuctionData,
     ) {
         self.upload_queue
             .send(AuctionUpload {
-                auction_id,
-                auction_data: dto::auction::from_domain(auction_data.clone()),
+                auction_id: new_auction_id,
+                auction_data: dto::auction::from_domain(new_auction_data.clone()),
             })
             .expect("upload queue should be alive at all times");
     }
