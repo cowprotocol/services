@@ -78,8 +78,14 @@ async fn test(web3: Web3) {
     onchain.mint_block().await;
 
     tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token.balanceOf(trader.address()).call().await.unwrap() != U256::ZERO };
+    let trade_happened = || async {
+        !token
+            .balanceOf(trader.address())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // We expect the partially fillable order to only fill half-way.

@@ -115,8 +115,14 @@ async fn solver_competition(web3: Web3) {
     onchain.mint_block().await;
 
     tracing::info!("waiting for trade");
-    let trade_happened =
-        || async { token_a.balanceOf(trader.address()).call().await.unwrap() == U256::ZERO };
+    let trade_happened = || async {
+        token_a
+            .balanceOf(trader.address())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     let indexed_trades = || async {

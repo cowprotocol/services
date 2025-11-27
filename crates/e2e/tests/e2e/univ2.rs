@@ -98,8 +98,14 @@ async fn test(web3: Web3) {
         .unwrap();
 
     tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token.balanceOf(trader.address()).call().await.unwrap() != U256::ZERO };
+    let trade_happened = || async {
+        !token
+            .balanceOf(trader.address())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     let balance = token.balanceOf(trader.address()).call().await.unwrap();

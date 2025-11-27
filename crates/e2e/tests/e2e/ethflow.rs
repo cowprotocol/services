@@ -419,16 +419,10 @@ async fn test_submit_quote(
     // Amount is reasonable (±10% from real price)
     let approx_output: AlloyU256 = response.quote.sell_amount * AlloyU256::from(DAI_PER_ETH);
     assert!(
-        response
-            .quote
-            .buy_amount
-            .gt(&(approx_output * AlloyU256::from(9u64) / AlloyU256::from(10)))
+        response.quote.buy_amount > (approx_output * AlloyU256::from(9u64) / AlloyU256::from(10))
     );
     assert!(
-        response
-            .quote
-            .buy_amount
-            .lt(&(approx_output * AlloyU256::from(11u64) / AlloyU256::from(10)))
+        response.quote.buy_amount < (approx_output * AlloyU256::from(11u64) / AlloyU256::from(10))
     );
 
     let OrderQuoteSide::Sell {
