@@ -57,12 +57,18 @@ fn to_interaction(
         // change this assumption, we would need to change it there as well.
         receiver.0.into_alloy(),
         pool.vault.0.into_alloy(),
-        Allowances::empty(receiver.0),
+        Allowances::empty(receiver.0.into_alloy()),
     );
 
     let interaction = handler.swap(
-        TokenAmount::new(input.0.token.into(), input.0.amount),
-        TokenAmount::new(output.0.token.into(), output.0.amount),
+        TokenAmount::new(
+            input.0.token.0.0.into_alloy(),
+            input.0.amount.0.into_alloy(),
+        ),
+        TokenAmount::new(
+            output.0.token.0.0.into_alloy(),
+            output.0.amount.0.into_alloy(),
+        ),
     );
 
     let (target, value, call_data) = interaction.encode_swap();

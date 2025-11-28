@@ -26,8 +26,7 @@ impl PoolReading for SwaprPoolReader {
         let fetch_pool = self.0.read_state(pair, block);
 
         async move {
-            let pair_contract =
-                ISwaprPair::Instance::new(pair_address.into_alloy(), self.0.web3.alloy.clone());
+            let pair_contract = ISwaprPair::Instance::new(pair_address, self.0.web3.alloy.clone());
             let fetch_fee = pair_contract.swapFee().block(block.into_alloy());
 
             let (pool, fee) = futures::join!(fetch_pool, fetch_fee.call().into_future());
@@ -60,7 +59,6 @@ mod tests {
             sources::{BaselineSource, uniswap_v2},
         },
         alloy::primitives::{Address, address},
-        ethcontract::H160,
         ethrpc::alloy::errors::testing_alloy_contract_error,
         maplit::hashset,
     };
@@ -69,7 +67,7 @@ mod tests {
     fn sets_fee() {
         let tokens =
             TokenPair::new(Address::from_slice(&[1; 20]), Address::from_slice(&[2; 20])).unwrap();
-        let address = H160::from_low_u64_be(1);
+        let address = Address::with_last_byte(1);
         assert_eq!(
             handle_results(
                 Ok(Some(Pool {
@@ -95,7 +93,7 @@ mod tests {
     fn ignores_contract_errors_when_reading_fee() {
         let tokens =
             TokenPair::new(Address::from_slice(&[1; 20]), Address::from_slice(&[2; 20])).unwrap();
-        let address = H160::from_low_u64_be(1);
+        let address = Address::with_last_byte(1);
         assert!(
             handle_results(
                 Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),

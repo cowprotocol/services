@@ -3,14 +3,11 @@ use {
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
-    ethrpc::{
-        alloy::conversions::IntoAlloy,
-        block_stream::{CurrentBlockWatcher, into_stream},
-    },
+    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::{FutureExt, StreamExt, future::BoxFuture},
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
-    primitive_types::{H160, U256},
+    primitive_types::U256,
     reqwest::{Client, header::AUTHORIZATION},
     serde::Deserialize,
     serde_with::serde_as,
@@ -25,7 +22,7 @@ use {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<H160, U256>);
+struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Address, U256>);
 
 type Token = Address;
 
@@ -155,7 +152,7 @@ async fn get_current_prices(
             let unit =
                 num::BigRational::from_integer(num::BigInt::from(10u64).pow(decimals.into()));
             let normalized_price = u256_to_big_rational(&price) / unit;
-            Some((token.into_alloy(), normalized_price.to_f64()?))
+            Some((token, normalized_price.to_f64()?))
         })
         .collect();
     Ok(normalized_prices)

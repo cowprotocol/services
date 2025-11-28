@@ -237,7 +237,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.args.coin_gecko.coin_gecko_url.clone(),
                     self.args.coin_gecko.coin_gecko_api_key.clone(),
                     &self.network.chain,
-                    weth.address().into_legacy(),
+                    *weth.address(),
                     self.components.tokens.clone(),
                 )
                 .await?;

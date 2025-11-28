@@ -8,6 +8,7 @@ pub mod zeroex;
 use derivative::Derivative;
 use {
     crate::settlement::SettlementEncoder,
+    alloy::primitives::Address,
     anyhow::Result,
     model::{
         TokenPair,
@@ -242,7 +243,7 @@ impl Default for LimitOrder {
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct ConstantProductOrder {
-    pub address: H160,
+    pub address: Address,
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
@@ -283,8 +284,8 @@ impl From<Pool> for ConstantProductOrder {
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct WeightedProductOrder {
-    pub address: H160,
-    pub reserves: BTreeMap<H160, WeightedTokenState>,
+    pub address: Address,
+    pub reserves: BTreeMap<Address, WeightedTokenState>,
     pub fee: Bfp,
     pub version: WeightedPoolVersion,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
@@ -301,8 +302,8 @@ impl std::fmt::Debug for WeightedProductOrder {
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct StablePoolOrder {
-    pub address: H160,
-    pub reserves: BTreeMap<H160, TokenState>,
+    pub address: Address,
+    pub reserves: BTreeMap<Address, TokenState>,
     pub fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]

@@ -25,7 +25,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::constant_product::Pool)
     let fee = num::rational::Ratio::new(pool.fee.numer().as_u32(), pool.fee.denom().as_u32());
 
     Some(Pool {
-        address,
+        address: address.into_alloy(),
         tokens,
         reserves,
         fee,

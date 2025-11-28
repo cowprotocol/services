@@ -20,6 +20,8 @@ use {
     },
     anyhow::{Context, Result, anyhow},
     ethrpc::alloy::conversions::IntoLegacy,
+    futures::StreamExt,
+    rand::Rng,
     std::time::Duration,
 };
 
@@ -29,12 +31,6 @@ pub struct Observer {
     persistence: infra::Persistence,
 }
 
-enum IndexSuccess {
-    NothingToDo,
-    IndexedSettlement,
-    SkippedInvalidTransaction,
-}
-
 impl Observer {
     /// Creates a new Observer and asynchronously schedules the first update
     /// run.
@@ -42,67 +38,61 @@ impl Observer {
         Self { eth, persistence }
     }
 
-    /// Fetches all the available missing data needed for bookkeeping.
-    /// This needs to get called after indexing a new settlement event
-    /// since this code needs that data to already be present in the DB.
-    pub async fn update(&self) {
-        const MAX_RETRIES: usize = 5;
-        let mut attempts = 0;
-        while attempts < MAX_RETRIES {
-            match self.single_update().await {
-                Ok(IndexSuccess::IndexedSettlement) => {
-                    tracing::debug!("on settlement event updater ran and processed event");
-                }
-                Ok(IndexSuccess::SkippedInvalidTransaction) => {
-                    tracing::warn!("stored default values for unindexable transaction");
-                }
-                Ok(IndexSuccess::NothingToDo) => {
-                    tracing::debug!("on settlement event updater ran without update");
+    /// Post processes all outstanding settlements. This involves decoding the
+    /// settlement details from the transaction and associating it with a
+    /// solution proposed by a solver for the auction specified at the end of
+    /// the transaction call data. If no solution can be found a dummy mapping
+    /// gets saved to mark the settlement as processed. This can happen when a
+    /// solver submits a solution despite not winning or if the settlement
+    /// belongs to an auction that was arbitrated in another environment (i.e.
+    /// prod vs. staging).
+    pub async fn post_process_outstanding_settlement_transactions(&self) {
+        let settlements =
+            match Self::retry_with_sleep(|| self.persistence.get_settlements_without_auction())
+                .await
+            {
+                Ok(settlements) => settlements,
+                Err(errs) => {
+                    tracing::warn!(?errs, "failed to fetch unprocessed settlements");
                     return;
                 }
-                Err(err) => {
-                    tracing::debug!(?err, "encountered retryable error");
-                    // wait a little to give temporary errors a chance to resolve themselves
-                    const TEMP_ERROR_BACK_OFF: Duration = Duration::from_millis(100);
-                    tokio::time::sleep(TEMP_ERROR_BACK_OFF).await;
-                    attempts += 1;
-                    continue;
-                }
-            }
+            };
 
-            // everything worked fine -> reset our attempts for the next settlement
-            attempts = 0;
+        if settlements.is_empty() {
+            tracing::debug!("no unprocessed settlements found");
+            return;
         }
+
+        // On mainnet it's common to have multiple settlements in the
+        // same block. So even if we process every block immediately,
+        // we should still post-process multiple settlements concurrently.
+        const MAX_CONCURRENCY: usize = 10;
+        futures::stream::iter(settlements)
+            .for_each_concurrent(MAX_CONCURRENCY, |settlement| async move {
+                tracing::debug!(tx = ?settlement.transaction, "start post processing of settlement");
+                match Self::retry_with_sleep(|| self.post_process_settlement(settlement)).await {
+                    Ok(_) =>  tracing::debug!(
+                        tx = ?settlement.transaction,
+                        "successfully post-processed settlement"
+                    ),
+                    Err(errs) => tracing::warn!(
+                        tx = ?settlement.transaction,
+                        ?errs,
+                        "gave up on post-processing settlement"
+                    ),
+                }
+            })
+            .await;
     }
 
-    /// Update database for settlement events that have not been processed yet.
-    ///
-    /// Returns whether an update was performed.
-    async fn single_update(&self) -> Result<IndexSuccess> {
-        // Find a settlement event that has not been processed yet.
-        let Some(event) = self
-            .persistence
-            .get_settlement_without_auction()
-            .await
-            .context("failed to fetch unprocessed tx from DB")?
-        else {
-            return Ok(IndexSuccess::NothingToDo);
-        };
-
-        tracing::debug!(tx = ?event.transaction, "found unprocessed settlement");
-
+    async fn post_process_settlement(&self, settlement: eth::SettlementEvent) -> Result<()> {
         let settlement_data = self
-            .fetch_auction_data_for_transaction(event.transaction)
+            .fetch_auction_data_for_transaction(settlement.transaction)
             .await?;
         self.persistence
-            .save_settlement(event, settlement_data.as_ref())
+            .save_settlement(settlement, settlement_data.as_ref())
             .await
-            .context("failed to update settlement")?;
-
-        match settlement_data {
-            None => Ok(IndexSuccess::SkippedInvalidTransaction),
-            Some(_) => Ok(IndexSuccess::IndexedSettlement),
-        }
+            .context("failed to update settlement")
     }
 
     /// Inspects the calldata of the transaction, decodes the arguments, and
@@ -178,5 +168,29 @@ impl Observer {
                 }
             }
         }
+    }
+
+    async fn retry_with_sleep<F, OK, ERR>(future: impl Fn() -> F) -> Result<OK, Vec<ERR>>
+    where
+        F: Future<Output = Result<OK, ERR>>,
+        ERR: std::fmt::Debug,
+    {
+        const MAX_RETRIES: usize = 5;
+
+        let mut errors = Vec::new();
+        let mut tries = 0;
+        while tries < MAX_RETRIES {
+            match future().await {
+                Ok(res) => return Ok(res),
+                Err(err) => {
+                    errors.push(err);
+                    tries += 1;
+                    // wait a little to give temporary errors a chance to resolve themselves
+                    let timeout_with_jitter = 50u64 + rand::thread_rng().gen_range(0..=50);
+                    tokio::time::sleep(Duration::from_millis(timeout_with_jitter)).await;
+                }
+            }
+        }
+        Err(errors)
     }
 }

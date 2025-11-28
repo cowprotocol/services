@@ -11,8 +11,9 @@
 use {
     super::swap::fixed_point::Bfp,
     crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
+    alloy::primitives::Address,
     anyhow::Result,
-    ethcontract::{H160, H256},
+    ethcontract::H256,
     reqwest::{Client, Url},
     serde::Deserialize,
     serde_json::json,
@@ -124,7 +125,7 @@ impl RegisteredPools {
     }
 
     /// Groups registered pools by factory addresses.
-    pub fn group_by_factory(self) -> HashMap<H160, RegisteredPools> {
+    pub fn group_by_factory(self) -> HashMap<Address, RegisteredPools> {
         let fetched_block_number = self.fetched_block_number;
         self.pools
             .into_iter()
@@ -148,8 +149,8 @@ impl RegisteredPools {
 pub struct PoolData {
     pub pool_type: PoolType,
     pub id: H256,
-    pub address: H160,
-    pub factory: H160,
+    pub address: Address,
+    pub factory: Address,
     pub swap_enabled: bool,
     pub tokens: Vec<Token>,
 }
@@ -167,7 +168,7 @@ pub enum PoolType {
 #[serde_as]
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct Token {
-    pub address: H160,
+    pub address: Address,
     pub decimals: u8,
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
@@ -244,7 +245,7 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::swap::fixed_point::Bfp,
-        ethcontract::{H160, H256},
+        ethcontract::H256,
         maplit::hashmap,
     };
 
@@ -335,17 +336,17 @@ mod tests {
                     PoolData {
                         pool_type: PoolType::Weighted,
                         id: H256([0x11; 32]),
-                        address: H160([0x22; 20]),
-                        factory: H160([0x55; 20]),
+                        address: Address::repeat_byte(0x22),
+                        factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
                         tokens: vec![
                             Token {
-                                address: H160([0x33; 20]),
+                                address: Address::repeat_byte(0x33),
                                 decimals: 3,
                                 weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
                             },
                             Token {
-                                address: H160([0x44; 20]),
+                                address: Address::repeat_byte(0x44),
                                 decimals: 4,
                                 weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
                             },
@@ -354,17 +355,17 @@ mod tests {
                     PoolData {
                         pool_type: PoolType::Stable,
                         id: H256([0x11; 32]),
-                        address: H160([0x22; 20]),
-                        factory: H160([0x55; 20]),
+                        address: Address::repeat_byte(0x22),
+                        factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
                         tokens: vec![
                             Token {
-                                address: H160([0x33; 20]),
+                                address: Address::repeat_byte(0x33),
                                 decimals: 3,
                                 weight: None,
                             },
                             Token {
-                                address: H160([0x44; 20]),
+                                address: Address::repeat_byte(0x44),
                                 decimals: 4,
                                 weight: None,
                             },
@@ -373,17 +374,17 @@ mod tests {
                     PoolData {
                         pool_type: PoolType::LiquidityBootstrapping,
                         id: H256([0x11; 32]),
-                        address: H160([0x22; 20]),
-                        factory: H160([0x55; 20]),
+                        address: Address::repeat_byte(0x22),
+                        factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
                         tokens: vec![
                             Token {
-                                address: H160([0x33; 20]),
+                                address: Address::repeat_byte(0x33),
                                 decimals: 3,
                                 weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
                             },
                             Token {
-                                address: H160([0x44; 20]),
+                                address: Address::repeat_byte(0x44),
                                 decimals: 4,
                                 weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
                             },
@@ -392,17 +393,17 @@ mod tests {
                     PoolData {
                         pool_type: PoolType::ComposableStable,
                         id: H256([0x11; 32]),
-                        address: H160([0x22; 20]),
-                        factory: H160([0x55; 20]),
+                        address: Address::repeat_byte(0x22),
+                        factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
                         tokens: vec![
                             Token {
-                                address: H160([0x33; 20]),
+                                address: Address::repeat_byte(0x33),
                                 decimals: 3,
                                 weight: None,
                             },
                             Token {
-                                address: H160([0x44; 20]),
+                                address: Address::repeat_byte(0x44),
                                 decimals: 4,
                                 weight: None,
                             },
@@ -436,7 +437,7 @@ mod tests {
 
     #[test]
     fn groups_pools_by_factory() {
-        let pool = |factory: H160, id: u8| PoolData {
+        let pool = |factory: Address, id: u8| PoolData {
             id: H256([id; 32]),
             factory,
             pool_type: PoolType::Weighted,
@@ -447,9 +448,9 @@ mod tests {
 
         let registered_pools = RegisteredPools {
             pools: vec![
-                pool(H160([1; 20]), 1),
-                pool(H160([1; 20]), 2),
-                pool(H160([2; 20]), 3),
+                pool(Address::repeat_byte(1), 1),
+                pool(Address::repeat_byte(1), 2),
+                pool(Address::repeat_byte(2), 3),
             ],
             fetched_block_number: 42,
         };
@@ -457,16 +458,16 @@ mod tests {
         assert_eq!(
             registered_pools.group_by_factory(),
             hashmap! {
-                H160([1; 20]) => RegisteredPools {
+                Address::repeat_byte(1) => RegisteredPools {
                     pools: vec![
-                        pool(H160([1; 20]), 1),
-                        pool(H160([1; 20]), 2),
+                        pool(Address::repeat_byte(1), 1),
+                        pool(Address::repeat_byte(1), 2),
                     ],
                     fetched_block_number: 42,
                 },
-                H160([2; 20]) => RegisteredPools {
+                Address::repeat_byte(2) => RegisteredPools {
                     pools: vec![
-                        pool(H160([2; 20]), 3),
+                        pool(Address::repeat_byte(2), 3),
                     ],
                     fetched_block_number: 42,
                 },
