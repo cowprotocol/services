@@ -66,8 +66,8 @@ pub fn spawn_heap_dump_handler() {
                         handle_connection_with_socket(socket).await;
                     });
 
-                    // 5-minute timeout to prevent stuck dumps from blocking future requests
-                    match tokio::time::timeout(Duration::from_secs(300), &mut handle).await {
+                    // 1-minute timeout to prevent stuck dumps from blocking future requests
+                    match tokio::time::timeout(Duration::from_secs(60), &mut handle).await {
                         Ok(Ok(())) => {
                             // Task completed successfully
                         }
