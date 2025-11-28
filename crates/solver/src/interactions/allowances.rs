@@ -201,8 +201,6 @@ async fn fetch_allowances(
                     .call()
                     .await;
 
-                println!("{:?}", allowance);
-
                 (spender, token, allowance)
             }
         });
