@@ -28,7 +28,7 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
                     .map(|(token, reserve)| {
                         Ok(balancer::v2::weighted::Reserve {
                             asset: eth::Asset {
-                                token: token.into(),
+                                token: token.into_legacy().into(),
                                 amount: reserve.common.balance.into(),
                             },
                             weight: balancer::v2::weighted::Weight::from_raw(

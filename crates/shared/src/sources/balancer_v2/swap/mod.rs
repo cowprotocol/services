@@ -11,8 +11,9 @@ use {
             WeightedTokenState,
         },
     },
+    alloy::primitives::Address,
     error::Error,
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     fixed_point::Bfp,
     std::collections::BTreeMap,
 };
@@ -73,7 +74,7 @@ impl TokenState {
 /// amounts.
 #[derive(Debug)]
 pub struct WeightedPoolRef<'a> {
-    pub reserves: &'a BTreeMap<H160, WeightedTokenState>,
+    pub reserves: &'a BTreeMap<Address, WeightedTokenState>,
     pub swap_fee: Bfp,
     pub version: WeightedPoolVersion,
 }
@@ -81,9 +82,9 @@ pub struct WeightedPoolRef<'a> {
 impl WeightedPoolRef<'_> {
     fn get_amount_out_inner(
         &self,
-        out_token: H160,
+        out_token: Address,
         in_amount: U256,
-        in_token: H160,
+        in_token: Address,
     ) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
@@ -112,16 +113,16 @@ impl WeightedPoolRef<'_> {
 impl BaselineSolvable for WeightedPoolRef<'_> {
     async fn get_amount_out(
         &self,
-        out_token: H160,
-        (in_amount, in_token): (U256, H160),
+        out_token: Address,
+        (in_amount, in_token): (U256, Address),
     ) -> Option<U256> {
         self.get_amount_out_inner(out_token, in_amount, in_token)
     }
 
     async fn get_amount_in(
         &self,
-        in_token: H160,
-        (out_amount, out_token): (U256, H160),
+        in_token: Address,
+        (out_amount, out_token): (U256, Address),
     ) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
@@ -157,8 +158,8 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 /// Stable pool data as a reference used for computing input and output amounts.
 #[derive(Debug)]
 pub struct StablePoolRef<'a> {
-    pub address: H160,
-    pub reserves: &'a BTreeMap<H160, TokenState>,
+    pub address: Address,
+    pub reserves: &'a BTreeMap<Address, TokenState>,
     pub swap_fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
 }
@@ -180,7 +181,9 @@ impl<'a> StablePoolRef<'a> {
     /// swaps.
     ///
     /// <https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L278>
-    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + 'a + use<'a> {
+    pub fn reserves_without_bpt(
+        &self,
+    ) -> impl Iterator<Item = (Address, TokenState)> + 'a + use<'a> {
         let bpt = self.address;
         self.reserves
             .iter()
@@ -190,8 +193,8 @@ impl<'a> StablePoolRef<'a> {
 
     fn upscale_balances_with_token_indices(
         &self,
-        in_token: &H160,
-        out_token: &H160,
+        in_token: &Address,
+        out_token: &Address,
     ) -> Result<BalancesWithIndices, Error> {
         let mut balances = vec![];
         let (mut token_index_in, mut token_index_out) = (0, 0);
@@ -221,8 +224,8 @@ impl<'a> StablePoolRef<'a> {
     /// https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L270
     fn regular_swap_given_in(
         &self,
-        out_token: H160,
-        (in_amount, in_token): (U256, H160),
+        out_token: Address,
+        (in_amount, in_token): (U256, Address),
     ) -> Option<U256> {
         let in_reserves = self.reserves.get(&in_token)?;
         let out_reserves = self.reserves.get(&out_token)?;
@@ -249,8 +252,8 @@ impl<'a> StablePoolRef<'a> {
     /// https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L270
     fn regular_swap_given_out(
         &self,
-        in_token: H160,
-        (out_amount, out_token): (U256, H160),
+        in_token: Address,
+        (out_amount, out_token): (U256, Address),
     ) -> Option<U256> {
         let in_reserves = self.reserves.get(&in_token)?;
         let out_reserves = self.reserves.get(&out_token)?;
@@ -285,9 +288,9 @@ impl<'a> StablePoolRef<'a> {
 impl StablePoolRef<'_> {
     fn get_amount_out_inner(
         &self,
-        out_token: H160,
+        out_token: Address,
         in_amount: U256,
-        in_token: H160,
+        in_token: Address,
     ) -> Option<U256> {
         if in_token == self.address || out_token == self.address {
             self.swap_with_bpt()
@@ -300,16 +303,16 @@ impl StablePoolRef<'_> {
 impl BaselineSolvable for StablePoolRef<'_> {
     async fn get_amount_out(
         &self,
-        out_token: H160,
-        (in_amount, in_token): (U256, H160),
+        out_token: Address,
+        (in_amount, in_token): (U256, Address),
     ) -> Option<U256> {
         self.get_amount_out_inner(out_token, in_amount, in_token)
     }
 
     async fn get_amount_in(
         &self,
-        in_token: H160,
-        (out_amount, out_token): (U256, H160),
+        in_token: Address,
+        (out_amount, out_token): (U256, Address),
     ) -> Option<U256> {
         if in_token == self.address || out_token == self.address {
             self.swap_with_bpt()
@@ -372,11 +375,11 @@ impl WeightedPool {
 }
 
 impl BaselineSolvable for WeightedPool {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
         self.as_pool_ref().get_amount_out(out_token, input).await
     }
 
-    async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: Address, output: (U256, Address)) -> Option<U256> {
         self.as_pool_ref().get_amount_in(in_token, output).await
     }
 
@@ -396,17 +399,17 @@ impl StablePool {
     }
 
     /// See [`StablePoolRef::reserves_without_bpt`].
-    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + '_ {
+    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (Address, TokenState)> + '_ {
         self.as_pool_ref().reserves_without_bpt()
     }
 }
 
 impl BaselineSolvable for StablePool {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
         self.as_pool_ref().get_amount_out(out_token, input).await
     }
 
-    async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: Address, output: (U256, Address)) -> Option<U256> {
         self.as_pool_ref().get_amount_in(in_token, output).await
     }
 
@@ -420,10 +423,11 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::pool_fetching::{AmplificationParameter, CommonPoolState},
+        alloy::primitives::Address,
     };
 
     fn create_weighted_pool_with(
-        tokens: Vec<H160>,
+        tokens: Vec<Address>,
         balances: Vec<U256>,
         weights: Vec<Bfp>,
         scaling_factors: Vec<Bfp>,
@@ -447,7 +451,7 @@ mod tests {
         WeightedPool {
             common: CommonPoolState {
                 id: Default::default(),
-                address: H160::zero(),
+                address: Address::ZERO,
                 swap_fee: Bfp::from_wei(swap_fee),
                 paused: true,
             },
@@ -457,7 +461,7 @@ mod tests {
     }
 
     fn create_stable_pool_with(
-        tokens: Vec<H160>,
+        tokens: Vec<Address>,
         balances: Vec<U256>,
         amplification_parameter: AmplificationParameter,
         scaling_factors: Vec<Bfp>,
@@ -477,7 +481,7 @@ mod tests {
         StablePool {
             common: CommonPoolState {
                 id: Default::default(),
-                address: H160::zero(),
+                address: Address::ZERO,
                 swap_fee: Bfp::from_wei(swap_fee),
                 paused: true,
             },
@@ -507,8 +511,8 @@ mod tests {
     async fn weighted_get_amount_out() {
         // Values obtained from this transaction:
         // https://dashboard.tenderly.co/tx/main/0xa9f571c9bfd4289bd4bd270465d73e1b7e010622ed089d54d81ec63a0365ec22/debugger
-        let crv = H160::repeat_byte(21);
-        let sdvecrv_dao = H160::repeat_byte(42);
+        let crv = ::alloy::primitives::Address::repeat_byte(21);
+        let sdvecrv_dao = ::alloy::primitives::Address::repeat_byte(42);
         let b = create_weighted_pool_with(
             vec![crv, sdvecrv_dao],
             vec![
@@ -532,8 +536,8 @@ mod tests {
     async fn weighted_get_amount_in() {
         // Values obtained from this transaction:
         // https://dashboard.tenderly.co/tx/main/0xafc3dd6a636a85d9c1976dfa5aee33f78e6ee902f285c9d4cf80a0014aa2a052/debugger
-        let weth = H160::repeat_byte(21);
-        let tusd = H160::repeat_byte(42);
+        let weth = ::alloy::primitives::Address::repeat_byte(21);
+        let tusd = ::alloy::primitives::Address::repeat_byte(42);
         let b = create_weighted_pool_with(
             vec![weth, tusd],
             vec![60_000_000_000_000_000_i128.into(), 250_000_000_i128.into()],
@@ -552,7 +556,7 @@ mod tests {
 
     #[test]
     fn construct_balances_and_token_indices() {
-        let tokens: Vec<_> = (1..=3).map(H160::from_low_u64_be).collect();
+        let tokens: Vec<_> = (1..=3).map(Address::with_last_byte).collect();
         let balances = (1..=3).map(|n| n.into()).collect();
         let pool = create_stable_pool_with(
             tokens.clone(),
@@ -593,9 +597,9 @@ mod tests {
         // Test based on actual swap.
         // https://dashboard.tenderly.co/tx/main/0x75be93fff064ad46b423b9e20cee09b0ae7f741087f43e4187d4f4cf59f54229/debugger
         // Token addresses are irrelevant for computation.
-        let dai = H160::from_low_u64_be(1);
-        let usdc = H160::from_low_u64_be(2);
-        let tusd = H160::from_low_u64_be(3);
+        let dai = Address::with_last_byte(1);
+        let usdc = Address::with_last_byte(2);
+        let tusd = Address::with_last_byte(3);
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
@@ -626,9 +630,9 @@ mod tests {
         // Test based on actual swap.
         // https://dashboard.tenderly.co/tx/main/0x38487122158eef6b63570b5d3754ddc223c63af5c049d7b80acacb9e8ca89a63/debugger
         // Token addresses are irrelevant for computation.
-        let dai = H160::from_low_u64_be(1);
-        let usdc = H160::from_low_u64_be(2);
-        let tusd = H160::from_low_u64_be(3);
+        let dai = Address::with_last_byte(1);
+        let usdc = Address::with_last_byte(2);
+        let tusd = Address::with_last_byte(3);
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =

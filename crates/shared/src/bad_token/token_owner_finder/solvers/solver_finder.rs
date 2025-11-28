@@ -1,8 +1,8 @@
 use {
     super::TokenOwnerSolverApi,
     crate::bad_token::token_owner_finder::TokenOwnerProposing,
+    alloy::primitives::Address,
     anyhow::Result,
-    ethcontract::H160,
     prometheus::{
         IntCounterVec,
         core::{AtomicU64, GenericCounter},
@@ -16,8 +16,8 @@ use {
     tracing::Instrument,
 };
 
-type Token = H160;
-type Owner = H160;
+type Token = Address;
+type Owner = Address;
 
 #[derive(Debug)]
 pub struct AutoUpdatingSolverTokenOwnerFinder {
@@ -126,6 +126,7 @@ mod tests {
     use {
         super::*,
         crate::bad_token::token_owner_finder::solvers::solver_api::SolverConfiguration,
+        alloy::primitives::address,
         reqwest::{Client, Url},
         std::str::FromStr,
     };
@@ -145,7 +146,7 @@ mod tests {
         );
         tokio::time::sleep(Duration::from_secs(10)).await;
         let owners = finder
-            .find_candidate_owners(addr!("132d8D2C76Db3812403431fAcB00F3453Fc42125"))
+            .find_candidate_owners(address!("132d8D2C76Db3812403431fAcB00F3453Fc42125"))
             .await
             .unwrap();
         dbg!(owners);

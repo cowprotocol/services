@@ -101,7 +101,7 @@ pub async fn run(args: Arguments) {
     }
 
     let settlement_contract = match args.shared.settlement_contract_address {
-        Some(address) => GPv2Settlement::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        Some(address) => GPv2Settlement::Instance::new(address, web3.alloy.clone()),
         None => GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .expect("load settlement contract"),
@@ -118,10 +118,9 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
-        Some(address) => contracts::alloy::support::Signatures::Instance::new(
-            address.into_alloy(),
-            web3.alloy.clone(),
-        ),
+        Some(address) => {
+            contracts::alloy::support::Signatures::Instance::new(address, web3.alloy.clone())
+        }
         None => contracts::alloy::support::Signatures::Instance::deployed(&web3.alloy)
             .await
             .expect("load signatures contract"),
@@ -163,7 +162,7 @@ pub async fn run(args: Arguments) {
         vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
-        Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        Some(address) => HooksTrampoline::Instance::new(address, web3.alloy.clone()),
         None => HooksTrampoline::Instance::deployed(&web3.alloy)
             .await
             .expect("load hooks trampoline contract"),
@@ -227,11 +226,11 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address().into_legacy(),
+        *native_token.address(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter().map(|t| t.into_alloy()));
+    allowed_tokens.extend(base_tokens.tokens().iter());
     allowed_tokens.push(BUY_ETH_ADDRESS.into_alloy());
     let unsupported_tokens = args.unsupported_tokens.clone();
 
@@ -249,7 +248,7 @@ pub async fn run(args: Arguments) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
-        settlement_contract.address().into_legacy(),
+        *settlement_contract.address(),
     )
     .await
     .expect("failed to initialize token owner finders");
@@ -263,7 +262,7 @@ pub async fn run(args: Arguments) {
                     tracing_node_url,
                     "trace",
                 ),
-                settlement_contract.address().into_legacy(),
+                *settlement_contract.address(),
                 finder,
             )),
             args.shared.token_quality_cache_expiry,

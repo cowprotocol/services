@@ -40,7 +40,7 @@ impl BadTokenDetecting for TraceCallDetector {
 }
 
 impl TraceCallDetector {
-    pub fn new(web3: Web3, settlement: H160, finder: Arc<dyn TokenOwnerFinding>) -> Self {
+    pub fn new(web3: Web3, settlement: Address, finder: Arc<dyn TokenOwnerFinding>) -> Self {
         Self {
             inner: TraceCallDetectorRaw::new(web3, settlement),
             finder,
@@ -53,7 +53,7 @@ impl TraceCallDetector {
         const MIN_AMOUNT: u64 = 100_000;
         let (take_from, amount) = match self
             .finder
-            .find_owner(token.into_legacy(), MIN_AMOUNT.into())
+            .find_owner(token, MIN_AMOUNT.into())
             .await
             .context("find_owner")?
         {
@@ -79,7 +79,7 @@ impl TraceCallDetector {
             }
         };
         self.inner
-            .test_transfer(take_from, token.into_legacy(), amount, &[])
+            .test_transfer(take_from, token, amount, &[])
             .await
     }
 }
@@ -89,11 +89,11 @@ impl TraceCallDetector {
 #[derive(Debug, Clone)]
 pub struct TraceCallDetectorRaw {
     pub web3: Web3,
-    pub settlement_contract: H160,
+    pub settlement_contract: Address,
 }
 
 impl TraceCallDetectorRaw {
-    pub fn new(web3: Web3, settlement: H160) -> Self {
+    pub fn new(web3: Web3, settlement: Address) -> Self {
         Self {
             web3,
             settlement_contract: settlement,
@@ -102,8 +102,8 @@ impl TraceCallDetectorRaw {
 
     pub async fn test_transfer(
         &self,
-        take_from: H160,
-        token: H160,
+        take_from: Address,
+        token: Address,
         amount: U256,
         pre_interactions: &[InteractionData],
     ) -> Result<TokenQuality> {
@@ -148,7 +148,7 @@ impl TraceCallDetectorRaw {
             }
         };
         let relevant_traces = &traces[pre_interactions.len()..];
-        Self::handle_response(relevant_traces, amount, take_from)
+        Self::handle_response(relevant_traces, amount, take_from.into_legacy())
     }
 
     // For the out transfer we use an arbitrary address without balance to detect
@@ -160,10 +160,15 @@ impl TraceCallDetectorRaw {
             .public_address()
     }
 
-    fn create_trace_request(&self, token: H160, amount: U256, take_from: H160) -> Vec<CallRequest> {
+    fn create_trace_request(
+        &self,
+        token: Address,
+        amount: U256,
+        take_from: Address,
+    ) -> Vec<CallRequest> {
         let mut requests = Vec::new();
         let recipient = Self::arbitrary_recipient().into_alloy();
-        let settlement_contract = self.settlement_contract.into_alloy();
+        let settlement_contract = self.settlement_contract;
 
         // 0
         let calldata = ERC20::ERC20::balanceOfCall {
@@ -341,10 +346,11 @@ impl TraceCallDetectorRaw {
     }
 }
 
-fn call_request(from: Option<H160>, to: H160, calldata: Vec<u8>) -> CallRequest {
+fn call_request(from: Option<Address>, to: Address, calldata: Vec<u8>) -> CallRequest {
+    // TODO(jose): figure out the proper mapping of this call request to alloy
     CallRequest {
-        from,
-        to: Some(to),
+        from: from.map(IntoLegacy::into_legacy),
+        to: Some(to.into_legacy()),
         data: Some(calldata.into()),
         ..Default::default()
     }
@@ -400,7 +406,7 @@ mod tests {
         alloy::primitives::address,
         chain::Chain,
         contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory},
-        ethrpc::{Web3, alloy::conversions::IntoLegacy},
+        ethrpc::Web3,
         std::{env, time::Duration},
         web3::types::{
             Action,
@@ -727,7 +733,7 @@ mod tests {
             .unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: settlement.address().into_legacy(),
+            settlement_contract: *settlement.address(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
@@ -739,10 +745,7 @@ mod tests {
                     .await
                     .unwrap()
                     .pair_provider,
-                    base_tokens: base_tokens
-                        .iter()
-                        .map(|token| token.into_legacy())
-                        .collect::<Vec<_>>(),
+                    base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
@@ -754,10 +757,7 @@ mod tests {
                     .await
                     .unwrap()
                     .pair_provider,
-                    base_tokens: base_tokens
-                        .iter()
-                        .map(|token| token.into_legacy())
-                        .collect::<Vec<_>>(),
+                    base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(BalancerVaultFinder(
                     BalancerV2Vault::Instance::deployed(&web3.alloy)
@@ -769,10 +769,7 @@ mod tests {
                         IUniswapV3Factory::Instance::deployed(&web3.alloy)
                             .await
                             .unwrap(),
-                        base_tokens
-                            .iter()
-                            .map(|token| token.into_legacy())
-                            .collect::<Vec<_>>(),
+                        base_tokens.to_vec(),
                         FeeValues::Static,
                     )
                     .await
@@ -787,7 +784,7 @@ mod tests {
                 ),
             ],
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
+        let token_cache = TraceCallDetector::new(web3, *settlement.address(), finder);
 
         println!("testing good tokens");
         for &token in base_tokens {
@@ -807,7 +804,7 @@ mod tests {
     async fn mainnet_univ3() {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
         let web3 = Web3::new_from_env();
-        let base_tokens = vec![testlib::tokens::WETH.into_legacy()];
+        let base_tokens = vec![testlib::tokens::WETH];
         let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
@@ -821,10 +818,10 @@ mod tests {
         );
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: settlement.address().into_legacy(),
+            settlement_contract: *settlement.address(),
             proposers: vec![univ3],
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
+        let token_cache = TraceCallDetector::new(web3, *settlement.address(), finder);
 
         let result = token_cache.detect(testlib::tokens::USDC).await;
         dbg!(&result);
@@ -945,9 +942,9 @@ mod tests {
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
             proposers: vec![solver_token_finder],
-            settlement_contract: settlement.address().into_legacy(),
+            settlement_contract: *settlement.address(),
         });
-        let token_cache = TraceCallDetector::new(web3, settlement.address().into_legacy(), finder);
+        let token_cache = TraceCallDetector::new(web3, *settlement.address(), finder);
 
         for token in tokens {
             let result = token_cache.detect(token).await;

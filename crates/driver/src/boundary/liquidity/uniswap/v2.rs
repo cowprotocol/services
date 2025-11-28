@@ -7,6 +7,7 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
+    alloy::primitives::Address,
     async_trait::async_trait,
     contracts::alloy::IUniswapLikeRouter,
     ethrpc::{
@@ -75,7 +76,7 @@ pub(in crate::boundary::liquidity) fn to_domain_pool(
     );
 
     Ok(liquidity::uniswap::v2::Pool {
-        address: pool.address.into(),
+        address: pool.address.into_legacy().into(),
         router: router(&pool),
         reserves: liquidity::uniswap::v2::Reserves::try_new(
             eth::Asset {
@@ -100,12 +101,18 @@ pub fn to_interaction(
     let handler = uniswap_v2::Inner::new(
         pool.router.0.into_alloy(),
         receiver.0.into_alloy(),
-        Mutex::new(Allowances::empty(receiver.0)),
+        Mutex::new(Allowances::empty(receiver.0.into_alloy())),
     );
 
     let (_, interaction) = handler.settle(
-        TokenAmount::new(input.0.token.into(), input.0.amount),
-        TokenAmount::new(output.0.token.into(), output.0.amount),
+        TokenAmount::new(
+            input.0.token.0.0.into_alloy(),
+            input.0.amount.0.into_alloy(),
+        ),
+        TokenAmount::new(
+            output.0.token.0.0.into_alloy(),
+            output.0.amount.0.into_alloy(),
+        ),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
@@ -142,7 +149,7 @@ where
     let pool_fetcher = {
         let factory = router.factory().call().await?;
         let pair_provider = PairProvider {
-            factory: factory.into_legacy(),
+            factory,
             init_code_digest: config.pool_code.into(),
         };
 
@@ -172,11 +179,7 @@ struct NoAllowanceManaging;
 
 #[async_trait]
 impl AllowanceManaging for NoAllowanceManaging {
-    async fn get_allowances(
-        &self,
-        _: HashSet<eth::H160>,
-        spender: eth::H160,
-    ) -> Result<Allowances> {
+    async fn get_allowances(&self, _: HashSet<Address>, spender: Address) -> Result<Allowances> {
         Ok(Allowances::empty(spender))
     }
 

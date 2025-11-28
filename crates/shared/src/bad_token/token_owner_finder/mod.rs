@@ -29,6 +29,7 @@ use {
         http_client::HttpClientFactory,
         sources::uniswap_v2::pair_provider::PairProvider,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result},
     chain::Chain,
     contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
@@ -38,7 +39,6 @@ use {
         errors::ContractErrorExt,
     },
     futures::{Stream, StreamExt as _},
-    primitive_types::H160,
     rate_limit::Strategy,
     reqwest::Url,
     std::{
@@ -54,7 +54,7 @@ use {
 #[async_trait::async_trait]
 pub trait TokenOwnerProposing: Send + Sync {
     /// Find candidate addresses that might own the token.
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
+    async fn find_candidate_owners(&self, token: Address) -> Result<Vec<Address>>;
 }
 
 /// To detect bad tokens we need to find some address on the network that owns
@@ -63,7 +63,11 @@ pub trait TokenOwnerProposing: Send + Sync {
 pub trait TokenOwnerFinding: Send + Sync {
     /// Find an addresses with at least `min_balance` of tokens and return it,
     /// along with its actual balance.
-    async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>>;
+    async fn find_owner(
+        &self,
+        token: Address,
+        min_balance: U256,
+    ) -> Result<Option<(Address, U256)>>;
 }
 
 /// Arguments related to the token owner finder.
@@ -100,7 +104,7 @@ pub struct Arguments {
         value_parser = parse_owners,
         default_value = "",
     )]
-    pub whitelisted_owners: HashMap<H160, Vec<H160>>,
+    pub whitelisted_owners: HashMap<Address, Vec<Address>>,
 
     /// The solvers urls to query the token owner pairs.
     #[clap(long, env, use_value_delimiter = true)]
@@ -153,7 +157,7 @@ pub struct Ethplorer {
     pub ethplorer_api_key: String,
 }
 
-fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
+fn parse_owners(s: &str) -> Result<HashMap<Address, Vec<Address>>> {
     if s.is_empty() {
         return Ok(Default::default());
     }
@@ -291,7 +295,7 @@ pub async fn init(
     vault: Option<&BalancerV2Vault::Instance>,
     uniswapv3_factory: Option<&IUniswapV3Factory::Instance>,
     base_tokens: &BaseTokens,
-    settlement_contract: H160,
+    settlement_contract: Address,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
     let web3 = ethrpc::instrumented::instrument_with_label(&web3, "tokenOwners".into());
     let finders = args
@@ -392,12 +396,12 @@ pub async fn init(
 pub struct TokenOwnerFinder {
     pub web3: Web3,
     pub proposers: Vec<Arc<dyn TokenOwnerProposing>>,
-    pub settlement_contract: H160,
+    pub settlement_contract: Address,
 }
 
 impl TokenOwnerFinder {
     /// Stream of addresses that might own the token.
-    fn candidate_owners(&self, token: H160) -> impl Stream<Item = H160> + '_ {
+    fn candidate_owners(&self, token: Address) -> impl Stream<Item = Address> + '_ {
         // Combine the results of all finders into a single stream.
         let streams = self.proposers.iter().map(|finder| {
             futures::stream::once(finder.find_candidate_owners(token))
@@ -419,8 +423,12 @@ impl TokenOwnerFinder {
 
 #[async_trait::async_trait]
 impl TokenOwnerFinding for TokenOwnerFinder {
-    async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>> {
-        let instance = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
+    async fn find_owner(
+        &self,
+        token: Address,
+        min_balance: U256,
+    ) -> Result<Option<(Address, U256)>> {
+        let instance = ERC20::Instance::new(token, self.web3.alloy.clone());
 
         // We use a stream with ready_chunks so that we can start with the addresses of
         // fast TokenOwnerFinding implementations first without having to wait
@@ -435,7 +443,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
                 // owner is not the settlement contract.
                 .filter(|owner| *owner != self.settlement_contract)
                 .map(|owner| {
-                    let balance = instance.balanceOf(owner.into_alloy());
+                    let balance = instance.balanceOf(owner);
                     async move {
                         match balance.call().await {
                             Ok(balance) => Ok((owner, balance)),
@@ -462,12 +470,12 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
 #[cfg(test)]
 mod test {
-    use {super::*, clap::Parser};
+    use {super::*, alloy::primitives::address, clap::Parser};
 
-    const TOKEN1: H160 = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-    const TOKEN2: H160 = addr!("7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9");
-    const OWNER1: H160 = addr!("06920c9fc643de77b99cb7670a944ad31eaaa260");
-    const OWNER2: H160 = addr!("06601571aa9d3e8f5f7cdd5b993192618964bab5");
+    const TOKEN1: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+    const TOKEN2: Address = address!("7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9");
+    const OWNER1: Address = address!("06920c9fc643de77b99cb7670a944ad31eaaa260");
+    const OWNER2: Address = address!("06601571aa9d3e8f5f7cdd5b993192618964bab5");
 
     #[test]
     fn parse_owners_empty() {

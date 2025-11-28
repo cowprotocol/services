@@ -1,7 +1,8 @@
 use {
     crate::liquidity::{ConstantProductOrder, WeightedProductOrder},
+    alloy::primitives::Address,
     anyhow::anyhow,
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     shared::{
         baseline_solver::BaselineSolvable,
         sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
@@ -28,11 +29,11 @@ impl FromStr for Arn {
 }
 
 impl BaselineSolvable for ConstantProductOrder {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
         amm_to_pool(self).get_amount_out(out_token, input).await
     }
 
-    async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: Address, output: (U256, Address)) -> Option<U256> {
         amm_to_pool(self).get_amount_in(in_token, output).await
     }
 
@@ -42,13 +43,13 @@ impl BaselineSolvable for ConstantProductOrder {
 }
 
 impl BaselineSolvable for WeightedProductOrder {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
         amm_to_weighted_pool(self)
             .get_amount_out(out_token, input)
             .await
     }
 
-    async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: Address, output: (U256, Address)) -> Option<U256> {
         amm_to_weighted_pool(self)
             .get_amount_in(in_token, output)
             .await

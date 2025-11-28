@@ -116,7 +116,7 @@ impl UniV2BaselineSourceParameters {
         );
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
-            factory: factory.into_legacy(),
+            factory,
             init_code_digest: self.init_code_digest.0,
         };
         let pool_reader = DefaultPoolReader::new(web3.clone(), pair_provider);
@@ -181,7 +181,6 @@ mod tests {
             primitives::{Address, address},
             providers::Provider,
         },
-        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashset,
         model::TokenPair,
     };
@@ -213,9 +212,9 @@ mod tests {
         web3: &Web3,
         version: &str,
         source: BaselineSource,
-        token0: H160,
-        token1: H160,
-        expected_pool_address: H160,
+        token0: Address,
+        token1: Address,
+        expected_pool_address: Address,
     ) {
         let version_ = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version_, version, "wrong node for test");
@@ -224,7 +223,7 @@ mod tests {
             .into_source(web3)
             .await
             .unwrap();
-        let pair = TokenPair::new(token0.into_alloy(), token1.into_alloy()).unwrap();
+        let pair = TokenPair::new(token0, token1).unwrap();
         let pool = source.pair_provider.pair_address(&pair);
         assert_eq!(pool, expected_pool_address);
     }
@@ -241,23 +240,23 @@ mod tests {
 
         test(
             BaselineSource::UniswapV2,
-            testlib::tokens::GNO.into_legacy(),
-            testlib::tokens::WETH.into_legacy(),
-            addr!("3e8468f66d30fc99f745481d4b383f89861702c6"),
+            testlib::tokens::GNO,
+            testlib::tokens::WETH,
+            address!("3e8468f66d30fc99f745481d4b383f89861702c6"),
         )
         .await;
         test(
             BaselineSource::SushiSwap,
-            testlib::tokens::GNO.into_legacy(),
-            testlib::tokens::WETH.into_legacy(),
-            addr!("41328fdba556c8c969418ccccb077b7b8d932aa5"),
+            testlib::tokens::GNO,
+            testlib::tokens::WETH,
+            address!("41328fdba556c8c969418ccccb077b7b8d932aa5"),
         )
         .await;
         test(
             BaselineSource::Swapr,
-            addr!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
-            testlib::tokens::WETH.into_legacy(),
-            addr!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13"),
+            address!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
+            testlib::tokens::WETH,
+            address!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13"),
         )
         .await;
     }
@@ -275,9 +274,9 @@ mod tests {
         // https://sepolia.etherscan.io/tx/0x4d31daa9e74b96a5c9a780cf8839b115ac25127b17226ecb1ad6e7f244fd1c8f
         test(
             BaselineSource::TestnetUniswapV2,
-            addr!("fff9976782d46cc05630d1f6ebab18b2324d6b14"),
-            addr!("7c43482436624585c27cc9f804e53463d5a37aba"),
-            addr!("84A1CE0e56500D51a6a6e2559567007E26dc8a7C"),
+            address!("fff9976782d46cc05630d1f6ebab18b2324d6b14"),
+            address!("7c43482436624585c27cc9f804e53463d5a37aba"),
+            address!("84A1CE0e56500D51a6a6e2559567007E26dc8a7C"),
         )
         .await;
     }
@@ -294,16 +293,16 @@ mod tests {
 
         test(
             BaselineSource::Baoswap,
-            addr!("7f7440c5098462f833e123b44b8a03e1d9785bab"),
-            addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
-            addr!("8746355882e10aae144d3709889dfaa39ff2a692"),
+            address!("7f7440c5098462f833e123b44b8a03e1d9785bab"),
+            address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
+            address!("8746355882e10aae144d3709889dfaa39ff2a692"),
         )
         .await;
         test(
             BaselineSource::Honeyswap,
-            addr!("71850b7e9ee3f13ab46d67167341e4bdc905eef9"),
-            addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
-            addr!("4505b262dc053998c10685dc5f9098af8ae5c8ad"),
+            address!("71850b7e9ee3f13ab46d67167341e4bdc905eef9"),
+            address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
+            address!("4505b262dc053998c10685dc5f9098af8ae5c8ad"),
         )
         .await;
     }
@@ -342,7 +341,7 @@ mod tests {
 
         println!("WETH <> wxDAI pool: {pool:#?}");
         assert_eq!(
-            pool.address.into_alloy(),
+            pool.address,
             address!("8c36f7ca02d50bf8e705f582328b873acbe9438d")
         );
     }
@@ -380,7 +379,7 @@ mod tests {
 
         println!("WETH <> wxDAI pool: {pool:#?}");
         assert_eq!(
-            pool.address.into_alloy(),
+            pool.address,
             address!("7bea4af5d425f2d4485bdad1859c88617df31a67")
         );
     }
