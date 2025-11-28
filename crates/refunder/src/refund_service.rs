@@ -294,3 +294,62 @@ impl RefundService {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Creates a minimal RefundService for testing purposes.
+    fn new_test_service(web3: Web3) -> RefundService {
+        RefundService {
+            db: PgPool::connect_lazy("postgresql://").unwrap(),
+            web3: web3.clone(),
+            ethflow_contracts: vec![],
+            min_validity_duration: 0,
+            min_price_deviation: 0.0,
+            max_gas_price: 0,
+            start_priority_fee_tip: 0,
+            submitter: Submitter {
+                web3: web3.clone(),
+                signer_address: Address::ZERO,
+                gas_estimator: Box::new(web3.legacy.clone()),
+                gas_parameters_of_last_tx: None,
+                nonce_of_last_submission: None,
+                max_gas_price: 0,
+                start_priority_fee_tip: 0,
+            },
+        }
+    }
+
+    /// Verifies that `can_receive_eth()` correctly identifies addresses that
+    /// cannot receive ETH transfers. Some smart contracts reject ETH transfers
+    /// (e.g., EOF contracts or contracts without receive/fallback functions),
+    /// which causes batch refunds to fail with EthTransferFailed errors.
+    ///
+    /// This test uses a real Sepolia EOF contract address that rejects ETH and
+    /// compares it against a normal EOA to ensure the filtering logic works.
+    #[tokio::test]
+    #[ignore] // Run with: cargo test --package refunder --lib test_problematic_sepolia_address -- --ignored
+    async fn test_problematic_sepolia_address() {
+        let web3 = Web3::new_from_url("https://ethereum-sepolia-rpc.publicnode.com");
+        let service = new_test_service(web3);
+
+        // EOF contract that cannot receive ETH (0xef01... bytecode prefix)
+        let problematic = address!("0x66C9152339ce05EE0C8A8eff9EeF8230AbFe8350");
+
+        // Normal EOA for comparison
+        let working = address!("0x5b485e4431853F82d89dba68220A422CC17cE024");
+
+        // Test that can_receive_eth correctly identifies the problematic address
+        assert!(
+            !service.can_receive_eth(problematic).await,
+            "EOF contract should be identified as unable to receive ETH"
+        );
+
+        // Test that can_receive_eth correctly identifies a working address
+        assert!(
+            service.can_receive_eth(working).await,
+            "Normal EOA should be identified as able to receive ETH"
+        );
+    }
+}
