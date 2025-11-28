@@ -171,8 +171,7 @@ pub async fn run(args: Arguments) {
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
-    let domain_separator =
-        DomainSeparator::new(chain_id, settlement_contract.address().into_legacy());
+    let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
 
@@ -590,7 +589,7 @@ async fn verify_deployed_contract_constants(
             .0,
     );
 
-    let domain_separator = DomainSeparator::new(chain_id, contract.address().into_legacy());
+    let domain_separator = DomainSeparator::new(chain_id, *contract.address());
     if !bytecode.contains(&const_hex::encode(domain_separator.0)) {
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }
