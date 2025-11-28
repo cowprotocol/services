@@ -390,7 +390,7 @@ mod tests {
         // Poor man's assert + get
         let allowances = allowances
             .get(&spender)
-            .expect(&format!("should have a spender key {:?}", spender));
+            .unwrap_or_else(|| panic!("should have a spender key {:?}", spender));
         assert_eq!(allowances.spender, spender);
         // We don't check which of the two (0x11, 0x22) got the error vs the result
         // because it's order dependent and without a custom mock transport just for
