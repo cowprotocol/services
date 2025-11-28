@@ -5,7 +5,7 @@ use {
     },
     anyhow::Result,
     ethrpc::{
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{self, CurrentBlockWatcher},
     },
     futures::{FutureExt, StreamExt},
@@ -213,7 +213,7 @@ impl Inner {
                 .iter()
                 // BUY_ETH_ADDRESS is just a marker and not a real address. We'll never be able to
                 // fetch data for it so ignore it to avoid taking exclusive locks all the time.
-                .filter(|address| !cache.contains_key(*address) && address.0.0 != BUY_ETH_ADDRESS)
+                .filter(|address| !cache.contains_key(*address) && address.0.0.into_alloy() != BUY_ETH_ADDRESS)
                 .cloned()
                 .unique()
                 .collect()

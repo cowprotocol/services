@@ -32,7 +32,7 @@ use {
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
 /// It is used in place of an actual buy token address in an order.
-pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
+pub const BUY_ETH_ADDRESS: Address = Address::repeat_byte(0xee);
 
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Interactions {

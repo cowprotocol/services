@@ -4,10 +4,11 @@ use {
         arguments::{self, display_option, display_secret_option},
         trade_finding::{Interaction, QuoteExecution},
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Result, ensure},
     bigdecimal::BigDecimal,
-    ethcontract::{H160, U256},
+    ethcontract::H160,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::future::BoxFuture,
     itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -200,8 +201,8 @@ pub struct Arguments {
     /// The amount in native tokens atoms to use for price estimation. Should be
     /// reasonably large so that small pools do not influence the prices. If
     /// not set a reasonable default is used based on network id.
-    #[clap(long, env, value_parser = U256::from_dec_str)]
-    pub amount_to_estimate_prices_with: Option<U256>,
+    #[clap(long, env)]
+    pub amount_to_estimate_prices_with: Option<alloy::primitives::U256>,
 
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
@@ -260,16 +261,16 @@ pub struct Arguments {
         long,
         env,
         value_delimiter = ',',
-        value_parser = parse_tuple::<H160, H160>
+        value_parser = parse_tuple::<Address, Address>
     )]
-    pub native_price_approximation_tokens: Vec<(H160, H160)>,
+    pub native_price_approximation_tokens: Vec<(Address, Address)>,
 
     /// Tokens for which quote verification should not be attempted. This is an
     /// escape hatch when there is a very bad but verifiable liquidity source
     /// that would win against a very good but unverifiable liquidity source
     /// (e.g. private liquidity that exists but can't be verified).
     #[clap(long, env, value_delimiter = ',')]
-    pub tokens_without_verification: Vec<H160>,
+    pub tokens_without_verification: Vec<Address>,
 }
 
 /// Custom Clap parser for tuple pair
@@ -542,8 +543,8 @@ impl Estimate {
     /// Returns (sell_amount, buy_amount).
     pub fn amounts(&self, query: &Query) -> (U256, U256) {
         match query.kind {
-            OrderKind::Buy => (self.out_amount, query.in_amount.get()),
-            OrderKind::Sell => (query.in_amount.get(), self.out_amount),
+            OrderKind::Buy => (self.out_amount, query.in_amount.get().into_alloy()),
+            OrderKind::Sell => (query.in_amount.get().into_alloy(), self.out_amount),
         }
     }
 
@@ -553,7 +554,7 @@ impl Estimate {
     /// unit of sell_token (buy_amount / sell_amount).
     pub fn price_in_buy_token_f64(&self, query: &Query) -> f64 {
         let (sell_amount, buy_amount) = self.amounts(query);
-        buy_amount.to_f64_lossy() / sell_amount.to_f64_lossy()
+        f64::from(buy_amount) / f64::from(sell_amount)
     }
 }
 

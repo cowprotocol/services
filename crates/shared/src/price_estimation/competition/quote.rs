@@ -138,7 +138,7 @@ impl RankingContext {
     /// trade route would report a higher `out_amount_in_eth`. This is also
     /// referred to as "bang-for-buck" and what matters most to traders.
     fn effective_eth_out(&self, estimate: &Estimate, kind: OrderKind) -> U256 {
-        let eth_out = estimate.out_amount.to_f64_lossy() * self.native_price;
+        let eth_out = f64::from(estimate.out_amount) * self.native_price;
         let fees = estimate.gas as f64 * self.gas_price;
         let effective_eth_out = match kind {
             // High fees mean receiving less `buy_token` from your sell order.
@@ -163,13 +163,14 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
+        alloy::primitives::U256,
         gas_estimation::GasPrice1559,
         model::order::OrderKind,
     };
 
     fn price(out_amount: u128, gas: u64) -> PriceEstimateResult {
         Ok(Estimate {
-            out_amount: out_amount.into(),
+            out_amount: U256::from(out_amount),
             gas,
             ..Default::default()
         })
@@ -352,13 +353,13 @@ mod tests {
     #[tokio::test]
     async fn prefer_verified_over_unverified() {
         let worse_verified_quote = Ok(Estimate {
-            out_amount: 900_000.into(),
+            out_amount: U256::from(900_000),
             gas: 2_000,
             verified: true,
             ..Default::default()
         });
         let better_unverified_quote = Ok(Estimate {
-            out_amount: 1_000_000.into(),
+            out_amount: U256::from(1_000_000),
             gas: 1_000,
             verified: false,
             ..Default::default()

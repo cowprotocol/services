@@ -71,7 +71,7 @@ async fn test(web3: Web3) {
         from: Some(safe.address().into_legacy()),
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(4),
-        buy_token: BUY_ETH_ADDRESS,
+        buy_token: BUY_ETH_ADDRESS.into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,

@@ -2,10 +2,11 @@ mod settlement_encoder;
 
 use {
     crate::liquidity::Settleable,
+    alloy::primitives::Address,
     anyhow::Result,
     ethrpc::alloy::conversions::IntoLegacy,
     model::order::{Order, OrderKind},
-    primitive_types::{H160, U256},
+    primitive_types::U256,
     shared::{
         conversions::U256Ext as _,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
@@ -25,8 +26,8 @@ pub struct Trade {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TradeExecution {
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub fee_amount: U256,
@@ -75,8 +76,8 @@ impl Trade {
         };
 
         Some(TradeExecution {
-            sell_token: order.sell_token.into_legacy(),
-            buy_token: order.buy_token.into_legacy(),
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
             sell_amount,
             buy_amount,
             fee_amount: self.executed_fee()?,
@@ -112,7 +113,7 @@ pub enum Revertable {
 
 impl Settlement {
     /// Creates a new settlement builder for the specified clearing prices.
-    pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
+    pub fn new(clearing_prices: HashMap<Address, U256>) -> Self {
         Self {
             encoder: SettlementEncoder::new(clearing_prices),
         }
@@ -128,7 +129,7 @@ impl Settlement {
     }
 
     /// Returns the clearing prices map.
-    pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
+    pub fn clearing_prices(&self) -> &HashMap<Address, U256> {
         self.encoder.clearing_prices()
     }
 
@@ -157,13 +158,12 @@ pub mod tests {
     use {
         super::*,
         crate::liquidity::SettlementHandling,
-        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashmap,
         model::order::{OrderClass, OrderData, OrderKind, OrderMetadata},
     };
 
     pub fn assert_settlement_encoded_with<L, S>(
-        prices: HashMap<H160, U256>,
+        prices: HashMap<Address, U256>,
         handler: S,
         execution: L::Execution,
         exec: impl FnOnce(&mut SettlementEncoder),
@@ -187,7 +187,10 @@ pub mod tests {
 
     /// Helper function for creating a settlement for the specified prices and
     /// trades for testing objective value computations.
-    fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
+    fn test_settlement(
+        prices: HashMap<alloy::primitives::Address, U256>,
+        trades: Vec<Trade>,
+    ) -> Settlement {
         Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades),
         }
@@ -277,13 +280,13 @@ pub mod tests {
         // Test if passing a clearing price of zero makes it not possible to add
         // trades.
 
-        let token0 = H160::from_low_u64_be(0);
-        let token1 = H160::from_low_u64_be(1);
+        let token0 = Address::with_last_byte(0);
+        let token1 = Address::with_last_byte(1);
 
         let order = Order {
             data: OrderData {
-                sell_token: token0.into_alloy(),
-                buy_token: token1.into_alloy(),
+                sell_token: token0,
+                buy_token: token1,
                 sell_amount: alloy::primitives::U256::from(10),
                 buy_amount: alloy::primitives::U256::from(9),
                 kind: OrderKind::Sell,
@@ -413,8 +416,8 @@ pub mod tests {
 
     #[test]
     fn includes_limit_order_ucp() {
-        let sell_token = H160([1; 20]);
-        let buy_token = H160([2; 20]);
+        let sell_token = alloy::primitives::Address::repeat_byte(1);
+        let buy_token = alloy::primitives::Address::repeat_byte(2);
 
         let settlement = test_settlement(
             hashmap! {
@@ -424,8 +427,8 @@ pub mod tests {
             vec![Trade {
                 order: Order {
                     data: OrderData {
-                        sell_token: sell_token.into_alloy(),
-                        buy_token: buy_token.into_alloy(),
+                        sell_token,
+                        buy_token,
                         sell_amount: alloy::primitives::U256::from(100_000_u128),
                         buy_amount: alloy::primitives::U256::from(99_000_u128),
                         kind: OrderKind::Sell,
@@ -453,10 +456,10 @@ pub mod tests {
         assert_eq!(
             settlement.clearing_prices,
             [
-                100_000_u128.into(),
-                100_000_u128.into(),
-                99_000_u128.into(),
-                100_000_u128.into(),
+                alloy::primitives::U256::from(100_000_u128),
+                alloy::primitives::U256::from(100_000_u128),
+                alloy::primitives::U256::from(99_000_u128),
+                alloy::primitives::U256::from(100_000_u128),
             ],
         );
     }

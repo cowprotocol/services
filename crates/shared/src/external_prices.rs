@@ -9,7 +9,6 @@ use {
     crate::conversions::U256Ext,
     alloy::primitives::{Address, U256},
     anyhow::{Result, bail},
-    ethrpc::alloy::conversions::IntoAlloy,
     model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, One as _, ToPrimitive as _},
     std::{
@@ -33,7 +32,7 @@ impl ExternalPrices {
         // wrapped asset price exist with a value of 1. This protects us from
         // malformed input (in case there are issues with the prices from the
         // `/auction` endpoint for example).
-        for token in [native_token, BUY_ETH_ADDRESS.into_alloy()] {
+        for token in [native_token, BUY_ETH_ADDRESS] {
             match xrates.get(&token) {
                 Some(price) if !price.is_one() => {
                     let price = price.to_f64().unwrap_or(f64::NAN);
@@ -138,7 +137,7 @@ mod tests {
             hashmap! {
                 Address::repeat_byte(1) => BigRational::new(1.into(), 10.into()),
                 native_token => BigRational::one(),
-                BUY_ETH_ADDRESS.into_alloy() => BigRational::one(),
+                BUY_ETH_ADDRESS => BigRational::one(),
             },
         );
     }
@@ -159,7 +158,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(
                 native_token,
                 btreemap! {
-                    BUY_ETH_ADDRESS.into_alloy() => U256::from(13_370_000_000_000_000_000_u128),
+                    BUY_ETH_ADDRESS => U256::from(13_370_000_000_000_000_000_u128),
                 },
             )
             .is_err()

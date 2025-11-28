@@ -138,7 +138,7 @@ pub struct LegacyTrade {
 /// A trade with JIT orders.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
-    pub clearing_prices: HashMap<Address, U256>,
+    pub clearing_prices: HashMap<Address, ::alloy::primitives::U256>,
     /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
     /// The onchain calls to run before sending user funds to the settlement
