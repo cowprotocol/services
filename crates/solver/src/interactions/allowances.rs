@@ -5,12 +5,13 @@
 use {
     crate::interactions::Erc20ApproveInteraction,
     alloy::{
+        network::Ethereum,
         primitives::{Address, U256},
-        sol_types::SolCall,
+        providers::DynProvider,
     },
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::alloy::ERC20,
-    ethrpc::{Web3, alloy::conversions::IntoLegacy},
+    ethrpc::Web3,
     maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
@@ -20,7 +21,6 @@ use {
         collections::{HashMap, HashSet},
         slice,
     },
-    web3::types::CallRequest,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -51,17 +51,17 @@ pub trait AllowanceManaging: Send + Sync {
 pub struct ApprovalRequest {
     pub token: Address,
     pub spender: Address,
-    pub amount: alloy::primitives::U256,
+    pub amount: U256,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Allowances {
     spender: Address,
-    allowances: HashMap<Address, alloy::primitives::U256>,
+    allowances: HashMap<Address, U256>,
 }
 
 impl Allowances {
-    pub fn new(spender: Address, allowances: HashMap<Address, alloy::primitives::U256>) -> Self {
+    pub fn new(spender: Address, allowances: HashMap<Address, U256>) -> Self {
         Self {
             spender,
             allowances,
@@ -125,7 +125,7 @@ impl Interaction for Approval {
         let approve = Erc20ApproveInteraction {
             token: self.token,
             spender: self.spender,
-            amount: alloy::primitives::U256::MAX,
+            amount: U256::MAX,
         };
 
         approve.encode()
@@ -153,7 +153,7 @@ impl AllowanceManaging for AllowanceManager {
         spender: Address,
     ) -> Result<Allowances> {
         Ok(fetch_allowances(
-            self.web3.clone(),
+            self.web3.alloy.clone(),
             self.owner,
             hashmap! { spender => tokens },
         )
@@ -171,7 +171,8 @@ impl AllowanceManaging for AllowanceManager {
                 .insert(request.token);
         }
 
-        let allowances = fetch_allowances(self.web3.clone(), self.owner, spender_tokens).await?;
+        let allowances =
+            fetch_allowances(self.web3.alloy.clone(), self.owner, spender_tokens).await?;
         let mut result = Vec::new();
         for request in requests {
             let allowance = allowances
@@ -184,29 +185,24 @@ impl AllowanceManaging for AllowanceManager {
     }
 }
 
-async fn fetch_allowances<T>(
-    web3: Web3<T>,
+async fn fetch_allowances(
+    alloy: DynProvider<Ethereum>,
     owner: Address,
     spender_tokens: HashMap<Address, HashSet<Address>>,
-) -> Result<HashMap<Address, Allowances>>
-where
-    T: ethcontract::web3::BatchTransport + Send + Sync + 'static,
-    T::Batch: Send,
-    T::Out: Send,
-{
+) -> Result<HashMap<Address, Allowances>> {
     let futures = spender_tokens
         .into_iter()
         .flat_map(|(spender, tokens)| tokens.into_iter().map(move |token| (spender, token)))
         .map(|(spender, token)| {
-            let web3 = web3.clone();
-
+            let alloy = alloy.clone();
             async move {
-                let calldata = ERC20::ERC20::allowanceCall { owner, spender }.abi_encode();
-                let req = CallRequest::builder()
-                    .to(token.into_legacy())
-                    .data(calldata.into())
-                    .build();
-                let allowance = web3.eth().call(req, None).await;
+                let allowance = ERC20::Instance::new(token, alloy)
+                    .allowance(owner, spender)
+                    .call()
+                    .await;
+
+                println!("{:?}", allowance);
+
                 (spender, token, allowance)
             }
         });
@@ -215,7 +211,7 @@ where
     let mut allowances = HashMap::new();
     for (spender, token, allowance) in results {
         let allowance = match allowance {
-            Ok(allowance) => U256::from_be_slice(&allowance.0),
+            Ok(allowance) => allowance,
             Err(err) => {
                 tracing::warn!("error retrieving allowance for token {:?}: {}", token, err);
                 continue;
@@ -236,15 +232,11 @@ where
 mod tests {
     use {
         super::*,
-        alloy::sol_types::SolCall,
-        ethcontract::{
-            common::abi::{self, Token},
-            web3::types::CallRequest,
+        alloy::{
+            providers::{Provider, ProviderBuilder, mock::Asserter},
+            sol_types::SolValue,
         },
-        ethrpc::mock,
         maplit::{hashmap, hashset},
-        serde_json::{Value, json},
-        shared::addr,
     };
 
     #[test]
@@ -253,19 +245,19 @@ mod tests {
         let allowances = Allowances::new(
             Address::repeat_byte(0x01),
             hashmap! {
-                token => alloy::primitives::U256::from(100),
+                token => U256::from(100),
             },
         );
 
         assert_eq!(
             allowances
-                .approve_token(TokenAmount::new(token, alloy::primitives::U256::from(42)))
+                .approve_token(TokenAmount::new(token, U256::from(42)))
                 .unwrap(),
             None
         );
         assert_eq!(
             allowances
-                .approve_token(TokenAmount::new(token, alloy::primitives::U256::from(100)))
+                .approve_token(TokenAmount::new(token, U256::from(100)))
                 .unwrap(),
             None
         );
@@ -278,13 +270,13 @@ mod tests {
         let allowances = Allowances::new(
             spender,
             hashmap! {
-                token => alloy::primitives::U256::from(100),
+                token => U256::from(100),
             },
         );
 
         assert_eq!(
             allowances
-                .approve_token(TokenAmount::new(token, alloy::primitives::U256::from(1337)))
+                .approve_token(TokenAmount::new(token, U256::from(1337)))
                 .unwrap(),
             Some(Approval { token, spender })
         );
@@ -295,16 +287,13 @@ mod tests {
         let allowances = Allowances::new(
             Address::repeat_byte(0x01),
             hashmap! {
-                Address::repeat_byte(0x02) => alloy::primitives::U256::from(100),
+                Address::repeat_byte(0x02) => U256::from(100),
             },
         );
 
         assert!(
             allowances
-                .approve_token(TokenAmount::new(
-                    Address::repeat_byte(0x03),
-                    alloy::primitives::U256::ZERO
-                ))
+                .approve_token(TokenAmount::new(Address::repeat_byte(0x03), U256::ZERO))
                 .is_err()
         );
     }
@@ -316,10 +305,7 @@ mod tests {
         let allowances = Allowances::new(spender, hashmap! {});
 
         assert_eq!(
-            allowances.approve_token_or_default(TokenAmount::new(
-                token,
-                alloy::primitives::U256::from(1337)
-            )),
+            allowances.approve_token_or_default(TokenAmount::new(token, U256::from(1337))),
             Some(Approval { token, spender })
         );
     }
@@ -329,16 +315,16 @@ mod tests {
         let mut allowances = Allowances::new(
             Address::repeat_byte(0x01),
             hashmap! {
-                Address::repeat_byte(0x11) => alloy::primitives::U256::from(1),
-                Address::repeat_byte(0x12) => alloy::primitives::U256::from(2),
+                Address::repeat_byte(0x11) => U256::from(1),
+                Address::repeat_byte(0x12) => U256::from(2),
             },
         );
         allowances
             .extend(Allowances::new(
                 Address::repeat_byte(0x01),
                 hashmap! {
-                    Address::repeat_byte(0x11) => alloy::primitives::U256::from(42),
-                    Address::repeat_byte(0x13) => alloy::primitives::U256::from(3),
+                    Address::repeat_byte(0x11) => U256::from(42),
+                    Address::repeat_byte(0x13) => U256::from(3),
                 },
             ))
             .unwrap();
@@ -346,9 +332,9 @@ mod tests {
         assert_eq!(
             allowances.allowances,
             hashmap! {
-                Address::repeat_byte(0x11) => alloy::primitives::U256::from(42),
-                Address::repeat_byte(0x12) => alloy::primitives::U256::from(2),
-                Address::repeat_byte(0x13) => alloy::primitives::U256::from(3),
+                Address::repeat_byte(0x11) => U256::from(42),
+                Address::repeat_byte(0x12) => U256::from(2),
+                Address::repeat_byte(0x13) => U256::from(3),
             },
         );
     }
@@ -371,7 +357,7 @@ mod tests {
             Approval { token, spender }.encode(),
             (
                 token,
-                alloy::primitives::U256::ZERO,
+                U256::ZERO,
                 const_hex::decode(
                     "095ea7b3\
                     0000000000000000000000000202020202020202020202020202020202020202\
@@ -382,42 +368,19 @@ mod tests {
         );
     }
 
-    fn allowance_return_data(value: ethcontract::U256) -> Value {
-        json!(web3::types::Bytes(abi::encode(&[Token::Uint(value)])))
-    }
-
     #[tokio::test]
     async fn fetch_skips_failed_allowance_calls() {
         let owner = Address::repeat_byte(1);
         let spender = Address::repeat_byte(2);
 
-        let web3 = mock::web3();
-        web3.transport()
-            .mock()
-            .expect_execute()
-            .returning(move |method, params| {
-                assert_eq!(method, "eth_call");
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
 
-                let call = serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
-                assert_eq!(
-                    call.data.unwrap(),
-                    contracts::alloy::ERC20::ERC20::allowanceCall { owner, spender }
-                        .abi_encode()
-                        .into()
-                );
-                let to = call.to.unwrap();
-
-                if to == addr!("1111111111111111111111111111111111111111") {
-                    Ok(allowance_return_data(1337.into()))
-                } else if to == addr!("2222222222222222222222222222222222222222") {
-                    Err(web3::Error::Decoder("test error".to_string()))
-                } else {
-                    panic!("call to unexpected token {to:?}")
-                }
-            });
+        asserter.push_success(&U256::from(1337).abi_encode());
+        asserter.push_failure_msg("test error");
 
         let allowances = fetch_allowances(
-            web3,
+            provider.erased(),
             owner,
             hashmap! {
                 spender => hashset![Address::repeat_byte(0x11), Address::repeat_byte(0x22)],
@@ -426,14 +389,18 @@ mod tests {
         .await
         .unwrap();
 
+        // Poor man's assert + get
+        let allowances = allowances
+            .get(&spender)
+            .expect(&format!("should have a spender key {:?}", spender));
+        assert_eq!(allowances.spender, spender);
+        // We don't check which of the two (0x11, 0x22) got the error vs the result
+        // because it's order dependent and without a custom mock transport just for
+        // this test, we wouldn't be able to make it deterministic
+        assert_eq!(allowances.allowances.len(), 1);
         assert_eq!(
-            allowances,
-            hashmap! {
-                spender => Allowances {
-                    spender,
-                    allowances: hashmap! { Address::repeat_byte(0x11) => alloy::primitives::U256::from(1337) },
-                },
-            },
+            allowances.allowances.values().next(),
+            Some(&U256::from(1337))
         );
     }
 }
