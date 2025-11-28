@@ -11,8 +11,7 @@ use {
             time::DeadlineExceeded,
         },
         infra::{
-            self,
-            Simulator,
+            self, Simulator,
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
@@ -127,6 +126,7 @@ impl Competition {
                 Error::MalformedRequest
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
+        tracing::debug!("retrieved auction orders count: {}", auction.orders.len());
 
         let settlement_contract = self.eth.contracts().settlement().address();
         let solver_address = self.solver.account().address();
@@ -152,6 +152,8 @@ impl Competition {
         let (auction, balances, app_data) =
             tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
+        tracing::debug!("auction orders count: {}", auction.orders.len());
+
         let auction = Self::run_blocking_with_timer("update_orders", move || {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
@@ -165,6 +167,11 @@ impl Competition {
             )
         })
         .await;
+
+        tracing::debug!(
+            "auction orders count (post update): {}",
+            auction.orders.len()
+        );
 
         // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
@@ -445,6 +452,9 @@ impl Competition {
                 // for performance reasons.
                 return true;
             }
+
+            // TODO: figure out some better way to do this. The wrappers kind of break the whole case of checking balances (like we do in like 5 other places)
+            return true;
 
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {

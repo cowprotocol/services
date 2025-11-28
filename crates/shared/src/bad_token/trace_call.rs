@@ -1,10 +1,18 @@
 use {
     super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
-    crate::{ethrpc::Web3, trace_many},
+    crate::{
+        ethrpc::Web3,
+        price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrideRequest,
+            BalanceOverrides,
+            BalanceOverriding,
+        },
+        trace_many,
+    },
     alloy::{primitives::Address, sol_types::SolCall},
     anyhow::{Context, Result, bail, ensure},
     contracts::alloy::ERC20,
-    ethcontract::{PrivateKey, jsonrpc::ErrorCode},
+    ethcontract::{PrivateKey, jsonrpc::ErrorCode, state_overrides::StateOverrides},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
@@ -122,7 +130,29 @@ impl TraceCallDetectorRaw {
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
         request.append(&mut self.create_trace_request(token, amount, take_from));
-        let traces = match trace_many::trace_many(request, &self.web3).await {
+
+        // Generate balance override for the take_from address
+        let balance_overrides = BalanceOverrides::new(self.web3.clone());
+        let state_overrides = balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token: token.into(),
+                holder: take_from.into(),
+                amount,
+            })
+            .await
+            .map(|(addr, override_)| {
+                let mut overrides = StateOverrides::default();
+                overrides.insert(addr, override_);
+                overrides
+            });
+
+        let traces = match trace_many::trace_many_with_state_overrides(
+            request,
+            &self.web3,
+            state_overrides,
+        )
+        .await
+        {
             Ok(result) => result,
             Err(e) => {
                 // If the node doesn't support trace calls, consider the token as good to not

@@ -10,9 +10,7 @@ use {
         domain::{
             Liquidity,
             competition::{
-                self,
-                Solution,
-                Solved,
+                self, Solution, Solved,
                 solution::{self, Settlement},
             },
             eth::{self, Gas},
@@ -443,7 +441,7 @@ pub fn order_excluded_from_auction(
     order: &competition::Order,
     reason: OrderExcludedFromAuctionReason,
 ) {
-    tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
+    tracing::debug!(uid=?order.uid, ?reason, "order excluded from auction");
 }
 
 /// Observe that a settlement was simulated

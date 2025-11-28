@@ -20,7 +20,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solvers /
+    cp target/release/solvers / && \
+    cp target/release/euler-solver /
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim AS intermediate
@@ -52,6 +53,10 @@ FROM intermediate AS solvers
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 ENTRYPOINT [ "solvers" ]
 
+FROM intermediate AS euler-solver
+COPY --from=cargo-build /euler-solver /usr/local/bin/euler-solver
+ENTRYPOINT [ "euler-solver" ]
+
 # Extract Binary
 FROM intermediate
 RUN apt-get update && \
@@ -68,6 +73,7 @@ COPY --from=cargo-build /driver /usr/local/bin/driver
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
+COPY --from=cargo-build /euler-solver /usr/local/bin/euler-solver
 COPY ./entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
