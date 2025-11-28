@@ -1,6 +1,6 @@
 use {
-    alloy::primitives::Address,
     super::{Order, eth},
+    alloy::primitives::Address,
     std::collections::HashMap,
 };
 

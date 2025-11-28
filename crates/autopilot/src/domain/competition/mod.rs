@@ -1,7 +1,7 @@
 use {
-    alloy::primitives::Address,
     super::auction::order,
     crate::domain::{self, auction, eth},
+    alloy::primitives::Address,
     derive_more::Display,
     num::Saturating,
     std::collections::HashMap,

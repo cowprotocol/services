@@ -27,7 +27,7 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()
-            .map(|addr| eth::H160(addr.0 .0))
+            .map(|addr| eth::H160(addr.0.0))
             .collect(),
     }
 }

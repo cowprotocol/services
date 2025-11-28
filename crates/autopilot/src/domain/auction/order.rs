@@ -1,9 +1,9 @@
 use {
-    alloy::primitives::Address,
     crate::{
         domain,
         domain::{eth, fee},
     },
+    alloy::primitives::Address,
     primitive_types::{H160, H256, U256},
     std::fmt::{self, Debug, Display, Formatter},
 };
@@ -38,7 +38,7 @@ pub struct OrderUid(pub [u8; 56]);
 
 impl OrderUid {
     pub fn owner(&self) -> Address {
-        Address::from(self.parts().1 .0)
+        Address::from(self.parts().1.0)
     }
 
     /// Splits an order UID into its parts.
