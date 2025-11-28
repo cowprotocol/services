@@ -12,7 +12,7 @@ use tokio::{
 /// Usage:
 /// ```bash
 /// # From your local machine (one-liner):
-/// kubectl exec orderbook-pod -n namespace -- sh -c "echo dump | nc -U /tmp/heap_dump_orderbook.sock" > heap.pprof
+/// kubectl exec <pod> -n <namespace> -- sh -c "echo dump | nc -U /tmp/heap_dump_<binary_name>.sock" > heap.pprof
 ///
 /// # Analyze with pprof:
 /// go tool pprof -http=:8080 heap.pprof
