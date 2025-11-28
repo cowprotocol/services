@@ -12,8 +12,6 @@ use {
 
 pub async fn start(args: impl IntoIterator<Item = String>) {
     observe::panic_hook::install();
-    #[cfg(all(unix, feature = "jemalloc-profiling"))]
-    observe::heap_dump_handler::spawn_heap_dump_handler();
     let args = cli::Args::parse_from(args);
     run_with(args, None).await;
 }
@@ -34,6 +32,8 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
         None,
     );
     observe::tracing::initialize_reentrant(&obs_config);
+    #[cfg(all(unix, feature = "jemalloc-profiling"))]
+    observe::heap_dump_handler::spawn_heap_dump_handler();
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 

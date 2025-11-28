@@ -46,7 +46,7 @@ serde_json = "1.0.117"
 serde_with = "3.8.1"
 sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "tls-native-tls", "bigdecimal", "chrono", "postgres", "macros"] }
 strum = { version = "0.27.2", features = ["derive"] }
-tempfile = "3.11"
+tempfile = "3.10.1"
 thiserror = "1.0.61"
 toml = "0.8.14"
 tokio = { version = "1.38.0", features = ["tracing"] }

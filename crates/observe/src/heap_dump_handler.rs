@@ -1,9 +1,10 @@
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
+    time::{Duration, timeout},
 };
 
-/// Spawns a new thread that listens for connections to a UNIX socket
+/// Spawns a new async task that listens for connections to a UNIX socket
 /// at "/tmp/heap_dump_<process_name>.sock".
 /// When "dump" command is sent, it generates a heap profile using
 /// jemalloc_pprof and streams the binary protobuf data back through the socket.
@@ -31,7 +32,7 @@ pub fn spawn_heap_dump_handler() {
     }
 
     tokio::spawn(async move {
-        let name = binary_name().unwrap_or_default();
+        let name = binary_name().unwrap_or("unknown".to_string());
         let socket_path = format!("/tmp/heap_dump_{name}.sock");
 
         tracing::info!(socket = socket_path, "heap dump handler started");
@@ -43,16 +44,29 @@ pub fn spawn_heap_dump_handler() {
         };
 
         loop {
-            // Catch any panics in connection handling to prevent the handler from crashing
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let listener = &handle.listener;
-                async move { handle_connection(listener).await }
-            }));
+            // Accept connection in main loop, then spawn task for each connection
+            // Sequential processing prevents multiple simultaneous expensive heap dumps
+            match handle.listener.accept().await {
+                Ok((socket, _addr)) => {
+                    let handle = tokio::spawn(async move {
+                        handle_connection_with_socket(socket).await;
+                    });
 
-            match result {
-                Ok(future) => future.await,
+                    // 5-minute timeout to prevent stuck dumps from blocking future requests
+                    match timeout(Duration::from_secs(300), handle).await {
+                        Ok(Ok(())) => {
+                            // Task completed successfully
+                        }
+                        Ok(Err(err)) => {
+                            tracing::error!(?err, "panic in heap dump connection handler");
+                        }
+                        Err(_) => {
+                            tracing::error!("heap dump request timed out after 5 minutes");
+                        }
+                    }
+                }
                 Err(err) => {
-                    tracing::error!(?err, "panic in heap dump connection handler");
+                    tracing::debug!(?err, "failed to accept connection");
                 }
             }
         }
@@ -80,12 +94,7 @@ fn binary_name() -> Option<String> {
     )
 }
 
-async fn handle_connection(listener: &UnixListener) {
-    let Ok((mut socket, _addr)) = listener.accept().await else {
-        tracing::debug!("failed to accept connection");
-        return;
-    };
-
+async fn handle_connection_with_socket(mut socket: UnixStream) {
     let message = read_line(&mut socket).await;
     match message.as_deref() {
         Some("dump") => {

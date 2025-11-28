@@ -6,6 +6,9 @@ on:
         description: 'Tag suffix for the profiling image (e.g., "profiling" or "profiling-v1.2.3")'
         required: false
         default: 'profiling'
+  push:
+    branches:
+      - jemalloc-profiling-support
 
 jobs:
   deploy-profiling:
