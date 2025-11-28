@@ -38,8 +38,19 @@ pub fn spawn_heap_dump_handler() {
         tracing::info!(socket = socket_path, "heap dump handler started");
 
         let _ = tokio::fs::remove_file(&socket_path).await;
+        let listener = match UnixListener::bind(&socket_path) {
+            Ok(listener) => listener,
+            Err(err) => {
+                tracing::error!(
+                    ?err,
+                    socket = socket_path,
+                    "failed to bind heap dump socket"
+                );
+                return;
+            }
+        };
         let handle = SocketHandle {
-            listener: UnixListener::bind(&socket_path).expect("socket handle is unique"),
+            listener,
             socket_path,
         };
 
@@ -48,12 +59,12 @@ pub fn spawn_heap_dump_handler() {
             // Sequential processing prevents multiple simultaneous expensive heap dumps
             match handle.listener.accept().await {
                 Ok((socket, _addr)) => {
-                    let handle = tokio::spawn(async move {
+                    let mut handle = tokio::spawn(async move {
                         handle_connection_with_socket(socket).await;
                     });
 
                     // 5-minute timeout to prevent stuck dumps from blocking future requests
-                    match timeout(Duration::from_secs(300), handle).await {
+                    match timeout(Duration::from_secs(300), &mut handle).await {
                         Ok(Ok(())) => {
                             // Task completed successfully
                         }
@@ -61,6 +72,7 @@ pub fn spawn_heap_dump_handler() {
                             tracing::error!(?err, "panic in heap dump connection handler");
                         }
                         Err(_) => {
+                            handle.abort();
                             tracing::error!("heap dump request timed out after 5 minutes");
                         }
                     }
