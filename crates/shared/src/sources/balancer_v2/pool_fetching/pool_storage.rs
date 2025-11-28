@@ -244,15 +244,17 @@ mod tests {
         Vec<Bfp>,
         Vec<(PoolCreated, u64)>,
     );
+    // This can be made cleaner by making the start and end be u8's but the H256
+    // doesn't support for a from(u8) so this needs to be reviewed upon migration
     fn pool_init_data(start: usize, end: usize) -> PoolInitData {
         let pool_ids: Vec<H256> = (start..=end)
             .map(|i| H256::from_low_u64_be(i as u64))
             .collect();
         let pool_addresses: Vec<Address> = (start..=end)
-            .map(|i| Address::left_padding_from((i as u64).to_be_bytes().as_slice()))
+            .map(|i| Address::with_last_byte(i as u8))
             .collect();
         let tokens: Vec<Address> = (start..=end + 1)
-            .map(|i| Address::left_padding_from((i as u64).to_be_bytes().as_slice()))
+            .map(|i| Address::with_last_byte(i as u8))
             .collect();
         let weights: Vec<Bfp> = (start..=end + 1).map(|i| Bfp::from_wei(i.into())).collect();
         let creation_events: Vec<(PoolCreated, u64)> = (start..=end)
@@ -437,7 +439,7 @@ mod tests {
         let new_pool = weighted::PoolInfo {
             common: common::PoolInfo {
                 id: H256::from_low_u64_be(43110),
-                address: Address::left_padding_from(42u64.to_be_bytes().as_slice()),
+                address: Address::with_last_byte(42),
                 tokens: vec![Address::left_padding_from(808u64.to_be_bytes().as_slice())],
                 scaling_factors: vec![Bfp::exp10(0)],
                 block_created: 3,
