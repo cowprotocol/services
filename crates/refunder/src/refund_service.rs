@@ -109,7 +109,8 @@ impl RefundService {
     }
 
     /// Checks if an address can receive ETH by simulating a small transfer.
-    /// Returns true for EOAs and contracts with working receive/fallback functions.
+    /// Returns true for EOAs and contracts with working receive/fallback
+    /// functions.
     async fn can_receive_eth(&self, address: Address) -> bool {
         use alloy::rpc::types::TransactionRequest;
 
@@ -216,8 +217,8 @@ impl RefundService {
             // previous contract, the order_owners could be zero, or the owner cannot
             // receive ETH (e.g. EOF contracts or contracts with restrictive receive logic)
             tracing::warn!(
-                "Skipping invalid orders (not created in current contract or owner cannot \
-                 receive ETH). Uids: {:?}",
+                "Skipping invalid orders (not created in current contract or owner cannot receive \
+                 ETH). Uids: {:?}",
                 invalid_uids
             );
         }
