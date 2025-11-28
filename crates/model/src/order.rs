@@ -1075,7 +1075,6 @@ mod tests {
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
-        primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
         testlib::assert_json_matches,
@@ -1159,11 +1158,11 @@ mod tests {
             },
             signature: EcdsaSignature {
                 v: 1,
-                r: H256::from_str(
+                r: B256::from_str(
                     "0200000000000000000000000000000000000000000000000000000000000003",
                 )
                 .unwrap(),
-                s: H256::from_str(
+                s: B256::from_str(
                     "0400000000000000000000000000000000000000000000000000000000000005",
                 )
                 .unwrap(),

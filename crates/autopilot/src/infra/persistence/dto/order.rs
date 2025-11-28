@@ -240,8 +240,8 @@ impl From<boundary::Signature> for domain::auction::order::Signature {
 impl From<domain::auction::order::EcdsaSignature> for boundary::EcdsaSignature {
     fn from(signature: domain::auction::order::EcdsaSignature) -> Self {
         Self {
-            r: signature.r,
-            s: signature.s,
+            r: signature.r.0.into(),
+            s: signature.s.0.into(),
             v: signature.v,
         }
     }
@@ -250,8 +250,8 @@ impl From<domain::auction::order::EcdsaSignature> for boundary::EcdsaSignature {
 impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
     fn from(signature: boundary::EcdsaSignature) -> Self {
         Self {
-            r: signature.r,
-            s: signature.s,
+            r: signature.r.0.into(),
+            s: signature.s.0.into(),
             v: signature.v,
         }
     }
