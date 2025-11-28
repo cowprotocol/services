@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(forge build:*)",
+      "Bash(FOUNDRY_PROFILE=cow-protocol forge build:*)",
+      "Bash(forge script:*)",
+      "Bash(cast call:*)",
+      "Bash(cast code:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

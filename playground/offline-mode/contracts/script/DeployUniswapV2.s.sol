@@ -60,11 +60,10 @@ contract DeployUniswapV2 is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy Factory using CREATE2 with compiled bytecode from Solidity 0.5.16
+        // Deploy Factory using CREATE2 with official precompiled bytecode from npm package
         console.log("Deploying UniswapV2Factory with CREATE2...");
-        bytes memory factoryCreationCode = vm.getCode(
-            "contracts/out-uniswap-v2/UniswapV2Factory.sol/UniswapV2Factory.json"
-        );
+        string memory factoryJson = vm.readFile("node_modules/@uniswap/v2-core/build/UniswapV2Factory.json");
+        bytes memory factoryCreationCode = vm.parseJsonBytes(factoryJson, ".bytecode");
         bytes memory factoryBytecode = abi.encodePacked(
             factoryCreationCode,
             abi.encode(deployer) // feeToSetter parameter
@@ -73,12 +72,11 @@ contract DeployUniswapV2 is Script {
         require(factory != address(0), "Factory deployment failed");
         console.log("  Factory deployed at:", factory);
 
-        // Deploy Router using CREATE2 with compiled bytecode from Solidity 0.6.6
+        // Deploy Router using CREATE2 with official precompiled bytecode from npm package
         console.log("");
         console.log("Deploying UniswapV2Router02 with CREATE2...");
-        bytes memory routerCreationCode = vm.getCode(
-            "contracts/out-uniswap-v2-periphery/UniswapV2Router02.sol/UniswapV2Router02.json"
-        );
+        string memory routerJson = vm.readFile("node_modules/@uniswap/v2-periphery/build/UniswapV2Router02.json");
+        bytes memory routerCreationCode = vm.parseJsonBytes(routerJson, ".bytecode");
         bytes memory routerBytecode = abi.encodePacked(
             routerCreationCode,
             abi.encode(factory, weth)

@@ -1,8 +1,7 @@
 [profile.default]
 src = "contracts/src"
 out = "contracts/out"
-libs = ["node_modules", "contracts/lib"]
-test = "contracts/test"
+libs = ["node_modules", "contracts/lib", "../../crates/contracts/solidity"]
 script = "contracts/script"
 
 # Optimizer settings
@@ -24,6 +23,7 @@ remappings = [
     "@openzeppelin/contracts-old/=node_modules/@openzeppelin/contracts-old/",
     "@cowprotocol/contracts/=node_modules/@cowprotocol/contracts/src/contracts/",
     "@cowprotocol/hooks-trampoline/=/Users/lgahdl/Documents/Trabalho/cowswap/hooks-trampoline/src/",
+    "@bleu-services/=../../crates/contracts/solidity/",
     "@uniswap/v2-core/=node_modules/@uniswap/v2-core/",
     "@uniswap/v2-periphery/=node_modules/@uniswap/v2-periphery/",
     "@uniswap/lib/=node_modules/@uniswap/lib/",
@@ -31,19 +31,19 @@ remappings = [
     "forge-std/=node_modules/forge-std/src/"
 ]
 
-# Test settings
-verbosity = 3
-fuzz_runs = 256
-
 # Filesystem permissions
 fs_permissions = [
     { access = "read-write", path = "./config" },
     { access = "read-write", path = "../../configs" },
     { access = "read-write", path = "../" },
+    { access = "read", path = "../../crates/contracts/solidity" },
     { access = "read", path = "./contracts/out-uniswap-v2" },
     { access = "read", path = "./contracts/out-uniswap-v2-periphery" },
     { access = "read", path = "./contracts/out-cow-protocol" },
-    { access = "read", path = "./node_modules" }
+    { access = "read", path = "./node_modules" },
+    { access = "read", path = "./node_modules/@uniswap/v2-core/build" },
+    { access = "read", path = "./node_modules/@uniswap/v2-periphery/build" },
+    { access = "read", path = "./node_modules/@cowprotocol/contracts/deployments" }
 ]
 
 # RPC
@@ -60,11 +60,12 @@ out = "contracts/out-uniswap-v2"
 libs = ["node_modules"]
 script = "node_modules/@uniswap/v2-core/contracts"
 test = "node_modules/@uniswap/v2-core/test"
+skip = ["UniswapV2Pair.sol"] # Skip building the pair contract
 solc_version = "0.5.16"
+cache=true
 optimizer = true
 optimizer_runs = 999999
 evm_version = "istanbul"
-ignored_error_codes = [5159]
 
 # Profile for Uniswap V2 Periphery (Solidity 0.6.6)
 [profile.uniswap-v2-periphery]
@@ -77,7 +78,6 @@ solc_version = "0.6.6"
 optimizer = true
 optimizer_runs = 999999
 evm_version = "istanbul"
-ignored_error_codes = [5159]
 remappings = [
     "@uniswap/lib/=node_modules/@uniswap/lib/",
     "@uniswap/v2-core/=node_modules/@uniswap/v2-core/"
@@ -89,14 +89,11 @@ src = "node_modules/@cowprotocol/contracts/src/contracts"
 out = "contracts/out-cow-protocol"
 libs = ["node_modules"]
 script = "node_modules/@cowprotocol/contracts/src/contracts"
-# Don't compile tests, only production contracts
-test = "contracts/test"
 solc_version = "0.7.6"
 optimizer = true
 optimizer_runs = 1000000
 via_ir = false
 evm_version = "istanbul"
-ignored_error_codes = [5159]
 remappings = [
     "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts-old/"
 ]

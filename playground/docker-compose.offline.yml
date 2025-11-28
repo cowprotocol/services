@@ -106,8 +106,7 @@ services:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - LOG_FILTER=orderbook=trace,shared=trace,shared::price_estimation=trace,shared::price_estimation::native=trace
-      - ACCOUNT_BALANCES_SIMULATION=false
-      - ACCOUNT_BALANCES_SIMULATOR=Web3
+      - SKIP_TRACE_API=true
       - SIMULATION_NODE_URL=http://chain:8545
       - EIP1271_SKIP_CREATION_VALIDATION=true
       - ENABLE_EIP1271_ORDERS=true

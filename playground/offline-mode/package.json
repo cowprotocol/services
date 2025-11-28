@@ -5,12 +5,7 @@
   "scripts": {
     "start-anvil:fresh": "rm -rf state/anvil-state.json & ./scripts/start-anvil.sh",
     "deploy:all": "./scripts/deploy-all.sh",
-    "build": "forge build",
-    "build:default": "FOUNDRY_PROFILE=default forge build",
-    "build:uniswap-v2": "FOUNDRY_PROFILE=uniswap-v2 forge build",
-    "build:uniswap-v2-periphery": "FOUNDRY_PROFILE=uniswap-v2-periphery forge build",
-    "build:cow-protocol": "FOUNDRY_PROFILE=cow-protocol forge build",
-    "build:all": "npm run build:default ; npm run build:uniswap-v2 ; npm run build:uniswap-v2-periphery ; npm run build:cow-protocol"
+    "build": "forge build"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.2",

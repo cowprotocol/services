@@ -2,40 +2,29 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Script.sol";
+import {DeploymentUtils} from "./Utils.sol";
 
-// Import GPv2TradeSimulator (Solidity 0.7.6)
-// We can't use a direct import here due to Solidity version mismatch
-// Instead, we'll use inline assembly/CREATE2 or deploy via bytecode
+// Import Balances from the main codebase using @bleu-services remapping
+// This contract has the balance() function required by the orderbook
+import {Balances} from "@bleu-services/Balances.sol";
 
 contract DeployTradeSimulator is Script {
+    using DeploymentUtils for bytes;
+
     // Deterministic salt for CREATE2
-    bytes32 constant TRADE_SIMULATOR_SALT = keccak256("cowswap-trade-simulator");
+    bytes32 constant BALANCES_SALT = keccak256("cowswap-balances-contract");
 
     function run() public {
         vm.startBroadcast();
 
-        // Deploy GPv2TradeSimulator using CREATE2
-        // Since we can't directly import the 0.7.6 contract in a 0.8.17 script,
-        // we'll deploy it using the artifact bytecode
+        // Deploy Balances contract using CREATE2
+        // This contract has the balance() function required by the orderbook
+        bytes memory bytecode = type(Balances).creationCode;
+        address balances = DeploymentUtils.deployWithCreate2(bytecode, BALANCES_SALT);
 
-        // Get the creation bytecode from the compiled artifact
-        // GPv2TradeSimulator is compiled with the cow-protocol profile, so it's in out-cow-protocol
-        bytes memory bytecode = vm.getCode("contracts/out-cow-protocol/GPv2TradeSimulator.sol/GPv2TradeSimulator.json");
+        require(balances != address(0), "Balances deployment failed");
 
-        bytes32 salt = TRADE_SIMULATOR_SALT;
-        address tradeSimulator;
-        assembly {
-            tradeSimulator := create2(
-                0,
-                add(bytecode, 0x20),
-                mload(bytecode),
-                salt
-            )
-        }
-
-        require(tradeSimulator != address(0), "Deployment failed");
-
-        console.log("GPv2TradeSimulator deployed at:", tradeSimulator);
+        console.log("Balances contract deployed at:", balances);
 
         vm.stopBroadcast();
     }

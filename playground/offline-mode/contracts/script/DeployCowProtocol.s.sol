@@ -23,17 +23,19 @@ contract DeployCowProtocol is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Get bytecode for GPv2AllowListAuthentication
-        bytes memory authenticatorBytecode = vm.getCode(
-            "contracts/out-cow-protocol/GPv2AllowListAuthentication.sol/GPv2AllowListAuthentication.json"
-        );
+        // Deploy GPv2AllowListAuthentication Implementation using CREATE2
+        // Using official precompiled Implementation contract (not proxy) from npm package
+        console.log("Deploying GPv2AllowListAuthentication Implementation with CREATE2...");
+        string memory authenticatorJson = vm.readFile("node_modules/@cowprotocol/contracts/deployments/xdai/GPv2AllowListAuthentication_Implementation.json");
+        bytes memory authenticatorBytecode = vm.parseJsonBytes(authenticatorJson, ".bytecode");
         address authenticator = DeploymentUtils.deployWithCreate2(authenticatorBytecode, AUTHENTICATOR_SALT);
         console.log("GPv2AllowListAuthentication deployed at:", authenticator);
 
-        // Get bytecode for GPv2Settlement with constructor args
-        bytes memory settlementCreationCode = vm.getCode(
-            "contracts/out-cow-protocol/GPv2Settlement.sol/GPv2Settlement.json"
-        );
+        // Deploy GPv2Settlement using CREATE2
+        // Using official precompiled bytecode from npm package
+        console.log("Deploying GPv2Settlement with CREATE2...");
+        string memory settlementJson = vm.readFile("node_modules/@cowprotocol/contracts/deployments/xdai/GPv2Settlement.json");
+        bytes memory settlementCreationCode = vm.parseJsonBytes(settlementJson, ".bytecode");
         bytes memory settlementBytecode = abi.encodePacked(
             settlementCreationCode,
             abi.encode(authenticator, balancerVault)
