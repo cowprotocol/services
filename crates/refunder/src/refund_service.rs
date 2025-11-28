@@ -3,6 +3,7 @@ use {
     alloy::{
         network::TxSigner,
         primitives::{Address, B256, Signature, address},
+        providers::Provider,
     },
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
@@ -107,6 +108,29 @@ impl RefundService {
         })
     }
 
+    /// Checks if an address can receive ETH by simulating a small transfer.
+    /// Returns true for EOAs and contracts with working receive/fallback functions.
+    async fn can_receive_eth(&self, address: Address) -> bool {
+        use alloy::rpc::types::TransactionRequest;
+
+        // Try to estimate gas for sending a minimal amount of ETH
+        let tx = TransactionRequest::default()
+            .to(address)
+            .value(alloy::primitives::U256::from(1));
+
+        match self.web3.alloy.estimate_gas(tx).await {
+            Ok(_) => true,
+            Err(err) => {
+                tracing::warn!(
+                    ?address,
+                    ?err,
+                    "Address cannot receive ETH - will skip refund"
+                );
+                false
+            }
+        }
+    }
+
     async fn identify_uids_refunding_status_via_web3_calls(
         &self,
         refundable_order_uids: Vec<EthOrderPlacement>,
@@ -146,12 +170,27 @@ impl RefundService {
                         return None;
                     }
                 };
-                let refund_status = match order_owner {
+                let mut refund_status = match order_owner {
                     Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
                     Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
                     // any other owner
                     _ => RefundStatus::NotYetRefunded,
                 };
+
+                // For orders that are not yet refunded, check if the owner can receive ETH
+                if refund_status == RefundStatus::NotYetRefunded {
+                    if let Some(owner) = order_owner {
+                        if !self.can_receive_eth(owner).await {
+                            tracing::warn!(
+                                uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
+                                owner = ?owner,
+                                "Order owner cannot receive ETH - marking as invalid"
+                            );
+                            refund_status = RefundStatus::Invalid;
+                        }
+                    }
+                }
+
                 Some((eth_order_placement.uid, refund_status, ethflow_contract))
             });
 
@@ -174,10 +213,11 @@ impl RefundService {
         }
         if !invalid_uids.is_empty() {
             // In exceptional cases, e.g. if the refunder tries to refund orders from a
-            // previous contract, the order_owners could be zero
+            // previous contract, the order_owners could be zero, or the owner cannot
+            // receive ETH (e.g. EOF contracts or contracts with restrictive receive logic)
             tracing::warn!(
-                "Trying to invalidate orders that weren't created in the current contract. Uids: \
-                 {:?}",
+                "Skipping invalid orders (not created in current contract or owner cannot \
+                 receive ETH). Uids: {:?}",
                 invalid_uids
             );
         }
