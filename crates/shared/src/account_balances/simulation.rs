@@ -74,8 +74,7 @@ impl Balances {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
                 let balance = token.balanceOf(query.owner);
-                let allowance =
-                    token.allowance(query.owner, self.vault_relayer().into_alloy());
+                let allowance = token.allowance(query.owner, self.vault_relayer().into_alloy());
                 let (balance, allowance) = futures::try_join!(
                     balance.call().into_future(),
                     allowance.call().into_future()
@@ -85,12 +84,9 @@ impl Balances {
             SellTokenSource::External => {
                 let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
                 let balance = token.balanceOf(query.owner);
-                let approved = vault.hasApprovedRelayer(
-                    query.owner,
-                    self.vault_relayer().into_alloy(),
-                );
-                let allowance =
-                    token.allowance(query.owner, self.vault().into_alloy());
+                let approved =
+                    vault.hasApprovedRelayer(query.owner, self.vault_relayer().into_alloy());
+                let allowance = token.allowance(query.owner, self.vault().into_alloy());
                 let (balance, approved, allowance) = futures::try_join!(
                     balance.call().into_future(),
                     approved.call().into_future(),
@@ -104,12 +100,9 @@ impl Balances {
             }
             SellTokenSource::Internal => {
                 let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
-                let balance = vault
-                    .getInternalBalance(query.owner, vec![query.token]);
-                let approved = vault.hasApprovedRelayer(
-                    query.owner,
-                    self.vault_relayer().into_alloy(),
-                );
+                let balance = vault.getInternalBalance(query.owner, vec![query.token]);
+                let approved =
+                    vault.hasApprovedRelayer(query.owner, self.vault_relayer().into_alloy());
                 let (balance, approved) = futures::try_join!(
                     balance.call().into_future(),
                     approved.call().into_future()
@@ -134,8 +127,7 @@ impl BalanceFetching for Balances {
             .iter()
             .map(|query| async {
                 if query.interactions.is_empty() {
-                    let token =
-                        ERC20::Instance::new(query.token, self.web3.alloy.clone());
+                    let token = ERC20::Instance::new(query.token, self.web3.alloy.clone());
                     self.tradable_balance_simple(query, &token).await
                 } else {
                     self.tradable_balance_simulated(query).await
