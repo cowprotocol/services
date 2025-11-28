@@ -35,6 +35,8 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 mimalloc = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
+jemalloc_pprof = { workspace = true, optional = true }
 model = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }
@@ -71,3 +73,4 @@ workspace = true
 
 [features]
 e2e = []
+jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]
