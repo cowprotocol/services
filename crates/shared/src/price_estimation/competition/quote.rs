@@ -12,7 +12,6 @@ use {
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
-    number::conversions::alloy::ToF64Lossy,
     primitive_types::{H160, U256},
     std::{cmp::Ordering, sync::Arc, time::Duration},
     tracing::instrument,
@@ -139,7 +138,7 @@ impl RankingContext {
     /// trade route would report a higher `out_amount_in_eth`. This is also
     /// referred to as "bang-for-buck" and what matters most to traders.
     fn effective_eth_out(&self, estimate: &Estimate, kind: OrderKind) -> U256 {
-        let eth_out = estimate.out_amount.to_f64_lossy() * self.native_price;
+        let eth_out = f64::from(estimate.out_amount) * self.native_price;
         let fees = estimate.gas as f64 * self.gas_price;
         let effective_eth_out = match kind {
             // High fees mean receiving less `buy_token` from your sell order.

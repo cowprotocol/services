@@ -12,7 +12,7 @@ use {
     futures::future::BoxFuture,
     itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    number::{conversions::alloy::ToF64Lossy, nonzero::U256 as NonZeroU256},
+    number::nonzero::U256 as NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
@@ -554,7 +554,7 @@ impl Estimate {
     /// unit of sell_token (buy_amount / sell_amount).
     pub fn price_in_buy_token_f64(&self, query: &Query) -> f64 {
         let (sell_amount, buy_amount) = self.amounts(query);
-        buy_amount.to_f64_lossy() / sell_amount.to_f64_lossy()
+        f64::from(buy_amount) / f64::from(sell_amount)
     }
 }
 
