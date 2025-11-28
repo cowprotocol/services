@@ -40,8 +40,8 @@ pub struct SettlementEncoder {
     // Make sure to update the `merge` method when adding new fields.
 
     // Invariant: tokens is all keys in clearing_prices sorted.
-    tokens: Vec<alloy::primitives::Address>,
-    clearing_prices: HashMap<alloy::primitives::Address, U256>,
+    tokens: Vec<Address>,
+    clearing_prices: HashMap<Address, U256>,
     trades: Vec<EncoderTrade>,
     // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
     // would make the trait not be object safe which prevents using it through `dyn`.

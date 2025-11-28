@@ -413,7 +413,7 @@ impl CachingNativePriceEstimator {
         }
 
         let uncached_tokens: Vec<_> = tokens
-            .into_iter()
+            .iter()
             .filter(|t| !prices.contains_key(*t))
             .copied()
             .collect();
