@@ -74,9 +74,9 @@ pub fn spawn_heap_dump_handler() {
                         Ok(Err(err)) => {
                             tracing::error!(?err, "panic in heap dump connection handler");
                         }
-                        Err(_) => {
+                        Err(elapsed) => {
                             handle.abort();
-                            tracing::error!("heap dump request timed out after 5 minutes");
+                            tracing::error!(?elapsed, "heap dump request timed out");
                         }
                     }
                 }
