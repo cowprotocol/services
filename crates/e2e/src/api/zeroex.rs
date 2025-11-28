@@ -147,12 +147,11 @@ struct ZeroExDomainSeparator([u8; 32]);
 impl ZeroExDomainSeparator {
     // See <https://github.com/0xProject/protocol/blob/%400x/contracts-zero-ex%400.49.0/contracts/zero-ex/contracts/src/fixins/FixinEIP712.sol>
     pub fn new(chain_id: u64, contract_addr: Address) -> Self {
-        let domain = alloy::sol_types::Eip712Domain {
-            name: Some("ZeroEx".into()),
-            version: Some("1.0.0".into()),
-            chain_id: Some(U256::from(chain_id)),
-            verifying_contract: Some(contract_addr),
-            salt: None,
+        let domain = alloy::sol_types::eip712_domain! {
+            name: "ZeroEx",
+            version: "1.0.0",
+            chain_id: chain_id,
+            verifying_contract: contract_addr,
         };
 
         Self(domain.separator().into())
