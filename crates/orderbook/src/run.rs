@@ -22,7 +22,7 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -230,7 +230,7 @@ pub async fn run(args: Arguments) {
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
     allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(BUY_ETH_ADDRESS.into_alloy());
+    allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
@@ -299,14 +299,13 @@ pub async fn run(args: Arguments) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            settlement: settlement_contract.address().into_legacy(),
-            native_token: native_token.address().into_legacy(),
+            settlement: *settlement_contract.address(),
+            native_token: *native_token.address(),
             authenticator: settlement_contract
                 .authenticator()
                 .call()
                 .await
-                .expect("failed to query solver authenticator address")
-                .into_legacy(),
+                .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
             block_stream: current_block_stream.clone(),
         },
@@ -328,13 +327,7 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
-    let prices = postgres_write
-        .fetch_latest_prices()
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|(k, v)| (k.into_legacy(), v))
-        .collect();
+    let prices = postgres_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory

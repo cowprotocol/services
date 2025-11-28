@@ -31,7 +31,7 @@ use {
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::conversions::IntoLegacy,
         block_stream::block_number_to_block_number_hash,
     },
     futures::StreamExt,
@@ -321,7 +321,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
     allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(model::order::BUY_ETH_ADDRESS.into_alloy());
+    allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let finder = token_owner_finder::init(
@@ -380,16 +380,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            settlement: eth.contracts().settlement().address().into_legacy(),
-            native_token: eth.contracts().weth().address().into_legacy(),
+            settlement: *eth.contracts().settlement().address(),
+            native_token: *eth.contracts().weth().address(),
             authenticator: eth
                 .contracts()
                 .settlement()
                 .authenticator()
                 .call()
                 .await
-                .expect("failed to query solver authenticator address")
-                .into_legacy(),
+                .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
             block_stream: eth.current_block().clone(),
         },
@@ -528,14 +527,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         bad_token_detector.clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        eth.contracts().weth().address().into_legacy(),
+        *eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFees::new(&args.fee_policies_config),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
-        eth.contracts().settlement().address().into_legacy(),
+        *eth.contracts().settlement().address(),
         args.disable_order_balance_filter,
         args.disable_1271_order_sig_filter,
         args.disable_1271_order_balance_filter,

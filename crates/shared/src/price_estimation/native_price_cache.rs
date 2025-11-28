@@ -7,10 +7,8 @@ use {
     },
     alloy::primitives::Address,
     bigdecimal::BigDecimal,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
     indexmap::IndexSet,
-    primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     rand::Rng,
     std::{
@@ -51,8 +49,8 @@ impl Metrics {
 pub struct CachingNativePriceEstimator(Arc<Inner>);
 
 struct Inner {
-    cache: Mutex<HashMap<H160, CachedResult>>,
-    high_priority: Mutex<IndexSet<H160>>,
+    cache: Mutex<HashMap<Address, CachedResult>>,
+    high_priority: Mutex<IndexSet<Address>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
     concurrent_requests: usize,
@@ -65,7 +63,7 @@ struct Inner {
     /// safe (e.g. csUSDL => Dai).
     /// It's very important that the 2 tokens have the same number of decimals.
     /// After startup this is a read only value.
-    approximation_tokens: HashMap<H160, H160>,
+    approximation_tokens: HashMap<Address, Address>,
     quote_timeout: Duration,
 }
 
@@ -123,9 +121,9 @@ impl CachedResult {
 impl Inner {
     // Returns a single cached price and updates its `requested_at` field.
     fn get_cached_price(
-        token: H160,
+        token: Address,
         now: Instant,
-        cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
+        cache: &mut MutexGuard<HashMap<Address, CachedResult>>,
         max_age: &Duration,
         create_missing_entry: bool,
     ) -> Option<CachedResult> {
@@ -157,9 +155,9 @@ impl Inner {
     }
 
     fn get_ready_to_use_cached_price(
-        token: H160,
+        token: Address,
         now: Instant,
-        cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
+        cache: &mut MutexGuard<HashMap<Address, CachedResult>>,
         max_age: &Duration,
         create_missing_entry: bool,
     ) -> Option<CachedResult> {
@@ -174,10 +172,10 @@ impl Inner {
     /// have fetched some requested price in the meantime.
     fn estimate_prices_and_update_cache<'a>(
         &'a self,
-        tokens: &'a [H160],
+        tokens: &'a [Address],
         max_age: Duration,
         request_timeout: Duration,
-    ) -> futures::stream::BoxStream<'a, (H160, NativePriceEstimateResult)> {
+    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
             let current_accumulative_errors_count = {
                 // check if the price is cached by now
@@ -197,7 +195,7 @@ impl Inner {
 
             let result = self
                 .estimator
-                .estimate_native_price(token_to_fetch.into_alloy(), request_timeout)
+                .estimate_native_price(token_to_fetch, request_timeout)
                 .await;
 
             // update price in cache
@@ -219,7 +217,7 @@ impl Inner {
     }
 
     /// Tokens with highest priority first.
-    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<H160> {
+    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<Address> {
         let mut outdated: Vec<_> = self
             .cache
             .lock()
@@ -230,7 +228,7 @@ impl Inner {
             .collect();
 
         let high_priority = self.high_priority.lock().unwrap().clone();
-        let index = |token: &H160| high_priority.get_index_of(token).unwrap_or(usize::MAX);
+        let index = |token: &Address| high_priority.get_index_of(token).unwrap_or(usize::MAX);
         outdated.sort_by_cached_key(|entry| {
             (
                 index(&entry.0),            // important items have a low index
@@ -300,7 +298,7 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    pub fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
+    pub fn initialize_cache(&self, prices: HashMap<Address, BigDecimal>) {
         let mut rng = rand::thread_rng();
         let now = std::time::Instant::now();
 
@@ -343,7 +341,7 @@ impl CachingNativePriceEstimator {
         update_size: Option<usize>,
         prefetch_time: Duration,
         concurrent_requests: usize,
-        approximation_tokens: HashMap<H160, H160>,
+        approximation_tokens: HashMap<Address, Address>,
         quote_timeout: Duration,
     ) -> Self {
         let inner = Arc::new(Inner {
@@ -374,8 +372,8 @@ impl CachingNativePriceEstimator {
     /// background task.
     fn get_cached_prices(
         &self,
-        tokens: &[H160],
-    ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
+        tokens: &[Address],
+    ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
         let mut cache = self.0.cache.lock().unwrap();
         let mut results = HashMap::default();
@@ -399,24 +397,24 @@ impl CachingNativePriceEstimator {
         results
     }
 
-    pub fn replace_high_priority(&self, tokens: IndexSet<H160>) {
+    pub fn replace_high_priority(&self, tokens: IndexSet<Address>) {
         tracing::trace!(?tokens, "update high priority tokens");
         *self.0.high_priority.lock().unwrap() = tokens;
     }
 
     pub async fn estimate_native_prices_with_timeout<'a>(
         &'a self,
-        tokens: &'a [H160],
+        tokens: &'a [Address],
         timeout: Duration,
-    ) -> HashMap<H160, NativePriceEstimateResult> {
+    ) -> HashMap<Address, NativePriceEstimateResult> {
         let mut prices = self.get_cached_prices(tokens);
         if timeout.is_zero() {
             return prices;
         }
 
         let uncached_tokens: Vec<_> = tokens
-            .iter()
-            .filter(|t| !prices.contains_key(t))
+            .into_iter()
+            .filter(|t| !prices.contains_key(*t))
             .copied()
             .collect();
         let price_stream =
@@ -448,13 +446,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let cached = {
                 let now = Instant::now();
                 let mut cache = self.0.cache.lock().unwrap();
-                Inner::get_ready_to_use_cached_price(
-                    token.into_legacy(),
-                    now,
-                    &mut cache,
-                    &self.0.max_age,
-                    false,
-                )
+                Inner::get_ready_to_use_cached_price(token, now, &mut cache, &self.0.max_age, false)
             };
 
             let label = if cached.is_some() { "hits" } else { "misses" };
@@ -468,7 +460,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(&[token.into_legacy()], self.0.max_age, timeout)
+                .estimate_prices_and_update_cache(&[token], self.0.max_age, timeout)
                 .next()
                 .await
                 .unwrap()
@@ -505,9 +497,8 @@ mod tests {
         let min_age = Duration::from_secs(MAX_AGE_SECS * 49 / 100);
         let max_age = Duration::from_secs(MAX_AGE_SECS * 91 / 100);
 
-        let prices = HashMap::from_iter(
-            (0..10).map(|t| (token(t).into_legacy(), BigDecimal::try_from(1e18).unwrap())),
-        );
+        let prices =
+            HashMap::from_iter((0..10).map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())));
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             Duration::from_secs(MAX_AGE_SECS),
@@ -593,8 +584,8 @@ mod tests {
             1,
             // set token approximations for tokens 1 and 2
             HashMap::from([
-                (token(1).into_legacy(), token(100).into_legacy()),
-                (token(2).into_legacy(), token(200).into_legacy()),
+                (Address::with_last_byte(1), Address::with_last_byte(100)),
+                (Address::with_last_byte(2), Address::with_last_byte(200)),
             ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
@@ -602,7 +593,7 @@ mod tests {
         // no approximation token used for token 0
         assert_eq!(
             estimator
-                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .estimate_native_price(Address::with_last_byte(0), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await
                 .unwrap()
                 .to_i64()
@@ -613,7 +604,7 @@ mod tests {
         // approximation price used for tokens 1 and 2
         assert_eq!(
             estimator
-                .estimate_native_price(token(1), HEALTHY_PRICE_ESTIMATION_TIME)
+                .estimate_native_price(Address::with_last_byte(1), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await
                 .unwrap()
                 .to_i64()
@@ -622,7 +613,7 @@ mod tests {
         );
         assert_eq!(
             estimator
-                .estimate_native_price(token(2), HEALTHY_PRICE_ESTIMATION_TIME)
+                .estimate_native_price(Address::with_last_byte(2), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await
                 .unwrap()
                 .to_i64()
@@ -978,8 +969,8 @@ mod tests {
 
     #[test]
     fn outdated_entries_prioritized() {
-        let t0 = H160::from_low_u64_be(0);
-        let t1 = H160::from_low_u64_be(1);
+        let t0 = Address::with_last_byte(0);
+        let t1 = Address::with_last_byte(1);
         let now = Instant::now();
         let inner = Inner {
             cache: Mutex::new(

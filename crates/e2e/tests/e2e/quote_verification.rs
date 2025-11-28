@@ -152,8 +152,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         Arc::new(web3.clone()),
         Arc::new(BalanceOverrides::default()),
         block_stream,
-        onchain.contracts().gp_settlement.address().into_legacy(),
-        onchain.contracts().weth.address().into_legacy(),
+        *onchain.contracts().gp_settlement.address(),
+        *onchain.contracts().weth.address(),
         BigDecimal::zero(),
         Default::default(),
     )
@@ -166,10 +166,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
             verifier
                 .verify(
                     &PriceQuery {
-                        sell_token: H160::from_str("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599")
-                            .unwrap(),
-                        buy_token: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
-                            .unwrap(),
+                        sell_token: address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
+                        buy_token: address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         kind: OrderKind::Sell,
                         in_amount: NonZeroU256::new(12.into()).unwrap(),
                     },
@@ -199,7 +197,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     };
 
     let verified_quote = Estimate {
-        out_amount: 16380122291179526144u128.into(),
+        out_amount: U256::from(16380122291179526144u128),
         gas: 225000,
         solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99").unwrap(),
         verified: true,

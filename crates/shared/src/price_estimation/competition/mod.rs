@@ -248,7 +248,7 @@ mod tests {
             PriceEstimating,
             Query,
         },
-        alloy::primitives::Address,
+        alloy::primitives::{Address, U256},
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
@@ -308,12 +308,12 @@ mod tests {
         ];
         let estimates = [
             Estimate {
-                out_amount: 1.into(),
+                out_amount: U256::ONE,
                 gas: 1,
                 ..Default::default()
             },
             Estimate {
-                out_amount: 2.into(),
+                out_amount: U256::from(2),
                 gas: 1,
                 ..Default::default()
             },
@@ -398,7 +398,7 @@ mod tests {
 
         fn estimate(amount: u64) -> Estimate {
             Estimate {
-                out_amount: amount.into(),
+                out_amount: U256::from(amount),
                 gas: 1,
                 ..Default::default()
             }
@@ -459,7 +459,7 @@ mod tests {
 
         fn estimate(amount: u64) -> Estimate {
             Estimate {
-                out_amount: amount.into(),
+                out_amount: U256::from(amount),
                 gas: 1,
                 ..Default::default()
             }
@@ -536,7 +536,7 @@ mod tests {
 
         fn estimate(amount: u64) -> Estimate {
             Estimate {
-                out_amount: amount.into(),
+                out_amount: U256::from(amount),
                 gas: 1,
                 ..Default::default()
             }

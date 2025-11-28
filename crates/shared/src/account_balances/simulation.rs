@@ -51,8 +51,8 @@ impl Balances {
         let simulation = self
             .balance_simulator
             .simulate(
-                query.owner,
-                query.token,
+                query.owner.into_legacy(),
+                query.token.into_legacy(),
                 query.source,
                 &query.interactions,
                 None,
@@ -73,9 +73,9 @@ impl Balances {
     ) -> Result<U256> {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
-                let balance = token.balanceOf(query.owner.into_alloy());
+                let balance = token.balanceOf(query.owner);
                 let allowance =
-                    token.allowance(query.owner.into_alloy(), self.vault_relayer().into_alloy());
+                    token.allowance(query.owner, self.vault_relayer().into_alloy());
                 let (balance, allowance) = futures::try_join!(
                     balance.call().into_future(),
                     allowance.call().into_future()
@@ -84,13 +84,13 @@ impl Balances {
             }
             SellTokenSource::External => {
                 let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
-                let balance = token.balanceOf(query.owner.into_alloy());
+                let balance = token.balanceOf(query.owner);
                 let approved = vault.hasApprovedRelayer(
-                    query.owner.into_alloy(),
+                    query.owner,
                     self.vault_relayer().into_alloy(),
                 );
                 let allowance =
-                    token.allowance(query.owner.into_alloy(), self.vault().into_alloy());
+                    token.allowance(query.owner, self.vault().into_alloy());
                 let (balance, approved, allowance) = futures::try_join!(
                     balance.call().into_future(),
                     approved.call().into_future(),
@@ -105,9 +105,9 @@ impl Balances {
             SellTokenSource::Internal => {
                 let vault = BalancerV2Vault::new(self.vault().into_alloy(), &self.web3.alloy);
                 let balance = vault
-                    .getInternalBalance(query.owner.into_alloy(), vec![query.token.into_alloy()]);
+                    .getInternalBalance(query.owner, vec![query.token]);
                 let approved = vault.hasApprovedRelayer(
-                    query.owner.into_alloy(),
+                    query.owner,
                     self.vault_relayer().into_alloy(),
                 );
                 let (balance, approved) = futures::try_join!(
@@ -135,7 +135,7 @@ impl BalanceFetching for Balances {
             .map(|query| async {
                 if query.interactions.is_empty() {
                     let token =
-                        ERC20::Instance::new(query.token.into_alloy(), self.web3.alloy.clone());
+                        ERC20::Instance::new(query.token, self.web3.alloy.clone());
                     self.tradable_balance_simple(query, &token).await
                 } else {
                     self.tradable_balance_simulated(query).await
@@ -154,8 +154,8 @@ impl BalanceFetching for Balances {
         let simulation = self
             .balance_simulator
             .simulate(
-                query.owner,
-                query.token,
+                query.owner.into_legacy(),
+                query.token.into_legacy(),
                 query.source,
                 &query.interactions,
                 Some(amount),
@@ -221,8 +221,8 @@ mod tests {
         balances
             .can_transfer(
                 &Query {
-                    owner,
-                    token,
+                    owner: owner.into_alloy(),
+                    token: token.into_alloy(),
                     source,
                     interactions: vec![],
                     balance_override: None,

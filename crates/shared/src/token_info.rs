@@ -3,10 +3,7 @@ use {
     anyhow::Result,
     async_trait::async_trait,
     contracts::alloy::ERC20,
-    ethrpc::{
-        Web3,
-        alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
-    },
+    ethrpc::{Web3, alloy::errors::ignore_non_node_error},
     futures::{
         FutureExt,
         future::{BoxFuture, Shared},
@@ -48,7 +45,7 @@ pub struct TokenInfoFetcher {
 
 impl TokenInfoFetcher {
     async fn fetch_token(&self, address: Address) -> Result<TokenInfo, Error> {
-        if address == BUY_ETH_ADDRESS.into_alloy() {
+        if address == BUY_ETH_ADDRESS {
             return Ok(TokenInfo {
                 decimals: Some(18),
                 symbol: Some("NATIVE_ASSET".to_string()),
