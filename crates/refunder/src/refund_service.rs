@@ -179,17 +179,16 @@ impl RefundService {
                 };
 
                 // For orders that are not yet refunded, check if the owner can receive ETH
-                if refund_status == RefundStatus::NotYetRefunded {
-                    if let Some(owner) = order_owner {
-                        if !self.can_receive_eth(owner).await {
-                            tracing::warn!(
-                                uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
-                                owner = ?owner,
-                                "Order owner cannot receive ETH - marking as invalid"
-                            );
-                            refund_status = RefundStatus::Invalid;
-                        }
-                    }
+                if refund_status == RefundStatus::NotYetRefunded
+                    && let Some(owner) = order_owner
+                    && !self.can_receive_eth(owner).await
+                {
+                    tracing::warn!(
+                        uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
+                        owner = ?owner,
+                        "Order owner cannot receive ETH - marking as invalid"
+                    );
+                    refund_status = RefundStatus::Invalid;
                 }
 
                 Some((eth_order_placement.uid, refund_status, ethflow_contract))
