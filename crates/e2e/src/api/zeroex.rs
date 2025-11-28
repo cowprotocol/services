@@ -2,14 +2,12 @@ use {
     crate::setup::TestAccount,
     alloy::primitives::{Address, B256, U256},
     chrono::{DateTime, NaiveDateTime, Utc},
-    ethcontract::common::abi::{Token, encode},
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     hex_literal::hex,
     model::DomainSeparator,
     shared::zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
-    std::{net::SocketAddr, sync::LazyLock},
+    std::net::SocketAddr,
     warp::{Filter, Reply},
-    web3::{signing, types::H160},
 };
 
 pub struct ZeroExApi {
@@ -75,22 +73,22 @@ impl Eip712TypedZeroExOrder {
     pub fn to_order_record(
         &self,
         chain_id: u64,
-        verifying_contract: H160,
+        verifying_contract: Address,
         signer: TestAccount,
     ) -> OrderRecord {
         OrderRecord::new(
             Order {
                 chain_id,
                 expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
-                fee_recipient: self.fee_recipient.into_legacy(),
-                maker: self.maker.into_legacy(),
-                maker_token: self.maker_token.into_legacy(),
+                fee_recipient: self.fee_recipient,
+                maker: self.maker,
+                maker_token: self.maker_token,
                 maker_amount: self.maker_amount,
-                pool: self.pool.into_legacy(),
+                pool: self.pool,
                 salt: self.salt.into_legacy(),
-                sender: self.sender.into_legacy(),
-                taker: self.taker.into_legacy(),
-                taker_token: self.taker_token.into_legacy(),
+                sender: self.sender,
+                taker: self.taker,
+                taker_token: self.taker_token,
                 taker_amount: self.taker_amount,
                 taker_token_fee_amount: self.taker_token_fee_amount,
                 verifying_contract,
@@ -116,8 +114,8 @@ impl Eip712TypedZeroExOrder {
     ) -> ZeroExSignature {
         let signature = signer.sign_typed_data(domain_separator, &hash);
         ZeroExSignature {
-            r: signature.r,
-            s: signature.s,
+            r: signature.r.into_alloy(),
+            s: signature.s.into_alloy(),
             v: signature.v,
             // See <https://github.com/0xProject/protocol/blob/%400x/protocol-utils%4011.24.2/packages/protocol-utils/src/signature_utils.ts#L13>
             signature_type: 2,
@@ -140,7 +138,7 @@ impl Eip712TypedZeroExOrder {
         hash_data[320..352].copy_from_slice(self.pool.as_slice());
         hash_data[376..384].copy_from_slice(&self.expiry.to_be_bytes());
         hash_data[384..416].copy_from_slice(&self.salt.to_be_bytes::<32>());
-        signing::keccak256(&hash_data)
+        alloy::primitives::keccak256(hash_data).into()
     }
 }
 
@@ -148,29 +146,16 @@ struct ZeroExDomainSeparator([u8; 32]);
 
 impl ZeroExDomainSeparator {
     // See <https://github.com/0xProject/protocol/blob/%400x/contracts-zero-ex%400.49.0/contracts/zero-ex/contracts/src/fixins/FixinEIP712.sol>
-    pub fn new(chain_id: u64, contract_addr: H160) -> Self {
-        /// The EIP-712 domain name used for computing the domain separator.
-        static DOMAIN_NAME: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"ZeroEx"));
+    pub fn new(chain_id: u64, contract_addr: Address) -> Self {
+        let domain = alloy::sol_types::Eip712Domain {
+            name: Some("ZeroEx".into()),
+            version: Some("1.0.0".into()),
+            chain_id: Some(U256::from(chain_id)),
+            verifying_contract: Some(contract_addr),
+            salt: None,
+        };
 
-        /// The EIP-712 domain version used for computing the domain separator.
-        static DOMAIN_VERSION: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"1.0.0"));
-
-        /// The EIP-712 domain type used computing the domain separator.
-        static DOMAIN_TYPE_HASH: LazyLock<[u8; 32]> = LazyLock::new(|| {
-            signing::keccak256(
-            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        )
-        });
-
-        let abi_encode_string = encode(&[
-            Token::FixedBytes((*DOMAIN_TYPE_HASH).into()),
-            Token::FixedBytes((*DOMAIN_NAME).into()),
-            Token::FixedBytes((*DOMAIN_VERSION).into()),
-            Token::Uint(chain_id.into()),
-            Token::Address(contract_addr),
-        ]);
-
-        Self(signing::keccak256(abi_encode_string.as_slice()))
+        Self(domain.separator().into())
     }
 
     pub fn to_domain_separator(&self) -> DomainSeparator {

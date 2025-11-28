@@ -20,7 +20,7 @@ use {
     futures::StreamExt,
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
-    primitive_types::{H160, U256},
+    primitive_types::U256,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
@@ -34,7 +34,7 @@ use {
     tracing::instrument,
 };
 
-type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
+type OrderBuckets = HashMap<(Address, Address), Vec<OrderRecord>>;
 type OrderbookCache = ArcSwap<OrderBuckets>;
 
 pub struct ZeroExLiquidity {
@@ -82,8 +82,8 @@ impl ZeroExLiquidity {
             id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(const_hex::encode(
                 &record.metadata().order_hash,
             ))),
-            sell_token: record.order().maker_token,
-            buy_token: record.order().taker_token,
+            sell_token: record.order().maker_token.into_legacy(),
+            buy_token: record.order().taker_token.into_legacy(),
             sell_amount,
             buy_amount: record.metadata().remaining_fillable_taker_amount.into(),
             kind: OrderKind::Buy,
@@ -112,7 +112,7 @@ impl ZeroExLiquidity {
                 OrdersQuery::default(),
                 // orders fillable only by our settlement contract
                 OrdersQuery {
-                    sender: Some(gpv2_address.into_legacy()),
+                    sender: Some(gpv2_address),
                     ..Default::default()
                 },
             ];
@@ -143,7 +143,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
         let filtered_zeroex_orders = get_useful_orders(zeroex_order_buckets.as_ref(), &pairs, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
-            .map(|o| o.order().taker_token.into_alloy())
+            .map(|o| o.order().taker_token)
             .collect();
 
         let allowances = Arc::new(
@@ -163,14 +163,10 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
 fn group_by_token_pair(
     orders: impl Iterator<Item = OrderRecord>,
-) -> HashMap<(H160, H160), Vec<OrderRecord>> {
+) -> HashMap<(Address, Address), Vec<OrderRecord>> {
     orders
         .filter_map(|record| {
-            TokenPair::new(
-                record.order().taker_token.into_alloy(),
-                record.order().maker_token.into_alloy(),
-            )
-            .map(|_| {
+            TokenPair::new(record.order().taker_token, record.order().maker_token).map(|_| {
                 (
                     (record.order().taker_token, record.order().maker_token),
                     record,
@@ -190,7 +186,7 @@ fn get_useful_orders(
     for orders in order_buckets
         .iter()
         .filter_map(|((token_a, token_b), record)| {
-            TokenPair::new(token_a.into_alloy(), token_b.into_alloy())
+            TokenPair::new(*token_a, *token_b)
                 .is_some_and(|pair| relevant_pairs.contains(&pair))
                 .then_some(record)
         })
@@ -238,7 +234,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
             anyhow::bail!("0x only supports executed amounts of size u128");
         }
         let approval = self.allowances.approve_token(TokenAmount::new(
-            self.order_record.order().taker_token.into_alloy(),
+            self.order_record.order().taker_token,
             execution.filled.into_alloy(),
         ))?;
         if let Some(approval) = approval {
@@ -276,8 +272,8 @@ pub mod tests {
     fn order_with_tokens(token_a: Address, token_b: Address) -> OrderRecord {
         OrderRecord::new(
             zeroex_api::Order {
-                taker_token: token_a.into_legacy(),
-                maker_token: token_b.into_legacy(),
+                taker_token: token_a,
+                maker_token: token_b,
                 ..Default::default()
             },
             OrderMetadata::default(),
@@ -320,8 +316,8 @@ pub mod tests {
         let order_with_fillable_amount = |remaining_fillable_taker_amount| {
             OrderRecord::new(
                 zeroex_api::Order {
-                    taker_token: token_a.into_legacy(),
-                    maker_token: token_b.into_legacy(),
+                    taker_token: token_a,
+                    maker_token: token_b,
                     taker_amount: 100_000_000,
                     maker_amount: 100_000_000,
                     ..Default::default()
@@ -360,8 +356,8 @@ pub mod tests {
         let order_with_amount = |taker_amount, remaining_fillable_taker_amount| {
             OrderRecord::new(
                 zeroex_api::Order {
-                    taker_token: token_a.into_legacy(),
-                    maker_token: token_b.into_legacy(),
+                    taker_token: token_a,
+                    maker_token: token_b,
                     taker_amount,
                     maker_amount: 100_000_000,
                     ..Default::default()
@@ -400,7 +396,7 @@ pub mod tests {
         let order_record = OrderRecord::new(
             zeroex_api::Order {
                 taker_amount: 100,
-                taker_token: sell_token.into_legacy(),
+                taker_token: sell_token,
                 ..Default::default()
             },
             OrderMetadata::default(),
@@ -448,7 +444,7 @@ pub mod tests {
         let order_record = OrderRecord::new(
             zeroex_api::Order {
                 taker_amount: 100,
-                taker_token: sell_token.into_legacy(),
+                taker_token: sell_token,
                 ..Default::default()
             },
             OrderMetadata::default(),

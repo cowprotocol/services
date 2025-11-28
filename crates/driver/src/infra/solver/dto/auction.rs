@@ -59,8 +59,8 @@ pub fn new(
             liquidity::Kind::Swapr(pool) => pool.base.reserves.iter().map(|r| r.token).collect(),
             liquidity::Kind::ZeroEx(limit_order) => {
                 vec![
-                    limit_order.order.maker_token.into(),
-                    limit_order.order.taker_token.into(),
+                    limit_order.order.maker_token.into_legacy().into(),
+                    limit_order.order.taker_token.into_legacy().into(),
                 ]
             }
         })
@@ -309,8 +309,8 @@ pub fn new(
                             address: limit_order.zeroex.address().into_legacy(),
                             gas_estimate: liquidity.gas.into(),
                             hash: Default::default(),
-                            maker_token: limit_order.order.maker_token,
-                            taker_token: limit_order.order.taker_token,
+                            maker_token: limit_order.order.maker_token.into_legacy(),
+                            taker_token: limit_order.order.taker_token.into_legacy(),
                             maker_amount: limit_order.fillable.maker.into(),
                             taker_amount: limit_order.fillable.taker.into(),
                             taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
