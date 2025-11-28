@@ -1,3 +1,4 @@
+pub use alloy::primitives::Address;
 pub use primitive_types::{H160, H256, U256};
 use {
     crate::{domain, util::conv::U256Ext},
@@ -10,12 +11,6 @@ use {
 /// ERC20 token.
 /// Same address is also used for XDAI on Gnosis Chain.
 pub const NATIVE_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
-
-/// An address. Can be an EOA or a smart contract address.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,
-)]
-pub struct Address(pub H160);
 
 /// Block number.
 #[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]

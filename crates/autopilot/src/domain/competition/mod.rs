@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     super::auction::order,
     crate::domain::{self, auction, eth},
     derive_more::Display,
@@ -21,7 +22,7 @@ type SolutionId = u64;
 pub struct Solution {
     /// A solution ID provided by the solver.
     id: SolutionId,
-    solver: eth::Address,
+    solver: Address,
     /// Score reported by the solver in their response.
     score: Score,
     orders: HashMap<domain::OrderUid, TradedOrder>,
@@ -35,7 +36,7 @@ pub struct Solution {
 impl Solution {
     pub fn new(
         id: SolutionId,
-        solver: eth::Address,
+        solver: Address,
         score: Score,
         orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
@@ -54,7 +55,7 @@ impl Solution {
         self.id
     }
 
-    pub fn solver(&self) -> eth::Address {
+    pub fn solver(&self) -> Address {
         self.solver
     }
 

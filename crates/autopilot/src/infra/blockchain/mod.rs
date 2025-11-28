@@ -3,7 +3,12 @@ use {
     crate::{boundary, domain::eth},
     alloy::providers::Provider,
     chain::Chain,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
+    ethrpc::{
+        Web3,
+        alloy::conversions::IntoAlloy,
+        block_stream::CurrentBlockWatcher,
+        extensions::DebugNamespace,
+    },
     primitive_types::U256,
     thiserror::Error,
     url::Url,
@@ -142,8 +147,8 @@ fn into_domain(
         hash: transaction.hash.into(),
         from: transaction
             .from
-            .ok_or(anyhow::anyhow!("missing from"))?
-            .into(),
+            .map(IntoAlloy::into_alloy)
+            .ok_or(anyhow::anyhow!("missing from"))?,
         block: receipt
             .block_number
             .ok_or(anyhow::anyhow!("missing block_number"))?
@@ -165,8 +170,8 @@ fn into_domain(
 impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
     fn from(frame: ethrpc::extensions::CallFrame) -> Self {
         eth::CallFrame {
-            from: frame.from.into(),
-            to: frame.to.map(Into::into),
+            from: eth::Address::from(frame.from.0),
+            to: frame.to.map(|h160| eth::Address::from(h160.0)),
             input: frame.input.0.into(),
             calls: frame.calls.into_iter().map(Into::into).collect(),
         }

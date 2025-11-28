@@ -75,7 +75,7 @@ impl Driver {
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
-            submission_address: submission_address.into(),
+            submission_address: eth::Address::from(submission_address.0),
             requested_timeout_on_problems,
         })
     }

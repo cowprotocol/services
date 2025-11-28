@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     crate::{
         domain,
         domain::{eth, fee},
@@ -16,8 +17,8 @@ pub struct Order {
     pub side: Side,
     pub created: u32,
     pub valid_to: u32,
-    pub receiver: Option<eth::Address>,
-    pub owner: eth::Address,
+    pub receiver: Option<Address>,
+    pub owner: Address,
     pub partially_fillable: bool,
     pub executed: TargetAmount,
     // Partially fillable orders should have their pre-interactions only executed
@@ -36,8 +37,8 @@ pub struct Order {
 pub struct OrderUid(pub [u8; 56]);
 
 impl OrderUid {
-    pub fn owner(&self) -> eth::Address {
-        self.parts().1.into()
+    pub fn owner(&self) -> Address {
+        Address::from(self.parts().1 .0)
     }
 
     /// Splits an order UID into its parts.
