@@ -1,7 +1,9 @@
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{UnixListener, UnixStream},
-    time::{Duration, timeout},
+use {
+    std::time::Duration,
+    tokio::{
+        io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+        net::{UnixListener, UnixStream},
+    },
 };
 
 /// Spawns a new async task that listens for connections to a UNIX socket
@@ -17,6 +19,7 @@ use tokio::{
 /// # Analyze with pprof:
 /// go tool pprof -http=:8080 heap.pprof
 /// ```
+#[cfg(all(unix, feature = "jemalloc-profiling"))]
 pub fn spawn_heap_dump_handler() {
     // Check if jemalloc profiling is available before spawning the handler
     // This prevents panics that would crash the entire process
@@ -64,7 +67,7 @@ pub fn spawn_heap_dump_handler() {
                     });
 
                     // 5-minute timeout to prevent stuck dumps from blocking future requests
-                    match timeout(Duration::from_secs(300), &mut handle).await {
+                    match tokio::time::timeout(Duration::from_secs(300), &mut handle).await {
                         Ok(Ok(())) => {
                             // Task completed successfully
                         }
@@ -133,9 +136,12 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
         .as_ref()
         .expect("PROF_CTL should be available - checked at handler spawn");
 
-    let mut prof_ctl = prof_ctl.lock().await;
+    let pprof_data = {
+        let mut lock = prof_ctl.lock().await;
+        lock.dump_pprof()
+    };
 
-    match prof_ctl.dump_pprof() {
+    match pprof_data {
         Ok(pprof_data) => {
             tracing::info!(size_bytes = pprof_data.len(), "heap dump generated");
 
