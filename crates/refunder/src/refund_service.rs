@@ -1,5 +1,6 @@
 use {
     crate::submitter::Submitter,
+    alloy::rpc::types::TransactionRequest,
     alloy::{
         network::TxSigner,
         primitives::{Address, B256, Signature, address},
@@ -112,8 +113,6 @@ impl RefundService {
     /// Returns true for EOAs and contracts with working receive/fallback
     /// functions.
     async fn can_receive_eth(&self, address: Address) -> bool {
-        use alloy::rpc::types::TransactionRequest;
-
         // Try to estimate gas for sending a minimal amount of ETH
         let tx = TransactionRequest::default()
             .to(address)
