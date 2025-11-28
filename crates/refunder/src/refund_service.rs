@@ -1,10 +1,10 @@
 use {
     crate::submitter::Submitter,
-    alloy::rpc::types::TransactionRequest,
     alloy::{
         network::TxSigner,
         primitives::{Address, B256, Signature, address},
         providers::Provider,
+        rpc::types::TransactionRequest,
     },
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
@@ -118,17 +118,18 @@ impl RefundService {
             .to(address)
             .value(alloy::primitives::U256::from(1));
 
-        match self.web3.alloy.estimate_gas(tx).await {
-            Ok(_) => true,
-            Err(err) => {
+        self.web3
+            .alloy
+            .estimate_gas(tx)
+            .await
+            .inspect_err(|err| {
                 tracing::warn!(
                     ?address,
                     ?err,
                     "Address cannot receive ETH - will skip refund"
                 );
-                false
-            }
-        }
+            })
+            .is_ok()
     }
 
     async fn identify_uids_refunding_status_via_web3_calls(
@@ -160,7 +161,7 @@ impl RefundService {
                     .expect("order_uid slice with incorrect length");
                 let order = ethflow_contract.orders(order_hash.into()).call().await;
                 let order_owner = match order {
-                    Ok(order) => Some(order.owner),
+                    Ok(order) => order.owner,
                     Err(err) => {
                         tracing::error!(
                             uid =? B256::from(order_hash),
@@ -170,25 +171,20 @@ impl RefundService {
                         return None;
                     }
                 };
-                let mut refund_status = match order_owner {
-                    Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
-                    Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
-                    // any other owner
-                    _ => RefundStatus::NotYetRefunded,
-                };
-
-                // For orders that are not yet refunded, check if the owner can receive ETH
-                if refund_status == RefundStatus::NotYetRefunded
-                    && let Some(owner) = order_owner
-                    && !self.can_receive_eth(owner).await
-                {
+                let refund_status = if order_owner == INVALIDATED_OWNER {
+                    RefundStatus::Refunded
+                } else if order_owner == NO_OWNER {
+                    RefundStatus::Invalid
+                } else if !self.can_receive_eth(order_owner).await {
                     tracing::warn!(
                         uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
-                        owner = ?owner,
+                        owner = ?order_owner,
                         "Order owner cannot receive ETH - marking as invalid"
                     );
-                    refund_status = RefundStatus::Invalid;
-                }
+                    RefundStatus::Invalid
+                } else {
+                    RefundStatus::NotYetRefunded
+                };
 
                 Some((eth_order_placement.uid, refund_status, ethflow_contract))
             });
