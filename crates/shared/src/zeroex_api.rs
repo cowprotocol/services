@@ -31,13 +31,6 @@ use {
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
 
-// The `Display` implementation for `H160` unfortunately does not print
-// the full address ad instead uses ellipsis (e.g. "0xeeee…eeee"). This
-// helper just works around that.
-fn addr2str(addr: Address) -> String {
-    format!("{addr:?}")
-}
-
 /// 0x API orders query parameters.
 ///
 /// These parameters are currently incomplete, and missing parameters can be
@@ -63,15 +56,16 @@ impl OrdersQuery {
         let mut url = crate::url::join(base_url, "/orderbook/v1/orders");
 
         if let Some(taker) = self.taker {
-            url.query_pairs_mut().append_pair("taker", &addr2str(taker));
+            url.query_pairs_mut()
+                .append_pair("taker", &taker.to_string());
         }
         if let Some(sender) = self.sender {
             url.query_pairs_mut()
-                .append_pair("sender", &addr2str(sender));
+                .append_pair("sender", &sender.to_string());
         }
         if let Some(verifying_contract) = self.verifying_contract {
             url.query_pairs_mut()
-                .append_pair("verifyingContract", &addr2str(verifying_contract));
+                .append_pair("verifyingContract", &verifying_contract.to_string());
         }
 
         url
