@@ -18,21 +18,29 @@ LIMIT 1
     sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
-pub async fn replace_auction(
+pub async fn get_next_auction_id(ex: &mut PgConnection) -> Result<AuctionId, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT nextval(pg_get_serial_sequence('auctions', 'id'))::bigint as next_id;"#;
+
+    let (id,) = sqlx::query_as(QUERY).fetch_one(ex).await?;
+    Ok(id)
+}
+
+pub async fn insert_auction_with_id(
     ex: &mut PgConnection,
+    id: AuctionId,
     data: &JsonValue,
-) -> Result<AuctionId, sqlx::Error> {
+) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 WITH deleted AS (
     DELETE FROM auctions
 )
-INSERT INTO auctions (json)
-VALUES ($1)
-RETURNING id;
+INSERT INTO auctions (id, json)
+VALUES ($1, $2);
     "#;
 
-    let (id,) = sqlx::query_as(QUERY).bind(data).fetch_one(ex).await?;
-    Ok(id)
+    sqlx::query(QUERY).bind(id).bind(data).execute(ex).await?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -96,14 +104,16 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let value = JsonValue::Number(1.into());
-        let id = replace_auction(&mut db, &value).await.unwrap();
+        let id = get_next_auction_id(&mut db).await.unwrap();
+        insert_auction_with_id(&mut db, id, &value).await.unwrap();
         let (id_, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
         assert_eq!(id, id_);
         assert_eq!(value, value_);
 
         let value = JsonValue::Number(2.into());
-        let id_ = replace_auction(&mut db, &value).await.unwrap();
+        let id_ = get_next_auction_id(&mut db).await.unwrap();
         assert_eq!(id + 1, id_);
+        insert_auction_with_id(&mut db, id_, &value).await.unwrap();
         let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
         assert_eq!(value, value_);
         assert_eq!(id_, id);
