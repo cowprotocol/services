@@ -477,7 +477,7 @@ mod tests {
             infra::Driver,
         },
         ethcontract::H160,
-        ethrpc::alloy::conversions::IntoAlloy,
+        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         hex_literal::hex,
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,
@@ -1388,7 +1388,7 @@ mod tests {
         });
 
         let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
-        let solver_address = eth::Address::from(solver_address.0);
+        let solver_address = solver_address.into_alloy();
 
         let solution = Solution::new(
             solution_id,
@@ -1403,7 +1403,7 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             None,
-            crate::arguments::Account::Address(eth::H160(solver_address.0.0)),
+            crate::arguments::Account::Address(solver_address.into_legacy()),
             false,
         )
         .await

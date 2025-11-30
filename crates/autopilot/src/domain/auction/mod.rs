@@ -1,6 +1,5 @@
 use {
     super::{Order, eth},
-    alloy::primitives::Address,
     std::collections::HashMap,
 };
 
@@ -16,7 +15,7 @@ pub struct RawAuctionData {
     pub block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
-    pub surplus_capturing_jit_order_owners: Vec<Address>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
 pub type Id = i64;
@@ -27,7 +26,7 @@ pub struct Auction {
     pub block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
-    pub surplus_capturing_jit_order_owners: Vec<Address>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
 impl PartialEq for Auction {

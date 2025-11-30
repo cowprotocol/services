@@ -1,8 +1,8 @@
 use {
-    crate::domain::competition::Score,
-    alloy::primitives::Address,
+    crate::domain::{competition::Score, eth},
     anyhow::Context,
     database::{
+        Address,
         auction::AuctionId,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
@@ -18,7 +18,7 @@ use {
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    pub reference_scores: HashMap<Address, Score>,
+    pub reference_scores: HashMap<eth::Address, Score>,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -91,7 +91,7 @@ impl super::Postgres {
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[database::Address],
+        surplus_capturing_jit_order_owners: &[Address],
     ) -> anyhow::Result<()> {
         let mut ex = self.pool.acquire().await.context("acquire")?;
 

@@ -76,7 +76,7 @@ impl Transaction {
         // Find trace call to settlement contract
         let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
             .map(|(trace, path)| (trace.input.clone(), path.clone()))
-            // All transactions emitting settlement events should have a /settle call, 
+            // All transactions emitting settlement events should have a /settle call,
             // otherwise it's an execution client bug
             .ok_or(Error::MissingCalldata)?;
 
@@ -146,7 +146,7 @@ impl Transaction {
                             amount: trade.buyAmount.into_legacy().into(),
                         },
                         side: flags.side(),
-                        receiver: eth::Address::from(trade.receiver.into_legacy().0),
+                        receiver: trade.receiver,
                         valid_to: trade.validTo,
                         app_data: domain::auction::order::AppDataHash(trade.appData.into()),
                         fee_amount: trade.feeAmount.into_legacy().into(),

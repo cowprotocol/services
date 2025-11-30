@@ -3,6 +3,7 @@ use {
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
     anyhow::{Context, Result, anyhow},
     chrono::{DateTime, Utc},
+    ethrpc::alloy::conversions::IntoAlloy,
     observe::tracing::tracing_headers,
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},
@@ -75,7 +76,7 @@ impl Driver {
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
-            submission_address: eth::Address::from(submission_address.0),
+            submission_address: submission_address.into_alloy(),
             requested_timeout_on_problems,
         })
     }

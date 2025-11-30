@@ -170,8 +170,8 @@ fn into_domain(
 impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
     fn from(frame: ethrpc::extensions::CallFrame) -> Self {
         eth::CallFrame {
-            from: eth::Address::from(frame.from.0),
-            to: frame.to.map(|h160| eth::Address::from(h160.0)),
+            from: frame.from.into_alloy(),
+            to: frame.to.map(IntoAlloy::into_alloy),
             input: frame.input.0.into(),
             calls: frame.calls.into_iter().map(Into::into).collect(),
         }
