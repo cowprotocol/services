@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::U256,
+    alloy::primitives::{Address, U256},
     e2e::setup::{
         Db,
         ExtraServiceArgs,
@@ -15,10 +15,7 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
     },
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -27,7 +24,7 @@ use {
     secp256k1::SecretKey,
     sqlx::Row,
     std::time::Instant,
-    web3::{signing::SecretKeyRef, types::H160},
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -90,7 +87,7 @@ async fn non_settling_solver(web3: Web3) {
         .take(3)
         .cloned()
         .collect::<Vec<_>>();
-    replace_solver_for_auction_ids(pool, &last_auctions, &solver_b.address().into_legacy()).await;
+    replace_solver_for_auction_ids(pool, &last_auctions, &solver_b.address()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
     let now = Instant::now();
@@ -162,7 +159,7 @@ async fn low_settling_solver(web3: Web3) {
         .enumerate()
         .filter_map(|(i, id)| (i % 2 == 0).then_some(*id))
         .collect::<Vec<_>>();
-    replace_solver_for_auction_ids(pool, &random_auctions, &solver_b.address().into_legacy()).await;
+    replace_solver_for_auction_ids(pool, &random_auctions, &solver_b.address()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
     let now = Instant::now();
@@ -301,10 +298,10 @@ async fn setup(
     (trader_a, token_a, token_b)
 }
 
-async fn replace_solver_for_auction_ids(pool: &Db, auction_ids: &[i64], solver: &H160) {
+async fn replace_solver_for_auction_ids(pool: &Db, auction_ids: &[i64], solver: &Address) {
     for auction_id in auction_ids {
         sqlx::query("UPDATE settlements SET solver = $1 WHERE auction_id = $2")
-            .bind(solver.0)
+            .bind(solver.as_slice())
             .bind(auction_id)
             .execute(pool)
             .await
@@ -333,10 +330,10 @@ async fn execute_order(
     services: &Services<'_>,
 ) -> anyhow::Result<()> {
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()

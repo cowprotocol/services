@@ -577,14 +577,14 @@ impl OrderValidating for OrderValidator {
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
         let app_data_signer = app_data.inner.protocol.signer.map(IntoLegacy::into_legacy);
 
-        let owner = order.verify_owner(domain_separator, app_data_signer)?;
+        let owner = order.verify_owner(domain_separator, app_data_signer.map(IntoAlloy::into_alloy))?;
         tracing::debug!(?owner, "recovered owner from order and signature");
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
             app_data: app_data.inner.hash,
             ..order.data()
         };
-        let uid = data.uid(domain_separator, &owner);
+        let uid = data.uid(domain_separator, &owner.into_legacy());
 
         let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
             if self.eip1271_skip_creation_validation {
@@ -595,7 +595,7 @@ impl OrderValidating for OrderValidator {
                 let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
-                        signer: owner,
+                        signer: owner.into_legacy(),
                         hash,
                         signature: signature.to_owned(),
                         interactions: app_data.interactions.pre.clone(),
@@ -625,15 +625,15 @@ impl OrderValidating for OrderValidator {
         }
 
         let pre_order =
-            PreOrderData::from_order_creation(owner.into_alloy(), &data, signing_scheme);
+            PreOrderData::from_order_creation(owner, &data, signing_scheme);
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
             .map_err(ValidationError::Partial)?;
 
         let verification = Verification {
-            from: owner.into_alloy(),
-            receiver: order.receiver.unwrap_or(owner).into_alloy(),
+            from: owner,
+            receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
             pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
@@ -657,7 +657,7 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        self.ensure_token_is_transferable(&order, owner, &app_data)
+        self.ensure_token_is_transferable(&order, owner.into_legacy(), &app_data)
             .await?;
 
         // Check if we need to re-classify the market order if it is outside the market
@@ -722,7 +722,7 @@ impl OrderValidating for OrderValidator {
                             },
                             data.kind,
                         ) {
-                            self.check_max_limit_orders(owner.into_alloy()).await?;
+                            self.check_max_limit_orders(owner).await?;
                         }
                         (class, Some(quote))
                     }
@@ -753,7 +753,7 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
-                    self.check_max_limit_orders(owner.into_alloy()).await?;
+                    self.check_max_limit_orders(owner).await?;
                 }
                 (OrderClass::Limit, None)
             }
@@ -769,7 +769,7 @@ impl OrderValidating for OrderValidator {
 
         let order = Order {
             metadata: OrderMetadata {
-                owner: owner.into_alloy(),
+                owner: owner,
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract: settlement_contract.into_alloy(),
@@ -1369,11 +1369,11 @@ mod tests {
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(0),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1392,7 +1392,7 @@ mod tests {
 
         let domain_separator = DomainSeparator::default();
         let creation = OrderCreation {
-            from: Some(H160([1; 20])),
+            from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: json!({
@@ -1440,7 +1440,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
-                signer: creation.from.unwrap(),
+                signer: creation.from.unwrap().into_legacy(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
@@ -1469,7 +1469,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
-                signer: creation.from.unwrap(),
+                signer: creation.from.unwrap().into_legacy(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
@@ -1496,7 +1496,7 @@ mod tests {
         );
 
         let creation_ = OrderCreation {
-            fee_amount: U256::zero(),
+            fee_amount: alloy::primitives::U256::ZERO,
             ..creation.clone()
         };
         let (order, _) = validator
@@ -1507,7 +1507,7 @@ mod tests {
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
-            fee_amount: U256::zero(),
+            fee_amount: alloy::primitives::U256::ZERO,
             partially_fillable: true,
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1585,10 +1585,10 @@ mod tests {
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(10),
-            sell_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(10),
+            sell_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1662,10 +1662,10 @@ mod tests {
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1725,11 +1725,11 @@ mod tests {
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(0),
-            sell_amount: U256::from(0),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(0),
+            sell_amount: alloy::primitives::U256::from(0),
+            fee_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1782,11 +1782,11 @@ mod tests {
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
             from: Some(Default::default()),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
@@ -1842,11 +1842,11 @@ mod tests {
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1905,11 +1905,11 @@ mod tests {
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1968,12 +1968,12 @@ mod tests {
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            from: Some(H160([1; 20])),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
+            from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -2037,10 +2037,10 @@ mod tests {
 
             let order = OrderCreation {
                 valid_to: u32::MAX,
-                sell_token: H160::from_low_u64_be(1),
-                sell_amount: 1.into(),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: 1.into(),
+                sell_token: Address::with_last_byte(1),
+                sell_amount: alloy::primitives::U256::from(1),
+                buy_token: Address::with_last_byte(2),
+                buy_amount: alloy::primitives::U256::from(1),
                 app_data: OrderCreationAppData::Full {
                     full: "{}".to_string(),
                 },
@@ -2129,10 +2129,10 @@ mod tests {
         // Test with flashloan hint that covers the sell amount
         let order_with_sufficient_flashloan = OrderCreation {
             valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            sell_amount: 100.into(),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: 1.into(),
+            sell_token: Address::with_last_byte(1),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
             app_data: OrderCreationAppData::Full {
                 full: r#"{
                     "metadata": {
@@ -2167,10 +2167,10 @@ mod tests {
         // Test with flashloan hint that doesn't cover the sell amount
         let order_with_insufficient_flashloan = OrderCreation {
             valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            sell_amount: 100.into(),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: 1.into(),
+            sell_token: Address::with_last_byte(1),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
             app_data: OrderCreationAppData::Full {
                 full: r#"{
                     "metadata": {
@@ -2204,10 +2204,10 @@ mod tests {
         // Test with flashloan hint for different token
         let order_with_wrong_token_flashloan = OrderCreation {
             valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            sell_amount: 100.into(),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: 1.into(),
+            sell_token: Address::with_last_byte(1),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
             app_data: OrderCreationAppData::Full {
                 full: r#"{
                     "metadata": {
@@ -2546,17 +2546,17 @@ mod tests {
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 10,
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            buy_amount: U256::from(4),
-            sell_amount: U256::from(3),
-            fee_amount: U256::from(0),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            buy_amount: alloy::primitives::U256::from(4),
+            sell_amount: alloy::primitives::U256::from(3),
+            fee_amount: alloy::primitives::U256::from(0),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
             },
-            from: Some(H160([0xf0; 20])),
-            receiver: Some(H160([0xf0; 20])),
+            from: Some(Address::repeat_byte(0xf0)),
+            receiver: Some(Address::repeat_byte(0xf0)),
             quote_id,
             ..Default::default()
         };
