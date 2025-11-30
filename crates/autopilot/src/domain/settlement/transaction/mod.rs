@@ -37,7 +37,7 @@ impl Authenticator for GPv2AllowListAuthentication::Instance {
         // find an eligible caller in the callstack. To avoid this case the
         // underlying call needs to happen on the same block the transaction happened.
         Ok(self
-            .isSolver(prospective_solver.0.into_alloy())
+            .isSolver(prospective_solver)
             .block(block.into_alloy())
             .call()
             .await
@@ -146,7 +146,7 @@ impl Transaction {
                             amount: trade.buyAmount.into_legacy().into(),
                         },
                         side: flags.side(),
-                        receiver: trade.receiver.into_legacy().into(),
+                        receiver: eth::Address::from(trade.receiver.into_legacy().0),
                         valid_to: trade.validTo,
                         app_data: domain::auction::order::AppDataHash(trade.appData.into()),
                         fee_amount: trade.feeAmount.into_legacy().into(),

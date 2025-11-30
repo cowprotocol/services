@@ -440,7 +440,7 @@ impl RunLoop {
 
         let participants = ranking
             .all()
-            .map(|participant| participant.solution().solver().into())
+            .map(|participant| participant.solution().solver().into_legacy())
             .collect::<HashSet<_>>();
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
@@ -467,7 +467,7 @@ impl RunLoop {
             .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
-                solver_address: participant.solution().solver().0.into_alloy(),
+                solver_address: participant.solution().solver(),
                 score: Some(Score::Solver(
                     participant.solution().score().get().0.into_alloy(),
                 )),

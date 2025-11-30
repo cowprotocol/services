@@ -292,7 +292,7 @@ impl SolvableOrdersCache {
                     price_exist
                 })
             })
-            .map(|cow_amm| eth::Address::from(cow_amm.address().into_legacy()))
+            .map(|cow_amm| *cow_amm.address())
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
