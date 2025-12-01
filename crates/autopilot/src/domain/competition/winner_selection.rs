@@ -477,6 +477,7 @@ mod tests {
             infra::Driver,
         },
         ethcontract::H160,
+        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         hex_literal::hex,
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,
@@ -1226,7 +1227,7 @@ mod tests {
             let reference_scores = arbitrator.compute_reference_scores(&ranking);
             assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
             for (solver_id, expected_score) in &self.expected_reference_scores {
-                let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();
+                let solver_address = solver_map.get(solver_id).unwrap().into_alloy();
                 let score = reference_scores.get(&solver_address).unwrap();
                 assert_eq!(score.0, eth::Ether(*expected_score))
             }
@@ -1387,7 +1388,7 @@ mod tests {
         });
 
         let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
-        let solver_address = eth::Address(solver_address);
+        let solver_address = solver_address.into_alloy();
 
         let solution = Solution::new(
             solution_id,
@@ -1402,7 +1403,7 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             None,
-            crate::arguments::Account::Address(solver_address.0),
+            crate::arguments::Account::Address(solver_address.into_legacy()),
             false,
         )
         .await

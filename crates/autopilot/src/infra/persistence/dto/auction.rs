@@ -1,9 +1,7 @@
 use {
     super::order::Order,
-    crate::{
-        domain,
-        domain::{auction::Price, eth},
-    },
+    crate::domain::{self, auction::Price, eth},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -27,7 +25,7 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()
-            .map(Into::into)
+            .map(IntoLegacy::into_legacy)
             .collect(),
     }
 }
@@ -78,7 +76,7 @@ impl Auction {
                 .auction
                 .surplus_capturing_jit_order_owners
                 .into_iter()
-                .map(Into::into)
+                .map(IntoAlloy::into_alloy)
                 .collect(),
         })
     }

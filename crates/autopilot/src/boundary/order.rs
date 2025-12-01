@@ -26,12 +26,8 @@ pub fn to_domain(
         created: u32::try_from(order.metadata.creation_date.timestamp()).unwrap_or(u32::MIN),
         valid_to: order.data.valid_to,
         side: order.data.kind.into(),
-        receiver: order
-            .data
-            .receiver
-            .map(IntoLegacy::into_legacy)
-            .map(Into::into),
-        owner: order.metadata.owner.into_legacy().into(),
+        receiver: order.data.receiver,
+        owner: order.metadata.owner,
         partially_fillable: order.data.partially_fillable,
         executed: remaining_order.executed_amount.into(),
         pre_interactions: if order_is_untouched {
