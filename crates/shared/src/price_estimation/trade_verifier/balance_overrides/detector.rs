@@ -10,13 +10,11 @@ use {
     },
     maplit::hashmap,
     std::{
-        collections::HashMap,
         fmt::{self, Debug, Formatter},
         sync::Arc,
     },
     thiserror::Error,
     web3::{
-        signing::keccak256,
         types::{BlockNumber, CallRequest},
     },
 };
@@ -84,19 +82,17 @@ impl Detector {
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError> {
-        println!("Starting detection for token {:?}", token);
 
         // First try the trace-based detection if the node supports it
-        println!("Attempting trace-based detection for token {:?}", token);
         let trace_strategy = self.detect_with_trace(token, holder).await;
         if let Ok(strategy) = trace_strategy {
-            println!(
+            tracing::debug!(
                 "Trace-based detection succeeded for token {:?}: {:?}",
                 token, strategy
             );
             return Ok(strategy);
         } else {
-            println!(
+            tracing::debug!(
                 "Trace-based detection failed, falling back to heuristic detection for token \
                  {:?}: {:#?}",
                 token, trace_strategy
@@ -155,7 +151,7 @@ impl Detector {
             .trace_call(call_request, BlockNumber::Latest.into())
             .await
             .map_err(|e| {
-                println!("debug_traceCall not supported for token {:?}: {}", token, e);
+                tracing::debug!("debug_traceCall not supported for token {:?}: {}", token, e);
                 DetectionError::Simulation(SimulationError::Other(anyhow::anyhow!(
                     "debug_traceCall failed: {e}"
                 )))
@@ -165,11 +161,11 @@ impl Detector {
         let storage_slots = self.extract_sload_slots(&trace);
 
         if storage_slots.is_empty() {
-            println!("no SLOAD operations found in trace for token {:?}", token);
+            tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
             return Err(DetectionError::NotFound);
         }
 
-        println!(
+        tracing::debug!(
             "found {} SLOAD operations for token {:?}: {:?}",
             storage_slots.len(),
             token,
@@ -178,7 +174,7 @@ impl Detector {
 
         if storage_slots.len() == 1 {
             let slot = storage_slots[0];
-            println!(
+            tracing::debug!(
                 "detected balance slot via trace (single SLOAD) for token {:?}: slot {:?}",
                 token, slot
             );
@@ -186,7 +182,7 @@ impl Detector {
         }
 
         // Multiple storage slots accessed - test each one to find the balance slot
-        println!(
+        tracing::debug!(
             "multiple SLOAD operations for token {:?}, count={}, testing each one",
             token,
             storage_slots.len()
@@ -196,7 +192,7 @@ impl Detector {
         // balance)
         for slot in storage_slots.iter().rev() {
             if let Ok(strategy) = self.verify_slot_is_balance(token, holder, *slot).await {
-                println!(
+                tracing::debug!(
                     "verified balance slot via testing for token {:?}: slot {:?}",
                     token, slot
                 );
@@ -204,7 +200,7 @@ impl Detector {
             }
         }
 
-        println!(
+        tracing::debug!(
             "none of the SLOAD slots appear to be the balance slot for token {:?}",
             token
         );

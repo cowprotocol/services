@@ -260,11 +260,8 @@ impl BalanceOverrides {
     }
 
     async fn cached_detection(&self, token: Address, holder: Address) -> Option<Strategy> {
-        println!("USE CACHED DETECTION FLOW, PRE DETECTOR INIT");
         let (detector, cache) = self.detector.as_ref()?;
         tracing::trace!(?token, "attempting to auto-detect");
-
-        println!("USE CACHED DETECTION FLOW");
 
         {
             let mut cache = cache.lock().unwrap();
@@ -304,7 +301,6 @@ impl BalanceOverriding for BalanceOverrides {
         &self,
         request: BalanceOverrideRequest,
     ) -> Option<(Address, StateOverride)> {
-        println!("ACTUALLY CHECK BALANCE OVERRIDING");
         let strategy = if let Some(strategy) = self.hardcoded.get(&request.token) {
             tracing::trace!(token = ?request.token, "using pre-configured balance override strategy");
             Some(strategy.clone())
@@ -313,10 +309,6 @@ impl BalanceOverriding for BalanceOverrides {
         }?;
 
         let (key, value) = strategy.state_override(&request.holder, &request.amount);
-        println!(
-            "overriding token balance: {:?} {:?} {:?}",
-            strategy, key, value
-        );
 
         Some((
             request.token,
@@ -338,7 +330,6 @@ impl BalanceOverriding for DummyOverrider {
         &self,
         _request: BalanceOverrideRequest,
     ) -> Option<(Address, StateOverride)> {
-        println!("DUMMY OVERRIDE");
         None
     }
 }
