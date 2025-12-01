@@ -26,15 +26,15 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
     let weth = &onchain.contracts().weth;
 
     weth.approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -66,7 +66,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Placing order with 1 wei of sell_tokens");
     weth.deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(::alloy::primitives::U256::ONE)
         .send_and_watch()
         .await
@@ -77,7 +77,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Deposit ETH to make order executable");
     weth.deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(2))
         .send_and_watch()
         .await
@@ -85,11 +85,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = weth
-            .balanceOf(trader.address().into_alloy())
-            .call()
-            .await
-            .unwrap();
+        let balance_after = weth.balanceOf(trader.address()).call().await.unwrap();
         !balance_after.is_zero()
     })
     .await

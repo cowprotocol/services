@@ -28,7 +28,7 @@ impl AlloyEventRetrieving for GPv2SettlementContract {
         Filter::new().address(self.address)
     }
 
-    fn provider(&self) -> &contracts::alloy::Provider {
+    fn provider(&self) -> &alloy::providers::DynProvider {
         &self.provider
     }
 }
@@ -75,7 +75,9 @@ impl EventStoring<(GPv2SettlementEvents, Log)> for Indexer {
         database::settlements::delete(&mut transaction, from_block).await?;
         transaction.commit().await?;
 
-        self.settlement_observer.update().await;
+        self.settlement_observer
+            .post_process_outstanding_settlement_transactions()
+            .await;
         Ok(())
     }
 
@@ -84,7 +86,9 @@ impl EventStoring<(GPv2SettlementEvents, Log)> for Indexer {
         crate::database::events::append_events(&mut transaction, events).await?;
         transaction.commit().await?;
 
-        self.settlement_observer.update().await;
+        self.settlement_observer
+            .post_process_outstanding_settlement_transactions()
+            .await;
         Ok(())
     }
 }

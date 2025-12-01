@@ -2,6 +2,7 @@ pub use shared::sources::balancer_v2::pool_fetching::StablePool as Pool;
 use {
     crate::domain::{eth, liquidity},
     ethereum_types::{H160, H256, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, CommonPoolState, TokenState},
         swap::fixed_point::Bfp,
@@ -27,7 +28,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
         .iter()
         .map(|reserve| {
             Some((
-                reserve.asset.token.0,
+                reserve.asset.token.0.into_alloy(),
                 TokenState {
                     balance: reserve.asset.amount,
                     scaling_factor: to_fixed_point(&reserve.scale.get())?,
@@ -44,7 +45,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
     Some(Pool {
         common: CommonPoolState {
             id,
-            address,
+            address: address.into_alloy(),
             swap_fee,
             paused: false,
         },

@@ -52,8 +52,8 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -62,7 +62,7 @@ async fn test(web3: Web3) {
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -70,7 +70,7 @@ async fn test(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(3))
         .send_and_watch()
         .await
@@ -92,8 +92,8 @@ async fn test(web3: Web3) {
     tracing::info!("Quoting order");
     let request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -200,8 +200,8 @@ async fn uses_stale_liquidity(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(2)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(2)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -210,7 +210,7 @@ async fn uses_stale_liquidity(web3: Web3) {
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(1))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -218,7 +218,7 @@ async fn uses_stale_liquidity(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(1))
         .send_and_watch()
         .await
@@ -230,8 +230,8 @@ async fn uses_stale_liquidity(web3: Web3) {
 
     let quote = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
                 value: NonZeroU256::new(to_wei(1)).unwrap(),
@@ -246,7 +246,7 @@ async fn uses_stale_liquidity(web3: Web3) {
     // Now, we want to manually unbalance the pools and assert that the quote
     // doesn't change (as the price estimation will use stale pricing data).
     onchain
-        .mint_token_to_weth_uni_v2_pool(&token, to_wei(1_000))
+        .mint_token_to_weth_uni_v2_pool(&token, eth(1_000))
         .await;
 
     tracing::info!("performining second quote, which should match first");
@@ -272,8 +272,8 @@ async fn quote_timeout(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(2)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(2)).await;
     let [sell_token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -331,8 +331,8 @@ async fn quote_timeout(web3: Web3) {
 
     let quote_request = |timeout| OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: sell_token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *sell_token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -385,11 +385,11 @@ async fn quote_timeout(web3: Web3) {
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
     // set up trader to pass balance checks during order creation
-    sell_token.mint(trader.address(), to_wei(1)).await;
+    sell_token.mint(trader.address(), eth(1)).await;
 
     sell_token
         .approve(onchain.contracts().allowance.into_alloy(), eth(1))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -423,8 +423,8 @@ async fn quote_timeout(web3: Web3) {
 async fn volume_fee(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [trader] = onchain.make_accounts(eth(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
@@ -433,7 +433,7 @@ async fn volume_fee(web3: Web3) {
         .contracts()
         .weth
         .approve(onchain.contracts().allowance.into_alloy(), eth(3))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -441,7 +441,7 @@ async fn volume_fee(web3: Web3) {
         .contracts()
         .weth
         .deposit()
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .value(eth(3))
         .send_and_watch()
         .await
@@ -463,8 +463,8 @@ async fn volume_fee(web3: Web3) {
     tracing::info!("Testing SELL quote with volume fee");
     let sell_request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(to_wei(1)).unwrap(),
@@ -482,8 +482,8 @@ async fn volume_fee(web3: Web3) {
     tracing::info!("Testing BUY quote with volume fee");
     let buy_request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        buy_token: token.address().into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
         side: OrderQuoteSide::Buy {
             buy_amount_after_fee: NonZeroU256::try_from(to_wei(1)).unwrap(),
         },

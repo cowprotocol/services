@@ -1,6 +1,8 @@
 use {
     crate::domain::liquidity::limit_order::LimitOrder,
-    contracts::ethcontract::{H160, U256},
+    alloy::primitives::Address,
+    ethcontract::U256,
+    ethrpc::alloy::conversions::IntoAlloy,
     shared::{baseline_solver::BaselineSolvable, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
 };
 
@@ -8,11 +10,11 @@ use {
 impl BaselineSolvable for LimitOrder {
     async fn get_amount_out(
         &self,
-        out_token: H160,
-        (in_amount, in_token): (U256, H160),
+        out_token: Address,
+        (in_amount, in_token): (U256, Address),
     ) -> Option<U256> {
-        if in_token != self.taker.token.0
-            || out_token != self.maker.token.0
+        if in_token != self.taker.token.0.into_alloy()
+            || out_token != self.maker.token.0.into_alloy()
             || in_amount > self.taker.amount
         {
             return None;
@@ -25,11 +27,11 @@ impl BaselineSolvable for LimitOrder {
 
     async fn get_amount_in(
         &self,
-        in_token: H160,
-        (out_amount, out_token): (U256, H160),
+        in_token: Address,
+        (out_amount, out_token): (U256, Address),
     ) -> Option<U256> {
-        if out_token != self.maker.token.0
-            || in_token != self.taker.token.0
+        if out_token != self.maker.token.0.into_alloy()
+            || in_token != self.taker.token.0.into_alloy()
             || out_amount > self.maker.amount
         {
             return None;
@@ -50,7 +52,7 @@ mod tests {
     use {
         super::*,
         crate::domain::{eth, liquidity::limit_order::TakerAmount},
-        contracts::ethcontract::U256,
+        ethrpc::alloy::conversions::IntoAlloy,
         shared::addr,
     };
 
@@ -76,8 +78,8 @@ mod tests {
         let desired_in_amount = to_wei(50);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
-        let out_token = order.maker.token.0;
-        let in_token = order.taker.token.0;
+        let out_token = order.maker.token.0.into_alloy();
+        let in_token = order.taker.token.0.into_alloy();
 
         let amount_out = order
             .get_amount_out(out_token, (desired_in_amount, in_token))
@@ -99,8 +101,8 @@ mod tests {
         let desired_out_amount = to_wei(50);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
-        let out_token = order.maker.token.0;
-        let in_token = order.taker.token.0;
+        let out_token = order.maker.token.0.into_alloy();
+        let in_token = order.taker.token.0.into_alloy();
 
         let amount_in = order
             .get_amount_in(in_token, (desired_out_amount, out_token))
@@ -121,8 +123,8 @@ mod tests {
         let fee_amount = to_wei(10);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
-        let out_token = order.maker.token.0;
-        let in_token = order.taker.token.0;
+        let out_token = order.maker.token.0.into_alloy();
+        let in_token = order.taker.token.0.into_alloy();
         let amount_in = taker_amount.checked_mul(U256::from(2)).unwrap();
         let amount_out = order.get_amount_out(out_token, (amount_in, in_token)).await;
 
@@ -136,8 +138,8 @@ mod tests {
         let fee_amount = to_wei(10);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
-        let out_token = order.maker.token.0;
-        let in_token = order.taker.token.0;
+        let out_token = order.maker.token.0.into_alloy();
+        let in_token = order.taker.token.0.into_alloy();
         let amount_out = maker_amount.checked_mul(U256::from(2)).unwrap();
         let amount_in = order.get_amount_in(in_token, (amount_out, out_token)).await;
 
@@ -151,8 +153,8 @@ mod tests {
         let fee_amount = to_wei(10);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
-        let out_token = order.maker.token.0;
-        let in_token = order.taker.token.0;
+        let out_token = order.maker.token.0.into_alloy();
+        let in_token = order.taker.token.0.into_alloy();
         let amount = to_wei(1);
         let amount_in = order.get_amount_in(out_token, (amount, in_token)).await;
         let amount_out = order.get_amount_out(in_token, (amount, out_token)).await;

@@ -1,8 +1,7 @@
 use {
     crate::{AuctionId, order::OrderUid},
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -36,7 +35,7 @@ pub struct SolverCompetitionAPI {
 pub struct CompetitionAuction {
     pub orders: Vec<OrderUid>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<Address, U256>,
 }
 
 #[serde_as]
@@ -45,13 +44,13 @@ pub struct CompetitionAuction {
 pub struct SolverSettlement {
     pub solver: String,
     #[serde(default)]
-    pub solver_address: H160,
+    pub solver_address: Address,
     #[serde(flatten)]
     pub score: Option<Score>,
     #[serde(default)]
     pub ranking: usize,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub clearing_prices: BTreeMap<H160, U256>,
+    pub clearing_prices: BTreeMap<Address, U256>,
     pub orders: Vec<Order>,
     #[serde(default)]
     pub is_winner: bool,
@@ -106,16 +105,16 @@ pub enum Order {
         id: OrderUid,
         /// The effective amount that left the user's wallet including all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        sell_amount: U256,
+        sell_amount: alloy::primitives::U256,
         /// The effective amount the user received after all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        buy_amount: U256,
+        buy_amount: alloy::primitives::U256,
     },
     #[serde(rename_all = "camelCase")]
     Legacy {
         id: OrderUid,
         #[serde_as(as = "HexOrDecimalU256")]
-        executed_amount: U256,
+        executed_amount: alloy::primitives::U256,
     },
 }
 
@@ -189,28 +188,28 @@ mod tests {
                         OrderUid([0x33; 56]),
                     ],
                     prices: btreemap! {
-                        H160([0x11; 20]) => 1000.into(),
-                        H160([0x22; 20]) => 2000.into(),
-                        H160([0x33; 20]) => 3000.into(),
+                        Address::repeat_byte(0x11) => U256::from(1000),
+                        Address::repeat_byte(0x22) => U256::from(2000),
+                        Address::repeat_byte(0x33) => U256::from(3000),
                     },
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
-                    solver_address: H160([0x22; 20]),
-                    score: Some(Score::Solver(1.into())),
+                    solver_address: Address::repeat_byte(0x22),
+                    score: Some(Score::Solver(U256::ONE)),
                     ranking: 1,
                     clearing_prices: btreemap! {
-                        H160([0x22; 20]) => 8.into(),
+                        Address::repeat_byte(0x22) => U256::from(8),
                     },
                     orders: vec![
                         Order::Colocated {
                             id: OrderUid([0x33; 56]),
-                            sell_amount: 12.into(),
-                            buy_amount: 13.into(),
+                            sell_amount: U256::from(12),
+                            buy_amount: U256::from(13),
                         },
                         Order::Legacy {
                             id: OrderUid([0x44; 56]),
-                            executed_amount: 14.into(),
+                            executed_amount: U256::from(14),
                         },
                     ],
                     is_winner: true,

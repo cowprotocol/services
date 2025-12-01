@@ -1,12 +1,10 @@
 use {
-    alloy::primitives::aliases::U24,
-    contracts::{
-        alloy::UniswapV3QuoterV2::IQuoterV2::{
-            QuoteExactInputSingleParams,
-            QuoteExactOutputSingleParams,
-        },
-        ethcontract::{H160, U256},
+    alloy::primitives::{Address, aliases::U24},
+    contracts::alloy::UniswapV3QuoterV2::IQuoterV2::{
+        QuoteExactInputSingleParams,
+        QuoteExactOutputSingleParams,
     },
+    ethcontract::{H160, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,
@@ -31,18 +29,18 @@ impl Pool {
 impl BaselineSolvable for Pool {
     async fn get_amount_out(
         &self,
-        out_token: H160,
-        (in_amount, in_token): (U256, H160),
+        out_token: Address,
+        (in_amount, in_token): (U256, Address),
     ) -> Option<U256> {
-        if TokenPair::new(out_token.into_alloy(), in_token.into_alloy()) != Some(self.tokens) {
+        if TokenPair::new(out_token, in_token) != Some(self.tokens) {
             // The pool has wrong tokens or input amount would overflow
             return None;
         }
 
         self.uni_v3_quoter_contract
             .quoteExactInputSingle(QuoteExactInputSingleParams {
-                tokenIn: in_token.into_alloy(),
-                tokenOut: out_token.into_alloy(),
+                tokenIn: in_token,
+                tokenOut: out_token,
                 amountIn: in_amount.into_alloy(),
                 fee: self.fee,
                 sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
@@ -55,18 +53,18 @@ impl BaselineSolvable for Pool {
 
     async fn get_amount_in(
         &self,
-        in_token: H160,
-        (out_amount, out_token): (U256, H160),
+        in_token: Address,
+        (out_amount, out_token): (U256, Address),
     ) -> Option<U256> {
-        if TokenPair::new(out_token.into_alloy(), in_token.into_alloy()) != Some(self.tokens) {
+        if TokenPair::new(out_token, in_token) != Some(self.tokens) {
             // The pool has wrong tokens or out amount would overflow
             return None;
         }
 
         self.uni_v3_quoter_contract
             .quoteExactOutputSingle(QuoteExactOutputSingleParams {
-                tokenIn: in_token.into_alloy(),
-                tokenOut: out_token.into_alloy(),
+                tokenIn: in_token,
+                tokenOut: out_token,
                 amount: out_amount.into_alloy(),
                 fee: self.fee,
                 sqrtPriceLimitX96: alloy::primitives::U160::ZERO,

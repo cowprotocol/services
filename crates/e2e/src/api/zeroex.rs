@@ -1,18 +1,13 @@
 use {
     crate::setup::TestAccount,
-    autopilot::domain::eth::U256,
+    alloy::primitives::{Address, B256, U256},
     chrono::{DateTime, NaiveDateTime, Utc},
-    driver::domain::eth::H256,
-    ethcontract::common::abi::{Token, encode},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     hex_literal::hex,
     model::DomainSeparator,
-    shared::{
-        zeroex_api,
-        zeroex_api::{Order, OrderMetadata, OrderRecord, ZeroExSignature},
-    },
-    std::{net::SocketAddr, sync::LazyLock},
+    shared::zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
+    std::net::SocketAddr,
     warp::{Filter, Reply},
-    web3::{signing, types::H160},
 };
 
 pub struct ZeroExApi {
@@ -55,17 +50,17 @@ impl ZeroExApi {
 }
 
 pub struct Eip712TypedZeroExOrder {
-    pub maker_token: H160,
-    pub taker_token: H160,
+    pub maker_token: Address,
+    pub taker_token: Address,
     pub maker_amount: u128,
     pub taker_amount: u128,
     pub remaining_fillable_taker_amount: u128,
     pub taker_token_fee_amount: u128,
-    pub maker: H160,
-    pub taker: H160,
-    pub sender: H160,
-    pub fee_recipient: H160,
-    pub pool: H256,
+    pub maker: Address,
+    pub taker: Address,
+    pub sender: Address,
+    pub fee_recipient: Address,
+    pub pool: B256,
     pub expiry: u64,
     pub salt: U256,
 }
@@ -78,7 +73,7 @@ impl Eip712TypedZeroExOrder {
     pub fn to_order_record(
         &self,
         chain_id: u64,
-        verifying_contract: H160,
+        verifying_contract: Address,
         signer: TestAccount,
     ) -> OrderRecord {
         OrderRecord::new(
@@ -90,7 +85,7 @@ impl Eip712TypedZeroExOrder {
                 maker_token: self.maker_token,
                 maker_amount: self.maker_amount,
                 pool: self.pool,
-                salt: self.salt,
+                salt: self.salt.into_legacy(),
                 sender: self.sender,
                 taker: self.taker,
                 taker_token: self.taker_token,
@@ -119,8 +114,8 @@ impl Eip712TypedZeroExOrder {
     ) -> ZeroExSignature {
         let signature = signer.sign_typed_data(domain_separator, &hash);
         ZeroExSignature {
-            r: signature.r,
-            s: signature.s,
+            r: signature.r.into_alloy(),
+            s: signature.s.into_alloy(),
             v: signature.v,
             // See <https://github.com/0xProject/protocol/blob/%400x/protocol-utils%4011.24.2/packages/protocol-utils/src/signature_utils.ts#L13>
             signature_type: 2,
@@ -131,19 +126,19 @@ impl Eip712TypedZeroExOrder {
     fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::ZEROEX_LIMIT_ORDER_TYPEHASH);
-        hash_data[44..64].copy_from_slice(self.maker_token.as_fixed_bytes());
-        hash_data[76..96].copy_from_slice(self.taker_token.as_fixed_bytes());
+        hash_data[44..64].copy_from_slice(self.maker_token.as_slice());
+        hash_data[76..96].copy_from_slice(self.taker_token.as_slice());
         hash_data[112..128].copy_from_slice(&self.maker_amount.to_be_bytes());
         hash_data[144..160].copy_from_slice(&self.taker_amount.to_be_bytes());
         hash_data[176..192].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
-        hash_data[204..224].copy_from_slice(self.maker.as_fixed_bytes());
-        hash_data[236..256].copy_from_slice(self.taker.as_fixed_bytes());
-        hash_data[268..288].copy_from_slice(self.sender.as_fixed_bytes());
-        hash_data[300..320].copy_from_slice(self.fee_recipient.as_fixed_bytes());
-        hash_data[320..352].copy_from_slice(self.pool.as_fixed_bytes());
+        hash_data[204..224].copy_from_slice(self.maker.as_slice());
+        hash_data[236..256].copy_from_slice(self.taker.as_slice());
+        hash_data[268..288].copy_from_slice(self.sender.as_slice());
+        hash_data[300..320].copy_from_slice(self.fee_recipient.as_slice());
+        hash_data[320..352].copy_from_slice(self.pool.as_slice());
         hash_data[376..384].copy_from_slice(&self.expiry.to_be_bytes());
-        self.salt.to_big_endian(&mut hash_data[384..416]);
-        signing::keccak256(&hash_data)
+        hash_data[384..416].copy_from_slice(&self.salt.to_be_bytes::<32>());
+        alloy::primitives::keccak256(hash_data).into()
     }
 }
 
@@ -151,29 +146,15 @@ struct ZeroExDomainSeparator([u8; 32]);
 
 impl ZeroExDomainSeparator {
     // See <https://github.com/0xProject/protocol/blob/%400x/contracts-zero-ex%400.49.0/contracts/zero-ex/contracts/src/fixins/FixinEIP712.sol>
-    pub fn new(chain_id: u64, contract_addr: H160) -> Self {
-        /// The EIP-712 domain name used for computing the domain separator.
-        static DOMAIN_NAME: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"ZeroEx"));
+    pub fn new(chain_id: u64, contract_addr: Address) -> Self {
+        let domain = alloy::sol_types::eip712_domain! {
+            name: "ZeroEx",
+            version: "1.0.0",
+            chain_id: chain_id,
+            verifying_contract: contract_addr,
+        };
 
-        /// The EIP-712 domain version used for computing the domain separator.
-        static DOMAIN_VERSION: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"1.0.0"));
-
-        /// The EIP-712 domain type used computing the domain separator.
-        static DOMAIN_TYPE_HASH: LazyLock<[u8; 32]> = LazyLock::new(|| {
-            signing::keccak256(
-            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        )
-        });
-
-        let abi_encode_string = encode(&[
-            Token::FixedBytes((*DOMAIN_TYPE_HASH).into()),
-            Token::FixedBytes((*DOMAIN_NAME).into()),
-            Token::FixedBytes((*DOMAIN_VERSION).into()),
-            Token::Uint(chain_id.into()),
-            Token::Address(contract_addr),
-        ]);
-
-        Self(signing::keccak256(abi_encode_string.as_slice()))
+        Self(domain.separator().into())
     }
 
     pub fn to_domain_separator(&self) -> DomainSeparator {

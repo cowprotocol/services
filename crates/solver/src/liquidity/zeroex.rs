@@ -20,7 +20,7 @@ use {
     futures::StreamExt,
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
-    primitive_types::{H160, U256},
+    primitive_types::U256,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
@@ -34,7 +34,7 @@ use {
     tracing::instrument,
 };
 
-type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
+type OrderBuckets = HashMap<(Address, Address), Vec<OrderRecord>>;
 type OrderbookCache = ArcSwap<OrderBuckets>;
 
 pub struct ZeroExLiquidity {
@@ -52,7 +52,7 @@ impl ZeroExLiquidity {
         gpv2: Address,
         blocks_stream: CurrentBlockWatcher,
     ) -> Self {
-        let allowance_manager = AllowanceManager::new(web3, gpv2.into_legacy());
+        let allowance_manager = AllowanceManager::new(web3, gpv2);
         let orderbook_cache: Arc<OrderbookCache> = Default::default();
         let cache = orderbook_cache.clone();
         tokio::spawn(
@@ -82,8 +82,8 @@ impl ZeroExLiquidity {
             id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(const_hex::encode(
                 &record.metadata().order_hash,
             ))),
-            sell_token: record.order().maker_token,
-            buy_token: record.order().taker_token,
+            sell_token: record.order().maker_token.into_legacy(),
+            buy_token: record.order().taker_token.into_legacy(),
             sell_amount,
             buy_amount: record.metadata().remaining_fillable_taker_amount.into(),
             kind: OrderKind::Buy,
@@ -112,7 +112,7 @@ impl ZeroExLiquidity {
                 OrdersQuery::default(),
                 // orders fillable only by our settlement contract
                 OrdersQuery {
-                    sender: Some(gpv2_address.into_legacy()),
+                    sender: Some(gpv2_address),
                     ..Default::default()
                 },
             ];
@@ -148,7 +148,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
         let allowances = Arc::new(
             self.allowance_manager
-                .get_allowances(tokens, self.zeroex.address().into_legacy())
+                .get_allowances(tokens, *self.zeroex.address())
                 .await?,
         );
 
@@ -163,14 +163,10 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
 fn group_by_token_pair(
     orders: impl Iterator<Item = OrderRecord>,
-) -> HashMap<(H160, H160), Vec<OrderRecord>> {
+) -> HashMap<(Address, Address), Vec<OrderRecord>> {
     orders
         .filter_map(|record| {
-            TokenPair::new(
-                record.order().taker_token.into_alloy(),
-                record.order().maker_token.into_alloy(),
-            )
-            .map(|_| {
+            TokenPair::new(record.order().taker_token, record.order().maker_token).map(|_| {
                 (
                     (record.order().taker_token, record.order().maker_token),
                     record,
@@ -190,7 +186,7 @@ fn get_useful_orders(
     for orders in order_buckets
         .iter()
         .filter_map(|((token_a, token_b), record)| {
-            TokenPair::new(token_a.into_alloy(), token_b.into_alloy())
+            TokenPair::new(*token_a, *token_b)
                 .is_some_and(|pair| relevant_pairs.contains(&pair))
                 .then_some(record)
         })
@@ -239,7 +235,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         }
         let approval = self.allowances.approve_token(TokenAmount::new(
             self.order_record.order().taker_token,
-            execution.filled,
+            execution.filled.into_alloy(),
         ))?;
         if let Some(approval) = approval {
             encoder.append_to_execution_plan(Arc::new(approval));
@@ -258,7 +254,6 @@ pub mod tests {
     use {
         super::*,
         crate::interactions::allowances::Approval,
-        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashmap,
         shared::{
             baseline_solver::BaseTokens,
@@ -268,28 +263,28 @@ pub mod tests {
         },
     };
 
-    fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
-        let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
-        let fake_order =
-            [TokenPair::new(token_a.into_alloy(), token_b.into_alloy()).unwrap()].into_iter();
+    fn get_relevant_pairs(token_a: Address, token_b: Address) -> HashSet<TokenPair> {
+        let base_tokens = Arc::new(BaseTokens::new(Address::ZERO, &[]));
+        let fake_order = [TokenPair::new(token_a, token_b).unwrap()].into_iter();
         base_tokens.relevant_pairs(fake_order)
+    }
+
+    fn order_with_tokens(token_a: Address, token_b: Address) -> OrderRecord {
+        OrderRecord::new(
+            zeroex_api::Order {
+                taker_token: token_a,
+                maker_token: token_b,
+                ..Default::default()
+            },
+            OrderMetadata::default(),
+        )
     }
 
     #[test]
     fn order_buckets_get_created() {
-        let token_a = H160([0x00; 20]);
-        let token_b = H160([0xff; 20]);
+        let token_a = Address::repeat_byte(0x00);
+        let token_b = Address::repeat_byte(0xff);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
-        let order_with_tokens = |token_a, token_b| {
-            OrderRecord::new(
-                zeroex_api::Order {
-                    taker_token: token_a,
-                    maker_token: token_b,
-                    ..Default::default()
-                },
-                OrderMetadata::default(),
-            )
-        };
         let order_1 = order_with_tokens(token_a, token_b);
         let order_2 = order_with_tokens(token_b, token_a);
         let order_3 = order_with_tokens(token_b, token_a);
@@ -301,20 +296,10 @@ pub mod tests {
 
     #[test]
     fn empty_bucket_no_relevant_orders() {
-        let token_a = H160([0x00; 20]);
-        let token_b = H160([0xff; 20]);
-        let token_ignore = H160([0x11; 20]);
+        let token_a = Address::repeat_byte(0x00);
+        let token_b = Address::repeat_byte(0xff);
+        let token_ignore = Address::repeat_byte(0x11);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
-        let order_with_tokens = |token_a, token_b| {
-            OrderRecord::new(
-                zeroex_api::Order {
-                    taker_token: token_a,
-                    maker_token: token_b,
-                    ..Default::default()
-                },
-                OrderMetadata::default(),
-            )
-        };
         let order_1 = order_with_tokens(token_ignore, token_b);
         let order_2 = order_with_tokens(token_a, token_ignore);
         let order_3 = order_with_tokens(token_ignore, token_ignore);
@@ -325,8 +310,8 @@ pub mod tests {
 
     #[test]
     fn biggest_volume_orders_get_selected() {
-        let token_a = H160([0x00; 20]);
-        let token_b = H160([0xff; 20]);
+        let token_a = Address::repeat_byte(0x00);
+        let token_b = Address::repeat_byte(0xff);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_fillable_amount = |remaining_fillable_taker_amount| {
             OrderRecord::new(
@@ -365,8 +350,8 @@ pub mod tests {
 
     #[test]
     fn best_priced_orders_get_selected() {
-        let token_a = H160([0x00; 20]);
-        let token_b = H160([0xff; 20]);
+        let token_a = Address::repeat_byte(0x00);
+        let token_b = Address::repeat_byte(0xff);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_amount = |taker_amount, remaining_fillable_taker_amount| {
             OrderRecord::new(
@@ -399,14 +384,14 @@ pub mod tests {
 
     #[tokio::test]
     async fn interaction_encodes_approval_when_insufficient() {
-        let sell_token = H160::from_low_u64_be(1);
+        let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
-            H160::default().into_alloy(),
+            Default::default(),
             ethrpc::mock::web3().alloy,
         ));
         let allowances = Allowances::new(
-            zeroex.address().into_legacy(),
-            hashmap! { sell_token => 99.into() },
+            *zeroex.address(),
+            hashmap! { sell_token => alloy::primitives::U256::from(99) },
         );
         let order_record = OrderRecord::new(
             zeroex_api::Order {
@@ -432,7 +417,7 @@ pub mod tests {
             [
                 Approval {
                     token: sell_token,
-                    spender: zeroex.address().into_legacy(),
+                    spender: *zeroex.address(),
                 }
                 .encode(),
                 ZeroExInteraction {
@@ -447,14 +432,14 @@ pub mod tests {
 
     #[tokio::test]
     async fn interaction_encodes_no_approval_when_sufficient() {
-        let sell_token = H160::from_low_u64_be(1);
+        let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
-            H160::default().into_alloy(),
+            Default::default(),
             ethrpc::mock::web3().alloy,
         ));
         let allowances = Allowances::new(
-            zeroex.address().into_legacy(),
-            hashmap! { sell_token => 100.into() },
+            *zeroex.address(),
+            hashmap! { sell_token => alloy::primitives::U256::from(100) },
         );
         let order_record = OrderRecord::new(
             zeroex_api::Order {

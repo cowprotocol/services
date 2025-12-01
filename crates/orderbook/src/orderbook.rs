@@ -13,7 +13,7 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{
@@ -78,13 +78,13 @@ impl Metrics {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
-                    sell: order.data.sell_amount.into_legacy(),
-                    buy: order.data.buy_amount.into_legacy(),
-                    fee: order.data.fee_amount.into_legacy(),
+                    sell: order.data.sell_amount,
+                    buy: order.data.buy_amount,
+                    fee: order.data.fee_amount,
                 },
                 &Amounts {
-                    sell: quote.sell_amount,
-                    buy: quote.buy_amount,
+                    sell: quote.sell_amount.into_alloy(),
+                    buy: quote.buy_amount.into_alloy(),
                     fee: FeeParameters {
                         // safe to unwrap as these values were converted from f64 previously
                         gas_amount: quote.gas_amount.to_f64().unwrap(),

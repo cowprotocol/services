@@ -18,7 +18,7 @@ use {
         time::now_in_epoch_seconds,
     },
     number::conversions::alloy::u256_to_big_decimal,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H256, U256},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
@@ -96,12 +96,12 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
-    weth: H160,
+    weth: Address,
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
-    settlement_contract: H160,
+    settlement_contract: Address,
     disable_order_balance_filter: bool,
     disable_1271_order_sig_filter: bool,
     disable_1271_order_balance_filter: bool,
@@ -124,12 +124,12 @@ impl SolvableOrdersCache {
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
-        weth: H160,
+        weth: Address,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
-        settlement_contract: H160,
+        settlement_contract: Address,
         disable_order_balance_filter: bool,
         disable_1271_order_sig_filter: bool,
         disable_1271_order_balance_filter: bool,
@@ -204,7 +204,7 @@ impl SolvableOrdersCache {
             let orders = orders_with_balance(
                 orders,
                 &balances,
-                self.settlement_contract.into_alloy(),
+                self.settlement_contract,
                 self.disable_1271_order_balance_filter,
             );
             let removed = counter.checkpoint("insufficient_balance", &orders);
@@ -219,7 +219,7 @@ impl SolvableOrdersCache {
 
         let cow_amm_tokens = cow_amms
             .iter()
-            .flat_map(|cow_amm| cow_amm.traded_tokens().iter().map(|t| t.into_legacy()))
+            .flat_map(|cow_amm| cow_amm.traded_tokens().iter().copied())
             .collect::<Vec<_>>();
 
         // create auction
@@ -242,7 +242,7 @@ impl SolvableOrdersCache {
                 .timed_future(
                     "weth_price_fetch",
                     self.native_price_estimator
-                        .estimate_native_price(self.weth.into_alloy(), Default::default()),
+                        .estimate_native_price(self.weth, Default::default()),
                 )
                 .await
                 .expect("weth price fetching can never fail");
@@ -281,7 +281,7 @@ impl SolvableOrdersCache {
             .iter()
             .filter(|cow_amm| {
                 cow_amm.traded_tokens().iter().all(|token| {
-                    let price_exist = prices.contains_key(&token.into_legacy());
+                    let price_exist = prices.contains_key(token);
                     if !price_exist {
                         tracing::debug!(
                             cow_amm = ?cow_amm.address(),
@@ -310,7 +310,8 @@ impl SolvableOrdersCache {
             prices: prices
                 .into_iter()
                 .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                    Price::try_new(value.into_legacy().into())
+                        .map(|price| (eth::TokenAddress(key.into_legacy()), price))
                 })
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
@@ -472,10 +473,10 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
 }
 
 async fn get_native_prices(
-    tokens: &[H160],
+    tokens: &[Address],
     native_price_estimator: &CachingNativePriceEstimator,
     timeout: Duration,
-) -> BTreeMap<H160, U256> {
+) -> BTreeMap<Address, alloy::primitives::U256> {
     native_price_estimator
         .estimate_native_prices_with_timeout(tokens, timeout)
         .await
@@ -622,17 +623,12 @@ async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
-    additional_tokens: impl IntoIterator<Item = H160>,
+    additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
-) -> (Vec<Order>, BTreeMap<H160, U256>) {
+) -> (Vec<Order>, BTreeMap<Address, alloy::primitives::U256>) {
     let traded_tokens = orders
         .iter()
-        .flat_map(|order| {
-            [
-                order.data.sell_token.into_legacy(),
-                order.data.buy_token.into_legacy(),
-            ]
-        })
+        .flat_map(|order| [order.data.sell_token, order.data.buy_token])
         .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
@@ -647,7 +643,7 @@ async fn get_orders_with_native_prices(
     let mut filtered_market_orders = 0_i64;
     let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
-        match (prices.get(&t0.into_legacy()), prices.get(&t1.into_legacy())) {
+        match (prices.get(t0), prices.get(t1)) {
             (Some(_), Some(_)) => true,
             _ => {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
@@ -673,7 +669,7 @@ async fn get_orders_with_native_prices(
 /// For the remaining orders we prioritize token prices that are needed the most
 /// often. That way we have the chance to make a majority of orders solvable
 /// with very few fetch requests.
-fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
+fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<Address> {
     /// How old an order can be at most to be considered a market order.
     const MARKET_ORDER_AGE: chrono::Duration = chrono::Duration::minutes(30);
     let now = chrono::Utc::now();
@@ -682,10 +678,10 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     orders.sort_by_key(|o| std::cmp::Reverse(o.metadata.creation_date));
 
     let mut high_priority_tokens = IndexSet::new();
-    let mut most_used_tokens = HashMap::<H160, usize>::new();
+    let mut most_used_tokens = HashMap::<Address, usize>::new();
     for order in orders {
-        let sell_token = order.data.sell_token.into_legacy();
-        let buy_token = order.data.buy_token.into_legacy();
+        let sell_token = order.data.sell_token;
+        let buy_token = order.data.buy_token;
         let is_market = now.signed_duration_since(order.metadata.creation_date) <= MARKET_ORDER_AGE;
 
         if is_market {
@@ -757,7 +753,7 @@ async fn find_unsupported_tokens(
 /// token price.
 fn filter_mispriced_limit_orders(
     mut orders: Vec<Order>,
-    prices: &BTreeMap<H160, U256>,
+    prices: &BTreeMap<Address, alloy::primitives::U256>,
     price_factor: &BigDecimal,
 ) -> Vec<Order> {
     orders.retain(|order| {
@@ -765,14 +761,8 @@ fn filter_mispriced_limit_orders(
             return true;
         }
 
-        let sell_price = prices
-            .get(&order.data.sell_token.into_legacy())
-            .unwrap()
-            .into_alloy();
-        let buy_price = prices
-            .get(&order.data.buy_token.into_legacy())
-            .unwrap()
-            .into_alloy();
+        let sell_price = *prices.get(&order.data.sell_token).unwrap();
+        let buy_price = *prices.get(&order.data.buy_token).unwrap();
 
         // Convert the sell and buy price to the native token (ETH) and make sure that
         // sell is higher than buy with the configurable price factor.
@@ -995,8 +985,8 @@ mod tests {
         assert_eq!(
             prices,
             btreemap! {
-                token1.into_legacy() => U256::from(2_000_000_000_000_000_000_u128),
-                token3.into_legacy() => U256::from(250_000_000_000_000_000_u128),
+                token1 => alloy::primitives::U256::from(2_000_000_000_000_000_000_u128),
+                token3 => alloy::primitives::U256::from(250_000_000_000_000_000_u128),
             }
         );
     }
@@ -1081,7 +1071,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             metrics,
-            vec![token5.into_legacy()],
+            vec![token5],
             Duration::ZERO,
         )
         .await;
@@ -1096,7 +1086,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             metrics,
-            vec![token5.into_legacy()],
+            vec![token5],
             Duration::ZERO,
         )
         .await;
@@ -1105,9 +1095,9 @@ mod tests {
         assert_eq!(
             prices,
             btreemap! {
-                token1.into_legacy() => U256::from(2_000_000_000_000_000_000_u128),
-                token3.into_legacy() => U256::from(250_000_000_000_000_000_u128),
-                token5.into_legacy() => U256::from(5_000_000_000_000_000_000_u128),
+                token1 => alloy::primitives::U256::from(2_000_000_000_000_000_000_u128),
+                token3 => alloy::primitives::U256::from(250_000_000_000_000_000_u128),
+                token5 => alloy::primitives::U256::from(5_000_000_000_000_000_000_u128),
             }
         );
     }
@@ -1118,8 +1108,8 @@ mod tests {
         let token2 = Address::repeat_byte(2);
         let token3 = Address::repeat_byte(3);
 
-        let token_approx1 = H160([4; 20]);
-        let token_approx2 = H160([5; 20]);
+        let token_approx1 = Address::repeat_byte(4);
+        let token_approx2 = Address::repeat_byte(5);
 
         let orders = vec![
             OrderBuilder::default()
@@ -1151,12 +1141,12 @@ mod tests {
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token_approx1.into_alloy())
+            .withf(move |token, _| *token == token_approx1)
             .returning(|_, _| async { Ok(40.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token, _| *token == token_approx2.into_alloy())
+            .withf(move |token, _| *token == token_approx2)
             .returning(|_, _| async { Ok(50.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
@@ -1167,10 +1157,7 @@ mod tests {
             Default::default(),
             3,
             // Set to use native price approximations for the following tokens
-            HashMap::from([
-                (token1.into_legacy(), token_approx1),
-                (token2.into_legacy(), token_approx2),
-            ]),
+            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
@@ -1187,9 +1174,9 @@ mod tests {
         assert_eq!(
             prices,
             btreemap! {
-                token1.into_legacy() => U256::from(40_000_000_000_000_000_000_u128),
-                token2.into_legacy() => U256::from(50_000_000_000_000_000_000_u128),
-                token3.into_legacy() => U256::from(3_000_000_000_000_000_000_u128),
+                token1 => alloy::primitives::U256::from(40_000_000_000_000_000_000_u128),
+                token2 => alloy::primitives::U256::from(50_000_000_000_000_000_000_u128),
+                token3 => alloy::primitives::U256::from(3_000_000_000_000_000_000_u128),
             }
         );
     }
@@ -1381,22 +1368,22 @@ mod tests {
 
     #[test]
     fn filters_mispriced_orders() {
-        let sell_token = H160([1; 20]);
-        let buy_token = H160([2; 20]);
+        let sell_token = Address::repeat_byte(1);
+        let buy_token = Address::repeat_byte(2);
 
         // Prices are set such that 1 sell token is equivalent to 2 buy tokens.
         // Additionally, they are scaled to large values to allow for overflows.
         let prices = btreemap! {
-            sell_token => U256::MAX / 100,
-            buy_token => U256::MAX / 200,
+            sell_token => alloy::primitives::U256::MAX / alloy::primitives::U256::from(100),
+            buy_token => alloy::primitives::U256::MAX / alloy::primitives::U256::from(200),
         };
         let price_factor = "0.95".parse().unwrap();
 
         let order = |sell_amount: u8, buy_amount: u8| Order {
             data: OrderData {
-                sell_token: sell_token.into_alloy(),
+                sell_token,
                 sell_amount: alloy::primitives::U256::from(sell_amount),
-                buy_token: buy_token.into_alloy(),
+                buy_token,
                 buy_amount: alloy::primitives::U256::from(buy_amount),
                 ..Default::default()
             },
@@ -1559,7 +1546,6 @@ mod tests {
     #[test]
     fn prioritizes_missing_prices() {
         let now = chrono::Utc::now();
-        let token = H160::from_low_u64_be;
 
         let order = |sell_token, buy_token, age| Order {
             metadata: OrderMetadata {
@@ -1585,12 +1571,12 @@ mod tests {
         ];
         let result = prioritize_missing_prices(orders);
         assert!(result.into_iter().eq([
-            token(1), // coming from youngest market order
-            token(3), // coming from youngest market order
-            token(2), // coming from older market order
-            token(6), // coming from limit order (part of 3 orders)
-            token(4), // coming from limit order (part of 2 orders)
-            token(5), // coming from limit order (part of 1 orders)
+            Address::with_last_byte(1), // coming from youngest market order
+            Address::with_last_byte(3), // coming from youngest market order
+            Address::with_last_byte(2), // coming from older market order
+            Address::with_last_byte(6), // coming from limit order (part of 3 orders)
+            Address::with_last_byte(4), // coming from limit order (part of 2 orders)
+            Address::with_last_byte(5), // coming from limit order (part of 1 orders)
         ]));
     }
 }

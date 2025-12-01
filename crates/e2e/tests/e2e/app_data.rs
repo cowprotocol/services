@@ -32,17 +32,17 @@ async fn local_node_app_data_full_format() {
 // Test that orders can be placed with the new app data format.
 async fn app_data(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token_a.mint(trader.address(), to_wei(10)).await;
+    token_a.mint(trader.address(), eth(10)).await;
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -114,8 +114,8 @@ async fn app_data(web3: Web3) {
     });
     services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: order3.sell_token,
-            buy_token: order3.buy_token,
+            sell_token: order3.sell_token.into_alloy(),
+            buy_token: order3.buy_token.into_alloy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
                     value: order3.sell_amount.try_into().unwrap(),
@@ -194,17 +194,17 @@ async fn app_data(web3: Web3) {
 /// all supported features.
 async fn app_data_full_format(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(eth(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token_a.mint(trader.address(), to_wei(10)).await;
+    token_a.mint(trader.address(), eth(10)).await;
 
     token_a
         .approve(onchain.contracts().allowance.into_alloy(), eth(10))
-        .from(trader.address().into_alloy())
+        .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();

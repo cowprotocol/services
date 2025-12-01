@@ -4,6 +4,7 @@ use {
     super::AmmOrderExecution,
     anyhow::{Context as _, Result},
     ethcontract::U256,
+    ethrpc::alloy::conversions::IntoAlloy,
     num::{BigInt, BigRational, CheckedDiv, Integer as _, ToPrimitive as _},
     shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
     std::{borrow::Cow, cmp, sync::LazyLock},
@@ -30,7 +31,7 @@ impl SlippageContext<'_> {
         let relative_ratio = |token_amount: &TokenAmount| -> Result<Cow<BigRational>> {
             let (relative, _) = self.calculator.compute(
                 self.prices.price(&token_amount.token),
-                number::conversions::u256_to_big_int(&token_amount.amount),
+                number::conversions::alloy::u256_to_big_int(&token_amount.amount),
             )?;
             Ok(relative)
         };
@@ -70,7 +71,7 @@ impl SlippageContext<'_> {
 
         let absolute = absolute_slippage_amount(
             &relative,
-            &number::conversions::u256_to_big_int(&execution.input_max.amount),
+            &number::conversions::alloy::u256_to_big_int(&execution.input_max.amount),
         );
         let slippage = SlippageAmount::from_num(&relative, &absolute)?;
 
@@ -184,8 +185,8 @@ impl SlippageAmount {
     }
 
     /// Increase the specified amount by the constant slippage.
-    pub fn add_to_amount(&self, amount: U256) -> U256 {
-        amount.saturating_add(self.absolute)
+    pub fn add_to_amount(&self, amount: alloy::primitives::U256) -> alloy::primitives::U256 {
+        amount.saturating_add(self.absolute.into_alloy())
     }
 }
 
@@ -199,7 +200,6 @@ fn absolute_slippage_amount(relative: &BigRational, amount: &BigInt) -> BigInt {
 mod tests {
     use {
         super::*,
-        ethrpc::alloy::conversions::IntoLegacy,
         shared::externalprices,
         testlib::tokens::{GNO, USDC, WETH},
     };
@@ -207,39 +207,51 @@ mod tests {
     #[test]
     fn amm_execution_slippage() {
         let calculator = SlippageCalculator::from_bps(100, Some(U256::exp10(18)));
-        let prices = externalprices! { native_token: WETH.into_legacy() };
+        let prices = externalprices! { native_token: WETH };
 
         let slippage = calculator.context(&prices);
         let cases = [
             (
                 AmmOrderExecution {
-                    input_max: TokenAmount::new(WETH.into_legacy(), 1_000_000_000_000_000_000_u128),
-                    output: TokenAmount::new(GNO.into_legacy(), 10_000_000_000_000_000_000_u128),
+                    input_max: TokenAmount::new(
+                        WETH,
+                        alloy::primitives::U256::from(1_000_000_000_000_000_000_u128),
+                    ),
+                    output: TokenAmount::new(
+                        GNO,
+                        alloy::primitives::U256::from(10_000_000_000_000_000_000_u128),
+                    ),
                     internalizable: false,
                 },
-                1_010_000_000_000_000_000_u128.into(),
+                alloy::primitives::U256::from(1_010_000_000_000_000_000_u128),
             ),
             (
                 AmmOrderExecution {
                     input_max: TokenAmount::new(
-                        GNO.into_legacy(),
-                        10_000_000_000_000_000_000_000_u128,
+                        GNO,
+                        alloy::primitives::U256::from(10_000_000_000_000_000_000_000_u128),
                     ),
                     output: TokenAmount::new(
-                        WETH.into_legacy(),
-                        1_000_000_000_000_000_000_000_u128,
+                        WETH,
+                        alloy::primitives::U256::from(1_000_000_000_000_000_000_000_u128),
                     ),
                     internalizable: false,
                 },
-                10_010_000_000_000_000_000_000_u128.into(),
+                alloy::primitives::U256::from(10_010_000_000_000_000_000_000_u128),
             ),
             (
                 AmmOrderExecution {
-                    input_max: TokenAmount::new(USDC.into_legacy(), 200_000_000_u128),
-                    output: TokenAmount::new(GNO.into_legacy(), 2_000_000_000_000_000_000_u128),
+                    input_max: TokenAmount::new(
+                        USDC,
+                        alloy::primitives::U256::from(200_000_000_u128),
+                    ),
+                    output: TokenAmount::new(
+                        GNO,
+                        alloy::primitives::U256::from(2_000_000_000_000_000_000_u128),
+                    ),
                     internalizable: false,
                 },
-                202_000_000_u128.into(),
+                alloy::primitives::U256::from(202_000_000_u128),
             ),
         ];
 

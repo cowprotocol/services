@@ -7,9 +7,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chain::Chain,
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, future::BoxFuture},
-    primitive_types::H160,
     reqwest::{Client, StatusCode},
     rust_decimal::{Decimal, MathematicalOps, prelude::ToPrimitive},
     serde::Deserialize,
@@ -23,14 +21,14 @@ use {
 };
 
 #[derive(Debug, Deserialize)]
-struct Response(HashMap<H160, Price>);
+struct Response(HashMap<Address, Price>);
 
 #[derive(Debug, Deserialize)]
 struct Price {
     eth: Option<f64>,
 }
 
-type Token = H160;
+type Token = Address;
 
 pub struct CoinGecko {
     client: Client,
@@ -43,7 +41,7 @@ pub struct CoinGecko {
 
 /// The token in which prices are denominated in.
 struct Denominator {
-    address: H160,
+    address: Address,
     /// Number of decimals of the token. This is necessary
     /// to know in order to normalize prices for tokens
     /// with a different number of decimals.
@@ -59,7 +57,7 @@ impl CoinGecko {
         base_url: Url,
         api_key: Option<String>,
         chain: &Chain,
-        native_token: H160,
+        native_token: Address,
         token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Result<Self> {
         let denominator_decimals = token_infos
@@ -154,7 +152,7 @@ impl CoinGecko {
         &self,
         mut tokens: HashSet<Token>,
         timeout: Duration,
-    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
+    ) -> Result<HashMap<Address, NativePriceEstimateResult>, PriceEstimationError> {
         tokens.insert(self.denominator.address);
 
         let tokens_vec: Vec<_> = tokens.iter().cloned().collect();
@@ -235,7 +233,8 @@ impl NativePriceBatchFetching for CoinGecko {
         &'_ self,
         tokens: HashSet<Token>,
         timeout: Duration,
-    ) -> BoxFuture<'_, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>> {
+    ) -> BoxFuture<'_, Result<HashMap<Address, NativePriceEstimateResult>, PriceEstimationError>>
+    {
         self.bulk_fetch_denominated_in_token(tokens, timeout)
             .boxed()
     }
@@ -259,10 +258,10 @@ impl NativePriceEstimating for CoinGecko {
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self
-                .fetch_native_prices(HashSet::from([token.into_legacy()]), timeout)
+                .fetch_native_prices(HashSet::from([token]), timeout)
                 .await?;
             prices
-                .get(&token.into_legacy())
+                .get(&token)
                 .ok_or(PriceEstimationError::NoLiquidity)?
                 .clone()
         }
@@ -342,21 +341,21 @@ mod tests {
                 Chain::Mainnet => (
                     "ethereum".to_string(),
                     Denominator {
-                        address: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                        address: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         decimals: 18,
                     },
                 ),
                 Chain::Gnosis => (
                     "xdai".to_string(),
                     Denominator {
-                        address: addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
+                        address: address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
                         decimals: 18,
                     },
                 ),
                 Chain::ArbitrumOne => (
                     "arbitrum-one".to_string(),
                     Denominator {
-                        address: addr!("82af49447d8a07e3bd95bd0d56f35241523fbab1"),
+                        address: address!("82af49447d8a07e3bd95bd0d56f35241523fbab1"),
                         decimals: 18,
                     },
                 ),
@@ -450,8 +449,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn works_multiple_tokens() {
-        let usdt_token = addr!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
-        let usdc_token = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let usdt_token = address!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
+        let usdc_token = address!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
@@ -479,8 +478,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn unknown_token_does_not_ruin_batch() {
-        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
-        let unknown_token = addr!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let usdc = address!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let unknown_token = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
@@ -515,11 +514,7 @@ mod tests {
             tokens
                 .iter()
                 .map(|t| {
-                    let decimals = if *t == usdc.into_legacy() {
-                        Some(6)
-                    } else {
-                        Some(18)
-                    };
+                    let decimals = if *t == usdc { Some(6) } else { Some(18) };
                     let info = TokenInfo {
                         decimals,
                         symbol: None,
@@ -573,11 +568,7 @@ mod tests {
                 .map(|t| {
                     // Let's pretend USDC has 21 decimals to check if the price adjustment
                     // also works when the requested token has more decimals.
-                    let decimals = if *t == usdc.into_legacy() {
-                        Some(21)
-                    } else {
-                        Some(18)
-                    };
+                    let decimals = if *t == usdc { Some(21) } else { Some(18) };
                     let info = TokenInfo {
                         decimals,
                         symbol: None,

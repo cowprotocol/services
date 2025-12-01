@@ -30,7 +30,7 @@ use {
         recent_block_cache::{Block, CacheConfig},
         token_info::TokenInfoFetching,
     },
-    alloy::providers::DynProvider,
+    alloy::{primitives::Address, providers::DynProvider},
     anyhow::{Context, Result},
     clap::ValueEnum,
     contracts::alloy::{
@@ -47,9 +47,8 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
-        InstanceExt,
     },
-    ethcontract::{BlockId, H160, H256},
+    ethcontract::{BlockId, H256},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
@@ -78,7 +77,7 @@ pub trait BalancerPoolEvaluating {
 #[derive(Clone, Debug)]
 pub struct CommonPoolState {
     pub id: H256,
-    pub address: H160,
+    pub address: Address,
     pub swap_fee: Bfp,
     pub paused: bool,
 }
@@ -86,7 +85,7 @@ pub struct CommonPoolState {
 #[derive(Clone, Debug)]
 pub struct WeightedPool {
     pub common: CommonPoolState,
-    pub reserves: BTreeMap<H160, WeightedTokenState>,
+    pub reserves: BTreeMap<Address, WeightedTokenState>,
     pub version: WeightedPoolVersion,
 }
 
@@ -108,7 +107,7 @@ impl WeightedPool {
 #[derive(Clone, Debug)]
 pub struct StablePool {
     pub common: CommonPoolState,
-    pub reserves: BTreeMap<H160, TokenState>,
+    pub reserves: BTreeMap<Address, TokenState>,
     pub amplification_parameter: AmplificationParameter,
 }
 
@@ -134,7 +133,7 @@ pub struct FetchedBalancerPools {
 }
 
 impl FetchedBalancerPools {
-    pub fn relevant_tokens(&self) -> HashSet<H160> {
+    pub fn relevant_tokens(&self) -> HashSet<Address> {
         let mut tokens = HashSet::new();
         tokens.extend(
             self.stable_pools
@@ -469,8 +468,6 @@ async fn create_aggregate_pool_fetcher(
 
     macro_rules! registry {
         ($factory:ident, $instance:expr_2021) => {{
-            use ethrpc::alloy::conversions::IntoLegacy;
-
             create_internal_pool_fetcher(
                 contracts.vault.clone(),
                 $factory::Instance::new(*$instance.address(), $instance.provider().clone()),
@@ -478,7 +475,7 @@ async fn create_aggregate_pool_fetcher(
                 token_infos.clone(),
                 $instance,
                 registered_pools_by_factory
-                    .remove(&(*$instance.address()).into_legacy())
+                    .remove(&(*$instance.address()))
                     .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
                 fetched_block_hash,
             )?
@@ -584,15 +581,13 @@ where
 /// the pool. For example the GNO-BAL pool with ID
 /// `0x36128d5436d2d70cab39c9af9cce146c38554ff0000200000000000000000009`:
 /// <https://etherscan.io/address/0x36128D5436d2d70cab39C9AF9CcE146C38554ff0>
-fn pool_address_from_id(pool_id: H256) -> H160 {
-    let mut address = H160::default();
-    address.0.copy_from_slice(&pool_id.0[..20]);
-    address
+fn pool_address_from_id(pool_id: H256) -> Address {
+    Address::from_slice(&pool_id.0[..20])
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex};
+    use {super::*, alloy::primitives::address, hex_literal::hex};
 
     #[test]
     fn can_extract_address_from_pool_id() {
@@ -600,7 +595,7 @@ mod tests {
             pool_address_from_id(H256(hex!(
                 "36128d5436d2d70cab39c9af9cce146c38554ff0000200000000000000000009"
             ))),
-            addr!("36128d5436d2d70cab39c9af9cce146c38554ff0"),
+            address!("36128d5436d2d70cab39c9af9cce146c38554ff0"),
         );
     }
 }

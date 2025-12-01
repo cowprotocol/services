@@ -66,7 +66,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
             // buy_token == sell_token => 1 to 1 conversion
             if query.buy_token == query.sell_token {
                 let estimation = Estimate {
-                    out_amount: query.in_amount.get(),
+                    out_amount: query.in_amount.get().into_alloy(),
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
@@ -77,11 +77,9 @@ impl PriceEstimating for SanitizedPriceEstimator {
             }
 
             // sell WETH for ETH => 1 to 1 conversion with cost for unwrapping
-            if query.sell_token == self.native_token
-                && query.buy_token == BUY_ETH_ADDRESS.into_alloy()
-            {
+            if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                 let estimation = Estimate {
-                    out_amount: query.in_amount.get(),
+                    out_amount: query.in_amount.get().into_alloy(),
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
                     verified: true,
@@ -92,11 +90,9 @@ impl PriceEstimating for SanitizedPriceEstimator {
             }
 
             // sell ETH for WETH => 1 to 1 conversion with cost for wrapping
-            if query.sell_token == BUY_ETH_ADDRESS.into_alloy()
-                && query.buy_token == self.native_token
-            {
+            if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
                 let estimation = Estimate {
-                    out_amount: query.in_amount.get(),
+                    out_amount: query.in_amount.get().into_alloy(),
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
                     verified: true,
@@ -112,14 +108,12 @@ impl PriceEstimating for SanitizedPriceEstimator {
 
             let mut adjusted_query = Query::clone(&*query);
             let modification = if query.sell_token != self.native_token
-                && query.buy_token == BUY_ETH_ADDRESS.into_alloy()
+                && query.buy_token == BUY_ETH_ADDRESS
             {
                 tracing::debug!(?query, "estimate price for buying native asset");
                 adjusted_query.buy_token = self.native_token;
                 Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
-            } else if query.sell_token == BUY_ETH_ADDRESS.into_alloy()
-                && query.buy_token != self.native_token
-            {
+            } else if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
                 tracing::debug!(?query, "estimate price for selling native asset");
                 adjusted_query.sell_token = self.native_token;
                 Some(Modification::AddGas(GAS_PER_WETH_WRAP))
@@ -158,7 +152,7 @@ mod tests {
             bad_token::{MockBadTokenDetecting, TokenQuality},
             price_estimation::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         },
-        alloy::primitives::Address,
+        alloy::primitives::{Address, U256 as AlloyU256},
         ethrpc::alloy::conversions::IntoAlloy,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
@@ -196,7 +190,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     gas: 100,
                     solver: Default::default(),
                     verified: false,
@@ -210,14 +204,14 @@ mod tests {
                 Query {
                     verification: Default::default(),
                     sell_token: Address::with_last_byte(1),
-                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
+                    buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     //sanitized_estimator will add ETH_UNWRAP_COST to the gas of any
                     //Query with ETH as the buy_token.
                     gas: GAS_PER_WETH_UNWRAP + 100,
@@ -231,7 +225,7 @@ mod tests {
                 Query {
                     verification: Default::default(),
                     sell_token: Address::with_last_byte(1),
-                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
+                    buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
@@ -247,7 +241,7 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BUY_ETH_ADDRESS.into_alloy(),
+                    sell_token: BUY_ETH_ADDRESS,
                     buy_token: Address::with_last_byte(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
@@ -255,7 +249,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     //sanitized_estimator will add ETH_WRAP_COST to the gas of any
                     //Query with ETH as the sell_token.
                     gas: GAS_PER_WETH_WRAP + 100,
@@ -277,7 +271,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
@@ -288,15 +282,15 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BUY_ETH_ADDRESS.into_alloy(),
-                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
+                    sell_token: BUY_ETH_ADDRESS,
+                    buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
@@ -308,14 +302,14 @@ mod tests {
                 Query {
                     verification: Default::default(),
                     sell_token: native_token,
-                    buy_token: BUY_ETH_ADDRESS.into_alloy(),
+                    buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
@@ -327,7 +321,7 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BUY_ETH_ADDRESS.into_alloy(),
+                    sell_token: BUY_ETH_ADDRESS,
                     buy_token: native_token,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
@@ -335,7 +329,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: 1.into(),
+                    out_amount: AlloyU256::ONE,
                     // Sanitized estimator will report a 1:1 estimate when wrapping native token.
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
@@ -403,7 +397,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: 1.into(),
+                        out_amount: AlloyU256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
@@ -419,7 +413,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: 1.into(),
+                        out_amount: AlloyU256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
@@ -435,7 +429,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: 1.into(),
+                        out_amount: AlloyU256::ONE,
                         gas: u64::MAX,
                         solver: Default::default(),
                         verified: false,
@@ -451,7 +445,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: 1.into(),
+                        out_amount: AlloyU256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: false,

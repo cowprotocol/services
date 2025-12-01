@@ -27,11 +27,11 @@ use {
     alloy::eips::BlockNumberOrTag,
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, InstanceExt, WETH9},
+    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::conversions::IntoLegacy,
         block_stream::block_number_to_block_number_hash,
     },
     futures::StreamExt,
@@ -216,14 +216,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
-        weth: args
-            .shared
-            .native_token_address
-            .map(IntoLegacy::into_legacy),
-        balances: args
-            .shared
-            .balances_contract_address
-            .map(IntoLegacy::into_legacy),
+        weth: args.shared.native_token_address,
+        balances: args.shared.balances_contract_address,
         trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(
@@ -322,12 +316,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        eth.contracts().weth().address().into_legacy(),
+        *eth.contracts().weth().address(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter().map(|t| t.into_alloy()));
-    allowed_tokens.push(model::order::BUY_ETH_ADDRESS.into_alloy());
+    allowed_tokens.extend(base_tokens.tokens().iter());
+    allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let finder = token_owner_finder::init(
@@ -339,7 +333,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
-        eth.contracts().settlement().address().into_legacy(),
+        *eth.contracts().settlement().address(),
     )
     .instrument(info_span!("token_owner_finder_init"))
     .await
@@ -354,7 +348,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                     tracing_node_url,
                     "trace",
                 ),
-                eth.contracts().settlement().address().into_legacy(),
+                *eth.contracts().settlement().address(),
                 finder,
             )),
             args.shared.token_quality_cache_expiry,
@@ -386,16 +380,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             web3: web3.clone(),
             simulation_web3,
             chain,
-            settlement: eth.contracts().settlement().address().into_legacy(),
-            native_token: eth.contracts().weth().address().into_legacy(),
+            settlement: *eth.contracts().settlement().address(),
+            native_token: *eth.contracts().weth().address(),
             authenticator: eth
                 .contracts()
                 .settlement()
                 .authenticator()
                 .call()
                 .await
-                .expect("failed to query solver authenticator address")
-                .into_legacy(),
+                .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
             block_stream: eth.current_block().clone(),
         },
@@ -534,14 +527,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         bad_token_detector.clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        eth.contracts().weth().address().into_legacy(),
+        *eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFees::new(&args.fee_policies_config),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
-        eth.contracts().settlement().address().into_legacy(),
+        *eth.contracts().settlement().address(),
         args.disable_order_balance_filter,
         args.disable_1271_order_sig_filter,
         args.disable_1271_order_balance_filter,
@@ -616,10 +609,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(
-                chain_id,
-                eth.contracts().settlement().address().into_legacy(),
-            ),
+            DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
             eth.contracts().settlement().address().into_legacy(),
             eth.contracts().trampoline().clone(),
         );

@@ -3,26 +3,24 @@
 use {
     super::TokenOwnerProposing,
     crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
-    alloy::eips::BlockNumberOrTag,
+    alloy::{eips::BlockNumberOrTag, primitives::Address},
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::H160,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
 };
 
 pub struct UniswapLikePairProviderFinder {
     pub inner: PairProvider,
-    pub base_tokens: Vec<H160>,
+    pub base_tokens: Vec<Address>,
 }
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for UniswapLikePairProviderFinder {
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
+    async fn find_candidate_owners(&self, token: Address) -> Result<Vec<Address>> {
         Ok(self
             .base_tokens
             .iter()
-            .filter_map(|base_token| TokenPair::new(base_token.into_alloy(), token.into_alloy()))
+            .filter_map(|base_token| TokenPair::new(*base_token, token))
             .map(|pair| self.inner.pair_address(&pair))
             .collect())
     }
@@ -33,14 +31,14 @@ pub struct BalancerVaultFinder(pub BalancerV2Vault::Instance);
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for BalancerVaultFinder {
-    async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
-        Ok(vec![self.0.address().into_legacy()])
+    async fn find_candidate_owners(&self, _: Address) -> Result<Vec<Address>> {
+        Ok(vec![*self.0.address()])
     }
 }
 
 pub struct UniswapV3Finder {
     pub factory: IUniswapV3Factory::Instance,
-    pub base_tokens: Vec<H160>,
+    pub base_tokens: Vec<Address>,
     fee_values: Vec<u32>,
 }
 
@@ -57,7 +55,7 @@ pub enum FeeValues {
 impl UniswapV3Finder {
     pub async fn new(
         factory: IUniswapV3Factory::Instance,
-        base_tokens: Vec<H160>,
+        base_tokens: Vec<Address>,
         fee_values: FeeValues,
     ) -> Result<Self> {
         let fee_values = match fee_values {
@@ -101,18 +99,14 @@ impl UniswapV3Finder {
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for UniswapV3Finder {
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
+    async fn find_candidate_owners(&self, token: Address) -> Result<Vec<Address>> {
         Ok(self
             .base_tokens
             .iter()
-            .filter_map(|base_token| TokenPair::new(base_token.into_alloy(), token.into_alloy()))
+            .filter_map(|base_token| TokenPair::new(*base_token, token))
             .flat_map(|pair| self.fee_values.iter().map(move |fee| (pair, *fee)))
             .map(|(pair, fee)| {
-                uniswap_v3_pair_provider::pair_address(
-                    &self.factory.address().into_legacy(),
-                    &pair,
-                    fee,
-                )
+                uniswap_v3_pair_provider::pair_address(self.factory.address(), &pair, fee)
             })
             .collect())
     }

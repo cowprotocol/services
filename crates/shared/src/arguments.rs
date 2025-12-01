@@ -12,9 +12,7 @@ use {
         tenderly_api,
     },
     alloy::primitives::Address,
-    anyhow::{Context, Result, ensure},
-    bigdecimal::BigDecimal,
-    ethcontract::{H160, U256},
+    anyhow::{Result, ensure},
     observe::TracingConfig,
     std::{
         fmt::{self, Display, Formatter},
@@ -182,7 +180,7 @@ pub struct Arguments {
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
     #[clap(long, env, use_value_delimiter = true)]
-    pub base_tokens: Vec<H160>,
+    pub base_tokens: Vec<Address>,
 
     /// Which Liquidity sources to be used by Price Estimator.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
@@ -249,7 +247,7 @@ pub struct Arguments {
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
-    pub settlement_contract_address: Option<H160>,
+    pub settlement_contract_address: Option<Address>,
 
     /// Override address of the Balances contract.
     #[clap(long, env)]
@@ -257,7 +255,7 @@ pub struct Arguments {
 
     /// Override address of the Signatures contract.
     #[clap(long, env)]
-    pub signatures_contract_address: Option<H160>,
+    pub signatures_contract_address: Option<Address>,
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
@@ -267,7 +265,7 @@ pub struct Arguments {
     /// trampolining custom order interactions. If not specified, the default
     /// contract deployment for the current network will be used.
     #[clap(long, env)]
-    pub hooks_contract_address: Option<H160>,
+    pub hooks_contract_address: Option<Address>,
 
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
@@ -496,23 +494,6 @@ impl Display for ExternalSolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}({})", self.name, self.url)
     }
-}
-
-pub fn parse_percentage_factor(s: &str) -> Result<f64> {
-    let percentage_factor = f64::from_str(s)?;
-    ensure!(percentage_factor.is_finite() && (0. ..=1.0).contains(&percentage_factor));
-    Ok(percentage_factor)
-}
-
-pub fn wei_from_ether(s: &str) -> anyhow::Result<U256> {
-    let in_ether = s.parse::<BigDecimal>()?;
-    let base = BigDecimal::new(1.into(), -18);
-    number::conversions::big_decimal_to_u256(&(in_ether * base)).context("invalid Ether value")
-}
-
-pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
-    let in_gwei: f64 = s.parse()?;
-    Ok(in_gwei * 1e9)
 }
 
 impl FromStr for ExternalSolver {

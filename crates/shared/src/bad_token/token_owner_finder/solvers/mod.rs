@@ -1,10 +1,10 @@
 pub mod solver_api;
 pub mod solver_finder;
 
-use {anyhow::Result, ethcontract::H160, std::collections::HashMap};
+use {alloy::primitives::Address, anyhow::Result, std::collections::HashMap};
 
-type Token = H160;
-type Owner = H160;
+type Token = Address;
+type Owner = Address;
 
 #[async_trait::async_trait]
 pub trait TokenOwnerSolverApi: Send + Sync {

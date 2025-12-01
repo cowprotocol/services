@@ -63,6 +63,7 @@ pub mod alloy {
         bigdecimal::{BigDecimal, num_bigint::ToBigInt},
         num::{BigInt, BigRational, BigUint, Zero, bigint::Sign},
     };
+
     pub fn big_uint_to_u256(input: &BigUint) -> Result<U256> {
         let bytes = input.to_bytes_be();
         ensure!(bytes.len() <= 32, "too large");

@@ -24,7 +24,10 @@ use {
     ::observe::metrics,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::BlockInfo},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::BlockInfo,
+    },
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -245,25 +248,22 @@ impl RunLoop {
     }
 
     async fn cut_auction(&self) -> Option<domain::Auction> {
-        let auction = match self.solvable_orders_cache.current_auction().await {
-            Some(auction) => auction,
-            None => {
-                tracing::debug!("no current auction");
-                return None;
-            }
+        let Some(auction) = self.solvable_orders_cache.current_auction().await else {
+            tracing::debug!("no current auction");
+            return None;
         };
         let auction = self.remove_in_flight_orders(auction).await;
+        let id = self
+            .persistence
+            .get_next_auction_id()
+            .await
+            .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
+            .ok()?;
+        Metrics::auction(id);
 
-        let id = match self.persistence.replace_current_auction(&auction).await {
-            Ok(id) => {
-                Metrics::auction(id);
-                id
-            }
-            Err(err) => {
-                tracing::error!(?err, "failed to replace current auction");
-                return None;
-            }
-        };
+        // always update the auction because the tests use this as a readiness probe
+        self.persistence.replace_current_auction_in_db(id, &auction);
+        self.persistence.upload_auction_to_s3(id, &auction);
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
@@ -271,7 +271,6 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
-
         Some(domain::Auction {
             id,
             block: auction.block,
@@ -464,8 +463,10 @@ impl RunLoop {
             .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
-                solver_address: participant.solution().solver().0,
-                score: Some(Score::Solver(participant.solution().score().get().0)),
+                solver_address: participant.solution().solver().0.into_alloy(),
+                score: Some(Score::Solver(
+                    participant.solution().score().get().0.into_alloy(),
+                )),
                 ranking: index + 1,
                 orders: participant
                     .solution()
@@ -473,15 +474,15 @@ impl RunLoop {
                     .iter()
                     .map(|(id, order)| Order::Colocated {
                         id: (*id).into(),
-                        sell_amount: order.executed_sell.into(),
-                        buy_amount: order.executed_buy.into(),
+                        sell_amount: order.executed_sell.0.into_alloy(),
+                        buy_amount: order.executed_buy.0.into_alloy(),
                     })
                     .collect(),
                 clearing_prices: participant
                     .solution()
                     .prices()
                     .iter()
-                    .map(|(token, price)| (token.0, price.get().into()))
+                    .map(|(token, price)| (token.0.into_alloy(), price.get().0.into_alloy()))
                     .collect(),
                 is_winner: participant.is_winner(),
                 filtered_out: participant.filtered_out(),
@@ -503,7 +504,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| ((*key).into(), value.get().into()))
+                    .map(|(key, value)| (key.0.into_alloy(), value.get().0.into_alloy()))
                     .collect(),
             },
             solutions,

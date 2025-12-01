@@ -9,13 +9,9 @@ use {
         Services,
         eth,
         run_forked_test_with_block_number,
-        to_wei,
         to_wei_with_exp,
     },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::conversions::IntoAlloy},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     reqwest::StatusCode,
 };
@@ -40,7 +36,7 @@ const BANNED_USER: Address = address!("7F367cC41522cE07553e823bf3be79A889DEbe1B"
 
 async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [solver] = onchain.make_solvers_forked(eth(1)).await;
 
     let token_dai = ERC20::Instance::new(
         address!("6b175474e89094c44da98b954eedeac495271d0f"),
@@ -96,14 +92,14 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
 
     let result = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_dai.address().into_legacy(),
-            buy_token: token_usdt.address().into_legacy(),
+            sell_token: *token_dai.address(),
+            buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 18).try_into().unwrap(),
                 },
             },
-            from: BANNED_USER.into_legacy(),
+            from: BANNED_USER,
             ..Default::default()
         })
         .await;

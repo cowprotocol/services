@@ -1,16 +1,13 @@
 use {
     crate::{
-        domain::{
-            competition::{
-                Order,
-                bad_tokens::{Quality, cache::Cache},
-                order,
-            },
-            eth,
+        domain::competition::{
+            Order,
+            bad_tokens::{Quality, cache::Cache},
+            order,
         },
         infra::{self, observe::metrics},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::FutureExt,
     model::interaction::InteractionData,
     shared::{
@@ -38,10 +35,8 @@ struct Inner {
 
 impl Detector {
     pub fn new(max_age: Duration, eth: &infra::Ethereum) -> Self {
-        let detector = TraceCallDetectorRaw::new(
-            eth.web3().clone(),
-            eth.contracts().settlement().address().into_legacy(),
-        );
+        let detector =
+            TraceCallDetectorRaw::new(eth.web3().clone(), *eth.contracts().settlement().address());
         Self(Arc::new(Inner {
             cache: Cache::new(max_age),
             detector,
@@ -79,7 +74,7 @@ impl Detector {
                         call_data: i.call_data.0.clone(),
                     })
                     .collect();
-                let trader = eth::Address::from(order.trader()).0;
+                let trader = order.trader().0.0.into_alloy();
                 let sell_amount = match order.partial {
                     order::Partial::Yes { available } => available.0,
                     order::Partial::No => order.sell.amount.0,
@@ -88,7 +83,7 @@ impl Detector {
                 async move {
                     let result = inner
                         .detector
-                        .test_transfer(trader, sell_token.0 .0, sell_amount, &pre_interactions)
+                        .test_transfer(trader, sell_token.0.0.into_alloy(), sell_amount, &pre_interactions)
                         .await;
                     match result {
                         Err(err) => {

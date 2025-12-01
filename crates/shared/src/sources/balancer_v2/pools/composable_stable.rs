@@ -48,7 +48,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_contract = BalancerV2ComposableStablePool::Instance::new(
-            pool_info.common.address.into_alloy(),
+            pool_info.common.address,
             self.provider().clone(),
         );
 
@@ -114,7 +114,8 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
-        ethcontract::{H160, H256},
+        alloy::primitives::Address,
+        ethcontract::H256,
     };
 
     #[test]
@@ -122,17 +123,17 @@ mod tests {
         let pool = PoolData {
             pool_type: PoolType::Stable,
             id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0xfa; 20]),
+            address: Address::repeat_byte(1),
+            factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
             tokens: vec![
                 Token {
-                    address: H160([0x11; 20]),
+                    address: Address::repeat_byte(0x11),
                     decimals: 1,
                     weight: None,
                 },
                 Token {
-                    address: H160([0x22; 20]),
+                    address: Address::repeat_byte(0x22),
                     decimals: 2,
                     weight: None,
                 },

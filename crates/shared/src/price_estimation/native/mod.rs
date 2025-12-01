@@ -2,11 +2,9 @@ use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     alloy::primitives::Address,
     bigdecimal::{BigDecimal, ToPrimitive},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, U256},
     std::{
         sync::{Arc, LazyLock},
         time::Duration,
@@ -37,12 +35,12 @@ pub fn from_normalized_price(price: BigDecimal) -> Option<f64> {
 }
 
 /// Convert from floating point price to normalized price
-pub fn to_normalized_price(price: f64) -> Option<U256> {
+pub fn to_normalized_price(price: f64) -> Option<alloy::primitives::U256> {
     let uint_max = 2.0_f64.powi(256);
 
     let price_in_eth = 1e18 * price;
     (price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max)
-        .then_some(U256::from_f64_lossy(price_in_eth))
+        .then_some(alloy::primitives::U256::saturating_from(price_in_eth))
 }
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
@@ -62,14 +60,14 @@ pub trait NativePriceEstimating: Send + Sync {
 /// compared to the current chain's native token.
 pub struct NativePriceEstimator {
     inner: Arc<dyn PriceEstimating>,
-    native_token: H160,
+    native_token: Address,
     price_estimation_amount: NonZeroU256,
 }
 
 impl NativePriceEstimator {
     pub fn new(
         inner: Arc<dyn PriceEstimating>,
-        native_token: H160,
+        native_token: Address,
         price_estimation_amount: NonZeroU256,
     ) -> Self {
         Self {
@@ -80,10 +78,10 @@ impl NativePriceEstimator {
     }
 
     // TODO explain why we use BUY order type (shallow liquidity)
-    fn query(&self, token: &H160, timeout: Duration) -> Query {
+    fn query(&self, token: &Address, timeout: Duration) -> Query {
         Query {
-            sell_token: token.into_alloy(),
-            buy_token: self.native_token.into_alloy(),
+            sell_token: *token,
+            buy_token: self.native_token,
             in_amount: self.price_estimation_amount,
             kind: OrderKind::Buy,
             verification: Default::default(),
@@ -101,7 +99,7 @@ impl NativePriceEstimating for NativePriceEstimator {
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let query = Arc::new(self.query(&token.into_legacy(), timeout));
+            let query = Arc::new(self.query(&token, timeout));
             let estimate = self.inner.estimate(query.clone()).await?;
             let price = estimate.price_in_buy_token_f64(&query);
             if is_price_malformed(price) {
@@ -124,7 +122,8 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
-        alloy::primitives::Address,
+        alloy::primitives::{Address, U256},
+        ethrpc::alloy::conversions::IntoLegacy,
         primitive_types::H160,
         std::str::FromStr,
     };
@@ -137,7 +136,7 @@ mod tests {
             assert!(query.sell_token == Address::with_last_byte(3));
             async {
                 Ok(Estimate {
-                    out_amount: 123_456_789_000_000_000u128.into(),
+                    out_amount: U256::from(123_456_789_000_000_000u128),
                     gas: 0,
                     solver: H160([1; 20]),
                     verified: false,
@@ -149,8 +148,11 @@ mod tests {
 
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
-            native_token: H160::from_low_u64_be(7),
-            price_estimation_amount: NonZeroU256::try_from(U256::exp10(18)).unwrap(),
+            native_token: Address::with_last_byte(7),
+            price_estimation_amount: NonZeroU256::try_from(
+                U256::from(10).pow(U256::from(18)).into_legacy(),
+            )
+            .unwrap(),
         };
 
         let result = native_price_estimator
@@ -170,8 +172,11 @@ mod tests {
 
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
-            native_token: H160::from_low_u64_be(7),
-            price_estimation_amount: NonZeroU256::try_from(U256::exp10(18)).unwrap(),
+            native_token: Address::with_last_byte(7),
+            price_estimation_amount: NonZeroU256::try_from(
+                U256::from(10).pow(U256::from(18)).into_legacy(),
+            )
+            .unwrap(),
         };
 
         let result = native_price_estimator
