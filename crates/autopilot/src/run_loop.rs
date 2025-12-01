@@ -216,12 +216,16 @@ impl RunLoop {
                         loop {
                             match listener.recv().await {
                                 Ok(_notification) => {
-                                    tracing::trace!("received new order notification");
-                                    // Ignore send errors - the receiver might have been dropped
-                                    let _ = sender.send(());
+                                    tracing::debug!("received order notification from postgres");
+                                    match sender.send(()) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            tracing::error!(?err, "failed to send order notification signal to main loop - channel closed");
+                                        }
+                                    }
                                 }
                                 Err(err) => {
-                                    tracing::error!(?err, "error receiving notification");
+                                    tracing::error!(?err, "error receiving notification from postgres");
                                     break;
                                 }
                             }
@@ -243,10 +247,14 @@ impl RunLoop {
 
         tokio::select! {
             _ = next_block => {
-                tracing::trace!("new block detected");
+                tracing::debug!("received new block")
             }
-            _ = receiver.recv() => {
-                tracing::trace!("new order notification received");
+            result = receiver.recv() => {
+                if result.is_some() {
+                    tracing::debug!("received new order");
+                } else {
+                    tracing::error!("order notification channel closed");
+                }
             }
         }
     }
