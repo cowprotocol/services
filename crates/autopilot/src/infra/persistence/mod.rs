@@ -95,6 +95,11 @@ impl Persistence {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
+    /// Returns a reference to the Postgres instance for direct database access.
+    pub fn postgres(&self) -> &Arc<Postgres> {
+        &self.postgres
+    }
+
     /// Fetches the ID that should be used for the next auction.
     pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
         let _timer = Metrics::get()
