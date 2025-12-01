@@ -143,6 +143,7 @@ impl Mempools {
             current_block = ?submitted_at_block,
             max_fee_per_gas = ?settlement.gas.price.max(),
             priority_fee_per_gas = ?settlement.gas.price.tip(),
+            ?nonce,
             "submitted tx to the mempool"
         );
 
