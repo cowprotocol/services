@@ -193,7 +193,8 @@ impl RunLoop {
         leader_lock_tracker.release().await;
     }
 
-    /// Spawns a background task that listens for new order notifications from PostgreSQL.
+    /// Spawns a background task that listens for new order notifications from
+    /// PostgreSQL.
     fn spawn_order_listener(
         persistence: infra::Persistence,
         sender: tokio::sync::mpsc::UnboundedSender<()>,
@@ -220,12 +221,19 @@ impl RunLoop {
                                     match sender.send(()) {
                                         Ok(_) => {}
                                         Err(err) => {
-                                            tracing::error!(?err, "failed to send order notification signal to main loop - channel closed");
+                                            tracing::error!(
+                                                ?err,
+                                                "failed to send order notification signal to main \
+                                                 loop - channel closed"
+                                            );
                                         }
                                     }
                                 }
                                 Err(err) => {
-                                    tracing::error!(?err, "error receiving notification from postgres");
+                                    tracing::error!(
+                                        ?err,
+                                        "error receiving notification from postgres"
+                                    );
                                     break;
                                 }
                             }
@@ -240,7 +248,8 @@ impl RunLoop {
         });
     }
 
-    /// Waits for either a new block to be mined or a new order to arrive in the database.
+    /// Waits for either a new block to be mined or a new order to arrive in the
+    /// database.
     async fn wait_for_block_or_order(&self) {
         let next_block = ethrpc::block_stream::next_block(self.eth.current_block());
         let mut receiver = self.new_order_receiver.lock().await;
