@@ -2,8 +2,8 @@
 //! onchain liquidity.
 
 use {
-    ethcontract::{H160, U256},
-    ethrpc::alloy::conversions::IntoAlloy,
+    alloy::primitives::Address,
+    ethcontract::U256,
     model::TokenPair,
     std::collections::{HashMap, HashSet},
 };
@@ -11,7 +11,7 @@ use {
 /// The maximum number of hops to use when trading with AMMs along a path.
 const DEFAULT_MAX_HOPS: usize = 2;
 
-type PathCandidate = Vec<H160>;
+type PathCandidate = Vec<Address>;
 
 /// Note that get_amount_out and get_amount_in are not always symmetrical. That
 /// is for some AMMs it is possible that get_amount_out returns an amount for
@@ -24,16 +24,16 @@ pub trait BaselineSolvable {
     /// expected amount of output token.
     fn get_amount_out(
         &self,
-        out_token: H160,
-        input: (U256, H160),
+        out_token: Address,
+        input: (U256, Address),
     ) -> impl Future<Output = Option<U256>> + Send;
 
     /// Given the input token, the amount and token we want output, return the
     /// required amount of input token that needs to be provided.
     fn get_amount_in(
         &self,
-        in_token: H160,
-        out: (U256, H160),
+        in_token: Address,
+        out: (U256, Address),
     ) -> impl Future<Output = Option<U256>> + Send;
 
     /// Returns the approximate amount of gas that using this piece of liquidity
@@ -65,7 +65,7 @@ impl<V, L: BaselineSolvable> Estimate<'_, V, L> {
 // result Returns None if the path is invalid or pool information doesn't exist.
 pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
     sell_amount: U256,
-    path: &[H160],
+    path: &[Address],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,
 ) -> Option<Estimate<'a, U256, L>> {
     let sell_token = path.first()?;
@@ -74,10 +74,7 @@ pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
 
     for current in path.iter().skip(1) {
         let (amount, previous_token, mut path) = previous;
-        let pools = liquidity.get(&TokenPair::new(
-            current.into_alloy(),
-            previous_token.into_alloy(),
-        )?)?;
+        let pools = liquidity.get(&TokenPair::new(*current, previous_token)?)?;
         let outputs = futures::future::join_all(pools.iter().map(|liquidity| async move {
             let output = liquidity
                 .get_amount_out(*current, (amount, previous_token))
@@ -105,7 +102,7 @@ pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
 // result Returns None if the path is invalid or pool information doesn't exist.
 pub async fn estimate_sell_amount<'a, L: BaselineSolvable>(
     buy_amount: U256,
-    path: &[H160],
+    path: &[Address],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,
 ) -> Option<Estimate<'a, U256, L>> {
     let buy_token = path.last()?;
@@ -114,10 +111,7 @@ pub async fn estimate_sell_amount<'a, L: BaselineSolvable>(
 
     for current in path.iter().rev().skip(1) {
         let (amount, previous_token, mut path) = previous;
-        let pools = liquidity.get(&TokenPair::new(
-            current.into_alloy(),
-            previous_token.into_alloy(),
-        )?)?;
+        let pools = liquidity.get(&TokenPair::new(*current, previous_token)?)?;
         let outputs = futures::future::join_all(pools.iter().map(|liquidity| async move {
             let output = liquidity
                 .get_amount_in(*current, (amount, previous_token))
@@ -148,13 +142,13 @@ pub struct BaseTokens {
     /// solver.
     ///
     /// Always includes the native token.
-    tokens: HashSet<H160>,
+    tokens: HashSet<Address>,
     /// All pairs of above.
     pairs: HashSet<TokenPair>,
 }
 
 impl BaseTokens {
-    pub fn new(native_token: H160, base_tokens: &[H160]) -> Self {
+    pub fn new(native_token: Address, base_tokens: &[Address]) -> Self {
         let mut tokens = base_tokens.to_vec();
         tokens.push(native_token);
         tokens.sort();
@@ -166,7 +160,7 @@ impl BaseTokens {
         }
     }
 
-    pub fn tokens(&self) -> &HashSet<H160> {
+    pub fn tokens(&self) -> &HashSet<Address> {
         &self.tokens
     }
 
@@ -180,8 +174,7 @@ impl BaseTokens {
                 result.extend(
                     self.tokens
                         .iter()
-                        .map(|base_token| base_token.into_alloy())
-                        .filter_map(move |base_token| TokenPair::new(base_token, token)),
+                        .filter_map(move |base_token| TokenPair::new(*base_token, token)),
                 );
             }
         }
@@ -197,7 +190,11 @@ impl BaseTokens {
     // potential intermediate base tokens and a maximum number of intermediate
     // steps. Can contain token pairs between base tokens or a base token and
     // the sell or buy token.
-    pub fn path_candidates(&self, sell_token: H160, buy_token: H160) -> HashSet<PathCandidate> {
+    pub fn path_candidates(
+        &self,
+        sell_token: Address,
+        buy_token: Address,
+    ) -> HashSet<PathCandidate> {
         self.path_candidates_with_hops(sell_token, buy_token, DEFAULT_MAX_HOPS)
     }
 
@@ -205,8 +202,8 @@ impl BaseTokens {
     /// hops.
     pub fn path_candidates_with_hops(
         &self,
-        sell_token: H160,
-        buy_token: H160,
+        sell_token: Address,
+        buy_token: Address,
         max_hops: usize,
     ) -> HashSet<PathCandidate> {
         path_candidates(sell_token, buy_token, &self.tokens, max_hops)
@@ -214,9 +211,9 @@ impl BaseTokens {
 }
 
 fn path_candidates(
-    sell_token: H160,
-    buy_token: H160,
-    base_tokens: &HashSet<H160>,
+    sell_token: Address,
+    buy_token: Address,
+    base_tokens: &HashSet<Address>,
     max_hops: usize,
 ) -> HashSet<PathCandidate> {
     if sell_token == buy_token {
@@ -252,7 +249,7 @@ fn path_candidates(
 }
 
 /// All token pairs between base tokens.
-fn base_token_pairs(base_tokens: &[H160]) -> impl Iterator<Item = TokenPair> + '_ {
+fn base_token_pairs(base_tokens: &[Address]) -> impl Iterator<Item = TokenPair> + '_ {
     base_tokens
         .iter()
         .copied()
@@ -262,7 +259,7 @@ fn base_token_pairs(base_tokens: &[H160]) -> impl Iterator<Item = TokenPair> + '
                 .iter()
                 .copied()
                 .skip(index)
-                .filter_map(move |token_| TokenPair::new(token.into_alloy(), token_.into_alloy()))
+                .filter_map(move |token_| TokenPair::new(token, token_))
         })
 }
 
@@ -271,16 +268,15 @@ mod tests {
     use {
         super::*,
         crate::sources::uniswap_v2::pool_fetching::Pool,
-        ethcontract::H160,
         maplit::{hashmap, hashset},
         model::TokenPair,
     };
 
     #[test]
     fn path_candidates_empty_when_same_token() {
-        let base = BaseTokens::new(H160::from_low_u64_be(0), &[H160::from_low_u64_be(1)]);
-        let sell_token = H160::from_low_u64_be(2);
-        let buy_token = H160::from_low_u64_be(2);
+        let base = BaseTokens::new(Address::with_last_byte(0), &[Address::with_last_byte(1)]);
+        let sell_token = Address::with_last_byte(2);
+        let buy_token = Address::with_last_byte(2);
 
         assert!(base.path_candidates(sell_token, buy_token).is_empty());
     }
@@ -288,14 +284,14 @@ mod tests {
     #[test]
     fn test_path_candidates() {
         let base_tokens = [
-            H160::from_low_u64_be(0),
-            H160::from_low_u64_be(1),
-            H160::from_low_u64_be(2),
+            Address::with_last_byte(0),
+            Address::with_last_byte(1),
+            Address::with_last_byte(2),
         ];
-        let base_token_set: HashSet<H160> = base_tokens.iter().copied().collect();
+        let base_token_set: HashSet<Address> = base_tokens.iter().copied().collect();
 
-        let sell_token = H160::from_low_u64_be(4);
-        let buy_token = H160::from_low_u64_be(5);
+        let sell_token = Address::with_last_byte(4);
+        let buy_token = Address::with_last_byte(5);
 
         // 0 hops
         assert_eq!(
@@ -354,14 +350,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_estimate_amount_returns_none_if_it_contains_pair_without_pool() {
-        let sell_token = H160::from_low_u64_be(1);
-        let intermediate = H160::from_low_u64_be(2);
-        let buy_token = H160::from_low_u64_be(3);
+        let sell_token = Address::with_last_byte(1);
+        let intermediate = Address::with_last_byte(2);
+        let buy_token = Address::with_last_byte(3);
 
         let path = vec![sell_token, intermediate, buy_token];
         let pools = [Pool::uniswap(
-            H160::from_low_u64_be(1),
-            TokenPair::new(path[0].into_alloy(), path[1].into_alloy()).unwrap(),
+            Address::with_last_byte(1),
+            TokenPair::new(path[0], path[1]).unwrap(),
             (100, 100),
         )];
         let pools = hashmap! {
@@ -378,20 +374,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_estimate_amount() {
-        let sell_token = H160::from_low_u64_be(1);
-        let intermediate = H160::from_low_u64_be(2);
-        let buy_token = H160::from_low_u64_be(3);
+        let sell_token = Address::with_last_byte(1);
+        let intermediate = Address::with_last_byte(2);
+        let buy_token = Address::with_last_byte(3);
 
         let path = vec![sell_token, intermediate, buy_token];
         let pools = [
             Pool::uniswap(
-                H160::from_low_u64_be(1),
-                TokenPair::new(path[0].into_alloy(), path[1].into_alloy()).unwrap(),
+                Address::with_last_byte(1),
+                TokenPair::new(path[0], path[1]).unwrap(),
                 (100, 100),
             ),
             Pool::uniswap(
-                H160::from_low_u64_be(2),
-                TokenPair::new(path[1].into_alloy(), path[2].into_alloy()).unwrap(),
+                Address::with_last_byte(2),
+                TokenPair::new(path[1], path[2]).unwrap(),
                 (200, 50),
             ),
         ];
@@ -419,20 +415,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_estimate_sell_amount_returns_none_buying_too_much() {
-        let sell_token = H160::from_low_u64_be(1);
-        let intermediate = H160::from_low_u64_be(2);
-        let buy_token = H160::from_low_u64_be(3);
+        let sell_token = Address::with_last_byte(1);
+        let intermediate = Address::with_last_byte(2);
+        let buy_token = Address::with_last_byte(3);
 
         let path = vec![sell_token, intermediate, buy_token];
         let pools = [
             Pool::uniswap(
-                H160::from_low_u64_be(1),
-                TokenPair::new(path[0].into_alloy(), path[1].into_alloy()).unwrap(),
+                Address::with_last_byte(1),
+                TokenPair::new(path[0], path[1]).unwrap(),
                 (100, 100),
             ),
             Pool::uniswap(
-                H160::from_low_u64_be(2),
-                TokenPair::new(path[1].into_alloy(), path[2].into_alloy()).unwrap(),
+                Address::with_last_byte(2),
+                TokenPair::new(path[1], path[2]).unwrap(),
                 (200, 50),
             ),
         ];
@@ -450,22 +446,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_estimate_amount_multiple_pools() {
-        let sell_token = H160::from_low_u64_be(1);
-        let intermediate = H160::from_low_u64_be(2);
-        let buy_token = H160::from_low_u64_be(3);
+        let sell_token = Address::with_last_byte(1);
+        let intermediate = Address::with_last_byte(2);
+        let buy_token = Address::with_last_byte(3);
 
         let mut path = vec![sell_token, intermediate, buy_token];
-        let first_pair = TokenPair::new(path[0].into_alloy(), path[1].into_alloy()).unwrap();
-        let second_pair = TokenPair::new(path[1].into_alloy(), path[2].into_alloy()).unwrap();
+        let first_pair = TokenPair::new(path[0], path[1]).unwrap();
+        let second_pair = TokenPair::new(path[1], path[2]).unwrap();
 
         let first_hop_high_price =
-            Pool::uniswap(H160::from_low_u64_be(1), first_pair, (101_000, 100_000));
+            Pool::uniswap(Address::with_last_byte(1), first_pair, (101_000, 100_000));
         let first_hop_low_price =
-            Pool::uniswap(H160::from_low_u64_be(1), first_pair, (100_000, 101_000));
+            Pool::uniswap(Address::with_last_byte(1), first_pair, (100_000, 101_000));
         let second_hop_high_slippage =
-            Pool::uniswap(H160::from_low_u64_be(2), second_pair, (200_000, 50_000));
+            Pool::uniswap(Address::with_last_byte(2), second_pair, (200_000, 50_000));
         let second_hop_low_slippage = Pool::uniswap(
-            H160::from_low_u64_be(2),
+            Address::with_last_byte(2),
             second_pair,
             (200_000_000, 50_000_000),
         );
@@ -512,13 +508,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_estimate_amount_invalid_pool() {
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-        let pair = TokenPair::new(sell_token.into_alloy(), buy_token.into_alloy()).unwrap();
+        let sell_token = Address::with_last_byte(1);
+        let buy_token = Address::with_last_byte(2);
+        let pair = TokenPair::new(sell_token, buy_token).unwrap();
 
         let path = vec![sell_token, buy_token];
-        let valid_pool = Pool::uniswap(H160::from_low_u64_be(1), pair, (100_000, 100_000));
-        let invalid_pool = Pool::uniswap(H160::default(), pair, (0, 0));
+        let valid_pool = Pool::uniswap(Address::with_last_byte(1), pair, (100_000, 100_000));
+        let invalid_pool = Pool::uniswap(Default::default(), pair, (0, 0));
         let pools = hashmap! {
             pair => vec![valid_pool, invalid_pool],
         };
@@ -536,72 +532,41 @@ mod tests {
 
     #[test]
     fn base_token_pairs_() {
-        let base_tokens: Vec<H160> = [0, 1, 2]
+        let base_tokens: Vec<Address> = [0, 1, 2]
             .iter()
             .copied()
-            .map(H160::from_low_u64_le)
+            .map(Address::with_last_byte)
             .collect();
         let pairs: Vec<TokenPair> = base_token_pairs(&base_tokens).collect();
         assert_eq!(pairs.len(), 3);
-        assert!(pairs.contains(
-            &TokenPair::new(base_tokens[0].into_alloy(), base_tokens[1].into_alloy()).unwrap()
-        ));
-        assert!(pairs.contains(
-            &TokenPair::new(base_tokens[0].into_alloy(), base_tokens[2].into_alloy()).unwrap()
-        ));
-        assert!(pairs.contains(
-            &TokenPair::new(base_tokens[1].into_alloy(), base_tokens[2].into_alloy()).unwrap()
-        ));
+        assert!(pairs.contains(&TokenPair::new(base_tokens[0], base_tokens[1]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(base_tokens[0], base_tokens[2]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(base_tokens[1], base_tokens[2]).unwrap()));
     }
 
     #[test]
     fn relevant_pairs() {
-        let tokens: Vec<H160> = [0, 1, 2, 3, 4]
+        let tokens: Vec<Address> = [0, 1, 2, 3, 4]
             .iter()
             .copied()
-            .map(H160::from_low_u64_le)
+            .map(Address::with_last_byte)
             .collect();
         let base = BaseTokens::new(tokens[0], &tokens[1..2]);
 
         let pairs = base.relevant_pairs(&mut std::iter::empty());
         assert!(pairs.is_empty());
 
-        let pairs = base.relevant_pairs(
-            &mut TokenPair::new(tokens[0].into_alloy(), tokens[1].into_alloy()).into_iter(),
-        );
+        let pairs = base.relevant_pairs(&mut TokenPair::new(tokens[0], tokens[1]).into_iter());
         assert_eq!(pairs.len(), 1);
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[0].into_alloy(), tokens[1].into_alloy()).unwrap())
-        );
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[1]).unwrap()));
 
-        let pairs = base.relevant_pairs(
-            &mut TokenPair::new(tokens[3].into_alloy(), tokens[4].into_alloy()).into_iter(),
-        );
+        let pairs = base.relevant_pairs(&mut TokenPair::new(tokens[3], tokens[4]).into_iter());
         assert_eq!(pairs.len(), 6);
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[0].into_alloy(), tokens[1].into_alloy()).unwrap())
-        );
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[0].into_alloy(), tokens[3].into_alloy()).unwrap())
-        );
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[0].into_alloy(), tokens[4].into_alloy()).unwrap())
-        );
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[1].into_alloy(), tokens[3].into_alloy()).unwrap())
-        );
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[1].into_alloy(), tokens[4].into_alloy()).unwrap())
-        );
-        assert!(
-            pairs
-                .contains(&TokenPair::new(tokens[3].into_alloy(), tokens[4].into_alloy()).unwrap())
-        );
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[1]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[3]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[4]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[1], tokens[3]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[1], tokens[4]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[3], tokens[4]).unwrap()));
     }
 }

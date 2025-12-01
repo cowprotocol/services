@@ -8,13 +8,11 @@ use {
     },
     alloy::primitives::Address,
     anyhow::anyhow,
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::{
         channel::mpsc,
         future::FutureExt as _,
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
-    primitive_types::H160,
     std::{
         collections::{HashMap, HashSet},
         future::Future,
@@ -53,11 +51,11 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     /// estimator result
     fn fetch_native_prices(
         &self,
-        tokens: HashSet<H160>,
+        tokens: HashSet<Address>,
         timeout: Duration,
     ) -> futures::future::BoxFuture<
         '_,
-        Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
+        Result<HashMap<Address, NativePriceEstimateResult>, PriceEstimationError>,
     >;
 
     /// Returns the number of prices that can be fetched in a single batch.
@@ -69,14 +67,14 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
 #[derive(Clone)]
 pub struct BufferedRequest<Inner> {
     inner: std::marker::PhantomData<Inner>,
-    requests: mpsc::UnboundedSender<H160>,
+    requests: mpsc::UnboundedSender<Address>,
     results: broadcast::Sender<NativePriceResult>,
 }
 
 /// Object to map the token with its native price estimator result
 #[derive(Clone)]
 struct NativePriceResult {
-    token: H160,
+    token: Address,
     result: Result<f64, PriceEstimationError>,
 }
 
@@ -99,19 +97,17 @@ where
             let mut rx = self.results.subscribe();
 
             // Sends the token for requesting price
-            self.requests
-                .unbounded_send(token.into_legacy())
-                .map_err(|e| {
-                    PriceEstimationError::ProtocolInternal(anyhow!(
-                        "failed to append a new token to the queue: {e:?}"
-                    ))
-                })?;
+            self.requests.unbounded_send(token).map_err(|e| {
+                PriceEstimationError::ProtocolInternal(anyhow!(
+                    "failed to append a new token to the queue: {e:?}"
+                ))
+            })?;
 
             tokio::time::timeout(timeout, async {
                 loop {
                     match rx.recv().await {
                         Ok(value) => {
-                            if value.token == token.into_legacy() {
+                            if value.token == token {
                                 return value.result;
                             }
                         }
@@ -161,7 +157,7 @@ where
     fn background_worker(
         inner: Arc<Inner>,
         config: Configuration,
-        requests: mpsc::UnboundedReceiver<H160>,
+        requests: mpsc::UnboundedReceiver<Address>,
         results_sender: broadcast::Sender<NativePriceResult>,
     ) -> JoinHandle<()> {
         let timeout = config.result_ready_timeout;
@@ -271,10 +267,10 @@ mod tests {
         ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
             async move {
                 let prices = self
-                    .fetch_native_prices(HashSet::from([token.into_legacy()]), timeout)
+                    .fetch_native_prices(HashSet::from([token]), timeout)
                     .await?;
                 prices
-                    .get(&token.into_legacy())
+                    .get(&token)
                     .cloned()
                     .ok_or(PriceEstimationError::NoLiquidity)?
             }

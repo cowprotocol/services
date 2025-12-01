@@ -252,25 +252,22 @@ impl RunLoop {
     }
 
     async fn cut_auction(&self) -> Option<domain::Auction> {
-        let auction = match self.solvable_orders_cache.current_auction().await {
-            Some(auction) => auction,
-            None => {
-                tracing::debug!("no current auction");
-                return None;
-            }
+        let Some(auction) = self.solvable_orders_cache.current_auction().await else {
+            tracing::debug!("no current auction");
+            return None;
         };
         let auction = self.remove_in_flight_orders(auction).await;
+        let id = self
+            .persistence
+            .get_next_auction_id()
+            .await
+            .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
+            .ok()?;
+        Metrics::auction(id);
 
-        let id = match self.persistence.replace_current_auction(&auction).await {
-            Ok(id) => {
-                Metrics::auction(id);
-                id
-            }
-            Err(err) => {
-                tracing::error!(?err, "failed to replace current auction");
-                return None;
-            }
-        };
+        // always update the auction because the tests use this as a readiness probe
+        self.persistence.replace_current_auction_in_db(id, &auction);
+        self.persistence.upload_auction_to_s3(id, &auction);
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
@@ -278,7 +275,6 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
-
         Some(domain::Auction {
             id,
             block: auction.block,
@@ -444,7 +440,7 @@ impl RunLoop {
 
         let participants = ranking
             .all()
-            .map(|participant| participant.solution().solver().into())
+            .map(|participant| participant.solution().solver().into_legacy())
             .collect::<HashSet<_>>();
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
@@ -471,7 +467,7 @@ impl RunLoop {
             .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
-                solver_address: participant.solution().solver().0.into_alloy(),
+                solver_address: participant.solution().solver(),
                 score: Some(Score::Solver(
                     participant.solution().score().get().0.into_alloy(),
                 )),

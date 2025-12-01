@@ -17,7 +17,7 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
@@ -492,10 +492,10 @@ impl OrderQuoter {
             }
             | OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: sell_amount },
-            } => (sell_amount.get(), trade_estimate.out_amount),
+            } => (sell_amount.get().into_alloy(), trade_estimate.out_amount),
             OrderQuoteSide::Buy {
                 buy_amount_after_fee: buy_amount,
-            } => (trade_estimate.out_amount, buy_amount.get()),
+            } => (trade_estimate.out_amount, buy_amount.get().into_alloy()),
         };
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as _,
@@ -510,8 +510,8 @@ impl OrderQuoter {
         let quote = QuoteData {
             sell_token: parameters.sell_token,
             buy_token: parameters.buy_token,
-            quoted_sell_amount: quoted_sell_amount.into_alloy(),
-            quoted_buy_amount: quoted_buy_amount.into_alloy(),
+            quoted_sell_amount,
+            quoted_buy_amount,
             fee_parameters,
             kind: trade_query.kind,
             expiration,
@@ -534,7 +534,7 @@ impl OrderQuoter {
         &self,
         estimate: &Estimate,
         parameters: &QuoteParameters,
-        sell_amount: U256,
+        sell_amount: alloy::primitives::U256,
     ) -> Result<(), CalculateQuoteError> {
         if estimate.verified
             || !matches!(
@@ -547,10 +547,7 @@ impl OrderQuoter {
         }
 
         let balance = match self
-            .get_balance(
-                &parameters.verification,
-                parameters.sell_token.into_legacy(),
-            )
+            .get_balance(&parameters.verification, parameters.sell_token)
             .await
         {
             Ok(balance) => balance,
@@ -569,9 +566,13 @@ impl OrderQuoter {
         Ok(())
     }
 
-    async fn get_balance(&self, verification: &Verification, token: H160) -> Result<U256> {
+    async fn get_balance(
+        &self,
+        verification: &Verification,
+        token: Address,
+    ) -> Result<alloy::primitives::U256> {
         let query = Query {
-            owner: verification.from.into_legacy(),
+            owner: verification.from,
             token,
             source: verification.sell_token_source,
             interactions: verification
@@ -587,7 +588,10 @@ impl OrderQuoter {
             balance_override: None,
         };
         let mut balances = self.balance_fetcher.get_balances(&[query]).await;
-        balances.pop().context("missing balance result")?
+        balances
+            .pop()
+            .map(|head| head.map(IntoAlloy::into_alloy))
+            .context("missing balance result")?
     }
 }
 
@@ -694,10 +698,10 @@ impl From<&OrderQuoteRequest> for PreOrderData {
     fn from(quote_request: &OrderQuoteRequest) -> Self {
         let owner = quote_request.from;
         Self {
-            owner: owner.into_legacy(),
-            sell_token: quote_request.sell_token.into_legacy(),
-            buy_token: quote_request.buy_token.into_legacy(),
-            receiver: quote_request.receiver.unwrap_or(owner).into_legacy(),
+            owner,
+            sell_token: quote_request.sell_token,
+            buy_token: quote_request.buy_token,
+            receiver: quote_request.receiver.unwrap_or(owner),
             valid_to: quote_request.validity.actual_valid_to(),
             partially_fillable: false,
             buy_token_balance: quote_request.buy_token_balance,
@@ -796,7 +800,7 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
-        alloy::primitives::Address,
+        alloy::primitives::{Address, U256 as AlloyU256},
         chrono::Utc,
         ethcontract::H160,
         futures::FutureExt,
@@ -883,7 +887,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(price_estimation::Estimate {
-                        out_amount: 42.into(),
+                        out_amount: AlloyU256::from(42),
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
@@ -1024,7 +1028,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(price_estimation::Estimate {
-                        out_amount: 42.into(),
+                        out_amount: AlloyU256::from(42),
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
@@ -1160,7 +1164,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(price_estimation::Estimate {
-                        out_amount: 100.into(),
+                        out_amount: AlloyU256::from(100),
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
@@ -1281,7 +1285,7 @@ mod tests {
         price_estimator.expect_estimate().returning(|_| {
             async {
                 Ok(price_estimation::Estimate {
-                    out_amount: 100.into(),
+                    out_amount: AlloyU256::from(100),
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
@@ -1355,7 +1359,7 @@ mod tests {
         price_estimator.expect_estimate().returning(|_| {
             async {
                 Ok(price_estimation::Estimate {
-                    out_amount: 100.into(),
+                    out_amount: AlloyU256::from(100),
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,

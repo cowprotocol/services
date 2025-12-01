@@ -12,10 +12,9 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     contracts::alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
-    primitive_types::H160,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
@@ -85,24 +84,23 @@ impl UniswapV3Liquidity {
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
-        let settlement_allowances =
-            Box::new(AllowanceManager::new(web3, gpv2_settlement.into_legacy()));
+        let settlement_allowances = Box::new(AllowanceManager::new(web3, gpv2_settlement));
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router.into_legacy())),
+                allowances: Mutex::new(Allowances::empty(router)),
             }),
             pool_fetcher,
             settlement_allowances,
         }
     }
 
-    async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
+    async fn cache_allowances(&self, tokens: HashSet<Address>) -> Result<()> {
         let router = self.inner.router;
         let allowances = self
             .settlement_allowances
-            .get_allowances(tokens, router.into_legacy())
+            .get_allowances(tokens, router)
             .await?;
 
         self.inner
@@ -138,8 +136,8 @@ impl LiquidityCollecting for UniswapV3Liquidity {
             )
             .context("cant create pair")?;
 
-            tokens.insert(pool.tokens[0].id);
-            tokens.insert(pool.tokens[1].id);
+            tokens.insert(pool.tokens[0].id.into_alloy());
+            tokens.insert(pool.tokens[1].id.into_alloy());
 
             result.push(Liquidity::Concentrated(ConcentratedLiquidity {
                 tokens: token_pair,
@@ -175,12 +173,12 @@ impl UniswapV3SettlementHandler {
             UniswapV3Interaction {
                 router: self.inner.router,
                 params: ExactOutputSingleParams {
-                    tokenIn: token_amount_in_max.token.into_alloy(),
-                    tokenOut: token_amount_out.token.into_alloy(),
+                    tokenIn: token_amount_in_max.token,
+                    tokenOut: token_amount_out.token,
                     fee,
                     recipient: self.inner.gpv2_settlement,
-                    amountOut: token_amount_out.amount.into_alloy(),
-                    amountInMaximum: token_amount_in_max.amount.into_alloy(),
+                    amountOut: token_amount_out.amount,
+                    amountInMaximum: token_amount_in_max.amount,
                     sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
                 },
             },
@@ -210,15 +208,15 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::U256, num::rational::Ratio, std::collections::HashMap};
+    use {super::*, alloy::primitives::U256, num::rational::Ratio, std::collections::HashMap};
 
     impl UniswapV3SettlementHandler {
-        fn new_dummy(allowances: HashMap<H160, U256>, fee: u32) -> Self {
+        fn new_dummy(allowances: HashMap<Address, U256>, fee: u32) -> Self {
             Self {
                 inner: Arc::new(Inner {
                     router: Default::default(),
                     gpv2_settlement: Default::default(),
-                    allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
+                    allowances: Mutex::new(Allowances::new(Address::ZERO, allowances)),
                 }),
                 fee,
             }
@@ -227,11 +225,11 @@ mod tests {
 
     #[test]
     fn test_should_set_allowance() {
-        let token_a = H160::from_low_u64_be(1);
-        let token_b = H160::from_low_u64_be(2);
+        let token_a = Address::with_last_byte(1);
+        let token_b = Address::with_last_byte(2);
         let allowances = maplit::hashmap! {
-            token_a => 100.into(),
-            token_b => 200.into(),
+            token_a => U256::from(100),
+            token_b => U256::from(200),
         };
 
         let settlement_handler = UniswapV3SettlementHandler::new_dummy(allowances, 10);
@@ -240,11 +238,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_a,
-                amount: 50.into(),
+                amount: U256::from(50),
             },
             TokenAmount {
                 token: token_b,
-                amount: 100.into(),
+                amount: U256::from(100),
             },
         );
         assert_eq!(approval, None);
@@ -252,11 +250,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_a,
-                amount: 99.into(),
+                amount: U256::from(99),
             },
             TokenAmount {
                 token: token_b,
-                amount: 100.into(),
+                amount: U256::from(100),
             },
         );
         assert_eq!(approval, None);
@@ -265,11 +263,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_b,
-                amount: 150.into(),
+                amount: U256::from(150),
             },
             TokenAmount {
                 token: token_a,
-                amount: 100.into(),
+                amount: U256::from(100),
             },
         );
         assert_eq!(approval, None);
@@ -277,11 +275,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_b,
-                amount: 199.into(),
+                amount: U256::from(199),
             },
             TokenAmount {
                 token: token_a,
-                amount: 100.into(),
+                amount: U256::from(100),
             },
         );
         assert_eq!(approval, None);
@@ -289,12 +287,12 @@ mod tests {
         // Untracked token
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
-                token: H160::from_low_u64_be(3),
-                amount: 1.into(),
+                token: Address::with_last_byte(3),
+                amount: U256::from(1),
             },
             TokenAmount {
                 token: token_a,
-                amount: 100.into(),
+                amount: U256::from(100),
             },
         );
         assert_ne!(approval, None);

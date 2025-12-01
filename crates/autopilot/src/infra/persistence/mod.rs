@@ -3,7 +3,7 @@ use {
         boundary,
         database::{Postgres, order_events::store_order_events},
         domain::{self, eth, settlement::transaction::EncodedTrade},
-        infra::persistence::dto::AuctionId,
+        infra::persistence::dto::{AuctionId, RawAuctionData},
     },
     anyhow::Context,
     bigdecimal::ToPrimitive,
@@ -36,6 +36,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    tokio::sync::mpsc,
     tracing::Instrument,
 };
 
@@ -46,42 +47,96 @@ pub mod dto;
 pub struct Persistence {
     s3: Option<s3::Uploader>,
     postgres: Arc<Postgres>,
+    /// Writing into this channel will cause the auction to be written to the
+    /// DB in an orderly manner (FIFO).
+    upload_queue: mpsc::UnboundedSender<AuctionUpload>,
+}
+
+struct AuctionUpload {
+    auction_id: domain::auction::Id,
+    /// Contains everything buy the auction_id.
+    auction_data: RawAuctionData,
 }
 
 impl Persistence {
     pub async fn new(config: Option<s3::Config>, postgres: Arc<Postgres>) -> Self {
+        let sender = Self::spawn_db_upload_task(postgres.clone());
+
         Self {
             s3: match config {
                 Some(config) => Some(s3::Uploader::new(config).await),
                 None => None,
             },
             postgres,
+            upload_queue: sender,
         }
+    }
+
+    /// Spawns a task that writes the most recent auction to the DB. Uploads
+    /// happen on a FIFO basis so the last write will always be the most
+    /// recent auction.
+    fn spawn_db_upload_task(db: Arc<Postgres>) -> mpsc::UnboundedSender<AuctionUpload> {
+        let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
+        tokio::task::spawn(async move {
+            while let Some(upload) = receiver.recv().await {
+                if let Err(err) = db
+                    .replace_current_auction(upload.auction_id, &upload.auction_data)
+                    .await
+                {
+                    tracing::error!(?err, "failed to replace auction in DB");
+                }
+            }
+            tracing::error!("auction upload task terminated unexpectedly");
+        });
+        sender
     }
 
     pub async fn leader(&self, key: String) -> LeaderLock {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
-    /// There is always only one `current` auction.
-    ///
-    /// This method replaces the current auction with the given one.
-    ///
-    /// If the given auction is successfully saved, it is also archived.
-    pub async fn replace_current_auction(
-        &self,
-        auction: &domain::RawAuctionData,
-    ) -> Result<domain::auction::Id, DatabaseError> {
-        let _timer = observe::metrics::metrics()
-            .on_auction_overhead_start("autopilot", "replace_auction_in_db");
-        let auction = dto::auction::from_domain(auction.clone());
+    /// Fetches the ID that should be used for the next auction.
+    pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_next_auction_id"])
+            .start_timer();
         self.postgres
-            .replace_current_auction(&auction)
+            .get_next_auction_id()
             .await
-            .inspect(|&id| {
-                self.archive_auction(dto::auction::Auction { id, auction });
-            })
             .map_err(DatabaseError)
+    }
+
+    /// Spawns a background task that replaces the current auction in the DB
+    /// with the new one.
+    pub fn replace_current_auction_in_db(
+        &self,
+        new_auction_id: domain::auction::Id,
+        new_auction_data: &domain::RawAuctionData,
+    ) {
+        self.upload_queue
+            .send(AuctionUpload {
+                auction_id: new_auction_id,
+                auction_data: dto::auction::from_domain(new_auction_data.clone()),
+            })
+            .expect("upload queue should be alive at all times");
+    }
+
+    /// Spawns a background task that uploads the auction to S3.
+    pub fn upload_auction_to_s3(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        if auction.orders.is_empty() {
+            return;
+        }
+        let Some(s3) = self.s3.clone() else {
+            return;
+        };
+        let auction_dto = dto::auction::from_domain(auction.clone());
+        tokio::task::spawn(async move {
+            match s3.upload(id.to_string(), &auction_dto).await {
+                Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
+                Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
+            }
+        });
     }
 
     /// Finds solvable orders based on the order's min validity period.
@@ -93,35 +148,6 @@ impl Persistence {
             .all_solvable_orders(min_valid_to)
             .await
             .context("failed to fetch all solvable orders")
-    }
-
-    /// Saves the given auction to storage for debugging purposes.
-    ///
-    /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, instance: dto::auction::Auction) {
-        let Some(uploader) = self.s3.clone() else {
-            return;
-        };
-        if instance.auction.orders.is_empty() {
-            tracing::info!("skip upload of empty auction");
-            return;
-        }
-        tokio::spawn(
-            async move {
-                match uploader
-                    .upload(instance.id.to_string(), &instance.auction)
-                    .await
-                {
-                    Ok(key) => {
-                        tracing::info!(?key, "uploaded auction to s3");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to upload auction to s3");
-                    }
-                }
-            }
-            .instrument(tracing::Span::current()),
-        );
     }
 
     /// Saves the competition data to the DB
@@ -351,7 +377,7 @@ impl Persistence {
                 .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?
                 .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
+                .map(|owner| eth::Address::new(owner.0))
                 .collect();
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)

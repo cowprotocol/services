@@ -13,12 +13,7 @@ pub mod trade;
 use {
     alloy::primitives::Address,
     const_hex::{FromHex, FromHexError},
-    primitive_types::H160,
-    std::{fmt, sync::LazyLock},
-    web3::{
-        ethabi::{Token, encode},
-        signing,
-    },
+    std::fmt,
 };
 
 pub type AuctionId = i64;
@@ -116,29 +111,16 @@ impl std::fmt::Debug for DomainSeparator {
 }
 
 impl DomainSeparator {
-    pub fn new(chain_id: u64, contract_address: H160) -> Self {
-        /// The EIP-712 domain name used for computing the domain separator.
-        static DOMAIN_NAME: LazyLock<[u8; 32]> =
-            LazyLock::new(|| signing::keccak256(b"Gnosis Protocol"));
+    pub fn new(chain_id: u64, contract_address: Address) -> Self {
+        let domain = alloy::sol_types::Eip712Domain {
+            name: Some("Gnosis Protocol".into()),
+            version: Some("v2".into()),
+            chain_id: Some(alloy::primitives::U256::from(chain_id)),
+            verifying_contract: Some(contract_address),
+            salt: None,
+        };
 
-        /// The EIP-712 domain version used for computing the domain separator.
-        static DOMAIN_VERSION: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"v2"));
-
-        /// The EIP-712 domain type used computing the domain separator.
-        static DOMAIN_TYPE_HASH: LazyLock<[u8; 32]> = LazyLock::new(|| {
-            signing::keccak256(
-            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        )
-        });
-        let abi_encode_string = encode(&[
-            Token::Uint((*DOMAIN_TYPE_HASH).into()),
-            Token::Uint((*DOMAIN_NAME).into()),
-            Token::Uint((*DOMAIN_VERSION).into()),
-            Token::Uint(chain_id.into()),
-            Token::Address(contract_address),
-        ]);
-
-        DomainSeparator(signing::keccak256(abi_encode_string.as_slice()))
+        DomainSeparator(domain.separator().into())
     }
 }
 
@@ -146,6 +128,7 @@ impl DomainSeparator {
 mod tests {
     use {
         super::*,
+        alloy::primitives::address,
         hex_literal::hex,
         std::{cmp::Ordering, str::FromStr},
     };
@@ -162,7 +145,7 @@ mod tests {
 
     #[test]
     fn domain_separator_sepolia() {
-        let contract_address: H160 = hex!("9008D19f58AAbD9eD0D60971565AA8510560ab41").into(); // new deployment
+        let contract_address = address!("9008D19f58AAbD9eD0D60971565AA8510560ab41"); // new deployment
         let chain_id: u64 = 11155111;
         let domain_separator_sepolia = DomainSeparator::new(chain_id, contract_address);
         // domain separator is taken from Sepolia deployment at address

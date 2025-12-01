@@ -97,18 +97,30 @@ impl Postgres {
         })
     }
 
-    pub async fn replace_current_auction(
-        &self,
-        auction: &dto::RawAuctionData,
-    ) -> Result<dto::AuctionId> {
+    pub async fn get_next_auction_id(&self) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["replace_current_auction"])
+            .with_label_values(&["get_next_auction_id"])
             .start_timer();
 
-        let data = serde_json::to_value(auction)?;
         let mut ex = self.pool.acquire().await?;
-        let id = database::auction::replace_auction(&mut ex, &data).await?;
+        let id = database::auction::get_next_auction_id(&mut ex).await?;
         Ok(id)
+    }
+
+    pub async fn replace_current_auction(
+        &self,
+        new_auction_id: dto::AuctionId,
+        new_auction_data: &dto::RawAuctionData,
+    ) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["insert_auction_with_id"])
+            .start_timer();
+
+        let data = serde_json::to_value(new_auction_data)?;
+        let mut ex = self.pool.acquire().await?;
+        database::auction::insert_auction_with_id(&mut ex, new_auction_id, &data).await?;
+        Ok(())
     }
 }

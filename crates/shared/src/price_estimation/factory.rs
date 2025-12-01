@@ -27,13 +27,10 @@ use {
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
     },
+    alloy::primitives::Address,
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
-    ethcontract::H160,
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -62,9 +59,9 @@ pub struct Network {
     pub web3: Web3,
     pub simulation_web3: Option<Web3>,
     pub chain: chain::Chain,
-    pub native_token: H160,
-    pub settlement: H160,
-    pub authenticator: H160,
+    pub native_token: Address,
+    pub settlement: Address,
+    pub authenticator: Address,
     pub base_tokens: Arc<BaseTokens>,
     pub block_stream: CurrentBlockWatcher,
 }
@@ -131,15 +128,12 @@ impl<'a> PriceEstimatorFactory<'a> {
         NonZeroU256::try_from(
             self.args
                 .amount_to_estimate_prices_with
-                .or_else(|| {
-                    Some(
-                        self.network
-                            .chain
-                            .default_amount_to_estimate_native_prices_with()
-                            .into_legacy(),
-                    )
+                .unwrap_or_else(|| {
+                    self.network
+                        .chain
+                        .default_amount_to_estimate_native_prices_with()
                 })
-                .context("No amount to estimate prices with set.")?,
+                .into_legacy(),
         )
     }
 
@@ -237,7 +231,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.args.coin_gecko.coin_gecko_url.clone(),
                     self.args.coin_gecko.coin_gecko_api_key.clone(),
                     &self.network.chain,
-                    weth.address().into_legacy(),
+                    *weth.address(),
                     self.components.tokens.clone(),
                 )
                 .await?;
@@ -307,7 +301,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn sanitized(&self, estimator: Arc<dyn PriceEstimating>) -> SanitizedPriceEstimator {
         SanitizedPriceEstimator::new(
             estimator,
-            self.network.native_token.into_alloy(),
+            self.network.native_token,
             self.components.bad_token_detector.clone(),
         )
     }
@@ -379,8 +373,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_concurrent_requests,
             self.args
                 .native_price_approximation_tokens
-                .clone()
-                .into_iter()
+                .iter()
+                .copied()
                 .collect(),
             self.args.quote_timeout,
         ));

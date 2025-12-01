@@ -77,25 +77,18 @@ async fn eth_integration(web3: Web3) {
             services.submit_quote(&request).await
         }
     };
-    quote(*token.address(), BUY_ETH_ADDRESS.into_alloy())
-        .await
-        .unwrap();
+    quote(*token.address(), BUY_ETH_ADDRESS).await.unwrap();
     // Eth is only supported as the buy token
-    let (status, body) = quote(BUY_ETH_ADDRESS.into_alloy(), *token.address())
-        .await
-        .unwrap_err();
+    let (status, body) = quote(BUY_ETH_ADDRESS, *token.address()).await.unwrap_err();
     assert_eq!(status, 400, "{body}");
 
     // Place Orders
-    assert_ne!(
-        onchain.contracts().weth.address().into_legacy(),
-        BUY_ETH_ADDRESS
-    );
+    assert_ne!(*onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(50),
-        buy_token: BUY_ETH_ADDRESS,
+        buy_token: BUY_ETH_ADDRESS.into_legacy(),
         buy_amount: to_wei(49),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
@@ -110,7 +103,7 @@ async fn eth_integration(web3: Web3) {
         kind: OrderKind::Sell,
         sell_token: token.address().into_legacy(),
         sell_amount: to_wei(50),
-        buy_token: BUY_ETH_ADDRESS,
+        buy_token: BUY_ETH_ADDRESS.into_legacy(),
         buy_amount: to_wei(49),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()

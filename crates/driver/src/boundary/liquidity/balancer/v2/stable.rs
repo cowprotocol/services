@@ -27,7 +27,7 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                     .map(|(token, reserve)| {
                         Ok(balancer::v2::stable::Reserve {
                             asset: eth::Asset {
-                                token: token.into(),
+                                token: token.into_legacy().into(),
                                 amount: reserve.balance.into(),
                             },
                             scale: balancer::v2::ScalingFactor::from_raw(

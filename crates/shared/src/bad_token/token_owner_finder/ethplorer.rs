@@ -1,8 +1,8 @@
 use {
     super::TokenOwnerProposing,
+    alloy::primitives::Address,
     anyhow::{Result, ensure},
     chain::Chain,
-    ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
     rate_limit::{RateLimiter, Strategy, back_off},
@@ -54,7 +54,7 @@ impl EthplorerTokenOwnerFinder {
         self
     }
 
-    async fn query_owners(&self, token: H160) -> Result<Vec<H160>> {
+    async fn query_owners(&self, token: Address) -> Result<Vec<Address>> {
         let mut url = crate::url::join(&self.base, &format!("getTopTokenHolders/{token:?}"));
         // We technically only need one candidate, returning the top 2 in case there
         // is a race condition and tokens have just been transferred out.
@@ -104,7 +104,7 @@ struct Response {
 
 #[derive(Deserialize)]
 struct Holder {
-    address: H160,
+    address: Address,
 }
 
 #[derive(Deserialize)]
@@ -134,7 +134,7 @@ struct Metrics {
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for EthplorerTokenOwnerFinder {
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
+    async fn find_candidate_owners(&self, token: Address) -> Result<Vec<Address>> {
         let metric = &self.metrics.results;
         let result = self.query_owners(token).await;
         match &result {
@@ -151,7 +151,7 @@ impl TokenOwnerProposing for EthplorerTokenOwnerFinder {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex};
+    use {super::*, alloy::primitives::address};
 
     #[tokio::test]
     #[ignore]
@@ -160,7 +160,7 @@ mod tests {
             EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, &Chain::Mainnet)
                 .unwrap();
         let owners = finder
-            .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
+            .find_candidate_owners(address!("1337BedC9D22ecbe766dF105c9623922A27963EC"))
             .await;
         assert!(!owners.unwrap().is_empty());
     }
@@ -172,7 +172,7 @@ mod tests {
             EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, &Chain::Gnosis)
                 .unwrap();
         let owners = finder
-            .find_candidate_owners(H160(hex!("000000000000000000000000000000000000def1")))
+            .find_candidate_owners(address!("000000000000000000000000000000000000def1"))
             .await;
         assert!(owners.unwrap().is_empty());
     }

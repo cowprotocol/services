@@ -33,9 +33,9 @@ impl BalancerSwapGivenOutInteraction {
         let single_swap = IVault::SingleSwap {
             poolId: self.pool_id.into_alloy(),
             kind: 1, // GivenOut
-            assetIn: self.asset_in_max.token.into_alloy(),
-            assetOut: self.asset_out.token.into_alloy(),
-            amount: self.asset_out.amount.into_alloy(),
+            assetIn: self.asset_in_max.token,
+            assetOut: self.asset_out.token,
+            amount: self.asset_out.amount,
             userData: self.user_data.clone().into_alloy(),
         };
         let funds = IVault::FundManagement {
@@ -48,7 +48,7 @@ impl BalancerSwapGivenOutInteraction {
         let method = swapCall {
             singleSwap: single_swap,
             funds,
-            limit: self.asset_in_max.amount.into_alloy(),
+            limit: self.asset_in_max.amount,
             deadline: *NEVER,
         }
         .abi_encode();
@@ -65,7 +65,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, primitive_types::H160};
+    use super::*;
 
     #[test]
     fn encode_unwrap_weth() {
@@ -74,8 +74,14 @@ mod tests {
             settlement: Address::from_slice(&[0x02; 20]),
             vault: vault_address,
             pool_id: H256([0x03; 32]),
-            asset_in_max: TokenAmount::new(H160([0x04; 20]), 1_337_000_000_000_000_000_000u128),
-            asset_out: TokenAmount::new(H160([0x05; 20]), 42_000_000_000_000_000_000u128),
+            asset_in_max: TokenAmount::new(
+                Address::repeat_byte(0x04),
+                alloy::primitives::U256::from(1_337_000_000_000_000_000_000u128),
+            ),
+            asset_out: TokenAmount::new(
+                Address::repeat_byte(0x05),
+                alloy::primitives::U256::from(42_000_000_000_000_000_000u128),
+            ),
             user_data: Bytes::default(),
         };
 

@@ -273,8 +273,8 @@ impl Utilities {
                         && order.app_data.flashloan() == first.app_data.flashloan()
                 });
                 Query {
-                    owner: trader.0.0,
-                    token: token.0.0,
+                    owner: trader.0.0.into_alloy(),
+                    token: token.0.0.into_alloy(),
                     source: match source {
                         SellTokenBalance::Erc20 => SellTokenSource::Erc20,
                         SellTokenBalance::Internal => SellTokenSource::Internal,
@@ -318,8 +318,8 @@ impl Utilities {
                 let balance = balance.ok()?;
                 Some((
                     (
-                        order::Trader(query.owner.into()),
-                        query.token.into(),
+                        order::Trader(query.owner.into_legacy().into()),
+                        query.token.into_legacy().into(),
                         match query.source {
                             SellTokenSource::Erc20 => SellTokenBalance::Erc20,
                             SellTokenSource::Internal => SellTokenBalance::Internal,

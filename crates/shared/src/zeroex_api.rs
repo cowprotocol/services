@@ -5,10 +5,11 @@
 //! <https://api.0x.org/>
 
 use {
+    alloy::primitives::{Address, B256, address},
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
-    ethcontract::{H160, H256, U256},
+    ethcontract::U256,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
     observe::tracing::tracing_headers,
@@ -30,13 +31,6 @@ use {
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
 
-// The `Display` implementation for `H160` unfortunately does not print
-// the full address ad instead uses ellipsis (e.g. "0xeeee…eeee"). This
-// helper just works around that.
-fn addr2str(addr: H160) -> String {
-    format!("{addr:#x}")
-}
-
 /// 0x API orders query parameters.
 ///
 /// These parameters are currently incomplete, and missing parameters can be
@@ -47,13 +41,13 @@ pub struct OrdersQuery {
     /// The address of the party that is allowed to fill the order.
     /// If set to a specific party, the order cannot be filled by anyone else.
     /// If left unspecified, anyone can fill the order.
-    pub taker: Option<H160>,
+    pub taker: Option<Address>,
     /// Allows the maker to enforce that the order flow through some
     /// additional logic before it can be filled (e.g., a KYC whitelist).
-    pub sender: Option<H160>,
+    pub sender: Option<Address>,
     /// Address of the contract where the transaction should be sent,
     /// usually this is the 0x exchange proxy contract.
-    pub verifying_contract: Option<H160>,
+    pub verifying_contract: Option<Address>,
 }
 
 impl OrdersQuery {
@@ -62,15 +56,16 @@ impl OrdersQuery {
         let mut url = crate::url::join(base_url, "/orderbook/v1/orders");
 
         if let Some(taker) = self.taker {
-            url.query_pairs_mut().append_pair("taker", &addr2str(taker));
+            url.query_pairs_mut()
+                .append_pair("taker", &taker.to_string());
         }
         if let Some(sender) = self.sender {
             url.query_pairs_mut()
-                .append_pair("sender", &addr2str(sender));
+                .append_pair("sender", &sender.to_string());
         }
         if let Some(verifying_contract) = self.verifying_contract {
             url.query_pairs_mut()
-                .append_pair("verifyingContract", &addr2str(verifying_contract));
+                .append_pair("verifyingContract", &verifying_contract.to_string());
         }
 
         url
@@ -80,8 +75,8 @@ impl OrdersQuery {
 impl Default for OrdersQuery {
     fn default() -> Self {
         Self {
-            taker: Some(H160::zero()),
-            sender: Some(H160::zero()),
+            taker: Some(Address::ZERO),
+            sender: Some(Address::ZERO),
             verifying_contract: Some(DefaultZeroExApi::DEFAULT_VERIFICATION_CONTRACT),
         }
     }
@@ -103,8 +98,8 @@ pub struct OrderMetadata {
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZeroExSignature {
-    pub r: H256,
-    pub s: H256,
+    pub r: B256,
+    pub s: B256,
     pub v: u8,
     pub signature_type: u8,
 }
@@ -123,43 +118,43 @@ pub struct Order {
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the
     /// order. This is typically used to incentivize off-chain order relay.
-    pub fee_recipient: H160,
+    pub fee_recipient: Address,
     /// The address of the party that creates the order. The maker is also one
     /// of the two parties that will be involved in the trade if the order
     /// gets filled.
-    pub maker: H160,
+    pub maker: Address,
     /// The amount of `maker_token` being sold by the maker.
     #[serde_as(as = "DisplayFromStr")]
     pub maker_amount: u128,
     /// The address of the ERC20 token the maker is selling to the taker.
-    pub maker_token: H160,
+    pub maker_token: Address,
     /// The staking pool to attribute the 0x protocol fee from this order. Set
     /// to zero to attribute to the default pool, not owned by anyone.
-    pub pool: H256,
+    pub pool: B256,
     /// A value that can be used to guarantee order uniqueness. Typically it is
     /// set to a random number.
     #[serde_as(as = "HexOrDecimalU256")]
     pub salt: U256,
     /// It allows the maker to enforce that the order flow through some
     /// additional logic before it can be filled (e.g., a KYC whitelist).
-    pub sender: H160,
+    pub sender: Address,
     /// The signature of the signed order.
     pub signature: ZeroExSignature,
     /// The address of the party that is allowed to fill the order. If set to a
     /// specific party, the order cannot be filled by anyone else. If left
     /// unspecified, anyone can fill the order.
-    pub taker: H160,
+    pub taker: Address,
     /// The amount of `taker_token` being sold by the taker.
     #[serde_as(as = "DisplayFromStr")]
     pub taker_amount: u128,
     /// The address of the ERC20 token the taker is selling to the maker.
-    pub taker_token: H160,
+    pub taker_token: Address,
     /// Amount of takerToken paid by the taker to the feeRecipient.
     #[serde_as(as = "DisplayFromStr")]
     pub taker_token_fee_amount: u128,
     /// Address of the contract where the transaction should be sent, usually
     /// this is the 0x exchange proxy contract.
-    pub verifying_contract: H160,
+    pub verifying_contract: Address,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -237,8 +232,8 @@ impl DefaultZeroExApi {
     pub const DEFAULT_URL: &'static str = "https://api.0x.org/";
     /// Default 0x verifying contract.
     /// The currently latest 0x v4 contract.
-    pub const DEFAULT_VERIFICATION_CONTRACT: H160 =
-        addr!("Def1C0ded9bec7F1a1670819833240f027b25EfF");
+    pub const DEFAULT_VERIFICATION_CONTRACT: Address =
+        address!("Def1C0ded9bec7F1a1670819833240f027b25EfF");
 
     /// Create a new 0x HTTP API client with the specified base URL.
     pub fn new(
@@ -456,7 +451,7 @@ impl Metrics {
 mod tests {
     use {
         super::*,
-        crate::addr,
+        alloy::primitives::address,
         chrono::{DateTime, NaiveDate},
     };
 
@@ -548,30 +543,30 @@ mod tests {
                     Order {
                         chain_id: 1u64,
                         expiry: 1646463524u64,
-                        fee_recipient: addr!("86003b044f70dac0abc80ac8957305b6370893ed"),
-                        maker: addr!("683b2388d719e98874d1f9c16b42a7bb498efbeb"),
+                        fee_recipient: address!("86003b044f70dac0abc80ac8957305b6370893ed"),
+                        maker: address!("683b2388d719e98874d1f9c16b42a7bb498efbeb"),
                         maker_amount: 500000000u128,
-                        maker_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-                        pool: H256::zero(),
+                        maker_token: address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                        pool: B256::ZERO,
                         salt: 1645858724.into(),
-                        sender: H160::zero(),
+                        sender: Address::ZERO,
                         signature: ZeroExSignature {
                             signature_type: 3,
-                            r: H256::from_slice(
+                            r: B256::from_slice(
                                 &const_hex::decode("db60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237")
                                     .unwrap()
                             ),
-                            s: H256::from_slice(
+                            s: B256::from_slice(
                                 &const_hex::decode("4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd")
                                     .unwrap()
                             ),
                             v: 28u8,
                         },
-                        taker: H160::zero(),
+                        taker: Address::ZERO,
                         taker_amount: 262467000000000000u128,
-                        taker_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                        taker_token: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         taker_token_fee_amount: 0u128,
-                        verifying_contract: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        verifying_contract: address!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     },
                     OrderMetadata {
                         order_hash:

@@ -3,14 +3,13 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::sol_types::{SolCall, SolType, sol_data},
+    alloy::{
+        primitives::Address,
+        sol_types::{SolCall, SolType, sol_data},
+    },
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethcontract::state_overrides::StateOverrides,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -25,8 +24,8 @@ mod simulation;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Query {
-    pub owner: H160,
-    pub token: H160,
+    pub owner: Address,
+    pub token: Address,
     pub source: SellTokenSource,
     pub interactions: Vec<InteractionData>,
     pub balance_override: Option<BalanceOverrideRequest>,
@@ -35,8 +34,8 @@ pub struct Query {
 impl Query {
     pub fn from_order(o: &Order) -> Self {
         Self {
-            owner: o.metadata.owner.into_legacy(),
-            token: o.data.sell_token.into_legacy(),
+            owner: o.metadata.owner,
+            token: o.data.sell_token,
             source: o.data.sell_token_balance,
             interactions: o.interactions.pre.clone(),
             // TODO eventually delete together with the balance

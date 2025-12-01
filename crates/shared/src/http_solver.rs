@@ -1,14 +1,17 @@
 pub mod model {
-    use {ethcontract::H160, primitive_types::U256, serde::Serialize};
+    use {
+        alloy::primitives::{Address, U256},
+        serde::Serialize,
+    };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TokenAmount {
         pub amount: U256,
-        pub token: H160,
+        pub token: Address,
     }
 
     impl TokenAmount {
-        pub fn new<T: Into<U256>>(token: H160, amount: T) -> Self {
+        pub fn new<T: Into<U256>>(token: Address, amount: T) -> Self {
             Self {
                 amount: amount.into(),
                 token,

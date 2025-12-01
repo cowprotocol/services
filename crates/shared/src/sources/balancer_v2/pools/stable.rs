@@ -9,9 +9,10 @@ use {
             swap::fixed_point::Bfp,
         },
     },
+    alloy::primitives::Address,
     anyhow::{Result, ensure},
     contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
-    ethcontract::{BlockId, H160, U256},
+    ethcontract::{BlockId, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
@@ -37,7 +38,7 @@ impl PoolIndexing for PoolInfo {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PoolState {
-    pub tokens: BTreeMap<H160, common::TokenState>,
+    pub tokens: BTreeMap<Address, common::TokenState>,
     pub swap_fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
 }
@@ -93,10 +94,8 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_contract = BalancerV2StablePool::Instance::new(
-            pool_info.common.address.into_alloy(),
-            self.provider().clone(),
-        );
+        let pool_contract =
+            BalancerV2StablePool::Instance::new(pool_info.common.address, self.provider().clone());
 
         let fetch_common = common_pool_state.map(Result::Ok);
         let fetch_amplification_parameter = async move {
@@ -130,28 +129,24 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::sources::balancer_v2::graph_api::Token,
-        ethcontract::{H160, H256},
-    };
+    use {super::*, crate::sources::balancer_v2::graph_api::Token, ethcontract::H256};
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
             id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0xfa; 20]),
+            address: Address::repeat_byte(1),
+            factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
             tokens: vec![
                 Token {
-                    address: H160([0x11; 20]),
+                    address: Address::repeat_byte(0x11),
                     decimals: 1,
                     weight: None,
                 },
                 Token {
-                    address: H160([0x22; 20]),
+                    address: Address::repeat_byte(0x22),
                     decimals: 2,
                     weight: None,
                 },

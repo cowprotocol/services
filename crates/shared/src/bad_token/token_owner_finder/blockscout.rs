@@ -1,8 +1,8 @@
 use {
     super::TokenOwnerProposing,
+    alloy::primitives::Address,
     anyhow::Result,
     chain::Chain,
-    ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
     rate_limit::{RateLimiter, Strategy, back_off},
@@ -55,7 +55,7 @@ impl BlockscoutTokenOwnerFinder {
         self
     }
 
-    async fn query_owners(&self, token: H160) -> Result<Vec<H160>> {
+    async fn query_owners(&self, token: Address) -> Result<Vec<Address>> {
         let mut url = self.base.clone();
         url.query_pairs_mut()
             .append_pair("module", "token")
@@ -101,7 +101,7 @@ struct Response {
 
 #[derive(Deserialize)]
 struct TokenOwner {
-    address: H160,
+    address: Address,
 }
 
 #[derive(MetricStorage, Clone, Debug)]
@@ -114,7 +114,7 @@ struct Metrics {
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for BlockscoutTokenOwnerFinder {
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
+    async fn find_candidate_owners(&self, token: Address) -> Result<Vec<Address>> {
         let metric = &Metrics::instance(observe::metrics::get_storage_registry())
             .unwrap()
             .results;
@@ -135,7 +135,7 @@ impl TokenOwnerProposing for BlockscoutTokenOwnerFinder {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex};
+    use {super::*, alloy::primitives::address};
 
     #[tokio::test]
     #[ignore]
@@ -143,7 +143,7 @@ mod tests {
         let finder =
             BlockscoutTokenOwnerFinder::with_network(Client::default(), &Chain::Mainnet).unwrap();
         let owners = finder
-            .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
+            .find_candidate_owners(address!("1337BedC9D22ecbe766dF105c9623922A27963EC"))
             .await;
         assert!(!owners.unwrap().is_empty());
     }
@@ -154,7 +154,7 @@ mod tests {
         let finder =
             BlockscoutTokenOwnerFinder::with_network(Client::default(), &Chain::Gnosis).unwrap();
         let owners = finder
-            .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
+            .find_candidate_owners(address!("1337BedC9D22ecbe766dF105c9623922A27963EC"))
             .await;
         assert!(!owners.unwrap().is_empty());
     }
@@ -165,7 +165,7 @@ mod tests {
         let finder =
             BlockscoutTokenOwnerFinder::with_network(Client::default(), &Chain::Gnosis).unwrap();
         let owners = finder
-            .find_candidate_owners(H160(hex!("000000000000000000000000000000000000def1")))
+            .find_candidate_owners(address!("000000000000000000000000000000000000def1"))
             .await;
         assert!(owners.unwrap().is_empty());
     }

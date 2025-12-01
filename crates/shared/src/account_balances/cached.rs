@@ -202,15 +202,15 @@ mod tests {
     use {
         super::*,
         crate::account_balances::MockBalanceFetching,
-        ethcontract::H160,
+        alloy::primitives::Address,
         ethrpc::block_stream::BlockInfo,
         model::order::SellTokenSource,
     };
 
     fn query(token: u8) -> Query {
         Query {
-            owner: H160([1; 20]),
-            token: H160([token; 20]),
+            owner: Address::repeat_byte(1),
+            token: Address::repeat_byte(token),
             source: SellTokenSource::Erc20,
             interactions: vec![],
             balance_override: None,

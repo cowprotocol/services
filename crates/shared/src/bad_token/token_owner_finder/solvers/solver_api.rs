@@ -1,13 +1,13 @@
 use {
     super::TokenOwnerSolverApi,
+    alloy::primitives::Address,
     anyhow::{Context, Result},
-    ethcontract::H160,
     reqwest::{Client, Url},
     std::collections::HashMap,
 };
 
-type Token = H160;
-type Owner = H160;
+type Token = Address;
+type Owner = Address;
 
 #[derive(Clone, Debug)]
 pub struct SolverConfiguration {

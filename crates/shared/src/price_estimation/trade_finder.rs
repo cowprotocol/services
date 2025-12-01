@@ -72,8 +72,8 @@ impl Inner {
         if let Some(verifier) = &self.verifier {
             let trade = self.finder.get_trade(&query).await?;
             let price_query = PriceQuery {
-                sell_token: query.sell_token.into_legacy(),
-                buy_token: query.buy_token.into_legacy(),
+                sell_token: query.sell_token,
+                buy_token: query.buy_token,
                 in_amount: query.in_amount,
                 kind: query.kind,
             };
@@ -86,7 +86,7 @@ impl Inner {
 
         let quote = self.finder.get_quote(&query).await?;
         Ok(Estimate {
-            out_amount: quote.out_amount.into_legacy(),
+            out_amount: quote.out_amount,
             gas: quote.gas_estimate,
             solver: quote.solver.into_legacy(),
             verified: false,

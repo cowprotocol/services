@@ -113,7 +113,7 @@ pub enum PartialValidationError {
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
-    UnsupportedToken { token: H160, reason: String },
+    UnsupportedToken { token: Address, reason: String },
     Other(anyhow::Error),
 }
 
@@ -187,10 +187,9 @@ impl From<CalculateQuoteError> for ValidationError {
             CalculateQuoteError::Price {
                 source: PriceEstimationError::UnsupportedToken { token, reason },
                 ..
-            } => ValidationError::Partial(PartialValidationError::UnsupportedToken {
-                token: token.into_legacy(),
-                reason,
-            }),
+            } => {
+                ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
+            }
             CalculateQuoteError::Price {
                 source: PriceEstimationError::ProtocolInternal(err),
                 ..
@@ -238,10 +237,10 @@ pub struct OrderValidator {
 
 #[derive(Debug, Eq, PartialEq, Default)]
 pub struct PreOrderData {
-    pub owner: H160,
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub receiver: H160,
+    pub owner: Address,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub receiver: Address,
     pub valid_to: u32,
     pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
@@ -250,25 +249,21 @@ pub struct PreOrderData {
     pub class: OrderClass,
 }
 
-fn actual_receiver(owner: H160, order: &OrderData) -> H160 {
+fn actual_receiver(owner: Address, order: &OrderData) -> Address {
     let receiver = order.receiver.unwrap_or_default();
-    if receiver.is_zero() {
-        owner
-    } else {
-        receiver.into_legacy()
-    }
+    if receiver.is_zero() { owner } else { receiver }
 }
 
 impl PreOrderData {
     pub fn from_order_creation(
-        owner: H160,
+        owner: Address,
         order: &OrderData,
         signing_scheme: SigningScheme,
     ) -> Self {
         Self {
             owner,
-            sell_token: order.sell_token.into_legacy(),
-            buy_token: order.buy_token.into_legacy(),
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
             receiver: actual_receiver(owner, order),
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
@@ -398,8 +393,8 @@ impl OrderValidator {
                 .balance_fetcher
                 .can_transfer(
                     &account_balances::Query {
-                        token: order.data().sell_token.into_legacy(),
-                        owner,
+                        token: order.data().sell_token,
+                        owner: owner.into_alloy(),
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
@@ -459,7 +454,7 @@ impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         if !self
             .banned_users
-            .banned([order.receiver.into_alloy(), order.owner.into_alloy()])
+            .banned([order.receiver, order.owner])
             .await
             .is_empty()
         {
@@ -489,14 +484,14 @@ impl OrderValidating for OrderValidator {
         if has_same_buy_and_sell_token(&order, self.native_token.address()) {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
-        if order.sell_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy() {
+        if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
 
         for &token in &[order.sell_token, order.buy_token] {
             if let TokenQuality::Bad { reason } = self
                 .bad_token_detector
-                .detect(token.into_alloy())
+                .detect(token)
                 .await
                 .map_err(PartialValidationError::Other)?
             {
@@ -629,7 +624,8 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
+        let pre_order =
+            PreOrderData::from_order_creation(owner.into_alloy(), &data, signing_scheme);
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
@@ -858,8 +854,7 @@ pub enum OrderValidToError {
 /// This also checks for orders selling wrapped native token for native token.
 fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &Address) -> bool {
     order.sell_token == order.buy_token
-        || (order.sell_token == native_token.into_legacy()
-            && order.buy_token.into_alloy() == BUY_ETH_ADDRESS.into_alloy())
+        || (order.sell_token == *native_token && order.buy_token == BUY_ETH_ADDRESS)
 }
 
 /// Retrieves the quote for an order that is being created and verify that its
@@ -1046,18 +1041,18 @@ mod tests {
 
     #[test]
     fn detects_orders_with_same_buy_and_sell_token() {
-        let native_token = [0xef; 20].into();
+        let native_token = Address::repeat_byte(0xef);
         assert!(has_same_buy_and_sell_token(
             &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x01; 20]),
+                sell_token: Address::repeat_byte(0x01),
+                buy_token: Address::repeat_byte(0x01),
                 ..Default::default()
             },
             &native_token,
         ));
         assert!(has_same_buy_and_sell_token(
             &PreOrderData {
-                sell_token: native_token.into_legacy(),
+                sell_token: native_token,
                 buy_token: BUY_ETH_ADDRESS,
                 ..Default::default()
             },
@@ -1066,8 +1061,8 @@ mod tests {
 
         assert!(!has_same_buy_and_sell_token(
             &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x02; 20]),
+                sell_token: Address::repeat_byte(0x01),
+                buy_token: Address::repeat_byte(0x02),
                 ..Default::default()
             },
             &native_token,
@@ -1077,7 +1072,7 @@ mod tests {
         assert!(!has_same_buy_and_sell_token(
             &PreOrderData {
                 sell_token: BUY_ETH_ADDRESS,
-                buy_token: native_token.into_legacy(),
+                buy_token: native_token,
                 ..Default::default()
             },
             &native_token,
@@ -1131,7 +1126,7 @@ mod tests {
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
-                    owner: H160::from_low_u64_be(1),
+                    owner: Address::with_last_byte(1),
                     ..Default::default()
                 })
                 .await,
@@ -1140,7 +1135,7 @@ mod tests {
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
-                    receiver: H160::from_low_u64_be(1),
+                    receiver: Address::with_last_byte(1),
                     ..Default::default()
                 })
                 .await,
@@ -1210,8 +1205,8 @@ mod tests {
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
-                    buy_token: H160::from_low_u64_be(2),
-                    sell_token: H160::from_low_u64_be(2),
+                    buy_token: Address::with_last_byte(2),
+                    sell_token: Address::with_last_byte(2),
                     ..Default::default()
                 })
                 .await,
@@ -1275,8 +1270,8 @@ mod tests {
             valid_to: time::now_in_epoch_seconds()
                 + validity_configuration.min.as_secs() as u32
                 + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
             ..Default::default()
         };
 
@@ -1295,7 +1290,7 @@ mod tests {
             validator
                 .partial_validate(PreOrderData {
                     class: OrderClass::Limit,
-                    owner: H160::from_low_u64_be(0x42),
+                    owner: Address::with_last_byte(0x42),
                     valid_to: time::now_in_epoch_seconds()
                         + validity_configuration.max_market.as_secs() as u32
                         + 2,
@@ -1309,7 +1304,7 @@ mod tests {
                 .partial_validate(PreOrderData {
                     partially_fillable: true,
                     class: OrderClass::Liquidity,
-                    owner: H160::from_low_u64_be(0x42),
+                    owner: Address::with_last_byte(0x42),
                     valid_to: u32::MAX,
                     ..order()
                 })

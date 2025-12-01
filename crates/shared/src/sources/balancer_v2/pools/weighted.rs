@@ -6,14 +6,15 @@ use {
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
+    alloy::primitives::Address,
     anyhow::{Result, anyhow},
     contracts::alloy::{
         BalancerV2WeightedPool,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethcontract::{BlockId, H160},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethcontract::BlockId,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt as _, future::BoxFuture},
     std::collections::BTreeMap,
 };
@@ -26,7 +27,7 @@ pub struct PoolInfo {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PoolState {
-    pub tokens: BTreeMap<H160, TokenState>,
+    pub tokens: BTreeMap<Address, TokenState>,
     pub swap_fee: Bfp,
     pub version: Version,
 }
@@ -71,10 +72,8 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory::Instance {
     type PoolState = PoolState;
 
     async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
-        let pool_contract = BalancerV2WeightedPool::Instance::new(
-            pool.address.into_alloy(),
-            self.provider().clone(),
-        );
+        let pool_contract =
+            BalancerV2WeightedPool::Instance::new(pool.address, self.provider().clone());
         let weights = pool_contract
             .getNormalizedWeights()
             .call()
@@ -154,8 +153,9 @@ mod tests {
             providers::{Provider, ProviderBuilder, mock::Asserter},
             sol_types::SolCall,
         },
-        ethcontract::{H160, H256},
+        ethcontract::H256,
         ethcontract_mock::Mock,
+        ethrpc::alloy::conversions::IntoAlloy,
         futures::future,
         maplit::btreemap,
     };
@@ -165,17 +165,17 @@ mod tests {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
             id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0xfa; 20]),
+            address: Address::repeat_byte(1),
+            factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
             tokens: vec![
                 Token {
-                    address: H160([0x11; 20]),
+                    address: Address::repeat_byte(0x11),
                     decimals: 1,
                     weight: Some(bfp!("1.337")),
                 },
                 Token {
-                    address: H160([0x22; 20]),
+                    address: Address::repeat_byte(0x22),
                     decimals: 2,
                     weight: Some(bfp!("4.2")),
                 },
@@ -187,8 +187,8 @@ mod tests {
             PoolInfo {
                 common: common::PoolInfo {
                     id: H256([2; 32]),
-                    address: H160([1; 20]),
-                    tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
+                    address: Address::repeat_byte(1),
+                    tokens: vec![Address::repeat_byte(0x11), Address::repeat_byte(0x22)],
                     scaling_factors: vec![Bfp::exp10(17), Bfp::exp10(16)],
                     block_created: 42,
                 },
@@ -205,17 +205,17 @@ mod tests {
         let pool = PoolData {
             pool_type: PoolType::Stable,
             id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0xfa; 20]),
+            address: Address::repeat_byte(1),
+            factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
             tokens: vec![
                 Token {
-                    address: H160([0x11; 20]),
+                    address: Address::repeat_byte(0x11),
                     decimals: 1,
                     weight: Some(bfp!("1.337")),
                 },
                 Token {
-                    address: H160([0x22; 20]),
+                    address: Address::repeat_byte(0x22),
                     decimals: 2,
                     weight: Some(bfp!("4.2")),
                 },
@@ -251,8 +251,12 @@ mod tests {
         let pool = factory
             .specialize_pool_info(common::PoolInfo {
                 id: H256([0x90; 32]),
-                tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
-                address: pool.address().into_legacy(),
+                tokens: vec![
+                    Address::repeat_byte(1),
+                    Address::repeat_byte(2),
+                    Address::repeat_byte(3),
+                ],
+                address: *pool.address(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
                 block_created: 42,
             })
@@ -265,11 +269,11 @@ mod tests {
     #[tokio::test]
     async fn fetch_pool_state() {
         let tokens = btreemap! {
-            H160([1; 20]) => common::TokenState {
+            Address::repeat_byte(1) => common::TokenState {
                 balance: bfp!("1000.0").as_uint256(),
                 scaling_factor: Bfp::exp10(0),
             },
-            H160([2; 20]) => common::TokenState {
+            Address::repeat_byte(2) => common::TokenState {
                 balance: 10_000_000.into(),
                 scaling_factor: Bfp::exp10(12),
             },
@@ -287,7 +291,7 @@ mod tests {
         let pool_info = PoolInfo {
             common: common::PoolInfo {
                 id: H256([0x90; 32]),
-                address: H160([0x90; 20]),
+                address: Address::repeat_byte(0x90),
                 tokens: tokens.keys().copied().collect(),
                 scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
                 block_created: 1337,
