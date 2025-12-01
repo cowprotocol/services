@@ -1,4 +1,4 @@
-mod detector;
+pub mod detector;
 
 use {
     self::detector::{DetectionError, Detector},
@@ -110,6 +110,7 @@ impl Display for TokenConfiguration {
             |f: &mut Formatter, (addr, strategy): (&Address, &Strategy)| match strategy {
                 Strategy::SolidityMapping { slot } => write!(f, "{addr:?}@{slot}"),
                 Strategy::SoladyMapping => write!(f, "SoladyMapping({addr:?})"),
+                Strategy::DirectSlot { slot } => write!(f, "DirectSlot({addr:?}@{slot:?})"),
             };
 
         let mut entries = self.0.iter();
@@ -193,6 +194,11 @@ pub enum Strategy {
     ///
     /// [^1]: <https://github.com/Vectorized/solady/blob/6122858a3aed96ee9493b99f70a245237681a95f/src/tokens/ERC20.sol#L75-L81>
     SoladyMapping,
+    /// Strategy that directly uses the storage slot discovered via
+    /// debug_traceCall. This is similar to Foundry's `deal` approach where
+    /// we trace a balanceOf call to find which storage slot is accessed for
+    /// a given account.
+    DirectSlot { slot: H256 },
 }
 
 impl Strategy {
@@ -212,6 +218,7 @@ impl Strategy {
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
                 H256(signing::keccak256(&buf))
             }
+            Self::DirectSlot { slot } => *slot,
         };
 
         let value = {
@@ -224,7 +231,7 @@ impl Strategy {
     }
 }
 
-type DetectorCache = Mutex<SizedCache<Address, Option<Strategy>>>;
+type DetectorCache = Mutex<SizedCache<(Address, Address), Option<Strategy>>>;
 
 /// The default balance override provider.
 #[derive(Debug, Default)]
@@ -234,10 +241,10 @@ pub struct BalanceOverrides {
     /// These take priority over the auto-detection mechanism and are excluded
     /// from the cache in order to prevent them from getting cleaned up by
     /// the caching policy.
-    hardcoded: HashMap<Address, Strategy>,
+    pub hardcoded: HashMap<Address, Strategy>,
     /// The balance override detector and its cache. Set to `None` if
     /// auto-detection is not enabled.
-    detector: Option<(Detector, DetectorCache)>,
+    pub detector: Option<(Detector, DetectorCache)>,
 }
 
 impl BalanceOverrides {
@@ -252,19 +259,22 @@ impl BalanceOverrides {
         }
     }
 
-    async fn cached_detection(&self, token: Address) -> Option<Strategy> {
+    async fn cached_detection(&self, token: Address, holder: Address) -> Option<Strategy> {
+        println!("USE CACHED DETECTION FLOW, PRE DETECTOR INIT");
         let (detector, cache) = self.detector.as_ref()?;
         tracing::trace!(?token, "attempting to auto-detect");
 
+        println!("USE CACHED DETECTION FLOW");
+
         {
             let mut cache = cache.lock().unwrap();
-            if let Some(strategy) = cache.cache_get(&token) {
+            if let Some(strategy) = cache.cache_get(&(token, holder)) {
                 tracing::trace!(?token, "cache hit");
                 return strategy.clone();
             }
         }
 
-        let strategy = detector.detect(token).await;
+        let strategy = detector.detect(token, holder).await;
 
         // Only cache when we successfully detect the token, or we can't find
         // it. Anything else is likely a temporary simulator (i.e. node) failure
@@ -272,7 +282,10 @@ impl BalanceOverrides {
         if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
             tracing::debug!(?token, ?strategy, "caching auto-detected strategy");
             let cached_strategy = strategy.as_ref().ok().cloned();
-            cache.lock().unwrap().cache_set(token, cached_strategy);
+            cache
+                .lock()
+                .unwrap()
+                .cache_set((token, holder), cached_strategy);
         } else {
             tracing::warn!(
                 ?token,
@@ -291,15 +304,19 @@ impl BalanceOverriding for BalanceOverrides {
         &self,
         request: BalanceOverrideRequest,
     ) -> Option<(Address, StateOverride)> {
+        println!("ACTUALLY CHECK BALANCE OVERRIDING");
         let strategy = if let Some(strategy) = self.hardcoded.get(&request.token) {
             tracing::trace!(token = ?request.token, "using pre-configured balance override strategy");
             Some(strategy.clone())
         } else {
-            self.cached_detection(request.token).await
+            self.cached_detection(request.token, request.holder).await
         }?;
 
         let (key, value) = strategy.state_override(&request.holder, &request.amount);
-        tracing::trace!(?strategy, ?key, ?value, "overriding token balance");
+        println!(
+            "overriding token balance: {:?} {:?} {:?}",
+            strategy, key, value
+        );
 
         Some((
             request.token,
@@ -321,6 +338,7 @@ impl BalanceOverriding for DummyOverrider {
         &self,
         _request: BalanceOverrideRequest,
     ) -> Option<(Address, StateOverride)> {
+        println!("DUMMY OVERRIDE");
         None
     }
 }
