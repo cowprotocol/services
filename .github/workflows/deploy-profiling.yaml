@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - jemalloc-profiling-support
+      - ilya/mem-leak-experiment
 
 jobs:
   deploy-profiling:

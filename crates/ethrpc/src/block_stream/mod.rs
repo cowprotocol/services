@@ -172,7 +172,7 @@ pub async fn current_block_ws_stream(
     let first_block = BlockInfo::try_from(first_block).context("failed to parse initial block")?;
 
     let (sender, receiver) = watch::channel(first_block);
-    let update_future = async move {
+    tokio::task::spawn(async move {
         // Keep WebSocket provider alive to maintain connection
         let _ws_provider = ws_provider;
         let mut previous_block = first_block;
@@ -187,6 +187,9 @@ pub async fn current_block_ws_stream(
                     continue;
                 }
             };
+
+            let _span =
+                tracing::info_span!("current_block_stream", block = block_info.number).entered();
 
             update_current_block_metrics(block_info.number);
 
@@ -217,9 +220,7 @@ pub async fn current_block_ws_stream(
 
         // If we reach here, the stream ended permanently
         tracing::error!("block stream ended after max reconnection attempts");
-    };
-
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    });
     Ok(receiver)
 }
 

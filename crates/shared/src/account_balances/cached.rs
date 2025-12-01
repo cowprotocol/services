@@ -116,42 +116,47 @@ impl Balances {
         let cache = self.balance_cache.clone();
         let mut stream = into_stream(block_stream);
 
-        let task = async move {
+        tokio::spawn(async move {
             while let Some(block) = stream.next().await {
-                let balances_to_update = {
+                let span = tracing::info_span!("balance_cache", block = block.number);
+                async {
+                    let balances_to_update = {
+                        let mut cache = cache.lock().unwrap();
+                        cache.last_seen_block = block.number;
+                        cache
+                            .data
+                            .iter()
+                            .filter_map(|(query, entry)| {
+                                // Only update balances that have been requested recently.
+                                let oldest_allowed_request =
+                                    cache.last_seen_block.saturating_sub(EVICTION_TIME);
+                                (entry.requested_at >= oldest_allowed_request)
+                                    .then_some(query.clone())
+                            })
+                            .collect_vec()
+                    };
+
+                    let results = inner.get_balances(&balances_to_update).await;
+
                     let mut cache = cache.lock().unwrap();
-                    cache.last_seen_block = block.number;
-                    cache
-                        .data
-                        .iter()
-                        .filter_map(|(query, entry)| {
-                            // Only update balances that have been requested recently.
-                            let oldest_allowed_request =
-                                cache.last_seen_block.saturating_sub(EVICTION_TIME);
-                            (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
-                        })
-                        .collect_vec()
-                };
-
-                let results = inner.get_balances(&balances_to_update).await;
-
-                let mut cache = cache.lock().unwrap();
-                balances_to_update
-                    .into_iter()
-                    .zip(results)
-                    .for_each(|(query, result)| {
-                        if let Ok(balance) = result {
-                            cache.update_balance(&query, balance, block.number);
-                        }
+                    balances_to_update
+                        .into_iter()
+                        .zip(results)
+                        .for_each(|(query, result)| {
+                            if let Ok(balance) = result {
+                                cache.update_balance(&query, balance, block.number);
+                            }
+                        });
+                    cache.data.retain(|_, value| {
+                        // Only keep balances where we know we have the most recent data.
+                        value.updated_at >= block.number
                     });
-                cache.data.retain(|_, value| {
-                    // Only keep balances where we know we have the most recent data.
-                    value.updated_at >= block.number
-                });
+                }
+                .instrument(span)
+                .await;
             }
             tracing::error!("block stream terminated unexpectedly");
-        };
-        tokio::spawn(task.instrument(tracing::info_span!("balance_cache")));
+        });
     }
 }
 

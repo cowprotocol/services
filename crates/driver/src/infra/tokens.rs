@@ -39,10 +39,7 @@ impl Fetcher {
             cache: RwLock::new(HashMap::new()),
             requests: BoxRequestSharing::labelled("token_info".into()),
         });
-        tokio::task::spawn(
-            update_task(block_stream, Arc::downgrade(&inner))
-                .instrument(tracing::info_span!("token_fetcher")),
-        );
+        tokio::task::spawn(update_task(block_stream, Arc::downgrade(&inner)));
         Self(inner)
     }
 
@@ -61,14 +58,23 @@ impl Fetcher {
 /// fetcher is dropped.
 async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>) {
     let mut stream = block_stream::into_stream(blocks);
-    while stream.next().await.is_some() {
-        let inner = match inner.upgrade() {
-            Some(inner) => inner,
-            // Fetcher was dropped, stop update task.
-            None => break,
-        };
-        if let Err(err) = update_balances(inner).await {
-            tracing::warn!(?err, "error updating token cache");
+    while let Some(block) = stream.next().await {
+        let span = tracing::info_span!("token_fetcher", block = block.number);
+        let should_break = async {
+            let inner = match inner.upgrade() {
+                Some(inner) => inner,
+                // Fetcher was dropped, stop update task.
+                None => return true,
+            };
+            if let Err(err) = update_balances(inner).await {
+                tracing::warn!(?err, "error updating token cache");
+            }
+            false
+        }
+        .instrument(span)
+        .await;
+        if should_break {
+            break;
         }
     }
 }

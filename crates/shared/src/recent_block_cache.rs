@@ -200,21 +200,28 @@ where
         block_stream: CurrentBlockWatcher,
         label: String,
     ) {
-        tokio::task::spawn(
-            async move {
-                let mut stream = ethrpc::block_stream::into_stream(block_stream);
-                while let Some(block) = stream.next().await {
+        tokio::task::spawn(async move {
+            let mut stream = ethrpc::block_stream::into_stream(block_stream);
+            while let Some(block) = stream.next().await {
+                let span =
+                    tracing::info_span!("cache_maintenance", cache = %label, block = block.number);
+                let should_break = async {
                     let Some(inner) = inner.upgrade() else {
                         tracing::debug!("cache no longer in use; terminate GC task");
-                        break;
+                        return true;
                     };
                     if let Err(err) = inner.update_cache_at_block(block.number).await {
                         tracing::warn!(?err, "failed to update cache");
                     }
+                    false
+                }
+                .instrument(span)
+                .await;
+                if should_break {
+                    break;
                 }
             }
-            .instrument(tracing::info_span!("cache_maintenance", cache = label)),
-        );
+        });
     }
 }
 
