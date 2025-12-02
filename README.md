@@ -111,6 +111,54 @@ cargo install --locked tokio-console
 tokio-console
 ```
 
+## Heap Profiling
+
+All binaries support opt-in heap profiling using jemalloc's profiling capabilities. This allows you to analyze memory usage in production environments without restarting services.
+
+### Building with Heap Profiling
+
+Build with the `jemalloc-profiling` feature:
+```bash
+cargo build --release --features jemalloc-profiling
+```
+
+Or with Docker:
+```bash
+docker build --build-arg CARGO_BUILD_FEATURES="--features jemalloc-profiling" .
+```
+
+### Generating Heap Dumps
+
+When running with the profiling feature enabled, each binary opens a UNIX socket at `/tmp/heap_dump_<binary_name>.sock`. To generate a heap dump, connect to the socket and send the "dump" command:
+
+**Note:** Services must be run with the `MALLOC_CONF` environment variable set:
+```bash
+MALLOC_CONF="prof:true,prof_active:true,lg_prof_sample:19"
+```
+
+```bash
+# From Kubernetes
+kubectl exec <pod> -n <namespace> -- sh -c "echo dump | nc -U /tmp/heap_dump_orderbook.sock" > heap.pprof
+
+# From Docker
+docker exec <container> sh -c "echo dump | nc -U /tmp/heap_dump_orderbook.sock" > heap.pprof
+```
+
+### Analyzing Heap Dumps
+
+The dumps are in pprof format and can be analyzed using Google's pprof tool:
+
+```bash
+# Install pprof
+go install github.com/google/pprof@latest
+
+# Interactive web UI
+pprof -http=:8080 heap.pprof
+
+# Command-line analysis
+pprof -top heap.pprof
+```
+
 ## Changing Log Filters
 
 It's possible to change the tracing log filter while the process is running. This can be useful to debug an error that requires more verbose logs but which might no longer appear after restarting the system.

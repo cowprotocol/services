@@ -37,7 +37,7 @@ impl Authenticator for GPv2AllowListAuthentication::Instance {
         // find an eligible caller in the callstack. To avoid this case the
         // underlying call needs to happen on the same block the transaction happened.
         Ok(self
-            .isSolver(prospective_solver.0.into_alloy())
+            .isSolver(prospective_solver)
             .block(block.into_alloy())
             .call()
             .await
@@ -76,7 +76,7 @@ impl Transaction {
         // Find trace call to settlement contract
         let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
             .map(|(trace, path)| (trace.input.clone(), path.clone()))
-            // All transactions emitting settlement events should have a /settle call, 
+            // All transactions emitting settlement events should have a /settle call,
             // otherwise it's an execution client bug
             .ok_or(Error::MissingCalldata)?;
 
@@ -146,7 +146,7 @@ impl Transaction {
                             amount: trade.buyAmount.into_legacy().into(),
                         },
                         side: flags.side(),
-                        receiver: trade.receiver.into_legacy().into(),
+                        receiver: trade.receiver,
                         valid_to: trade.validTo,
                         app_data: domain::auction::order::AppDataHash(trade.appData.into()),
                         fee_amount: trade.feeAmount.into_legacy().into(),

@@ -5,6 +5,7 @@ use {
         infra::persistence::dto::{self, order::Order},
     },
     chrono::{DateTime, Utc},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
@@ -65,7 +66,8 @@ impl Request {
             surplus_capturing_jit_order_owners: auction
                 .surplus_capturing_jit_order_owners
                 .iter()
-                .map(|address| address.0)
+                .copied()
+                .map(IntoLegacy::into_legacy)
                 .collect::<Vec<_>>(),
         };
         Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
@@ -113,7 +115,7 @@ impl Solution {
     ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
         Ok(domain::competition::Solution::new(
             self.solution_id,
-            self.submission_address.into(),
+            self.submission_address.into_alloy(),
             domain::competition::Score::try_new(self.score.into())?,
             self.orders
                 .into_iter()
