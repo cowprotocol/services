@@ -324,20 +324,21 @@ impl Mempools {
         nonce: eth::U256,
     ) -> anyhow::Result<eth::GasPrice> {
         let tx = self.find_pending_tx_in_mempool(solver, nonce).await?;
-        let replacement_gas_price = eth::GasPrice::new(
-            U256::from(tx.max_fee_per_gas())
-                .checked_mul_f64(GAS_PRICE_BUMP)
-                .context("gas price bump overflowed the max_fee_per_gas")?
-                .into(),
-            eth::U256::from(
+        let bumped_max_fee_per_gas = U256::from(tx.max_fee_per_gas())
+            .checked_mul_f64(GAS_PRICE_BUMP)
+            .context("gas price bump overflowed the max_fee_per_gas")?
+            .into();
+        let replacement_gas_price = eth::GasPrice {
+            max: bumped_max_fee_per_gas,
+            tip: eth::U256::from(
                 tx.max_priority_fee_per_gas()
                     .context("pending tx is not EIP 1559")?,
             )
             .checked_mul_f64(GAS_PRICE_BUMP)
             .context("gas price bump overflowed the max_priority_fee_per_gas")?
             .into(),
-            U256::from(tx.max_fee_per_gas()).into(),
-        );
+            base: bumped_max_fee_per_gas,
+        };
         Ok(replacement_gas_price)
     }
 
