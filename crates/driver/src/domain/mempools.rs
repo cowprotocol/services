@@ -24,7 +24,7 @@ use {
 
 /// Factor by how much a transaction fee needs to be increased to override a
 /// pending transaction at the same nonce.
-const GAS_PRICE_BUMP: f64 = 1.125;
+const GAS_PRICE_BUMP: f64 = 1.13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
@@ -137,9 +137,19 @@ impl Mempools {
         // transactions (e.g., settlement tx and cancellation tx) from the same
         // solver address.
         let nonce = mempool.get_nonce(solver.address()).await?;
-        let hash = mempool
+        let hash = match mempool
             .submit(tx.clone(), settlement.gas, solver, nonce)
-            .await?;
+            .await
+        {
+            Ok(hash) => hash,
+            Err(err) => {
+                let pending_tx = self
+                    .find_pending_tx_in_mempool(solver.address().0.into_alloy(), nonce.as_u64())
+                    .await;
+                tracing::warn!(?tx, ?nonce, ?solver, ?settlement.gas, ?err, ?pending_tx, "failed to submit settlement tx");
+                return Err(err);
+            }
+        };
         let submitted_at_block = self.ethereum.current_block().borrow().number;
         tracing::debug!(
             ?hash,
@@ -263,7 +273,7 @@ impl Mempools {
             .await
         {
             Ok(tx) => {
-                tracing::debug!("found target tx in the mempool");
+                tracing::debug!(?tx, "found target tx in the mempool");
                 eth::GasPrice::new(
                     U256::from(tx.max_fee_per_gas()).into(),
                     eth::U256::from(
