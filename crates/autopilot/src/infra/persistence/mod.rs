@@ -101,39 +101,34 @@ impl Persistence {
         let pool = self.postgres.pool.clone();
         tokio::spawn(async move {
             loop {
-                match sqlx::postgres::PgListener::connect_with(&pool).await {
-                    Ok(mut listener) => {
-                        tracing::info!("connected to PostgreSQL for order notifications");
-
-                        if let Err(err) = listener.listen("new_order").await {
-                            tracing::error!(?err, "failed to listen on 'new_order' channel");
-                            tokio::time::sleep(Duration::from_secs(5)).await;
-                            continue;
-                        }
-
-                        loop {
-                            match listener.recv().await {
-                                Ok(notification) => {
-                                    let order_uid = notification.payload();
-                                    tracing::debug!(
-                                        order_uid,
-                                        "received order notification from postgres"
-                                    );
-                                    notify.notify_one();
-                                }
-                                Err(err) => {
-                                    tracing::error!(
-                                        ?err,
-                                        "error receiving notification from postgres"
-                                    );
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
+                    Ok(listener) => listener,
                     Err(err) => {
                         tracing::error!(?err, "failed to create PostgreSQL listener");
                         tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+
+                tracing::info!("connected to PostgreSQL for order notifications");
+
+                if let Err(err) = listener.listen("new_order").await {
+                    tracing::error!(?err, "failed to listen on 'new_order' channel");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+
+                loop {
+                    match listener.recv().await {
+                        Ok(notification) => {
+                            let order_uid = notification.payload();
+                            tracing::debug!(order_uid, "received order notification from postgres");
+                            notify.notify_one();
+                        }
+                        Err(err) => {
+                            tracing::error!(?err, "error receiving notification from postgres");
+                            break;
+                        }
                     }
                 }
             }
