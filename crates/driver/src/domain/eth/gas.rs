@@ -31,13 +31,13 @@ impl Add for Gas {
 #[derive(Debug, Clone, Copy)]
 pub struct GasPrice {
     /// The maximum total fee that should be charged.
-    max: FeePerGas,
+    pub max: FeePerGas,
     /// The maximum priority fee (i.e. the tip to the block proposer) that
     /// can be charged.
-    tip: FeePerGas,
+    pub tip: FeePerGas,
     /// The current base gas price that will be charged to all accounts on the
     /// next block.
-    base: FeePerGas,
+    pub base: FeePerGas,
 }
 
 impl GasPrice {
