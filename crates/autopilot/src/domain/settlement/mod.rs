@@ -354,6 +354,7 @@ mod tests {
             eth,
             settlement::{OrderMatchKey, trade_to_key},
         },
+        alloy::primitives::address,
         ethcontract::BlockId,
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
@@ -584,9 +585,7 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
-            "9008d19f58aabd9ed0d60971565aa8510560ab41"
-        )));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
 
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
@@ -694,9 +693,7 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
-            "9008d19f58aabd9ed0d60971565aa8510560ab41"
-        )));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -840,9 +837,7 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
-            "9008d19f58aabd9ed0d60971565aa8510560ab41"
-        )));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -1018,9 +1013,8 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
-            "9008d19f58aabd9ed0d60971565aa8510560ab41"
-        )));
+        let settlement_contract =
+            eth::Address::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -1056,8 +1050,8 @@ mod tests {
         let auction = super::Auction {
             block: eth::BlockNo(0),
             prices,
-            surplus_capturing_jit_order_owners: HashSet::from([eth::Address(
-                eth::H160::from_slice(&hex!("f08d4dea369c456d26a3168ff0024b904f2d8b91")),
+            surplus_capturing_jit_order_owners: HashSet::from([address!(
+                "f08d4dea369c456d26a3168ff0024b904f2d8b91"
             )]),
             id: 0,
             orders: Default::default(),
@@ -1202,9 +1196,7 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
-            "9008d19f58aabd9ed0d60971565aa8510560ab41"
-        )));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -1429,9 +1421,7 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "8f05589c4b810bc2f706854508d66d447cd971f8354a4bb0b3471ceb0a466bc7"
         ));
-        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
-            "9008d19f58aabd9ed0d60971565aa8510560ab41"
-        )));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {

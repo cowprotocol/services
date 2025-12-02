@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain,
-        domain::{eth, fee},
-    },
+    crate::domain::{self, eth, fee},
     primitive_types::{H160, H256, U256},
     std::fmt::{self, Debug, Display, Formatter},
 };
@@ -37,7 +34,7 @@ pub struct OrderUid(pub [u8; 56]);
 
 impl OrderUid {
     pub fn owner(&self) -> eth::Address {
-        self.parts().1.into()
+        eth::Address::from(self.parts().1.0)
     }
 
     /// Splits an order UID into its parts.
