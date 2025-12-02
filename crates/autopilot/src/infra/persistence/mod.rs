@@ -382,7 +382,7 @@ impl Persistence {
                 .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?
                 .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
+                .map(|owner| eth::Address::new(owner.0))
                 .collect();
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
