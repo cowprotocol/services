@@ -105,15 +105,16 @@ impl Detector {
         let trace_strategy = self.detect_with_trace(token, holder).await;
         if let Ok(strategy) = trace_strategy {
             tracing::debug!(
-                "Trace-based detection succeeded for token {:?}: {:?}",
-                token, strategy
+                ?token,
+                ?strategy,
+                "Trace-based detection succeeded"
             );
             return Ok(strategy);
         } else {
             tracing::debug!(
-                "Trace-based detection failed, falling back to heuristic detection for token \
-                 {:?}: {:#?}",
-                token, trace_strategy
+                ?token,
+                ?trace_strategy,
+                "Trace-based detection failed, falling back to heuristic detection",
             );
         }
 
@@ -206,6 +207,8 @@ impl Detector {
 
         // Iterate through slots in reverse order (last accessed is most likely the
         // balance)
+        // We check slots individually/one at a time instead of all at once because
+        // changing unnecessary storage slots could negatively affect the execution (ex. overriding an upgradable proxy contract target)
         for (i, slot) in storage_slots.iter().rev().enumerate() {
             if let Ok(strategy) = self.verify_slot_is_balance(token, holder, *slot).await {
                 tracing::debug!(
