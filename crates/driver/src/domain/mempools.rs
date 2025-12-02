@@ -10,9 +10,12 @@ use {
             eth::{TxId, TxStatus},
         },
         infra::{self, Ethereum, observe, solver::Solver},
+        util::conv::u256::U256Ext,
     },
+    alloy::{consensus::Transaction, providers::ext::TxPoolApi},
     anyhow::Context,
-    ethrpc::block_stream::into_stream,
+    ethcontract::U256,
+    ethrpc::{alloy::conversions::IntoAlloy, block_stream::into_stream},
     futures::{FutureExt, StreamExt, future::select_ok},
     std::ops::Sub,
     thiserror::Error,
@@ -255,6 +258,38 @@ impl Mempools {
         blocks_elapsed: u64,
         nonce: eth::U256,
     ) -> Result<TxId, Error> {
+        let new_gas_price = match self
+            .find_pending_tx_in_mempool(solver.address().0.into_alloy(), nonce.as_u64())
+            .await
+        {
+            Ok(tx) => {
+                tracing::debug!("found target tx in the mempool");
+                eth::GasPrice::new(
+                    U256::from(tx.max_fee_per_gas()).into(),
+                    eth::U256::from(
+                        tx.max_priority_fee_per_gas()
+                            .context("pending tx is not EIP 1559")?,
+                    )
+                    .checked_mul_f64(GAS_PRICE_BUMP)
+                    .context("gas price bump overflowed the priority fee")?
+                    .into(),
+                    U256::from(tx.max_fee_per_gas()).into(),
+                )
+            }
+            Err(err) => {
+                // In case we weren't able to find the target tx we just send a cancellation
+                // based on the information we know about our previous submission attempt.
+                // We can hit this path under a few different conditions (RPC doesn't expose the
+                // `txpool` API, tx landed in the meantime).
+                tracing::warn!(
+                    ?err,
+                    previous = ?pending,
+                    "failed to find target tx in the mempool; computing new gas price based on previous data"
+                );
+                pending * GAS_PRICE_BUMP
+            }
+        };
+
         let cancellation = eth::Tx {
             from: solver.address(),
             to: solver.address(),
@@ -262,8 +297,6 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
-        let gas_price_bump_factor = GAS_PRICE_BUMP.powi(blocks_elapsed.max(1) as i32);
-        let new_gas_price = pending * gas_price_bump_factor;
         let gas = competition::solution::settlement::Gas {
             estimate: CANCELLATION_GAS_AMOUNT.into(),
             limit: CANCELLATION_GAS_AMOUNT.into(),
@@ -271,13 +304,36 @@ impl Mempools {
         };
         tracing::debug!(
             ?blocks_elapsed,
-            original_gas_price = ?pending,
             ?new_gas_price,
-            bump_factor = ?gas_price_bump_factor,
+            ?nonce,
             "Cancelling transaction with adjusted gas price"
         );
 
         mempool.submit(cancellation, gas, solver, nonce).await
+    }
+
+    async fn find_pending_tx_in_mempool(
+        &self,
+        signer: alloy::primitives::Address,
+        nonce: u64,
+    ) -> anyhow::Result<alloy::rpc::types::Transaction> {
+        let tx_pool_content = self
+            .ethereum
+            .web3()
+            .alloy
+            .txpool_content_from(signer)
+            .await
+            .context("failed to query pending transactions")?;
+
+        // find the one with the specified nonce
+        let pending_tx = tx_pool_content
+            .pending
+            .into_iter()
+            .chain(tx_pool_content.queued)
+            .find(|(_signer, tx)| tx.nonce() == nonce)
+            .context("no pending transaction with target nonce ({nonce})")?
+            .1;
+        Ok(pending_tx)
     }
 }
 
