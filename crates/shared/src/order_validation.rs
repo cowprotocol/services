@@ -46,7 +46,9 @@ use {
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
-    }, std::{sync::Arc, time::Duration}, tracing::instrument
+    },
+    std::{sync::Arc, time::Duration},
+    tracing::instrument,
 };
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
@@ -859,8 +861,7 @@ pub enum OrderValidToError {
 /// This also checks for orders selling wrapped native token for native token.
 fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &Address) -> bool {
     order.sell_token == order.buy_token
-        || (order.sell_token == *native_token
-            && order.buy_token == BUY_ETH_ADDRESS)
+        || (order.sell_token == *native_token && order.buy_token == BUY_ETH_ADDRESS)
 }
 
 /// Retrieves the quote for an order that is being created and verify that its
@@ -1029,7 +1030,7 @@ mod tests {
             signature_validator::MockSignatureValidating,
         },
         alloy::{
-            primitives::{Address, B160, U160, address},
+            primitives::{Address, U160, address},
             providers::{Provider, ProviderBuilder, mock::Asserter},
         },
         ethcontract::web3::signing::SecretKeyRef,

@@ -91,7 +91,7 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
-        let liquidity = match (solver.liquidity(), self.liquidity_pairs()) {
+        let liquidity = match (solver.liquidity(), self.token_liquidity()) {
             (solver::Liquidity::Fetch, Some(pairs)) => {
                 liquidity
                     .fetch(&pairs, infra::liquidity::AtBlock::Recent)
@@ -226,7 +226,7 @@ impl Order {
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn liquidity_pairs(&self) -> Option<HashSet<liquidity::TokenPair>> {
+    fn token_liquidity(&self) -> Option<HashSet<liquidity::TokenPair>> {
         liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
             .map(|pair| iter::once(pair).collect())
             .ok()
