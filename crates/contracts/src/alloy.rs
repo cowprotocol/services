@@ -640,7 +640,8 @@ crate::bindings!(
         // <https://polygonscan.com/tx/0xe2a4d996de0d6a23108f701b37acba6c47ee34448bb51fec5c23f542a6f3ccc8>
         POLYGON => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 35701901),
         // <https://plasmascan.to/tx/0x6d19057fb8b25b17fe9107be7726007d503dae50d1b0965b422fc3b512bf5dbe?chainid=9745>
-        PLASMA => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 7808),
+        PLASMA => (address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"), 7808
+),
     }
 );
 
