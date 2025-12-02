@@ -4,10 +4,7 @@ use {
     anyhow::Context,
     contracts::alloy::ERC20,
     ethcontract::{Address, H160, H256, U256, state_overrides::StateOverride},
-    ethrpc::{
-        alloy::conversions::{IntoAlloy},
-        extensions::DebugNamespace,
-    },
+    ethrpc::{alloy::conversions::IntoAlloy, extensions::DebugNamespace},
     maplit::hashmap,
     std::{
         collections::HashMap,
@@ -37,14 +34,19 @@ impl std::ops::Deref for Detector {
     }
 }
 
-fn merge_state_overrides(overrides: Vec<HashMap<H160, StateOverride>>) -> HashMap<H160, StateOverride> {
+fn merge_state_overrides(
+    overrides: Vec<HashMap<H160, StateOverride>>,
+) -> HashMap<H160, StateOverride> {
     let mut merged = HashMap::new();
 
     for override_map in overrides {
         for (address, state_override) in override_map {
-            merged.entry(address)
+            merged
+                .entry(address)
                 .and_modify(|existing: &mut StateOverride| {
-                    if let (Some(existing_diff), Some(new_diff)) = (&mut existing.state_diff, &state_override.state_diff) {
+                    if let (Some(existing_diff), Some(new_diff)) =
+                        (&mut existing.state_diff, &state_override.state_diff)
+                    {
                         existing_diff.extend(new_diff.clone());
                     }
                 })
@@ -58,8 +60,10 @@ fn merge_state_overrides(overrides: Vec<HashMap<H160, StateOverride>>) -> HashMa
 impl Detector {
     /// Creates a new balance override detector.
     pub fn new(web3: ethrpc::Web3, probing_depth: u8) -> Self {
-
-        Self(Arc::new(Inner { web3, probing_depth }))
+        Self(Arc::new(Inner {
+            web3,
+            probing_depth,
+        }))
     }
 
     fn generate_strategies(&self, target_contract: H160) -> Vec<StrategyHelper> {
@@ -80,7 +84,10 @@ impl Detector {
         for start_slot in entry_points {
             let mut map_slot = U256::from(start_slot);
             for _ in 0..self.probing_depth {
-                strategies.push(Strategy::SolidityMapping { target_contract: H160::default(), map_slot });
+                strategies.push(Strategy::SolidityMapping {
+                    target_contract: H160::default(),
+                    map_slot,
+                });
                 map_slot += U256::one();
             }
         }
@@ -100,15 +107,10 @@ impl Detector {
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError> {
-
         // First try the trace-based detection if the node supports it
         let trace_strategy = self.detect_with_trace(token, holder).await;
         if let Ok(strategy) = trace_strategy {
-            tracing::debug!(
-                ?token,
-                ?strategy,
-                "Trace-based detection succeeded"
-            );
+            tracing::debug!(?token, ?strategy, "Trace-based detection succeeded");
             return Ok(strategy);
         } else {
             tracing::debug!(
@@ -125,7 +127,7 @@ impl Detector {
             strategies
                 .iter()
                 .map(|helper| helper.strategy.state_override(&holder, &helper.balance))
-                .collect()
+                .collect(),
         );
 
         let balance = token
@@ -195,7 +197,10 @@ impl Detector {
                 iterations = 0,
                 "detected balance slot via trace (single SLOAD) for token",
             );
-            return Ok(Strategy::DirectSlot { target_contract: slot.0, slot: slot.1 });
+            return Ok(Strategy::DirectSlot {
+                target_contract: slot.0,
+                slot: slot.1,
+            });
         }
 
         // Multiple storage slots accessed - test each one to find the balance slot
@@ -208,7 +213,8 @@ impl Detector {
         // Iterate through slots in reverse order (last accessed is most likely the
         // balance)
         // We check slots individually/one at a time instead of all at once because
-        // changing unnecessary storage slots could negatively affect the execution (ex. overriding an upgradable proxy contract target)
+        // changing unnecessary storage slots could negatively affect the execution (ex.
+        // overriding an upgradable proxy contract target)
         for (i, slot) in storage_slots.iter().rev().enumerate() {
             if let Ok(strategy) = self.verify_slot_is_balance(token, holder, *slot).await {
                 tracing::debug!(
@@ -233,7 +239,11 @@ impl Detector {
 
     /// Extracts storage slots accessed via SLOAD operations from struct logs.
     /// Returns slots in the order they were accessed.
-    fn extract_sload_slots(&self, trace: &ethrpc::extensions::StructLogTrace, initial_storage_context: H160) -> Vec<(H160, H256)> {
+    fn extract_sload_slots(
+        &self,
+        trace: &ethrpc::extensions::StructLogTrace,
+        initial_storage_context: H160,
+    ) -> Vec<(H160, H256)> {
         let mut storage_context: H160 = initial_storage_context;
         let mut slots = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -298,7 +308,10 @@ impl Detector {
 
         // If the balance matches our test value, we found the right slot
         if balance == test_balance.into_alloy() {
-            Ok(Strategy::DirectSlot { target_contract: slot.0, slot: slot.1 })
+            Ok(Strategy::DirectSlot {
+                target_contract: slot.0,
+                slot: slot.1,
+            })
         } else {
             Err(DetectionError::NotFound)
         }
@@ -370,10 +383,13 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::SolidityMapping { 
-            target_contract: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-            map_slot: 3.into()
-        });
+        assert_eq!(
+            storage,
+            Strategy::SolidityMapping {
+                target_contract: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                map_slot: 3.into()
+            }
+        );
 
         let storage = detector
             .detect(
@@ -397,7 +413,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::SoladyMapping { target_contract: addr!("0000000000c5dc95539589fbd24be07c6c14eca4") });
+        assert_eq!(
+            storage,
+            Strategy::SoladyMapping {
+                target_contract: addr!("0000000000c5dc95539589fbd24be07c6c14eca4")
+            }
+        );
     }
 
     /// Tests that we can detect storage slots by probing the first
@@ -416,6 +437,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::SolidityMapping { target_contract: addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"), map_slot: 51.into() });
+        assert_eq!(
+            storage,
+            Strategy::SolidityMapping {
+                target_contract: addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
+                map_slot: 51.into()
+            }
+        );
     }
 }

@@ -108,9 +108,17 @@ impl Display for TokenConfiguration {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let format_entry =
             |f: &mut Formatter, (addr, strategy): (&Address, &Strategy)| match strategy {
-                Strategy::SolidityMapping { target_contract, map_slot } => write!(f, "SolidityMapping({target_contract:?}@{map_slot})"),
-                Strategy::SoladyMapping { target_contract } => write!(f, "SoladyMapping({target_contract})"),
-                Strategy::DirectSlot { target_contract, slot  } => write!(f, "DirectSlot({addr:?}: {target_contract:?}@{slot})"),
+                Strategy::SolidityMapping {
+                    target_contract,
+                    map_slot,
+                } => write!(f, "SolidityMapping({target_contract:?}@{map_slot})"),
+                Strategy::SoladyMapping { target_contract } => {
+                    write!(f, "SoladyMapping({target_contract})")
+                }
+                Strategy::DirectSlot {
+                    target_contract,
+                    slot,
+                } => write!(f, "DirectSlot({addr:?}: {target_contract:?}@{slot})"),
             };
 
         let mut entries = self.0.iter();
@@ -189,7 +197,10 @@ pub enum Strategy {
     /// The strategy is configured with the storage slot [^1] of the mapping.
     ///
     /// [^1]: <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>
-    SolidityMapping { target_contract: H160, map_slot: U256 },
+    SolidityMapping {
+        target_contract: H160,
+        map_slot: U256,
+    },
     /// Strategy computing storage slot for balances based on the Solady library
     /// [^1].
     ///
@@ -207,7 +218,10 @@ impl Strategy {
     /// holder and amount.
     fn state_override(&self, holder: &Address, amount: &U256) -> HashMap<H160, StateOverride> {
         let (target_contract, key) = match self {
-            Self::SolidityMapping { target_contract, map_slot } => {
+            Self::SolidityMapping {
+                target_contract,
+                map_slot,
+            } => {
                 let mut buf = [0; 64];
                 buf[12..32].copy_from_slice(holder.as_fixed_bytes());
                 map_slot.to_big_endian(&mut buf[32..64]);
@@ -219,7 +233,10 @@ impl Strategy {
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
                 (target_contract, H256(signing::keccak256(&buf)))
             }
-            Self::DirectSlot { target_contract, slot } => (target_contract, *slot),
+            Self::DirectSlot {
+                target_contract,
+                slot,
+            } => (target_contract, *slot),
         };
 
         let value = {
@@ -314,7 +331,10 @@ impl BalanceOverriding for BalanceOverrides {
             self.cached_detection(request.token, request.holder).await
         }?;
 
-        strategy.state_override(&request.holder, &request.amount).into_iter().last()
+        strategy
+            .state_override(&request.holder, &request.amount)
+            .into_iter()
+            .last()
     }
 }
 
