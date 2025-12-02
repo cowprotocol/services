@@ -92,8 +92,8 @@ pub struct RunLoop {
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     winner_selection: winner_selection::Arbitrator,
-    /// Receiver for new order notifications from the database
-    new_order_receiver: Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<()>>>,
+    /// Notifier that wakes the main loop on new blocks or orders
+    wake_notify: Arc<tokio::sync::Notify>,
 }
 
 impl RunLoop {
@@ -113,11 +113,12 @@ impl RunLoop {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 
-        // Create channel for new order notifications
-        let (new_order_sender, new_order_receiver) = tokio::sync::mpsc::unbounded_channel();
+        // Create notifier that wakes the main loop on new blocks or orders
+        let wake_notify = Arc::new(tokio::sync::Notify::new());
 
-        // Spawn background task to listen for database notifications
-        Self::spawn_order_listener(persistence.clone(), new_order_sender);
+        // Spawn background tasks to listen for events
+        persistence.spawn_order_listener(wake_notify.clone());
+        Self::spawn_block_listener(eth.current_block().clone(), wake_notify.clone());
 
         Self {
             config,
@@ -132,7 +133,7 @@ impl RunLoop {
             maintenance,
             competition_updates_sender,
             winner_selection: winner_selection::Arbitrator { max_winners, weth },
-            new_order_receiver: Arc::new(Mutex::new(new_order_receiver)),
+            wake_notify,
         }
     }
 
@@ -159,8 +160,8 @@ impl RunLoop {
         let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
-            // Wait for either a new block or a new order before proceeding
-            self_arc.wait_for_block_or_order().await;
+            // Wait for a new block or order before proceeding
+            self_arc.wake_notify.notified().await;
 
             leader_lock_tracker.try_acquire().await;
 
@@ -193,79 +194,19 @@ impl RunLoop {
         leader_lock_tracker.release().await;
     }
 
-    /// Spawns a background task that listens for new order notifications from
-    /// PostgreSQL.
-    fn spawn_order_listener(
-        persistence: infra::Persistence,
-        sender: tokio::sync::mpsc::UnboundedSender<()>,
+    /// Spawns a background task that listens for new blocks from the
+    /// blockchain.
+    fn spawn_block_listener(
+        current_block: ethrpc::block_stream::CurrentBlockWatcher,
+        notify: Arc<tokio::sync::Notify>,
     ) {
         tokio::spawn(async move {
-            // Get a dedicated connection from the pool for listening
-            let pool = persistence.postgres().pool.clone();
-
             loop {
-                match sqlx::postgres::PgListener::connect_with(&pool).await {
-                    Ok(mut listener) => {
-                        tracing::info!("connected to PostgreSQL for order notifications");
-
-                        if let Err(err) = listener.listen("new_order").await {
-                            tracing::error!(?err, "failed to listen on 'new_order' channel");
-                            tokio::time::sleep(Duration::from_secs(5)).await;
-                            continue;
-                        }
-
-                        loop {
-                            match listener.recv().await {
-                                Ok(_notification) => {
-                                    tracing::debug!("received order notification from postgres");
-                                    match sender.send(()) {
-                                        Ok(_) => {}
-                                        Err(err) => {
-                                            tracing::error!(
-                                                ?err,
-                                                "failed to send order notification signal to main \
-                                                 loop - channel closed"
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    tracing::error!(
-                                        ?err,
-                                        "error receiving notification from postgres"
-                                    );
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(?err, "failed to create PostgreSQL listener");
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                    }
-                }
+                ethrpc::block_stream::next_block(&current_block).await;
+                tracing::debug!("received new block");
+                notify.notify_one();
             }
         });
-    }
-
-    /// Waits for either a new block to be mined or a new order to arrive in the
-    /// database.
-    async fn wait_for_block_or_order(&self) {
-        let next_block = ethrpc::block_stream::next_block(self.eth.current_block());
-        let mut receiver = self.new_order_receiver.lock().await;
-
-        tokio::select! {
-            _ = next_block => {
-                tracing::debug!("received new block")
-            }
-            result = receiver.recv() => {
-                if result.is_some() {
-                    tracing::debug!("received new order");
-                } else {
-                    tracing::error!("order notification channel closed");
-                }
-            }
-        }
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
