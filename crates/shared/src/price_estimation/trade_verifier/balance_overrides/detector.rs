@@ -3,20 +3,19 @@ use {
     crate::tenderly_api::SimulationError,
     anyhow::Context,
     contracts::alloy::ERC20,
-    ethcontract::{Address, H256, U256, state_overrides::StateOverride},
+    ethcontract::{Address, H160, H256, U256, state_overrides::StateOverride},
     ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::conversions::{IntoAlloy},
         extensions::DebugNamespace,
     },
     maplit::hashmap,
     std::{
+        collections::HashMap,
         fmt::{self, Debug, Formatter},
         sync::Arc,
     },
     thiserror::Error,
-    web3::{
-        types::{BlockNumber, CallRequest},
-    },
+    web3::types::{BlockNumber, CallRequest},
 };
 
 /// A heuristic balance override detector based on `eth_call` simulations.
@@ -26,9 +25,8 @@ use {
 pub struct Detector(Arc<Inner>);
 
 pub struct Inner {
+    probing_depth: u8,
     web3: ethrpc::Web3,
-    /// all strategies used to detect successful balance overrides
-    strategies: Vec<StrategyHelper>,
 }
 
 impl std::ops::Deref for Detector {
@@ -39,39 +37,59 @@ impl std::ops::Deref for Detector {
     }
 }
 
+fn merge_state_overrides(overrides: Vec<HashMap<H160, StateOverride>>) -> HashMap<H160, StateOverride> {
+    let mut merged = HashMap::new();
+
+    for override_map in overrides {
+        for (address, state_override) in override_map {
+            merged.entry(address)
+                .and_modify(|existing: &mut StateOverride| {
+                    if let (Some(existing_diff), Some(new_diff)) = (&mut existing.state_diff, &state_override.state_diff) {
+                        existing_diff.extend(new_diff.clone());
+                    }
+                })
+                .or_insert(state_override);
+        }
+    }
+
+    merged
+}
+
 impl Detector {
     /// Creates a new balance override detector.
     pub fn new(web3: ethrpc::Web3, probing_depth: u8) -> Self {
-        let strategies: Vec<_> = {
-            // First test storage slots that don't need guesswork.
-            let mut strategies = vec![
-                Strategy::SoladyMapping,
-                Strategy::SolidityMapping {
-                    slot: U256::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
-                },
-            ];
 
-            // For each entry point probe the first n following slots.
-            let entry_points = [
-                // solc lays out memory linearly starting at 0 by default
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            ];
-            for start_slot in entry_points {
-                let mut slot = U256::from(start_slot);
-                for _ in 0..probing_depth {
-                    strategies.push(Strategy::SolidityMapping { slot });
-                    slot += U256::one();
-                }
+        Self(Arc::new(Inner { web3, probing_depth }))
+    }
+
+    fn generate_strategies(&self, target_contract: H160) -> Vec<StrategyHelper> {
+        // First test storage slots that don't need guesswork.
+        let mut strategies = vec![
+            Strategy::SoladyMapping { target_contract },
+            Strategy::SolidityMapping {
+                target_contract,
+                map_slot: U256::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
+            },
+        ];
+
+        // For each entry point probe the first n following slots.
+        let entry_points = [
+            // solc lays out memory linearly starting at 0 by default
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        ];
+        for start_slot in entry_points {
+            let mut map_slot = U256::from(start_slot);
+            for _ in 0..self.probing_depth {
+                strategies.push(Strategy::SolidityMapping { target_contract: H160::default(), map_slot });
+                map_slot += U256::one();
             }
+        }
 
-            strategies
-                .into_iter()
-                .enumerate()
-                .map(|(index, strategy)| StrategyHelper::new(strategy, index))
-                .collect()
-        };
-
-        Self(Arc::new(Inner { web3, strategies }))
+        strategies
+            .into_iter()
+            .enumerate()
+            .map(|(index, strategy)| StrategyHelper::new(strategy, index))
+            .collect()
     }
 
     /// Tries to detect the balance override strategy for the specified token.
@@ -100,13 +118,15 @@ impl Detector {
         }
 
         // Fall back to the original heuristic-based detection
+        let strategies = self.generate_strategies(token);
         let token = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
-        let overrides = hashmap! {
-            token.address().into_legacy() => StateOverride {
-                state_diff: Some(self.strategies.iter().map(|helper| helper.strategy.state_override(&holder, &helper.balance)).collect()),
-                ..Default::default()
-            },
-        };
+        let overrides = merge_state_overrides(
+            strategies
+                .iter()
+                .map(|helper| helper.strategy.state_override(&holder, &helper.balance))
+                .collect()
+        );
+
         let balance = token
             .balanceOf(holder.into_alloy())
             .state(overrides.into_alloy())
@@ -115,7 +135,7 @@ impl Detector {
             .context("eth_call with state overrides failed")
             .map_err(|e| DetectionError::Simulation(SimulationError::Other(e)))?;
 
-        self.strategies
+        strategies
             .iter()
             .find_map(|helper| {
                 (helper.balance.into_alloy() == balance).then_some(helper.strategy.clone())
@@ -151,50 +171,50 @@ impl Detector {
             .trace_call(call_request, BlockNumber::Latest.into())
             .await
             .map_err(|e| {
-                tracing::debug!("debug_traceCall not supported for token {:?}: {}", token, e);
+                tracing::debug!(?token, error = ?e, "debug_traceCall not supported for token");
                 DetectionError::Simulation(SimulationError::Other(anyhow::anyhow!(
                     "debug_traceCall failed: {e}"
                 )))
             })?;
 
         // Extract storage slots accessed via SLOAD operations
-        let storage_slots = self.extract_sload_slots(&trace);
+        let storage_slots = self.extract_sload_slots(&trace, token);
 
         if storage_slots.is_empty() {
             tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
             return Err(DetectionError::NotFound);
         }
 
-        tracing::debug!(
-            "found {} SLOAD operations for token {:?}: {:?}",
-            storage_slots.len(),
-            token,
-            storage_slots
-        );
-
         if storage_slots.len() == 1 {
             let slot = storage_slots[0];
             tracing::debug!(
-                "detected balance slot via trace (single SLOAD) for token {:?}: slot {:?}",
-                token, slot
+                storage_context = ?slot.0,
+                slot = ?slot.1,
+                ?slot,
+                iterations = 0,
+                "detected balance slot via trace (single SLOAD) for token",
             );
-            return Ok(Strategy::DirectSlot { slot });
+            return Ok(Strategy::DirectSlot { target_contract: slot.0, slot: slot.1 });
         }
 
         // Multiple storage slots accessed - test each one to find the balance slot
         tracing::debug!(
-            "multiple SLOAD operations for token {:?}, count={}, testing each one",
-            token,
-            storage_slots.len()
+            ?token,
+            total = storage_slots.len(),
+            "multiple SLOAD operations, testing each one",
         );
 
         // Iterate through slots in reverse order (last accessed is most likely the
         // balance)
-        for slot in storage_slots.iter().rev() {
+        for (i, slot) in storage_slots.iter().rev().enumerate() {
             if let Ok(strategy) = self.verify_slot_is_balance(token, holder, *slot).await {
                 tracing::debug!(
-                    "verified balance slot via testing for token {:?}: slot {:?}",
-                    token, slot
+                    ?token,
+                    ?holder,
+                    ?slot,
+                    iterations = i + 1,
+                    total = storage_slots.len(),
+                    "verified balance SLOAD slot via testing",
                 );
                 return Ok(strategy);
             }
@@ -210,11 +230,16 @@ impl Detector {
 
     /// Extracts storage slots accessed via SLOAD operations from struct logs.
     /// Returns slots in the order they were accessed.
-    fn extract_sload_slots(&self, trace: &ethrpc::extensions::StructLogTrace) -> Vec<H256> {
+    fn extract_sload_slots(&self, trace: &ethrpc::extensions::StructLogTrace, initial_storage_context: H160) -> Vec<(H160, H256)> {
+        let mut storage_context: H160 = initial_storage_context;
         let mut slots = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
         for log in &trace.struct_logs {
+            if log.op == "CALL" || log.op == "STATICCALL" && !log.stack.len() >= 2 {
+                // CALL opcode takes the address of the contract to call as second element
+                storage_context = H160::from(log.stack[log.stack.len() - 2]);
+            }
             // SLOAD opcode reads from storage
             // The storage key is on top of the stack (last element)
             if log.op == "SLOAD" && !log.stack.is_empty() {
@@ -223,7 +248,7 @@ impl Detector {
 
                 // Only add unique slots, preserving order
                 if seen.insert(slot) {
-                    slots.push(slot);
+                    slots.push((storage_context, slot));
                 }
             }
         }
@@ -237,7 +262,7 @@ impl Detector {
         &self,
         token: Address,
         holder: Address,
-        slot: H256,
+        slot: (H160, H256),
     ) -> Result<Strategy, DetectionError> {
         // Use a unique test value to verify this is the balance slot
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
@@ -247,9 +272,9 @@ impl Detector {
         test_balance.to_big_endian(&mut slot_value);
 
         let overrides = hashmap! {
-            token => StateOverride {
+            slot.0 => StateOverride {
                 state_diff: Some(hashmap! {
-                    slot => H256(slot_value),
+                    slot.1 => H256(slot_value),
                 }),
                 ..Default::default()
             },
@@ -270,7 +295,7 @@ impl Detector {
 
         // If the balance matches our test value, we found the right slot
         if balance == test_balance.into_alloy() {
-            Ok(Strategy::DirectSlot { slot })
+            Ok(Strategy::DirectSlot { target_contract: slot.0, slot: slot.1 })
         } else {
             Err(DetectionError::NotFound)
         }
@@ -338,34 +363,38 @@ mod tests {
         let storage = detector
             .detect(
                 addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                addr!("0x0000000000000000000000000000000000000001"),
+                addr!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::SolidityMapping { slot: 3.into() });
+        assert_eq!(storage, Strategy::SolidityMapping { 
+            target_contract: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+            map_slot: 3.into()
+        });
 
         let storage = detector
             .detect(
                 addr!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
-                addr!("0x0000000000000000000000000000000000000001"),
+                addr!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
         assert_eq!(
             storage,
             Strategy::SolidityMapping {
-                slot: U256::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
+                target_contract: addr!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
+                map_slot: U256::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
             }
         );
 
         let storage = detector
             .detect(
                 addr!("0000000000c5dc95539589fbd24be07c6c14eca4"),
-                addr!("0x0000000000000000000000000000000000000001"),
+                addr!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::SoladyMapping);
+        assert_eq!(storage, Strategy::SoladyMapping { target_contract: addr!("0000000000c5dc95539589fbd24be07c6c14eca4") });
     }
 
     /// Tests that we can detect storage slots by probing the first
@@ -380,10 +409,10 @@ mod tests {
         let storage = detector
             .detect(
                 addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
-                addr!("0x0000000000000000000000000000000000000001"),
+                addr!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::SolidityMapping { slot: 51.into() });
+        assert_eq!(storage, Strategy::SolidityMapping { target_contract: addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"), map_slot: 51.into() });
     }
 }
