@@ -137,15 +137,17 @@ impl Mempools {
         // transactions (e.g., settlement tx and cancellation tx) from the same
         // solver address.
         let nonce = mempool.get_nonce(solver.address()).await?;
-        let hash = match mempool
-            .submit(tx.clone(), settlement.gas, solver, nonce)
-            .await
-        {
+
+        let gas = settlement::Gas {
+            price: self
+                .replacement_gas_price(solver, nonce, settlement.gas.price)
+                .await,
+            ..settlement.gas
+        };
+        let hash = match mempool.submit(tx.clone(), gas, solver, nonce).await {
             Ok(hash) => hash,
             Err(err) => {
-                let pending_tx = self
-                    .find_pending_tx_in_mempool(solver.address().0.into_alloy(), nonce.as_u64())
-                    .await;
+                let pending_tx = self.find_pending_tx_in_mempool(solver, nonce).await;
                 tracing::warn!(?tx, ?nonce, ?solver, ?settlement.gas, ?err, ?pending_tx, "failed to submit settlement tx");
                 return Err(err);
             }
@@ -268,37 +270,7 @@ impl Mempools {
         blocks_elapsed: u64,
         nonce: eth::U256,
     ) -> Result<TxId, Error> {
-        let new_gas_price = match self
-            .find_pending_tx_in_mempool(solver.address().0.into_alloy(), nonce.as_u64())
-            .await
-        {
-            Ok(tx) => {
-                tracing::debug!(?tx, "found target tx in the mempool");
-                eth::GasPrice::new(
-                    U256::from(tx.max_fee_per_gas()).into(),
-                    eth::U256::from(
-                        tx.max_priority_fee_per_gas()
-                            .context("pending tx is not EIP 1559")?,
-                    )
-                    .checked_mul_f64(GAS_PRICE_BUMP)
-                    .context("gas price bump overflowed the priority fee")?
-                    .into(),
-                    U256::from(tx.max_fee_per_gas()).into(),
-                )
-            }
-            Err(err) => {
-                // In case we weren't able to find the target tx we just send a cancellation
-                // based on the information we know about our previous submission attempt.
-                // We can hit this path under a few different conditions (RPC doesn't expose the
-                // `txpool` API, tx landed in the meantime).
-                tracing::warn!(
-                    ?err,
-                    previous = ?pending,
-                    "failed to find target tx in the mempool; computing new gas price based on previous data"
-                );
-                pending * GAS_PRICE_BUMP
-            }
-        };
+        let new_gas_price = self.replacement_gas_price(solver, nonce, pending).await;
 
         let cancellation = eth::Tx {
             from: solver.address(),
@@ -324,14 +296,14 @@ impl Mempools {
 
     async fn find_pending_tx_in_mempool(
         &self,
-        signer: alloy::primitives::Address,
-        nonce: u64,
+        solver: &Solver,
+        nonce: eth::U256,
     ) -> anyhow::Result<alloy::rpc::types::Transaction> {
         let tx_pool_content = self
             .ethereum
             .web3()
             .alloy
-            .txpool_content_from(signer)
+            .txpool_content_from(solver.address().0.into_alloy())
             .await
             .context("failed to query pending transactions")?;
 
@@ -340,10 +312,57 @@ impl Mempools {
             .pending
             .into_iter()
             .chain(tx_pool_content.queued)
-            .find(|(_signer, tx)| tx.nonce() == nonce)
+            .find(|(_signer, tx)| tx.nonce() == nonce.as_u64())
             .context("no pending transaction with target nonce ({nonce})")?
             .1;
         Ok(pending_tx)
+    }
+
+    async fn replacement_gas_price_based_on_mempool(
+        &self,
+        solver: &Solver,
+        nonce: eth::U256,
+    ) -> anyhow::Result<eth::GasPrice> {
+        let tx = self.find_pending_tx_in_mempool(solver, nonce).await?;
+        let replacement_gas_price = eth::GasPrice::new(
+            U256::from(tx.max_fee_per_gas()).into(),
+            eth::U256::from(
+                tx.max_priority_fee_per_gas()
+                    .context("pending tx is not EIP 1559")?,
+            )
+            .checked_mul_f64(GAS_PRICE_BUMP)
+            .context("gas price bump overflowed the priority fee")?
+            .into(),
+            U256::from(tx.max_fee_per_gas()).into(),
+        );
+        Ok(replacement_gas_price)
+    }
+
+    async fn replacement_gas_price(
+        &self,
+        solver: &Solver,
+        nonce: eth::U256,
+        current_gas_price: eth::GasPrice,
+    ) -> eth::GasPrice {
+        match self
+            .replacement_gas_price_based_on_mempool(solver, nonce)
+            .await
+        {
+            Ok(gas) => {
+                tracing::debug!(?gas, "computed replacement gas based on mempool");
+                gas
+            }
+            Err(err) => {
+                let bumped = current_gas_price * GAS_PRICE_BUMP;
+                tracing::warn!(
+                    current = ?current_gas_price,
+                    replacement_gas = ?bumped,
+                    ?err,
+                    "failed to compute gas price based on mempool - fall back to current gas price"
+                );
+                bumped
+            }
+        }
     }
 }
 
