@@ -307,7 +307,7 @@ pub struct PoolData {
 
 impl ContainsId for PoolData {
     fn get_id(&self) -> String {
-        self.id.to_string()
+        format!("{:#x}", self.id)
     }
 }
 

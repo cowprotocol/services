@@ -466,7 +466,7 @@ pub async fn block_number_to_block_number_hash(
     let block = provider
         .get_block_by_number(block_number)
         .await?
-        .context("block should exists")?;
+        .with_context(|| format!("failed to find block {}", block_number))?;
     Ok((block.header.number, block.header.hash.into_legacy()))
 }
 
