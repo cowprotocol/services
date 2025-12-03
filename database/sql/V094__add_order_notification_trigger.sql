@@ -13,9 +13,3 @@ CREATE TRIGGER order_insert_notify
 AFTER INSERT ON orders
 FOR EACH ROW
 EXECUTE FUNCTION notify_new_order();
-
--- Create a trigger that fires after each insert on the orders table
-CREATE TRIGGER onchain_order_insert_notify
-AFTER INSERT ON onchain_orders
-FOR EACH ROW
-EXECUTE FUNCTION notify_new_order();
