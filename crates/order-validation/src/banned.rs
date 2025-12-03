@@ -56,6 +56,8 @@ impl Onchain {
         let detector = Arc::clone(&self);
 
         tokio::task::spawn(async move {
+            let mut interval = tokio::time::interval(maintenance_timeout);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 let start = Instant::now();
 
@@ -100,10 +102,7 @@ impl Onchain {
 
                 detector.insert_many_into_cache(results);
 
-                let remaining_sleep = maintenance_timeout
-                    .checked_sub(start.elapsed())
-                    .unwrap_or_default();
-                tokio::time::sleep(remaining_sleep).await;
+                interval.tick().await;
             }
         });
     }

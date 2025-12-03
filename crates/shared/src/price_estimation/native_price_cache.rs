@@ -289,10 +289,10 @@ impl UpdateTask {
 
     /// Runs background updates until inner is no longer alive.
     async fn run(self) {
+        let mut interval = tokio::time::interval(self.update_interval);
         while let Some(inner) = self.inner.upgrade() {
-            let now = Instant::now();
             self.single_update(&inner).await;
-            tokio::time::sleep(self.update_interval.saturating_sub(now.elapsed())).await;
+            interval.tick().await;
         }
     }
 }

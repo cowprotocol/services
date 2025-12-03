@@ -254,8 +254,10 @@ pub async fn current_block_stream(
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
         let mut previous_block = first_block;
+        let mut interval = tokio::time::interval(poll_interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
-            tokio::time::sleep(poll_interval).await;
+            interval.tick().await;
             let block = match provider.current_block().await {
                 Ok(block) => block,
                 Err(err) => {

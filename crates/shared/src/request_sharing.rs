@@ -65,9 +65,10 @@ where
 
     fn spawn_gc(cache: Cache<Request, Fut>, label: String) {
         tokio::task::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
             loop {
                 Self::collect_garbage(&cache, &label);
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                interval.tick().await;
             }
         });
     }

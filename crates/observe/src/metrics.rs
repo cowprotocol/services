@@ -1,7 +1,7 @@
 use {
     prometheus::{
         Encoder,
-        core::{AtomicF64, AtomicU64, GenericCounterVec},
+        core::{AtomicF64, AtomicU64, GenericCounterVec, GenericGauge},
     },
     std::{
         collections::HashMap,
@@ -39,6 +39,7 @@ pub fn setup_registry(prefix: Option<String>, labels: Option<HashMap<String, Str
     let registry = prometheus::Registry::new_custom(prefix, labels).unwrap();
     let storage_registry = prometheus_metric_storage::StorageRegistry::new(registry);
     REGISTRY.set(storage_registry).unwrap();
+    spawn_tokio_metrics_exporter();
 }
 
 /// Like [`setup_registry`], but can be called multiple times in a row.
@@ -166,16 +167,37 @@ fn handle_startup_probe(
     })
 }
 
+fn spawn_tokio_metrics_exporter() {
+    let handle = tokio::runtime::Handle::current();
+    let runtime_monitor = tokio_metrics::RuntimeMonitor::new(&handle);
+    let metrics = metrics();
+    tokio::task::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        for snapshot in runtime_monitor.intervals() {
+            tracing::error!(?snapshot);
+            // TODO update our prometheus metrics
+            metrics
+                .tokio_workers_count
+                .set(snapshot.workers_count as u64);
+            interval.tick().await;
+        }
+    });
+}
+
 /// Metrics shared by potentially all processes.
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
     /// All the time losses we incur while arbitrating the auctions
     #[metric(labels("component", "phase"))]
-    pub auction_overhead_time: GenericCounterVec<AtomicF64>,
+    auction_overhead_time: GenericCounterVec<AtomicF64>,
 
     /// How many measurements we did for each source of overhead.
     #[metric(labels("component", "phase"))]
-    pub auction_overhead_count: GenericCounterVec<AtomicU64>,
+    auction_overhead_count: GenericCounterVec<AtomicU64>,
+
+    // TODO add all sort of metrics
+    /// How many worker threads the runtime currently has.
+    tokio_workers_count: GenericGauge<AtomicU64>,
 }
 
 impl Metrics {

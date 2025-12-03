@@ -4303,6 +4303,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
 
 [[package]]
+name = "metrics"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25dea7ac8057892855ec285c440160265225438c3c45072613c25a4b26e98ef5"
+dependencies = [
+ "ahash 0.8.11",
+ "portable-atomic",
+]
+
+[[package]]
 name = "mimalloc"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4704,6 +4714,7 @@ dependencies = [
  "serde_json",
  "time",
  "tokio",
+ "tokio-metrics",
  "tracing",
  "tracing-opentelemetry",
  "tracing-serde",
@@ -7153,6 +7164,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.108",
+]
+
+[[package]]
+name = "tokio-metrics"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a01bbf7db0b3f5eee8930a119fe99bfa1438de1095fe3d26b25e652a5933ef3f"
+dependencies = [
+ "futures-util",
+ "metrics",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
