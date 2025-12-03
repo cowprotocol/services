@@ -76,6 +76,7 @@ observe = { workspace = true, features = ["axum-tracing"] }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 app-data = { workspace = true, features = ["test_helpers"] }

@@ -32,12 +32,16 @@ use {
 };
 
 pub mod metrics;
+mod span_metrics;
 mod tokio_metrics;
 
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
 pub fn init(obs_config: observe::Config) {
-    observe::tracing::initialize_reentrant(&obs_config);
+    // Initialize tracing with custom span metrics layer
+    let span_layer = span_metrics::SpanMetricsLayer::new(span_metrics::default_tracked_spans());
+    observe::tracing::initialize_with_layer(&obs_config, Some(Box::new(span_layer)));
+
     metrics::init();
     tokio_metrics::spawn_runtime_monitor();
     #[cfg(all(unix, feature = "jemalloc-profiling"))]

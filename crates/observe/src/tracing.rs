@@ -56,6 +56,20 @@ pub fn initialize_reentrant(config: &Config) {
     });
 }
 
+/// Like [`initialize_reentrant`], but accepts an optional custom layer.
+/// This allows services to add additional tracing layers (e.g., metrics
+/// collection).
+pub fn initialize_with_layer(
+    config: &Config,
+    custom_layer: Option<Box<dyn Layer<tracing_subscriber::Registry> + Send + Sync>>,
+) {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        set_tracing_subscriber_with_layer(config, custom_layer);
+        std::panic::set_hook(Box::new(tracing_panic_hook));
+    });
+}
+
 fn set_tracing_subscriber(config: &Config) {
     let initial_filter = config.env_filter.to_string();
 
@@ -173,11 +187,115 @@ fn set_tracing_subscriber(config: &Config) {
     }
 }
 
+/// Like set_tracing_subscriber but accepts an optional custom layer.
+fn set_tracing_subscriber_with_layer(
+    config: &Config,
+    custom_layer: Option<Box<dyn Layer<tracing_subscriber::Registry> + Send + Sync>>,
+) {
+    let initial_filter = config.env_filter.to_string();
+
+    macro_rules! fmt_layer {
+        ($env_filter:expr_2021, $stderr_threshold:expr_2021, $use_json_format:expr_2021) => {{
+            let stderr_threshold = $stderr_threshold.clone();
+            let writer = std::io::stderr
+                .with_filter(move |meta| {
+                    stderr_threshold.is_some_and(|min_verbosity| meta.level() <= &min_verbosity)
+                })
+                .or_else(std::io::stdout);
+            let timer = UtcTime::new(format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ));
+
+            if config.use_json_format {
+                tracing_subscriber::fmt::layer()
+                    .event_format(TraceIdJsonFormat)
+                    .with_writer(writer)
+                    .with_filter($env_filter)
+                    .boxed()
+            } else {
+                tracing_subscriber::fmt::layer()
+                    .with_timer(timer)
+                    .with_ansi(atty::is(atty::Stream::Stdout))
+                    .map_event_format(|formatter| TraceIdFmt {
+                        inner: formatter.with_ansi(atty::is(atty::Stream::Stdout)),
+                    })
+                    .with_writer(writer)
+                    .with_filter($env_filter)
+                    .boxed()
+            }
+        }};
+    }
+
+    let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
+        .unwrap_or("false".to_string())
+        .parse()
+        .unwrap();
+
+    let (env_filter, reload_handle) =
+        tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
+
+    let tracing_layer = if let Some(tracing_config) = &config.tracing {
+        global::set_text_map_propagator(TraceContextPropagator::new());
+
+        let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(tracing_config.collector_endpoint.as_str())
+            .with_timeout(tracing_config.export_timeout)
+            .build()
+            .expect("otlp exporter");
+        let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_batch_exporter(otlp_exporter)
+            .with_sampler(Sampler::AlwaysOn)
+            .with_id_generator(RandomIdGenerator::default())
+            .with_resource(
+                Resource::builder()
+                    .with_attribute(KeyValue::new(
+                        "service.name",
+                        tracing_config.service_name.to_owned(),
+                    ))
+                    .build(),
+            )
+            .build()
+            .tracer("cow_tracing");
+        tracing::info!("tracing layer set up");
+        Some(
+            tracing_opentelemetry::layer()
+                .with_tracer(tracer)
+                .with_filter(LevelFilter::from_level(tracing_config.level)),
+        )
+    } else {
+        tracing::info!("no tracing layer set up");
+        None
+    };
+
+    let subscriber = tracing_subscriber::registry()
+        .with(custom_layer)
+        .with(LevelFilter::TRACE)
+        .with(RequestIdLayer)
+        .with(fmt_layer!(
+            env_filter,
+            config.stderr_threshold,
+            config.use_json_format
+        ))
+        .with(tracing_layer);
+
+    if cfg!(tokio_unstable) && enable_tokio_console {
+        subscriber.with(console_subscriber::spawn()).init();
+        tracing::info!("started program with support for tokio-console");
+    } else {
+        subscriber.init();
+        tracing::info!("started program without support for tokio-console");
+    }
+    if cfg!(unix) {
+        spawn_reload_handler(initial_filter, reload_handle);
+    }
+}
+
 /// Panic hook that prints roughly the same message as the default panic hook
 /// but uses tracing:error instead of stderr.
 ///
 /// Useful when we want panic messages to have the proper log format for Kibana.
-fn tracing_panic_hook(panic: &PanicHookInfo) {
+pub fn tracing_panic_hook(panic: &PanicHookInfo) {
     let thread = std::thread::current();
     let name = thread.name().unwrap_or("<unnamed>");
     let backtrace = std::backtrace::Backtrace::force_capture();
