@@ -11,6 +11,11 @@ use {
 /// Metadata stored in span extensions to track hierarchy information.
 struct SpanMetadata {
     has_children: bool,
+    /// The hierarchy classification at the time of first enter.
+    /// This must be stored because hierarchy can change (e.g., leaf ->
+    /// intermediate) when children are created, but we need consistent
+    /// inc/dec.
+    hierarchy_at_enter: Option<&'static str>,
 }
 
 /// A tracing layer that tracks active span counts by hierarchy for monitoring
@@ -48,6 +53,7 @@ where
             // Initialize metadata for this span
             span.extensions_mut().insert(SpanMetadata {
                 has_children: false,
+                hierarchy_at_enter: None,
             });
 
             // Mark parent as having children
@@ -63,24 +69,38 @@ where
         if let Some(span) = ctx.span(id) {
             let span_name = span.name();
             if self.should_track(span_name) {
-                // Determine hierarchy category
-                let has_parent = span.parent().is_some();
-                let has_children = span
+                // Check if we've already determined hierarchy for this span
+                let already_entered = span
                     .extensions()
                     .get::<SpanMetadata>()
-                    .map(|m| m.has_children)
-                    .unwrap_or(false);
+                    .and_then(|m| m.hierarchy_at_enter)
+                    .is_some();
 
-                let hierarchy = match (has_parent, has_children) {
-                    (false, _) => "root",           // No parent = root/orphan
-                    (true, false) => "leaf",        // Has parent but no children = leaf
-                    (true, true) => "intermediate", // Has both = intermediate
-                };
+                if !already_entered {
+                    // First enter: determine and store hierarchy
+                    let has_parent = span.parent().is_some();
+                    let has_children = span
+                        .extensions()
+                        .get::<SpanMetadata>()
+                        .map(|m| m.has_children)
+                        .unwrap_or(false);
 
-                metrics::get()
-                    .active_spans_by_hierarchy
-                    .with_label_values(&[span_name, hierarchy])
-                    .inc();
+                    let hierarchy = match (has_parent, has_children) {
+                        (false, _) => "root",           // No parent = root/orphan
+                        (true, false) => "leaf",        // Has parent but no children = leaf
+                        (true, true) => "intermediate", // Has both = intermediate
+                    };
+
+                    // Store the hierarchy for consistent dec on exit
+                    if let Some(metadata) = span.extensions_mut().get_mut::<SpanMetadata>() {
+                        metadata.hierarchy_at_enter = Some(hierarchy);
+                    }
+
+                    metrics::get()
+                        .active_spans_by_hierarchy
+                        .with_label_values(&[span_name, hierarchy])
+                        .inc();
+                }
             }
         }
     }
@@ -89,24 +109,17 @@ where
         if let Some(span) = ctx.span(id) {
             let span_name = span.name();
             if self.should_track(span_name) {
-                // Determine hierarchy category (same logic as on_enter)
-                let has_parent = span.parent().is_some();
-                let has_children = span
+                // Use the stored hierarchy from on_enter
+                if let Some(hierarchy) = span
                     .extensions()
                     .get::<SpanMetadata>()
-                    .map(|m| m.has_children)
-                    .unwrap_or(false);
-
-                let hierarchy = match (has_parent, has_children) {
-                    (false, _) => "root",
-                    (true, false) => "leaf",
-                    (true, true) => "intermediate",
-                };
-
-                metrics::get()
-                    .active_spans_by_hierarchy
-                    .with_label_values(&[span_name, hierarchy])
-                    .dec();
+                    .and_then(|m| m.hierarchy_at_enter)
+                {
+                    metrics::get()
+                        .active_spans_by_hierarchy
+                        .with_label_values(&[span_name, hierarchy])
+                        .dec();
+                }
             }
         }
     }
