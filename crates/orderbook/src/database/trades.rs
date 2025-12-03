@@ -19,6 +19,8 @@ pub trait TradeRetrieving: Send + Sync {
 pub struct TradeFilter {
     pub owner: Option<Address>,
     pub order_uid: Option<OrderUid>,
+    pub offset: u64,
+    pub limit: u64,
 }
 
 #[async_trait::async_trait]
@@ -34,6 +36,14 @@ impl TradeRetrieving for Postgres {
             &mut ex,
             filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
             filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
+            filter
+                .offset
+                .try_into()
+                .context("offset too large for database")?,
+            filter
+                .limit
+                .try_into()
+                .context("limit too large for database")?,
         )
         .into_inner()
         .map_err(anyhow::Error::from)

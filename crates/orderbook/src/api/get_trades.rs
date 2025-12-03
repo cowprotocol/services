@@ -19,24 +19,43 @@ use {
 struct Query {
     pub order_uid: Option<OrderUid>,
     pub owner: Option<Address>,
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
 }
+
+const DEFAULT_OFFSET: u64 = 0;
+const DEFAULT_LIMIT: u64 = 10;
+const MIN_LIMIT: u64 = 1;
+const MAX_LIMIT: u64 = 1000;
 
 #[derive(Debug, Eq, PartialEq)]
 enum TradeFilterError {
     InvalidFilter(String),
+    InvalidLimit(u64, u64),
 }
 
 impl Query {
-    fn trade_filter(&self) -> TradeFilter {
+    fn trade_filter(&self, offset: u64, limit: u64) -> TradeFilter {
         TradeFilter {
             order_uid: self.order_uid,
             owner: self.owner,
+            offset,
+            limit,
         }
     }
 
     fn validate(&self) -> Result<TradeFilter, TradeFilterError> {
         match (self.order_uid.as_ref(), self.owner.as_ref()) {
-            (Some(_), None) | (None, Some(_)) => Ok(self.trade_filter()),
+            (Some(_), None) | (None, Some(_)) => {
+                let offset = self.offset.unwrap_or(DEFAULT_OFFSET);
+                let limit = self.limit.unwrap_or(DEFAULT_LIMIT);
+
+                if !(MIN_LIMIT..=MAX_LIMIT).contains(&limit) {
+                    return Err(TradeFilterError::InvalidLimit(MIN_LIMIT, MAX_LIMIT));
+                }
+
+                Ok(self.trade_filter(offset, limit))
+            }
             _ => Err(TradeFilterError::InvalidFilter(
                 "Must specify exactly one of owner or orderUid.".to_owned(),
             )),
@@ -71,6 +90,13 @@ pub fn get_trades(db: Postgres) -> impl Filter<Extract = (ApiReply,), Error = Re
                     let err = error("InvalidTradeFilter", msg);
                     with_status(err, StatusCode::BAD_REQUEST)
                 }
+                Err(TradeFilterError::InvalidLimit(min, max)) => {
+                    let err = error(
+                        "InvalidLimit",
+                        format!("limit must be between {min} and {max}"),
+                    );
+                    with_status(err, StatusCode::BAD_REQUEST)
+                }
             })
         }
     })
@@ -98,6 +124,8 @@ mod tests {
             .unwrap();
         assert_eq!(result.owner, Some(owner));
         assert_eq!(result.order_uid, None);
+        assert_eq!(result.offset, DEFAULT_OFFSET);
+        assert_eq!(result.limit, DEFAULT_LIMIT);
 
         let uid = OrderUid([1u8; 56]);
         let order_uid_path = format!("/v1/trades?orderUid={uid}");
@@ -107,6 +135,18 @@ mod tests {
             .unwrap();
         assert_eq!(result.owner, None);
         assert_eq!(result.order_uid, Some(uid));
+        assert_eq!(result.offset, DEFAULT_OFFSET);
+        assert_eq!(result.limit, DEFAULT_LIMIT);
+
+        // Test with custom offset and limit
+        let owner_path = format!("/v1/trades?owner=0x{owner:x}&offset=10&limit=50");
+        let result = trade_filter(request().path(owner_path.as_str()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.owner, Some(owner));
+        assert_eq!(result.offset, 10);
+        assert_eq!(result.limit, 50);
     }
 
     #[tokio::test]
@@ -126,5 +166,20 @@ mod tests {
         let path = "/v1/trades";
         let result = trade_filter(request().path(path)).await.unwrap();
         assert!(result.is_err());
+
+        // Test limit validation
+        let path = format!("/v1/trades?owner=0x{owner:x}&limit=0");
+        let result = trade_filter(request().path(path.as_str())).await.unwrap();
+        assert!(matches!(
+            result,
+            Err(TradeFilterError::InvalidLimit(MIN_LIMIT, MAX_LIMIT))
+        ));
+
+        let path = format!("/v1/trades?owner=0x{owner:x}&limit=1001");
+        let result = trade_filter(request().path(path.as_str())).await.unwrap();
+        assert!(matches!(
+            result,
+            Err(TradeFilterError::InvalidLimit(MIN_LIMIT, MAX_LIMIT))
+        ));
     }
 }
