@@ -185,7 +185,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     // If the DB is in read-only mode, running ANALYZE is not possible and will
     // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
-    crate::database::run_database_metrics_work(db_read.clone());
+    crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
