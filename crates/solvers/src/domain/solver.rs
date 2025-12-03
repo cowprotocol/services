@@ -170,7 +170,7 @@ impl Inner {
                         .route(native_price_request, self.max_hops)
                         .await
                     {
-                        Some(route) => {
+                        Ok(Some(route)) => {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
                             let price = self.native_token_price_estimation_amount.to_f64_lossy()
@@ -180,6 +180,10 @@ impl Inner {
                             };
 
                             auction::Price(eth::Ether(price))
+                        }
+                        Ok(None) => {
+                            tracing::info!("Solving for sell=buy, price is 1");
+                            auction::Price(eth::Ether(U256::one()))
                         }
                         _ => {
                             // This is to allow quotes to be generated for tokens for which the sell
@@ -192,31 +196,49 @@ impl Inner {
 
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrappers = request.wrappers.clone();
-                let route = boundary_solver.route(request, self.max_hops).await?;
-                let interactions = route
-                    .segments
-                    .iter()
-                    .map(|segment| {
-                        solution::Interaction::Liquidity(Box::new(solution::LiquidityInteraction {
-                            liquidity: segment.liquidity.clone(),
-                            input: segment.input,
-                            output: segment.output,
-                            // TODO does the baseline solver know about this optimization?
-                            internalize: false,
-                        }))
-                    })
-                    .collect();
+                let route = boundary_solver.route(request, self.max_hops).await.ok()?;
+                let interactions;
+                let gas;
+                let (input, mut output);
 
-                let mut output = if route.is_empty() {
-                    order.sell
-                } else {
-                    route.output()
-                };
-                let input = if route.is_empty() {
-                    order.sell
-                } else {
-                    route.input()
-                };
+                match route {
+                    Some(route) => {
+                        interactions = route
+                            .segments
+                            .iter()
+                            .map(|segment| {
+                                solution::Interaction::Liquidity(Box::new(
+                                    solution::LiquidityInteraction {
+                                        liquidity: segment.liquidity.clone(),
+                                        input: segment.input,
+                                        output: segment.output,
+                                        // TODO does the baseline solver know about this
+                                        // optimization?
+                                        internalize: false,
+                                    },
+                                ))
+                            })
+                            .collect();
+                        gas = route.gas() + self.solution_gas_offset;
+                        input = route.input();
+                        output = route.output();
+                    }
+                    None => {
+                        interactions = Vec::default();
+                        gas = eth::Gas(U256::zero()) + self.solution_gas_offset;
+
+                        (input, output) = match order.side {
+                            order::Side::Sell => (order.buy, order.sell),
+                            order::Side::Buy => (order.sell, order.buy),
+                        };
+                        let sell = order.sell;
+                        let buy = order.buy;
+                        tracing::info!(
+                            "Computing solution for sell=buy. input: {input:?} output: \
+                             {output:?}, sell: {sell:?}, buy: {buy:?}"
+                        );
+                    }
+                }
 
                 // The baseline solver generates a path with swapping
                 // for exact output token amounts. This leads to
@@ -228,7 +250,6 @@ impl Inner {
                     output.amount = cmp::min(output.amount, order.buy.amount);
                 }
 
-                let gas = route.gas() + self.solution_gas_offset;
                 let fee = sell_token_price
                     .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0.0)?))?
                     .into();
@@ -365,25 +386,18 @@ pub struct Segment<'a> {
 }
 
 impl<'a> Route<'a> {
-    pub fn new(segments: Vec<Segment<'a>>) -> Self {
-        Self { segments }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.segments.is_empty()
+    pub fn new(segments: Vec<Segment<'a>>) -> Option<Self> {
+        if segments.is_empty() {
+            return None;
+        }
+        Some(Self { segments })
     }
 
     fn input(&self) -> eth::Asset {
-        if self.is_empty() {
-            unreachable!("Output empty segment");
-        }
         self.segments[0].input
     }
 
     fn output(&self) -> eth::Asset {
-        if self.is_empty() {
-            unreachable!("Output empty segment");
-        }
         self.segments
             .last()
             .expect("route has at least one segment by construction")

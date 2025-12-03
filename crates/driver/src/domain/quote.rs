@@ -17,10 +17,7 @@ use {
     },
     chrono::Utc,
     ethrpc::alloy::conversions::IntoLegacy,
-    std::{
-        collections::{HashMap, HashSet},
-        iter,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 /// A quote describing the expected outcome of an order.
@@ -92,7 +89,7 @@ impl Order {
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = match (solver.liquidity(), self.token_liquidity()) {
-            (solver::Liquidity::Fetch, Some(pairs)) => {
+            (solver::Liquidity::Fetch, pairs) if !pairs.is_empty() => {
                 liquidity
                     .fetch(&pairs, infra::liquidity::AtBlock::Recent)
                     .await
@@ -226,10 +223,11 @@ impl Order {
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn token_liquidity(&self) -> Option<HashSet<liquidity::TokenPair>> {
+    fn token_liquidity(&self) -> HashSet<liquidity::TokenPair> {
         liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
-            .map(|pair| iter::once(pair).collect())
             .ok()
+            .into_iter()
+            .collect()
     }
 }
 
