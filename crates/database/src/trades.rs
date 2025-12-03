@@ -704,30 +704,28 @@ mod tests {
             expected_trades.push(trade);
         }
 
-        // Sort expected trades by block_number DESC
+        // Sort expected trades by block_number DESC (matching query ORDER BY)
         expected_trades.sort_by(|a, b| b.block_number.cmp(&a.block_number));
 
-        // Test limit: get first 2 trades
-        let mut result = trades(&mut db, Some(&owner), None, 0, 2)
+        // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
+        let result = trades(&mut db, Some(&owner), None, 0, 2)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
-        result.sort_by_key(|t| (t.block_number, t.log_index));
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0], expected_trades[4]); // block 0
-        assert_eq!(result[1], expected_trades[3]); // block 1
+        assert_eq!(result[0], expected_trades[0]); // block 4
+        assert_eq!(result[1], expected_trades[1]); // block 3
 
-        // Test offset: skip first 2, get next 2
-        let mut result = trades(&mut db, Some(&owner), None, 2, 2)
+        // Test offset: skip first 2, get next 2 (blocks 2 and 1 in DESC order)
+        let result = trades(&mut db, Some(&owner), None, 2, 2)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
-        result.sort_by_key(|t| (t.block_number, t.log_index));
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], expected_trades[2]); // block 2
-        assert_eq!(result[1], expected_trades[1]); // block 3
+        assert_eq!(result[1], expected_trades[3]); // block 1
 
         // Test offset beyond available trades
         let result = trades(&mut db, Some(&owner), None, 10, 2)
@@ -737,13 +735,12 @@ mod tests {
             .unwrap();
         assert_eq!(result.len(), 0);
 
-        // Test large limit returns all available trades
-        let mut result = trades(&mut db, Some(&owner), None, 0, 100)
+        // Test large limit returns all available trades in DESC order
+        let result = trades(&mut db, Some(&owner), None, 0, 100)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
-        result.sort_by_key(|t| (t.block_number, t.log_index));
         assert_eq!(result.len(), 5);
         assert_eq!(result, expected_trades);
     }
