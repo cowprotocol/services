@@ -55,6 +55,15 @@ pub struct Metrics {
         )
     )]
     pub used_solve_time: prometheus::HistogramVec,
+
+    /// Number of tasks currently alive on the tokio runtime.
+    pub tokio_active_tasks: prometheus::IntGauge,
+
+    /// Number of idle blocking threads.
+    pub tokio_idle_workers: prometheus::IntGauge,
+
+    /// Number of active blocking threads.
+    pub tokio_active_workers: prometheus::IntGauge,
 }
 
 impl Metrics {
