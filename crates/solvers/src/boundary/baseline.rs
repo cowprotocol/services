@@ -21,6 +21,8 @@ pub struct Solver<'a> {
     liquidity: HashMap<liquidity::Id, &'a liquidity::Liquidity>,
 }
 
+pub struct RouteComputationError;
+
 impl<'a> Solver<'a> {
     pub fn new(
         weth: &eth::WethAddress,
@@ -42,9 +44,10 @@ impl<'a> Solver<'a> {
         &self,
         request: solver::Request,
         max_hops: usize,
-    ) -> Option<solver::Route<'a>> {
+    ) -> Result<Option<solver::Route<'a>>, RouteComputationError> {
         if request.sell.token == request.buy.token {
-            return Some(solver::Route::new(vec![]));
+            tracing::info!("Sell=Buy, returning empty route");
+            return Ok(None);
         }
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
@@ -61,6 +64,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&sell.path, request.sell.token.0, sell.value)
                         .await?;
@@ -81,7 +85,8 @@ impl<'a> Solver<'a> {
                     .await
                     .into_iter()
                     .flatten()
-                    .min_by_key(|(_, sell)| sell.value)?
+                    .min_by_key(|(_, sell)| sell.value)
+                    .ok_or(RouteComputationError)?
             }
             order::Side::Sell => {
                 let futures = candidates.iter().map(|path| async {
@@ -91,6 +96,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
                         .await?;
@@ -111,11 +117,12 @@ impl<'a> Solver<'a> {
                     .await
                     .into_iter()
                     .flatten()
-                    .max_by_key(|(_, buy)| buy.value)?
+                    .max_by_key(|(_, buy)| buy.value)
+                    .ok_or(RouteComputationError)?
             }
         };
 
-        Some(solver::Route::new(segments))
+        solver::Route::new(segments).map(Ok).transpose()
     }
 
     async fn traverse_path(

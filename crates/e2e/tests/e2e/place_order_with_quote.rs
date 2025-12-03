@@ -4,7 +4,7 @@ use {
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::alloy::{
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::IntoAlloy,
     },
     model::{
         order::{OrderCreation, OrderKind},
@@ -168,7 +168,9 @@ async fn place_order_with_quote_same_token_pair_error(web3: Web3) {
         },
         ..Default::default()
     };
-    assert!(services.submit_quote(&quote_request).await.is_err());
+    assert!(
+        matches!(services.submit_quote(&quote_request).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
+    );
 }
 
 async fn place_order_with_quote_same_token_pair(web3: Web3) {

@@ -403,6 +403,7 @@ pub async fn run(args: Arguments) {
         .ok();
     let order_validator = Arc::new(
         OrderValidator::new(
+            native_token,
             Arc::new(order_validation::banned::Users::new(
                 chainalysis_oracle,
                 args.banned_users,
@@ -421,9 +422,7 @@ pub async fn run(args: Arguments) {
             app_data_validator.clone(),
             args.max_gas_per_order,
         )
-        .with_sell_and_buy_validation(
-            (!args.allow_same_sell_and_buy_token).then(|| native_token.clone()),
-        ),
+        .with_allow_same_sell_and_buy_token(args.allow_same_sell_and_buy_token),
     );
     let ipfs = args
         .ipfs_gateway
