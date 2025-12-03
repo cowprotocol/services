@@ -65,9 +65,10 @@ pub struct Metrics {
     /// Number of active blocking threads.
     pub tokio_active_workers: prometheus::IntGauge,
 
-    /// Number of currently active tracing spans.
-    #[metric(labels("span_name"))]
-    pub active_spans: prometheus::IntGaugeVec,
+    /// Number of currently active tracing spans by hierarchy type.
+    /// Labels: span_name, hierarchy (root/leaf/intermediate)
+    #[metric(labels("span_name", "hierarchy"))]
+    pub active_spans_by_hierarchy: prometheus::IntGaugeVec,
 }
 
 impl Metrics {

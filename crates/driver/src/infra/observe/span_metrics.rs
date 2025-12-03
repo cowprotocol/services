@@ -1,12 +1,21 @@
 use {
     super::metrics,
     std::collections::HashSet,
-    tracing::{Subscriber, span::Id},
+    tracing::{
+        Subscriber,
+        span::{Attributes, Id},
+    },
     tracing_subscriber::{Layer, layer::Context, registry::LookupSpan},
 };
 
-/// A tracing layer that tracks active span counts for monitoring span leaks.
-/// Only tracks spans in the whitelist to control metric cardinality.
+/// Metadata stored in span extensions to track hierarchy information.
+struct SpanMetadata {
+    has_children: bool,
+}
+
+/// A tracing layer that tracks active span counts by hierarchy for monitoring
+/// span leaks. Only tracks spans in the whitelist to control metric
+/// cardinality.
 pub struct SpanMetricsLayer {
     /// Whitelist of span names to track. Empty set means track all spans.
     tracked_spans: HashSet<&'static str>,
@@ -34,13 +43,43 @@ impl<S> Layer<S> for SpanMetricsLayer
 where
     S: Subscriber + for<'lookup> LookupSpan<'lookup>,
 {
+    fn on_new_span(&self, _attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
+        if let Some(span) = ctx.span(id) {
+            // Initialize metadata for this span
+            span.extensions_mut().insert(SpanMetadata {
+                has_children: false,
+            });
+
+            // Mark parent as having children
+            if let Some(parent) = span.parent()
+                && let Some(metadata) = parent.extensions_mut().get_mut::<SpanMetadata>()
+            {
+                metadata.has_children = true;
+            }
+        }
+    }
+
     fn on_enter(&self, id: &Id, ctx: Context<'_, S>) {
         if let Some(span) = ctx.span(id) {
             let span_name = span.name();
             if self.should_track(span_name) {
+                // Determine hierarchy category
+                let has_parent = span.parent().is_some();
+                let has_children = span
+                    .extensions()
+                    .get::<SpanMetadata>()
+                    .map(|m| m.has_children)
+                    .unwrap_or(false);
+
+                let hierarchy = match (has_parent, has_children) {
+                    (false, _) => "root",           // No parent = root/orphan
+                    (true, false) => "leaf",        // Has parent but no children = leaf
+                    (true, true) => "intermediate", // Has both = intermediate
+                };
+
                 metrics::get()
-                    .active_spans
-                    .with_label_values(&[span_name])
+                    .active_spans_by_hierarchy
+                    .with_label_values(&[span_name, hierarchy])
                     .inc();
             }
         }
@@ -50,9 +89,23 @@ where
         if let Some(span) = ctx.span(id) {
             let span_name = span.name();
             if self.should_track(span_name) {
+                // Determine hierarchy category (same logic as on_enter)
+                let has_parent = span.parent().is_some();
+                let has_children = span
+                    .extensions()
+                    .get::<SpanMetadata>()
+                    .map(|m| m.has_children)
+                    .unwrap_or(false);
+
+                let hierarchy = match (has_parent, has_children) {
+                    (false, _) => "root",
+                    (true, false) => "leaf",
+                    (true, true) => "intermediate",
+                };
+
                 metrics::get()
-                    .active_spans
-                    .with_label_values(&[span_name])
+                    .active_spans_by_hierarchy
+                    .with_label_values(&[span_name, hierarchy])
                     .dec();
             }
         }
