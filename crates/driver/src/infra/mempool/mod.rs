@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::unbuffered_web3_client,
-        domain::{competition, eth, mempools},
+        domain::{eth, mempools},
         infra,
     },
     ethrpc::Web3,
@@ -97,7 +97,8 @@ impl Mempool {
     pub async fn submit(
         &self,
         tx: eth::Tx,
-        gas: competition::solution::settlement::Gas,
+        gas_price: eth::GasPrice,
+        gas_limit: eth::Gas,
         solver: &infra::Solver,
         nonce: eth::U256,
     ) -> Result<eth::TxId, mempools::Error> {
@@ -106,12 +107,12 @@ impl Mempool {
             .to(tx.to.into())
             .nonce(nonce)
             .gas_price(ethcontract::GasPrice::Eip1559 {
-                max_fee_per_gas: gas.price.max().into(),
-                max_priority_fee_per_gas: gas.price.tip().into(),
+                max_fee_per_gas: gas_price.max().into(),
+                max_priority_fee_per_gas: gas_price.tip().into(),
             })
             .data(tx.input.into())
             .value(tx.value.0)
-            .gas(gas.limit.0)
+            .gas(gas_limit.0)
             .access_list(web3::types::AccessList::from(tx.access_list))
             .resolve(ethcontract::transaction::ResolveCondition::Pending)
             .send()
