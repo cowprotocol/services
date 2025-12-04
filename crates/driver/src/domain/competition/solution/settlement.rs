@@ -358,7 +358,7 @@ pub struct Gas {
     /// computed by adding a buffer to the gas estimate to allow for small
     /// variations in the actual gas that gets used.
     pub limit: eth::Gas,
-    /// The gas price (EIP1559) for a settlement transaction.
+    /// The network gas price (EIP1559) at the time the settlement tx was built.
     pub price: eth::GasPrice,
 }
 
