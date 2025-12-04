@@ -31,6 +31,32 @@ use {
     tokio::sync::Mutex,
 };
 
+/// Metrics for tracking lock contention in the Balancer pool registry.
+#[derive(Debug, Clone, prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "balancer_pool_registry")]
+struct Metrics {
+    /// Time spent waiting to acquire the updater lock.
+    #[metric(
+        labels("operation"),
+        buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+    )]
+    lock_wait_time: prometheus::HistogramVec,
+
+    /// Time the updater lock is held.
+    #[metric(
+        labels("operation"),
+        buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+    )]
+    lock_hold_time: prometheus::HistogramVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(observe::metrics::get_storage_registry())
+            .expect("unexpected error getting metrics instance")
+    }
+}
+
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
 #[async_trait::async_trait]
@@ -99,17 +125,42 @@ where
     Factory: FactoryIndexing,
 {
     async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<H256> {
-        self.updater
-            .lock()
-            .await
-            .store()
-            .pool_ids_for_token_pairs(&token_pairs)
+        let wait_start = std::time::Instant::now();
+        let guard = self.updater.lock().await;
+
+        Metrics::get()
+            .lock_wait_time
+            .with_label_values(&["pool_ids_for_token_pairs"])
+            .observe(wait_start.elapsed().as_secs_f64());
+
+        let _hold_timer = Metrics::get()
+            .lock_hold_time
+            .with_label_values(&["pool_ids_for_token_pairs"])
+            .start_timer();
+
+        guard.store().pool_ids_for_token_pairs(&token_pairs)
     }
 
     async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
         let block = BlockId::Number(block.into());
 
-        let pool_infos = self.updater.lock().await.store().pools_by_id(&pool_ids);
+        let wait_start = std::time::Instant::now();
+        let guard = self.updater.lock().await;
+
+        Metrics::get()
+            .lock_wait_time
+            .with_label_values(&["pools_by_id"])
+            .observe(wait_start.elapsed().as_secs_f64());
+
+        let pool_infos = {
+            let _hold_timer = Metrics::get()
+                .lock_hold_time
+                .with_label_values(&["pools_by_id"])
+                .start_timer();
+
+            guard.store().pools_by_id(&pool_ids)
+        }; // Lock released here
+
         let pool_futures = pool_infos
             .into_iter()
             .map(|pool_info| self.fetcher.fetch_pool(&pool_info, block))
@@ -126,6 +177,14 @@ where
     Factory: FactoryIndexing,
 {
     async fn run_maintenance(&self) -> Result<()> {
+        // Note: self.updater.run_maintenance() is implemented on Mutex<EventHandler>
+        // which internally locks, so we measure the entire operation including lock
+        // time.
+        let _timer = Metrics::get()
+            .lock_hold_time
+            .with_label_values(&["run_maintenance"])
+            .start_timer();
+
         self.updater.run_maintenance().await
     }
 
