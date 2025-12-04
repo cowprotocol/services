@@ -279,8 +279,8 @@ fn set_tracing_subscriber_with_layer(
         ))
         .with(tracing_layer);
 
-    if cfg!(tokio_unstable) && enable_tokio_console {
-        subscriber.with(console_subscriber::spawn()).init();
+    if enable_tokio_console {
+        // subscriber.with(console_subscriber::spawn()).init();
         tracing::info!("started program with support for tokio-console");
     } else {
         subscriber.init();

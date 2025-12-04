@@ -1,2 +1,1 @@
 [build]
-rustflags = ["--cfg", "tokio_unstable"]

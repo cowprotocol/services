@@ -69,6 +69,15 @@ pub struct Metrics {
     /// Labels: span_name, hierarchy (root/leaf/intermediate)
     #[metric(labels("span_name", "hierarchy"))]
     pub active_spans_by_hierarchy: prometheus::IntGaugeVec,
+
+    /// Approximate memory usage of span extensions in bytes.
+    /// This tracks the total size of data stored in span extensions.
+    pub span_extensions_memory_bytes: prometheus::IntGauge,
+
+    /// Number of spans with each type of extension data.
+    /// Labels: extension_type (request_id, span_metadata, etc.)
+    #[metric(labels("extension_type"))]
+    pub span_extensions_count: prometheus::IntGaugeVec,
 }
 
 impl Metrics {

@@ -9,7 +9,7 @@ use {
 };
 
 /// Metadata stored in span extensions to track hierarchy information.
-struct SpanMetadata {
+pub struct SpanMetadata {
     has_children: bool,
     /// The hierarchy classification at the time of first enter.
     /// This must be stored because hierarchy can change (e.g., leaf ->

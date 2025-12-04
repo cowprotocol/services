@@ -32,15 +32,22 @@ use {
 };
 
 pub mod metrics;
+mod request_id_layer;
+mod span_extension_metrics;
 mod span_metrics;
 mod tokio_metrics;
 
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
 pub fn init(obs_config: observe::Config) {
-    // Initialize tracing with custom span metrics layer
+    // Initialize tracing with custom layers:
+    // 1. Span metrics layer for tracking active spans
+    // 2. Request ID layer for tracking request ID extensions
+    use tracing_subscriber::Layer;
     let span_layer = span_metrics::SpanMetricsLayer::new(span_metrics::default_tracked_spans());
-    observe::tracing::initialize_with_layer(&obs_config, Some(Box::new(span_layer)));
+    let request_id_layer = request_id_layer::RequestIdLayer;
+    let combined_layer = span_layer.and_then(request_id_layer);
+    observe::tracing::initialize_with_layer(&obs_config, Some(Box::new(combined_layer)));
 
     metrics::init();
     tokio_metrics::spawn_runtime_monitor();
