@@ -32,7 +32,7 @@ pub struct Auction {
     pub price_values: Vec<BigDecimal>,
     pub block: i64,
     pub id: i64,
-    pub deadline: Option<i64>,
+    pub deadline: i64,
 }
 
 #[derive(sqlx::FromRow)]
@@ -1229,7 +1229,7 @@ mod tests {
             tx_hash
         );
         assert_eq!(solver_competition.auction.id, 1);
-        assert_eq!(solver_competition.auction.deadline, Some(2));
+        assert_eq!(solver_competition.auction.deadline, 2);
         assert_eq!(solver_competition.trades.len(), 1);
         assert_eq!(solver_competition.trades.first().unwrap().solution_uid, 0);
         assert_eq!(solver_competition.reference_scores.len(), 1);
