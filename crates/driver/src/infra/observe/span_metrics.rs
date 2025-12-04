@@ -105,8 +105,8 @@ where
         }
     }
 
-    fn on_exit(&self, id: &Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(id) {
+    fn on_close(&self, id: Id, ctx: Context<'_, S>) {
+        if let Some(span) = ctx.span(&id) {
             let span_name = span.name();
             if self.should_track(span_name) {
                 // Use the stored hierarchy from on_enter
