@@ -109,11 +109,6 @@ fn set_tracing_subscriber(config: &Config) {
         }};
     }
 
-    let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
-        .unwrap_or("false".to_string())
-        .parse()
-        .unwrap();
-
     let (env_filter, reload_handle) =
         tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
 
@@ -161,13 +156,8 @@ fn set_tracing_subscriber(config: &Config) {
         ))
         .with(tracing_layer);
 
-    if cfg!(tokio_unstable) && enable_tokio_console {
-        subscriber.with(console_subscriber::spawn()).init();
-        tracing::info!("started program with support for tokio-console");
-    } else {
-        subscriber.init();
-        tracing::info!("started program without support for tokio-console");
-    }
+    subscriber.init();
+    tracing::info!("started program without support for tokio-console");
     if cfg!(unix) {
         spawn_reload_handler(initial_filter, reload_handle);
     }

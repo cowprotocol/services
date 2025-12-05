@@ -8,7 +8,7 @@ RUN rustup component add clippy rustfmt
 RUN echo "\
 [build]\n \
 target = \"$(rustc -Vv | grep host | awk '{print $2}')\"\n \
-rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\", \"--cfg\", \"tokio_unstable\"]\n \
+rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\"]\n \
 [target.$(rustc -Vv | grep host | awk '{print $2}')]\n \
 linker = \"clang\"\n \
 " > ~/.cargo/config.toml
