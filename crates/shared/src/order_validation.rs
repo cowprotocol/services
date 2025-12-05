@@ -301,6 +301,7 @@ impl OrderValidator {
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: Validator,
         max_gas_per_order: u64,
+        allow_same_sell_and_buy_token: bool,
     ) -> Self {
         Self {
             native_token,
@@ -317,18 +318,8 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             max_gas_per_order,
-            allow_same_sell_and_buy_token: false,
+            allow_same_sell_and_buy_token,
         }
-    }
-
-    /// Enables sell and buy validation if Some<WETH9::Instance> is provided
-    /// Disables it if None
-    pub fn with_allow_same_sell_and_buy_token(
-        mut self,
-        allow_same_sell_and_buy_token: bool,
-    ) -> Self {
-        self.allow_same_sell_and_buy_token = allow_same_sell_and_buy_token;
-        self
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -1082,8 +1073,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
         let result = validator
             .partial_validate(PreOrderData {
                 partially_fillable: true,
@@ -1236,8 +1227,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
                 + validity_configuration.min.as_secs() as u32
@@ -1326,8 +1317,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(true);
+            true,
+        );
 
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1415,8 +1406,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1632,8 +1623,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
@@ -1709,8 +1700,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
@@ -1774,8 +1765,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
@@ -1832,8 +1823,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1895,8 +1886,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1960,8 +1951,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2024,8 +2015,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2094,8 +2085,8 @@ mod tests {
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
                 u64::MAX,
-            )
-            .with_allow_same_sell_and_buy_token(false);
+                false,
+            );
 
             let order = OrderCreation {
                 valid_to: u32::MAX,
@@ -2186,8 +2177,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         // Test with flashloan hint that covers the sell amount
         let order_with_sufficient_flashloan = OrderCreation {
@@ -2605,8 +2596,8 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-        )
-        .with_allow_same_sell_and_buy_token(false);
+            false,
+        );
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 10,
