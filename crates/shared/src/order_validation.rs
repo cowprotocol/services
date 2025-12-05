@@ -577,7 +577,8 @@ impl OrderValidating for OrderValidator {
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
         let app_data_signer = app_data.inner.protocol.signer.map(IntoLegacy::into_legacy);
 
-        let owner = order.verify_owner(domain_separator, app_data_signer.map(IntoAlloy::into_alloy))?;
+        let owner =
+            order.verify_owner(domain_separator, app_data_signer.map(IntoAlloy::into_alloy))?;
         tracing::debug!(?owner, "recovered owner from order and signature");
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
@@ -624,8 +625,7 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let pre_order =
-            PreOrderData::from_order_creation(owner, &data, signing_scheme);
+        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
@@ -769,7 +769,7 @@ impl OrderValidating for OrderValidator {
 
         let order = Order {
             metadata: OrderMetadata {
-                owner: owner,
+                owner,
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract: settlement_contract.into_alloy(),
