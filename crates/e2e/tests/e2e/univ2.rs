@@ -3,10 +3,7 @@ use {
     contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::{eth, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -58,10 +55,10 @@ async fn test(web3: Web3) {
     let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: eth(2),
+        buy_token: *token.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()

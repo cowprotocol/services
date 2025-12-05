@@ -2,10 +2,7 @@ use {
     ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{BlockId, H160, H256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
@@ -65,10 +62,10 @@ async fn test_cancel_on_expiry(web3: Web3) {
     let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: eth(2),
+        buy_token: *token.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()

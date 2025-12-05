@@ -348,10 +348,7 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if orders
-            .iter()
-            .any(|order| signer != order.metadata.owner.into_legacy())
-        {
+        if orders.iter().any(|order| signer != order.metadata.owner) {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -381,7 +378,7 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if signer != order.metadata.owner.into_legacy() {
+        if signer != order.metadata.owner {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -634,8 +631,6 @@ mod tests {
     use {
         super::*,
         crate::database::orders::MockOrderStoring,
-        ethcontract::H160,
-        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         mockall::predicate::eq,
         model::{
             order::{OrderData, OrderMetadata},
@@ -678,7 +673,7 @@ mod tests {
                 Ok((
                     Order {
                         metadata: OrderMetadata {
-                            owner: creation.from.unwrap().into_alloy(),
+                            owner: creation.from.unwrap(),
                             uid: new_order_uid,
                             ..Default::default()
                         },
@@ -714,7 +709,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(H160([2; 20])),
+                    from: Some(Address::repeat_byte(2)),
                     signature: Signature::Eip712(Default::default()),
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -734,7 +729,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(H160([2; 20])),
+                    from: Some(Address::repeat_byte(2)),
                     signature: Signature::Eip712(Default::default()),
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -754,7 +749,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(old_order.metadata.owner.into_legacy()),
+                    from: Some(old_order.metadata.owner),
                     signature: Signature::PreSign,
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -773,7 +768,7 @@ mod tests {
         // Stars align...
         let (order_id, _) = orderbook
             .add_order(OrderCreation {
-                from: Some(old_order.metadata.owner.into_legacy()),
+                from: Some(old_order.metadata.owner),
                 signature: Signature::Eip712(Default::default()),
                 app_data: OrderCreationAppData::Full {
                     full: format!(

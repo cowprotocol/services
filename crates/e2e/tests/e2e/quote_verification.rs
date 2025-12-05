@@ -1,14 +1,14 @@
 use {
-    ::alloy::primitives::{Address, U256, address},
+    ::alloy::{
+        primitives::{Address, U256, address},
+        providers::Provider,
+    },
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::{eth, *},
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
     },
     model::{
         interaction::InteractionData,
@@ -423,8 +423,8 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     assert!(
         onchain
             .web3()
-            .eth()
-            .balance(trader.address().into_legacy(), None)
+            .alloy
+            .get_balance(trader.address())
             .await
             .unwrap()
             .is_zero()

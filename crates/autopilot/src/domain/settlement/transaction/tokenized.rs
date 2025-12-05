@@ -43,7 +43,7 @@ pub fn order_uid(
     let owner = signature
         .recover_owner(&trade.signature.0, &domain_separator, &order.hash_struct())
         .map_err(error::Uid::RecoverOwner)?;
-    Ok(order.uid(&domain_separator, &owner).into())
+    Ok(order.uid(&domain_separator, &owner.into_legacy()).into())
 }
 
 /// Trade flags are encoded in a 256-bit integer field. For more information on

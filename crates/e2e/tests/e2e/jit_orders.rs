@@ -80,7 +80,7 @@ async fn single_limit_order_test(web3: Web3) {
                 name: "mock_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
-                base_tokens: vec![token.address().into_legacy()],
+                base_tokens: vec![*token.address()],
                 merge_solutions: true,
             },
         ],
@@ -111,10 +111,10 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Place order
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: eth(10),
+        buy_token: *token.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -169,7 +169,7 @@ async fn single_limit_order_test(web3: Web3) {
                 fee: Some(to_wei(1)),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: order.sell_amount,
+                executed_amount: order.sell_amount.into_legacy(),
                 fee: Some(0.into()),
                 order: solvers_dto::solution::OrderUid(order_id.0),
             }),

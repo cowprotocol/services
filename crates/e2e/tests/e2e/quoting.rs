@@ -1,9 +1,6 @@
 use {
     e2e::setup::{colocation::SolverEngine, eth, mock::Mock, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -291,14 +288,14 @@ async fn quote_timeout(web3: Web3) {
                 name: "test_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
-                base_tokens: vec![sell_token.address().into_legacy()],
+                base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
             },
             SolverEngine {
                 name: "test_quoter".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
-                base_tokens: vec![sell_token.address().into_legacy()],
+                base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
             },
         ],
@@ -354,9 +351,7 @@ async fn quote_timeout(web3: Web3) {
 
     // native token price requests are also capped to the max timeout
     let start = std::time::Instant::now();
-    let res = services
-        .get_native_price(&sell_token.address().into_legacy())
-        .await;
+    let res = services.get_native_price(sell_token.address()).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
@@ -395,10 +390,10 @@ async fn quote_timeout(web3: Web3) {
         .unwrap();
 
     let order = OrderCreation {
-        sell_token: sell_token.address().into_legacy(),
-        sell_amount: to_wei(1),
+        sell_token: *sell_token.address(),
+        sell_amount: eth(1),
         buy_token: Default::default(),
-        buy_amount: to_wei(1),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,

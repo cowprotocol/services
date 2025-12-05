@@ -1,8 +1,8 @@
 use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256},
     anyhow::{Context as _, Result, ensure},
-    primitive_types::{H160, H256},
+    primitive_types::H160,
     serde::{Deserialize, Serialize, de},
     std::{
         convert::TryInto as _,
@@ -174,7 +174,7 @@ impl Signature {
         signature: &[u8],
         domain_separator: &DomainSeparator,
         struct_hash: &[u8; 32],
-    ) -> Result<H160> {
+    ) -> Result<Address> {
         match self {
             Self::Eip712(_) | Self::EthSign(_) => {
                 let recovered = self
@@ -183,8 +183,8 @@ impl Signature {
                     .context("unreachable?")?;
                 Ok(recovered.signer)
             }
-            Self::Eip1271(_) => Ok(H160::from_slice(&signature[..20])),
-            Self::PreSign => Ok(H160::from_slice(signature)),
+            Self::Eip1271(_) => Ok(Address::from_slice(&signature[..20])),
+            Self::PreSign => Ok(Address::from_slice(signature)),
         }
     }
 }
@@ -194,10 +194,10 @@ impl Signature {
 pub struct Recovered {
     /// The signing message that was used for recovery. The actual value of this
     /// message depends on the singing scheme used.
-    pub message: H256,
+    pub message: B256,
 
     /// The recovered signer address.
-    pub signer: H160,
+    pub signer: Address,
 }
 
 /// An internal type used for deriving `serde` implementations for the
@@ -332,10 +332,10 @@ impl EcdsaSignature {
         let (signature, recovery_id) = recovery
             .as_signature()
             .context("unexpectedly invalid signature")?;
-        let signer = signing::recover(&message, &signature, recovery_id)?;
+        let signer = Address::new(signing::recover(&message, &signature, recovery_id)?.0);
 
         Ok(Recovered {
-            message: H256(message),
+            message: message.into(),
             signer,
         })
     }

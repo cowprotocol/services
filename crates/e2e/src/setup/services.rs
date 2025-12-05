@@ -7,6 +7,7 @@ use {
         colocation::{self, SolverEngine},
         wait_for_condition,
     },
+    alloy::primitives::Address,
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
@@ -532,7 +533,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_native_price(
         &self,
-        token: &H160,
+        token: &Address,
     ) -> Result<NativeTokenPrice, (StatusCode, String)> {
         let response = self
             .http

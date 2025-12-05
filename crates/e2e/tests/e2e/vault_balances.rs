@@ -1,9 +1,6 @@
 use {
     e2e::setup::{eth, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
@@ -57,11 +54,11 @@ async fn vault_balances(web3: Web3) {
     // Place Orders
     let order = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(10),
+        sell_token: *token.address(),
+        sell_amount: eth(10),
         sell_token_balance: SellTokenSource::External,
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(8),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(8),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }

@@ -58,10 +58,10 @@ async fn test(web3: Web3) {
     let balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(4),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: eth(4),
+        buy_token: *token.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,

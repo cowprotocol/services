@@ -156,10 +156,10 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     let order = OrderCreation {
-        sell_token: token_usdc.address().into_legacy(),
-        sell_amount: amount.into_legacy(),
-        buy_token: token_usdt.address().into_legacy(),
-        buy_amount: amount.into_legacy(),
+        sell_token: *token_usdc.address(),
+        sell_amount: amount,
+        buy_token: *token_usdt.address(),
+        buy_amount: amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -305,14 +305,18 @@ fn create_zeroex_liquidity_orders(
     weth_address: Address,
 ) -> [shared::zeroex_api::OrderRecord; 3] {
     let typed_order = Eip712TypedZeroExOrder {
-        maker_token: order_creation.buy_token.into_alloy(),
-        taker_token: order_creation.sell_token.into_alloy(),
+        maker_token: order_creation.buy_token,
+        taker_token: order_creation.sell_token,
         // fully covers execution costs
-        maker_amount: order_creation.buy_amount.as_u128() * 3,
-        taker_amount: order_creation.sell_amount.as_u128() * 2,
+        maker_amount: u128::try_from(order_creation.buy_amount).unwrap() * 3,
+        taker_amount: u128::try_from(order_creation.sell_amount).unwrap() * 2,
         // makes 0x order partially filled, but the amount is higher than the cowswap order to
         // make sure the 0x order is not overfilled in the end of the e2e test
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
+        remaining_fillable_taker_amount: (order_creation.sell_amount
+            * alloy::primitives::U256::from(3)
+            / alloy::primitives::U256::from(2))
+        .try_into()
+        .unwrap(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         // Makes it possible for anyone to fill the order
@@ -325,12 +329,12 @@ fn create_zeroex_liquidity_orders(
     };
     let usdt_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
-        taker_token: order_creation.buy_token.into_alloy(),
+        taker_token: order_creation.buy_token,
         // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: order_creation.sell_amount.as_u128(),
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
+        taker_amount: order_creation.sell_amount.try_into().unwrap(),
+        remaining_fillable_taker_amount: order_creation.sell_amount.try_into().unwrap(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),
@@ -342,12 +346,12 @@ fn create_zeroex_liquidity_orders(
     };
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
-        taker_token: order_creation.sell_token.into_alloy(),
+        taker_token: order_creation.sell_token,
         // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: order_creation.sell_amount.as_u128(),
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
+        taker_amount: order_creation.sell_amount.try_into().unwrap(),
+        remaining_fillable_taker_amount: order_creation.sell_amount.try_into().unwrap(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),

@@ -1,10 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{eth, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -91,10 +88,10 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     // Place Order
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(9),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(9),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -108,9 +105,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     tracing::info!("waiting for first trade");
     onchain.mint_block().await;
-    let trade_happened = || async {
-        token_b.balanceOf(trader.address()).call().await.unwrap() == order.buy_amount.into_alloy()
-    };
+    let trade_happened =
+        || async { token_b.balanceOf(trader.address()).call().await.unwrap() == order.buy_amount };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check that settlement buffers were traded.
@@ -138,7 +134,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let trade_happened = || async {
         onchain.mint_block().await;
         token_b.balanceOf(trader.address()).call().await.unwrap()
-            == (order.buy_amount.into_alloy() * U256::from(2))
+            == (order.buy_amount * ::alloy::primitives::U256::from(2))
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 }

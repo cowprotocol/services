@@ -9,7 +9,7 @@ use {
         util::Bytes,
     },
     app_data::AppDataHash,
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
     model::{
         DomainSeparator,
@@ -324,7 +324,7 @@ impl JitOrder {
             signature.data = Bytes(self.0.signature[20..].to_vec());
         }
 
-        signature.signer = signer.into();
+        signature.signer = signer.into_legacy().into();
 
         Ok(signature)
     }
