@@ -213,6 +213,12 @@ paths:
       summary: Get existing trades.
       description: |
         Exactly one of `owner` or `orderUid` must be set.
+
+        Results are paginated and sorted by block number and log index descending (newest trades first).
+
+        To enumerate all trades start with `offset` 0 and keep increasing the
+        `offset` by the total number of returned results. When a response
+        contains less than `limit` the last page has been reached.
       parameters:
         - name: owner
           in: query
@@ -223,6 +229,22 @@ paths:
           in: query
           schema:
             $ref: "#/components/schemas/UID"
+          required: false
+        - name: offset
+          in: query
+          description: |
+            The pagination offset. Defaults to 0.
+          schema:
+            type: integer
+          required: false
+        - name: limit
+          in: query
+          description: |
+            The maximum number of trades to return. Defaults to 10. Must be between 1 and 1000.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
           required: false
       responses:
         "200":
