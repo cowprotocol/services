@@ -20,7 +20,7 @@ use {
 /// pending transaction at the same nonce. The correct factor is actually
 /// 1.125 but to avoid rounding issues on chains with very low gas prices
 /// we increase slightly more.
-const GAS_PRICE_BUMP: f64 = 1.3;
+const GAS_PRICE_BUMP: f64 = 1.13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
