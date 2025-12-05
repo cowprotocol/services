@@ -165,7 +165,6 @@ pub fn run_database_metrics_work(db: Postgres) {
     let span = tracing::info_span!("database_metrics");
     // Spawn the task for updating large table statistics
     tokio::spawn(update_large_tables_stats(db.clone()).instrument(span.clone()));
-
     // Spawn the task for database metrics
     tokio::task::spawn(database_metrics(db).instrument(span));
 }
