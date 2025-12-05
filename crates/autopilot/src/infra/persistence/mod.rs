@@ -95,6 +95,46 @@ impl Persistence {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
+    /// Spawns a background task that listens for new order notifications from
+    /// PostgreSQL and notifies via the provided Notify.
+    pub fn spawn_order_listener(&self, notify: Arc<tokio::sync::Notify>) {
+        let pool = self.postgres.pool.clone();
+        tokio::spawn(async move {
+            loop {
+                let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
+                    Ok(listener) => listener,
+                    Err(err) => {
+                        tracing::error!(?err, "failed to create PostgreSQL listener");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+
+                tracing::info!("connected to PostgreSQL for order notifications");
+
+                if let Err(err) = listener.listen("new_order").await {
+                    tracing::error!(?err, "failed to listen on 'new_order' channel");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+
+                loop {
+                    match listener.recv().await {
+                        Ok(notification) => {
+                            let order_uid = notification.payload();
+                            tracing::debug!(order_uid, "received order notification from postgres");
+                            notify.notify_one();
+                        }
+                        Err(err) => {
+                            tracing::error!(?err, "error receiving notification from postgres");
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     /// Fetches the ID that should be used for the next auction.
     pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
         let _timer = Metrics::get()

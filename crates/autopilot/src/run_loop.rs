@@ -92,6 +92,8 @@ pub struct RunLoop {
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     winner_selection: winner_selection::Arbitrator,
+    /// Notifier that wakes the main loop on new blocks or orders
+    wake_notify: Arc<tokio::sync::Notify>,
 }
 
 impl RunLoop {
@@ -111,6 +113,13 @@ impl RunLoop {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 
+        // Create notifier that wakes the main loop on new blocks or orders
+        let wake_notify = Arc::new(tokio::sync::Notify::new());
+
+        // Spawn background tasks to listen for events
+        persistence.spawn_order_listener(wake_notify.clone());
+        Self::spawn_block_listener(eth.current_block().clone(), wake_notify.clone());
+
         Self {
             config,
             eth,
@@ -124,6 +133,7 @@ impl RunLoop {
             maintenance,
             competition_updates_sender,
             winner_selection: winner_selection::Arbitrator { max_winners, weth },
+            wake_notify,
         }
     }
 
@@ -156,6 +166,10 @@ impl RunLoop {
                 .update_caches(&mut last_block, leader_lock_tracker.is_leader())
                 .await;
 
+            // Wait for a new block or order before proceeding (we do this *after* caches
+            // are loaded to reduce auction start time)
+            self_arc.wake_notify.notified().await;
+
             // caches are warmed up, we're ready to do leader work
             if let Some(startup) = self_arc.probes.startup.as_ref() {
                 startup.store(true, Ordering::Release);
@@ -179,6 +193,21 @@ impl RunLoop {
             }
         }
         leader_lock_tracker.release().await;
+    }
+
+    /// Spawns a background task that listens for new blocks from the
+    /// blockchain.
+    fn spawn_block_listener(
+        current_block: ethrpc::block_stream::CurrentBlockWatcher,
+        notify: Arc<tokio::sync::Notify>,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                ethrpc::block_stream::next_block(&current_block).await;
+                tracing::debug!("received new block");
+                notify.notify_one();
+            }
+        });
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
