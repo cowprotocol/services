@@ -19,7 +19,7 @@ test-e2e-local: (test-e2e "local_node")
 # Run End-to-end tests on forked node
 #
 # FORK_URL_MAINNET and FORK_URL_GNOSIS env variables have to be provided.
-test-e2e-forked: (test-e2e "forked_node")
+test-e2e-forked: (test-e2e "forked_node_trace_based")
 
 # Run End-to-end tests with custom filters
 test-e2e *filters:
