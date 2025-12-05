@@ -23,6 +23,8 @@ pub struct Solver<'a> {
     liquidity: HashMap<liquidity::Id, &'a liquidity::Liquidity>,
 }
 
+pub struct RouteComputationError;
+
 impl<'a> Solver<'a> {
     pub fn new(
         weth: &eth::WethAddress,
@@ -45,6 +47,9 @@ impl<'a> Solver<'a> {
         request: solver::Request,
         max_hops: usize,
     ) -> Option<solver::Route<'a>> {
+        if request.sell.token == request.buy.token {
+            return Some(solver::Route::new(vec![]));
+        }
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0.into_alloy(),
             request.buy.token.0.into_alloy(),
@@ -60,6 +65,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&sell.path, request.sell.token.0, sell.value)
                         .await?;
@@ -90,6 +96,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
                         .await?;
@@ -114,7 +121,7 @@ impl<'a> Solver<'a> {
             }
         };
 
-        solver::Route::new(segments)
+        Some(solver::Route::new(segments))
     }
 
     async fn traverse_path(
