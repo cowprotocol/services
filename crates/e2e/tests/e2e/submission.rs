@@ -6,8 +6,10 @@ use {
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::time::Duration,
@@ -277,19 +279,42 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         .await
         .expect("Must be able to disable automine");
 
+    tracing::info!("Quoting");
+    let quote_sell_amount = eth(1);
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *token.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(quote_sell_amount.into_legacy()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+    let quote_response = services.submit_quote(&quote_request).await.unwrap();
+    tracing::info!(?quote_response);
+    assert!(quote_response.id.is_some());
+    assert!(quote_response.verified);
+    assert!(quote_response.quote.buy_amount < quote_sell_amount);
+
+    let quote_metadata =
+        crate::database::quote_metadata(services.db(), quote_response.id.unwrap()).await;
+    assert!(quote_metadata.is_some());
+    tracing::debug!(?quote_metadata);
+
     tracing::info!("Placing order");
     let initial_balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(initial_balance, eth(10));
 
-    let order_sell_amount: ::alloy::primitives::Uint<256, 4> = eth(2);
-    let order_buy_amount = eth(1);
     let order = OrderCreation {
-        sell_token: *token.address(),
-        sell_amount: order_sell_amount,
-        buy_token: *token.address(),
-        buy_amount: order_buy_amount,
-        valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
+        sell_token: *token.address(),
+        buy_token: *token.address(),
+        quote_id: quote_response.id,
+        sell_amount: quote_sell_amount,
+        buy_amount: quote_response.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
     .sign(
@@ -311,7 +336,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     onchain.mint_block().await;
 
     // Wait for settlement tx to appear in txpool
-    wait_for_condition(Duration::from_secs(2), || async {
+    wait_for_condition(TIMEOUT, || async {
         get_pending_tx(solver.account().address(), &web3)
             .await
             .is_some()

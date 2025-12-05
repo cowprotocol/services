@@ -19,7 +19,7 @@ use {
     ::alloy::sol_types::SolCall,
     alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
-    bigdecimal::BigDecimal,
+    bigdecimal::{BigDecimal, Zero},
     contracts::alloy::{
         GPv2Settlement,
         WETH9,
@@ -771,8 +771,11 @@ fn add_balance_queries(
         alloy::primitives::U256::ZERO,
         query_balance_call.into(),
     );
-    // query balance query at the end of pre-interactions
-    settlement.interactions[0].push(interaction.clone());
+
+    // query the balance as the first interaction, the sell token has already
+    // been transferred into the settlement contract since the calculation is
+    // based on the out amount
+    settlement.interactions[1].insert(0, interaction.clone());
     // query balance right after we payed out all `buy_token`
     settlement.interactions[2].insert(0, interaction);
     settlement
@@ -869,7 +872,7 @@ fn ensure_quote_accuracy(
         .get(&query.buy_token)
         .context("summary buy token is missing")?;
 
-    if *sell_token_lost >= sell_token_lost_limit || *buy_token_lost >= buy_token_lost_limit {
+    if (!sell_token_lost.is_zero() && *sell_token_lost >= sell_token_lost_limit) || (!buy_token_lost.is_zero() && *buy_token_lost >= buy_token_lost_limit) {
         return Err(Error::TooInaccurate);
     }
 

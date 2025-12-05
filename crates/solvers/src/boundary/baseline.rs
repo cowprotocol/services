@@ -44,10 +44,10 @@ impl<'a> Solver<'a> {
         &self,
         request: solver::Request,
         max_hops: usize,
-    ) -> Result<Option<solver::Route<'a>>, RouteComputationError> {
+    ) -> Option<solver::Route<'a>> {
         if request.sell.token == request.buy.token {
             tracing::info!("Sell=Buy, returning empty route");
-            return Ok(None);
+            return Some(solver::Route::new(vec![]));
         }
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
@@ -85,8 +85,7 @@ impl<'a> Solver<'a> {
                     .await
                     .into_iter()
                     .flatten()
-                    .min_by_key(|(_, sell)| sell.value)
-                    .ok_or(RouteComputationError)?
+                    .min_by_key(|(_, sell)| sell.value)?
             }
             order::Side::Sell => {
                 let futures = candidates.iter().map(|path| async {
@@ -117,12 +116,11 @@ impl<'a> Solver<'a> {
                     .await
                     .into_iter()
                     .flatten()
-                    .max_by_key(|(_, buy)| buy.value)
-                    .ok_or(RouteComputationError)?
+                    .max_by_key(|(_, buy)| buy.value)?
             }
         };
 
-        solver::Route::new(segments).map(Ok).transpose()
+        Some(solver::Route::new(segments))
     }
 
     async fn traverse_path(
