@@ -327,16 +327,14 @@ impl Mempools {
         let pending_tx = mempool
             .find_pending_tx_in_mempool(solver.address(), nonce)
             .await?;
-        let pending_tx_gas_price = eth::GasPrice {
-            max: eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-            tip: eth::U256::from(
-                pending_tx
-                    .max_priority_fee_per_gas()
-                    .context("pending tx is not EIP 1559")?,
-            )
+        let pending_tx_gas_price = eth::GasPrice::new(
+            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+            eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
+                format!("pending tx is not EIP 1559 ()", pending_tx.inner.tx_hash())
+            })?)
             .into(),
-            base: eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-        };
+            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+        );
         // in order to replace a tx we need to increase the price
         Ok(pending_tx_gas_price * GAS_PRICE_BUMP)
     }
