@@ -38,6 +38,8 @@ pub mod metrics;
 pub fn init(obs_config: observe::Config) {
     observe::tracing::initialize_reentrant(&obs_config);
     metrics::init();
+    #[cfg(all(unix, feature = "jemalloc-profiling"))]
+    observe::heap_dump_handler::spawn_heap_dump_handler();
 }
 
 /// Observe a received auction.

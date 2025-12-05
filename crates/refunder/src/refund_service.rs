@@ -3,6 +3,8 @@ use {
     alloy::{
         network::TxSigner,
         primitives::{Address, B256, Signature, address},
+        providers::Provider,
+        rpc::types::TransactionRequest,
     },
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
@@ -107,6 +109,29 @@ impl RefundService {
         })
     }
 
+    /// Checks if an address can receive ETH by simulating a small transfer.
+    /// Returns true for EOAs and contracts with working receive/fallback
+    /// functions.
+    async fn can_receive_eth(&self, address: Address) -> bool {
+        // Try to estimate gas for sending a minimal amount of ETH
+        let tx = TransactionRequest::default()
+            .to(address)
+            .value(alloy::primitives::U256::from(1));
+
+        self.web3
+            .alloy
+            .estimate_gas(tx)
+            .await
+            .inspect_err(|err| {
+                tracing::warn!(
+                    ?address,
+                    ?err,
+                    "Address cannot receive ETH - will skip refund"
+                );
+            })
+            .is_ok()
+    }
+
     async fn identify_uids_refunding_status_via_web3_calls(
         &self,
         refundable_order_uids: Vec<EthOrderPlacement>,
@@ -136,7 +161,7 @@ impl RefundService {
                     .expect("order_uid slice with incorrect length");
                 let order = ethflow_contract.orders(order_hash.into()).call().await;
                 let order_owner = match order {
-                    Ok(order) => Some(order.owner),
+                    Ok(order) => order.owner,
                     Err(err) => {
                         tracing::error!(
                             uid =? B256::from(order_hash),
@@ -146,12 +171,21 @@ impl RefundService {
                         return None;
                     }
                 };
-                let refund_status = match order_owner {
-                    Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
-                    Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
-                    // any other owner
-                    _ => RefundStatus::NotYetRefunded,
+                let refund_status = if order_owner == INVALIDATED_OWNER {
+                    RefundStatus::Refunded
+                } else if order_owner == NO_OWNER {
+                    RefundStatus::Invalid
+                } else if !self.can_receive_eth(order_owner).await {
+                    tracing::warn!(
+                        uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
+                        owner = ?order_owner,
+                        "Order owner cannot receive ETH - marking as invalid"
+                    );
+                    RefundStatus::Invalid
+                } else {
+                    RefundStatus::NotYetRefunded
                 };
+
                 Some((eth_order_placement.uid, refund_status, ethflow_contract))
             });
 
@@ -174,10 +208,11 @@ impl RefundService {
         }
         if !invalid_uids.is_empty() {
             // In exceptional cases, e.g. if the refunder tries to refund orders from a
-            // previous contract, the order_owners could be zero
+            // previous contract, the order_owners could be zero, or the owner cannot
+            // receive ETH (e.g. EOF contracts or contracts with restrictive receive logic)
             tracing::warn!(
-                "Trying to invalidate orders that weren't created in the current contract. Uids: \
-                 {:?}",
+                "Skipping invalid orders (not created in current contract or owner cannot receive \
+                 ETH). Uids: {:?}",
                 invalid_uids
             );
         }
@@ -252,5 +287,64 @@ impl RefundService {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Creates a minimal RefundService for testing purposes.
+    fn new_test_service(web3: Web3) -> RefundService {
+        RefundService {
+            db: PgPool::connect_lazy("postgresql://").unwrap(),
+            web3: web3.clone(),
+            ethflow_contracts: vec![],
+            min_validity_duration: 0,
+            min_price_deviation: 0.0,
+            max_gas_price: 0,
+            start_priority_fee_tip: 0,
+            submitter: Submitter {
+                web3: web3.clone(),
+                signer_address: Address::ZERO,
+                gas_estimator: Box::new(web3.legacy.clone()),
+                gas_parameters_of_last_tx: None,
+                nonce_of_last_submission: None,
+                max_gas_price: 0,
+                start_priority_fee_tip: 0,
+            },
+        }
+    }
+
+    /// Verifies that `can_receive_eth()` correctly identifies addresses that
+    /// cannot receive ETH transfers. Some smart contracts reject ETH transfers
+    /// (e.g., EOF contracts or contracts without receive/fallback functions),
+    /// which causes batch refunds to fail with EthTransferFailed errors.
+    ///
+    /// This test uses a real Sepolia EOF contract address that rejects ETH and
+    /// compares it against a normal EOA to ensure the filtering logic works.
+    #[tokio::test]
+    #[ignore] // Run with: cargo test --package refunder --lib test_problematic_sepolia_address -- --ignored
+    async fn test_problematic_sepolia_address() {
+        let web3 = Web3::new_from_url("https://ethereum-sepolia-rpc.publicnode.com");
+        let service = new_test_service(web3);
+
+        // EOF contract that cannot receive ETH (0xef01... bytecode prefix)
+        let problematic = address!("0x66C9152339ce05EE0C8A8eff9EeF8230AbFe8350");
+
+        // Normal EOA for comparison
+        let working = address!("0x5b485e4431853F82d89dba68220A422CC17cE024");
+
+        // Test that can_receive_eth correctly identifies the problematic address
+        assert!(
+            !service.can_receive_eth(problematic).await,
+            "EOF contract should be identified as unable to receive ETH"
+        );
+
+        // Test that can_receive_eth correctly identifies a working address
+        assert!(
+            service.can_receive_eth(working).await,
+            "Normal EOA should be identified as able to receive ETH"
+        );
     }
 }
