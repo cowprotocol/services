@@ -160,14 +160,15 @@ impl RunLoop {
         let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
-            // Wait for a new block or order before proceeding
-            self_arc.wake_notify.notified().await;
-
             leader_lock_tracker.try_acquire().await;
 
             let start_block = self_arc
                 .update_caches(&mut last_block, leader_lock_tracker.is_leader())
                 .await;
+
+            // Wait for a new block or order before proceeding (we do this *after* caches
+            // are loaded to reduce auction start time)
+            self_arc.wake_notify.notified().await;
 
             // caches are warmed up, we're ready to do leader work
             if let Some(startup) = self_arc.probes.startup.as_ref() {
