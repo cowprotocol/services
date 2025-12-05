@@ -91,6 +91,28 @@ impl<T: Transport> Debug<T> {
                 .execute("debug_traceTransaction", vec![hash, tracing_options]),
         )
     }
+
+    /// Traces a call with struct logs to capture opcode-level execution.
+    /// This is useful for detecting which storage slots are accessed during a
+    /// call.
+    pub fn trace_call(
+        &self,
+        call: CallRequest,
+        block: BlockId,
+    ) -> CallFuture<StructLogTrace, T::Out> {
+        let call = helpers::serialize(&call);
+        let block = helpers::serialize(&block);
+        let tracing_options = serde_json::json!({
+            "enableMemory": false,
+            "disableStack": false,
+            "disableStorage": false,
+            "enableReturnData": false
+        });
+        CallFuture::new(
+            self.transport()
+                .execute("debug_traceCall", vec![call, block, tracing_options]),
+        )
+    }
 }
 
 /// Taken from alloy::rpc::types::trace::geth::CallFrame
@@ -106,6 +128,88 @@ pub struct CallFrame {
     /// Recorded child calls.
     #[serde(default)]
     pub calls: Vec<CallFrame>,
+}
+
+/// Struct log trace response from debug_traceCall
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructLogTrace {
+    /// Gas used by the call
+    #[serde(default)]
+    pub gas: u64,
+    /// Whether the call failed
+    #[serde(default)]
+    pub failed: bool,
+    /// Return value
+    #[serde(default)]
+    pub return_value: String,
+    /// Struct logs containing opcode-level execution trace
+    #[serde(default)]
+    pub struct_logs: Vec<StructLog>,
+}
+
+/// Individual struct log entry representing one opcode execution
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructLog {
+    /// Program counter
+    pub pc: u64,
+    /// Opcode name
+    pub op: String,
+    /// Gas remaining
+    pub gas: u64,
+    /// Gas cost
+    pub gas_cost: u64,
+    /// Depth of call stack
+    pub depth: u64,
+    /// Stack values (top of stack is last element)
+    /// Stack values can be variable length hex strings, so we deserialize as
+    /// strings
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_hex_stack")]
+    pub stack: Vec<primitive_types::H256>,
+    /// Storage changes at this step
+    #[serde(default)]
+    pub storage: std::collections::HashMap<primitive_types::H256, primitive_types::H256>,
+}
+
+/// Custom deserializer for stack values that handles variable-length hex
+/// strings (side note: I don't know why this has to be so complicated...)
+fn deserialize_hex_stack<'de, D>(deserializer: D) -> Result<Vec<primitive_types::H256>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let strings: Vec<String> = Vec::deserialize(deserializer)?;
+
+    strings
+        .into_iter()
+        .map(|s| {
+            // Remove 0x prefix if present
+            let mut hex_str = s.strip_prefix("0x").unwrap_or(&s).to_string();
+
+            // Hex decoder requires even number of digits, prepend 0 if odd
+            if hex_str.len() % 2 != 0 {
+                hex_str.insert(0, '0');
+            }
+
+            // Decode hex to bytes
+            let bytes = const_hex::decode(&hex_str)
+                .map_err(|e| serde::de::Error::custom(format!("invalid hex: {}", e)))?;
+
+            // Left-pad to 32 bytes
+            let mut padded = [0u8; 32];
+            if bytes.len() <= 32 {
+                padded[32 - bytes.len()..].copy_from_slice(&bytes);
+            } else {
+                return Err(serde::de::Error::custom(format!(
+                    "hex value too long: {} bytes",
+                    bytes.len()
+                )));
+            }
+
+            Ok(primitive_types::H256(padded))
+        })
+        .collect()
 }
 
 #[cfg(test)]
