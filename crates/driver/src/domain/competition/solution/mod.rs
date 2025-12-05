@@ -199,6 +199,17 @@ impl Solution {
             .collect()
     }
 
+    /// Returns all the order UIDs involved in the solution.
+    pub fn order_uids(&self) -> Vec<order::Uid> {
+        self.trades
+            .iter()
+            .map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => fulfillment.order().uid,
+                Trade::Jit(jit) => jit.order().uid,
+            })
+            .collect()
+    }
+
     /// Interactions executed by this solution.
     pub fn interactions(&self) -> &[Interaction] {
         &self.interactions

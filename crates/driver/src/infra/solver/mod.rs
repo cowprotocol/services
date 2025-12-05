@@ -131,6 +131,7 @@ pub struct Config {
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
     pub bad_token_detection: BadTokenDetection,
+    pub bad_order_detection: BadOrderDetection,
     /// Max size of the pending settlements queue.
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
@@ -168,6 +169,10 @@ impl Solver {
 
     pub fn bad_token_detection(&self) -> &BadTokenDetection {
         &self.config.bad_token_detection
+    }
+
+    pub fn bad_order_detection(&self) -> &BadOrderDetection {
+        &self.config.bad_order_detection
     }
 
     pub fn persistence(&self) -> Persistence {
@@ -435,4 +440,13 @@ pub struct BadTokenDetection {
     pub metrics_strategy_required_measurements: u32,
     pub metrics_strategy_log_only: bool,
     pub metrics_strategy_token_freeze_time: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct BadOrderDetection {
+    pub enable_metrics_strategy: bool,
+    pub metrics_strategy_failure_ratio: f64,
+    pub metrics_strategy_required_measurements: u32,
+    pub metrics_strategy_log_only: bool,
+    pub metrics_strategy_order_freeze_time: Duration,
 }

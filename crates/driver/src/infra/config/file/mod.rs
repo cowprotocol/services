@@ -314,6 +314,10 @@ struct SolverConfig {
     #[serde(default, flatten)]
     bad_token_detection: BadTokenDetectionConfig,
 
+    /// Configuration for bad order detection.
+    #[serde(default, flatten)]
+    bad_order_detection: BadOrderDetectionConfig,
+
     /// The maximum number of `/settle` requests that can be queued up
     /// before the driver starts dropping new `/solve` requests.
     #[serde(default = "default_settle_queue_size")]
@@ -883,6 +887,53 @@ pub struct BadTokenDetectionConfig {
     pub metrics_strategy_token_freeze_time: Duration,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BadOrderDetectionConfig {
+    /// Whether the solver opted into detecting problematic
+    /// orders with metrics-based detection.
+    #[serde(default, rename = "enable-metrics-bad-order-detection")]
+    pub enable_metrics_strategy: bool,
+
+    /// The ratio of failures to attempts that qualifies an order as problematic.
+    #[serde(
+        default = "default_metrics_bad_order_detector_failure_ratio",
+        rename = "metrics-bad-order-detection-failure-ratio"
+    )]
+    pub metrics_strategy_failure_ratio: f64,
+
+    /// The minimum number of attempts required before evaluating an order's
+    /// quality.
+    #[serde(
+        default = "default_metrics_bad_order_detector_required_measurements",
+        rename = "metrics-bad-order-detection-required-measurements"
+    )]
+    pub metrics_strategy_required_measurements: u32,
+
+    /// Controls whether the metrics based detection strategy should only log
+    /// problematic orders or actually filter them out.
+    #[serde(
+        default = "default_metrics_bad_order_detector_log_only",
+        rename = "metrics-bad-order-detection-log-only"
+    )]
+    pub metrics_strategy_log_only: bool,
+
+    /// How long the metrics based bad order detection should flag an order as
+    /// problematic before it allows to solve for that order again.
+    #[serde(
+        default = "default_metrics_bad_order_detector_freeze_time",
+        rename = "metrics-bad-order-detection-order-freeze-time",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_order_freeze_time: Duration,
+}
+
+impl Default for BadOrderDetectionConfig {
+    fn default() -> Self {
+        serde_json::from_str("{}").expect("BadOrderDetectionConfig uses default values")
+    }
+}
+
 impl Default for BadTokenDetectionConfig {
     fn default() -> Self {
         serde_json::from_str("{}").expect("MetricsBadTokenDetectorConfig uses default values")
@@ -957,6 +1008,22 @@ fn default_metrics_bad_token_detector_log_only() -> bool {
 
 fn default_metrics_bad_token_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+fn default_metrics_bad_order_detector_failure_ratio() -> f64 {
+    0.9
+}
+
+fn default_metrics_bad_order_detector_required_measurements() -> u32 {
+    5
+}
+
+fn default_metrics_bad_order_detector_log_only() -> bool {
+    false
+}
+
+fn default_metrics_bad_order_detector_freeze_time() -> Duration {
+    Duration::from_secs(60 * 60) // 1 hour
 }
 
 /// According to statistics, the average size of the app-data is ~800 bytes.

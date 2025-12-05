@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::bad_tokens, eth},
+        domain::{competition::{bad_orders, bad_tokens}, eth},
         infra::{
             self,
             blockchain,
@@ -9,7 +9,7 @@ use {
             mempool,
             notify,
             simulator,
-            solver::{self, BadTokenDetection, SolutionMerging},
+            solver::{self, BadOrderDetection, BadTokenDetection, SolutionMerging},
         },
     },
     chain::Chain,
@@ -135,6 +135,23 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     metrics_strategy_token_freeze_time: solver_config
                         .bad_token_detection
                         .metrics_strategy_token_freeze_time,
+                },
+                bad_order_detection: BadOrderDetection {
+                    enable_metrics_strategy: solver_config
+                        .bad_order_detection
+                        .enable_metrics_strategy,
+                    metrics_strategy_failure_ratio: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_failure_ratio,
+                    metrics_strategy_required_measurements: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_required_measurements,
+                    metrics_strategy_log_only: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_log_only,
+                    metrics_strategy_order_freeze_time: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_order_freeze_time,
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
