@@ -222,6 +222,11 @@ impl Inner {
                     input = route.input().expect("route is not empty");
                     output = route.output().expect("route is not empty");
                 } else {
+                    // Route is empty in case of sell and buy tokens being the same, as there
+                    // is no need to figure out the liquidity for such pair.
+                    //
+                    // The input and output of the solution can be set directly to the
+                    // respective sell and buy tokens 1 to 1.
                     interactions = Vec::default();
                     gas = eth::Gas(U256::zero()) + self.solution_gas_offset;
 

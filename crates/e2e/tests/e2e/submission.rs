@@ -310,17 +310,6 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     let initial_balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(initial_balance, eth(10));
 
-    // let quote_sell_amount = to_wei(2);
-    // let order_buy_amount = to_wei(1);
-    // let order = OrderCreation {
-    //     sell_token: token.address().into_legacy(),
-    //     sell_amount: order_sell_amount,
-    //     buy_token: token.address().into_legacy(),
-    //     buy_amount: order_buy_amount,
-    //     valid_to: model::time::now_in_epoch_seconds() + 300,
-    //     kind: OrderKind::Sell,
-    //     ..Default::default()
-    // }
     let order = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: token.address().into_legacy(),

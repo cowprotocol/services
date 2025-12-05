@@ -48,7 +48,6 @@ impl<'a> Solver<'a> {
         max_hops: usize,
     ) -> Option<solver::Route<'a>> {
         if request.sell.token == request.buy.token {
-            tracing::info!("Sell=Buy, returning empty route");
             return Some(solver::Route::new(vec![]));
         }
         let candidates = self.base_tokens.path_candidates_with_hops(
