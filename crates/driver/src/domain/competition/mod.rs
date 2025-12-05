@@ -775,11 +775,13 @@ impl Competition {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
         }
         // First filter by bad tokens (simulation-based detection)
-        auction = self.bad_tokens
+        auction = self
+            .bad_tokens
             .filter_unsupported_orders_in_auction(auction)
             .await;
         // Then filter by bad orders (metrics-based detection)
-        auction = self.bad_orders
+        auction = self
+            .bad_orders
             .filter_unsupported_orders_in_auction(auction);
         auction
     }

@@ -1,6 +1,9 @@
 use {
     super::Quality,
-    crate::{domain::competition::order, infra::{observe::metrics, solver}},
+    crate::{
+        domain::competition::order,
+        infra::{observe::metrics, solver},
+    },
     dashmap::DashMap,
     std::{
         sync::Arc,
@@ -17,13 +20,13 @@ struct OrderStatistics {
 
 /// Monitors orders to determine whether they are considered "unsupported" based
 /// on the ratio of failing to total settlement encoding attempts. An order must
-/// have participated in at least `REQUIRED_MEASUREMENTS` settlement attempts to be
-/// evaluated. If, at that point, the ratio of failures is greater than or equal
-/// to `FAILURE_RATIO`, the order is considered unsupported.
+/// have participated in at least `REQUIRED_MEASUREMENTS` settlement attempts to
+/// be evaluated. If, at that point, the ratio of failures is greater than or
+/// equal to `FAILURE_RATIO`, the order is considered unsupported.
 ///
-/// This detector tracks settlement simulation failures at the order level rather
-/// than the token level, avoiding the problem of banning good tokens due to
-/// solver-specific issues or bad solutions.
+/// This detector tracks settlement simulation failures at the order level
+/// rather than the token level, avoiding the problem of banning good tokens due
+/// to solver-specific issues or bad solutions.
 #[derive(Clone)]
 pub struct Detector {
     failure_ratio: f64,
@@ -87,7 +90,8 @@ impl Detector {
 
     /// Updates the orders that participated in settlements by
     /// incrementing their attempt count.
-    /// `failure` indicates whether the settlement encoding/simulation was successful or not.
+    /// `failure` indicates whether the settlement encoding/simulation was
+    /// successful or not.
     pub fn update_orders(&self, order_uids: &[order::Uid], failure: bool) {
         let now = Instant::now();
         let mut new_unsupported_orders = vec![];

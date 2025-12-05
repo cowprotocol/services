@@ -895,7 +895,8 @@ pub struct BadOrderDetectionConfig {
     #[serde(default, rename = "enable-metrics-bad-order-detection")]
     pub enable_metrics_strategy: bool,
 
-    /// The ratio of failures to attempts that qualifies an order as problematic.
+    /// The ratio of failures to attempts that qualifies an order as
+    /// problematic.
     #[serde(
         default = "default_metrics_bad_order_detector_failure_ratio",
         rename = "metrics-bad-order-detection-failure-ratio"

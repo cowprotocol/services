@@ -1,5 +1,5 @@
 use {
-    crate::domain::competition::{order, Auction},
+    crate::domain::competition::{Auction, order},
     std::fmt,
 };
 
@@ -29,9 +29,7 @@ pub struct Detector {
 impl Detector {
     /// Creates a new detector without any detection mechanisms enabled.
     pub fn new() -> Self {
-        Self {
-            metrics: None,
-        }
+        Self { metrics: None }
     }
 
     /// Enables detection of unsupported orders based on settlement simulation
@@ -86,8 +84,7 @@ impl Detector {
     }
 
     fn get_order_quality(&self, uid: &order::Uid, now: std::time::Instant) -> Quality {
-        if let Some(Quality::Unsupported) = self.metrics.as_ref().map(|m| m.get_quality(uid, now))
-        {
+        if let Some(Quality::Unsupported) = self.metrics.as_ref().map(|m| m.get_quality(uid, now)) {
             return Quality::Unsupported;
         }
 
