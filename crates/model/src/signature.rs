@@ -1,5 +1,6 @@
 use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
+    alloy::primitives::B256,
     anyhow::{Context as _, Result, ensure},
     primitive_types::{H160, H256},
     serde::{Deserialize, Serialize, de},
@@ -120,8 +121,8 @@ impl Signature {
                     .try_into()
                     .context("ECDSA signature must be 65 bytes long")?;
                 EcdsaSignature {
-                    r: H256::from_slice(&bytes[..32]),
-                    s: H256::from_slice(&bytes[32..64]),
+                    r: B256::from_slice(&bytes[..32]),
+                    s: B256::from_slice(&bytes[32..64]),
                     v: bytes[64],
                 }
                 .to_signature(
@@ -258,8 +259,8 @@ impl SigningScheme {
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash)]
 pub struct EcdsaSignature {
-    pub r: H256,
-    pub s: H256,
+    pub r: B256,
+    pub s: B256,
     pub v: u8,
 }
 
@@ -306,16 +307,16 @@ impl EcdsaSignature {
     /// r + s + v
     pub fn to_bytes(self) -> [u8; 65] {
         let mut bytes = [0u8; 65];
-        bytes[..32].copy_from_slice(self.r.as_bytes());
-        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[..32].copy_from_slice(self.r.as_slice());
+        bytes[32..64].copy_from_slice(self.s.as_slice());
         bytes[64] = self.v;
         bytes
     }
 
     pub fn from_bytes(bytes: &[u8; 65]) -> Self {
         EcdsaSignature {
-            r: H256::from_slice(&bytes[..32]),
-            s: H256::from_slice(&bytes[32..64]),
+            r: B256::from_slice(&bytes[..32]),
+            s: B256::from_slice(&bytes[32..64]),
             v: bytes[64],
         }
     }
@@ -327,7 +328,7 @@ impl EcdsaSignature {
         struct_hash: &[u8; 32],
     ) -> Result<Recovered> {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
-        let recovery = Recovery::new(message, self.v as u64, self.r, self.s);
+        let recovery = Recovery::new(message, self.v as u64, self.r.0.into(), self.s.0.into());
         let (signature, recovery_id) = recovery
             .as_signature()
             .context("unexpectedly invalid signature")?;
@@ -350,8 +351,8 @@ impl EcdsaSignature {
         let signature = key.sign(&message, None).unwrap();
         Self {
             v: signature.v as u8,
-            r: signature.r,
-            s: signature.s,
+            r: signature.r.0.into(),
+            s: signature.s.0.into(),
         }
     }
 
@@ -359,8 +360,8 @@ impl EcdsaSignature {
     /// when you don't actually care about the owner.
     pub fn non_zero() -> Self {
         Self {
-            r: H256([1; 32]),
-            s: H256([2; 32]),
+            r: B256::repeat_byte(1),
+            s: B256::repeat_byte(2),
             v: 27,
         }
     }
@@ -517,8 +518,8 @@ mod tests {
             ),
             (
                 Signature::EthSign(EcdsaSignature {
-                    r: H256([1; 32]),
-                    s: H256([2; 32]),
+                    r: B256::repeat_byte(1),
+                    s: B256::repeat_byte(2),
                     v: 3,
                 }),
                 json!({

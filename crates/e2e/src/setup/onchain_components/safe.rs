@@ -275,8 +275,8 @@ impl Safe {
         // Signature format specified here:
         // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F11#L20>
         [
-            signature.r.as_bytes(),
-            signature.s.as_bytes(),
+            signature.r.as_slice(),
+            signature.s.as_slice(),
             &[signature.v],
         ]
         .concat()
