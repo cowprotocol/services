@@ -32,6 +32,7 @@ pub struct Auction {
     pub price_values: Vec<BigDecimal>,
     pub block: i64,
     pub id: i64,
+    pub deadline: i64,
 }
 
 #[derive(sqlx::FromRow)]
@@ -115,7 +116,7 @@ pub async fn load_by_id(
     id: AuctionId,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION: &str = r#"
-        SELECT id, order_uids, price_tokens, price_values, block
+        SELECT id, order_uids, price_tokens, price_values, block, deadline
         FROM competition_auctions
         WHERE id = $1;
     "#;
@@ -1228,6 +1229,7 @@ mod tests {
             tx_hash
         );
         assert_eq!(solver_competition.auction.id, 1);
+        assert_eq!(solver_competition.auction.deadline, 2);
         assert_eq!(solver_competition.trades.len(), 1);
         assert_eq!(solver_competition.trades.first().unwrap().solution_uid, 0);
         assert_eq!(solver_competition.reference_scores.len(), 1);
