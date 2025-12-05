@@ -401,29 +401,27 @@ pub async fn run(args: Arguments) {
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
         .await
         .ok();
-    let order_validator = Arc::new(
-        OrderValidator::new(
-            native_token,
-            Arc::new(order_validation::banned::Users::new(
-                chainalysis_oracle,
-                args.banned_users,
-                args.banned_users_max_cache_size.get().to_u64().unwrap(),
-            )),
-            validity_configuration,
-            args.eip1271_skip_creation_validation,
-            bad_token_detector.clone(),
-            hooks_contract,
-            optimal_quoter.clone(),
-            balance_fetcher,
-            signature_validator,
-            Arc::new(postgres_write.clone()),
-            args.max_limit_orders_per_user,
-            code_fetcher,
-            app_data_validator.clone(),
-            args.max_gas_per_order,
-        )
-        .with_allow_same_sell_and_buy_token(args.allow_same_sell_and_buy_token),
-    );
+    let order_validator = Arc::new(OrderValidator::new(
+        native_token,
+        Arc::new(order_validation::banned::Users::new(
+            chainalysis_oracle,
+            args.banned_users,
+            args.banned_users_max_cache_size.get().to_u64().unwrap(),
+        )),
+        validity_configuration,
+        args.eip1271_skip_creation_validation,
+        bad_token_detector.clone(),
+        hooks_contract,
+        optimal_quoter.clone(),
+        balance_fetcher,
+        signature_validator,
+        Arc::new(postgres_write.clone()),
+        args.max_limit_orders_per_user,
+        code_fetcher,
+        app_data_validator.clone(),
+        args.max_gas_per_order,
+        args.allow_same_sell_and_buy_token,
+    ));
     let ipfs = args
         .ipfs_gateway
         .map(|url| {
