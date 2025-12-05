@@ -18,7 +18,7 @@ use {
 
 /// Factor by how much a transaction fee needs to be increased to override a
 /// pending transaction at the same nonce. The correct factor is actually
-/// 1.25 but to avoid rounding issues on chains with very low gas prices
+/// 1.125 but to avoid rounding issues on chains with very low gas prices
 /// we increase slightly more.
 const GAS_PRICE_BUMP: f64 = 1.3;
 
