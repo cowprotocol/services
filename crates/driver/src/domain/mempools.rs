@@ -330,7 +330,7 @@ impl Mempools {
         let pending_tx_gas_price = eth::GasPrice::new(
             eth::U256::from(pending_tx.max_fee_per_gas()).into(),
             eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
-                format!("pending tx is not EIP 1559 ()", pending_tx.inner.tx_hash())
+                format!("pending tx is not EIP 1559 ({})", pending_tx.inner.tx_hash())
             })?)
             .into(),
             eth::U256::from(pending_tx.max_fee_per_gas()).into(),
