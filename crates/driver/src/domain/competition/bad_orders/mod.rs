@@ -1,6 +1,6 @@
 use {
     crate::domain::competition::{order, Auction},
-    std::{collections::HashSet, fmt},
+    std::fmt,
 };
 
 pub mod metrics;

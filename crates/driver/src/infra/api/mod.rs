@@ -3,7 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
+            competition::{bad_orders, bad_tokens, order::app_data::AppDataRetriever, sorting},
         },
         infra::{
             self,
@@ -111,6 +111,18 @@ impl Api {
                 ));
             }
 
+            let bad_order_config = solver.bad_order_detection();
+            let mut bad_orders = bad_orders::Detector::new();
+            if bad_order_config.enable_metrics_strategy {
+                bad_orders.with_metrics_detector(bad_orders::metrics::Detector::new(
+                    bad_order_config.metrics_strategy_failure_ratio,
+                    bad_order_config.metrics_strategy_required_measurements,
+                    bad_order_config.metrics_strategy_log_only,
+                    bad_order_config.metrics_strategy_order_freeze_time,
+                    name.clone(),
+                ));
+            }
+
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
                 solver: solver.clone(),
@@ -122,6 +134,7 @@ impl Api {
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
+                    Arc::new(bad_orders),
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
                 ),

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::{bad_orders, bad_tokens}, eth},
+        domain::{competition::bad_tokens, eth},
         infra::{
             self,
             blockchain,
