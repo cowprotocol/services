@@ -872,7 +872,9 @@ fn ensure_quote_accuracy(
         .get(&query.buy_token)
         .context("summary buy token is missing")?;
 
-    if (!sell_token_lost.is_zero() && *sell_token_lost >= sell_token_lost_limit) || (!buy_token_lost.is_zero() && *buy_token_lost >= buy_token_lost_limit) {
+    if (!sell_token_lost.is_zero() && *sell_token_lost >= sell_token_lost_limit)
+        || (!buy_token_lost.is_zero() && *buy_token_lost >= buy_token_lost_limit)
+    {
         return Err(Error::TooInaccurate);
     }
 
