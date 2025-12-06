@@ -83,7 +83,7 @@ pub fn cancel_order(
 mod tests {
     use {
         super::*,
-        ethcontract::H256,
+        alloy::primitives::B256,
         hex_literal::hex,
         model::signature::{EcdsaSignature, EcdsaSigningScheme},
         serde_json::json,
@@ -103,10 +103,10 @@ mod tests {
             .unwrap(),
             CancellationPayload {
                 signature: EcdsaSignature {
-                    r: H256(hex!(
+                    r: B256::new(hex!(
                         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
                     )),
-                    s: H256(hex!(
+                    s: B256::new(hex!(
                         "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
                     )),
                     v: 27,
