@@ -141,7 +141,7 @@ impl Mempools {
             .ethereum
             .gas_price(None)
             .await
-            .unwrap_or(settlement.gas.price);
+            .context("failed to compute current gas price")?;
         let submission_block = self.ethereum.current_block().borrow().number;
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
         let estimated_gas_price =
@@ -152,14 +152,13 @@ impl Mempools {
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, solver, nonce)
             .await;
-        let final_gas_price = if let Ok(replacement_gas_price) = replacement_gas_price {
-            if replacement_gas_price.max() > estimated_gas_price.max() {
-                replacement_gas_price
-            } else {
-                current_gas_price
+        let final_gas_price = match &replacement_gas_price {
+            Ok(Some(replacement_gas_price))
+                if replacement_gas_price.max() > estimated_gas_price.max() =>
+            {
+                *replacement_gas_price
             }
-        } else {
-            current_gas_price
+            _ => current_gas_price,
         };
 
         tracing::debug!(
@@ -209,7 +208,7 @@ impl Mempools {
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
                             let _ = self
-                                .cancel(mempool, settlement.gas.price, solver, nonce)
+                                .cancel(mempool, final_gas_price, solver, nonce)
                                 .await
                                 .context("cancellation tx due to deadline failed")?;
                             return Err(Error::Expired {
@@ -222,7 +221,7 @@ impl Mempools {
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
                                 let cancellation_tx_hash = self
-                                    .cancel(mempool, settlement.gas.price, solver, nonce)
+                                    .cancel(mempool, final_gas_price, solver, nonce)
                                     .await
                                     .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
@@ -286,9 +285,10 @@ impl Mempools {
         // the node is the ultimate source of truth to compute the minimum
         // replacement gas price, but if that fails for whatever reason
         // we use our best estimate based on the originally submitted tx
-        let final_gas_price = replacement_gas_price
-            .as_ref()
-            .unwrap_or(&fallback_gas_price);
+        let final_gas_price = match &replacement_gas_price {
+            Ok(Some(replacement)) => *replacement,
+            _ => fallback_gas_price,
+        };
 
         let cancellation = eth::Tx {
             from: solver.address(),
@@ -308,7 +308,7 @@ impl Mempools {
         mempool
             .submit(
                 cancellation,
-                *final_gas_price,
+                final_gas_price,
                 CANCELLATION_GAS_AMOUNT.into(),
                 solver,
                 nonce,
@@ -323,10 +323,15 @@ impl Mempools {
         mempool: &infra::Mempool,
         solver: &Solver,
         nonce: eth::U256,
-    ) -> anyhow::Result<eth::GasPrice> {
-        let pending_tx = mempool
+    ) -> anyhow::Result<Option<eth::GasPrice>> {
+        let pending_tx = match mempool
             .find_pending_tx_in_mempool(solver.address(), nonce)
-            .await?;
+            .await?
+        {
+            Some(tx) => tx,
+            None => return Ok(None),
+        };
+
         let pending_tx_gas_price = eth::GasPrice::new(
             eth::U256::from(pending_tx.max_fee_per_gas()).into(),
             eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
@@ -339,7 +344,7 @@ impl Mempools {
             eth::U256::from(pending_tx.max_fee_per_gas()).into(),
         );
         // in order to replace a tx we need to increase the price
-        Ok(pending_tx_gas_price * GAS_PRICE_BUMP)
+        Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))
     }
 }
 

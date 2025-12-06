@@ -137,13 +137,12 @@ impl Mempool {
                 let pending_tx = self
                     .find_pending_tx_in_mempool(solver.address(), nonce)
                     .await;
-                let pending_tx_gas_price = pending_tx.map(|tx| tx.gas_price());
 
                 tracing::debug!(
                     ?err,
                     new_gas_price = ?gas_price,
-                    ?pending_tx_gas_price,
                     ?nonce,
+                    ?pending_tx,
                     ?gas_limit,
                     solver = ?solver.address(),
                     "failed to submit tx to mempool"
@@ -159,7 +158,7 @@ impl Mempool {
         &self,
         signer: eth::Address,
         nonce: eth::U256,
-    ) -> anyhow::Result<alloy::rpc::types::Transaction> {
+    ) -> anyhow::Result<Option<alloy::rpc::types::Transaction>> {
         let tx_pool_content = self
             .transport
             .alloy
@@ -173,8 +172,7 @@ impl Mempool {
             .into_iter()
             .chain(tx_pool_content.queued)
             .find(|(_signer, tx)| tx.nonce() == nonce.as_u64())
-            .context("no pending transaction with target nonce ({nonce})")?
-            .1;
+            .map(|(_, tx)| tx);
         Ok(pending_tx)
     }
 

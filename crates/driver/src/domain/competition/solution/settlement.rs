@@ -170,12 +170,14 @@ impl Settlement {
         )
         .await?;
         let price = eth.gas_price(None).await?;
-        let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
+        let gas = Gas::new(gas, eth.block_gas_limit())?;
 
-        // Ensure that the solver has sufficient balance for the settlement to be mined.
-        if eth.balance(solution.solver().address()).await? < gas.required_balance() {
+        // Ensure that the solver has sufficient balance for the settlement to be mined
+        // even if the gas price keeps climbing during the tx submission.
+        let required_eth_balance = gas.required_balance(price * 2.);
+        if eth.balance(solution.solver().address()).await? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
-                gas.required_balance(),
+                required_eth_balance,
             ));
         }
 
@@ -358,18 +360,12 @@ pub struct Gas {
     /// computed by adding a buffer to the gas estimate to allow for small
     /// variations in the actual gas that gets used.
     pub limit: eth::Gas,
-    /// The network gas price (EIP1559) at the time the settlement tx was built.
-    pub price: eth::GasPrice,
 }
 
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
-    pub fn new(
-        estimate: eth::Gas,
-        block_limit: eth::Gas,
-        price: eth::GasPrice,
-    ) -> Result<Self, solution::Error> {
+    pub fn new(estimate: eth::Gas, block_limit: eth::Gas) -> Result<Self, solution::Error> {
         // We don't allow for solutions to take up more than half of the block's gas
         // limit. This is to ensure that block producers attempt to include the
         // settlement transaction in the next block as long as it is reasonably
@@ -399,13 +395,12 @@ impl Gas {
         Ok(Self {
             estimate,
             limit: std::cmp::min(max_gas, estimate_with_buffer),
-            price,
         })
     }
 
     /// The balance required to ensure settlement execution with the given gas
     /// parameters.
-    pub fn required_balance(&self) -> eth::Ether {
-        self.limit * self.price.max()
+    pub fn required_balance(&self, price: eth::GasPrice) -> eth::Ether {
+        self.limit * price.max()
     }
 }
