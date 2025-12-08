@@ -2,7 +2,7 @@ use {
     crate::setup::TestAccount,
     alloy::primitives::{Address, B256, U256},
     chrono::{DateTime, NaiveDateTime, Utc},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     model::DomainSeparator,
     shared::zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
@@ -114,8 +114,8 @@ impl Eip712TypedZeroExOrder {
     ) -> ZeroExSignature {
         let signature = signer.sign_typed_data(domain_separator, &hash);
         ZeroExSignature {
-            r: signature.r.into_alloy(),
-            s: signature.s.into_alloy(),
+            r: signature.r,
+            s: signature.s,
             v: signature.v,
             // See <https://github.com/0xProject/protocol/blob/%400x/protocol-utils%4011.24.2/packages/protocol-utils/src/signature_utils.ts#L13>
             signature_type: 2,
