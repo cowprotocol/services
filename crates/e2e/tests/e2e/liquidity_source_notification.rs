@@ -237,10 +237,10 @@ http-timeout = "10s"
     // Create CoW order
     let order_id = {
         let order = OrderCreation {
-            sell_token: token_usdc.address().into_legacy(),
-            sell_amount: trade_amount,
-            buy_token: token_usdt.address().into_legacy(),
-            buy_amount: trade_amount,
+            sell_token: *token_usdc.address(),
+            sell_amount: trade_amount.into_alloy(),
+            buy_token: *token_usdt.address(),
+            buy_amount: trade_amount.into_alloy(),
             valid_to: model::time::now_in_epoch_seconds() + 300,
             kind: OrderKind::Sell,
             ..Default::default()

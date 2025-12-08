@@ -2,10 +2,7 @@ use {
     ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -88,10 +85,10 @@ async fn place_order_with_quote(web3: Web3) {
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: quote_sell_amount,
-        buy_token: token.address().into_legacy(),
-        buy_amount: quote_response.quote.buy_amount.into_legacy(),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: quote_sell_amount.into_alloy(),
+        buy_token: *token.address(),
+        buy_amount: quote_response.quote.buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
