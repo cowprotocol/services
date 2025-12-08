@@ -1,10 +1,7 @@
 use {
     alloy::primitives::Address,
     e2e::setup::{OnchainComponents, Services, TestAccount, eth, run_test, safe::Safe, to_wei},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
@@ -49,10 +46,10 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address().into_legacy(),
-            sell_amount: to_wei(2),
-            buy_token: token_b.address().into_legacy(),
-            buy_amount: to_wei(1),
+            sell_token: *token_a.address(),
+            sell_amount: eth(2),
+            buy_token: *token_b.address(),
+            buy_amount: eth(1),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()
@@ -116,7 +113,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     // Rejected: from and signer are inconsistent.
     let full_app_data = full_app_data_with_signer(adversary.address());
     let mut order5 = create_order(full_app_data);
-    order5.from = Some(safe.address().into_legacy());
+    order5.from = Some(safe.address());
     safe.sign_order(&mut order5, &onchain);
     let err = services.create_order(&order5).await.unwrap_err();
     assert!(err.1.contains("AppdataFromMismatch"));

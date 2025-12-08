@@ -1,10 +1,8 @@
 use {
+    ::alloy::primitives::Address,
     e2e::setup::{eth, safe::Safe, *},
-    ethcontract::{H160, U256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethcontract::U256,
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -51,10 +49,10 @@ async fn smart_contract_orders(web3: Web3) {
 
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(5),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *token.address(),
+        sell_amount: eth(5),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     };
@@ -63,12 +61,12 @@ async fn smart_contract_orders(web3: Web3) {
     // Check that we can't place invalid orders.
     let orders = [
         OrderCreation {
-            from: Some(safe.address().into_legacy()),
+            from: Some(safe.address()),
             signature: Signature::Eip1271(b"invalid signature".to_vec()),
             ..order_template.clone()
         },
         OrderCreation {
-            from: Some(H160(*b"invalid address\0\0\0\0\0")),
+            from: Some(Address::new(*b"invalid address\0\0\0\0\0")),
             signature: Signature::Eip1271(signature1271.clone()),
             ..order_template.clone()
         },
@@ -81,7 +79,7 @@ async fn smart_contract_orders(web3: Web3) {
     // Place orders
     let orders = [
         OrderCreation {
-            from: Some(safe.address().into_legacy()),
+            from: Some(safe.address()),
             signature: Signature::Eip1271(signature1271),
             ..order_template.clone()
         },
@@ -89,7 +87,7 @@ async fn smart_contract_orders(web3: Web3) {
             app_data: OrderCreationAppData::Full {
                 full: "{\"salt\": \"second\"}".to_string(),
             },
-            from: Some(safe.address().into_legacy()),
+            from: Some(safe.address()),
             signature: Signature::PreSign,
             ..order_template.clone()
         },
@@ -194,14 +192,14 @@ async fn erc1271_gas_limit(web3: Web3) {
     U256::exp10(6).to_big_endian(&mut signature);
 
     let order = OrderCreation {
-        sell_token: cow.address().into_legacy(),
-        sell_amount: to_wei(4),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *cow.address(),
+        sell_amount: eth(4),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         signature: Signature::Eip1271(signature.to_vec()),
-        from: Some(trader.address().into_legacy()),
+        from: Some(*trader.address()),
         ..Default::default()
     };
 

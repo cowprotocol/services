@@ -80,10 +80,10 @@ async fn gas_limit(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: cow.address().into_legacy(),
-        sell_amount: to_wei(4),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *cow.address(),
+        sell_amount: eth(4),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full {
@@ -157,10 +157,10 @@ async fn allowance(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: cow.address().into_legacy(),
-        sell_amount: to_wei(5),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *cow.address(),
+        sell_amount: eth(5),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full {
@@ -205,7 +205,7 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert!(balance >= order.buy_amount.into_alloy());
+    assert!(balance >= order.buy_amount);
 
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
@@ -332,17 +332,17 @@ async fn signature(web3: Web3) {
 
     // Place Orders
     let mut order = OrderCreation {
-        from: Some(safe.address().into_legacy()),
+        from: Some(safe.address()),
         // Quotes for trades where the pre-interactions deploy a contract
         // at the `from` address currently can't be verified.
         // To not throw an error because we can't get a verifiable quote
         // we make the order partially fillable and sell slightly more than
         // `from` currently has.
-        sell_amount: to_wei(6),
+        sell_amount: eth(6),
         partially_fillable: true,
-        sell_token: token.address().into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full {
@@ -374,11 +374,7 @@ async fn signature(web3: Web3) {
     assert_eq!(balance, to_wei(5));
 
     // Check that the Safe really hasn't been deployed yet.
-    let code = web3
-        .eth()
-        .code(safe.address().into_legacy(), None)
-        .await
-        .unwrap();
+    let code = web3.alloy.get_code_at(safe.address()).await.unwrap();
     assert_eq!(code.0.len(), 0);
 
     tracing::info!("Waiting for trade.");
@@ -401,14 +397,10 @@ async fn signature(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert!(balance >= order.buy_amount.into_alloy());
+    assert!(balance >= order.buy_amount);
 
     // Check Safe was deployed
-    let code = web3
-        .eth()
-        .code(safe.address().into_legacy(), None)
-        .await
-        .unwrap();
+    let code = web3.alloy.get_code_at(safe.address()).await.unwrap();
     assert_ne!(code.0.len(), 0);
 
     tracing::info!("Waiting for auction to be cleared.");
@@ -469,10 +461,10 @@ async fn partial_fills(web3: Web3) {
 
     tracing::info!("Placing order");
     let order = OrderCreation {
-        sell_token: sell_token.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *sell_token.address(),
+        sell_amount: eth(2),
+        buy_token: *token.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,

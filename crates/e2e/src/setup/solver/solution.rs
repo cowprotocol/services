@@ -59,7 +59,8 @@ impl JitOrder {
             domain,
             &signature
                 .recover_owner(&signature.to_bytes(), domain, &data.hash_struct())
-                .unwrap(),
+                .unwrap()
+                .into_legacy(),
         );
         let signature = match signature {
             model::signature::Signature::Eip712(signature) => signature.to_bytes().to_vec(),
