@@ -577,7 +577,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone(), args.max_maintenance_timeout);
+    let mut maintenance = Maintenance::new(
+        settlement_event_indexer,
+        db_write.clone(),
+        args.max_maintenance_timeout,
+    );
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
