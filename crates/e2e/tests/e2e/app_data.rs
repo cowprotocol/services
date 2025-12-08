@@ -51,10 +51,10 @@ async fn app_data(web3: Web3) {
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address().into_legacy(),
-            sell_amount: to_wei(2),
-            buy_token: token_b.address().into_legacy(),
-            buy_amount: to_wei(1),
+            sell_token: *token_a.address(),
+            sell_amount: eth(2),
+            buy_token: *token_b.address(),
+            buy_amount: eth(1),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()
@@ -114,11 +114,11 @@ async fn app_data(web3: Web3) {
     });
     services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: order3.sell_token.into_alloy(),
-            buy_token: order3.buy_token.into_alloy(),
+            sell_token: order3.sell_token,
+            buy_token: order3.buy_token,
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
-                    value: order3.sell_amount.try_into().unwrap(),
+                    value: order3.sell_amount.into_legacy().try_into().unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Hash {
@@ -213,10 +213,10 @@ async fn app_data_full_format(web3: Web3) {
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address().into_legacy(),
-            sell_amount: to_wei(2),
-            buy_token: token_b.address().into_legacy(),
-            buy_amount: to_wei(1),
+            sell_token: *token_a.address(),
+            sell_amount: eth(2),
+            buy_token: *token_b.address(),
+            buy_amount: eth(1),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()
