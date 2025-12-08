@@ -240,8 +240,10 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
-    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
+        // continue minting another block to make sure the autopilot eventually
+        // refreshes its cache
+        onchain.mint_block().await;
         services.get_auction().await.auction.orders.is_empty()
     })
     .await
