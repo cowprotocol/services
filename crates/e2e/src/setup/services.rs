@@ -135,8 +135,6 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--db-read-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -237,6 +235,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
