@@ -23,6 +23,7 @@ use {
     std::{
         collections::{HashMap, hash_map::Entry},
         ops::DerefMut,
+        sync::LazyLock,
         time::Duration,
     },
     tokio::task::JoinHandle,
@@ -38,6 +39,12 @@ pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
+static LOCAL_READ_ONLY_DB_URL: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "postgresql://readonly@localhost/{db}",
+        db = std::env::var("USER").unwrap()
+    )
+});
 
 fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
@@ -227,6 +234,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
