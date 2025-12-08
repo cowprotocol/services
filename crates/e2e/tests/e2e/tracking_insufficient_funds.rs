@@ -144,8 +144,8 @@ async fn test(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    onchain.mint_block().await;
     let orders_updated = || async {
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         let order_b_correct_events = events_b.into_iter().map(|e| e.label).collect::<Vec<_>>()
@@ -166,8 +166,8 @@ async fn test(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    onchain.mint_block().await;
     let orders_updated = || async {
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_b).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         events_a.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
