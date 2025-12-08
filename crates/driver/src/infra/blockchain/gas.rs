@@ -120,6 +120,8 @@ impl GasPriceEstimator {
             )
         };
 
+        // make sure the used max fee per gas is at least big enough to cover the tip -
+        // otherwise the tx will be rejected by the node immediately
         let suggested_max_fee_per_gas = eth::U256::from_f64_lossy(estimate.max_fee_per_gas);
         let suggested_max_fee_per_gas =
             std::cmp::max(suggested_max_fee_per_gas, max_priority_fee_per_gas);
