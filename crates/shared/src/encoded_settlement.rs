@@ -88,7 +88,7 @@ pub struct EncodedSettlement {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::H256, hex_literal::hex, model::signature::EcdsaSignature};
+    use {super::*, alloy::primitives::B256, hex_literal::hex, model::signature::EcdsaSignature};
 
     #[test]
     fn order_flag_permutations() {
@@ -188,8 +188,8 @@ mod tests {
             (Signature::Eip712(Default::default()), vec![0; 65]),
             (
                 Signature::EthSign(EcdsaSignature {
-                    r: H256([1; 32]),
-                    s: H256([1; 32]),
+                    r: B256::repeat_byte(1),
+                    s: B256::repeat_byte(1),
                     v: 1,
                 }),
                 vec![1; 65],
