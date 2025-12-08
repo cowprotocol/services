@@ -1,6 +1,7 @@
+DOCKER := docker
 JQ     := jq
 
-SOLC     := solc
+SOLC     := ethereum/solc:0.8.30
 SOLFLAGS := --overwrite --abi --bin --bin-runtime --metadata-hash none --optimize --optimize-runs 1000000 --evm-version shanghai
 
 TARGETDIR   := ../../../target/solidity
@@ -16,7 +17,7 @@ CONTRACTS := \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 
-TEST_CONTRACTS := Counter.sol GasHog.sol NonStandardERC20Balances.sol
+TEST_CONTRACTS := Counter.sol GasHog.sol
 TEST_ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(TEST_CONTRACTS))
 
 .PHONY: artifacts
@@ -48,10 +49,18 @@ $(ARTIFACTDIR)/%.json: $(TARGETDIR)/%.abi
 
 $(TARGETDIR)/%.abi: %.sol
 	@mkdir -p $(TARGETDIR)
-	@echo solc $(SOLFLAGS) -o $(TARGETDIR) $<
-	@$(SOLC) $(SOLFLAGS) -o $(TARGETDIR) $<
+	@echo solc $(SOLFLAGS) -o /target $<
+	@$(DOCKER) run -it --rm \
+		-v "$(abspath .):/contracts" -w "/contracts" \
+		-v "$(abspath $(TARGETDIR)):/target" \
+		$(SOLC) \
+		$(SOLFLAGS) -o /target $<
 
 $(TARGETDIR)/%.abi: tests/%.sol
 	@mkdir -p $(TARGETDIR)
-	@echo solc $(SOLFLAGS) -o $(TARGETDIR) $<
-	@cd tests && $(SOLC) $(SOLFLAGS) -o $(abspath $(TARGETDIR)) $(notdir $<)
+	@echo solc $(SOLFLAGS) -o /target $(notdir $<)
+	@$(DOCKER) run -it --rm \
+		-v "$(abspath .)/tests:/contracts" -w "/contracts" \
+		-v "$(abspath $(TARGETDIR)):/target" \
+		$(SOLC) \
+		$(SOLFLAGS) -o /target $(notdir $<)
