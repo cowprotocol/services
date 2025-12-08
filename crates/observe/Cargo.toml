@@ -37,3 +37,4 @@ workspace = true
 default = []
 axum-tracing = ["axum"]
 jemalloc-profiling = ["dep:jemalloc_pprof"]
+tokio-console = ["dep:console-subscriber"]
