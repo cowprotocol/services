@@ -1,2 +1,2 @@
 [build]
-rustflags = ["--cfg", "tokio_unstable"]
+# rustflags configuration removed - tokio_unstable only enabled in playground
