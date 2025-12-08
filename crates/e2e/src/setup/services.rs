@@ -23,7 +23,6 @@ use {
     std::{
         collections::{HashMap, hash_map::Entry},
         ops::DerefMut,
-        sync::LazyLock,
         time::Duration,
     },
     tokio::task::JoinHandle,
