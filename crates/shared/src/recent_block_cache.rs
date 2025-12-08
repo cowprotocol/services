@@ -30,7 +30,7 @@ use {
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::{FutureExt, StreamExt},
+    futures::{FutureExt, StreamExt, TryStreamExt},
     itertools::Itertools,
     prometheus::IntCounterVec,
     std::{
@@ -246,15 +246,13 @@ where
     }
 
     async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
-        let fetched =
-            futures::future::join_all(keys.iter().map(|key| self.fetch_inner(key.clone(), block)))
-                .await;
-        let fetched: Vec<_> = fetched
-            .into_iter()
-            .filter_map(|res| res.ok())
-            .flatten()
-            .collect();
-        Ok(fetched)
+        let futures = keys.into_iter().map(|key| self.fetch_inner(key, block));
+        // only process a limited number of requests in parallel to avoid creating
+        // a ton of tracing spans at the same time since tracing never deallocates
+        // span memory to reuse it later
+        let stream = futures::stream::iter(futures).buffered(50);
+        let fetched_items: Vec<_> = stream.try_collect().await?;
+        Ok(fetched_items.into_iter().flatten().collect())
     }
 
     // Sometimes nodes requests error when we try to get state from what we think is
