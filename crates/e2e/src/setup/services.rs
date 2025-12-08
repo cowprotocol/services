@@ -134,8 +134,6 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--db-read-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
