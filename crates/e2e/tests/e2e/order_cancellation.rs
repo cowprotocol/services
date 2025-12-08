@@ -214,6 +214,10 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
+    // Mint a couple blocks (the autopilot might not pick it up immediately)
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    onchain.mint_block().await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 2
