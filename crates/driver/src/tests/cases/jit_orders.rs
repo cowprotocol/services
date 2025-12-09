@@ -62,7 +62,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.execution.solver.sell)
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
-    let solver_fee = test_case.execution.driver.sell / 100;
+    let solver_fee = test_case.execution.driver.sell / eth::U256::from(100);
     // Amounts expected to be returned by the driver after fee processing
     let jit_order_expected_amounts = if test_case.is_surplus_capturing_jit_order {
         ExpectedOrderAmounts {
@@ -93,7 +93,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .buy_amount(test_case.order.buy_amount)
         .solver_fee(Some(solver_fee))
         .side(test_case.order.side)
-        .partial(0.into())
+        .partial(eth::U256::ZERO)
         .no_surplus();
 
     let solver = test_solver();

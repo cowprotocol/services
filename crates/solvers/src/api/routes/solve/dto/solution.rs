@@ -115,14 +115,16 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                         }
                     })
                     .collect(),
-                gas: solution.gas.map(|gas| gas.0.as_u64()),
+                gas: solution
+                    .gas
+                    .map(|gas| u64::try_from(gas.0).unwrap_or(u64::MAX)),
                 // rely on driver to fill in the blanks
                 flashloans: None,
                 wrappers: solution
                     .wrappers
                     .iter()
                     .map(|w| solvers_dto::solution::WrapperCall {
-                        address: w.target.0,
+                        address: w.target,
                         data: w.data.clone(),
                     })
                     .collect(),
@@ -135,7 +137,7 @@ fn interaction_data_from_domain(interaction_data: &[eth::Interaction]) -> Vec<Ca
     interaction_data
         .iter()
         .map(|interaction| Call {
-            target: interaction.target.0,
+            target: interaction.target,
             value: interaction.value.0,
             calldata: interaction.calldata.clone(),
         })

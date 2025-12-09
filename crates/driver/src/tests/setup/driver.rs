@@ -3,13 +3,9 @@ use {
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
-        tests::{
-            hex_address,
-            setup::{blockchain::Trade, orderbook::Orderbook},
-        },
+        tests::setup::{blockchain::Trade, orderbook::Orderbook},
     },
     const_hex::ToHexExt,
-    ethrpc::alloy::conversions::IntoLegacy,
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -99,7 +95,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Side::Sell => "sell",
                 order::Side::Buy => "buy",
             },
-            "owner": hex_address(test.trader_address),
+            "owner": (test.trader_address.encode_hex_with_prefix()),
             "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
             "executed": match quote.order.partial {
                 Partial::Yes { executed } => executed.to_string(),
@@ -117,7 +113,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "quote": quote.order.quote,
         });
         if let Some(receiver) = quote.order.receiver {
-            order["receiver"] = json!(hex_address(receiver));
+            order["receiver"] = json!((receiver.encode_hex_with_prefix()));
         }
         orders_json.push(order);
     }
@@ -241,7 +237,7 @@ async fn create_config_file(
         blockchain.weth.address(),
         blockchain.balances.address(),
         blockchain.signatures.address(),
-        hex_address(blockchain.flashloan_router.address().into_legacy()),
+        blockchain.flashloan_router.address(),
     )
     .unwrap();
 

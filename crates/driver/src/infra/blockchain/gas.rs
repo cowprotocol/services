@@ -72,7 +72,7 @@ impl GasPriceEstimator {
                 } => (max_additional_tip, additional_tip_percentage),
             })
             .next()
-            .unwrap_or((eth::U256::zero(), 0.));
+            .unwrap_or((eth::U256::ZERO, 0.));
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()
@@ -104,19 +104,17 @@ impl GasPriceEstimator {
             .await
             .map(|estimate| {
                 let (max, percentage) = self.additional_tip;
-                let additional_tip = max
-                    .to_f64_lossy()
-                    .min(estimate.max_fee_per_gas * percentage);
+                let additional_tip = f64::from(max).min(estimate.max_fee_per_gas * percentage);
 
                 let tip = std::cmp::max(
-                    self.min_priority_fee + eth::U256::from_f64_lossy(additional_tip),
-                    eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas + additional_tip),
+                    self.min_priority_fee + eth::U256::from(additional_tip),
+                    eth::U256::from(estimate.max_priority_fee_per_gas + additional_tip),
                 );
 
                 eth::GasPrice::new(
                     self.max_fee_per_gas.into(),
                     tip.into(),
-                    eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
+                    eth::U256::from(estimate.base_fee_per_gas).into(),
                 )
             })
             .map_err(Error::GasPrice)

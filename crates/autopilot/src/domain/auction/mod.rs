@@ -1,6 +1,6 @@
 use {
     super::{Order, eth},
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     std::collections::HashMap,
 };
 
@@ -77,7 +77,7 @@ impl Price {
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0.0 / Self::BASE).into()
+        (amount.0 * self.0.0 / U256::from(Self::BASE)).into()
     }
 }
 

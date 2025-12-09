@@ -8,8 +8,9 @@ use {
         FromPrimitive,
         num_traits::{CheckedDiv, CheckedMul},
     },
+    ethrpc::alloy::conversions::IntoAlloy,
     num::BigRational,
-    number::conversions::{big_decimal_to_u256, big_rational_to_u256},
+    number::conversions::big_rational_to_u256,
 };
 
 pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Quote, QuoteError> {
@@ -27,13 +28,13 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
     .map_err(QuoteError::Error)?;
     Ok(domain::Quote {
         order_uid: domain::OrderUid(quote.order_uid.0),
-        sell_amount: big_decimal_to_u256(&quote.sell_amount)
+        sell_amount: number::conversions::alloy::big_decimal_to_u256(&quote.sell_amount)
             .ok_or(QuoteError::U256Overflow)?
             .into(),
-        buy_amount: big_decimal_to_u256(&quote.buy_amount)
+        buy_amount: number::conversions::alloy::big_decimal_to_u256(&quote.buy_amount)
             .ok_or(QuoteError::U256Overflow)?
             .into(),
-        fee: fee.into(),
+        fee: fee.into_alloy().into(),
         solver: Address::new(quote.solver.0),
     })
 }

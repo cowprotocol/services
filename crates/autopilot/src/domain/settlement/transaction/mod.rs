@@ -138,18 +138,18 @@ impl Transaction {
                         uid: tokenized::order_uid(&trade, &tokens, domain_separator)
                             .map_err(Error::OrderUidRecover)?,
                         sell: eth::Asset {
-                            token: sell_token.into_legacy().into(),
-                            amount: trade.sellAmount.into_legacy().into(),
+                            token: sell_token.into(),
+                            amount: trade.sellAmount.into(),
                         },
                         buy: eth::Asset {
-                            token: buy_token.into_legacy().into(),
-                            amount: trade.buyAmount.into_legacy().into(),
+                            token: buy_token.into(),
+                            amount: trade.buyAmount.into(),
                         },
                         side: flags.side(),
                         receiver: trade.receiver,
                         valid_to: trade.validTo,
                         app_data: domain::auction::order::AppDataHash(trade.appData.into()),
-                        fee_amount: trade.feeAmount.into_legacy().into(),
+                        fee_amount: trade.feeAmount.into(),
                         sell_token_balance: flags.sell_token_balance().into(),
                         buy_token_balance: flags.buy_token_balance().into(),
                         partially_fillable: flags.partially_fillable(),
@@ -159,15 +159,15 @@ impl Transaction {
                         )
                         .map_err(Error::SignatureRecover)?)
                         .into(),
-                        executed: trade.executedAmount.into_legacy().into(),
+                        executed: trade.executedAmount.into(),
                         prices: Prices {
                             uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index].into_legacy(),
-                                buy: clearing_prices[uniform_buy_token_index].into_legacy(),
+                                sell: clearing_prices[uniform_sell_token_index],
+                                buy: clearing_prices[uniform_buy_token_index],
                             },
                             custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index].into_legacy(),
-                                buy: clearing_prices[buy_token_index].into_legacy(),
+                                sell: clearing_prices[sell_token_index],
+                                buy: clearing_prices[buy_token_index],
                             },
                         },
                     })

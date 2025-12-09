@@ -1,9 +1,6 @@
-use {
-    crate::{
-        domain::{self, eth, liquidity},
-        util::Bytes,
-    },
-    ethrpc::alloy::conversions::IntoLegacy,
+use crate::{
+    domain::{self, eth, liquidity},
+    util::Bytes,
 };
 
 /// Interaction with a smart contract which is needed to execute this solution
@@ -40,12 +37,12 @@ impl Interaction {
             Interaction::Custom(interaction) => interaction.allowances.clone(),
             Interaction::Liquidity(interaction) => {
                 let address = match &interaction.liquidity.kind {
-                    liquidity::Kind::UniswapV2(pool) => pool.router.into(),
-                    liquidity::Kind::UniswapV3(pool) => pool.router.into(),
-                    liquidity::Kind::BalancerV2Stable(pool) => pool.vault.into(),
-                    liquidity::Kind::BalancerV2Weighted(pool) => pool.vault.into(),
-                    liquidity::Kind::Swapr(pool) => pool.base.router.into(),
-                    liquidity::Kind::ZeroEx(pool) => pool.zeroex.address().into_legacy(),
+                    liquidity::Kind::UniswapV2(pool) => pool.router,
+                    liquidity::Kind::UniswapV3(pool) => pool.router,
+                    liquidity::Kind::BalancerV2Stable(pool) => pool.vault,
+                    liquidity::Kind::BalancerV2Weighted(pool) => pool.vault,
+                    liquidity::Kind::Swapr(pool) => pool.base.router,
+                    liquidity::Kind::ZeroEx(pool) => (*pool.zeroex.address()).into(),
                 };
                 // As a gas optimization, we always approve the max amount possible. This
                 // minimizes the number of approvals necessary, and therefore

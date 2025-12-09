@@ -6,7 +6,7 @@ use {
             liquidity::{self, balancer},
         },
     },
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::IntoAlloy,
     solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 
@@ -27,33 +27,33 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                     .map(|(token, reserve)| {
                         Ok(balancer::v2::stable::Reserve {
                             asset: eth::Asset {
-                                token: token.into_legacy().into(),
-                                amount: reserve.balance.into(),
+                                token: token.into(),
+                                amount: reserve.balance.into_alloy().into(),
                             },
                             scale: balancer::v2::ScalingFactor::from_raw(
-                                reserve.scaling_factor.as_uint256(),
+                                reserve.scaling_factor.as_uint256().into_alloy(),
                             )?,
                         })
                     })
                     .collect::<Result<_>>()?,
             )?,
             amplification_parameter: balancer::v2::stable::AmplificationParameter::new(
-                pool.amplification_parameter.factor(),
-                pool.amplification_parameter.precision(),
+                pool.amplification_parameter.factor().into_alloy(),
+                pool.amplification_parameter.precision().into_alloy(),
             )?,
-            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256()),
+            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256().into_alloy()),
         }),
     })
 }
 
 fn vault(pool: &StablePoolOrder) -> eth::ContractAddress {
-    pool.settlement_handling
+    (*pool
+        .settlement_handling
         .as_any()
         .downcast_ref::<balancer_v2::SettlementHandler>()
         .expect("downcast balancer settlement handler")
-        .vault()
-        .into_legacy()
-        .into()
+        .vault())
+    .into()
 }
 
 fn pool_id(pool: &StablePoolOrder) -> balancer::v2::Id {

@@ -6,13 +6,13 @@ pub mod limit_order;
 pub mod stable;
 pub mod weighted_product;
 
-use {crate::domain::eth, ethereum_types::H160, std::cmp::Ordering};
+use {crate::domain::eth, std::cmp::Ordering};
 
 /// A source of liquidity which can be used by the solver.
 #[derive(Clone, Debug)]
 pub struct Liquidity {
     pub id: Id,
-    pub address: H160,
+    pub address: eth::Address,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
     pub state: State,
@@ -74,6 +74,6 @@ impl ScalingFactor {
 
 impl Default for ScalingFactor {
     fn default() -> Self {
-        Self(eth::Rational::new_raw(1.into(), 1.into()))
+        Self(eth::Rational::new_raw(eth::U256::ONE, eth::U256::ONE))
     }
 }

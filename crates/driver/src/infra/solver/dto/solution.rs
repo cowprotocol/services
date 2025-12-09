@@ -9,7 +9,7 @@ use {
         util::Bytes,
     },
     app_data::AppDataHash,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoLegacy,
     itertools::Itertools,
     model::{
         DomainSeparator,
@@ -79,7 +79,7 @@ impl Solutions {
                                             amount: jit_order.0.buy_amount.into(),
                                             token: jit_order.0.buy_token.into(),
                                         },
-                                        receiver: jit_order.0.receiver.into(),
+                                        receiver: jit_order.0.receiver,
                                         partially_fillable: jit_order.0.partially_fillable,
                                         valid_to: jit_order.0.valid_to.into(),
                                         app_data: jit_order.0.app_data.into(),
@@ -126,7 +126,7 @@ impl Solutions {
                         .pre_interactions
                         .into_iter()
                         .map(|interaction| eth::Interaction {
-                            target: interaction.target.into(),
+                            target: interaction.target,
                             value: interaction.value.into(),
                             call_data: Bytes(interaction.calldata),
                         })
@@ -147,8 +147,8 @@ impl Solutions {
                                             .map(|allowance| {
                                                 eth::Allowance {
                                                     token: allowance.token.into(),
-                                                    spender: allowance.spender.into(),
-                                                    amount: allowance.amount.into_alloy(),
+                                                    spender: allowance.spender,
+                                                    amount: allowance.amount,
                                                 }
                                                 .into()
                                             })
@@ -203,14 +203,14 @@ impl Solutions {
                         .post_interactions
                         .into_iter()
                         .map(|interaction| eth::Interaction {
-                            target: interaction.target.into(),
+                            target: interaction.target,
                             value: interaction.value.into(),
                             call_data: Bytes(interaction.calldata),
                         })
                         .collect(),
                     solver.clone(),
                     weth,
-                    solution.gas.map(|gas| eth::Gas(gas.into())),
+                    solution.gas.map(eth::Gas::from),
                     solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
@@ -230,7 +230,7 @@ impl Solutions {
                             ))
                         }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {
-                        address: eth::Address(w.address),
+                        address: w.address,
                         data: w.data,
                     }).collect()
                 )
@@ -256,11 +256,11 @@ pub struct JitOrder(solvers_dto::solution::JitOrder);
 impl JitOrder {
     fn raw_order_data(&self) -> OrderData {
         OrderData {
-            sell_token: self.0.sell_token.into_alloy(),
-            buy_token: self.0.buy_token.into_alloy(),
-            receiver: Some(self.0.receiver.into_alloy()),
-            sell_amount: self.0.sell_amount.into_alloy(),
-            buy_amount: self.0.buy_amount.into_alloy(),
+            sell_token: self.0.sell_token,
+            buy_token: self.0.buy_token,
+            receiver: Some(self.0.receiver),
+            sell_amount: self.0.sell_amount,
+            buy_amount: self.0.buy_amount,
             valid_to: self.0.valid_to,
             app_data: AppDataHash(self.0.app_data),
             fee_amount: alloy::primitives::U256::ZERO,
@@ -324,7 +324,7 @@ impl JitOrder {
             signature.data = Bytes(self.0.signature[20..].to_vec());
         }
 
-        signature.signer = signer.into_legacy().into();
+        signature.signer = signer;
 
         Ok(signature)
     }
@@ -333,7 +333,7 @@ impl JitOrder {
         let order_data = self.raw_order_data();
         let signature = self.signature(domain)?;
         Ok(order_data
-            .uid(&DomainSeparator(domain.0), &signature.signer.into())
+            .uid(&DomainSeparator(domain.0), &signature.signer.into_legacy())
             .0
             .into())
     }

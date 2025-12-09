@@ -22,7 +22,7 @@ use {
     },
     anyhow::Result,
     derive_more::{From, Into},
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::IntoAlloy,
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
@@ -190,7 +190,7 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.account.address().into()
+        self.config.account.address().into_alloy()
     }
 
     /// The account which should be used to sign settlements for this solver.
@@ -334,11 +334,11 @@ impl Solver {
             .flat_map(|order| {
                 let hint = order.app_data.flashloan()?;
                 let flashloan = eth::Flashloan {
-                    liquidity_provider: hint.liquidity_provider.into_legacy().into(),
-                    protocol_adapter: hint.protocol_adapter.into_legacy().into(),
-                    receiver: hint.receiver.into_legacy().into(),
-                    token: hint.token.into_legacy().into(),
-                    amount: hint.amount.into_legacy().into(),
+                    liquidity_provider: hint.liquidity_provider.into(),
+                    protocol_adapter: hint.protocol_adapter.into(),
+                    receiver: hint.receiver,
+                    token: hint.token.into(),
+                    amount: hint.amount.into(),
                 };
                 Some((order.uid, flashloan))
             })
@@ -357,7 +357,7 @@ impl Solver {
                 let wrapper_calls = wrappers
                     .iter()
                     .map(|w| solvers_dto::auction::WrapperCall {
-                        address: w.address.into_legacy(),
+                        address: w.address,
                         data: w.data.clone(),
                         is_omittable: w.is_omittable,
                     })

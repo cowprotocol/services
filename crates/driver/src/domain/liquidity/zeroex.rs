@@ -3,7 +3,7 @@ use {
     alloy::primitives::{Address, B256},
     anyhow::anyhow,
     contracts::alloy::IZeroex,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     primitive_types::U256,
     std::sync::Arc,
 };
@@ -81,7 +81,7 @@ impl LimitOrder {
         let calldata = method.calldata();
 
         Ok(eth::Interaction {
-            target: self.zeroex.address().into_legacy().into(),
+            target: *self.zeroex.address(),
             value: 0.into(),
             call_data: calldata.to_vec().into(),
         })

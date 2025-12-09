@@ -16,10 +16,7 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::{BlockRetrieving, CurrentBlockWatcher},
-    },
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
@@ -55,27 +52,21 @@ fn to_interaction(
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
-        receiver.0.into_alloy(),
-        pool.vault.0.into_alloy(),
-        Allowances::empty(receiver.0.into_alloy()),
+        *receiver,
+        pool.vault.0,
+        Allowances::empty(*receiver),
     );
 
     let interaction = handler.swap(
-        TokenAmount::new(
-            input.0.token.0.0.into_alloy(),
-            input.0.amount.0.into_alloy(),
-        ),
-        TokenAmount::new(
-            output.0.token.0.0.into_alloy(),
-            output.0.amount.0.into_alloy(),
-        ),
+        TokenAmount::new(input.0.token.0.0, input.0.amount.0),
+        TokenAmount::new(output.0.token.0.0, output.0.amount.0),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
 
     eth::Interaction {
-        target: target.into_legacy().into(),
-        value: value.into_legacy().into(),
+        target,
+        value: value.into(),
         call_data: call_data.0.to_vec().into(),
     }
 }
@@ -113,7 +104,7 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::Instance::new(config.vault.0.into_alloy(), web3.alloy.clone()),
+        vault: BalancerV2Vault::Instance::new(config.vault.0, web3.alloy.clone()),
         factories: [
             config
                 .weighted

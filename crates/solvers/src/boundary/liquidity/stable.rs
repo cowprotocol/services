@@ -2,7 +2,7 @@ pub use shared::sources::balancer_v2::pool_fetching::StablePool as Pool;
 use {
     crate::domain::{eth, liquidity},
     ethereum_types::{H160, H256, U256},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, CommonPoolState, TokenState},
         swap::fixed_point::Bfp,
@@ -28,17 +28,17 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
         .iter()
         .map(|reserve| {
             Some((
-                reserve.asset.token.0.into_alloy(),
+                reserve.asset.token.0,
                 TokenState {
-                    balance: reserve.asset.amount,
+                    balance: reserve.asset.amount.into_legacy(),
                     scaling_factor: to_fixed_point(&reserve.scale.get())?,
                 },
             ))
         })
         .collect::<Option<_>>()?;
     let amplification_parameter = AmplificationParameter::try_new(
-        *pool.amplification_parameter.numer(),
-        *pool.amplification_parameter.denom(),
+        pool.amplification_parameter.numer().into_legacy(),
+        pool.amplification_parameter.denom().into_legacy(),
     )
     .ok()?;
 
@@ -60,6 +60,6 @@ fn to_fixed_point(ratio: &eth::Rational) -> Option<Bfp> {
     // of a base 2 FP format you typically see). Just convert our ratio into
     // this format.
     let base = U256::exp10(18);
-    let wei = ratio.numer().checked_mul(base)? / ratio.denom();
+    let wei = ratio.numer().into_legacy().checked_mul(base)? / ratio.denom().into_legacy();
     Some(Bfp::from_wei(wei))
 }

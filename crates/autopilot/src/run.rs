@@ -31,7 +31,7 @@ use {
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::block_number_to_block_number_hash,
     },
     futures::StreamExt,
@@ -658,7 +658,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
+                driver
+                    .fairness_threshold
+                    .map(IntoAlloy::into_alloy)
+                    .map(Into::into),
                 driver.submission_account,
                 driver.requested_timeout_on_problems,
             )
@@ -715,7 +718,10 @@ async fn shadow_mode(args: Arguments) -> ! {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
+                driver
+                    .fairness_threshold
+                    .map(IntoAlloy::into_alloy)
+                    .map(Into::into),
                 // HACK: the auction logic expects all drivers
                 // to use a different submission address. But
                 // in the shadow environment all drivers use
@@ -795,7 +801,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         liveness.clone(),
         current_block,
         args.max_winners_per_auction,
-        weth.address().into_legacy().into(),
+        (*weth.address()).into(),
     );
     shadow.run_forever().await;
 }

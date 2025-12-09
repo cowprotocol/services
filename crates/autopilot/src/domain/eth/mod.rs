@@ -1,10 +1,7 @@
+pub use alloy::primitives::{Address, B256, U256};
 use {
     crate::{domain, util::conv::U256Ext},
     derive_more::{Display, From, Into},
-};
-pub use {
-    alloy::primitives::Address,
-    primitive_types::{H160, H256, U256},
 };
 
 /// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
@@ -12,7 +9,7 @@ pub use {
 /// convention across the Ethereum ecosystem whenever ETH is treated like an
 /// ERC20 token.
 /// Same address is also used for XDAI on Gnosis Chain.
-pub const NATIVE_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
+pub const NATIVE_TOKEN: TokenAddress = TokenAddress(Address::repeat_byte(0xee));
 
 /// Block number.
 #[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]
@@ -29,13 +26,13 @@ impl std::ops::Add<u64> for BlockNo {
 
 /// A transaction ID, AKA transaction hash.
 #[derive(Debug, Copy, Clone, From, Default)]
-pub struct TxId(pub H256);
+pub struct TxId(pub B256);
 
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct TokenAddress(pub H160);
+pub struct TokenAddress(pub Address);
 
 impl TokenAddress {
     /// If the token is ETH/XDAI, return WETH/WXDAI, thereby converting it to
@@ -54,8 +51,8 @@ impl TokenAddress {
 #[derive(Debug, Clone, Copy, From, Into)]
 pub struct WrappedNativeToken(TokenAddress);
 
-impl From<H160> for WrappedNativeToken {
-    fn from(value: H160) -> Self {
+impl From<Address> for WrappedNativeToken {
+    fn from(value: Address) -> Self {
         WrappedNativeToken(value.into())
     }
 }
@@ -106,7 +103,7 @@ impl std::ops::Add for SellTokenAmount {
 
 impl num::Zero for SellTokenAmount {
     fn zero() -> Self {
-        Self(U256::zero())
+        Self(U256::ZERO)
     }
 
     fn is_zero(&self) -> bool {
@@ -232,7 +229,7 @@ impl std::ops::AddAssign for TokenAmount {
 
 impl num::Zero for TokenAmount {
     fn zero() -> Self {
-        Self(U256::zero())
+        Self(U256::ZERO)
     }
 
     fn is_zero(&self) -> bool {
@@ -284,7 +281,7 @@ impl num::CheckedSub for Ether {
 
 impl num::Zero for Ether {
     fn zero() -> Self {
-        Self(U256::zero())
+        Self(U256::ZERO)
     }
 
     fn is_zero(&self) -> bool {

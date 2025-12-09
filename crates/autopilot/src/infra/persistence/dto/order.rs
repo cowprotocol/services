@@ -3,11 +3,10 @@ use {
         boundary::{self},
         domain::{self, OrderUid, eth, fee::FeeFactor},
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     app_data::AppDataHash,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -17,8 +16,8 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     pub uid: boundary::OrderUid,
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -27,8 +26,8 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
-    pub receiver: Option<H160>,
-    pub owner: H160,
+    pub receiver: Option<Address>,
+    pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed: U256,
@@ -59,8 +58,8 @@ pub fn from_domain(order: domain::Order) -> Order {
         created: order.created,
         valid_to: order.valid_to,
         kind: order.side.into(),
-        receiver: order.receiver.map(IntoLegacy::into_legacy),
-        owner: order.owner.into_legacy(),
+        receiver: order.receiver,
+        owner: order.owner,
         partially_fillable: order.partially_fillable,
         executed: order.executed.into(),
         pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
@@ -97,8 +96,8 @@ pub fn to_domain(order: Order) -> domain::Order {
         created: order.created,
         valid_to: order.valid_to,
         side: order.kind.into(),
-        receiver: order.receiver.map(|h160| eth::Address::from(h160.0)),
-        owner: eth::Address::from(order.owner.0),
+        receiver: order.receiver,
+        owner: order.owner,
         partially_fillable: order.partially_fillable,
         executed: order.executed.into(),
         pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
@@ -348,9 +347,9 @@ pub struct Quote {
 impl Quote {
     fn from_domain(quote: domain::Quote) -> Self {
         Quote {
-            sell_amount: quote.sell_amount.0.into_alloy(),
-            buy_amount: quote.buy_amount.0.into_alloy(),
-            fee: quote.fee.0.into_alloy(),
+            sell_amount: quote.sell_amount.0,
+            buy_amount: quote.buy_amount.0,
+            fee: quote.fee.0,
             solver: quote.solver,
         }
     }
@@ -358,9 +357,9 @@ impl Quote {
     pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
         domain::Quote {
             order_uid,
-            sell_amount: self.sell_amount.into_legacy().into(),
-            buy_amount: self.buy_amount.into_legacy().into(),
-            fee: self.fee.into_legacy().into(),
+            sell_amount: self.sell_amount.into(),
+            buy_amount: self.buy_amount.into(),
+            fee: self.fee.into(),
             solver: self.solver,
         }
     }

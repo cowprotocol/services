@@ -418,6 +418,6 @@ mod tests {
     }
 
     pub fn to_wei(base: u32) -> eth::U256 {
-        eth::U256::from(base) * eth::U256::exp10(18)
+        eth::U256::from(base) * eth::U256::from(10).pow(eth::U256::from(18))
     }
 }

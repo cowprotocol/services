@@ -111,7 +111,7 @@ impl Auction {
             .filter_map(|(address, token)| token.price.map(|price| (*address, price)))
             .chain(std::iter::once((
                 eth::ETH_TOKEN,
-                eth::U256::exp10(18).into(),
+                eth::U256::from(10).pow(eth::U256::from(18)).into(),
             )))
             .collect()
     }
@@ -180,7 +180,7 @@ impl Price {
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0.0 / Self::BASE).into()
+        (amount.0 * self.0.0 / eth::U256::from(Self::BASE)).into()
     }
 
     /// Convert an amount of ETH into a token amount using this price.

@@ -4,7 +4,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
-    ethrpc::{alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::block_stream::CurrentBlockWatcher,
     futures::future,
     model::TokenPair,
     shared::{
@@ -104,7 +104,8 @@ impl Fetcher {
             &config
                 .base_tokens
                 .iter()
-                .map(|t| t.0.0.into_alloy())
+                .cloned()
+                .map(Into::into)
                 .collect::<Vec<_>>(),
         );
 
@@ -131,7 +132,7 @@ impl Fetcher {
             .iter()
             .map(|pair| {
                 let (a, b) = pair.get();
-                TokenPair::new(a.0.0.into_alloy(), b.0.0.into_alloy()).expect("a != b")
+                TokenPair::new(a.0.0, b.0.0).expect("a != b")
             })
             .collect();
 

@@ -4,7 +4,10 @@ use {
         domain::{competition, eth, mempools},
         infra,
     },
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -85,8 +88,9 @@ impl Mempool {
     pub async fn get_nonce(&self, address: eth::Address) -> Result<eth::U256, mempools::Error> {
         self.transport
             .eth()
-            .transaction_count(address.into(), self.config.nonce_block_number)
+            .transaction_count(address.into_legacy(), self.config.nonce_block_number)
             .await
+            .map(IntoAlloy::into_alloy)
             .map_err(|err| {
                 mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
             })
@@ -103,15 +107,15 @@ impl Mempool {
     ) -> Result<eth::TxId, mempools::Error> {
         ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
             .from(solver.account().clone())
-            .to(tx.to.into())
-            .nonce(nonce)
+            .to(tx.to.into_legacy())
+            .nonce(nonce.into_legacy())
             .gas_price(ethcontract::GasPrice::Eip1559 {
-                max_fee_per_gas: gas.price.max().into(),
-                max_priority_fee_per_gas: gas.price.tip().into(),
+                max_fee_per_gas: gas.price.max().0.0.into_legacy(),
+                max_priority_fee_per_gas: gas.price.tip().0.0.into_legacy(),
             })
             .data(tx.input.into())
-            .value(tx.value.0)
-            .gas(gas.limit.0)
+            .value(tx.value.0.into_legacy())
+            .gas(gas.limit.0.into_legacy())
             .access_list(web3::types::AccessList::from(tx.access_list))
             .resolve(ethcontract::transaction::ResolveCondition::Pending)
             .send()

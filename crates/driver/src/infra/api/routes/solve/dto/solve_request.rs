@@ -44,7 +44,7 @@ impl SolveRequest {
                 .into_iter()
                 .map(|order| competition::Order {
                     uid: order.uid.into(),
-                    receiver: order.receiver.map(Into::into),
+                    receiver: order.receiver,
                     created: order.created.into(),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
@@ -83,7 +83,7 @@ impl SolveRequest {
                         .pre_interactions
                         .into_iter()
                         .map(|interaction| eth::Interaction {
-                            target: interaction.target.into(),
+                            target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.call_data.into(),
                         })
@@ -92,7 +92,7 @@ impl SolveRequest {
                         .post_interactions
                         .into_iter()
                         .map(|interaction| eth::Interaction {
-                            target: interaction.target.into(),
+                            target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.call_data.into(),
                         })
@@ -124,7 +124,7 @@ impl SolveRequest {
                             }
                         },
                         data: order.signature.into(),
-                        signer: order.owner.into(),
+                        signer: order.owner,
                     },
                     protocol_fees: order
                         .protocol_fees
@@ -171,7 +171,6 @@ impl SolveRequest {
             eth,
             self.surplus_capturing_jit_order_owners
                 .into_iter()
-                .map(Into::into)
                 .collect::<HashSet<_>>(),
         )
         .await
@@ -217,7 +216,7 @@ pub struct SolveRequest {
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
-    surplus_capturing_jit_order_owners: Vec<eth::H160>,
+    surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
 impl SolveRequest {
@@ -230,7 +229,7 @@ impl SolveRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Token {
-    pub address: eth::H160,
+    pub address: eth::Address,
     #[serde_as(as = "Option<serialize::U256>")]
     pub price: Option<eth::U256>,
     pub trusted: bool,
@@ -242,8 +241,8 @@ struct Token {
 struct Order {
     #[serde_as(as = "serialize::Hex")]
     uid: [u8; order::UID_LEN],
-    sell_token: eth::H160,
-    buy_token: eth::H160,
+    sell_token: eth::Address,
+    buy_token: eth::Address,
     #[serde_as(as = "serialize::U256")]
     sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
@@ -252,8 +251,8 @@ struct Order {
     created: u32,
     valid_to: u32,
     kind: Kind,
-    receiver: Option<eth::H160>,
-    owner: eth::H160,
+    receiver: Option<eth::Address>,
+    owner: eth::Address,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.
     #[serde_as(as = "serialize::U256")]
@@ -284,7 +283,7 @@ enum Kind {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
-    target: eth::H160,
+    target: eth::Address,
     #[serde_as(as = "serialize::U256")]
     value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
@@ -349,11 +348,15 @@ pub struct Quote {
     pub buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     pub fee: eth::U256,
-    pub solver: eth::H160,
+    pub solver: eth::Address,
 }
 
 impl Quote {
-    fn into_domain(self, sell_token: eth::H160, buy_token: eth::H160) -> competition::order::Quote {
+    fn into_domain(
+        self,
+        sell_token: eth::Address,
+        buy_token: eth::Address,
+    ) -> competition::order::Quote {
         competition::order::Quote {
             sell: eth::Asset {
                 amount: self.sell_amount.into(),
@@ -367,7 +370,7 @@ impl Quote {
                 amount: self.fee.into(),
                 token: sell_token.into(),
             },
-            solver: self.solver.into(),
+            solver: self.solver,
         }
     }
 }

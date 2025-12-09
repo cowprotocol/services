@@ -5,7 +5,7 @@ use {
     chain::Chain,
     ethrpc::{
         Web3,
-        alloy::conversions::IntoAlloy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::CurrentBlockWatcher,
         extensions::DebugNamespace,
     },
@@ -112,11 +112,13 @@ impl Ethereum {
 
     pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
         let (transaction, receipt, traces) = tokio::try_join!(
-            self.web3.eth().transaction(hash.0.into()),
-            self.web3.eth().transaction_receipt(hash.0),
+            self.web3.eth().transaction(hash.0.into_legacy().into()),
+            self.web3.eth().transaction_receipt(hash.0.into_legacy()),
             // Use unbuffered transport for the Debug API since not all providers support
             // batched debug calls.
-            self.unbuffered_web3.debug().transaction(hash.0),
+            self.unbuffered_web3
+                .debug()
+                .transaction(hash.0.into_legacy()),
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
@@ -144,7 +146,7 @@ fn into_domain(
     timestamp: U256,
 ) -> anyhow::Result<eth::Transaction> {
     Ok(eth::Transaction {
-        hash: transaction.hash.into(),
+        hash: transaction.hash.into_alloy().into(),
         from: transaction
             .from
             .map(IntoAlloy::into_alloy)
@@ -157,10 +159,12 @@ fn into_domain(
         gas: receipt
             .gas_used
             .ok_or(anyhow::anyhow!("missing gas_used"))?
+            .into_alloy()
             .into(),
         gas_price: receipt
             .effective_gas_price
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
+            .into_alloy()
             .into(),
         timestamp: timestamp.as_u32(),
         trace_calls: trace_calls.into(),

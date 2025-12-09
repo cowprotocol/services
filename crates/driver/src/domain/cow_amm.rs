@@ -3,7 +3,6 @@ use {
     alloy::{primitives::Address, providers::DynProvider},
     contracts::alloy::cow_amm::CowAmmLegacyHelper,
     cow_amm::Amm,
-    ethrpc::alloy::conversions::IntoAlloy,
     itertools::{
         Either::{Left, Right},
         Itertools,
@@ -55,12 +54,9 @@ impl Cache {
             let cache = self.inner.read().await;
             surplus_capturing_jit_order_owners
                 .iter()
-                .partition_map(|&address| {
-                    let address = address.0.into_alloy();
-                    match cache.get(&address) {
-                        Some(amm) => Left(amm.clone()),
-                        None => Right(address),
-                    }
+                .partition_map(|&address| match cache.get(&address) {
+                    Some(amm) => Left(amm.clone()),
+                    None => Right(address),
                 })
         };
 

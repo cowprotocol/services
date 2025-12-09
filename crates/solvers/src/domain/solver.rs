@@ -18,7 +18,7 @@ use {
         },
         infra::metrics,
     },
-    ethereum_types::U256,
+    alloy::primitives::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
     tracing::Instrument,
@@ -161,7 +161,7 @@ impl Inner {
                 Some(price) => price,
                 None if sell_token == self.weth.0.into() => {
                     // Early return if the sell token is native token
-                    auction::Price(eth::Ether(eth::U256::exp10(18)))
+                    auction::Price(eth::Ether(eth::U256::from(10).pow(eth::U256::from(18))))
                 }
                 None => {
                     // Estimate the price of the sell token in the native token
@@ -173,8 +173,8 @@ impl Inner {
                         Some(route) => {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
-                            let price = self.native_token_price_estimation_amount.to_f64_lossy()
-                                / route.input().amount.to_f64_lossy();
+                            let price = f64::from(self.native_token_price_estimation_amount)
+                                / f64::from(route.input().amount);
                             let Some(price) = to_normalized_price(price) else {
                                 continue;
                             };
@@ -267,7 +267,7 @@ impl Inner {
 
         (0..n)
             .map(move |i| {
-                let divisor = U256::one() << i;
+                let divisor = U256::ONE << i;
                 Request {
                     sell: eth::Asset {
                         token: sell.token,
@@ -296,7 +296,7 @@ impl Inner {
             // `type(uint112).max` without overflowing a `uint256` on the smart
             // contract level. Requiring to trade more than `type(uint112).max`
             // is unlikely and would not work with Uniswap V2 anyway.
-            amount: eth::U256::one() << 144,
+            amount: eth::U256::ONE << 144,
         };
 
         let buy = eth::Asset {
@@ -318,7 +318,7 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 
     let price_in_eth = 1e18 * price;
     if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
+        Some(U256::from(price_in_eth))
     } else {
         None
     }
@@ -374,8 +374,10 @@ impl<'a> Route<'a> {
     }
 
     fn gas(&self) -> eth::Gas {
-        eth::Gas(self.segments.iter().fold(U256::zero(), |acc, segment| {
-            acc.saturating_add(segment.gas.0)
-        }))
+        eth::Gas(
+            self.segments
+                .iter()
+                .fold(U256::ZERO, |acc, segment| acc.saturating_add(segment.gas.0)),
+        )
     }
 }

@@ -13,6 +13,7 @@ use {
         },
     },
     chain::Chain,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
     std::path::Path,
@@ -64,7 +65,9 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             .unwrap_or_else(|_| panic!("Unable to load KMS account {key_id:?}"));
                     ethcontract::Account::Kms(account, None)
                 }
-                file::Account::Address(address) => ethcontract::Account::Local(address, None),
+                file::Account::Address(address) => {
+                    ethcontract::Account::Local(address.into_legacy(), None)
+                }
             };
             solver::Config {
                 endpoint: solver_config.endpoint,
@@ -100,7 +103,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 s3: solver_config.s3.map(Into::into),
                 solver_native_token: solver_config.manage_native_token.to_domain(),
-                quote_tx_origin: solver_config.quote_tx_origin.map(eth::Address),
+                quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
                 bad_token_detection: BadTokenDetection {
                     tokens_supported: solver_config
