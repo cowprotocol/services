@@ -1,8 +1,7 @@
 pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
 use {
     crate::domain::{eth, liquidity},
-    alloy::primitives::Address,
-    ethereum_types::{H256, U256},
+    alloy::primitives::{Address, B256, U256},
     ethrpc::alloy::conversions::IntoLegacy,
     shared::sources::balancer_v2::{
         pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
@@ -20,11 +19,7 @@ pub fn to_boundary_pool(
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is
     // pretty good.
-    let id = {
-        let mut buf = [0_u8; 32];
-        buf[..20].copy_from_slice(address.as_slice());
-        H256(buf)
-    };
+    let id = B256::right_padding_from(address.as_slice());
 
     let swap_fee = to_fixed_point(&pool.fee)?;
     let reserves = pool
@@ -46,7 +41,7 @@ pub fn to_boundary_pool(
 
     Some(Pool {
         common: CommonPoolState {
-            id,
+            id: id.into_legacy(),
             address,
             swap_fee,
             paused: false,
@@ -64,7 +59,7 @@ fn to_fixed_point(ratio: &eth::Rational) -> Option<Bfp> {
     // Balancer "fixed point numbers" are in a weird decimal FP format (instead
     // of a base 2 FP format you typically see). Just convert our ratio into
     // this format.
-    let base = U256::exp10(18);
-    let wei = ratio.numer().into_legacy().checked_mul(base)? / ratio.denom().into_legacy();
-    Some(Bfp::from_wei(wei))
+    let base = U256::from(10).pow(U256::from(18));
+    let wei = ratio.numer().checked_mul(base)? / ratio.denom();
+    Some(Bfp::from_wei(wei.into_legacy()))
 }

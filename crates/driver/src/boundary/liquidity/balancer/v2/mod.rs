@@ -16,7 +16,10 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::IntoAlloy,
+        block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    },
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
@@ -27,7 +30,7 @@ use {
     },
     solver::{
         interactions::allowances::Allowances,
-        liquidity::{balancer_v2, balancer_v2::BalancerV2Liquidity},
+        liquidity::balancer_v2::{self, BalancerV2Liquidity},
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
     std::sync::Arc,
@@ -48,7 +51,7 @@ fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = balancer_v2::SettlementHandler::new(
-        pool.id.into(),
+        pool.id.0.into_alloy(),
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
