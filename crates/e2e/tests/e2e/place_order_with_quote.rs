@@ -25,8 +25,8 @@ async fn local_node_place_order_with_quote_basic() {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_place_order_with_quote_same_token_pair_error() {
-    run_test(place_order_with_quote_same_token_pair_error).await;
+async fn local_node_disabled_same_sell_and_buy_token_order_feature() {
+    run_test(disabled_same_sell_and_buy_token_order_feature).await;
 }
 
 async fn place_order_with_quote(web3: Web3) {

@@ -238,7 +238,7 @@ impl std::fmt::Display for Arguments {
             max_gas_per_order,
             active_order_competition_threshold,
             volume_fee_config,
-            allow_same_sell_and_buy_token,
+            disable_same_sell_and_buy_token_orders,
         } = self;
 
         write!(f, "{shared}")?;
@@ -295,7 +295,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
         writeln!(
             f,
-            "allow_same_sell_and_buy_token: {allow_same_sell_and_buy_token}"
+            "disable_same_sell_and_buy_token_orders: {disable_same_sell_and_buy_token_orders}"
         )?;
 
         Ok(())

@@ -420,7 +420,7 @@ pub async fn run(args: Arguments) {
         code_fetcher,
         app_data_validator.clone(),
         args.max_gas_per_order,
-        args.allow_same_sell_and_buy_token,
+        args.disable_same_sell_and_buy_token_orders,
     ));
     let ipfs = args
         .ipfs_gateway
