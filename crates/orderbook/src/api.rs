@@ -33,6 +33,7 @@ mod get_solver_competition_v2;
 mod get_token_metadata;
 mod get_total_surplus;
 mod get_trades;
+mod get_trades_v2;
 mod get_user_orders;
 mod post_order;
 mod post_quote;
@@ -68,6 +69,10 @@ pub fn handle_all_routes(
         (
             "v1/get_trades",
             box_filter(get_trades::get_trades(database_read.clone())),
+        ),
+        (
+            "v2/get_trades",
+            box_filter(get_trades_v2::get_trades(database_read.clone())),
         ),
         (
             "v1/cancel_order",

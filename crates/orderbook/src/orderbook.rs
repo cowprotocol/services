@@ -571,8 +571,6 @@ impl Orderbook {
             .trades(&TradeFilter {
                 owner: None,
                 order_uid: Some(*uid),
-                offset: 0,
-                limit: 1,
             })
             .await?;
 

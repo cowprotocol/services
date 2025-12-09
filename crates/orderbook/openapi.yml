@@ -210,7 +210,49 @@ paths:
   /api/v1/trades:
     get:
       operationId: getTrades
-      summary: Get existing trades.
+      summary: Get existing trades (unpaginated).
+      deprecated: true
+      description: |
+        **Deprecated:** This endpoint is deprecated. Please use `/api/v2/trades` instead, which provides pagination support.
+
+        Exactly one of `owner` or `orderUid` must be set.
+
+        Results are sorted by block number and log index descending (newest trades first).
+
+        **Note:** This endpoint returns all matching trades without pagination. For paginated results, use `/api/v2/trades`.
+      parameters:
+        - name: owner
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: false
+        - name: orderUid
+          in: query
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: false
+      responses:
+        "200":
+          description: |-
+            ### If `owner` is specified:
+
+            Return all trades related to that `owner`.
+
+            ### If `orderUid` is specified:
+
+            Return all trades related to that `orderUid`. Given that an order
+            may be partially fillable, it is possible that an individual order
+            may have *multiple* trades.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+  /api/v2/trades:
+    get:
+      operationId: getTradesV2
+      summary: Get existing trades (paginated).
       description: |
         Exactly one of `owner` or `orderUid` must be set.
 
