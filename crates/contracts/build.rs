@@ -766,7 +766,9 @@ fn main() {
                     BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
                 ]))
                 // Test Contract with non-standard ERC20 balance storage
-                .add_contract(Contract::new("NonStandardERC20Balances")),
+                .add_contract(Contract::new("NonStandardERC20Balances"))
+                // Test Contract which selectively pulls balance storage from another target
+                .add_contract(Contract::new("RemoteERC20Balances")),
         )
         .add_submodule(
             Submodule::new("support") // support module

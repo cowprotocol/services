@@ -579,9 +579,29 @@ async fn trace_based_balance_detection(web3: Web3) {
             .await
             .unwrap();
 
+    // Deploy the NonStandardERC20BalancesEntrance token - as if the previous contract wasnt
+    // complicated enough, this contract will selectively delegate the balance it returns between
+    // itself (allowing for testing of calling another contract to get a balance--or calling
+    // another contract to *not* get a balance)
+    let entry_token_use_self =
+        contracts::alloy::test::RemoteERC20Balances::Instance::deploy(web3.alloy.clone(), *non_standard_token.address(), true)
+            .await
+            .unwrap();
+    let entry_token_use_other =
+        contracts::alloy::test::RemoteERC20Balances::Instance::deploy(web3.alloy.clone(), *non_standard_token.address(), false)
+            .await
+            .unwrap();
+
     // Mint some tokens to the trader (so the contract has non-zero state)
     non_standard_token
         .mint(trader.address(), eth(100))
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    entry_token_use_self
+        .mint(trader.address(), eth(123))
         .from(solver.address())
         .send_and_watch()
         .await
@@ -594,7 +614,7 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     // Test with WETH (standard ERC20 with mapping at slot 3)
     let weth = *onchain.contracts().weth.address();
-    tracing::info!("Testing WETH balance detection...");
+    tracing::info!(?weth, "Testing WETH balance detection...");
     let weth_strategy = detector
         .detect(weth.into_legacy(), test_account.into_legacy())
         .await;
@@ -607,7 +627,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // Test with NonStandardERC20Balances - this is the key test case
     // The balance is at offset 2 within the UserData struct (epoch=0, approvals
     // mapping=1, balance=2)
-    tracing::info!("Testing NonStandardERC20Balances detection...");
+    tracing::info!(address = ?non_standard_token.address(), "Testing NonStandardERC20Balances detection...");
     let non_standard_strategy = detector
         .detect(
             non_standard_token.address().into_legacy(),
@@ -621,6 +641,38 @@ async fn trace_based_balance_detection(web3: Web3) {
     tracing::info!(
         "✓ NonStandardERC20Balances strategy detected: {:?}",
         non_standard_strategy
+    );
+
+    tracing::info!(address = ?entry_token_use_other.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
+    let remote_strategy = detector
+        .detect(
+            entry_token_use_other.address().into_legacy(),
+            test_account.into_legacy(),
+        )
+        .await;
+    assert!(
+        matches!(remote_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect non-standard token balance slot via trace-based detection"
+    );
+    tracing::info!(
+        "✓ RemoteERC20Balances (remote) strategy detected: {:?}",
+        non_standard_strategy
+    );
+
+    tracing::info!(address = ?entry_token_use_self.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
+    let remote_self_strategy = detector
+        .detect(
+            entry_token_use_self.address().into_legacy(),
+            test_account.into_legacy(),
+        )
+        .await;
+    assert!(
+        matches!(remote_self_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect non-standard token balance slot via trace-based detection"
+    );
+    tracing::info!(
+        "✓ RemoteERC20Balances (remote) strategy detected: {:?}",
+        remote_self_strategy
     );
 
     // Verify that the detected strategies actually work by testing balance
@@ -659,7 +711,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         let token_contract = ERC20::Instance::new(token, web3.alloy.clone());
         let balance = token_contract
             .balanceOf(test_account)
-            .state(HashMap::from([(override_token, state_override)]).into_alloy())
+            .state(HashMap::from([(override_token, state_override.clone())]).into_alloy())
             .call()
             .await
             .unwrap();
@@ -671,10 +723,11 @@ async fn trace_based_balance_detection(web3: Web3) {
         );
 
         tracing::info!(
-            "✓ Balance override verified for token {:?}: set {} and got {}",
-            token,
-            test_balance,
-            balance
+            ?token,
+            ?balance,
+            ?override_token,
+            ?state_override,
+            "✓ Balance override verified for token",
         );
     }
 
@@ -695,4 +748,21 @@ async fn trace_based_balance_detection(web3: Web3) {
         test_balance,
     )
     .await;
+    test_balance_override(
+        &web3,
+        *entry_token_use_other.address(),
+        remote_strategy.unwrap(),
+        test_account,
+        test_balance,
+    )
+    .await;
+    test_balance_override(
+        &web3,
+        *entry_token_use_self.address(),
+        remote_self_strategy.unwrap(),
+        test_account,
+        test_balance,
+    )
+    .await;
+    panic!("something is wrong but I got to the end");
 }

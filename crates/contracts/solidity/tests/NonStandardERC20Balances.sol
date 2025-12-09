@@ -18,7 +18,7 @@ contract NonStandardERC20Balances {
         users[user].balance = amount;
     }
 
-    function balanceOf(address user) external view returns (uint256) {
+    function balanceOf(address user) external virtual view returns (uint256) {
         return users[user].balance;
     }
 
