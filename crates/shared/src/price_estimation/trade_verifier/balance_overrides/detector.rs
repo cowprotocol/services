@@ -72,7 +72,7 @@ fn merge_state_diffs_in_overrides(
 /// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
 ///    those storage slots first
 fn sort_storage_overrides(
-    storage_slots: &mut Vec<(H160, H256)>,
+    storage_slots: &mut [(H160, H256)],
     holder: &H160,
     heuristic_depth: usize,
 ) {
