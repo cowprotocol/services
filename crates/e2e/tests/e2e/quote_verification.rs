@@ -8,7 +8,7 @@ use {
     ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
+        alloy::{CallBuilderExt, conversions::{IntoAlloy, IntoLegacy}},
     },
     model::{
         interaction::InteractionData,
