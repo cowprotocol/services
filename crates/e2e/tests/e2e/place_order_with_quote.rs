@@ -121,7 +121,7 @@ async fn place_order_with_quote(web3: Web3) {
     assert_eq!(quote_metadata.unwrap().0, order_quote.metadata);
 }
 
-async fn place_order_with_quote_same_token_pair_error(web3: Web3) {
+async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(10).into_alloy()).await;
