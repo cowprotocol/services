@@ -175,8 +175,12 @@ impl TradeVerifier {
             .from(solver_address)
             .to(solver_address)
             .gas(Self::DEFAULT_GAS)
+            // Use a high enough non-zero gas price to catch tokens with special logic
+            // for gas_price == 0 but also avoid reverts due to too low gas price.
+            // The exact price is not important since we are only interested in the used
+            // gas units anyway.
             .gas_price(
-                u128::try_from(block.gas_price)
+                u128::try_from(block.gas_price.saturating_mul(2.into()))
                 .map_err(|err| anyhow!(err))
                 .context("converting gas price to u128")?
             );
@@ -724,7 +728,8 @@ fn recover_jit_order_owner(
             let owner = signature
                 .recover(domain_separator, &order_data.hash_struct())?
                 .context("could not recover the owner")?
-                .signer;
+                .signer
+                .into_legacy();
             (owner, signature)
         }
     };

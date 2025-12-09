@@ -59,19 +59,7 @@ pub fn initialize_reentrant(config: &Config) {
 fn set_tracing_subscriber(config: &Config) {
     let initial_filter = config.env_filter.to_string();
 
-    // The `tracing` APIs are heavily generic to enable zero overhead. Unfortunately
-    // this leads to very annoying type constraints which can only be satisfied
-    // by literally copy and pasting the code so the compiler doesn't try to
-    // infer types that satisfy both the tokio-console and the regular case.
-    // It's tempting to resolve this mess by first configuring the `fmt_layer` and
-    // only then the `console_subscriber`. However, this setup was the only way
-    // I found that:
-    // 1. actually makes `tokio-console` work
-    // 2. prints logs if `tokio-console` is disabled
-    // 3. does NOT skip the next log following a `tracing::event!()`. These calls
-    //    happen for example under the hood in `sqlx`. I don't understand what's
-    //    actually causing that but at this point I'm just happy if all the features
-    //    work correctly.
+    // The `tracing` APIs are heavily generic to enable zero overhead.
 
     macro_rules! fmt_layer {
         ($env_filter:expr_2021, $stderr_threshold:expr_2021, $use_json_format:expr_2021) => {{
@@ -108,11 +96,6 @@ fn set_tracing_subscriber(config: &Config) {
             }
         }};
     }
-
-    let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
-        .unwrap_or("false".to_string())
-        .parse()
-        .unwrap();
 
     let (env_filter, reload_handle) =
         tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
@@ -161,13 +144,33 @@ fn set_tracing_subscriber(config: &Config) {
         ))
         .with(tracing_layer);
 
-    if cfg!(tokio_unstable) && enable_tokio_console {
-        subscriber.with(console_subscriber::spawn()).init();
-        tracing::info!("started program with support for tokio-console");
-    } else {
-        subscriber.init();
-        tracing::info!("started program without support for tokio-console");
+    #[cfg(all(tokio_unstable, feature = "tokio-console"))]
+    {
+        let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
+            .unwrap_or("false".to_string())
+            .parse()
+            .unwrap();
+
+        if enable_tokio_console {
+            subscriber.with(console_subscriber::spawn()).init();
+            tracing::info!("started program with support for tokio-console");
+        } else {
+            subscriber.init();
+            tracing::info!(
+                "started program without support for tokio-console (TOKIO_CONSOLE=false)"
+            );
+        }
     }
+
+    #[cfg(not(all(tokio_unstable, feature = "tokio-console")))]
+    {
+        subscriber.init();
+        tracing::info!(
+            "started program without support for tokio-console (not compiled with tokio_unstable \
+             cfg and tokio-console feature)"
+        );
+    }
+
     if cfg!(unix) {
         spawn_reload_handler(initial_filter, reload_handle);
     }

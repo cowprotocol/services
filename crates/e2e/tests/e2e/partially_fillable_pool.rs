@@ -1,10 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{eth, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -84,10 +81,10 @@ async fn test(web3: Web3) {
     onchain.mint_block().await;
 
     let order_a = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(500),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(390),
+        sell_token: *token_a.address(),
+        sell_amount: eth(500),
+        buy_token: *token_b.address(),
+        buy_amount: eth(390),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,

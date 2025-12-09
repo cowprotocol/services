@@ -188,11 +188,9 @@ async fn combined_protocol_fees(web3: Web3) {
         .expect("Expected exactly four elements");
 
     let market_price_improvement_order = OrderCreation {
-        sell_amount,
+        sell_amount: sell_amount.into_alloy(),
         // to make sure the order is in-market
-        buy_amount: (market_quote_before.quote.buy_amount * AlloyU256::from(2)
-            / AlloyU256::from(3))
-        .into_legacy(),
+        buy_amount: market_quote_before.quote.buy_amount * AlloyU256::from(2) / AlloyU256::from(3),
         ..sell_order_from_quote(&market_quote_before)
     }
     .sign(
@@ -201,10 +199,9 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let limit_surplus_order = OrderCreation {
-        sell_amount,
+        sell_amount: sell_amount.into_alloy(),
         // to make sure the order is out-of-market
-        buy_amount: (limit_quote_before.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2))
-            .into_legacy(),
+        buy_amount: limit_quote_before.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2),
         ..sell_order_from_quote(&limit_quote_before)
     }
     .sign(
@@ -213,10 +210,9 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let partner_fee_order = OrderCreation {
-        sell_amount,
+        sell_amount: sell_amount.into_alloy(),
         // to make sure the order is out-of-market
-        buy_amount: (partner_fee_quote.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2))
-            .into_legacy(),
+        buy_amount: (partner_fee_quote.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2)),
         app_data: partner_fee_app_data.clone(),
         ..sell_order_from_quote(&partner_fee_quote)
     }
@@ -515,11 +511,11 @@ async fn surplus_partner_fee(web3: Web3) {
         .await;
 
     let order = OrderCreation {
-        sell_amount: to_wei(10),
-        sell_token: onchain.contracts().weth.address().into_legacy(),
+        sell_amount: eth(10),
+        sell_token: *onchain.contracts().weth.address(),
         // just set any low amount since it doesn't matter for this test
-        buy_amount: to_wei(1),
-        buy_token: token.address().into_legacy(),
+        buy_amount: eth(1),
+        buy_token: *token.address(),
         app_data: partner_fee_app_data.clone(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
@@ -637,10 +633,10 @@ fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
 
 fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
     OrderCreation {
-        sell_token: quote.quote.sell_token.into_legacy(),
-        sell_amount: quote.quote.sell_amount.into_legacy(),
-        buy_token: quote.quote.buy_token.into_legacy(),
-        buy_amount: quote.quote.buy_amount.into_legacy(),
+        sell_token: quote.quote.sell_token,
+        sell_amount: quote.quote.sell_amount,
+        buy_token: quote.quote.buy_token,
+        buy_amount: quote.quote.buy_amount,
         valid_to: quote.quote.valid_to,
         kind: OrderKind::Sell,
         quote_id: quote.id,
@@ -762,10 +758,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     .quote;
 
     let order = OrderCreation {
-        sell_token: token_gno.address().into_legacy(),
-        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)).into_legacy(),
-        buy_token: token_dai.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_gno.address(),
+        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        buy_token: *token_dai.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -917,10 +913,10 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     .quote;
 
     let order = OrderCreation {
-        sell_token: token_gno.address().into_legacy(),
-        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)).into_legacy(),
-        buy_token: token_dai.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_gno.address(),
+        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        buy_token: *token_dai.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()

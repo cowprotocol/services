@@ -86,10 +86,10 @@ async fn eth_integration(web3: Web3) {
     assert_ne!(*onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(50),
-        buy_token: BUY_ETH_ADDRESS.into_legacy(),
-        buy_amount: to_wei(49),
+        sell_token: *token.address(),
+        sell_amount: eth(50),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: eth(49),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
@@ -101,10 +101,10 @@ async fn eth_integration(web3: Web3) {
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(50),
-        buy_token: BUY_ETH_ADDRESS.into_legacy(),
-        buy_amount: to_wei(49),
+        sell_token: *token.address(),
+        sell_amount: eth(50),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: eth(49),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }

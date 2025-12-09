@@ -65,11 +65,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "postgresql://")]
     pub db_write_url: Url,
 
-    /// Url of the Postgres database replica. By default it's the same as
-    /// db_write_url
-    #[clap(long, env)]
-    pub db_read_url: Option<Url>,
-
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
     pub insert_batch_size: NonZeroUsize,
@@ -272,6 +267,13 @@ pub struct Arguments {
     /// and not cut any auctions.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub enable_leader_lock: bool,
+
+    /// Limits the amount of time the autopilot may spend running the
+    /// maintenance logic between 2 auctions. When this times out we prefer
+    /// running a not fully updated auction over stalling the protocol any
+    /// further.
+    #[clap(long, env, default_value = "5s", value_parser = humantime::parse_duration)]
+    pub max_maintenance_timeout: Duration,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -389,7 +391,6 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_write_url,
-            db_read_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
@@ -405,6 +406,7 @@ impl std::fmt::Display for Arguments {
             disable_1271_order_balance_filter,
             disable_1271_order_sig_filter,
             enable_leader_lock,
+            max_maintenance_timeout,
         } = self;
 
         write!(f, "{shared}")?;
@@ -417,7 +419,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
-        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
@@ -488,6 +489,7 @@ impl std::fmt::Display for Arguments {
             "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
+        writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
         Ok(())
     }
 }
