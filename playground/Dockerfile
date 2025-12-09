@@ -31,7 +31,7 @@ CMD ["migrate"]
 FROM chef AS builder
 COPY --from=planner /src/recipe.json recipe.json
 COPY --from=chef /.cargo /.cargo
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --features observe/tokio-console --recipe-path recipe.json
 
 # Copy only the library crates for now
 COPY --from=chef /.cargo /.cargo
@@ -48,9 +48,9 @@ COPY ./crates/chain/ ./crates/chain
 COPY ./crates/ethrpc/ ./crates/ethrpc
 COPY ./crates/observe/ ./crates/observe
 COPY ./crates/order-validation/ ./crates/order-validation
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package shared
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package shared
 COPY ./crates/solver/ ./crates/solver
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solver
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package solver
 
 # Create an base image for all the binaries
 FROM docker.io/debian:bookworm-slim AS base
@@ -61,14 +61,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
 FROM builder AS alerter-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/alerter/ ./crates/alerter
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package alerter
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package alerter
 
 FROM base AS alerter
 COPY --from=alerter-build /src/target/release/alerter /usr/local/bin/alerter
 ENTRYPOINT [ "alerter" ]
 
 FROM builder AS autopilot-build
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package autopilot
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package autopilot
 
 FROM base AS autopilot
 COPY --from=chef /.cargo /.cargo
@@ -78,7 +78,7 @@ ENTRYPOINT [ "autopilot" ]
 
 FROM builder AS driver-build
 COPY ./crates/driver/ ./crates/driver
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package driver
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package driver
 
 FROM base AS driver
 COPY --from=driver-build /src/target/release/driver /usr/local/bin/driver
@@ -87,7 +87,7 @@ ENTRYPOINT [ "driver" ]
 FROM builder AS orderbook-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/orderbook/ ./crates/orderbook
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package orderbook
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package orderbook
 
 FROM base AS orderbook
 COPY --from=orderbook-build /src/target/release/orderbook /usr/local/bin/orderbook
@@ -96,7 +96,7 @@ ENTRYPOINT [ "orderbook" ]
 FROM builder AS refunder-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/refunder/ ./crates/refunder
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package refunder
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package refunder
 
 FROM base AS refunder
 COPY --from=refunder-build /src/target/release/refunder /usr/local/bin/refunder
@@ -105,7 +105,7 @@ ENTRYPOINT [ "refunder" ]
 FROM builder AS solvers-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/solvers/ ./crates/solvers
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solvers
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features observe/tokio-console --package solvers
 
 FROM base AS solvers
 COPY --from=solvers-build /src/target/release/solvers /usr/local/bin/solvers
