@@ -1,11 +1,14 @@
 use {
     super::TestAccount,
-    crate::setup::{
-        Contracts,
-        OnchainComponents,
-        TIMEOUT,
-        colocation::{self, SolverEngine},
-        wait_for_condition,
+    crate::{
+        nodes::NODE_WS_HOST,
+        setup::{
+            Contracts,
+            OnchainComponents,
+            TIMEOUT,
+            colocation::{self, SolverEngine},
+            wait_for_condition,
+        },
     },
     alloy::primitives::Address,
     app_data::{AppDataDocument, AppDataHash},
@@ -128,6 +131,7 @@ impl<'a> Services<'a> {
             "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
+            format!("--node-ws-url={NODE_WS_HOST}"),
             "--simulation-node-url=http://localhost:8545".to_string(),
             "--native-price-cache-max-age=2s".to_string(),
             "--native-price-prefetch-time=500ms".to_string(),
