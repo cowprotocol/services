@@ -299,7 +299,7 @@ impl Detector {
         let mut seen = std::collections::HashSet::new();
 
         for log in &trace.struct_logs {
-            if log.op == "CALL" || log.op == "STATICCALL" && !log.stack.len() >= 2 {
+            if (log.op == "CALL" || log.op == "STATICCALL") && log.stack.len() >= 2 {
                 // CALL opcode takes the address of the contract to call as second element
                 storage_context = H160::from(log.stack[log.stack.len() - 2]);
             }
