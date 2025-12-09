@@ -557,7 +557,8 @@ impl RunLoop {
             competition_table,
         };
 
-        let save_solutions = self.persistence
+        let save_solutions = self
+            .persistence
             .save_solutions(auction.id, ranking.all())
             .map(|res| match res {
                 Ok(_) => {
