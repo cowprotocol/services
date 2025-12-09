@@ -76,10 +76,6 @@ fn sort_storage_overrides(
     holder: &H160,
     heuristic_depth: usize,
 ) {
-    // Iterate through slots in reverse order (last accessed is most likely the
-    // balance)
-    storage_slots.reverse();
-
     // We can also use heuristics to sort by slots most likely to actually be the
     // balance slot
     let mut heuristic_slots = HashSet::new();
@@ -93,11 +89,11 @@ fn sort_storage_overrides(
 
     // sort by whether or not its a heuristic slot or not (stable so it wont change
     // the relative order of equal elements)
-    storage_slots.sort_by(|a, b| {
-        heuristic_slots
-            .contains(&b.1)
-            .cmp(&heuristic_slots.contains(&a.1))
-    });
+    storage_slots.sort_by_key(|v| heuristic_slots.contains(&v.1));
+
+    // Iterate through slots in reverse order (last accessed is most likely the
+    // balance)
+    storage_slots.reverse();
 }
 
 impl Detector {
@@ -128,7 +124,7 @@ impl Detector {
             let mut map_slot = U256::from(start_slot);
             for _ in 0..self.probing_depth {
                 strategies.push(Strategy::SolidityMapping {
-                    target_contract: H160::default(),
+                    target_contract,
                     map_slot,
                 });
                 map_slot += U256::one();
