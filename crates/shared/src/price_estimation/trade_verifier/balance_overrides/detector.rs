@@ -7,12 +7,15 @@ use {
     ethrpc::{alloy::conversions::IntoAlloy, extensions::DebugNamespace},
     maplit::hashmap,
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         fmt::{self, Debug, Formatter},
         sync::Arc,
     },
     thiserror::Error,
-    web3::types::{BlockNumber, CallRequest},
+    web3::{
+        signing,
+        types::{BlockNumber, CallRequest},
+    },
 };
 
 /// A heuristic balance override detector based on `eth_call` simulations.
@@ -34,7 +37,12 @@ impl std::ops::Deref for Detector {
     }
 }
 
-fn merge_state_overrides(
+/// Helper function to put together separate StateOverride objects in a address
+/// hash map. Useful for condensing multiple state overrides into a single call
+/// request. This is specifically designed to work with the state overrides that
+/// come from the Detector, and this function does not have any logic to merge
+/// together any fields other than `state_diff`.
+fn merge_state_diffs_in_overrides(
     overrides: Vec<HashMap<H160, StateOverride>>,
 ) -> HashMap<H160, StateOverride> {
     let mut merged = HashMap::new();
@@ -55,6 +63,41 @@ fn merge_state_overrides(
     }
 
     merged
+}
+
+/// Used by detect_with_trace when there are multiple to increase the chances we
+/// find the correct storage slot quickly. Strategies employed:
+/// 1. Reverse because the most recently accessed storage slots are most likely
+///    tobe the return value of `balanceOf`
+/// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
+///    those storage slots first
+fn sort_storage_overrides(
+    storage_slots: &mut Vec<(H160, H256)>,
+    holder: &H160,
+    heuristic_depth: usize,
+) {
+    // Iterate through slots in reverse order (last accessed is most likely the
+    // balance)
+    storage_slots.reverse();
+
+    // We can also use heuristics to sort by slots most likely to actually be the
+    // balance slot
+    let mut heuristic_slots = HashSet::new();
+
+    for i in 0..heuristic_depth {
+        let mut buf = [0; 64];
+        buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+        U256::from(i).to_big_endian(&mut buf[32..64]);
+        heuristic_slots.insert(H256(signing::keccak256(&buf)));
+    }
+
+    // sort by whether or not its a heuristic slot or not (stable so it wont change
+    // the relative order of equal elements)
+    storage_slots.sort_by(|a, b| {
+        heuristic_slots
+            .contains(&b.1)
+            .cmp(&heuristic_slots.contains(&a.1))
+    });
 }
 
 impl Detector {
@@ -123,7 +166,7 @@ impl Detector {
         // Fall back to the original heuristic-based detection
         let strategies = self.generate_strategies(token);
         let token = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
-        let overrides = merge_state_overrides(
+        let overrides = merge_state_diffs_in_overrides(
             strategies
                 .iter()
                 .map(|helper| helper.strategy.state_override(&holder, &helper.balance))
@@ -148,7 +191,10 @@ impl Detector {
 
     /// Detects the balance storage slot using debug_traceCall, similar to
     /// Foundry's `deal`. This traces a balanceOf call and finds which
-    /// storage slot is accessed.
+    /// storage slot is accessed. If more than one slot is accessed, we reverse
+    /// by order accessed, sort by if the slot was one that would normally
+    /// be seen in  solidity mapping, and test one by one to see if the
+    /// override is effective.
     async fn detect_with_trace(
         &self,
         token: Address,
@@ -181,7 +227,7 @@ impl Detector {
             })?;
 
         // Extract storage slots accessed via SLOAD operations
-        let storage_slots = self.extract_sload_slots(&trace, token);
+        let mut storage_slots = self.extract_sload_slots(&trace, token);
 
         if storage_slots.is_empty() {
             tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
@@ -210,12 +256,16 @@ impl Detector {
             "multiple SLOAD operations, testing each one",
         );
 
-        // Iterate through slots in reverse order (last accessed is most likely the
-        // balance)
+        sort_storage_overrides(&mut storage_slots, &holder, self.probing_depth.into());
+
         // We check slots individually/one at a time instead of all at once because
         // changing unnecessary storage slots could negatively affect the execution (ex.
         // overriding an upgradable proxy contract target)
-        for (i, slot) in storage_slots.iter().rev().enumerate() {
+        for (i, slot) in storage_slots
+            .iter()
+            .take(self.probing_depth.into())
+            .enumerate()
+        {
             if let Ok(strategy) = self.verify_slot_is_balance(token, holder, *slot).await {
                 tracing::debug!(
                     ?token,
@@ -443,6 +493,122 @@ mod tests {
                 target_contract: addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
                 map_slot: 51.into()
             }
+        );
+    }
+
+    #[test]
+    fn test_sort_storage_overrides_reverses_order() {
+        let contract = addr!("0000000000000000000000000000000000000002");
+        let contract2 = addr!("0000000000000000000000000000000000000002");
+        let slot1 = H256::from_low_u64_be(1);
+        let slot2 = H256::from_low_u64_be(2);
+        let slot3 = H256::from_low_u64_be(3);
+        let mut slots = vec![
+            (contract, slot1),
+            (contract2, slot3),
+            (contract, slot2),
+            (contract, slot3),
+            (contract2, slot1),
+        ];
+        let holder = addr!("0000000000000000000000000000000000000001");
+
+        // These slots don't match any heuristic, so should just be reversed
+        sort_storage_overrides(&mut slots, &holder, 5);
+
+        assert_eq!(
+            slots,
+            vec![
+                (contract2, slot1),
+                (contract, slot3),
+                (contract, slot2),
+                (contract2, slot3),
+                (contract, slot1),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sort_storage_overrides_with_heuristic_slots_stable() {
+        use web3::signing;
+
+        let contract = addr!("0000000000000000000000000000000000000002");
+        let holder = addr!("1111111111111111111111111111111111111111");
+
+        // Calculate what slot index 0 would hash to for this holder
+        let mut buf = [0u8; 64];
+        buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+        U256::from(0).to_big_endian(&mut buf[32..64]);
+        let heuristic_slot1 = H256(signing::keccak256(&buf));
+        U256::from(5).to_big_endian(&mut buf[32..64]);
+        let heuristic_slot2 = H256(signing::keccak256(&buf));
+        U256::from(10).to_big_endian(&mut buf[32..64]);
+        let heuristic_slot3 = H256(signing::keccak256(&buf));
+
+        // Create non-heuristic slots
+        let slot1 = H256::from_low_u64_be(999);
+        let slot2 = H256::from_low_u64_be(998);
+        let slot3 = H256::from_low_u64_be(995);
+
+        let mut slots = vec![
+            (contract, slot1),
+            (contract, slot3),
+            (contract, heuristic_slot2),
+            (contract, heuristic_slot3),
+            (contract, slot2),
+            (contract, heuristic_slot1),
+        ];
+
+        sort_storage_overrides(&mut slots, &holder, 100);
+
+        // After reverse: [heuristic, non_heuristic]
+        // After sort: non-heuristic slots come before heuristic slots due to false <
+        // true And the reversed order should be preserved
+        // So: [non_heuristic, heuristic]
+        assert_eq!(
+            slots,
+            vec![
+                (contract, heuristic_slot1),
+                (contract, heuristic_slot3),
+                (contract, heuristic_slot2),
+                (contract, slot2),
+                (contract, slot3),
+                (contract, slot1),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sort_storage_overrides_zero_heuristic_depth() {
+        let contract = addr!("0000000000000000000000000000000000000002");
+        let holder = addr!("5555555555555555555555555555555555555555");
+
+        let slot1 = H256::from_low_u64_be(1);
+        let slot2 = H256::from_low_u64_be(2);
+        let slot3 = H256::from_low_u64_be(3);
+
+        let mut buf = [0u8; 64];
+        buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+        U256::from(0).to_big_endian(&mut buf[32..64]);
+        let heuristic_slot = H256(signing::keccak256(&buf));
+
+        let mut slots = vec![
+            (contract, slot1),
+            (contract, slot2),
+            (contract, heuristic_slot),
+            (contract, slot3),
+        ];
+
+        sort_storage_overrides(&mut slots, &holder, 0);
+
+        // With depth 0, no heuristic slots are created, so just reversed
+        assert_eq!(
+            slots,
+            vec![
+                (contract, slot3),
+                (contract, heuristic_slot),
+                (contract, slot2),
+                (contract, slot1),
+            ]
         );
     }
 }
