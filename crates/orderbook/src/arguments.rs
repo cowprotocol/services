@@ -146,9 +146,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub volume_fee_config: Option<VolumeFeeConfig>,
 
-    /// Allow same sell and buy token
+    /// Disable ability to place orders with the same sell and buy tokens
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub allow_same_sell_and_buy_token: bool,
+    pub disable_same_sell_and_buy_token_orders: bool,
 }
 
 /// Volume-based protocol fee factor to be applied to quotes.
