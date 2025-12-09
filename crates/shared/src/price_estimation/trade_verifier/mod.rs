@@ -772,7 +772,7 @@ fn add_balance_queries(
         query_balance_call.into(),
     );
 
-    // query the balance as the first interaction, the sell token has already
+    // query the balance as the first middle interaction, the sell token has already
     // been transferred into the settlement contract since the calculation is
     // based on the out amount
     settlement.interactions[1].insert(0, interaction.clone());
