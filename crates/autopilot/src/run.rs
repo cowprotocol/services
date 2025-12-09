@@ -173,17 +173,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
-    let db_read = if let Some(db_read_url) = args.db_read_url
-        && args.db_write_url != db_read_url
-    {
-        Postgres::new(db_read_url.as_str(), args.insert_batch_size)
-            .await
-            .expect("failed to create read replica database")
-    } else {
-        db_write.clone()
-    };
-
-    crate::database::run_database_metrics_work(db_read.clone());
+    // If the DB is in read-only mode, running ANALYZE is not possible and will
+    // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
+    crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(

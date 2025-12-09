@@ -10,10 +10,7 @@ use {
         to_wei,
         wait_for_condition,
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
@@ -68,15 +65,15 @@ async fn test(web3: Web3) {
         .unwrap();
     assert_eq!(balance, ::alloy::primitives::U256::ZERO);
     let mut order = OrderCreation {
-        from: Some(safe.address().into_legacy()),
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(4),
-        buy_token: BUY_ETH_ADDRESS.into_legacy(),
-        buy_amount: to_wei(3),
+        from: Some(safe.address()),
+        sell_token: *token.address(),
+        sell_amount: eth(4),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,
-        receiver: Some(safe.address().into_legacy()),
+        receiver: Some(safe.address()),
         ..Default::default()
     };
     order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(

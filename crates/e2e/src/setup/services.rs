@@ -7,6 +7,7 @@ use {
         colocation::{self, SolverEngine},
         wait_for_condition,
     },
+    alloy::primitives::Address,
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
@@ -134,8 +135,6 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--db-read-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -236,6 +235,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -532,7 +533,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_native_price(
         &self,
-        token: &H160,
+        token: &Address,
     ) -> Result<NativeTokenPrice, (StatusCode, String)> {
         let response = self
             .http
