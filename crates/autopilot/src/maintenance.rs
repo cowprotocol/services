@@ -20,7 +20,11 @@ use {
         core::{AtomicU64, GenericGauge},
     },
     shared::{event_handling::AlloyEventRetriever, maintenance::Maintaining},
-    std::{future::Future, sync::Arc, time::Instant},
+    std::{
+        future::Future,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tokio::sync::Mutex,
 };
 
@@ -36,18 +40,25 @@ pub struct Maintenance {
     cow_amm_indexer: Vec<Arc<dyn Maintaining>>,
     /// On which block we last ran an update successfully.
     last_processed: Mutex<BlockInfo>,
+    /// Limits the amount of time the autopilot may spend running the
+    /// maintenance logic between 2 auctions. When this times out we prefer
+    /// running a not fully updated auction over stalling the protocol any
+    /// further.
+    timeout: Duration,
 }
 
 impl Maintenance {
     pub fn new(
         settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
         db_cleanup: Postgres,
+        timeout: Duration,
     ) -> Self {
         Self {
             settlement_indexer,
             db_cleanup,
             cow_amm_indexer: Default::default(),
             last_processed: Default::default(),
+            timeout,
         }
     }
 
@@ -62,7 +73,8 @@ impl Maintenance {
         }
 
         let start = Instant::now();
-        if let Err(err) = self.update_inner().await {
+
+        if let Err(err) = tokio::time::timeout(self.timeout, self.update_inner()).await {
             tracing::warn!(?err, block = new_block.number, "failed to run maintenance");
             metrics().updates.with_label_values(&["error"]).inc();
             return;
