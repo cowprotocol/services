@@ -28,7 +28,7 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 warp = { workspace = true }
 tracing-serde = { workspace = true }
-jemalloc_pprof = { workspace = true, optional = true }
+jemalloc_pprof = { workspace = true }
 
 [lints]
 workspace = true
@@ -36,5 +36,4 @@ workspace = true
 [features]
 default = []
 axum-tracing = ["axum"]
-jemalloc-profiling = ["dep:jemalloc_pprof"]
 tokio-console = ["dep:console-subscriber"]
