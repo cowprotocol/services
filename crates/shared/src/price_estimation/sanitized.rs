@@ -24,7 +24,7 @@ pub struct SanitizedPriceEstimator {
     inner: Arc<dyn PriceEstimating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: Address,
-    /// Enables the short-circuiting logic in case of sell and buy is the same
+    /// Enables the short-circuiting logic in case the sell and buy tokens are the same
     is_estimating_native_price: bool,
 }
 
