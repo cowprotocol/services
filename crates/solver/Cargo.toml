@@ -16,7 +16,6 @@ anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
@@ -27,7 +26,6 @@ maplit = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 serde_json = { workspace = true }
