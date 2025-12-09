@@ -288,10 +288,10 @@ async fn cow_amm_jit(web3: Web3) {
 
     // place user order with the same limit price as the CoW AMM order
     let user_order = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: ethcontract::U256::exp10(17), // 0.1 WETH
-        buy_token: dai.address().into_legacy(),
-        buy_amount: to_wei(230), // 230 DAI
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(17)), // 0.1 WETH
+        buy_token: *dai.address(),
+        buy_amount: eth(230), // 230 DAI
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -307,6 +307,7 @@ async fn cow_amm_jit(web3: Web3) {
     let bob_balance_before = dai.balanceOf(bob.address()).call().await.unwrap();
 
     let fee = ethcontract::U256::exp10(16); // 0.01 WETH
+    let fee_alloy = alloy::primitives::U256::from(fee.low_u128());
 
     mock_solver.configure_solution(Some(Solution {
         id: 1,
@@ -340,7 +341,7 @@ async fn cow_amm_jit(web3: Web3) {
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 order: solvers_dto::solution::OrderUid(user_order_id.0),
-                executed_amount: user_order.sell_amount - fee,
+                executed_amount: (user_order.sell_amount - fee_alloy).into_legacy(),
                 fee: Some(fee),
             }),
         ],
@@ -363,7 +364,7 @@ async fn cow_amm_jit(web3: Web3) {
         let bob_received = bob_balance - bob_balance_before;
 
         // bob and CoW AMM both got surplus and an equal amount
-        amm_received >= cow_amm_order.buyAmount && bob_received > user_order.buy_amount.into_alloy()
+        amm_received >= cow_amm_order.buyAmount && bob_received > user_order.buy_amount
     })
     .await
     .unwrap();
@@ -589,10 +590,10 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
 
     // Place Orders
     let order = OrderCreation {
-        sell_token: usdc.address().into_legacy(),
-        sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: usdt.address().into_legacy(),
-        buy_amount: to_wei_with_exp(2000, 6),
+        sell_token: *usdc.address(),
+        sell_amount: alloy::primitives::U256::from(to_wei_with_exp(1000, 6).low_u128()),
+        buy_token: *usdt.address(),
+        buy_amount: alloy::primitives::U256::from(to_wei_with_exp(2000, 6).low_u128()),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -857,7 +858,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .unwrap()
         .unwrap();
     let valid_to = block.timestamp.as_u32() + 300;
-    let executed_amount = to_wei(230);
+    let executed_amount = eth(230);
 
     // CoW AMM order remains the same (selling WETH for DAI)
     let cow_amm_order = contracts::alloy::cow_amm::CowAmm::GPv2Order::Data {
@@ -865,7 +866,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         buyToken: *dai.address(),
         receiver: Default::default(),
         sellAmount: U256::from(10).pow(U256::from(17)),
-        buyAmount: executed_amount.into_alloy(),
+        buyAmount: executed_amount,
         validTo: valid_to,
         appData: FixedBytes(APP_DATA),
         feeAmount: U256::ZERO,
@@ -976,7 +977,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
                 }),
                 solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                     order: solvers_dto::solution::OrderUid(order_uid.0),
-                    executed_amount: executed_amount - fee_user,
+                    executed_amount: executed_amount.into_legacy() - fee_user,
                     fee: Some(fee_user),
                 }),
             ],
@@ -999,7 +1000,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
-                value: NonZeroU256::try_from(executed_amount).unwrap(),
+                value: NonZeroU256::try_from(executed_amount.into_legacy()).unwrap(),
             },
         },
         ..Default::default()
@@ -1014,10 +1015,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         *onchain.contracts().weth.address()
     );
     // Ensure the amounts are the same as the solution proposes.
-    assert_eq!(
-        quote_response.quote.sell_amount,
-        executed_amount.into_alloy()
-    );
+    assert_eq!(quote_response.quote.sell_amount, executed_amount);
     assert_eq!(
         quote_response.quote.buy_amount,
         U256::from(10).pow(U256::from(17))
@@ -1025,11 +1023,12 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)
     let user_order = OrderCreation {
-        sell_token: dai.address().into_legacy(),
+        sell_token: *dai.address(),
         sell_amount: executed_amount, // 230 DAI
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: ethcontract::U256::from(90000000000000000u64), /* 0.09 WETH to generate some
-                                                                    * surplus */
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: alloy::primitives::U256::from(90000000000000000u64), /* 0.09 WETH to generate
+                                                                          * some
+                                                                          * surplus */
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -1068,8 +1067,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         let bob_weth_received = bob_weth_balance_after - bob_weth_balance_before;
 
         // Bob should receive WETH, CoW AMM's WETH balance decreases
-        bob_weth_received >= user_order.buy_amount.into_alloy()
-            && amm_weth_sent == cow_amm_order.sellAmount
+        bob_weth_received >= user_order.buy_amount && amm_weth_sent == cow_amm_order.sellAmount
     })
     .await
     .unwrap();

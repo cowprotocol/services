@@ -30,7 +30,6 @@ use {
         },
         block_stream::timestamp_of_current_block_in_seconds,
     },
-    hex_literal::hex,
     model::{
         DomainSeparator,
         order::{
@@ -144,7 +143,7 @@ async fn eth_flow_tx(web3: Web3) {
          }}
     }}
 }}"#,
-                dai.address().into_legacy(),
+                dai.address(),
                 approve_call_data,
                 onchain.contracts().weth.address(),
                 approve_call_data,
@@ -361,9 +360,9 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
-    let buy_token = dai.address().into_legacy();
+    let buy_token = *dai.address();
     let receiver = Address::repeat_byte(0x42);
-    let sell_amount = to_wei(1);
+    let sell_amount = eth(1);
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3.alloy)
             .await
@@ -373,8 +372,8 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         &test_submit_quote(
             &services,
             &(EthFlowTradeIntent {
-                sell_amount: sell_amount.into_alloy(),
-                buy_token: buy_token.into_alloy(),
+                sell_amount,
+                buy_token,
                 receiver,
             })
             .to_quote_request(
@@ -487,12 +486,9 @@ async fn test_order_availability_in_api(
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [
-        &owner.into_legacy(),
-        &ethflow_contract.address().into_legacy(),
-    ] {
+    for address in [owner, ethflow_contract.address()] {
         test_account_query(
-            address,
+            &address.into_legacy(),
             services.client(),
             order,
             &owner.into_legacy(),
@@ -693,7 +689,7 @@ impl ExtendedEthFlowOrder {
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.appData.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
-            .with_eip1271(ethflow_contract.address().into_legacy(), hex!("").into())
+            .with_eip1271(ethflow_contract.address().into_legacy(), vec![])
             .build()
     }
 

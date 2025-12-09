@@ -296,19 +296,19 @@ pub struct QuoteAmounts {
 pub struct OrderCreation {
     // These fields are the same as in `OrderData`.
     /// The address of the token being sold.
-    pub sell_token: H160,
+    pub sell_token: Address,
     /// The address of the token being bought.
-    pub buy_token: H160,
+    pub buy_token: Address,
     /// The receiver of the `buy_token`. When this field is `None`, the receiver
     /// is the same as the owner.
     #[serde(default)]
-    pub receiver: Option<H160>,
+    pub receiver: Option<Address>,
     /// The *maximum* amount of `sell_token`s that may be sold.
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
+    pub sell_amount: alloy::primitives::U256,
     /// The *minimum* amount of `buy_token`s that should be bought.
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub buy_amount: alloy::primitives::U256,
     /// The block timestamp when the order can no longer be settled (UNIX
     /// timestamp in seconds).
     pub valid_to: u32,
@@ -318,7 +318,7 @@ pub struct OrderCreation {
     ///
     /// Deprecation note: orders with a non-zero `fee_amount` should be rejected
     /// by the API.
-    pub fee_amount: U256,
+    pub fee_amount: alloy::primitives::U256,
     /// The kind of order (i.e. sell or buy).
     pub kind: OrderKind,
     /// Whether the order can be carried out in multiple smaller trades, or it
@@ -336,7 +336,7 @@ pub struct OrderCreation {
     ///
     /// In the EthFlow case, it will have the address of the EthFlow smart
     /// contract.
-    pub from: Option<H160>,
+    pub from: Option<Address>,
     /// The owner's signature of the order's data.
     #[serde(flatten)]
     pub signature: Signature,
@@ -351,24 +351,15 @@ impl OrderCreation {
     /// Returns the order's data — i.e. the [`OrderCreation`] without
     /// the metadata: `signature`, `quote_id` and with the `app_data`'s hash.
     pub fn data(&self) -> OrderData {
-        let mut sell_amount_buffer = [0; 32];
-        self.sell_amount.to_big_endian(&mut sell_amount_buffer);
-
-        let mut buy_amount_buffer = [0; 32];
-        self.buy_amount.to_big_endian(&mut buy_amount_buffer);
-
-        let mut fee_amount_buffer = [0; 32];
-        self.fee_amount.to_big_endian(&mut fee_amount_buffer);
-
         OrderData {
-            sell_token: Address::new(self.sell_token.0),
-            buy_token: Address::new(self.buy_token.0),
-            receiver: self.receiver.map(|receiver| Address::new(receiver.0)),
-            sell_amount: alloy::primitives::U256::from_be_slice(&sell_amount_buffer),
-            buy_amount: alloy::primitives::U256::from_be_slice(&buy_amount_buffer),
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
+            receiver: self.receiver,
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
             valid_to: self.valid_to,
             app_data: self.app_data.hash(),
-            fee_amount: alloy::primitives::U256::from_be_slice(&fee_amount_buffer),
+            fee_amount: self.fee_amount,
             kind: self.kind,
             partially_fillable: self.partially_fillable,
             sell_token_balance: self.sell_token_balance,
@@ -405,8 +396,8 @@ impl OrderCreation {
     pub fn verify_owner(
         &self,
         domain: &DomainSeparator,
-        app_data_signer: Option<H160>,
-    ) -> Result<H160, VerificationError> {
+        app_data_signer: Option<Address>,
+    ) -> Result<Address, VerificationError> {
         let recovered = self
             .signature
             .recover(domain, &self.data().hash_struct())
@@ -496,8 +487,8 @@ impl OrderCreationAppData {
 
 #[derive(Debug)]
 pub struct AppdataFromMismatch {
-    pub from: H160,
-    pub app_data_signer: H160,
+    pub from: Address,
+    pub app_data_signer: Address,
 }
 
 #[derive(Debug)]
@@ -547,7 +538,7 @@ pub struct SignedOrderCancellations {
 }
 
 impl SignedOrderCancellations {
-    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
+    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {
         Ok(self
             .signature
             .recover(
@@ -614,7 +605,7 @@ impl OrderCancellation {
         signing::keccak256(&hash_data)
     }
 
-    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
+    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {
         Ok(self
             .signature
             .recover(self.signing_scheme, domain_separator, &self.hash_struct())?
@@ -1072,10 +1063,10 @@ mod tests {
     use {
         super::*,
         crate::signature::{EcdsaSigningScheme, SigningScheme},
+        alloy::primitives::address,
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
-        primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
         testlib::assert_json_matches,
@@ -1159,11 +1150,11 @@ mod tests {
             },
             signature: EcdsaSignature {
                 v: 1,
-                r: H256::from_str(
+                r: B256::from_str(
                     "0200000000000000000000000000000000000000000000000000000000000003",
                 )
                 .unwrap(),
-                s: H256::from_str(
+                s: B256::from_str(
                     "0400000000000000000000000000000000000000000000000000000000000005",
                 )
                 .unwrap(),
@@ -1179,7 +1170,7 @@ mod tests {
 
     #[test]
     fn order_creation_serialization() {
-        let owner = H160([0xff; 20]);
+        let owner = Address::repeat_byte(0xff);
         for (signature, signing_scheme, from, signature_bytes) in [
             (
                 Signature::default_with(SigningScheme::Eip712),
@@ -1200,16 +1191,16 @@ mod tests {
             (Signature::PreSign, "presign", Some(owner), "0x"),
         ] {
             let order = OrderCreation {
-                sell_token: H160([0x11; 20]),
-                buy_token: H160([0x22; 20]),
-                receiver: Some(H160([0x33; 20])),
-                sell_amount: 123.into(),
-                buy_amount: 456.into(),
+                sell_token: Address::repeat_byte(0x11),
+                buy_token: Address::repeat_byte(0x22),
+                receiver: Some(Address::repeat_byte(0x33)),
+                sell_amount: alloy::primitives::U256::from(123),
+                buy_amount: alloy::primitives::U256::from(456),
                 valid_to: 1337,
                 app_data: OrderCreationAppData::Hash {
                     hash: AppDataHash([0x44; 32]),
                 },
-                fee_amount: 789.into(),
+                fee_amount: alloy::primitives::U256::from(789),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
@@ -1293,7 +1284,7 @@ mod tests {
         let domain_separator = DomainSeparator(hex!(
             "74e0b11bd18120612556bae4578cfd3a254d7e2495f543c569a92ff5794d9b09"
         ));
-        let expected_owner = H160(hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8"));
+        let expected_owner = address!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
 
         for (signing_scheme, signature) in &[
             (
@@ -1380,7 +1371,7 @@ mod tests {
             "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
         ));
 
-        let expected_owner = H160(hex!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"));
+        let expected_owner = address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
         let eip712_signature = hex!(
             "f2c69310a4dbcd78feabfd802df296ca4650681e01872f667251916ed3e9a2e14928382316607594a77c620e4bc4536e6fe145ee993a5ccc38fda929e86830231b"
@@ -1470,7 +1461,10 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(recovered.signer, h160_from_public_key(public_key));
+        assert_eq!(
+            recovered.signer,
+            Address::new(h160_from_public_key(public_key).0)
+        );
     }
 
     #[test]

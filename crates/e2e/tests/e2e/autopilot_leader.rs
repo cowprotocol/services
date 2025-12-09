@@ -112,10 +112,10 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     let order = || {
         OrderCreation {
-            sell_token: token_a.address().into_legacy(),
-            sell_amount: to_wei(10),
-            buy_token: onchain.contracts().weth.address().into_legacy(),
-            buy_amount: to_wei(5),
+            sell_token: *token_a.address(),
+            sell_amount: eth(10),
+            buy_token: *onchain.contracts().weth.address(),
+            buy_amount: eth(5),
             valid_to: model::time::now_in_epoch_seconds() + 300,
             kind: OrderKind::Sell,
             ..Default::default()

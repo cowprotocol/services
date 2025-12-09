@@ -724,7 +724,8 @@ fn recover_jit_order_owner(
             let owner = signature
                 .recover(domain_separator, &order_data.hash_struct())?
                 .context("could not recover the owner")?
-                .signer;
+                .signer
+                .into_legacy();
             (owner, signature)
         }
     };
