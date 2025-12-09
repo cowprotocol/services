@@ -163,10 +163,10 @@ async fn single_limit_order_test(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -286,10 +286,10 @@ async fn two_limit_orders_test(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -310,10 +310,10 @@ async fn two_limit_orders_test(web3: Web3) {
     assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderCreation {
-        sell_token: token_b.address().into_legacy(),
-        sell_amount: to_wei(5),
-        buy_token: token_a.address().into_legacy(),
-        buy_amount: to_wei(2),
+        sell_token: *token_b.address(),
+        sell_amount: eth(5),
+        buy_token: *token_a.address(),
+        buy_amount: eth(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -392,7 +392,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 "test_solver".into(),
                 solver_a.clone(),
                 *onchain.contracts().weth.address(),
-                vec![base_a.address().into_legacy()],
+                vec![*base_a.address()],
                 2,
                 false,
             )
@@ -401,7 +401,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 "solver2".into(),
                 solver_b.clone(),
                 *onchain.contracts().weth.address(),
-                vec![base_b.address().into_legacy()],
+                vec![*base_b.address()],
                 2,
                 false,
             )
@@ -420,10 +420,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Place Orders
     let order_a = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_c.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_c.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -436,10 +436,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let uid_a = services.create_order(&order_a).await.unwrap();
 
     let order_b = OrderCreation {
-        sell_token: token_b.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_d.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_b.address(),
+        sell_amount: eth(10),
+        buy_token: *token_d.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -504,7 +504,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         database::solver_competition_v2::fetch_solver_winning_solutions(
             &mut ex,
             competition.auction_id,
-            ByteArray(solver_a.address().into_legacy().0),
+            ByteArray(solver_a.address().0.0),
         )
         .await
         .unwrap();
@@ -512,7 +512,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         database::solver_competition_v2::fetch_solver_winning_solutions(
             &mut ex,
             competition.auction_id,
-            ByteArray(solver_b.address().into_legacy().0),
+            ByteArray(solver_b.address().0.0),
         )
         .await
         .unwrap();
@@ -549,10 +549,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         .unwrap();
     assert_eq!(settlements.len(), 2);
     assert!(settlements.iter().any(|settlement| settlement.solver
-        == ByteArray(solver_a.address().into_legacy().0)
+        == ByteArray(solver_a.address().0.0)
         && settlement.solution_uid == solver_a_winning_solutions[0].uid));
     assert!(settlements.iter().any(|settlement| settlement.solver
-        == ByteArray(solver_b.address().into_legacy().0)
+        == ByteArray(solver_b.address().0.0)
         && settlement.solution_uid == solver_b_winning_solutions[0].uid));
 
     // Ensure all the reference scores are indexed
@@ -567,11 +567,11 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // fetch the reference scores of both winners
     let solver_a_reference_score = reference_scores
-        .get(&ByteArray(solver_a.address().into_legacy().0))
+        .get(&ByteArray(solver_a.address().0.0))
         .unwrap()
         .clone();
     let solver_b_reference_score = reference_scores
-        .get(&ByteArray(solver_b.address().into_legacy().0))
+        .get(&ByteArray(solver_b.address().0.0))
         .unwrap()
         .clone();
 
@@ -628,10 +628,10 @@ async fn too_many_limit_orders_test(web3: Web3) {
         .await;
 
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: eth(1),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -646,10 +646,10 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // Attempt to place another order, but the orderbook is configured to allow only
     // one limit order per user.
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(2),
+        sell_token: *token_a.address(),
+        sell_amount: eth(1),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -724,10 +724,10 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place "in-market" order
     let order = OrderCreation {
-        sell_token: token.address().into_legacy(),
-        sell_amount: quote.quote.sell_amount.into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(eth(4)).into_legacy(),
+        sell_token: *token.address(),
+        sell_amount: quote.quote.sell_amount,
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: quote.quote.buy_amount.saturating_sub(eth(4)),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -741,10 +741,10 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place a "limit" order
     let order = OrderCreation {
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(3),
+        sell_token: *token.address(),
+        sell_amount: eth(1),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -760,10 +760,10 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place another "in-market" order in order to check it is not limited
     let order = OrderCreation {
-        sell_token: token.address().into_legacy(),
-        sell_amount: quote.quote.sell_amount.into_legacy(),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(eth(2)).into_legacy(),
+        sell_token: *token.address(),
+        sell_amount: quote.quote.sell_amount,
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: quote.quote.buy_amount.saturating_sub(eth(2)),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -777,10 +777,10 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place a "limit" order in order to see if fails
     let order = OrderCreation {
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(2),
+        sell_token: *token.address(),
+        sell_amount: eth(1),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -849,10 +849,10 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     onchain.mint_block().await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address().into_legacy(),
-        sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_usdt.address().into_legacy(),
-        buy_amount: to_wei_with_exp(500, 6),
+        sell_token: *token_usdc.address(),
+        sell_amount: to_wei_with_exp(1000, 6).into_alloy(),
+        buy_token: *token_usdt.address(),
+        buy_amount: to_wei_with_exp(500, 6).into_alloy(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -951,10 +951,10 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address().into_legacy(),
-        sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_wxdai.address().into_legacy(),
-        buy_amount: to_wei(500),
+        sell_token: *token_usdc.address(),
+        sell_amount: to_wei_with_exp(1000, 6).into_alloy(),
+        buy_token: *token_wxdai.address(),
+        buy_amount: eth(500),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -1050,10 +1050,10 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Place order
     let mut order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -1069,7 +1069,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Cannot place orders with unsupported tokens
-    order.sell_token = unsupported.address().into_legacy();
+    order.sell_token = *unsupported.address();
     services
         .create_order(&order.sign(
             EcdsaSigningScheme::Eip712,

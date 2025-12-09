@@ -4,10 +4,7 @@ use {
         nodes::local_node::TestNodeApi,
         setup::{eth, *},
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -116,10 +113,10 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -147,10 +144,10 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 
     // Replace order
     let new_order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(3),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: eth(3),
+        buy_token: *token_b.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -292,10 +289,10 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     onchain.mint_block().await;
 
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: false,
         kind: OrderKind::Sell,
@@ -310,10 +307,10 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
 
     // Replace order
     let new_order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(3),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: eth(3),
+        buy_token: *token_b.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -429,10 +426,10 @@ async fn single_replace_order_test(web3: Web3) {
 
     let balance_before = token_a.balanceOf(trader.address()).call().await.unwrap();
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: eth(10),
+        buy_token: *token_b.address(),
+        buy_amount: eth(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -458,10 +455,10 @@ async fn single_replace_order_test(web3: Web3) {
 
     // Replace order
     let new_order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(3),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: eth(3),
+        buy_token: *token_b.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: false,

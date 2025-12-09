@@ -1,7 +1,6 @@
 use {
     crate::{nodes::NODE_WS_HOST, setup::*},
     ::alloy::primitives::Address,
-    ethcontract::H160,
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,
@@ -13,7 +12,7 @@ pub struct SolverEngine {
     pub name: String,
     pub endpoint: Url,
     pub account: TestAccount,
-    pub base_tokens: Vec<H160>,
+    pub base_tokens: Vec<Address>,
     pub merge_solutions: bool,
 }
 
@@ -21,7 +20,7 @@ pub async fn start_baseline_solver(
     name: String,
     account: TestAccount,
     weth: Address,
-    base_tokens: Vec<H160>,
+    base_tokens: Vec<Address>,
     max_hops: usize,
     merge_solutions: bool,
 ) -> SolverEngine {
@@ -227,7 +226,7 @@ mempool = "public"
     })
 }
 
-fn encode_base_tokens(tokens: impl IntoIterator<Item = H160>) -> String {
+fn encode_base_tokens(tokens: impl IntoIterator<Item = Address>) -> String {
     tokens
         .into_iter()
         .map(|token| format!(r#""{token:x}""#))

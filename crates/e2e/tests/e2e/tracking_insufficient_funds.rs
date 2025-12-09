@@ -1,10 +1,7 @@
 use {
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -71,10 +68,10 @@ async fn test(web3: Web3) {
 
     tracing::info!("Placing order");
     let order_a = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: eth(2),
+        buy_token: *token.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -85,10 +82,10 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_b = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: eth(2),
+        buy_token: *token.address(),
+        buy_amount: eth(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -144,8 +141,8 @@ async fn test(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    onchain.mint_block().await;
     let orders_updated = || async {
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         let order_b_correct_events = events_b.into_iter().map(|e| e.label).collect::<Vec<_>>()
@@ -166,8 +163,8 @@ async fn test(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    onchain.mint_block().await;
     let orders_updated = || async {
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_b).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         events_a.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
