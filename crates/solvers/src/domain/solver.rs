@@ -13,7 +13,7 @@ use {
             auction,
             eth,
             liquidity,
-            order::{self, Order},
+            order::{self, Order, Side},
             solution,
         },
         infra::metrics,
@@ -170,13 +170,12 @@ impl Inner {
                         .route(native_price_request, self.max_hops)
                         .await
                     {
-                        Some(route) if !route.is_empty() => {
+                        Some(route) => {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
                             let price = f64::from(self.native_token_price_estimation_amount)
                                 / f64::from(route
                                     .input()
-                                    .expect("route is not empty")
                                     .amount);
                             let Some(price) = to_normalized_price(price) else {
                                 continue;
@@ -195,13 +194,23 @@ impl Inner {
 
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrappers = request.wrappers.clone();
-                let route = boundary_solver.route(request, self.max_hops).await?;
-                let interactions;
-                let gas;
-                let (input, mut output);
-
-                if !route.is_empty() {
-                    interactions = route
+                let solution = if order.sell.token == order.buy.token {
+                    let (input, mut output) = match order.side {
+                        Side::Sell => (order.sell, order.buy),
+                        Side::Buy => (order.buy, order.sell),
+                    };
+                    output.amount = input.amount;
+                    solution::Single {
+                        order: order.clone(),
+                        input,
+                        output,
+                        interactions: Vec::default(),
+                        gas: eth::Gas(U256::ZERO) + self.solution_gas_offset,
+                        wrappers,
+                    }
+                } else {
+                    let route = boundary_solver.route(request, self.max_hops).await?;
+                    let interactions = route
                         .segments
                         .iter()
                         .map(|segment| {
@@ -217,51 +226,40 @@ impl Inner {
                             ))
                         })
                         .collect();
-                    gas = route.gas() + self.solution_gas_offset;
-                    input = route.input().expect("route is not empty");
-                    output = route.output().expect("route is not empty");
-                } else {
-                    // Route is empty in case of sell and buy tokens being the same, as there
-                    // is no need to figure out the liquidity for such pair.
-                    //
-                    // The input and output of the solution can be set directly to the
-                    // respective sell and buy tokens 1 to 1.
-                    interactions = Vec::default();
-                    gas = eth::Gas(U256::ZERO) + self.solution_gas_offset;
+                    let gas = route.gas() + self.solution_gas_offset;
+                    let mut output = route.output().expect("route is not empty");
 
-                    (input, output) = match order.side {
-                        order::Side::Sell => (order.sell, order.buy),
-                        order::Side::Buy => (order.buy, order.sell),
-                    };
-                    output.amount = input.amount;
-                }
+                    // The baseline solver generates a path with swapping
+                    // for exact output token amounts. This leads to
+                    // potential rounding errors for buy orders, where we
+                    // can buy slightly more than intended. Fix this by
+                    // capping the output amount to the order's buy amount
+                    // for buy orders.
+                    if let order::Side::Buy = order.side {
+                        output.amount = cmp::min(output.amount, order.buy.amount);
+                    }
 
-                // The baseline solver generates a path with swapping
-                // for exact output token amounts. This leads to
-                // potential rounding errors for buy orders, where we
-                // can buy slightly more than intended. Fix this by
-                // capping the output amount to the order's buy amount
-                // for buy orders.
-                if let order::Side::Buy = order.side {
-                    output.amount = cmp::min(output.amount, order.buy.amount);
-                }
-
-                let fee = sell_token_price
-                    .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0.0)?))?
-                    .into();
-
-                Some(
                     solution::Single {
                         order: order.clone(),
-                        input,
+                        input: route.input(),
                         output,
                         interactions,
                         gas,
                         wrappers,
                     }
-                    .into_solution(fee)?
-                    .with_id(solution::Id(i as u64))
-                    .with_buffers_internalizations(&auction.tokens),
+                };
+
+                let fee = sell_token_price
+                    .ether_value(eth::Ether(
+                        solution.gas.0.checked_mul(auction.gas_price.0.0)?,
+                    ))?
+                    .into();
+
+                Some(
+                    solution
+                        .into_solution(fee)?
+                        .with_id(solution::Id(i as u64))
+                        .with_buffers_internalizations(&auction.tokens),
                 )
             };
 
@@ -382,20 +380,19 @@ pub struct Segment<'a> {
 }
 
 impl<'a> Route<'a> {
-    pub fn new(segments: Vec<Segment<'a>>) -> Self {
-        Self { segments }
+    pub fn new(segments: Vec<Segment<'a>>) -> Option<Self> {
+        if segments.is_empty() {
+            return None;
+        }
+        Some(Self { segments })
     }
 
-    fn input(&self) -> Option<eth::Asset> {
-        self.segments.first().map(|segment| segment.input)
+    fn input(&self) -> eth::Asset {
+        self.segments[0].input
     }
 
     fn output(&self) -> Option<eth::Asset> {
         self.segments.last().map(|segment| segment.output)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.segments.is_empty()
     }
 
     fn gas(&self) -> eth::Gas {

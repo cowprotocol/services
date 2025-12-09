@@ -47,7 +47,7 @@ use {
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
-    std::{sync::Arc, time::Duration},
+    std::{str::FromStr, sync::Arc, time::Duration},
     tracing::instrument,
 };
 
@@ -214,6 +214,38 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
+#[derive(Clone, Debug)]
+pub enum SameTokensPolicy {
+    Disallow,
+    AllowSell,
+    Allow,
+}
+
+impl FromStr for SameTokensPolicy {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(match value {
+            "disallow" => Self::Disallow,
+            "allowSell" => Self::AllowSell,
+            "allow" => Self::Allow,
+            _ => anyhow::bail!("Invalid same token policy: {value}"),
+        })
+    }
+}
+
+impl SameTokensPolicy {
+    fn validate_same_sell_and_buy_token(&self, order: &PreOrderData) -> bool {
+        if order.sell_token != order.buy_token {
+            return true;
+        }
+        matches!(
+            (self, order.kind),
+            (Self::Allow, _) | (Self::AllowSell, OrderKind::Sell)
+        )
+    }
+}
+
 #[derive(Clone)]
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
@@ -233,7 +265,7 @@ pub struct OrderValidator {
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
     max_gas_per_order: u64,
-    allow_same_sell_and_buy_token: bool,
+    same_tokens_policy: SameTokensPolicy,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -248,6 +280,7 @@ pub struct PreOrderData {
     pub sell_token_balance: SellTokenSource,
     pub signing_scheme: SigningScheme,
     pub class: OrderClass,
+    pub kind: OrderKind,
 }
 
 fn actual_receiver(owner: Address, order: &OrderData) -> Address {
@@ -275,6 +308,7 @@ impl PreOrderData {
                 true => OrderClass::Limit,
                 false => OrderClass::Market,
             },
+            kind: order.kind,
         }
     }
 }
@@ -301,7 +335,7 @@ impl OrderValidator {
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: Validator,
         max_gas_per_order: u64,
-        allow_same_sell_and_buy_token: bool,
+        same_tokens_policy: SameTokensPolicy,
     ) -> Self {
         Self {
             native_token,
@@ -318,7 +352,7 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             max_gas_per_order,
-            allow_same_sell_and_buy_token,
+            same_tokens_policy,
         }
     }
 
@@ -484,7 +518,10 @@ impl OrderValidating for OrderValidator {
 
         self.validity_configuration.validate_period(&order)?;
 
-        if !self.allow_same_sell_and_buy_token && order.sell_token == order.buy_token {
+        if !self
+            .same_tokens_policy
+            .validate_same_sell_and_buy_token(&order)
+        {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
 
@@ -1073,7 +1110,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1227,7 +1264,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1277,7 +1314,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pre_validate_allow_same_sell_and_buy_token() {
+    async fn pre_validate_allow_same_tokens() {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
@@ -1317,7 +1354,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            true,
+            SameTokensPolicy::Allow,
         );
 
         let order = || PreOrderData {
@@ -1346,6 +1383,84 @@ mod tests {
                     .partial_validate(PreOrderData {
                         buy_token: Address::with_last_byte(2),
                         sell_token: Address::with_last_byte(2),
+                        ..order()
+                    })
+                    .await
+            )
+            .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn pre_validate_same_tokens_allow_sell() {
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let validity_configuration = OrderValidPeriodConfiguration {
+            min: Duration::from_secs(1),
+            max_market: Duration::from_secs(100),
+            max_limit: Duration::from_secs(200),
+        };
+
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        bad_token_detector
+            .expect_detect()
+            .with(eq(Address::with_last_byte(1)))
+            .returning(|_| Ok(TokenQuality::Good));
+        bad_token_detector
+            .expect_detect()
+            .with(eq(Address::with_last_byte(2)))
+            .returning(|_| Ok(TokenQuality::Good));
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let validator = OrderValidator::new(
+            native_token.clone(),
+            Arc::new(order_validation::banned::Users::none()),
+            validity_configuration,
+            false,
+            Arc::new(bad_token_detector),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::AllowSell,
+        );
+
+        let order = || PreOrderData {
+            buy_token: Address::with_last_byte(2),
+            sell_token: Address::with_last_byte(2),
+            valid_to: time::now_in_epoch_seconds()
+                + validity_configuration.min.as_secs() as u32
+                + 2,
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            dbg!(
+                validator
+                    .partial_validate(PreOrderData {
+                        kind: OrderKind::Buy,
+                        ..order()
+                    })
+                    .await
+            ),
+            Err(PartialValidationError::SameBuyAndSellToken)
+        ));
+
+        assert!(
+            dbg!(
+                validator
+                    .partial_validate(PreOrderData {
+                        kind: OrderKind::Sell,
                         ..order()
                     })
                     .await
@@ -1406,7 +1521,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
@@ -1623,7 +1738,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
@@ -1700,7 +1815,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
@@ -1765,7 +1880,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1823,7 +1938,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let order = OrderCreation {
@@ -1886,7 +2001,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let order = OrderCreation {
@@ -1951,7 +2066,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let order = OrderCreation {
@@ -2015,7 +2130,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
@@ -2085,7 +2200,7 @@ mod tests {
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
                 u64::MAX,
-                false,
+                SameTokensPolicy::Disallow,
             );
 
             let order = OrderCreation {
@@ -2177,7 +2292,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         // Test with flashloan hint that covers the sell amount
@@ -2596,7 +2711,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
-            false,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {

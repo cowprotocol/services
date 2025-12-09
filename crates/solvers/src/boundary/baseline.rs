@@ -45,9 +45,6 @@ impl<'a> Solver<'a> {
         request: solver::Request,
         max_hops: usize,
     ) -> Option<solver::Route<'a>> {
-        if request.sell.token == request.buy.token {
-            return Some(solver::Route::new(vec![]));
-        }
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
             request.buy.token.0,
@@ -119,7 +116,7 @@ impl<'a> Solver<'a> {
             }
         };
 
-        Some(solver::Route::new(segments))
+        solver::Route::new(segments)
     }
 
     async fn traverse_path(

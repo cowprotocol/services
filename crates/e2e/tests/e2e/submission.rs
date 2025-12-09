@@ -34,12 +34,6 @@ async fn local_node_submit_same_sell_and_buy_token_order_without_quote() {
     run_test(test_submit_same_sell_and_buy_token_order_without_quote).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_submit_same_sell_and_buy_token_order_without_quote_fail() {
-    run_test(test_submit_same_sell_and_buy_token_order_without_quote_fail).await;
-}
-
 async fn test_cancel_on_expiry(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -163,7 +157,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec!["--allow-same-sell-and-buy-token=true".to_string()],
+                api: vec!["--same-tokens-policy=allowSell".to_string()],
                 ..Default::default()
             },
             solver.clone(),
@@ -194,55 +188,6 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     services.create_order(&order).await.unwrap();
 }
 
-async fn test_submit_same_sell_and_buy_token_order_without_quote_fail(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
-    let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
-        .await;
-
-    token.mint(trader.address(), eth(10)).await;
-
-    token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    tracing::info!("Starting services.");
-    let services = Services::new(&onchain).await;
-    services.start_protocol(solver.clone()).await;
-
-    // Disable auto-mine so we don't accidentally mine a settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
-        .await
-        .expect("Must be able to disable automine");
-
-    tracing::info!("Placing order");
-    let order = OrderCreation {
-        sell_token: *token.address(),
-        sell_amount: eth(1),
-        buy_token: *token.address(),
-        buy_amount: eth(1),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-    );
-    // services.create_order(&order).await.unwrap();
-    assert!(
-        matches!(services.create_order(&order).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
-    );
-}
-
 async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -266,7 +211,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec!["--allow-same-sell-and-buy-token=true".to_string()],
+                api: vec!["--same-tokens-policy=allowSell".to_string()],
                 ..Default::default()
             },
             solver.clone(),
@@ -376,7 +321,10 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     tracing::info!(?initial_balance, ?final_balance, "Trade completed");
 
     // Verify that the balance changed (settlement happened on chain)
-    assert_ne!(final_balance, initial_balance);
+    assert!(
+        final_balance < initial_balance,
+        "Final balance should be smaller than initial balance due to fees"
+    );
 }
 
 async fn get_pending_tx(account: H160, web3: &Web3) -> Option<web3::types::Transaction> {
