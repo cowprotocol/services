@@ -294,24 +294,43 @@ impl Detector {
         trace: &ethrpc::extensions::StructLogTrace,
         initial_storage_context: H160,
     ) -> Vec<(H160, H256)> {
-        let mut storage_context: H160 = initial_storage_context;
+        let mut storage_context = vec![initial_storage_context];
         let mut slots = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
         for log in &trace.struct_logs {
+            // CALL or STATICCALL calls another contract, possibly reading data
+            // we need to keep track of this contract being called so we know to update the
+            // state of this different contract
             if (log.op == "CALL" || log.op == "STATICCALL") && log.stack.len() >= 2 {
                 // CALL opcode takes the address of the contract to call as second element
-                storage_context = H160::from(log.stack[log.stack.len() - 2]);
+                tracing::debug!("Detected CALL into nested contract");
+                storage_context.push(H160::from(log.stack[log.stack.len() - 2]));
+            } else if log.op == "DELEGATECALL" && log.stack.len() >= 2 {
+                // DELEGATECALL opcode uses the same execution context as the previous contract
+                // but we still need to push it again so the RETURN does not
+                // break
+                storage_context.push(*storage_context.last().unwrap());
+            }
+            // RETURN is when a contract that was called returns
+            else if log.op == "RETURN" {
+                tracing::debug!("Detected RETURN from nested contract");
+                if storage_context.is_empty() {
+                    tracing::debug!("RETURN too early");
+                    break;
+                }
+                storage_context.pop();
             }
             // SLOAD opcode reads from storage
             // The storage key is on top of the stack (last element)
-            if log.op == "SLOAD" && !log.stack.is_empty() {
+            else if log.op == "SLOAD" && !log.stack.is_empty() {
+                tracing::debug!("Detected SLOAD");
                 // Stack grows upward, so the top is the last element
                 let slot = *log.stack.last().unwrap();
 
                 // Only add unique slots, preserving order
-                if seen.insert(slot) {
-                    slots.push((storage_context, slot));
+                if seen.insert((*storage_context.last().unwrap(), slot)) {
+                    slots.push((*storage_context.last().unwrap(), slot));
                 }
             }
         }

@@ -579,18 +579,25 @@ async fn trace_based_balance_detection(web3: Web3) {
             .await
             .unwrap();
 
-    // Deploy the NonStandardERC20BalancesEntrance token - as if the previous contract wasnt
-    // complicated enough, this contract will selectively delegate the balance it returns between
-    // itself (allowing for testing of calling another contract to get a balance--or calling
-    // another contract to *not* get a balance)
-    let entry_token_use_self =
-        contracts::alloy::test::RemoteERC20Balances::Instance::deploy(web3.alloy.clone(), *non_standard_token.address(), true)
-            .await
-            .unwrap();
-    let entry_token_use_other =
-        contracts::alloy::test::RemoteERC20Balances::Instance::deploy(web3.alloy.clone(), *non_standard_token.address(), false)
-            .await
-            .unwrap();
+    // Deploy the NonStandardERC20BalancesEntrance token - as if the previous
+    // contract wasnt complicated enough, this contract will selectively
+    // delegate the balance it returns between itself (allowing for testing of
+    // calling another contract to get a balance--or calling another contract to
+    // *not* get a balance)
+    let entry_token_use_self = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
+        web3.alloy.clone(),
+        *non_standard_token.address(),
+        true,
+    )
+    .await
+    .unwrap();
+    let entry_token_use_other = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
+        web3.alloy.clone(),
+        *non_standard_token.address(),
+        false,
+    )
+    .await
+    .unwrap();
 
     // Mint some tokens to the trader (so the contract has non-zero state)
     non_standard_token
@@ -659,7 +666,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         non_standard_strategy
     );
 
-    tracing::info!(address = ?entry_token_use_self.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
+    tracing::info!(address = ?entry_token_use_self.address(), "Testing RemoteERC20Balances (using local contract slot) detection...");
     let remote_self_strategy = detector
         .detect(
             entry_token_use_self.address().into_legacy(),
@@ -671,7 +678,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         "Should detect non-standard token balance slot via trace-based detection"
     );
     tracing::info!(
-        "✓ RemoteERC20Balances (remote) strategy detected: {:?}",
+        "✓ RemoteERC20Balances (self) strategy detected: {:?}",
         remote_self_strategy
     );
 
@@ -764,5 +771,4 @@ async fn trace_based_balance_detection(web3: Web3) {
         test_balance,
     )
     .await;
-    panic!("something is wrong but I got to the end");
 }
