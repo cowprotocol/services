@@ -1,8 +1,5 @@
 use {
-    super::{
-        competition::{self, solution::settlement},
-        eth,
-    },
+    super::{competition::solution::settlement, eth},
     crate::{
         domain::{
             BlockNo,
@@ -11,17 +8,19 @@ use {
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
+    alloy::consensus::Transaction,
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
-    std::ops::Sub,
     thiserror::Error,
     tracing::Instrument,
 };
 
 /// Factor by how much a transaction fee needs to be increased to override a
-/// pending transaction at the same nonce.
-const GAS_PRICE_BUMP: f64 = 1.125;
+/// pending transaction at the same nonce. The correct factor is actually
+/// 1.125 but to avoid rounding issues on chains with very low gas prices
+/// we increase slightly more.
+const GAS_PRICE_BUMP: f64 = 1.13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
@@ -108,6 +107,7 @@ impl Mempools {
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
         block_stream.next().await;
 
+        let current_block = self.ethereum.current_block().borrow().number;
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
@@ -117,10 +117,9 @@ impl Mempools {
                     ?err,
                     "settlement tx simulation reverted before submitting to the mempool"
                 );
-                let block = self.ethereum.current_block().borrow().number;
                 return Err(Error::SimulationRevert {
-                    submitted_at_block: block,
-                    reverted_at_block: block,
+                    submitted_at_block: current_block,
+                    reverted_at_block: current_block,
                 });
             } else {
                 tracing::warn!(
@@ -134,17 +133,51 @@ impl Mempools {
         // transactions (e.g., settlement tx and cancellation tx) from the same
         // solver address.
         let nonce = mempool.get_nonce(solver.address()).await?;
-        let hash = mempool
-            .submit(tx.clone(), settlement.gas, solver, nonce)
-            .await?;
-        let submitted_at_block = self.ethereum.current_block().borrow().number;
+
+        // estimate the gas price such that the tx should still be included
+        // even if the gas price increases the maximum amount until the submission
+        // deadline
+        let current_gas_price = self
+            .ethereum
+            .gas_price(None)
+            .await
+            .context("failed to compute current gas price")?;
+        let submission_block = self.ethereum.current_block().borrow().number;
+        let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
+        let estimated_gas_price =
+            current_gas_price * GAS_PRICE_BUMP.powi(blocks_until_deadline as i32);
+
+        // if there is still a tx pending we also have to make sure we outbid that one
+        // enough to make the node replace it in the mempool
+        let replacement_gas_price = self
+            .minimum_replacement_gas_price(mempool, solver, nonce)
+            .await;
+        let final_gas_price = match &replacement_gas_price {
+            Ok(Some(replacement_gas_price))
+                if replacement_gas_price.max() > estimated_gas_price.max() =>
+            {
+                *replacement_gas_price
+            }
+            _ => estimated_gas_price,
+        };
+
         tracing::debug!(
-            ?hash,
-            current_block = ?submitted_at_block,
-            max_fee_per_gas = ?settlement.gas.price.max(),
-            priority_fee_per_gas = ?settlement.gas.price.tip(),
-            "submitted tx to the mempool"
+            submission_block,
+            blocks_until_deadline,
+            ?replacement_gas_price,
+            ?current_gas_price,
+            ?final_gas_price,
+            "submitting settlement tx"
         );
+        let hash = mempool
+            .submit(
+                tx.clone(),
+                final_gas_price,
+                settlement.gas.limit,
+                solver,
+                nonce,
+            )
+            .await?;
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
@@ -161,53 +194,47 @@ impl Mempools {
                 match receipt {
                     TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
                         tx_hash: hash.clone(),
-                        submitted_at_block: submitted_at_block.into(),
+                        submitted_at_block: submission_block.into(),
                         included_in_block: block_number,
                     }),
                     TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
                             tx_id: hash.clone(),
-                            submitted_at_block,
+                            submitted_at_block: submission_block,
                             reverted_at_block: block_number.into(),
                         })
                     }
                     TxStatus::Pending => {
-                        let blocks_elapsed = block.number.sub(submitted_at_block);
-
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
-                            let cancellation_tx_hash = self
-                                .cancel(mempool, settlement.gas.price, solver, blocks_elapsed, nonce)
-                                .await
-                                .context("cancellation tx due to deadline failed")?;
-                            tracing::info!(
-                                settle_tx_hash = ?hash,
-                                deadline = submission_deadline,
+                            tracing::debug!(
+                                submission_deadline,
                                 current_block = block.number,
-                                ?cancellation_tx_hash,
-                                "tx not confirmed in time, cancelling",
+                                settle_tx_hash = ?hash,
+                                "exceeded submission deadline, cancelling"
                             );
+                            let _ = self
+                                .cancel(mempool, final_gas_price, solver, nonce)
+                                .await;
                             return Err(Error::Expired {
                                 tx_id: hash.clone(),
-                                submitted_at_block,
+                                submitted_at_block: submission_block,
                                 submission_deadline,
                             });
                         }
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
-                                let cancellation_tx_hash = self
-                                    .cancel(mempool, settlement.gas.price, solver, blocks_elapsed, nonce)
-                                    .await
-                                    .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
-                                    ?cancellation_tx_hash,
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
+                                let _ = self
+                                    .cancel(mempool, final_gas_price, solver, nonce)
+                                    .await;
                                 return Err(Error::SimulationRevert {
-                                    submitted_at_block,
+                                    submitted_at_block: submission_block,
                                     reverted_at_block: block.number,
                                 });
                             } else {
@@ -237,7 +264,7 @@ impl Mempools {
                 return Ok(SubmissionSuccess {
                     tx_hash: hash,
                     included_in_block: block_number,
-                    submitted_at_block: submitted_at_block.into(),
+                    submitted_at_block: submission_block.into(),
                 });
             }
         }
@@ -249,11 +276,23 @@ impl Mempools {
     async fn cancel(
         &self,
         mempool: &infra::mempool::Mempool,
-        pending: eth::GasPrice,
+        original_tx_gas_price: eth::GasPrice,
         solver: &Solver,
-        blocks_elapsed: u64,
         nonce: eth::U256,
     ) -> Result<TxId, Error> {
+        let fallback_gas_price = original_tx_gas_price * GAS_PRICE_BUMP;
+        let replacement_gas_price = self
+            .minimum_replacement_gas_price(mempool, solver, nonce)
+            .await;
+
+        // the node is the ultimate source of truth to compute the minimum
+        // replacement gas price, but if that fails for whatever reason
+        // we use our best estimate based on the originally submitted tx
+        let final_gas_price = match &replacement_gas_price {
+            Ok(Some(replacement)) => *replacement,
+            _ => fallback_gas_price,
+        };
+
         let cancellation = eth::Tx {
             from: solver.address(),
             to: solver.address(),
@@ -261,22 +300,54 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
-        let gas_price_bump_factor = GAS_PRICE_BUMP.powi(blocks_elapsed.max(1) as i32);
-        let new_gas_price = pending * gas_price_bump_factor;
-        let gas = competition::solution::settlement::Gas {
-            estimate: CANCELLATION_GAS_AMOUNT.into(),
-            limit: CANCELLATION_GAS_AMOUNT.into(),
-            price: new_gas_price,
-        };
+
         tracing::debug!(
-            ?blocks_elapsed,
-            original_gas_price = ?pending,
-            ?new_gas_price,
-            bump_factor = ?gas_price_bump_factor,
-            "Cancelling transaction with adjusted gas price"
+            ?replacement_gas_price,
+            ?fallback_gas_price,
+            ?final_gas_price,
+            "submitting cancellation tx"
         );
 
-        mempool.submit(cancellation, gas, solver, nonce).await
+        mempool
+            .submit(
+                cancellation,
+                final_gas_price,
+                CANCELLATION_GAS_AMOUNT.into(),
+                solver,
+                nonce,
+            )
+            .await
+    }
+
+    /// Tries to determine the minimum price to replace an existing
+    /// transaction in the mempool.
+    async fn minimum_replacement_gas_price(
+        &self,
+        mempool: &infra::Mempool,
+        solver: &Solver,
+        nonce: eth::U256,
+    ) -> anyhow::Result<Option<eth::GasPrice>> {
+        let pending_tx = match mempool
+            .find_pending_tx_in_mempool(solver.address(), nonce)
+            .await?
+        {
+            Some(tx) => tx,
+            None => return Ok(None),
+        };
+
+        let pending_tx_gas_price = eth::GasPrice::new(
+            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+            eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
+                format!(
+                    "pending tx is not EIP 1559 ({})",
+                    pending_tx.inner.tx_hash()
+                )
+            })?)
+            .into(),
+            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+        );
+        // in order to replace a tx we need to increase the price
+        Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))
     }
 }
 

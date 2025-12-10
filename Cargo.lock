@@ -389,6 +389,7 @@ dependencies = [
  "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
  "alloy-rpc-types-trace",
+ "alloy-rpc-types-txpool",
  "alloy-signer",
  "alloy-sol-types",
  "alloy-transport",
@@ -494,6 +495,7 @@ dependencies = [
  "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
  "alloy-rpc-types-trace",
+ "alloy-rpc-types-txpool",
  "alloy-serde",
  "serde",
 ]
@@ -566,6 +568,18 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "alloy-rpc-types-txpool"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f82e3068673a3cf93fbbc2f60a59059395cd54bbe39af895827faa5e641cc8f"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "alloy-serde",
+ "serde",
 ]
 
 [[package]]

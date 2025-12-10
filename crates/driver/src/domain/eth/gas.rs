@@ -61,21 +61,8 @@ impl GasPrice {
         self.base
     }
 
-    /// Creates a new instance limiting maxFeePerGas to a reasonable multiple of
-    /// the current base fee.
     pub fn new(max: FeePerGas, tip: FeePerGas, base: FeePerGas) -> Self {
-        // We multiply a fixed factor of the current base fee per
-        // gas, which is chosen to be the maximum possible increase to the base
-        // fee (max 12.5% per block) over 12 blocks, also including the "tip".
-        const MAX_FEE_FACTOR: f64 = 4.2;
-        Self {
-            max: FeePerGas(std::cmp::min(
-                max.0,
-                base.mul_ceil(MAX_FEE_FACTOR).add(tip).0,
-            )),
-            tip,
-            base,
-        }
+        Self { max, tip, base }
     }
 }
 

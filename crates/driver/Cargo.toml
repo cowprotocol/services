@@ -15,7 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types", "rand"] }
+alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "rand"] }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
