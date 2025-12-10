@@ -30,7 +30,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     );
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
-    #[cfg(all(unix, feature = "jemalloc-profiling"))]
+    #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
     tracing::info!("running refunder with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("refunder".into()), None);
