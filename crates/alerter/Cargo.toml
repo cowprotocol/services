@@ -11,9 +11,8 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 humantime = { workspace = true }
 observe = { workspace = true }
-mimalloc = { workspace = true }
-tikv-jemallocator = { workspace = true, optional = true }
-jemalloc_pprof = { workspace = true, optional = true }
+mimalloc = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true }
 model = { workspace = true }
 number = { workspace = true }
 prometheus = { workspace = true }
@@ -30,4 +29,4 @@ warp = { workspace = true }
 workspace = true
 
 [features]
-jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]
+mimalloc-allocator = ["dep:mimalloc"]

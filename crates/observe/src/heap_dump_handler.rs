@@ -11,6 +11,9 @@ use {
 /// When "dump" command is sent, it generates a heap profile using
 /// jemalloc_pprof and streams the binary protobuf data back through the socket.
 ///
+/// Profiling is enabled at runtime via the MALLOC_CONF environment variable.
+/// Set MALLOC_CONF=prof:true to enable heap profiling.
+///
 /// Usage:
 /// ```bash
 /// # From your local machine (one-liner):
@@ -19,20 +22,18 @@ use {
 /// # Analyze with pprof:
 /// go tool pprof -http=:8080 heap.pprof
 /// ```
-#[cfg(all(unix, feature = "jemalloc-profiling"))]
 pub fn spawn_heap_dump_handler() {
-    // Check if jemalloc profiling is available before spawning the handler
-    // This prevents panics that would crash the entire process
+    // Check if jemalloc profiling is available at runtime
+    // This depends on whether MALLOC_CONF=prof:true was set
     let profiling_available =
         std::panic::catch_unwind(|| jemalloc_pprof::PROF_CTL.as_ref().is_some()).unwrap_or(false);
 
     if !profiling_available {
-        tracing::warn!(
-            "jemalloc profiling not available - heap dump handler not started. Ensure service is \
-             built with jemalloc-profiling feature and MALLOC_CONF is set."
-        );
+        // Profiling is disabled - do nothing
         return;
     }
+
+    tracing::info!("jemalloc heap profiling is active");
 
     tokio::spawn(async move {
         let name = binary_name().unwrap_or("unknown".to_string());

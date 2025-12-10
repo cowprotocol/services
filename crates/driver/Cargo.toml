@@ -35,9 +35,8 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
-mimalloc = { workspace = true }
-tikv-jemallocator = { workspace = true, optional = true }
-jemalloc_pprof = { workspace = true, optional = true }
+mimalloc = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
@@ -93,4 +92,4 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 workspace = true
 
 [features]
-jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]
+mimalloc-allocator = ["dep:mimalloc"]
