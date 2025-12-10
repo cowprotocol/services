@@ -59,14 +59,10 @@ jobs:
 
           if [ -n "$FEATURES" ]; then
             CARGO_FEATURES="--features $FEATURES"
-          else
-            CARGO_FEATURES=""
           fi
 
           if echo "$FEATURES" | grep -q "tokio-console"; then
             RUSTFLAGS="--cfg tokio_unstable"
-          else
-            RUSTFLAGS=""
           fi
 
           echo "cargo_features=$CARGO_FEATURES" >> $GITHUB_OUTPUT
