@@ -782,7 +782,12 @@ impl RunLoop {
         .boxed();
 
         let wait_for_settlement_transaction = self
-            .wait_for_settlement_transaction(auction_id, solver, submission_deadline_latest_block)
+            .wait_for_settlement_transaction(
+                auction_id,
+                solver,
+                submission_deadline_latest_block,
+                solution_uid,
+            )
             .boxed();
 
         // Wait for either the settlement transaction to be mined or the driver returned
@@ -885,6 +890,7 @@ impl RunLoop {
         auction_id: i64,
         solver: eth::Address,
         submission_deadline_latest_block: u64,
+        solution_uid: usize,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
@@ -896,7 +902,7 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_settlement_transaction(auction_id, solver)
+                .find_settlement_transaction(auction_id, solver, solution_uid)
                 .await
             {
                 Ok(Some(transaction)) => return Ok(transaction),

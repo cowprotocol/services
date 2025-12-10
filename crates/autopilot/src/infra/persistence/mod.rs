@@ -325,12 +325,13 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// For a given auction and solver, tries to find the settlement
-    /// transaction.
+    /// Tries to find the transaction executing a given solution proposed
+    /// by the solver.
     pub async fn find_settlement_transaction(
         &self,
         auction_id: i64,
         solver: eth::Address,
+        solution_uid: usize,
     ) -> Result<Option<eth::TxId>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -342,6 +343,9 @@ impl Persistence {
             &mut ex,
             auction_id,
             ByteArray(solver.0.0),
+            solution_uid
+                .try_into()
+                .context("could not convert solution id to i64")?,
         )
         .await?
         .map(|hash| H256(hash.0).into()))
