@@ -40,9 +40,11 @@ use {
             transaction::{self, ClearingPrices},
         },
     },
+    alloy_primitives::keccak256,
     anyhow::{Context, Result},
     itertools::{Either, Itertools},
     num::Saturating,
+    primitive_types::{H160, U256},
     std::collections::{HashMap, HashSet},
 };
 
@@ -62,8 +64,8 @@ impl Arbitrator {
     ) -> Ranking {
         let mut participants = participants;
         participants.sort_by(|a, b| {
-            let ha = a.solution().sort_key();
-            let hb = b.solution().sort_key();
+            let ha = hash_solution(a.solution());
+            let hb = hash_solution(b.solution());
             ha.cmp(&hb)
         });
 
@@ -1478,4 +1480,72 @@ mod tests {
             _ => Err(serde::de::Error::custom(format!("Invalid side: {s}"))),
         }
     }
+}
+
+fn u64_be(x: u64) -> [u8; 8] {
+    x.to_be_bytes()
+}
+
+fn u256_be(x: &U256) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    x.to_big_endian(&mut out);
+    out
+}
+
+fn h160_bytes(h: &H160) -> [u8; 20] {
+    h.0
+}
+
+fn side_to_u8(side: crate::domain::auction::order::Side) -> u8 {
+    match side {
+        crate::domain::auction::order::Side::Buy => 0,
+        crate::domain::auction::order::Side::Sell => 1,
+    }
+}
+
+fn encode_traded_order(buf: &mut Vec<u8>, order: &crate::domain::competition::TradedOrder) {
+    buf.push(side_to_u8(order.side));
+
+    buf.extend_from_slice(&h160_bytes(&(order.sell.token).0));
+    buf.extend_from_slice(&u256_be(&(order.sell.amount).0));
+
+    buf.extend_from_slice(&h160_bytes(&(order.buy.token).0));
+    buf.extend_from_slice(&u256_be(&(order.buy.amount).0));
+
+    buf.extend_from_slice(&u256_be(&(order.executed_sell).0));
+    buf.extend_from_slice(&u256_be(&(order.executed_buy).0));
+}
+
+pub fn hash_solution(sol: &Solution) -> [u8; 32] {
+    let mut buf = Vec::new();
+
+    buf.extend_from_slice(&u64_be(sol.id));
+    buf.extend_from_slice(&u256_be(&sol.score.0.0));
+
+    let addr: &H160 = &sol.solver.0;
+    buf.extend_from_slice(&h160_bytes(addr));
+
+    let mut orders: Vec<_> = sol.orders.iter().collect();
+    orders.sort_by(|(uid1, _), (uid2, _)| uid1.0.cmp(&uid2.0));
+
+    buf.extend_from_slice(&u64_be(orders.len() as u64));
+
+    for (uid, order) in orders {
+        // key = OrderUid([u8; 56])
+        buf.extend_from_slice(&uid.0);
+
+        encode_traded_order(&mut buf, order);
+    }
+
+    let mut prices: Vec<_> = sol.prices.iter().collect();
+    prices.sort_by(|(t1, _), (t2, _)| h160_bytes(&t1.0).cmp(&h160_bytes(&t2.0)));
+
+    buf.extend_from_slice(&u64_be(prices.len() as u64));
+
+    for (token_addr, price) in prices {
+        buf.extend_from_slice(&h160_bytes(&token_addr.0));
+        buf.extend_from_slice(&u256_be(&price.0.0));
+    }
+
+    keccak256(&buf).into()
 }

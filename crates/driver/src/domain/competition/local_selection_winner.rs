@@ -1,5 +1,6 @@
 use {
     alloy::{consensus::private::alloy_primitives, signers::Either},
+    alloy_primitives::keccak256,
     anyhow::Context,
     derive_more::{Display, From, Into},
     itertools::Itertools,
@@ -370,8 +371,8 @@ impl LocalArbitrator {
     ) -> Ranking {
         let mut participants = participants;
         participants.sort_by(|a, b| {
-            let ha = a.solution().sort_key();
-            let hb = b.solution().sort_key();
+            let ha = hash_solution(a.solution());
+            let hb = hash_solution(b.solution());
             ha.cmp(&hb)
         });
 
@@ -672,4 +673,80 @@ fn score_by_token_pair(
             .saturating_add_assign(Score(Ether(score.0)));
     }
     Ok(scores)
+}
+
+fn u64_to_be_bytes(x: u64) -> [u8; 8] {
+    x.to_be_bytes()
+}
+
+fn u256_to_be_bytes(x: &crate::domain::eth::U256) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    // adjust this depending on your U256 implementation
+    x.to_big_endian(&mut out);
+    out
+}
+
+fn h160_to_bytes(x: &crate::domain::eth::H160) -> [u8; 20] {
+    // if H160 is a tuple struct: pub struct H160(pub [u8; 20]);
+    x.0
+}
+
+fn side_to_byte(side: &crate::infra::api::routes::solve::dto::solve_response::Side) -> u8 {
+    match side {
+        crate::infra::api::routes::solve::dto::solve_response::Side::Buy => 0u8,
+        crate::infra::api::routes::solve::dto::solve_response::Side::Sell => 1u8,
+    }
+}
+
+fn encode_traded_order(
+    buf: &mut Vec<u8>,
+    order: &crate::infra::api::routes::solve::dto::solve_response::TradedOrder,
+) {
+    buf.push(side_to_byte(&order.side));
+
+    buf.extend_from_slice(&h160_to_bytes(&order.sell_token));
+    buf.extend_from_slice(&u256_to_be_bytes(&order.limit_sell));
+
+    buf.extend_from_slice(&h160_to_bytes(&order.buy_token));
+    buf.extend_from_slice(&u256_to_be_bytes(&order.limit_buy));
+
+    buf.extend_from_slice(&u256_to_be_bytes(&order.executed_sell));
+    buf.extend_from_slice(&u256_to_be_bytes(&order.executed_buy));
+}
+
+pub fn hash_solution(
+    solution: &crate::infra::api::routes::solve::dto::solve_response::Solution,
+) -> [u8; 32] {
+    let mut data = Vec::new();
+
+    data.extend_from_slice(&u64_to_be_bytes(solution.solution_id));
+    data.extend_from_slice(&u256_to_be_bytes(&solution.score));
+    data.extend_from_slice(&h160_to_bytes(&solution.submission_address));
+
+    let mut orders: Vec<(
+        &crate::infra::api::routes::solve::dto::solve_response::OrderId,
+        &crate::infra::api::routes::solve::dto::solve_response::TradedOrder,
+    )> = solution.orders.iter().collect();
+    orders.sort_by(|(id1, _), (id2, _)| id1.cmp(id2));
+
+    data.extend_from_slice(&u64_to_be_bytes(orders.len() as u64));
+
+    for (order_id, traded_order) in orders {
+        // OrderId is [u8; UID_LEN]
+        data.extend_from_slice(order_id);
+        encode_traded_order(&mut data, traded_order);
+    }
+
+    let mut prices: Vec<(&crate::domain::eth::H160, &crate::domain::eth::U256)> =
+        solution.clearing_prices.iter().collect();
+    prices.sort_by(|(a, _), (b, _)| h160_to_bytes(a).cmp(&h160_to_bytes(b)));
+
+    data.extend_from_slice(&u64_to_be_bytes(prices.len() as u64));
+
+    for (token, price) in prices {
+        data.extend_from_slice(&h160_to_bytes(token));
+        data.extend_from_slice(&u256_to_be_bytes(price));
+    }
+
+    keccak256(&data).into()
 }

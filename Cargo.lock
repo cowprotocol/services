@@ -1221,6 +1221,7 @@ name = "autopilot"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-primitives",
  "anyhow",
  "app-data",
  "async-trait",

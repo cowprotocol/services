@@ -75,7 +75,7 @@ impl Solution {
     }
 }
 
-type OrderId = [u8; order::UID_LEN];
+pub(crate) type OrderId = [u8; order::UID_LEN];
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize)]

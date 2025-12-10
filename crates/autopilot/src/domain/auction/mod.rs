@@ -41,7 +41,7 @@ impl PartialEq for Auction {
 /// The price of a token in wei. This represents how much wei is needed to buy
 /// 10**18 of another token.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Price(eth::Ether);
+pub struct Price(pub(crate) eth::Ether);
 
 impl Price {
     /// The base Ether amount for pricing.
