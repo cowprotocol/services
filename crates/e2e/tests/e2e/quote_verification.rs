@@ -571,6 +571,9 @@ async fn trace_based_balance_detection(web3: Web3) {
     let [solver] = onchain.make_solvers(eth(10)).await;
     let [trader] = onchain.make_accounts(eth(1)).await;
 
+    // Test with WETH (standard ERC20 with mapping at slot 3)
+    let weth = *onchain.contracts().weth.address();
+
     // Deploy the NonStandardERC20Balances token - this has balances stored at an
     // offset within a struct mapping, making it undetectable by standard slot
     // calculation methods
@@ -586,14 +589,14 @@ async fn trace_based_balance_detection(web3: Web3) {
     // *not* get a balance)
     let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
         web3.alloy.clone(),
-        *struct_offset_token.address(),
+        weth,
         true,
     )
     .await
     .unwrap();
     let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
         web3.alloy.clone(),
-        *struct_offset_token.address(),
+        weth,
         false,
     )
     .await
@@ -619,15 +622,13 @@ async fn trace_based_balance_detection(web3: Web3) {
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
 
-    // Test with WETH (standard ERC20 with mapping at slot 3)
-    let weth = *onchain.contracts().weth.address();
     tracing::info!(?weth, "Testing WETH balance detection...");
     let weth_strategy = detector.detect(weth, test_account).await;
+    tracing::info!("WETH strategy detected: {:?}", weth_strategy);
     assert!(
-        matches!(weth_strategy, Ok(Strategy::DirectSlot { .. })),
+        matches!(weth_strategy, Ok(Strategy::SolidityMapping { .. })),
         "Should detect WETH balance slot via trace"
     );
-    tracing::info!("✓ WETH strategy detected: {:?}", weth_strategy);
 
     // Test with NonStandardERC20Balances - this is the key test case
     // The balance is at offset 2 within the UserData struct (epoch=0, approvals
@@ -650,7 +651,10 @@ async fn trace_based_balance_detection(web3: Web3) {
         .detect(*delegated_storage_token.address(), test_account)
         .await;
     assert!(
-        matches!(delegated_storage_strategy, Ok(Strategy::DirectSlot { .. })),
+        matches!(
+            delegated_storage_strategy,
+            Ok(Strategy::SolidityMapping { .. })
+        ),
         "Should detect non-standard token balance slot via trace-based detection"
     );
     tracing::info!(

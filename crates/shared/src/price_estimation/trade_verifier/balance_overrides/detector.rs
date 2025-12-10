@@ -12,13 +12,11 @@ use {
         },
         sol_types::SolCall,
     },
-    anyhow::Context,
     contracts::alloy::ERC20,
-    ethcontract::{H160, H256, U256, state_overrides::StateOverride},
+    ethcontract::U256,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    maplit::hashmap,
     std::{
-        collections::{HashMap, HashSet},
+        collections::HashMap,
         fmt::{self, Debug, Formatter},
         sync::Arc,
     },
@@ -45,63 +43,67 @@ impl std::ops::Deref for Detector {
     }
 }
 
-/// Helper function to put together separate StateOverride objects in a address
-/// hash map. Useful for condensing multiple state overrides into a single call
-/// request. This is specifically designed to work with the state overrides that
-/// come from the Detector, and this function does not have any logic to merge
-/// together any fields other than `state_diff`.
-fn merge_state_diffs_in_overrides(
-    overrides: Vec<HashMap<H160, StateOverride>>,
-) -> HashMap<H160, StateOverride> {
-    let mut merged = HashMap::new();
-
-    for override_map in overrides {
-        for (address, state_override) in override_map {
-            merged
-                .entry(address)
-                .and_modify(|existing: &mut StateOverride| {
-                    if let (Some(existing_diff), Some(new_diff)) =
-                        (&mut existing.state_diff, &state_override.state_diff)
-                    {
-                        existing_diff.extend(new_diff.clone());
-                    }
-                })
-                .or_insert(state_override);
-        }
-    }
-
-    merged
-}
-
-/// Used by detect_with_trace when there are multiple to increase the chances we
-/// find the correct storage slot quickly. Strategies employed:
+/// Used by detect when there are multiple to increase the chances we
+/// find the correct storage slot quickly. Returns a list of strategies to try.
+/// Strategies employed:
 /// 1. Reverse because the most recently accessed storage slots are most likely
-///    tobe the return value of `balanceOf`
+///    to be the return value of `balanceOf`
 /// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
-///    those storage slots first
-fn sort_storage_overrides(
-    storage_slots: &mut [(Address, B256)],
+///    those storage slots first - these return `SolidityMapping` strategy
+/// 3. For non-heuristic slots, return `DirectSlot` strategy
+fn create_strategies_from_slots(
+    storage_slots: &[(Address, B256)],
     holder: &Address,
     heuristic_depth: usize,
-) {
-    // We can also use heuristics to sort by slots most likely to actually be the
-    // balance slot
-    let mut heuristic_slots = HashSet::new();
+) -> Vec<Strategy> {
+    // Build a map from heuristic slot hash to the map_slot index
+    let mut heuristic_slot_to_index = HashMap::new();
 
     for i in 0..heuristic_depth {
         let mut buf = [0; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(i).to_big_endian(&mut buf[32..64]);
-        heuristic_slots.insert(B256::from(signing::keccak256(&buf)));
+        let slot_hash = B256::from(signing::keccak256(&buf));
+        heuristic_slot_to_index.insert(slot_hash, i);
     }
 
-    // sort by whether or not its a heuristic slot or not (stable so it wont change
-    // the relative order of equal elements)
-    storage_slots.sort_by_key(|v| heuristic_slots.contains(&v.1));
+    // Create strategies for each slot
+    let mut strategies: Vec<(Strategy, bool)> = storage_slots
+        .iter()
+        .map(|(contract, slot)| {
+            if let Some(&map_slot_index) = heuristic_slot_to_index.get(slot) {
+                // This slot matches a SolidityMapping heuristic
+                (
+                    Strategy::SolidityMapping {
+                        target_contract: contract.into_legacy(),
+                        map_slot: U256::from(map_slot_index),
+                    },
+                    true, // is_heuristic
+                )
+            } else {
+                // This slot doesn't match heuristic, use DirectSlot
+                (
+                    Strategy::DirectSlot {
+                        target_contract: contract.into_legacy(),
+                        slot: slot.into_legacy(),
+                    },
+                    false, // not heuristic
+                )
+            }
+        })
+        .collect();
 
-    // Iterate through slots in reverse order (last accessed is most likely the
-    // balance)
-    storage_slots.reverse();
+    // Sort by whether it's a heuristic slot (stable sort preserves order)
+    strategies.sort_by_key(|(_, is_heuristic)| *is_heuristic);
+
+    // Reverse so most recently accessed come first
+    strategies.reverse();
+
+    // Extract just the strategies
+    strategies
+        .into_iter()
+        .map(|(strategy, _)| strategy)
+        .collect()
 }
 
 impl Detector {
@@ -113,97 +115,13 @@ impl Detector {
         }))
     }
 
-    fn generate_strategies(&self, target_contract: H160) -> Vec<StrategyHelper> {
-        // First test storage slots that don't need guesswork.
-        let mut strategies = vec![
-            Strategy::SoladyMapping { target_contract },
-            Strategy::SolidityMapping {
-                target_contract,
-                map_slot: U256::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
-            },
-        ];
-
-        // For each entry point probe the first n following slots.
-        let entry_points = [
-            // solc lays out memory linearly starting at 0 by default
-            "0000000000000000000000000000000000000000000000000000000000000000",
-        ];
-        for start_slot in entry_points {
-            let mut map_slot = U256::from(start_slot);
-            for _ in 0..self.probing_depth {
-                strategies.push(Strategy::SolidityMapping {
-                    target_contract,
-                    map_slot,
-                });
-                map_slot += U256::one();
-            }
-        }
-
-        strategies
-            .into_iter()
-            .enumerate()
-            .map(|(index, strategy)| StrategyHelper::new(strategy, index))
-            .collect()
-    }
-
-    /// Tries to detect the balance override strategy for the specified token.
-    /// Returns an `Err` if it cannot detect the strategy or an internal
-    /// simulation fails.
-    pub async fn detect(
-        &self,
-        token: Address,
-        holder: Address,
-    ) -> Result<Strategy, DetectionError> {
-        // First try the trace-based detection if the node supports it
-        let trace_strategy = self.detect_with_trace(token, holder).await;
-        if let Ok(strategy) = trace_strategy {
-            tracing::debug!(?token, ?strategy, "Trace-based detection succeeded");
-            return Ok(strategy);
-        } else {
-            tracing::debug!(
-                ?token,
-                ?trace_strategy,
-                "Trace-based detection failed, falling back to heuristic detection",
-            );
-        }
-
-        // Fall back to the original heuristic-based detection
-        let strategies = self.generate_strategies(token.into_legacy());
-        let token_contract = ERC20::Instance::new(token, self.web3.alloy.clone());
-        let overrides = merge_state_diffs_in_overrides(
-            strategies
-                .iter()
-                .map(|helper| {
-                    helper
-                        .strategy
-                        .state_override(&holder.into_legacy(), &helper.balance)
-                })
-                .collect(),
-        );
-
-        let balance = token_contract
-            .balanceOf(holder)
-            .state(overrides.into_alloy())
-            .call()
-            .await
-            .context("eth_call with state overrides failed")
-            .map_err(|e| DetectionError::Simulation(SimulationError::Other(e)))?;
-
-        strategies
-            .iter()
-            .find_map(|helper| {
-                (helper.balance.into_alloy() == balance).then_some(helper.strategy.clone())
-            })
-            .ok_or(DetectionError::NotFound)
-    }
-
     /// Detects the balance storage slot using debug_traceCall, similar to
     /// Foundry's `deal`. This traces a balanceOf call and finds which
     /// storage slot is accessed. If more than one slot is accessed, we reverse
     /// by order accessed, sort by if the slot was one that would normally
-    /// be seen in  solidity mapping, and test one by one to see if the
+    /// be seen in solidity mapping, and test one by one to see if the
     /// override is effective.
-    async fn detect_with_trace(
+    pub async fn detect(
         &self,
         token: Address,
         holder: Address,
@@ -234,14 +152,17 @@ impl Detector {
             })?;
 
         // Extract storage slots accessed via SLOAD operations
-        let mut storage_slots = self.extract_sload_slots(trace, token);
+        let storage_slots = self.extract_sload_slots(trace, token);
 
         if storage_slots.is_empty() {
             tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
             return Err(DetectionError::NotFound);
         }
 
-        if storage_slots.len() == 1 {
+        let strategies =
+            create_strategies_from_slots(&storage_slots, &holder, self.probing_depth.into());
+
+        if strategies.len() == 1 {
             let slot = storage_slots[0];
             tracing::debug!(
                 storage_context = ?slot.0,
@@ -250,10 +171,8 @@ impl Detector {
                 iterations = 0,
                 "detected balance slot via trace (single SLOAD) for token",
             );
-            return Ok(Strategy::DirectSlot {
-                target_contract: slot.0.into_legacy(),
-                slot: slot.1.into_legacy(),
-            });
+
+            return Ok(strategies[0].clone());
         }
 
         // Multiple storage slots accessed - test each one to find the balance slot
@@ -263,26 +182,24 @@ impl Detector {
             "multiple SLOAD operations, testing each one",
         );
 
-        sort_storage_overrides(&mut storage_slots, &holder, self.probing_depth.into());
-
         // We check slots individually/one at a time instead of all at once because
         // changing unnecessary storage slots could negatively affect the execution (ex.
         // overriding an upgradable proxy contract target)
-        for (i, slot) in storage_slots
+        for (i, strategy) in strategies
             .iter()
             .take(self.probing_depth.into())
             .enumerate()
         {
-            if let Ok(strategy) = self.verify_slot_is_balance(token, holder, *slot).await {
+            if self.verify_strategy(token, holder, strategy).await.is_ok() {
                 tracing::debug!(
                     ?token,
                     ?holder,
-                    ?slot,
+                    ?strategy,
                     iterations = i + 1,
                     total = storage_slots.len(),
-                    "verified balance SLOAD slot via testing",
+                    "verified balance strategy via testing",
                 );
-                return Ok(strategy);
+                return Ok(strategy.clone());
             }
         }
 
@@ -357,29 +274,19 @@ impl Detector {
         slots
     }
 
-    /// Verifies that a storage slot controls the balance by setting it and
-    /// checking balanceOf.
-    async fn verify_slot_is_balance(
+    /// Verifies that a strategy correctly controls the balance by applying it
+    /// and checking balanceOf.
+    async fn verify_strategy(
         &self,
         token: Address,
         holder: Address,
-        slot: (Address, B256),
-    ) -> Result<Strategy, DetectionError> {
-        // Use a unique test value to verify this is the balance slot
+        strategy: &Strategy,
+    ) -> Result<(), DetectionError> {
+        // Use a unique test value to verify this strategy works
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
 
-        // Create state override with the test value in this slot
-        let mut slot_value = [0u8; 32];
-        test_balance.to_big_endian(&mut slot_value);
-
-        let overrides = hashmap! {
-            slot.0.into_legacy() => StateOverride {
-                state_diff: Some(hashmap! {
-                    slot.1.into_legacy() => H256(slot_value),
-                }),
-                ..Default::default()
-            },
-        };
+        // Create state override using the strategy
+        let overrides = strategy.state_override(&holder.into_legacy(), &test_balance);
 
         // Call balanceOf with the override
         let token_contract = ERC20::Instance::new(token, self.web3.alloy.clone());
@@ -390,50 +297,18 @@ impl Detector {
             .await
             .map_err(|e| {
                 DetectionError::Simulation(SimulationError::Other(anyhow::anyhow!(
-                    "balanceOf call failed during slot verification: {e}"
+                    "balanceOf call failed during strategy verification: {e}"
                 )))
             })?;
 
-        // If the balance matches our test value, we found the right slot
+        // If the balance matches our test value, the strategy works
         if balance == test_balance.into_alloy() {
-            Ok(Strategy::DirectSlot {
-                target_contract: slot.0.into_legacy(),
-                slot: slot.1.into_legacy(),
-            })
+            Ok(())
         } else {
             Err(DetectionError::NotFound)
         }
     }
 }
-
-/// Contains all the information we need to determine which state override
-/// was successful.
-struct StrategyHelper {
-    /// strategy that was used to compute the state override
-    strategy: Strategy,
-    /// balance amount the strategy wrote into the storage
-    balance: U256,
-}
-
-impl StrategyHelper {
-    fn new(strategy: Strategy, index: usize) -> Self {
-        let index = u8::try_from(index).expect("unreasonable amount of strategies used");
-        Self {
-            strategy,
-            // Use an exact value which isn't too large or too small. This helps
-            // not have false positives for cases where the token balances in
-            // some other denomination from the actual token balance (such as
-            // stETH for example) and not run into issues with overflows.
-            // We also make sure that we avoid 0 because `balanceOf()` returns
-            // 0 by default so we can't use it to detect successful state overrides.
-            balance: U256::from(u64::from_be_bytes([index + 1; 8])),
-        }
-    }
-}
-
-// <https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/blob/master/contracts/token/ERC20/ERC20Upgradeable.sol#L43-L44>
-const OPEN_ZEPPELIN_ERC20_UPGRADEABLE: &str =
-    "52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00";
 
 impl Debug for Detector {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -455,6 +330,10 @@ pub enum DetectionError {
 #[cfg(test)]
 mod tests {
     use {super::*, ethrpc::Web3};
+
+    // <https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/blob/master/contracts/token/ERC20/ERC20Upgradeable.sol#L43-L44>
+    const OPEN_ZEPPELIN_ERC20_UPGRADEABLE: &str =
+        "52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00";
 
     /// Tests that we can detect storage slots by probing the first
     /// n slots or by checking hardcoded known slots.
@@ -539,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sort_storage_overrides_reverses_order() {
+    fn test_create_strategies_reverses_order() {
         use alloy::primitives::{address, b256};
 
         let contract = address!("0000000000000000000000000000000000000002");
@@ -547,7 +426,7 @@ mod tests {
         let slot1 = b256!("0000000000000000000000000000000000000000000000000000000000000001");
         let slot2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
         let slot3 = b256!("0000000000000000000000000000000000000000000000000000000000000003");
-        let mut slots = vec![
+        let slots = vec![
             (contract, slot1),
             (contract2, slot3),
             (contract, slot2),
@@ -556,23 +435,39 @@ mod tests {
         ];
         let holder = address!("0000000000000000000000000000000000000001");
 
-        // These slots don't match any heuristic, so should just be reversed
-        sort_storage_overrides(&mut slots, &holder, 5);
+        // These slots don't match any heuristic, so should just be reversed and return
+        // DirectSlot
+        let strategies = create_strategies_from_slots(&slots, &holder, 5);
 
         assert_eq!(
-            slots,
+            strategies,
             vec![
-                (contract2, slot1),
-                (contract, slot3),
-                (contract, slot2),
-                (contract2, slot3),
-                (contract, slot1),
+                Strategy::DirectSlot {
+                    target_contract: contract2.into_legacy(),
+                    slot: slot1.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot3.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot2.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract2.into_legacy(),
+                    slot: slot3.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot1.into_legacy(),
+                },
             ]
         );
     }
 
     #[test]
-    fn test_sort_storage_overrides_with_heuristic_slots_stable() {
+    fn test_create_strategies_with_heuristic_slots_stable() {
         use alloy::primitives::{address, b256};
 
         let contract = address!("0000000000000000000000000000000000000002");
@@ -593,7 +488,7 @@ mod tests {
         let slot2 = b256!("00000000000000000000000000000000000000000000000000000000000003e6");
         let slot3 = b256!("00000000000000000000000000000000000000000000000000000000000003e3");
 
-        let mut slots = vec![
+        let slots = vec![
             (contract, slot1),
             (contract, slot3),
             (contract, heuristic_slot2),
@@ -602,27 +497,45 @@ mod tests {
             (contract, heuristic_slot1),
         ];
 
-        sort_storage_overrides(&mut slots, &holder, 100);
+        let strategies = create_strategies_from_slots(&slots, &holder, 100);
 
         // After reverse: [heuristic, non_heuristic]
         // After sort: non-heuristic slots come before heuristic slots due to false <
         // true And the reversed order should be preserved
-        // So: [non_heuristic, heuristic]
+        // So: [heuristic (as SolidityMapping), non_heuristic (as DirectSlot)]
         assert_eq!(
-            slots,
+            strategies,
             vec![
-                (contract, heuristic_slot1),
-                (contract, heuristic_slot3),
-                (contract, heuristic_slot2),
-                (contract, slot2),
-                (contract, slot3),
-                (contract, slot1),
+                Strategy::SolidityMapping {
+                    target_contract: contract.into_legacy(),
+                    map_slot: U256::from(0),
+                },
+                Strategy::SolidityMapping {
+                    target_contract: contract.into_legacy(),
+                    map_slot: U256::from(10),
+                },
+                Strategy::SolidityMapping {
+                    target_contract: contract.into_legacy(),
+                    map_slot: U256::from(5),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot2.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot3.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot1.into_legacy(),
+                },
             ]
         );
     }
 
     #[test]
-    fn test_sort_storage_overrides_zero_heuristic_depth() {
+    fn test_create_strategies_zero_heuristic_depth() {
         use alloy::primitives::{address, b256};
 
         let contract = address!("0000000000000000000000000000000000000002");
@@ -637,23 +550,36 @@ mod tests {
         U256::from(0).to_big_endian(&mut buf[32..64]);
         let heuristic_slot = B256::from(signing::keccak256(&buf));
 
-        let mut slots = vec![
+        let slots = vec![
             (contract, slot1),
             (contract, slot2),
             (contract, heuristic_slot),
             (contract, slot3),
         ];
 
-        sort_storage_overrides(&mut slots, &holder, 0);
+        let strategies = create_strategies_from_slots(&slots, &holder, 0);
 
-        // With depth 0, no heuristic slots are created, so just reversed
+        // With depth 0, no heuristic slots are created, so all become DirectSlot and
+        // just reversed
         assert_eq!(
-            slots,
+            strategies,
             vec![
-                (contract, slot3),
-                (contract, heuristic_slot),
-                (contract, slot2),
-                (contract, slot1),
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot3.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: heuristic_slot.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot2.into_legacy(),
+                },
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot1.into_legacy(),
+                },
             ]
         );
     }
