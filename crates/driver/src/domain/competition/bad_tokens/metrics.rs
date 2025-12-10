@@ -136,7 +136,7 @@ impl Detector {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::H160};
+    use {super::*, alloy::primitives::Address};
 
     /// Tests that a token only gets marked temporarily as unsupported.
     /// After the freeze period it will be allowed again.
@@ -151,8 +151,8 @@ mod tests {
             solver::Name("mysolver".to_string()),
         );
 
-        let token_a = eth::TokenAddress(eth::ContractAddress(H160([1; 20])));
-        let token_b = eth::TokenAddress(eth::ContractAddress(H160([2; 20])));
+        let token_a = eth::TokenAddress(eth::ContractAddress(Address::repeat_byte(1)));
+        let token_b = eth::TokenAddress(eth::ContractAddress(Address::repeat_byte(2)));
         let token_quality = || detector.get_quality(&token_a, Instant::now());
 
         // token is reported as unknown while we don't have enough measurements

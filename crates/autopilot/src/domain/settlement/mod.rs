@@ -19,7 +19,6 @@ use {
     chrono::{DateTime, Utc},
     database::{orders::OrderKind, solver_competition_v2::Solution},
     futures::TryFutureExt,
-    number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
 
@@ -242,12 +241,16 @@ fn order_to_key(order: &database::solver_competition_v2::Order) -> OrderMatchKey
     OrderMatchKey {
         uid: OrderUid(order.uid.0),
         token: match order.side {
-            OrderKind::Sell => eth::H160(order.sell_token.0).into(),
-            OrderKind::Buy => eth::H160(order.buy_token.0).into(),
+            OrderKind::Sell => eth::Address::new(order.sell_token.0).into(),
+            OrderKind::Buy => eth::Address::new(order.buy_token.0).into(),
         },
         executed: match order.side {
-            OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
-            OrderKind::Buy => big_decimal_to_u256(&order.executed_buy).unwrap_or_default(),
+            OrderKind::Sell => {
+                number::conversions::alloy::big_decimal_to_u256(&order.executed_sell)
+                    .unwrap_or_default()
+            }
+            OrderKind::Buy => number::conversions::alloy::big_decimal_to_u256(&order.executed_buy)
+                .unwrap_or_default(),
         },
     }
 }
@@ -717,16 +720,12 @@ mod tests {
             // prices read from https://solver-instances.s3.eu-central-1.amazonaws.com/prod/mainnet/legacy/8655372.json
             prices: auction::Prices::from([
                 (
-                    eth::TokenAddress(eth::H160::from_slice(&hex!(
-                        "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                    ))),
+                    eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                     auction::Price::try_new(eth::U256::from(1000000000000000000u128).into())
                         .unwrap(),
                 ),
                 (
-                    eth::TokenAddress(eth::H160::from_slice(&hex!(
-                        "c52fafdc900cb92ae01e6e4f8979af7f436e2eb2"
-                    ))),
+                    eth::TokenAddress(address!("c52fafdc900cb92ae01e6e4f8979af7f436e2eb2")),
                     auction::Price::try_new(eth::U256::from(537359915436704u128).into()).unwrap(),
                 ),
             ]),
@@ -856,16 +855,12 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "dac17f958d2ee523a2206206994597c13d831ec7"
-                ))),
+                eth::TokenAddress(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
                 auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
                     .unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "056fd409e1d7a124bd7017459dfea2f387b6d5cd"
-                ))),
+                eth::TokenAddress(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
                 auction::Price::try_new(
                     eth::U256::from(3177764302250520038326415654912u128).into(),
                 )
@@ -1033,16 +1028,12 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-                ))),
+                eth::TokenAddress(address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")),
                 auction::Price::try_new(eth::U256::from(374263465721452989998170112u128).into())
                     .unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                ))),
+                eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                 auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
@@ -1215,21 +1206,15 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee"
-                ))),
+                eth::TokenAddress(address!("812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee")),
                 auction::Price::try_new(eth::U256::from(400373909534592401408u128).into()).unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "a21Af1050F7B26e0cfF45ee51548254C41ED6b5c"
-                ))),
+                eth::TokenAddress(address!("a21Af1050F7B26e0cfF45ee51548254C41ED6b5c")),
                 auction::Price::try_new(eth::U256::from(127910593u128).into()).unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                ))),
+                eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                 auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
@@ -1248,11 +1233,14 @@ mod tests {
             )]),
         };
         let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
-        assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
-        assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
+        assert_eq!(
+            jit_trade.fee_in_ether(&auction.prices).unwrap().0,
+            eth::U256::ZERO
+        );
+        assert_eq!(jit_trade.score(&auction).unwrap().0, eth::U256::ZERO);
         assert_eq!(
             jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
-            0.into()
+            eth::U256::ZERO
         );
         assert!(
             jit_trade

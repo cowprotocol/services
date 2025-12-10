@@ -310,8 +310,7 @@ impl SolvableOrdersCache {
             prices: prices
                 .into_iter()
                 .map(|(key, value)| {
-                    Price::try_new(value.into_legacy().into())
-                        .map(|price| (eth::TokenAddress(key.into_legacy()), price))
+                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
                 })
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,

@@ -17,7 +17,6 @@ use {
             eth,
             mock::Mock,
             run_forked_test_with_block_number,
-            to_wei,
             to_wei_with_exp,
             wait_for_condition,
         },
@@ -61,7 +60,7 @@ async fn liquidity_source_notification(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
     // Define trade params
-    let trade_amount = to_wei_with_exp(5, 8);
+    let trade_amount = to_wei_with_exp(5, 8).into_alloy();
 
     // Create parties accounts
     // solver - represents both baseline solver engine for quoting and liquorice
@@ -88,7 +87,7 @@ async fn liquidity_source_notification(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(trader.address(), trade_amount.into_alloy())
+                .transfer(trader.address(), trade_amount)
                 .from(USDC_WHALE)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -106,7 +105,7 @@ async fn liquidity_source_notification(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(solver.address(), trade_amount.into_alloy())
+                .transfer(solver.address(), trade_amount)
                 .from(USDC_WHALE)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -143,14 +142,13 @@ async fn liquidity_source_notification(web3: Web3) {
         .BALANCE_MANAGER()
         .call()
         .await
-        .expect("no balance manager found")
-        .into_legacy();
+        .expect("no balance manager found");
 
     // Fund `liquorice_maker`
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdt
-                .transfer(liquorice_maker.address(), trade_amount.into_alloy())
+                .transfer(liquorice_maker.address(), trade_amount)
                 .from(USDT_WHALE)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -167,7 +165,7 @@ async fn liquidity_source_notification(web3: Web3) {
     // Maker gives approval to the Liquorice balance manager contract
     token_usdt
         .approve(
-            liquorice_balance_manager_address.into_alloy(),
+            liquorice_balance_manager_address,
             alloy::primitives::U256::MAX,
         )
         .from(liquorice_maker.address())
@@ -238,9 +236,9 @@ http-timeout = "10s"
     let order_id = {
         let order = OrderCreation {
             sell_token: *token_usdc.address(),
-            sell_amount: trade_amount.into_alloy(),
+            sell_amount: trade_amount,
             buy_token: *token_usdt.address(),
-            buy_amount: trade_amount.into_alloy(),
+            buy_amount: trade_amount,
             valid_to: model::time::now_in_epoch_seconds() + 300,
             kind: OrderKind::Sell,
             ..Default::default()
@@ -263,8 +261,8 @@ http-timeout = "10s"
         effectiveTrader: *onchain.contracts().gp_settlement.address(),
         baseToken: *token_usdc.address(),
         quoteToken: *token_usdt.address(),
-        baseTokenAmount: trade_amount.into_alloy(),
-        quoteTokenAmount: trade_amount.into_alloy(),
+        baseTokenAmount: trade_amount,
+        quoteTokenAmount: trade_amount,
         minFillAmount: U256::from(1),
         quoteExpiry: U256::from(Utc::now().timestamp() as u64 + 10),
         recipient: liquorice_maker.address(),
@@ -308,24 +306,24 @@ http-timeout = "10s"
     liquorice_solver_api_mock.configure_solution(Some(Solution {
         id: 1,
         prices: HashMap::from([
-            (token_usdc.address().into_legacy(), to_wei(11)),
-            (token_usdt.address().into_legacy(), to_wei(10)),
+            (*token_usdc.address(), eth(11)),
+            (*token_usdt.address(), eth(10)),
         ]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: trade_amount,
-                fee: Some(0.into()),
+                fee: Some(alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_id.0),
             },
         )],
         pre_interactions: vec![],
         interactions: vec![solvers_dto::solution::Interaction::Custom(
             solvers_dto::solution::CustomInteraction {
-                target: liquorice_settlement.address().into_legacy(),
+                target: *liquorice_settlement.address(),
                 calldata: liquorice_solution_calldata,
-                value: 0.into(),
+                value: alloy::primitives::U256::ZERO,
                 allowances: vec![solvers_dto::solution::Allowance {
-                    token: token_usdc.address().into_legacy(),
+                    token: *token_usdc.address(),
                     spender: liquorice_balance_manager_address,
                     amount: trade_amount,
                 }],

@@ -13,7 +13,7 @@ pub struct Gas(pub U256);
 
 impl From<u64> for Gas {
     fn from(value: u64) -> Self {
-        Self(value.into())
+        Self(U256::from(value))
     }
 }
 
@@ -43,9 +43,10 @@ pub struct GasPrice {
 impl GasPrice {
     /// Returns the estimated [`EffectiveGasPrice`] for the gas price estimate.
     pub fn effective(&self) -> EffectiveGasPrice {
-        U256::from(self.max)
-            .min(U256::from(self.base).saturating_add(self.tip.into()))
-            .into()
+        let max = self.max.0.0;
+        let base = self.base.0.0;
+        let tip = self.tip.0.0;
+        max.min(base.saturating_add(tip)).into()
     }
 
     pub fn max(&self) -> FeePerGas {
@@ -113,7 +114,7 @@ pub struct FeePerGas(pub Ether);
 impl FeePerGas {
     /// Multiplies this fee by the given floating point number, rounding up.
     fn mul_ceil(self, rhs: f64) -> Self {
-        U256::from_f64_lossy((self.0.0.to_f64_lossy() * rhs).ceil()).into()
+        U256::from((f64::from(self.0.0) * rhs).ceil()).into()
     }
 }
 

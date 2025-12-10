@@ -17,10 +17,11 @@ mod gas;
 
 pub use {
     allowance::Allowance,
+    alloy::primitives::{Address, U256},
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, H256, U256, U512},
+    primitive_types::{H256, U512},
 };
 
 // TODO This module is getting a little hectic with all kinds of different
@@ -30,7 +31,7 @@ pub use {
 /// it does not implement the ERC20 interface, but this address is used by
 /// convention across the Ethereum ecosystem whenever ETH is treated like an
 /// ERC20 token.
-pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20])));
+pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(Address::repeat_byte(0xee)));
 
 /// An EIP-2930 access list. This type ensures that the addresses and storage
 /// keys are not repeated, and that the ordering is deterministic.
@@ -62,7 +63,7 @@ impl From<web3::types::AccessList> for AccessList {
                 .into_iter()
                 .map(|item| {
                     (
-                        item.address.into(),
+                        item.address.into_alloy(),
                         item.storage_keys
                             .into_iter()
                             .map(|key| key.into())
@@ -81,7 +82,7 @@ impl From<AccessList> for web3::types::AccessList {
             .into_iter()
             .sorted_by_key(|&(address, _)| address)
             .map(|(address, storage_keys)| web3::types::AccessListItem {
-                address: address.into(),
+                address: address.into_legacy(),
                 storage_keys: storage_keys.into_iter().sorted().map(|key| key.0).collect(),
             })
             .collect()
@@ -91,21 +92,11 @@ impl From<AccessList> for web3::types::AccessList {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
 struct StorageKey(pub H256);
 
-/// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct Address(pub H160);
-
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
 /// A smart contract address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
-pub struct ContractAddress(pub H160);
-
-impl From<ContractAddress> for Address {
-    fn from(value: ContractAddress) -> Self {
-        value.0.into()
-    }
-}
+pub struct ContractAddress(pub Address);
 
 /// An ERC20 token address.
 ///
@@ -188,7 +179,7 @@ impl num::CheckedDiv for TokenAmount {
 
 impl From<u128> for TokenAmount {
     fn from(value: u128) -> Self {
-        Self(value.into())
+        Self(U256::from(value))
     }
 }
 
@@ -208,7 +199,7 @@ impl std::ops::AddAssign for TokenAmount {
 
 impl num::Zero for TokenAmount {
     fn zero() -> Self {
-        Self(U256::zero())
+        Self(U256::ZERO)
     }
 
     fn is_zero(&self) -> bool {
@@ -226,19 +217,19 @@ impl std::fmt::Display for TokenAmount {
 #[derive(Debug, Clone, Copy, From, Into)]
 pub struct WethAddress(pub TokenAddress);
 
-impl From<H160> for WethAddress {
-    fn from(value: H160) -> Self {
+impl From<Address> for WethAddress {
+    fn from(value: Address) -> Self {
         WethAddress(value.into())
     }
 }
 
-impl From<H160> for TokenAddress {
-    fn from(value: H160) -> Self {
+impl From<Address> for TokenAddress {
+    fn from(value: Address) -> Self {
         Self(value.into())
     }
 }
 
-impl From<TokenAddress> for H160 {
+impl From<TokenAddress> for Address {
     fn from(value: TokenAddress) -> Self {
         value.0.into()
     }
@@ -264,15 +255,14 @@ pub struct Ether(pub U256);
 
 impl From<Ether> for num::BigInt {
     fn from(value: Ether) -> Self {
-        let mut bytes = [0; 32];
-        value.0.to_big_endian(&mut bytes);
-        num::BigUint::from_bytes_be(&bytes).into()
+        num::BigUint::from_bytes_be(value.0.to_be_bytes::<32>().as_slice()).into()
     }
 }
 
+// TODO: check if actually needed
 impl From<i32> for Ether {
     fn from(value: i32) -> Self {
-        Self(value.into())
+        Self(U256::from(value))
     }
 }
 
@@ -286,7 +276,7 @@ impl std::ops::Add for Ether {
 
 impl num::Zero for Ether {
     fn zero() -> Self {
-        Self(U256::zero())
+        Self(U256::ZERO)
     }
 
     fn is_zero(&self) -> bool {
@@ -315,8 +305,8 @@ pub struct Interaction {
 impl From<Interaction> for model::interaction::InteractionData {
     fn from(interaction: Interaction) -> Self {
         Self {
-            target: interaction.target.0.into_alloy(),
-            value: interaction.value.0.into_alloy(),
+            target: interaction.target,
+            value: interaction.value.0,
             call_data: interaction.call_data.0,
         }
     }
@@ -325,8 +315,8 @@ impl From<Interaction> for model::interaction::InteractionData {
 impl From<model::interaction::InteractionData> for Interaction {
     fn from(interaction: model::interaction::InteractionData) -> Self {
         Self {
-            target: interaction.target.into_legacy().into(),
-            value: interaction.value.into_legacy().into(),
+            target: interaction.target,
+            value: interaction.value.into(),
             call_data: interaction.call_data.into(),
         }
     }
@@ -358,11 +348,11 @@ pub struct Tx {
 impl From<Tx> for CallRequest {
     fn from(value: Tx) -> Self {
         Self {
-            from: Some(value.from.into()),
-            to: Some(value.to.into()),
+            from: Some(value.from.into_legacy()),
+            to: Some(value.to.into_legacy()),
             gas: None,
             gas_price: None,
-            value: Some(value.value.into()),
+            value: Some(value.value.0.into_legacy()),
             data: Some(value.input.into()),
             transaction_type: None,
             access_list: Some(value.access_list.into()),
@@ -438,7 +428,7 @@ impl From<&solvers_dto::solution::Flashloan> for Flashloan {
         Self {
             liquidity_provider: value.liquidity_provider.into(),
             protocol_adapter: value.protocol_adapter.into(),
-            receiver: value.receiver.into(),
+            receiver: value.receiver,
             token: value.token.into(),
             amount: value.amount.into(),
         }
@@ -451,8 +441,8 @@ impl Into<FlashloanHint> for &Flashloan {
         FlashloanHint {
             liquidity_provider: self.liquidity_provider.into(),
             protocol_adapter: self.protocol_adapter.into(),
-            receiver: self.receiver.into(),
-            token: self.token.into(),
+            receiver: self.receiver,
+            token: self.token.0.into(),
             amount: self.amount.into(),
         }
     }

@@ -55,7 +55,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.execution.solver.sell)
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
-    let solver_fee = test_case.execution.driver.sell / 100;
+    let solver_fee = test_case.execution.driver.sell / eth::U256::from(100);
     let executed = match test_case.order.side {
         order::Side::Buy => (test_case.order.buy_amount > test_case.execution.solver.buy)
             .then_some(test_case.execution.solver.buy),
@@ -79,7 +79,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
         .executed(executed)
-        .partial(0.into())
+        .partial(eth::U256::ZERO)
         // Surplus is configured explicitly via executed/quoted amounts
         .no_surplus()
         .expected_amounts(expected_amounts);

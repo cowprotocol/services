@@ -435,14 +435,11 @@ async fn store_filtered_solutions(web3: Web3) {
     // good solver settles order_ab at a price 3:1
     good_solver.configure_solution(Some(Solution {
         id: 0,
-        prices: HashMap::from([
-            (token_a.address().into_legacy(), to_wei(3)),
-            (token_b.address().into_legacy(), to_wei(1)),
-        ]),
+        prices: HashMap::from([(*token_a.address(), eth(3)), (*token_b.address(), eth(1))]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
-                executed_amount: order_ab.sell_amount.into_legacy(),
-                fee: Some(0.into()),
+                executed_amount: order_ab.sell_amount,
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             },
         )],
@@ -460,19 +457,19 @@ async fn store_filtered_solutions(web3: Web3) {
     bad_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token_a.address().into_legacy(), to_wei(2)),
-            (token_b.address().into_legacy(), to_wei(1)),
-            (token_c.address().into_legacy(), to_wei(1)),
+            (*token_a.address(), eth(2)),
+            (*token_b.address(), eth(1)),
+            (*token_c.address(), eth(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: order_ab.sell_amount.into_legacy(),
-                fee: Some(0.into()),
+                executed_amount: order_ab.sell_amount,
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: order_ac.sell_amount.into_legacy(),
-                fee: Some(0.into()),
+                executed_amount: order_ac.sell_amount,
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_ac_id.0),
             }),
         ],

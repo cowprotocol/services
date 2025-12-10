@@ -476,6 +476,7 @@ mod tests {
             },
             infra::Driver,
         },
+        alloy::primitives::{U256, address},
         ethcontract::H160,
         ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         hex_literal::hex,
@@ -1157,7 +1158,7 @@ mod tests {
                 prices
                     .iter()
                     .map(|(token_id, price)| {
-                        let token_address = TokenAddress(*token_map.get(token_id).unwrap());
+                        let token_address = token_map.get(token_id).unwrap().into_alloy().into();
                         let price = create_price(*price);
                         (token_address, price)
                     })
@@ -1274,7 +1275,7 @@ mod tests {
     fn create_test_arbitrator() -> super::Arbitrator {
         super::Arbitrator {
             max_winners: 10,
-            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
+            weth: address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").into(),
         }
     }
 
@@ -1294,18 +1295,18 @@ mod tests {
             uid: create_order_uid(uid),
             sell: eth::Asset {
                 amount: sell_amount.into(),
-                token: sell_token.into(),
+                token: sell_token.into_alloy().into(),
             },
             buy: eth::Asset {
                 amount: buy_amount.into(),
-                token: buy_token.into(),
+                token: buy_token.into_alloy().into(),
             },
             protocol_fees: vec![],
             side,
             receiver: None,
             owner: Default::default(),
             partially_fillable: false,
-            executed: eth::U256::zero().into(),
+            executed: eth::U256::ZERO.into(),
             pre_interactions: vec![],
             post_interactions: vec![],
             sell_token_balance: order::SellTokenSource::Erc20,
@@ -1338,7 +1339,7 @@ mod tests {
     ) -> Auction {
         // Initialize the prices of the tokens if they are not specified
         let prices = prices.unwrap_or({
-            let default_price = create_price(DEFAULT_TOKEN_PRICE.into());
+            let default_price = create_price(U256::from(DEFAULT_TOKEN_PRICE));
             let mut res = HashMap::new();
             for order in &orders {
                 res.insert(order.buy.token, default_price);
@@ -1381,8 +1382,8 @@ mod tests {
         let prices = prices.unwrap_or({
             let mut res = HashMap::new();
             for (_, trade) in &trades {
-                res.insert(trade.buy.token, create_price(eth::U256::one()));
-                res.insert(trade.sell.token, create_price(eth::U256::one()));
+                res.insert(trade.buy.token, create_price(eth::U256::ONE));
+                res.insert(trade.sell.token, create_price(eth::U256::ONE));
             }
             res
         });
@@ -1394,7 +1395,7 @@ mod tests {
             solution_id,
             solver_address,
             // provided score does not matter as it's computed automatically by the arbitrator
-            Score(eth::Ether(eth::U256::zero())),
+            Score(eth::Ether(eth::U256::ZERO)),
             trade_order_map,
             prices,
         );

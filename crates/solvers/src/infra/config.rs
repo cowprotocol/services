@@ -2,19 +2,15 @@ use {
     crate::{
         domain::{eth, solver},
         infra::contracts,
-        util::serialize,
     },
     chain::Chain,
-    ethereum_types::H160,
     reqwest::Url,
     serde::Deserialize,
-    serde_with::serde_as,
     shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::{fmt::Debug, path::Path},
     tokio::fs,
 };
 
-#[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
@@ -25,12 +21,12 @@ struct Config {
     /// Optional WETH contract address. This can be used to specify a manual
     /// value **instead** of using the canonical WETH contract for the
     /// configured chain.
-    weth: Option<H160>,
+    weth: Option<eth::Address>,
 
     /// List of base tokens to use when path finding. This defines the tokens
     /// that can appear as intermediate "hops" within a trading route. Note that
     /// WETH is always considered as a base token.
-    base_tokens: Vec<eth::H160>,
+    base_tokens: Vec<eth::Address>,
 
     /// The maximum number of hops to consider when finding the optimal trading
     /// path.
@@ -47,7 +43,6 @@ struct Config {
 
     /// The amount of the native token to use to estimate native price of a
     /// token
-    #[serde_as(as = "serialize::U256")]
     native_token_price_estimation_amount: eth::U256,
 
     /// If this is configured the solver will also use the Uniswap V3 liquidity

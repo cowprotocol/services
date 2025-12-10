@@ -22,7 +22,7 @@ use {
         to_wei_with_exp,
         wait_for_condition,
     },
-    ethcontract::{BlockId, BlockNumber, H160},
+    ethcontract::{BlockId, BlockNumber},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -33,7 +33,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::{addr, ethrpc::Web3},
+    shared::ethrpc::Web3,
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,
@@ -259,8 +259,8 @@ async fn cow_amm_jit(web3: Web3) {
         &onchain.contracts().domain_separator,
     );
     let cow_amm_commitment = Call {
-        target: cow_amm_commitment_data.target.into_legacy(),
-        value: cow_amm_commitment_data.value.into_legacy(),
+        target: cow_amm_commitment_data.target,
+        value: cow_amm_commitment_data.value,
         calldata: cow_amm_commitment_data.call_data,
     };
 
@@ -306,27 +306,23 @@ async fn cow_amm_jit(web3: Web3) {
     let amm_balance_before = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
     let bob_balance_before = dai.balanceOf(bob.address()).call().await.unwrap();
 
-    let fee = ethcontract::U256::exp10(16); // 0.01 WETH
-    let fee_alloy = alloy::primitives::U256::from(fee.low_u128());
+    let fee = alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(16)); // 0.01 WETH
 
     mock_solver.configure_solution(Some(Solution {
         id: 1,
         // assume price of the univ2 pool
         prices: HashMap::from([
-            (dai.address().into_legacy(), to_wei(100)),
-            (
-                onchain.contracts().weth.address().into_legacy(),
-                to_wei(300_000),
-            ),
+            (*dai.address(), eth(100)),
+            (*onchain.contracts().weth.address(), eth(300_000)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
                 order: solvers_dto::solution::JitOrder {
-                    sell_token: cow_amm_order.sellToken.into_legacy(),
-                    buy_token: cow_amm_order.buyToken.into_legacy(),
-                    receiver: cow_amm_order.receiver.into_legacy(),
-                    sell_amount: cow_amm_order.sellAmount.into_legacy(),
-                    buy_amount: cow_amm_order.buyAmount.into_legacy(),
+                    sell_token: cow_amm_order.sellToken,
+                    buy_token: cow_amm_order.buyToken,
+                    receiver: cow_amm_order.receiver,
+                    sell_amount: cow_amm_order.sellAmount,
+                    buy_amount: cow_amm_order.buyAmount,
                     partially_fillable: cow_amm_order.partiallyFillable,
                     valid_to: cow_amm_order.validTo,
                     app_data: cow_amm_order.appData.0,
@@ -336,12 +332,12 @@ async fn cow_amm_jit(web3: Web3) {
                     signing_scheme: SigningScheme::Eip1271,
                     signature,
                 },
-                executed_amount: cow_amm_order.sellAmount.into_legacy() - fee,
+                executed_amount: cow_amm_order.sellAmount - fee,
                 fee: Some(fee),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 order: solvers_dto::solution::OrderUid(user_order_id.0),
-                executed_amount: (user_order.sell_amount - fee_alloy).into_legacy(),
+                executed_amount: (user_order.sell_amount - fee),
                 fee: Some(fee),
             }),
         ],
@@ -422,14 +418,12 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     // Unbalance the cow amm enough that baseline is able to rebalance
     // it with the current liquidity.
-    const USDC_WETH_COW_AMM: H160 = H160(hex_literal::hex!(
-        "f08d4dea369c456d26a3168ff0024b904f2d8b91"
-    ));
+    const USDC_WETH_COW_AMM: Address = address!("f08d4dea369c456d26a3168ff0024b904f2d8b91");
 
     let weth_balance = onchain
         .contracts()
         .weth
-        .balanceOf(USDC_WETH_COW_AMM.into_alloy())
+        .balanceOf(USDC_WETH_COW_AMM)
         .call()
         .await
         .unwrap();
@@ -451,17 +445,13 @@ async fn cow_amm_driver_support(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .transfer(USDC_WETH_COW_AMM.into_alloy(), weth_to_send)
+        .transfer(USDC_WETH_COW_AMM, weth_to_send)
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    let amm_usdc_balance_before = usdc
-        .balanceOf(USDC_WETH_COW_AMM.into_alloy())
-        .call()
-        .await
-        .unwrap();
+    let amm_usdc_balance_before = usdc.balanceOf(USDC_WETH_COW_AMM).call().await.unwrap();
 
     // Now we create an unfillable order just so the orderbook is not empty.
     // Otherwise all auctions would be skipped because there is no user order to
@@ -630,11 +620,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
         onchain.mint_block().await;
         tokio::time::sleep(tokio::time::Duration::from_millis(1_000)).await;
 
-        let amm_usdc_balance_after = usdc
-            .balanceOf(USDC_WETH_COW_AMM.into_alloy())
-            .call()
-            .await
-            .unwrap();
+        let amm_usdc_balance_after = usdc.balanceOf(USDC_WETH_COW_AMM).call().await.unwrap();
         // CoW AMM traded automatically
         amm_usdc_balance_after != amm_usdc_balance_before
     })
@@ -658,8 +644,8 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     // all tokens traded by the cow amms
     tracing::info!("Waiting for all relevant native prices to be indexed.");
     let expected_prices = [
-        addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"), // WETH
-        addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"), // USDC
+        address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"), // WETH
+        address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"), // USDC
     ];
 
     wait_for_condition(TIMEOUT, || async {
@@ -677,8 +663,8 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
         let found_amm_jit_orders = auctions.iter().any(|auction| {
             auction.orders.iter().any(|order| {
                 order.owner == USDC_WETH_COW_AMM
-                    && order.sell_token == onchain.contracts().weth.address().into_legacy()
-                    && order.buy_token == usdc.address().into_legacy()
+                    && order.sell_token == *onchain.contracts().weth.address()
+                    && order.buy_token == *usdc.address()
             })
         });
 
@@ -904,8 +890,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         &onchain.contracts().domain_separator,
     );
     let cow_amm_commitment = Call {
-        target: cow_amm_commitment_data.target.into_legacy(),
-        value: cow_amm_commitment_data.value.into_legacy(),
+        target: cow_amm_commitment_data.target,
+        value: cow_amm_commitment_data.value,
         calldata: cow_amm_commitment_data.call_data,
     };
 
@@ -942,27 +928,24 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Set the fees appropriately
-    let fee_cow_amm = ethcontract::U256::exp10(16); // 0.01 WETH
-    let fee_user = to_wei(1); // 1 DAI
+    let fee_cow_amm = alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(16)); // 0.01 WETH
+    let fee_user = eth(1); // 1 DAI
 
     let mocked_solutions = |order_uid: OrderUid| {
         Solution {
             id: 1,
             prices: HashMap::from([
-                (dai.address().into_legacy(), to_wei(1)), // 1 DAI = $1
-                (
-                    onchain.contracts().weth.address().into_legacy(),
-                    to_wei(2300),
-                ), // 1 WETH = $2300
+                (*dai.address(), eth(1)),                         // 1 DAI = $1
+                (*onchain.contracts().weth.address(), eth(2300)), // 1 WETH = $2300
             ]),
             trades: vec![
                 solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
                     order: solvers_dto::solution::JitOrder {
-                        sell_token: cow_amm_order.sellToken.into_legacy(),
-                        buy_token: cow_amm_order.buyToken.into_legacy(),
-                        receiver: cow_amm_order.receiver.into_legacy(),
-                        sell_amount: cow_amm_order.sellAmount.into_legacy(),
-                        buy_amount: cow_amm_order.buyAmount.into_legacy(),
+                        sell_token: cow_amm_order.sellToken,
+                        buy_token: cow_amm_order.buyToken,
+                        receiver: cow_amm_order.receiver,
+                        sell_amount: cow_amm_order.sellAmount,
+                        buy_amount: cow_amm_order.buyAmount,
                         partially_fillable: cow_amm_order.partiallyFillable,
                         valid_to: cow_amm_order.validTo,
                         app_data: cow_amm_order.appData.0,
@@ -972,12 +955,12 @@ async fn cow_amm_opposite_direction(web3: Web3) {
                         signing_scheme: SigningScheme::Eip1271,
                         signature: signature.clone(),
                     },
-                    executed_amount: cow_amm_order.sellAmount.into_legacy() - fee_cow_amm,
+                    executed_amount: cow_amm_order.sellAmount - fee_cow_amm,
                     fee: Some(fee_cow_amm),
                 }),
                 solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                     order: solvers_dto::solution::OrderUid(order_uid.0),
-                    executed_amount: executed_amount.into_legacy() - fee_user,
+                    executed_amount: executed_amount - fee_user,
                     fee: Some(fee_user),
                 }),
             ],

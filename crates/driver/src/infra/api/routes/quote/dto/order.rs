@@ -26,8 +26,8 @@ impl Order {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
-    sell_token: eth::H160,
-    buy_token: eth::H160,
+    sell_token: eth::Address,
+    buy_token: eth::Address,
     #[serde_as(as = "serialize::U256")]
     amount: eth::U256,
     kind: Kind,

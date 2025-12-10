@@ -12,7 +12,10 @@ use {
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, U256, errors::MethodError},
-    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
+    ethrpc::alloy::{
+        conversions::{IntoAlloy, IntoLegacy},
+        errors::ignore_non_node_error,
+    },
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
@@ -172,24 +175,24 @@ impl BaselineSolvable for Pool {
     async fn get_amount_out(
         &self,
         out_token: Address,
-        (in_amount, in_token): (U256, Address),
-    ) -> Option<U256> {
-        self.get_amount_out(in_token, in_amount)
+        (in_amount, in_token): (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
+        self.get_amount_out(in_token, in_amount.into_legacy())
             .map(|(out_amount, token)| {
                 assert_eq!(token, out_token);
-                out_amount
+                out_amount.into_alloy()
             })
     }
 
     async fn get_amount_in(
         &self,
         in_token: Address,
-        (out_amount, out_token): (U256, Address),
-    ) -> Option<U256> {
-        self.get_amount_in(out_token, out_amount)
+        (out_amount, out_token): (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
+        self.get_amount_in(out_token, out_amount.into_legacy())
             .map(|(in_amount, token)| {
                 assert_eq!(token, in_token);
-                in_amount
+                in_amount.into_alloy()
             })
     }
 
