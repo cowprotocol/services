@@ -4,6 +4,11 @@ on:
     branches: [main]
     tags: [v*]
   workflow_dispatch:
+    inputs:
+      features:
+        description: 'Optional cargo features (currently supported: "mimalloc-allocator")'
+        required: false
+        default: ''
 
 jobs:
   deploy:
@@ -40,6 +45,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
+          build-args: |
+            CARGO_BUILD_FEATURES=${{ github.event.inputs.features && format('--features {0}', github.event.inputs.features) || '' }}
 
       - name: Migration image metadata
         id: meta_migration

@@ -1713,6 +1713,9 @@ components:
         auctionStartBlock:
           type: integer
           description: Block that the auction started on.
+        auctionDeadlineBlock:
+          type: integer
+          description: Block deadline by which the auction must be settled.
         transactionHashes:
           type: array
           description: |
