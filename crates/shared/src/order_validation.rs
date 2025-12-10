@@ -214,24 +214,11 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, clap::ValueEnum)]
 pub enum SameTokensPolicy {
     Disallow,
     AllowSell,
     Allow,
-}
-
-impl FromStr for SameTokensPolicy {
-    type Err = anyhow::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Ok(match value {
-            "disallow" => Self::Disallow,
-            "allowSell" => Self::AllowSell,
-            "allow" => Self::Allow,
-            _ => anyhow::bail!("Invalid same token policy: {value}"),
-        })
-    }
 }
 
 impl SameTokensPolicy {

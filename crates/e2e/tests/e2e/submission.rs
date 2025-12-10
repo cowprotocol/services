@@ -157,7 +157,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec!["--same-tokens-policy=allowSell".to_string()],
+                api: vec!["--same-tokens-policy=allow-sell".to_string()],
                 ..Default::default()
             },
             solver.clone(),
@@ -211,7 +211,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec!["--same-tokens-policy=allowSell".to_string()],
+                api: vec!["--same-tokens-policy=allow-sell".to_string()],
                 ..Default::default()
             },
             solver.clone(),
