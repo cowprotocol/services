@@ -207,10 +207,11 @@ impl Mempools {
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
-                            let _ = self
-                                .cancel(mempool, final_gas_price, solver, nonce)
-                                .await
-                                .context("cancellation tx due to deadline failed")?;
+                            tracing::debug!("don't bother with cancellation tx");
+                            // let _ = self
+                            //     .cancel(mempool, final_gas_price, solver, nonce)
+                            //     .await
+                            //     .context("cancellation tx due to deadline failed")?;
                             return Err(Error::Expired {
                                 tx_id: hash.clone(),
                                 submitted_at_block: submission_block,
@@ -220,15 +221,16 @@ impl Mempools {
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
-                                let cancellation_tx_hash = self
-                                    .cancel(mempool, final_gas_price, solver, nonce)
-                                    .await
-                                    .context("cancellation tx due to revert failed")?;
+                                tracing::debug!("don't bother with cancellation tx");
+                                // let cancellation_tx_hash = self
+                                //     .cancel(mempool, final_gas_price, solver, nonce)
+                                //     .await
+                                //     .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
-                                    ?cancellation_tx_hash,
+                                    // ?cancellation_tx_hash,
                                     ?err,
-                                    "tx started failing in mempool, cancelling"
+                                    "tx started failing in mempool"
                                 );
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block: submission_block,
