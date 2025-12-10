@@ -259,6 +259,7 @@ impl From<Ether> for num::BigInt {
     }
 }
 
+// TODO: check if actually needed
 impl From<i32> for Ether {
     fn from(value: i32) -> Self {
         Self(U256::from(value))
