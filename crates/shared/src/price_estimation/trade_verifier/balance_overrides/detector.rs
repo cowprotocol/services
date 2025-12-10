@@ -59,13 +59,19 @@ fn create_strategies_from_slots(
     // Build a map from heuristic slot hash to the map_slot index
     let mut heuristic_slot_to_index = HashMap::new();
 
+    let mut buf = [0; 64];
+    buf[12..32].copy_from_slice(holder.as_slice());
     for i in 0..heuristic_depth {
-        let mut buf = [0; 64];
-        buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(i).to_big_endian(&mut buf[32..64]);
         let slot_hash = B256::from(signing::keccak256(&buf));
         heuristic_slot_to_index.insert(slot_hash, i);
     }
+
+    buf[0..20].copy_from_slice(holder.as_slice());
+    buf[20..32].copy_from_slice(&[
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
+    ]);
+    let solady_slot = B256::from(signing::keccak256(&buf[0..32]));
 
     // Create strategies for each slot
     let mut strategies: Vec<(Strategy, bool)> = storage_slots
@@ -77,6 +83,14 @@ fn create_strategies_from_slots(
                     Strategy::SolidityMapping {
                         target_contract: contract.into_legacy(),
                         map_slot: U256::from(map_slot_index),
+                    },
+                    true, // is_heuristic
+                )
+            } else if *slot == solady_slot {
+                // This slot matches a SoladyMapping heuristic
+                (
+                    Strategy::SoladyMapping {
+                        target_contract: contract.into_legacy(),
                     },
                     true, // is_heuristic
                 )
@@ -480,8 +494,11 @@ mod tests {
         let heuristic_slot1 = B256::from(signing::keccak256(&buf));
         U256::from(5).to_big_endian(&mut buf[32..64]);
         let heuristic_slot2 = B256::from(signing::keccak256(&buf));
-        U256::from(10).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot3 = B256::from(signing::keccak256(&buf));
+        buf[0..20].copy_from_slice(holder.as_slice());
+        buf[20..32].copy_from_slice(&[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
+        ]);
+        let heuristic_slot3 = B256::from(signing::keccak256(&buf[0..32]));
 
         // Create non-heuristic slots
         let slot1 = b256!("00000000000000000000000000000000000000000000000000000000000003e7");
@@ -510,9 +527,8 @@ mod tests {
                     target_contract: contract.into_legacy(),
                     map_slot: U256::from(0),
                 },
-                Strategy::SolidityMapping {
+                Strategy::SoladyMapping {
                     target_contract: contract.into_legacy(),
-                    map_slot: U256::from(10),
                 },
                 Strategy::SolidityMapping {
                     target_contract: contract.into_legacy(),
