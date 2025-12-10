@@ -213,7 +213,7 @@ paths:
       summary: Get existing trades (unpaginated).
       deprecated: true
       description: |
-        **Deprecated:** This endpoint is deprecated. Please use `/api/v2/trades` instead, which provides pagination support.
+        **Deprecated:** This endpoint is deprecated and will be removed in the future. Please use `/api/v2/trades` instead, which provides pagination support.
 
         Exactly one of `owner` or `orderUid` must be set.
 
