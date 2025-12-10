@@ -47,7 +47,7 @@ use {
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
-    std::{str::FromStr, sync::Arc, time::Duration},
+    std::{sync::Arc, time::Duration},
     tracing::instrument,
 };
 
@@ -218,7 +218,7 @@ pub trait LimitOrderCounting: Send + Sync {
 pub enum SameTokensPolicy {
     Disallow,
     AllowSell,
-    Allow,
+    // Allow, TODO: Allow sell and buy orders with the same tokens (https://github.com/cowprotocol/services/issues/3963)
 }
 
 impl SameTokensPolicy {
@@ -228,7 +228,8 @@ impl SameTokensPolicy {
         }
         matches!(
             (self, order.kind),
-            (Self::Allow, _) | (Self::AllowSell, OrderKind::Sell)
+            /* (Self::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963 */
+            (Self::AllowSell, OrderKind::Sell)
         )
     }
 }
@@ -1297,84 +1298,6 @@ mod tests {
                 })
                 .await
                 .is_ok()
-        );
-    }
-
-    #[tokio::test]
-    async fn pre_validate_allow_same_tokens() {
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
-        let validity_configuration = OrderValidPeriodConfiguration {
-            min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
-        };
-
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        bad_token_detector
-            .expect_detect()
-            .with(eq(Address::with_last_byte(1)))
-            .returning(|_| Ok(TokenQuality::Good));
-        bad_token_detector
-            .expect_detect()
-            .with(eq(Address::with_last_byte(2)))
-            .returning(|_| Ok(TokenQuality::Good));
-
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            native_token.clone(),
-            Arc::new(order_validation::banned::Users::none()),
-            validity_configuration,
-            false,
-            Arc::new(bad_token_detector),
-            HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
-                ProviderBuilder::new()
-                    .connect_mocked_client(Asserter::new())
-                    .erased(),
-            ),
-            Arc::new(MockOrderQuoting::new()),
-            Arc::new(MockBalanceFetching::new()),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-            u64::MAX,
-            SameTokensPolicy::Allow,
-        );
-
-        let order = || PreOrderData {
-            valid_to: time::now_in_epoch_seconds()
-                + validity_configuration.min.as_secs() as u32
-                + 2,
-            ..Default::default()
-        };
-
-        assert!(matches!(
-            dbg!(
-                validator
-                    .partial_validate(PreOrderData {
-                        buy_token: BUY_ETH_ADDRESS,
-                        sell_token: *native_token.address(),
-                        ..order()
-                    })
-                    .await
-            ),
-            Err(PartialValidationError::SameBuyAndSellToken)
-        ));
-
-        assert!(
-            dbg!(
-                validator
-                    .partial_validate(PreOrderData {
-                        buy_token: Address::with_last_byte(2),
-                        sell_token: Address::with_last_byte(2),
-                        ..order()
-                    })
-                    .await
-            )
-            .is_ok()
         );
     }
 

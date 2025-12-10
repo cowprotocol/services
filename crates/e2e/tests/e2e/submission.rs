@@ -2,7 +2,10 @@ use {
     ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{BlockId, H160, H256},
-    ethrpc::alloy::{CallBuilderExt, conversions::{IntoAlloy, IntoLegacy}},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
