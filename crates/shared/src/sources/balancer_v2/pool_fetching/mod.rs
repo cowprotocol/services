@@ -247,7 +247,7 @@ impl BalancerFactoryKind {
     /// Returns a vector with supported factories for the specified chain ID.
     pub fn for_chain(chain_id: u64) -> Vec<Self> {
         match chain_id {
-            1 => Self::value_variants().to_owned(),
+            1 | 123456789 => Self::value_variants().to_owned(), // Mainnet and MainnetFork use same factories
             5 => vec![
                 Self::Weighted,
                 Self::WeightedV3,

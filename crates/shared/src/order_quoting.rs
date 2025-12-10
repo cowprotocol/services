@@ -149,7 +149,7 @@ impl Quote {
         self.buy_amount = alloy::primitives::U256::uint_try_from(
             self.data
                 .quoted_buy_amount
-                .widening_mul::<_, _, 512, 8>(sell_amount)
+                .widening_mul::<256, 4, 512, 8>(sell_amount)
                 / U512::from(self.data.quoted_sell_amount),
         )
         .unwrap_or(alloy::primitives::U256::MAX);
