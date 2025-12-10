@@ -15,17 +15,17 @@ pub fn to_boundary_pool(
     let reserves = (
         u128::try_from(reserves.0.amount)
             .inspect_err(|_| {
-                tracing::trace!(
+                tracing::debug!(
                     address = %reserves.0.token.0,
-                    "failed to convert asset 0 amount to u128"
+                    "asset 0 amount > u128"
                 );
             })
             .ok()?,
         u128::try_from(reserves.1.amount)
             .inspect_err(|_| {
-                tracing::trace!(
+                tracing::debug!(
                     address = %reserves.1.token.0,
-                    "failed to convert asset 1 amount to u128"
+                    "asset 1 amount > u128"
                 );
             })
             .ok()?,
@@ -34,12 +34,12 @@ pub fn to_boundary_pool(
     let fee = num::rational::Ratio::new(
         u32::try_from(pool.fee.numer())
             .inspect_err(
-                |_| tracing::trace!(pool = ?pool.reserves, "pool fee numerator > u32::MAX"),
+                |_| tracing::debug!(pool = ?pool.reserves, "pool fee numerator > u32::MAX"),
             )
             .ok()?,
         u32::try_from(pool.fee.denom())
             .inspect_err(
-                |_| tracing::trace!(pool = ?pool.reserves, "pool fee numerator > u32::MAX"),
+                |_| tracing::debug!(pool = ?pool.reserves, "pool fee denominator > u32::MAX"),
             )
             .ok()?,
     );
