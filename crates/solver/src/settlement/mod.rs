@@ -259,16 +259,16 @@ pub mod tests {
                 ..Default::default()
             };
             let sell_price = U256::from(2);
-            let buy_price = U256::from(1);
+            let buy_price = U256::ONE;
             assert!(trade.executed_amounts(sell_price, buy_price).is_none());
 
             // div
             let trade = Trade {
                 order,
-                executed_amount: U256::from(1),
+                executed_amount: U256::ONE,
                 ..Default::default()
             };
-            let sell_price = U256::from(1);
+            let sell_price = U256::ONE;
             let buy_price = U256::ZERO;
             assert!(trade.executed_amounts(sell_price, buy_price).is_none());
         }
@@ -295,24 +295,24 @@ pub mod tests {
         };
 
         let mut settlement = Settlement::new(hashmap! {
-            token0 => U256::from(1),
-            token1 => U256::from(1),
+            token0 => U256::ONE,
+            token1 => U256::ONE,
         });
         assert!(
             settlement
                 .encoder
-                .add_trade(order.clone(), U256::from(10), U256::from(0))
+                .add_trade(order.clone(), U256::from(10), U256::ZERO)
                 .is_ok()
         );
 
         let mut settlement = Settlement::new(hashmap! {
-            token0 => U256::from(1),
-            token1 => U256::from(0),
+            token0 => U256::ONE,
+            token1 => U256::ZERO,
         });
         assert!(
             settlement
                 .encoder
-                .add_trade(order, U256::from(10), U256::from(0))
+                .add_trade(order, U256::from(10), U256::ZERO)
                 .is_err()
         );
     }
