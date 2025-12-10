@@ -362,7 +362,7 @@ impl Persistence {
             .with_label_values(&["save_auction"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await?;
+        let mut ex = self.postgres.pool.acquire().await?;
 
         database::auction::save(
             &mut ex,
@@ -394,7 +394,7 @@ impl Persistence {
         )
         .await?;
 
-        Ok(ex.commit().await?)
+        Ok(())
     }
 
     /// Get auction data to post-process the given trades.
