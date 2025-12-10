@@ -1,8 +1,8 @@
 pub use shared::sources::balancer_v2::pool_fetching::StablePool as Pool;
 use {
     crate::domain::{eth, liquidity},
-    ethereum_types::{H160, H256, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    alloy::primitives::{Address, B256, U256},
+    ethrpc::alloy::conversions::IntoLegacy,
     shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, CommonPoolState, TokenState},
         swap::fixed_point::Bfp,
@@ -11,16 +11,12 @@ use {
 
 /// Converts a domain pool into a [`shared`] Balancer V2 stable pool. Returns
 /// `None` if the domain pool cannot be represented as a boundary pool.
-pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option<Pool> {
+pub fn to_boundary_pool(address: Address, pool: &liquidity::stable::Pool) -> Option<Pool> {
     // NOTE: this is only used for encoding and not for solving, so it's OK to
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is
     // pretty good.
-    let id = {
-        let mut buf = [0_u8; 32];
-        buf[..20].copy_from_slice(address.as_bytes());
-        H256(buf)
-    };
+    let id = B256::right_padding_from(address.as_slice());
 
     let swap_fee = to_fixed_point(&pool.fee)?;
     let reserves = pool
@@ -44,8 +40,8 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
 
     Some(Pool {
         common: CommonPoolState {
-            id,
-            address: address.into_alloy(),
+            id: id.into_legacy(),
+            address,
             swap_fee,
             paused: false,
         },
@@ -59,7 +55,7 @@ fn to_fixed_point(ratio: &eth::Rational) -> Option<Bfp> {
     // Balancer "fixed point numbers" are in a weird decimal FP format (instead
     // of a base 2 FP format you typically see). Just convert our ratio into
     // this format.
-    let base = U256::exp10(18);
-    let wei = ratio.numer().into_legacy().checked_mul(base)? / ratio.denom().into_legacy();
-    Some(Bfp::from_wei(wei))
+    let base = U256::from(10).pow(U256::from(18));
+    let wei = ratio.numer().checked_mul(base)? / ratio.denom();
+    Some(Bfp::from_wei(wei.into_legacy()))
 }

@@ -1,11 +1,9 @@
 use {
     alloy::{
-        primitives::{Address, U256},
+        primitives::{Address, B256, Bytes, U256},
         sol_types::SolCall,
     },
     contracts::alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
-    ethcontract::{Bytes, H256},
-    ethrpc::alloy::conversions::IntoAlloy,
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -17,10 +15,10 @@ use {
 pub struct BalancerSwapGivenOutInteraction {
     pub settlement: Address,
     pub vault: Address,
-    pub pool_id: H256,
+    pub pool_id: B256,
     pub asset_in_max: TokenAmount,
     pub asset_out: TokenAmount,
-    pub user_data: Bytes<Vec<u8>>,
+    pub user_data: Bytes,
 }
 
 /// An impossibly distant future timestamp. Note that we use `0x80000...00`
@@ -31,12 +29,12 @@ pub static NEVER: LazyLock<U256> = LazyLock::new(|| U256::from(1) << 255);
 impl BalancerSwapGivenOutInteraction {
     pub fn encode_swap(&self) -> EncodedInteraction {
         let single_swap = IVault::SingleSwap {
-            poolId: self.pool_id.into_alloy(),
+            poolId: self.pool_id,
             kind: 1, // GivenOut
             assetIn: self.asset_in_max.token,
             assetOut: self.asset_out.token,
             amount: self.asset_out.amount,
-            userData: self.user_data.clone().into_alloy(),
+            userData: self.user_data.clone(),
         };
         let funds = IVault::FundManagement {
             sender: self.settlement,
@@ -73,7 +71,7 @@ mod tests {
         let interaction = BalancerSwapGivenOutInteraction {
             settlement: Address::from_slice(&[0x02; 20]),
             vault: vault_address,
-            pool_id: H256([0x03; 32]),
+            pool_id: B256::repeat_byte(0x03),
             asset_in_max: TokenAmount::new(
                 Address::repeat_byte(0x04),
                 alloy::primitives::U256::from(1_337_000_000_000_000_000_000u128),

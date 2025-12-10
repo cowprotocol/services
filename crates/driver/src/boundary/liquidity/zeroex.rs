@@ -64,8 +64,10 @@ pub fn to_domain(
     let domain = zeroex::LimitOrder {
         order,
         fillable: Amounts {
-            maker: limit_order.sell_amount.as_u128(),
-            taker: limit_order.buy_amount.as_u128(),
+            maker: u128::try_from(limit_order.sell_amount)
+                .expect("value should be lower than u128::MAX"),
+            taker: u128::try_from(limit_order.buy_amount)
+                .expect("value should be lower than u128::MAX"),
         },
         zeroex: handler.zeroex.clone(),
     };
