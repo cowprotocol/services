@@ -146,7 +146,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     );
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
-    #[cfg(all(unix, feature = "jemalloc-profiling"))]
+    #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
@@ -569,7 +569,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
+    let mut maintenance = Maintenance::new(
+        settlement_event_indexer,
+        db_write.clone(),
+        args.max_maintenance_timeout,
+    );
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {

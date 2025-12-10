@@ -267,6 +267,13 @@ pub struct Arguments {
     /// and not cut any auctions.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub enable_leader_lock: bool,
+
+    /// Limits the amount of time the autopilot may spend running the
+    /// maintenance logic between 2 auctions. When this times out we prefer
+    /// running a not fully updated auction over stalling the protocol any
+    /// further.
+    #[clap(long, env, default_value = "5s", value_parser = humantime::parse_duration)]
+    pub max_maintenance_timeout: Duration,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -399,6 +406,7 @@ impl std::fmt::Display for Arguments {
             disable_1271_order_balance_filter,
             disable_1271_order_sig_filter,
             enable_leader_lock,
+            max_maintenance_timeout,
         } = self;
 
         write!(f, "{shared}")?;
@@ -481,6 +489,7 @@ impl std::fmt::Display for Arguments {
             "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
+        writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
         Ok(())
     }
 }

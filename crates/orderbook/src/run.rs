@@ -71,7 +71,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
-    #[cfg(all(unix, feature = "jemalloc-profiling"))]
+    #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
     run(args).await;
 }
