@@ -73,6 +73,7 @@ impl CoinGecko {
 
         let chain = match chain {
             Chain::Mainnet => "ethereum".to_string(),
+            Chain::MainnetFork => "ethereum".to_string(),
             Chain::Gnosis => "xdai".to_string(),
             Chain::ArbitrumOne => "arbitrum-one".to_string(),
             Chain::Base => "base".to_string(),

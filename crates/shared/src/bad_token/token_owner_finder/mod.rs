@@ -201,6 +201,7 @@ impl TokenOwnerFindingStrategy {
     pub fn defaults_for_network(chain: &Chain) -> &'static [Self] {
         match chain {
             Chain::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            Chain::MainnetFork => &[Self::Liquidity],
             Chain::Gnosis => &[Self::Liquidity, Self::Blockscout],
             Chain::Sepolia
             | Chain::Goerli
