@@ -135,12 +135,12 @@ async fn single_limit_order_test(web3: Web3) {
     let (jit_order, jit_order_uid) = JitOrder {
         owner: trader.address().into_legacy(),
         sell: Asset {
-            amount: to_wei(10),
-            token: token.address().into_legacy(),
+            amount: eth(10),
+            token: *token.address(),
         },
         buy: Asset {
-            amount: to_wei(1),
-            token: onchain.contracts().weth.address().into_legacy(),
+            amount: eth(1),
+            token: *onchain.contracts().weth.address(),
         },
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -157,20 +157,20 @@ async fn single_limit_order_test(web3: Web3) {
     mock_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token.address().into_legacy(), to_wei(1)),
-            (onchain.contracts().weth.address().into_legacy(), to_wei(1)),
+            (*token.address(), eth(1)),
+            (*onchain.contracts().weth.address(), eth(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
                 order: jit_order,
                 // Making it 9 + 1 so we cover the edge case of fill-or-kill solution mismatches
                 // when observing settlements https://github.com/cowprotocol/services/pull/3440
-                executed_amount: to_wei(9),
-                fee: Some(to_wei(1)),
+                executed_amount: eth(9),
+                fee: Some(eth(1)),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: order.sell_amount.into_legacy(),
-                fee: Some(0.into()),
+                executed_amount: order.sell_amount,
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_id.0),
             }),
         ],

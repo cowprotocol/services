@@ -6,6 +6,7 @@ use {
             setup::{Order, OrderQuote, ab_order, ab_pool, ab_solution, setup, test_solver},
         },
     },
+    alloy::primitives::U256,
     chrono::Utc,
     std::time::Duration,
 };
@@ -264,7 +265,7 @@ async fn filtering() {
         .order(
             Order {
                 sell_amount: "4999999999900.002".ether().into_wei(),
-                surplus_factor: 1.into(),
+                surplus_factor: U256::ONE,
                 ..ab_order()
             }
                 .rename("fourth order")

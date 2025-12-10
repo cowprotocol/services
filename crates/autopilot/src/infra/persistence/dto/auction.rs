@@ -20,7 +20,7 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
         prices: auction
             .prices
             .into_iter()
-            .map(|(key, value)| (key.into(), value.get().into()))
+            .map(|(key, value)| (key.0.into_legacy(), value.get().0.into_legacy()))
             .collect(),
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
@@ -69,7 +69,8 @@ impl Auction {
                 .prices
                 .into_iter()
                 .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                    Price::try_new(value.into_alloy().into())
+                        .map(|price| (eth::TokenAddress(key.into_alloy()), price))
                 })
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners: self

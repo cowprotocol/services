@@ -15,8 +15,8 @@ use {
         },
         util::conv::U256Ext,
     },
+    alloy::primitives::{U512, ruint::UintTryFrom},
     error::Math,
-    ethrpc::alloy::conversions::IntoLegacy,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
     std::collections::HashMap,
 };
@@ -55,7 +55,7 @@ impl Trade {
         let surplus_in_surplus_token = {
             let user_surplus = self.surplus_over_limit_price()?.0;
             let fees: eth::U256 = self.protocol_fees(fee_policies)?.into_iter().try_fold(
-                eth::U256::zero(),
+                eth::U256::ZERO,
                 |acc, i| {
                     acc.checked_add(i.fee.amount.0)
                         .ok_or(Error::Math(Math::Overflow))
@@ -79,12 +79,13 @@ impl Trade {
                 // to avoid loss of precision because we work with integers we first multiply
                 // and then divide:
                 // buy_amount = surplus * buy_price / sell_price
-                let surplus_in_buy_tokens: eth::U256 = surplus_in_surplus_token
-                    .full_mul(self.buy.amount.0)
-                    .checked_div(self.sell.amount.0.into())
-                    .ok_or(Error::Math(Math::DivisionByZero))?
-                    .try_into()
-                    .map_err(|_| Error::Math(Math::Overflow))?;
+                let surplus_in_buy_tokens = surplus_in_surplus_token
+                    .widening_mul(self.buy.amount.0)
+                    .checked_div(U512::from(self.sell.amount.0))
+                    .ok_or(Error::Math(Math::DivisionByZero))?;
+                let surplus_in_buy_tokens: eth::U256 =
+                    eth::U256::uint_try_from(surplus_in_buy_tokens)
+                        .map_err(|_| Error::Math(Math::Overflow))?;
 
                 // Afterwards we convert the buy token surplus to the native token.
                 native_price_buy.in_eth(surplus_in_buy_tokens.into())
@@ -348,7 +349,7 @@ impl Trade {
         // negative surplus is not error in this case, as solutions often have no
         // improvement over quote which results in negative surplus
         if let Err(error::Math::Negative) = surplus {
-            return Ok(eth::SurplusTokenAmount(0.into()));
+            return Ok(eth::SurplusTokenAmount(eth::U256::ZERO));
         }
         Ok(surplus?)
     }
@@ -384,9 +385,9 @@ impl Trade {
                 side: self.side,
             },
             Quote {
-                sell: quote.sell_amount.into_legacy().into(),
-                buy: quote.buy_amount.into_legacy().into(),
-                fee: quote.fee.into_legacy().into(),
+                sell: quote.sell_amount.into(),
+                buy: quote.buy_amount.into(),
+                fee: quote.fee.into(),
             },
         )?;
         self.surplus_over(&self.prices.custom, quote)

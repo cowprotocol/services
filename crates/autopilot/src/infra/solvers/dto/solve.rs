@@ -51,9 +51,9 @@ impl Request {
                 .prices
                 .iter()
                 .map(|(address, price)| Token {
-                    address: address.to_owned().into(),
-                    price: Some(price.get().into()),
-                    trusted: trusted_tokens.contains(&(address.0)),
+                    address: address.to_owned().0.into_legacy(),
+                    price: Some(price.get().0.into_legacy()),
+                    trusted: trusted_tokens.contains(&(address.0.into_legacy())),
                 })
                 .chain(trusted_tokens.iter().map(|&address| Token {
                     address,
@@ -116,7 +116,7 @@ impl Solution {
         Ok(domain::competition::Solution::new(
             self.solution_id,
             self.submission_address.into_alloy(),
-            domain::competition::Score::try_new(self.score.into())?,
+            domain::competition::Score::try_new(self.score.into_alloy().into())?,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
@@ -124,7 +124,8 @@ impl Solution {
             self.clearing_prices
                 .into_iter()
                 .map(|(token, price)| {
-                    domain::auction::Price::try_new(price.into()).map(|price| (token.into(), price))
+                    domain::auction::Price::try_new(price.into_alloy().into())
+                        .map(|price| (token.into_alloy().into(), price))
                 })
                 .collect::<Result<_, _>>()?,
         ))
@@ -160,19 +161,19 @@ impl TradedOrder {
     pub fn into_domain(self) -> domain::competition::TradedOrder {
         domain::competition::TradedOrder {
             sell: eth::Asset {
-                token: self.sell_token.into(),
-                amount: self.limit_sell.into(),
+                token: self.sell_token.into_alloy().into(),
+                amount: self.limit_sell.into_alloy().into(),
             },
             buy: eth::Asset {
-                token: self.buy_token.into(),
-                amount: self.limit_buy.into(),
+                token: self.buy_token.into_alloy().into(),
+                amount: self.limit_buy.into_alloy().into(),
             },
             side: match self.side {
                 Side::Buy => domain::auction::order::Side::Buy,
                 Side::Sell => domain::auction::order::Side::Sell,
             },
-            executed_sell: self.executed_sell.into(),
-            executed_buy: self.executed_buy.into(),
+            executed_sell: self.executed_sell.into_alloy().into(),
+            executed_buy: self.executed_buy.into_alloy().into(),
         }
     }
 }

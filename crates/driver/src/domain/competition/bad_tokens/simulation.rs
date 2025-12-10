@@ -7,7 +7,7 @@ use {
         },
         infra::{self, observe::metrics},
     },
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::FutureExt,
     model::interaction::InteractionData,
     shared::{
@@ -69,12 +69,12 @@ impl Detector {
                     .pre_interactions
                     .iter()
                     .map(|i| InteractionData {
-                        target: i.target.0.into_alloy(),
-                        value: i.value.0.into_alloy(),
+                        target: i.target,
+                        value: i.value.0,
                         call_data: i.call_data.0.clone(),
                     })
                     .collect();
-                let trader = order.trader().0.0.into_alloy();
+                let trader = order.trader().0;
                 let sell_amount = match order.partial {
                     order::Partial::Yes { available } => available.0,
                     order::Partial::No => order.sell.amount.0,
@@ -83,7 +83,7 @@ impl Detector {
                 async move {
                     let result = inner
                         .detector
-                        .test_transfer(trader, sell_token.0.0.into_alloy(), sell_amount, &pre_interactions)
+                        .test_transfer(trader, sell_token.0.0, sell_amount.into_legacy(), &pre_interactions)
                         .await;
                     match result {
                         Err(err) => {

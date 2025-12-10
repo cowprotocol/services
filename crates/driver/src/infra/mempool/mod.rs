@@ -6,7 +6,10 @@ use {
     },
     alloy::{consensus::Transaction, providers::ext::TxPoolApi},
     anyhow::Context,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -87,8 +90,9 @@ impl Mempool {
     pub async fn get_nonce(&self, address: eth::Address) -> Result<eth::U256, mempools::Error> {
         self.transport
             .eth()
-            .transaction_count(address.into(), self.config.nonce_block_number)
+            .transaction_count(address.into_legacy(), self.config.nonce_block_number)
             .await
+            .map(IntoAlloy::into_alloy)
             .map_err(|err| {
                 mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
             })
@@ -107,15 +111,15 @@ impl Mempool {
         let submission =
             ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
                 .from(solver.account().clone())
-                .to(tx.to.into())
-                .nonce(nonce)
+                .to(tx.to.into_legacy())
+                .nonce(nonce.into_legacy())
                 .gas_price(ethcontract::GasPrice::Eip1559 {
-                    max_fee_per_gas: gas_price.max().into(),
-                    max_priority_fee_per_gas: gas_price.tip().into(),
+                    max_fee_per_gas: gas_price.max().0.0.into_legacy(),
+                    max_priority_fee_per_gas: gas_price.tip().0.0.into_legacy(),
                 })
                 .data(tx.input.into())
-                .value(tx.value.0)
-                .gas(gas_limit.0)
+                .value(tx.value.0.into_legacy())
+                .gas(gas_limit.0.into_legacy())
                 .access_list(web3::types::AccessList::from(tx.access_list))
                 .resolve(ethcontract::transaction::ResolveCondition::Pending)
                 .send()
@@ -162,7 +166,7 @@ impl Mempool {
         let tx_pool_content = self
             .transport
             .alloy
-            .txpool_content_from(signer.0.into_alloy())
+            .txpool_content_from(signer)
             .await
             .context("failed to query pending transactions")?;
 
@@ -171,7 +175,7 @@ impl Mempool {
             .pending
             .into_iter()
             .chain(tx_pool_content.queued)
-            .find(|(_signer, tx)| tx.nonce() == nonce.as_u64())
+            .find(|(_signer, tx)| eth::U256::from(tx.nonce()) == nonce)
             .map(|(_, tx)| tx);
         Ok(pending_tx)
     }

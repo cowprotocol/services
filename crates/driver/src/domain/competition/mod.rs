@@ -21,7 +21,7 @@ use {
         },
         util::{Bytes, math},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     std::{
@@ -127,15 +127,15 @@ impl Competition {
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let settlement_contract = self.eth.contracts().settlement().address();
-        let solver_address = self.solver.account().address();
+        let settlement_contract = *self.eth.contracts().settlement().address();
+        let solver_address = self.solver.account().address().into_alloy();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         // Add the CoW AMM orders to the auction
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let settlement = settlement_contract.into_legacy();
+        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
@@ -155,13 +155,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(
-                auction,
-                balances,
-                app_data,
-                cow_amm_orders,
-                &eth::Address(settlement),
-            )
+            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
         })
         .await;
 
@@ -398,9 +392,9 @@ impl Competition {
     // we allocate balances for the most relevants first.
     fn sort_orders(
         mut auction: Auction,
-        solver: eth::H160,
+        solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        _settlement_contract: eth::H160,
+        _settlement_contract: eth::Address,
     ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
@@ -499,13 +493,8 @@ impl Competition {
             //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(
-                        available.0.into_alloy(),
-                        allocated_balance.0.into_alloy(),
-                        max_sell.0.into_alloy(),
-                    )
-                    .unwrap_or_default()
-                    .into_legacy(),
+                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                        .unwrap_or_default(),
                 );
             }
             if order.available().is_zero() {

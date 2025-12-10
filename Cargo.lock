@@ -6552,6 +6552,7 @@ dependencies = [
 name = "solvers-dto"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "app-data",
  "bigdecimal",
  "bytes-hex",

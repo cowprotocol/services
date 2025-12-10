@@ -16,7 +16,6 @@ use {
         util,
     },
     chrono::Utc,
-    ethrpc::alloy::conversions::IntoLegacy,
     std::{
         collections::{HashMap, HashSet},
         iter,
@@ -26,7 +25,7 @@ use {
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
-    pub clearing_prices: HashMap<eth::H160, eth::U256>,
+    pub clearing_prices: HashMap<eth::Address, eth::U256>,
     pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
@@ -48,9 +47,7 @@ impl Quote {
             interactions: solution
                 .interactions()
                 .iter()
-                .map(|i| {
-                    encode::interaction(i, eth.contracts().settlement().address().into_legacy())
-                })
+                .map(|i| encode::interaction(i, eth.contracts().settlement().address()))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .flatten()
@@ -191,7 +188,7 @@ impl Order {
     fn buy(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
-                amount: eth::U256::one().into(),
+                amount: eth::U256::ONE.into(),
                 token: self.tokens.buy,
             },
             order::Side::Buy => eth::Asset {
@@ -219,7 +216,9 @@ impl Order {
             // contract level. Requiring to trade more than `type(uint112).max`
             // is unlikely and would not work with Uniswap V2 anyway.
             order::Side::Buy => eth::Asset {
-                amount: (eth::U256::one() << 144).into(),
+                // NOTE: the saturating strategy here is slightly irrelevant since we know that 1 <<
+                // 144 fits within U256
+                amount: (eth::U256::ONE.saturating_shl(144)).into(),
                 token: self.tokens.sell,
             },
         }
@@ -269,7 +268,7 @@ mod encode {
                 allowance::{Approval, Required},
             },
         },
-        ethcontract::H160,
+        alloy::primitives::Address,
         num::rational::Ratio,
     };
 
@@ -277,7 +276,7 @@ mod encode {
 
     pub(super) fn interaction(
         interaction: &solution::Interaction,
-        settlement: H160,
+        settlement: &Address,
     ) -> Result<Vec<eth::Interaction>, solution::encoding::Error> {
         let slippage = solution::slippage::Parameters {
             relative: Ratio::new_raw(DEFAULT_QUOTE_SLIPPAGE_BPS.into(), 10_000.into()),
@@ -289,7 +288,7 @@ mod encode {
         let encoded = match interaction {
             solution::Interaction::Custom(interaction) => eth::Interaction {
                 value: interaction.value,
-                target: interaction.target.0.into(),
+                target: interaction.target.0,
                 call_data: interaction.call_data.clone(),
             },
             solution::Interaction::Liquidity(liquidity) => {

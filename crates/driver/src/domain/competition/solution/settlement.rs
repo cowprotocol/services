@@ -376,7 +376,7 @@ impl Gas {
         // will not exceed the remaining space in the block next and ignore transactions
         // whose gas limit exceed the remaining space (without simulating the actual
         // gas required).
-        let max_gas = eth::Gas(block_limit.0 / 2);
+        let max_gas = eth::Gas(block_limit.0 / eth::U256::from(2));
         if estimate > max_gas {
             return Err(solution::Error::GasLimitExceeded(estimate, max_gas));
         }
@@ -388,9 +388,7 @@ impl Gas {
         // the end of execution, so we want to increase gas limit enough so
         // those solutions don't revert with out of gas error.
         const GAS_LIMIT_FACTOR: f64 = 2.0;
-        let estimate_with_buffer =
-            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
-                .into();
+        let estimate_with_buffer = eth::U256::from(f64::from(estimate.0) * GAS_LIMIT_FACTOR).into();
 
         Ok(Self {
             estimate,

@@ -219,7 +219,7 @@ fn default_additional_tip_percentage() -> f64 {
 
 /// 1000 gwei
 fn default_gas_price_cap() -> eth::U256 {
-    eth::U256::from(1000) * eth::U256::exp10(9)
+    eth::U256::from(1000) * eth::U256::from(10).pow(eth::U256::from(9))
 }
 
 fn default_target_confirm_time() -> Duration {
@@ -232,7 +232,7 @@ fn default_retry_interval() -> Duration {
 
 /// 3 gwei
 fn default_max_additional_tip() -> eth::U256 {
-    eth::U256::from(3) * eth::U256::exp10(9)
+    eth::U256::from(3) * eth::U256::from(10).pow(eth::U256::from(9))
 }
 
 fn default_soft_cancellations_flag() -> bool {
@@ -304,7 +304,7 @@ struct SolverConfig {
 
     /// Which `tx.origin` is required to make a quote simulation pass.
     #[serde(default)]
-    quote_tx_origin: Option<eth::H160>,
+    quote_tx_origin: Option<eth::Address>,
 
     /// Maximum HTTP response size the driver will accept in bytes.
     #[serde(default = "default_response_size_limit_max_bytes")]
@@ -351,7 +351,7 @@ enum Account {
     /// An address is used to identify the account for signing, relying on the
     /// connected node's account management features. This can also be used to
     /// start the driver in a dry-run mode.
-    Address(eth::H160),
+    Address(eth::Address),
 }
 
 #[serde_as]
@@ -390,16 +390,16 @@ struct Slippage {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
-    gp_v2_settlement: Option<eth::H160>,
+    gp_v2_settlement: Option<eth::Address>,
 
     /// Override the default address of the WETH contract.
-    weth: Option<eth::H160>,
+    weth: Option<eth::Address>,
 
     /// Override the default address of the Balances contract.
-    balances: Option<eth::H160>,
+    balances: Option<eth::Address>,
 
     /// Override the default address of the Signatures contract.
-    signatures: Option<eth::H160>,
+    signatures: Option<eth::Address>,
 
     /// List of all cow amm factories with the corresponding helper contract.
     #[serde(default)]
@@ -407,16 +407,16 @@ struct ContractsConfig {
 
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
-    flashloan_router: Option<eth::H160>,
+    flashloan_router: Option<eth::Address>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CowAmmConfig {
     /// CoW AMM factory address.
-    pub factory: eth::H160,
+    pub factory: eth::Address,
     /// Which helper contract to use for interfacing with CoW AMMs.
-    pub helper: eth::H160,
+    pub helper: eth::Address,
 }
 
 #[derive(Debug, Deserialize)]
@@ -459,7 +459,7 @@ struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
     #[serde(default)]
-    base_tokens: Vec<eth::H160>,
+    base_tokens: Vec<eth::Address>,
 
     /// Liquidity provided by a Uniswap V2 compatible contract.
     #[serde(default)]
@@ -496,7 +496,7 @@ enum UniswapV2Config {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// The address of the Uniswap V2 compatible router contract.
-        router: eth::H160,
+        router: eth::Address,
 
         /// The digest of the pool initialization code.
         pool_code: eth::H256,
@@ -529,7 +529,7 @@ enum SwaprConfig {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// The address of the Swapr compatible router contract.
-        router: eth::H160,
+        router: eth::Address,
 
         /// The digest of the pool initialization code.
         pool_code: eth::H256,
@@ -576,7 +576,7 @@ enum UniswapV3Config {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// Addresses of Uniswap V3 compatible router contracts.
-        router: eth::H160,
+        router: eth::Address,
 
         /// How many pools to initialize during start up.
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
@@ -637,7 +637,7 @@ enum BalancerV2Config {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// Addresses of Balancer V2 compatible vault contract.
-        vault: eth::H160,
+        vault: eth::Address,
 
         /// The weighted pool factory contract addresses.
         #[serde(default)]
@@ -838,7 +838,7 @@ fn default_simulation_bad_token_max_age() -> Duration {
 pub struct BadTokenDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
     #[serde(default)]
-    pub token_supported: HashMap<eth::H160, bool>,
+    pub token_supported: HashMap<eth::Address, bool>,
 
     /// Whether the solver opted into detecting unsupported
     /// tokens with `trace_callMany` based simulation.

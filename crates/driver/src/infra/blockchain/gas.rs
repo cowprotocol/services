@@ -72,7 +72,7 @@ impl GasPriceEstimator {
                 } => (max_additional_tip, additional_tip_percentage),
             })
             .next()
-            .unwrap_or((eth::U256::zero(), 0.));
+            .unwrap_or((eth::U256::ZERO, 0.));
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()
@@ -109,20 +109,19 @@ impl GasPriceEstimator {
             // the driver supports tweaking the tx gas price tip in case the gas
             // price estimator is systematically too low => compute configured tip bump
             let (max_additional_tip, tip_percentage_increase) = self.additional_tip;
-            let additional_tip = max_additional_tip
-                .to_f64_lossy()
+            let additional_tip = f64::from(max_additional_tip)
                 .min(estimate.max_priority_fee_per_gas * tip_percentage_increase);
 
             // make sure we tip at least some configurable minimum amount
             std::cmp::max(
                 self.min_priority_fee,
-                eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas + additional_tip),
+                eth::U256::from(estimate.max_priority_fee_per_gas + additional_tip),
             )
         };
 
         // make sure the used max fee per gas is at least big enough to cover the tip -
         // otherwise the tx will be rejected by the node immediately
-        let suggested_max_fee_per_gas = eth::U256::from_f64_lossy(estimate.max_fee_per_gas);
+        let suggested_max_fee_per_gas = eth::U256::from(estimate.max_fee_per_gas);
         let suggested_max_fee_per_gas =
             std::cmp::max(suggested_max_fee_per_gas, max_priority_fee_per_gas);
         if suggested_max_fee_per_gas > self.max_fee_per_gas {
@@ -135,7 +134,7 @@ impl GasPriceEstimator {
         Ok(eth::GasPrice::new(
             suggested_max_fee_per_gas.into(),
             max_priority_fee_per_gas.into(),
-            eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
+            eth::U256::from(estimate.base_fee_per_gas).into(),
         ))
     }
 }

@@ -10,7 +10,7 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::{Web3, alloy::conversions::IntoLegacy},
+    ethrpc::Web3,
 };
 
 #[derive(Debug, Clone)]
@@ -145,7 +145,7 @@ impl Contracts {
     /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
     /// Gnosis Chain)
     pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
-        self.weth.address().into_legacy().into()
+        (*self.weth.address()).into()
     }
 
     pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {
