@@ -127,7 +127,7 @@ impl DataAggregator {
             eth.web3(),
             shared::signature_validator::Contracts {
                 settlement: eth.contracts().settlement().clone(),
-                vault_relayer: eth.contracts().vault_relayer().0,
+                vault_relayer: eth.contracts().vault_relayer().0.into_legacy(),
                 signatures: eth.contracts().signatures().clone(),
             },
             eth.balance_overrider(),
@@ -137,7 +137,7 @@ impl DataAggregator {
             .contracts()
             .cow_amm_helper_by_factory()
             .iter()
-            .map(|(factory, helper)| (factory.0.into_alloy(), helper.0.into_alloy()))
+            .map(|(factory, helper)| (factory.0, helper.0))
             .collect();
         let cow_amm_cache =
             cow_amm::Cache::new(eth.web3().alloy.clone(), cow_amm_helper_by_factory);
@@ -273,8 +273,8 @@ impl Utilities {
                         && order.app_data.flashloan() == first.app_data.flashloan()
                 });
                 Query {
-                    owner: trader.0.0.into_alloy(),
-                    token: token.0.0.into_alloy(),
+                    owner: trader.0,
+                    token: token.0.0,
                     source: match source {
                         SellTokenBalance::Erc20 => SellTokenSource::Erc20,
                         SellTokenBalance::Internal => SellTokenSource::Internal,
@@ -285,8 +285,8 @@ impl Utilities {
                             .pre_interactions
                             .iter()
                             .map(|i| InteractionData {
-                                target: i.target.0.into_alloy(),
-                                value: i.value.0.into_alloy(),
+                                target: i.target,
+                                value: i.value.0,
                                 call_data: i.call_data.0.clone(),
                             })
                             .collect()
@@ -315,11 +315,11 @@ impl Utilities {
             .into_iter()
             .zip(balances)
             .filter_map(|(query, balance)| {
-                let balance = balance.ok()?;
+                let balance = balance.ok()?.into_alloy();
                 Some((
                     (
-                        order::Trader(query.owner.into_legacy().into()),
-                        query.token.into_legacy().into(),
+                        order::Trader(query.owner),
+                        query.token.into(),
                         match query.source {
                             SellTokenSource::Erc20 => SellTokenBalance::Erc20,
                             SellTokenSource::Internal => SellTokenBalance::Internal,
@@ -420,9 +420,9 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(&eth::TokenAddress(eth::ContractAddress(t.into_legacy())))
+                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
                                 .and_then(|token| token.price)
-                                .map(|price| price.0.0.into_alloy())
+                                .map(|price| price.0.0)
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
@@ -449,21 +449,18 @@ impl Utilities {
                         .uid(&domain_separator, &amm.into_legacy())
                         .0
                         .into(),
-                    receiver: template
-                        .order
-                        .receiver
-                        .map(|addr| addr.into_legacy().into()),
+                    receiver: template.order.receiver,
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
                         .into(),
                     valid_to: template.order.valid_to.into(),
                     buy: eth::Asset {
-                        amount: template.order.buy_amount.into_legacy().into(),
-                        token: template.order.buy_token.into_legacy().into(),
+                        amount: template.order.buy_amount.into(),
+                        token: template.order.buy_token.into(),
                     },
                     sell: eth::Asset {
-                        amount: template.order.sell_amount.into_legacy().into(),
-                        token: template.order.sell_token.into_legacy().into(),
+                        amount: template.order.sell_amount.into(),
+                        token: template.order.sell_token.into(),
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
@@ -473,12 +470,8 @@ impl Utilities {
                     partial: match template.order.partially_fillable {
                         true => order::Partial::Yes {
                             available: match template.order.kind {
-                                OrderKind::Sell => {
-                                    order::TargetAmount(template.order.sell_amount.into_legacy())
-                                }
-                                OrderKind::Buy => {
-                                    order::TargetAmount(template.order.buy_amount.into_legacy())
-                                }
+                                OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
+                                OrderKind::Buy => order::TargetAmount(template.order.buy_amount),
                             },
                         },
                         false => order::Partial::No,
@@ -497,7 +490,7 @@ impl Utilities {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
                             data: Bytes(bytes),
-                            signer: amm.into_legacy().into(),
+                            signer: amm,
                         },
                         _ => {
                             tracing::warn!(

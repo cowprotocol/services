@@ -16,7 +16,6 @@ use {
         },
     },
     chrono::Utc,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -283,10 +282,7 @@ impl Solution {
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
                 eth.erc20(required.0.token)
-                    .allowance(
-                        settlement_contract.address().into_legacy().into(),
-                        required.0.spender,
-                    )
+                    .allowance(*settlement_contract.address(), required.0.spender)
                     .await
                     .map(|existing| (required, existing))
             }))
@@ -342,8 +338,8 @@ impl Solution {
         // Scale prices
         let mut prices = self.prices.clone();
         for (token, price) in other.prices.iter() {
-            let scaled = number::conversions::big_rational_to_u256(
-                &(number::conversions::u256_to_big_rational(price) * &factor),
+            let scaled = number::conversions::alloy::big_rational_to_u256(
+                &(number::conversions::alloy::u256_to_big_rational(price) * &factor),
             )
             .map_err(error::Merge::Math)?;
             match prices.entry(*token) {
@@ -425,8 +421,8 @@ impl Solution {
         for allowance in allowances {
             let amount = normalized
                 .entry((allowance.0.token, allowance.0.spender))
-                .or_insert(eth::U256::zero());
-            *amount = amount.saturating_add(allowance.0.amount.into_legacy());
+                .or_insert(eth::U256::ZERO);
+            *amount = amount.saturating_add(allowance.0.amount);
         }
         normalized
             .into_iter()
@@ -434,7 +430,7 @@ impl Solution {
                 eth::Allowance {
                     token,
                     spender,
-                    amount: amount.into_alloy(),
+                    amount,
                 }
                 .into()
             })
@@ -547,8 +543,8 @@ fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
             let first_price = first[token];
             let second_price = second[token];
             BigRational::new(
-                number::conversions::u256_to_big_int(&first_price),
-                number::conversions::u256_to_big_int(&second_price),
+                number::conversions::alloy::u256_to_big_int(&first_price),
+                number::conversions::alloy::u256_to_big_int(&second_price),
             )
         })
         .collect();

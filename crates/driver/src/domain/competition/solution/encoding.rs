@@ -13,11 +13,13 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
-    alloy::sol_types::SolCall,
+    alloy::{
+        primitives::{Address, U256},
+        sol_types::SolCall,
+    },
     contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
-    ethcontract::H160,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
+    num::Zero,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -53,7 +55,7 @@ pub fn tx(
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
     let mut post_interactions = solution.post_interactions.clone();
-    let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
+    let mut native_unwrap = eth::TokenAmount(eth::U256::ZERO);
 
     // Encode uniform clearing price vector
     for (token, amount) in solution
@@ -61,8 +63,8 @@ pub fn tx(
         .into_iter()
         .sorted_by_cached_key(|(token, _amount)| *token)
     {
-        tokens.push(token.0.0.into_alloy());
-        clearing_prices.push(amount.into_alloy());
+        tokens.push(token.into());
+        clearing_prices.push(amount);
     }
 
     // Encode trades with custom clearing prices
@@ -98,12 +100,12 @@ pub fn tx(
                         // indices are set below
                         sell_token_index: Default::default(),
                         buy_token_index: Default::default(),
-                        receiver: trade.order().receiver.unwrap_or_default().into(),
+                        receiver: trade.order().receiver.unwrap_or_default(),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
                         app_data: trade.order().app_data.hash().0.0.into(),
-                        fee_amount: eth::U256::zero(),
+                        fee_amount: eth::U256::ZERO,
                         flags: Flags {
                             side: trade.order().side,
                             partially_fillable: matches!(
@@ -136,12 +138,12 @@ pub fn tx(
                         // indices are set below
                         sell_token_index: Default::default(),
                         buy_token_index: Default::default(),
-                        receiver: trade.order().receiver.into(),
+                        receiver: trade.order().receiver,
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
                         app_data: trade.order().app_data.0.0.into(),
-                        fee_amount: eth::U256::zero(),
+                        fee_amount: eth::U256::ZERO,
                         flags: Flags {
                             side: trade.order().side,
                             partially_fillable: matches!(
@@ -158,13 +160,13 @@ pub fn tx(
                 )
             }
         };
-        tokens.push(price.sell_token.into_alloy());
-        tokens.push(price.buy_token.into_alloy());
-        clearing_prices.push(price.sell_price.into_alloy());
-        clearing_prices.push(price.buy_price.into_alloy());
+        tokens.push(price.sell_token);
+        tokens.push(price.buy_token);
+        clearing_prices.push(price.sell_price);
+        clearing_prices.push(price.buy_price);
 
-        trade.sell_token_index = (tokens.len() - 2).into();
-        trade.buy_token_index = (tokens.len() - 1).into();
+        trade.sell_token_index = U256::from(tokens.len() - 2);
+        trade.buy_token_index = U256::from(tokens.len() - 1);
 
         trades.push(trade);
     }
@@ -196,11 +198,9 @@ pub fn tx(
                 target: interaction.target.into(),
                 call_data: interaction.call_data.clone(),
             },
-            competition::solution::Interaction::Liquidity(liquidity) => liquidity_interaction(
-                liquidity,
-                &slippage,
-                contracts.settlement().address().into_legacy(),
-            )?,
+            competition::solution::Interaction::Liquidity(liquidity) => {
+                liquidity_interaction(liquidity, &slippage, contracts.settlement().address())?
+            }
         })
     }
 
@@ -238,17 +238,14 @@ pub fn tx(
     } else if has_wrappers {
         encode_wrapper_settlement(solution, settle_calldata)
     } else {
-        (
-            contracts.settlement().address().into_legacy().into(),
-            settle_calldata,
-        )
+        (*contracts.settlement().address(), settle_calldata)
     };
 
     Ok(eth::Tx {
         from: solution.solver().address(),
         to,
         input: calldata.into(),
-        value: Ether(0.into()),
+        value: Ether::zero(),
         access_list: Default::default(),
     })
 }
@@ -274,10 +271,10 @@ fn encode_flashloan_settlement(
         .flashloans
         .values()
         .map(|flashloan| LoanRequest::Data {
-            amount: flashloan.amount.0.into_alloy(),
-            borrower: flashloan.protocol_adapter.0.into_alloy(),
-            lender: flashloan.liquidity_provider.0.into_alloy(),
-            token: flashloan.token.0.0.into_alloy(),
+            amount: flashloan.amount.0,
+            borrower: flashloan.protocol_adapter.0,
+            lender: flashloan.liquidity_provider.0,
+            token: flashloan.token.0.0,
         })
         .collect();
 
@@ -287,7 +284,7 @@ fn encode_flashloan_settlement(
         .calldata()
         .to_vec();
 
-    Ok((router.address().into_legacy().into(), calldata))
+    Ok((*router.address(), calldata))
 }
 
 /// Encodes a settlement transaction that uses wrapper contracts.
@@ -331,7 +328,7 @@ fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
     for (index, w) in wrappers.iter().enumerate() {
         // Skip first wrapper's address (it's the transaction target)
         if index != 0 {
-            wrapper_data.extend(w.address.0.as_bytes());
+            wrapper_data.extend(w.address.as_slice());
         }
 
         // Encode data length as u16 in native endian, then the data itself
@@ -345,7 +342,7 @@ fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
 pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
-    settlement_contract: H160,
+    settlement_contract: &Address,
 ) -> Result<eth::Interaction, Error> {
     let (input, output) = slippage.apply_to(&slippage::Interaction {
         input: liquidity.input,
@@ -353,21 +350,15 @@ pub fn liquidity_interaction(
     })?;
 
     match liquidity.liquidity.kind.clone() {
-        liquidity::Kind::UniswapV2(pool) => {
-            pool.swap(&input, &output, &settlement_contract.into()).ok()
-        }
-        liquidity::Kind::UniswapV3(pool) => {
-            pool.swap(&input, &output, &settlement_contract.into()).ok()
-        }
+        liquidity::Kind::UniswapV2(pool) => pool.swap(&input, &output, settlement_contract).ok(),
+        liquidity::Kind::UniswapV3(pool) => pool.swap(&input, &output, settlement_contract).ok(),
         liquidity::Kind::BalancerV2Stable(pool) => {
-            pool.swap(&input, &output, &settlement_contract.into()).ok()
+            pool.swap(&input, &output, settlement_contract).ok()
         }
         liquidity::Kind::BalancerV2Weighted(pool) => {
-            pool.swap(&input, &output, &settlement_contract.into()).ok()
+            pool.swap(&input, &output, settlement_contract).ok()
         }
-        liquidity::Kind::Swapr(pool) => {
-            pool.swap(&input, &output, &settlement_contract.into()).ok()
-        }
+        liquidity::Kind::Swapr(pool) => pool.swap(&input, &output, settlement_contract).ok(),
         liquidity::Kind::ZeroEx(limit_order) => limit_order.to_interaction(&input).ok(),
     }
     .ok_or(Error::InvalidInteractionExecution(Box::new(
@@ -380,12 +371,12 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
     let amount: [_; 32] = allowance.amount.to_be_bytes();
     eth::Interaction {
         target: allowance.token.0.into(),
-        value: eth::U256::zero().into(),
+        value: Ether::zero(),
         // selector (4 bytes) + spender (20 byte address padded to 32 bytes) + amount (32 bytes)
         call_data: [
             selector.as_slice(),
             [0; 12].as_slice(),
-            allowance.spender.0.as_bytes(),
+            allowance.spender.as_slice(),
             &amount,
         ]
         .concat()
@@ -395,16 +386,16 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
 
 fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> eth::Interaction {
     eth::Interaction {
-        target: weth.address().into_legacy().into(),
-        value: Ether(0.into()),
-        call_data: Bytes(weth.withdraw(amount.0.into_alloy()).calldata().to_vec()),
+        target: *weth.address(),
+        value: Ether::zero(),
+        call_data: weth.withdraw(amount.0).calldata().to_vec().into(),
     }
 }
 
 struct Trade {
     sell_token_index: eth::U256,
     buy_token_index: eth::U256,
-    receiver: eth::H160,
+    receiver: eth::Address,
     sell_amount: eth::U256,
     buy_amount: eth::U256,
     valid_to: u32,
@@ -416,9 +407,9 @@ struct Trade {
 }
 
 struct Price {
-    sell_token: eth::H160,
+    sell_token: eth::Address,
     sell_price: eth::U256,
-    buy_token: eth::H160,
+    buy_token: eth::Address,
     buy_price: eth::U256,
 }
 
@@ -433,22 +424,22 @@ struct Flags {
 pub mod codec {
     use {
         crate::domain::{competition::order, eth},
+        alloy::primitives::U256,
         contracts::alloy::GPv2Settlement,
-        ethrpc::alloy::conversions::IntoAlloy,
     };
 
     pub(super) fn trade(trade: &super::Trade) -> GPv2Settlement::GPv2Trade::Data {
         GPv2Settlement::GPv2Trade::Data {
-            sellTokenIndex: trade.sell_token_index.into_alloy(),
-            buyTokenIndex: trade.buy_token_index.into_alloy(),
-            receiver: trade.receiver.into_alloy(),
-            sellAmount: trade.sell_amount.into_alloy(),
-            buyAmount: trade.buy_amount.into_alloy(),
+            sellTokenIndex: trade.sell_token_index,
+            buyTokenIndex: trade.buy_token_index,
+            receiver: trade.receiver,
+            sellAmount: trade.sell_amount,
+            buyAmount: trade.buy_amount,
             validTo: trade.valid_to,
             appData: trade.app_data.0.into(),
-            feeAmount: trade.fee_amount.into_alloy(),
-            flags: flags(&trade.flags).into_alloy(),
-            executedAmount: trade.executed_amount.into_alloy(),
+            feeAmount: trade.fee_amount,
+            flags: flags(&trade.flags),
+            executedAmount: trade.executed_amount,
             signature: trade.signature.0.clone().into(),
         }
     }
@@ -481,15 +472,15 @@ pub mod codec {
             order::signature::Scheme::Eip1271 => 0b10,
             order::signature::Scheme::PreSign => 0b11,
         } << 5;
-        result.into()
+        U256::from(result)
     }
 
     pub(super) fn interaction(
         interaction: &eth::Interaction,
     ) -> GPv2Settlement::GPv2Interaction::Data {
         GPv2Settlement::GPv2Interaction::Data {
-            target: interaction.target.0.into_alloy(),
-            value: interaction.value.0.into_alloy(),
+            target: interaction.target,
+            value: interaction.value.0,
             callData: interaction.call_data.0.clone().into(),
         }
     }
@@ -500,31 +491,30 @@ pub mod codec {
                 signature.data.clone()
             }
             order::signature::Scheme::Eip1271 => {
-                super::Bytes([signature.signer.0.as_bytes(), signature.data.0.as_slice()].concat())
+                [signature.signer.as_slice(), signature.data.0.as_slice()]
+                    .concat()
+                    .into()
             }
-            order::signature::Scheme::PreSign => {
-                super::Bytes(signature.signer.0.as_bytes().to_vec())
-            }
+            order::signature::Scheme::PreSign => signature.signer.to_vec().into(),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use {super::*, hex_literal::hex};
+    use {super::*, alloy::primitives::address, hex_literal::hex};
 
     #[test]
     fn test_approve() {
         let allowance = Allowance {
-            token: eth::H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
-            spender: eth::H160::from_slice(&hex!("000000000022D473030F116dDEE9F6B43aC78BA3"))
-                .into(),
+            token: address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").into(),
+            spender: address!("000000000022D473030F116dDEE9F6B43aC78BA3"),
             amount: alloy::primitives::U256::MAX,
         };
         let interaction = approve(&allowance);
         assert_eq!(
             interaction.target,
-            eth::H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
         );
         assert_eq!(
             interaction.call_data.0.as_slice(),

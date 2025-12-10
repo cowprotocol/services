@@ -201,7 +201,7 @@ impl Fulfillment {
                 // Orders with static fees are no longer used, except for quoting purposes, when
                 // the static fee is set to 0. This is expected to be resolved with https://github.com/cowprotocol/services/issues/2543
                 // Once resolved, this code will be simplified as part of https://github.com/cowprotocol/services/issues/2507
-                order::SellAmount(0.into())
+                order::SellAmount(eth::U256::ZERO)
             }
             Fee::Dynamic(fee) => fee,
         }
@@ -303,7 +303,7 @@ impl Fulfillment {
                 // be caught by simulation
                 limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
-                    .unwrap_or(eth::U256::zero())
+                    .unwrap_or(eth::U256::ZERO)
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
@@ -328,7 +328,7 @@ impl Fulfillment {
                 // be caught by simulation
                 executed_buy_amount
                     .checked_sub(limit_buy_amount)
-                    .unwrap_or(eth::U256::zero())
+                    .unwrap_or(eth::U256::ZERO)
             }
         };
         Ok(surplus.into())

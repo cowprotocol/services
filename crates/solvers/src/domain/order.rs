@@ -2,8 +2,8 @@
 
 use {
     crate::{domain::eth, util},
-    ethcontract::H160,
-    ethereum_types::{Address, H256},
+    eth::Address,
+    ethereum_types::H256,
     std::fmt::{self, Debug, Display, Formatter},
 };
 
@@ -149,6 +149,6 @@ pub struct FlashloanHint {
 
 #[derive(Debug, Clone)]
 pub struct WrapperCall {
-    pub address: H160,
+    pub address: eth::Address,
     pub data: Vec<u8>,
 }

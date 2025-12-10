@@ -59,8 +59,8 @@ impl Enso {
             .post(self.url.clone())
             .json(&dto::Request {
                 chain_id: self.chain.id(),
-                from: tx.from.into(),
-                to: tx.to.into(),
+                from: tx.from,
+                to: tx.to,
                 data: tx.input.into(),
                 value: tx.value.into(),
                 gas_limit: GAS_LIMIT,

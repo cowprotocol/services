@@ -18,7 +18,7 @@ pub struct Id(pub eth::H256);
 impl Id {
     /// Extracts the pool address configured in the ID.
     pub fn address(&self) -> eth::ContractAddress {
-        eth::H160::from_slice(&self.0[..20]).into()
+        eth::Address::from_slice(&self.0[..20]).into()
     }
 }
 

@@ -167,7 +167,7 @@ impl RunLoop {
             Metrics::get()
                 .performance_rewards
                 .with_label_values(&[&driver.name])
-                .inc_by(reward.get().0.to_f64_lossy());
+                .inc_by(f64::from(reward.get().0));
             Metrics::get()
                 .wins
                 .with_label_values(&[&driver.name])

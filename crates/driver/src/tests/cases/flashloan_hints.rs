@@ -8,8 +8,6 @@ use {
     },
     alloy::primitives::Address,
     app_data::{Flashloan, ProtocolAppData, hash_full_app_data},
-    ethrpc::alloy::conversions::IntoLegacy,
-    primitive_types::H160,
     std::sync::Arc,
 };
 
@@ -31,11 +29,11 @@ async fn solutions_with_flashloan() {
         protocol_app_data,
     )));
 
-    let settlement = H160([5; 20]);
+    let settlement = Address::repeat_byte(5);
     let order = ab_order().app_data(app_data).receiver(Some(settlement));
 
     let test = setup()
-        .settlement_address(&settlement)
+        .settlement_address(settlement)
         .pool(ab_pool())
         .order(order.clone())
         // This test is just about parsing the request JSON bodies so we don't care
@@ -67,11 +65,11 @@ async fn solutions_without_flashloan() {
     let app_data = AppData::Full(Arc::new(protocol_app_data_into_validated(
         protocol_app_data,
     )));
-    let settlement = H160([5; 20]);
+    let settlement = Address::repeat_byte(5);
     let order = ab_order().app_data(app_data).receiver(Some(settlement));
 
     let test = setup()
-        .settlement_address(&settlement)
+        .settlement_address(settlement)
         .pool(ab_pool())
         .order(order.clone())
         .solution(ab_solution())
@@ -98,10 +96,10 @@ fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::Vali
 
 fn flashloan_into_dto(flashloan: Flashloan) -> solvers_dto::solution::Flashloan {
     solvers_dto::solution::Flashloan {
-        liquidity_provider: flashloan.liquidity_provider.into_legacy(),
-        protocol_adapter: flashloan.protocol_adapter.into_legacy(),
-        receiver: flashloan.receiver.into_legacy(),
-        token: flashloan.token.into_legacy(),
-        amount: flashloan.amount.into_legacy(),
+        liquidity_provider: flashloan.liquidity_provider,
+        protocol_adapter: flashloan.protocol_adapter,
+        receiver: flashloan.receiver,
+        token: flashloan.token,
+        amount: flashloan.amount,
     }
 }

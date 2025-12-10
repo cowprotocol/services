@@ -1,5 +1,8 @@
 use {crate::domain::eth, anyhow::Result, bigdecimal::Zero};
 
+// NOTE(jmg-duarte): ruint has support for num-traits, num-bigint, num-integer
+// https://docs.rs/crate/ruint/latest/features
+
 pub trait U256Ext: Sized {
     fn to_big_int(&self) -> num::BigInt;
     fn to_big_uint(&self) -> num::BigUint;
@@ -20,9 +23,7 @@ impl U256Ext for eth::U256 {
     }
 
     fn to_big_uint(&self) -> num::BigUint {
-        let mut bytes = [0; 32];
-        self.to_big_endian(&mut bytes);
-        num::BigUint::from_bytes_be(&bytes)
+        num::BigUint::from_bytes_be(self.to_be_bytes::<32>().as_slice())
     }
 
     fn to_big_rational(&self) -> num::BigRational {
@@ -30,7 +31,7 @@ impl U256Ext for eth::U256 {
     }
 
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
-        self.checked_add(other.checked_sub(1.into())?)?
+        self.checked_add(other.checked_sub(eth::U256::ONE)?)?
             .checked_div(*other)
     }
 
@@ -50,8 +51,8 @@ impl U256Ext for eth::U256 {
         // that requires to double check and adjust a few tests due to tiny
         // changes in rounding.
         const CONVERSION_FACTOR: f64 = 1_000_000_000_000_000_000.;
-        let multiplied = self.checked_mul(Self::from_f64_lossy(factor * CONVERSION_FACTOR))?
-            / Self::from_f64_lossy(CONVERSION_FACTOR);
+        let multiplied = self.checked_mul(Self::from(factor * CONVERSION_FACTOR))?
+            / Self::from(CONVERSION_FACTOR);
         Some(multiplied)
     }
 
@@ -63,7 +64,7 @@ impl U256Ext for eth::U256 {
     fn from_big_uint(input: &num::BigUint) -> Result<Self> {
         let bytes = input.to_bytes_be();
         anyhow::ensure!(bytes.len() <= 32, "too large");
-        Ok(eth::U256::from_big_endian(&bytes))
+        Ok(eth::U256::from_be_slice(&bytes))
     }
 
     fn from_big_rational(value: &num::BigRational) -> Result<Self> {

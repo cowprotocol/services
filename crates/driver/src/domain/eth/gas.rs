@@ -13,7 +13,7 @@ pub struct Gas(pub U256);
 
 impl From<u64> for Gas {
     fn from(value: u64) -> Self {
-        Self(value.into())
+        Self(U256::from(value))
     }
 }
 
@@ -43,9 +43,10 @@ pub struct GasPrice {
 impl GasPrice {
     /// Returns the estimated [`EffectiveGasPrice`] for the gas price estimate.
     pub fn effective(&self) -> EffectiveGasPrice {
-        U256::from(self.max)
-            .min(U256::from(self.base).saturating_add(self.tip.into()))
-            .into()
+        let max = self.max.0.0;
+        let base = self.base.0.0;
+        let tip = self.tip.0.0;
+        max.min(base.saturating_add(tip)).into()
     }
 
     pub fn max(&self) -> FeePerGas {
@@ -60,21 +61,8 @@ impl GasPrice {
         self.base
     }
 
-    /// Creates a new instance limiting maxFeePerGas to a reasonable multiple of
-    /// the current base fee.
     pub fn new(max: FeePerGas, tip: FeePerGas, base: FeePerGas) -> Self {
-        // We multiply a fixed factor of the current base fee per
-        // gas, which is chosen to be the maximum possible increase to the base
-        // fee (max 12.5% per block) over 12 blocks, also including the "tip".
-        const MAX_FEE_FACTOR: f64 = 4.2;
-        Self {
-            max: FeePerGas(std::cmp::min(
-                max.0,
-                base.mul_ceil(MAX_FEE_FACTOR).add(tip).0,
-            )),
-            tip,
-            base,
-        }
+        Self { max, tip, base }
     }
 }
 
@@ -113,7 +101,7 @@ pub struct FeePerGas(pub Ether);
 impl FeePerGas {
     /// Multiplies this fee by the given floating point number, rounding up.
     fn mul_ceil(self, rhs: f64) -> Self {
-        U256::from_f64_lossy((self.0.0.to_f64_lossy() * rhs).ceil()).into()
+        U256::from((f64::from(self.0.0) * rhs).ceil()).into()
     }
 }
 

@@ -1,10 +1,15 @@
 use {
     crate::{
         boundary::unbuffered_web3_client,
-        domain::{competition, eth, mempools},
+        domain::{eth, mempools},
         infra,
     },
-    ethrpc::Web3,
+    alloy::{consensus::Transaction, providers::ext::TxPoolApi},
+    anyhow::Context,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -85,8 +90,9 @@ impl Mempool {
     pub async fn get_nonce(&self, address: eth::Address) -> Result<eth::U256, mempools::Error> {
         self.transport
             .eth()
-            .transaction_count(address.into(), self.config.nonce_block_number)
+            .transaction_count(address.into_legacy(), self.config.nonce_block_number)
             .await
+            .map(IntoAlloy::into_alloy)
             .map_err(|err| {
                 mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
             })
@@ -97,27 +103,81 @@ impl Mempool {
     pub async fn submit(
         &self,
         tx: eth::Tx,
-        gas: competition::solution::settlement::Gas,
+        gas_price: eth::GasPrice,
+        gas_limit: eth::Gas,
         solver: &infra::Solver,
         nonce: eth::U256,
     ) -> Result<eth::TxId, mempools::Error> {
-        ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
-            .from(solver.account().clone())
-            .to(tx.to.into())
-            .nonce(nonce)
-            .gas_price(ethcontract::GasPrice::Eip1559 {
-                max_fee_per_gas: gas.price.max().into(),
-                max_priority_fee_per_gas: gas.price.tip().into(),
-            })
-            .data(tx.input.into())
-            .value(tx.value.0)
-            .gas(gas.limit.0)
-            .access_list(web3::types::AccessList::from(tx.access_list))
-            .resolve(ethcontract::transaction::ResolveCondition::Pending)
-            .send()
+        let submission =
+            ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
+                .from(solver.account().clone())
+                .to(tx.to.into_legacy())
+                .nonce(nonce.into_legacy())
+                .gas_price(ethcontract::GasPrice::Eip1559 {
+                    max_fee_per_gas: gas_price.max().0.0.into_legacy(),
+                    max_priority_fee_per_gas: gas_price.tip().0.0.into_legacy(),
+                })
+                .data(tx.input.into())
+                .value(tx.value.0.into_legacy())
+                .gas(gas_limit.0.into_legacy())
+                .access_list(web3::types::AccessList::from(tx.access_list))
+                .resolve(ethcontract::transaction::ResolveCondition::Pending)
+                .send()
+                .await;
+
+        match submission {
+            Ok(receipt) => {
+                tracing::debug!(
+                    ?nonce,
+                    ?gas_price,
+                    ?gas_limit,
+                    solver = ?solver.address(),
+                    "successfully submitted tx to mempool"
+                );
+                Ok(eth::TxId(receipt.hash()))
+            }
+            Err(err) => {
+                // log pending tx in case we failed to replace a pending tx
+                let pending_tx = self
+                    .find_pending_tx_in_mempool(solver.address(), nonce)
+                    .await;
+
+                tracing::debug!(
+                    ?err,
+                    new_gas_price = ?gas_price,
+                    ?nonce,
+                    ?pending_tx,
+                    ?gas_limit,
+                    solver = ?solver.address(),
+                    "failed to submit tx to mempool"
+                );
+                Err(mempools::Error::Other(err.into()))
+            }
+        }
+    }
+
+    /// Queries the mempool for a pending transaction of the given solver and
+    /// nonce.
+    pub async fn find_pending_tx_in_mempool(
+        &self,
+        signer: eth::Address,
+        nonce: eth::U256,
+    ) -> anyhow::Result<Option<alloy::rpc::types::Transaction>> {
+        let tx_pool_content = self
+            .transport
+            .alloy
+            .txpool_content_from(signer)
             .await
-            .map(|result| eth::TxId(result.hash()))
-            .map_err(|err| mempools::Error::Other(anyhow::Error::from(err)))
+            .context("failed to query pending transactions")?;
+
+        // find the one with the specified nonce
+        let pending_tx = tx_pool_content
+            .pending
+            .into_iter()
+            .chain(tx_pool_content.queued)
+            .find(|(_signer, tx)| eth::U256::from(tx.nonce()) == nonce)
+            .map(|(_, tx)| tx);
+        Ok(pending_tx)
     }
 
     pub fn config(&self) -> &Config {

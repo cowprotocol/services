@@ -29,10 +29,7 @@ use {
     ::observe::metrics,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::BlockInfo,
-    },
+    ethrpc::{alloy::conversions::IntoLegacy, block_stream::BlockInfo},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -162,13 +159,13 @@ impl RunLoop {
         while !control.should_shutdown() {
             leader_lock_tracker.try_acquire().await;
 
+            // Wait for notify about some significant state change (e.g. new
+            // order, new block). We only update the cache afterwards to update
+            // to the most recent state.
+            self_arc.wake_notify.notified().await;
             let start_block = self_arc
                 .update_caches(&mut last_block, leader_lock_tracker.is_leader())
                 .await;
-
-            // Wait for a new block or order before proceeding (we do this *after* caches
-            // are loaded to reduce auction start time)
-            self_arc.wake_notify.notified().await;
 
             // caches are warmed up, we're ready to do leader work
             if let Some(startup) = self_arc.probes.startup.as_ref() {
@@ -497,9 +494,7 @@ impl RunLoop {
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
                 solver_address: participant.solution().solver(),
-                score: Some(Score::Solver(
-                    participant.solution().score().get().0.into_alloy(),
-                )),
+                score: Some(Score::Solver(participant.solution().score().get().0)),
                 ranking: index + 1,
                 orders: participant
                     .solution()
@@ -507,15 +502,15 @@ impl RunLoop {
                     .iter()
                     .map(|(id, order)| Order::Colocated {
                         id: (*id).into(),
-                        sell_amount: order.executed_sell.0.into_alloy(),
-                        buy_amount: order.executed_buy.0.into_alloy(),
+                        sell_amount: order.executed_sell.0,
+                        buy_amount: order.executed_buy.0,
                     })
                     .collect(),
                 clearing_prices: participant
                     .solution()
                     .prices()
                     .iter()
-                    .map(|(token, price)| (token.0.into_alloy(), price.get().0.into_alloy()))
+                    .map(|(token, price)| (token.0, price.get().0))
                     .collect(),
                 is_winner: participant.is_winner(),
                 filtered_out: participant.filtered_out(),
@@ -537,7 +532,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| (key.0.into_alloy(), value.get().0.into_alloy()))
+                    .map(|(key, value)| (key.0, value.get().0))
                     .collect(),
             },
             solutions,
@@ -550,38 +545,42 @@ impl RunLoop {
                 .prices
                 .clone()
                 .into_iter()
-                .map(|(key, value)| (key.into(), value.get().into()))
+                .map(|(key, value)| (key.0.into_legacy(), value.get().0.into_legacy()))
                 .collect(),
             block_deadline,
             competition_simulation_block,
             competition_table,
         };
 
-        match futures::try_join!(
+        let save_solutions = self
+            .persistence
+            .save_solutions(auction.id, ranking.all())
+            .map(|res| match res {
+                Ok(_) => {
+                    // Notify the solver participation guard that the proposed solutions have been
+                    // saved.
+                    if let Err(err) = self.competition_updates_sender.send(()) {
+                        tracing::error!(?err, "failed to notify solver participation guard");
+                    }
+                    Ok(())
+                }
+                Err(err) => {
+                    // Don't error if saving of auction and solution fails, until stable.
+                    // Various edge cases with JIT orders verifiable only in production.
+                    tracing::warn!(?err, "failed to save new competition data");
+                    Err(err.0.context("failed to save solutions"))
+                }
+            });
+
+        tracing::trace!(?competition, "saving competition");
+
+        futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
                 .save_solutions(auction.id, ranking.all())
                 .map_err(|e| e.0.context("failed to save solutions")),
-        ) {
-            Ok(_) => {
-                // Notify the solver participation guard that the proposed solutions have been
-                // saved.
-                if let Err(err) = self.competition_updates_sender.send(()) {
-                    tracing::error!(?err, "failed to notify solver participation guard");
-                }
-            }
-            Err(err) => {
-                // Don't error if saving of auction and solution fails, until stable.
-                // Various edge cases with JIT orders verifiable only in production.
-                tracing::warn!(?err, "failed to save new competition data");
-            }
-        }
-        tracing::trace!(auction_id = ?auction.id, "auction saved");
-
-        tracing::trace!(?competition, "saving competition");
-        futures::try_join!(
             self.persistence
                 .save_competition(competition)
                 .map_err(|e| e.0.context("failed to save competition")),
@@ -594,8 +593,11 @@ impl RunLoop {
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
-        )?;
-        tracing::trace!(auction_id = ?auction.id, "competition saved");
+            save_solutions
+        )
+        .inspect_err(|err| tracing::warn!(?err, "failed to write post processed data to DB"))?;
+
+        tracing::debug!(time = ?start.elapsed(), "post-processing done");
 
         Metrics::post_processed(start.elapsed());
         Ok(())
@@ -782,7 +784,12 @@ impl RunLoop {
         .boxed();
 
         let wait_for_settlement_transaction = self
-            .wait_for_settlement_transaction(auction_id, solver, submission_deadline_latest_block)
+            .wait_for_settlement_transaction(
+                auction_id,
+                solver,
+                submission_deadline_latest_block,
+                solution_uid,
+            )
             .boxed();
 
         // Wait for either the settlement transaction to be mined or the driver returned
@@ -885,6 +892,7 @@ impl RunLoop {
         auction_id: i64,
         solver: eth::Address,
         submission_deadline_latest_block: u64,
+        solution_uid: usize,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
@@ -896,7 +904,7 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_settlement_transaction(auction_id, solver)
+                .find_settlement_transaction(auction_id, solver, solution_uid)
                 .await
             {
                 Ok(Some(transaction)) => return Ok(transaction),

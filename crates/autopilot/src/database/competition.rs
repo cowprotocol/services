@@ -52,7 +52,7 @@ impl super::Postgres {
             .map(|(solver, score)| database::reference_scores::Score {
                 auction_id: competition.auction_id,
                 solver: ByteArray(solver.0.0),
-                reference_score: u256_to_big_decimal(&score.get().0),
+                reference_score: number::conversions::alloy::u256_to_big_decimal(&score.get().0),
             })
             .collect();
 

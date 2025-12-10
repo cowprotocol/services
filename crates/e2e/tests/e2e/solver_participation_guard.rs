@@ -163,17 +163,13 @@ async fn low_settling_solver(web3: Web3) {
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
     let now = Instant::now();
-    assert!(
-        execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
-            .await
-            .is_ok()
-    );
+    execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+        .await
+        .unwrap();
     // Now, the stat is updated, and the solver is banned.
-    assert!(
-        execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
-            .await
-            .is_err()
-    );
+    execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+        .await
+        .unwrap_err();
 
     // 40 seconds is the cache TTL, and 5 seconds is added to compensate any
     // possible delays.

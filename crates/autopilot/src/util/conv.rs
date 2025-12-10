@@ -7,7 +7,7 @@ pub trait U256Ext: Sized {
 
 impl U256Ext for eth::U256 {
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
-        self.checked_add(other.checked_sub(1.into())?)?
+        self.checked_add(other.checked_sub(Self::ONE)?)?
             .checked_div(*other)
     }
 
@@ -22,8 +22,8 @@ impl U256Ext for eth::U256 {
         // that requires to double check and adjust a few tests due to tiny
         // changes in rounding.
         const CONVERSION_FACTOR: f64 = 1_000_000_000_000_000_000.;
-        let multiplied = self.checked_mul(Self::from_f64_lossy(factor * CONVERSION_FACTOR))?
-            / Self::from_f64_lossy(CONVERSION_FACTOR);
+        let multiplied = self.checked_mul(Self::from(factor * CONVERSION_FACTOR))?
+            / Self::from(CONVERSION_FACTOR);
         Some(multiplied)
     }
 }

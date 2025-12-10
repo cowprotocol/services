@@ -1,9 +1,16 @@
 use {
-    crate::{boundary, domain::eth},
+    crate::{
+        boundary,
+        domain::{eth, eth::U256},
+    },
     alloy::providers::Provider,
     chain::Chain,
-    ethcontract::{U256, errors::ExecutionError},
-    ethrpc::{Web3, alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    ethcontract::errors::ExecutionError,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         price_estimation::trade_verifier::balance_overrides::{
@@ -116,7 +123,7 @@ impl Ethereum {
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
-            contracts.vault_relayer().0,
+            contracts.vault_relayer().0.into_legacy(),
             Some(contracts.vault().address().into_legacy()),
             balance_overrider.clone(),
         );
@@ -163,7 +170,7 @@ impl Ethereum {
 
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
-        let code = self.web3.eth().code(address.into(), None).await?;
+        let code = self.web3.eth().code(address.into_legacy(), None).await?;
         Ok(!code.0.is_empty())
     }
 
@@ -180,8 +187,11 @@ impl Ethereum {
         CallRequest: From<T>,
     {
         let mut tx: CallRequest = tx.into();
-        tx.gas = Some(self.inner.tx_gas_limit);
-        tx.gas_price = self.simulation_gas_price().await;
+        tx.gas = Some(self.inner.tx_gas_limit.into_legacy());
+        tx.gas_price = self
+            .simulation_gas_price()
+            .await
+            .map(IntoLegacy::into_legacy);
 
         let json = self
             .web3
@@ -205,17 +215,21 @@ impl Ethereum {
             .eth()
             .estimate_gas(
                 web3::types::CallRequest {
-                    from: Some(tx.from.into()),
-                    to: Some(tx.to.into()),
-                    value: Some(tx.value.into()),
+                    from: Some(tx.from.into_legacy()),
+                    to: Some(tx.to.into_legacy()),
+                    value: Some(tx.value.0.into_legacy()),
                     data: Some(tx.input.clone().into()),
                     access_list: Some(tx.access_list.clone().into()),
-                    gas_price: self.simulation_gas_price().await,
+                    gas_price: self
+                        .simulation_gas_price()
+                        .await
+                        .map(IntoLegacy::into_legacy),
                     ..Default::default()
                 },
                 None,
             )
             .await
+            .map(IntoAlloy::into_alloy)
             .map(Into::into)
             .map_err(Into::into)
     }
@@ -228,15 +242,21 @@ impl Ethereum {
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
-        self.inner.current_block.borrow().gas_limit.into()
+        self.inner
+            .current_block
+            .borrow()
+            .gas_limit
+            .into_alloy()
+            .into()
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
             .eth()
-            .balance(address.into(), None)
+            .balance(address.into_legacy(), None)
             .await
+            .map(IntoAlloy::into_alloy)
             .map(Into::into)
             .map_err(Into::into)
     }

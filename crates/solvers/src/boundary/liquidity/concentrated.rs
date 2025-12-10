@@ -1,11 +1,10 @@
 use {
-    alloy::primitives::{Address, aliases::U24},
+    alloy::primitives::{Address, U256, aliases::U24},
     contracts::alloy::UniswapV3QuoterV2::IQuoterV2::{
         QuoteExactInputSingleParams,
         QuoteExactOutputSingleParams,
     },
-    ethcontract::{H160, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethcontract::H160,
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,
     std::sync::Arc,
@@ -41,13 +40,13 @@ impl BaselineSolvable for Pool {
             .quoteExactInputSingle(QuoteExactInputSingleParams {
                 tokenIn: in_token,
                 tokenOut: out_token,
-                amountIn: in_amount.into_alloy(),
+                amountIn: in_amount,
                 fee: self.fee,
                 sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
             })
             .call()
             .await
-            .map(|result| result.amountOut.into_legacy())
+            .map(|result| result.amountOut)
             .ok()
     }
 
@@ -65,13 +64,13 @@ impl BaselineSolvable for Pool {
             .quoteExactOutputSingle(QuoteExactOutputSingleParams {
                 tokenIn: in_token,
                 tokenOut: out_token,
-                amount: out_amount.into_alloy(),
+                amount: out_amount,
                 fee: self.fee,
                 sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
             })
             .call()
             .await
-            .map(|result| result.amountIn.into_legacy())
+            .map(|result| result.amountIn)
             .ok()
     }
 

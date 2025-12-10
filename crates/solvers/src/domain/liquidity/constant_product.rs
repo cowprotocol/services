@@ -2,7 +2,7 @@
 
 use {
     crate::domain::{eth, liquidity},
-    ethereum_types::U256,
+    alloy::primitives::U256,
     std::cmp::Ordering,
 };
 

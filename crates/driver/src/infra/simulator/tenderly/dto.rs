@@ -2,6 +2,7 @@
 
 use {
     crate::{domain::eth, util::serialize},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -11,8 +12,8 @@ use {
 #[derive(Debug, Serialize)]
 pub struct Request {
     pub network_id: String,
-    pub from: eth::H160,
-    pub to: eth::H160,
+    pub from: eth::Address,
+    pub to: eth::Address,
     #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
     pub value: eth::U256,
@@ -45,7 +46,7 @@ pub struct AccessList(Vec<AccessListItem>);
 
 #[derive(Debug, Deserialize, Serialize)]
 struct AccessListItem {
-    address: eth::H160,
+    address: eth::Address,
     #[serde(default)]
     storage_keys: Vec<eth::H256>,
 }
@@ -56,7 +57,7 @@ impl From<eth::AccessList> for AccessList {
             web3::types::AccessList::from(value)
                 .into_iter()
                 .map(|item| AccessListItem {
-                    address: item.address,
+                    address: item.address.into_alloy(),
                     storage_keys: item.storage_keys,
                 })
                 .collect(),
@@ -70,7 +71,7 @@ impl From<AccessList> for eth::AccessList {
             .0
             .into_iter()
             .map(|item| web3::types::AccessListItem {
-                address: item.address,
+                address: item.address.into_legacy(),
                 storage_keys: item.storage_keys,
             })
             .collect_vec()

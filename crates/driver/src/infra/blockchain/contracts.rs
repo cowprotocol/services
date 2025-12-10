@@ -8,10 +8,7 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::conversions::IntoAlloy},
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -58,7 +55,7 @@ impl Contracts {
         let settlement = GPv2Settlement::Instance::new(
             addresses
                 .settlement
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -69,7 +66,7 @@ impl Contracts {
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -77,7 +74,7 @@ impl Contracts {
         let signatures = contracts::alloy::support::Signatures::Instance::new(
             addresses
                 .signatures
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -86,7 +83,7 @@ impl Contracts {
         let weth = WETH9::Instance::new(
             addresses
                 .weth
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
             web3.alloy.clone(),
@@ -104,18 +101,12 @@ impl Contracts {
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
-            .or_else(|| {
-                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
-                    eth::ContractAddress(deployment_address.into_legacy())
-                })
-            })
-            .map(|address| {
-                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
-            });
+            .or_else(|| FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress))
+            .map(|address| FlashLoanRouter::Instance::new(address.0, web3.alloy.clone()));
 
         Ok(Self {
             settlement,
-            vault_relayer: vault_relayer.into_legacy().into(),
+            vault_relayer: vault_relayer.into(),
             vault,
             signatures,
             weth,
@@ -148,7 +139,7 @@ impl Contracts {
     }
 
     pub fn weth_address(&self) -> eth::WethAddress {
-        self.weth.address().into_legacy().into()
+        (*self.weth.address()).into()
     }
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
@@ -185,6 +176,7 @@ pub fn deployment_address(
             .networks
             .get(&chain.id().to_string())?
             .address
+            .into_alloy()
             .into(),
     )
 }

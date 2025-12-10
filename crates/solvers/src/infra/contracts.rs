@@ -1,9 +1,4 @@
-use {
-    crate::domain::eth,
-    chain::Chain,
-    contracts::alloy::WETH9,
-    ethrpc::alloy::conversions::IntoLegacy,
-};
+use {crate::domain::eth, chain::Chain, contracts::alloy::WETH9};
 
 #[derive(Clone, Debug)]
 pub struct Contracts {
@@ -15,8 +10,7 @@ impl Contracts {
         Self {
             weth: eth::WethAddress(
                 WETH9::deployment_address(&chain.id())
-                    .expect("there should be a contract address for all supported chains")
-                    .into_legacy(),
+                    .expect("there should be a contract address for all supported chains"),
             ),
         }
     }

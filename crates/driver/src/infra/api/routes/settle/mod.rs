@@ -33,7 +33,6 @@ async fn route(
                 req.submission_deadline_latest_block,
             )
             .await;
-        observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
     }
     .instrument(tracing::info_span!("/settle", solver, %auction_id))

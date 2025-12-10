@@ -21,10 +21,9 @@ use {
         },
         util::{Bytes, math},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
-    num::Zero,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -128,15 +127,15 @@ impl Competition {
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let settlement_contract = self.eth.contracts().settlement().address();
-        let solver_address = self.solver.account().address();
+        let settlement_contract = *self.eth.contracts().settlement().address();
+        let solver_address = self.solver.account().address().into_alloy();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         // Add the CoW AMM orders to the auction
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let settlement = settlement_contract.into_legacy();
+        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
@@ -156,13 +155,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(
-                auction,
-                balances,
-                app_data,
-                cow_amm_orders,
-                &eth::Address(settlement),
-            )
+            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
         })
         .await;
 
@@ -399,9 +392,9 @@ impl Competition {
     // we allocate balances for the most relevants first.
     fn sort_orders(
         mut auction: Auction,
-        solver: eth::H160,
+        solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        _settlement_contract: eth::H160,
+        _settlement_contract: eth::Address,
     ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
@@ -500,13 +493,8 @@ impl Competition {
             //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(
-                        available.0.into_alloy(),
-                        allocated_balance.0.into_alloy(),
-                        max_sell.0.into_alloy(),
-                    )
-                    .unwrap_or_default()
-                    .into_legacy(),
+                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                        .unwrap_or_default(),
                 );
             }
             if order.available().is_zero() {
@@ -667,7 +655,7 @@ impl Competition {
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
-        let mut settlement = {
+        let settlement = {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
@@ -693,19 +681,6 @@ impl Competition {
                     }
                 }
             });
-        }
-
-        // When settling, the gas price must be carefully chosen to ensure the
-        // transaction is included in a block before the deadline.
-        let time_limit = submission_time_limit(&self.eth, submission_deadline);
-        // refresh gas price to be up-to-date
-        if let Ok(gas_price) = self.eth.gas_price(time_limit).await {
-            tracing::debug!(
-                ?time_limit,
-                ?gas_price,
-                "time limit used for refreshed gas price"
-            );
-            settlement.gas.price = gas_price;
         }
 
         let executed = self
@@ -819,25 +794,6 @@ fn merge(
     merged
 }
 
-/// Returns the aimed time limit for bringing the solution onchain, based on the
-/// submission deadline.
-fn submission_time_limit(eth: &Ethereum, submission_deadline: BlockNo) -> Option<Duration> {
-    let current_block = eth.current_block().borrow().number;
-    let blocks_until_deadline: u32 = (submission_deadline.checked_sub(current_block))?
-        .try_into()
-        .ok()?;
-    if blocks_until_deadline.is_zero() {
-        return None;
-    }
-    let time_limit = eth
-        .chain()
-        .block_time_in_ms()
-        .checked_mul(blocks_until_deadline)?;
-    // Using the above time limit, solutions are expected to be settled before the
-    // deadline. For safety, let's aim to settle the solution earlier (half that
-    // time):
-    time_limit.checked_div(2)
-}
 struct SettleRequest {
     auction_id: auction::Id,
     solution_id: u64,

@@ -19,7 +19,7 @@ pub struct Quote {
     /// additional sell amount.
     #[serde_as(as = "HexOrDecimalU256")]
     pub network_fee: eth::U256,
-    pub solver: eth::H160,
+    pub solver: eth::Address,
 }
 
 #[serde_as]
