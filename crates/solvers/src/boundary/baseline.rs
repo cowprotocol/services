@@ -21,8 +21,6 @@ pub struct Solver<'a> {
     liquidity: HashMap<liquidity::Id, &'a liquidity::Liquidity>,
 }
 
-pub struct RouteComputationError;
-
 impl<'a> Solver<'a> {
     pub fn new(
         weth: &eth::WethAddress,
