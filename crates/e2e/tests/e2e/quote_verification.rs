@@ -574,7 +574,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // Deploy the NonStandardERC20Balances token - this has balances stored at an
     // offset within a struct mapping, making it undetectable by standard slot
     // calculation methods
-    let non_standard_token =
+    let struct_offset_token =
         contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.alloy.clone())
             .await
             .unwrap();
@@ -584,30 +584,30 @@ async fn trace_based_balance_detection(web3: Web3) {
     // delegate the balance it returns between itself (allowing for testing of
     // calling another contract to get a balance--or calling another contract to
     // *not* get a balance)
-    let entry_token_use_self = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
+    let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
         web3.alloy.clone(),
-        *non_standard_token.address(),
+        *struct_offset_token.address(),
         true,
     )
     .await
     .unwrap();
-    let entry_token_use_other = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
+    let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
         web3.alloy.clone(),
-        *non_standard_token.address(),
+        *struct_offset_token.address(),
         false,
     )
     .await
     .unwrap();
 
     // Mint some tokens to the trader (so the contract has non-zero state)
-    non_standard_token
+    struct_offset_token
         .mint(trader.address(), eth(100))
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    entry_token_use_self
+    local_storage_token
         .mint(trader.address(), eth(123))
         .from(solver.address())
         .send_and_watch()
@@ -622,9 +622,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // Test with WETH (standard ERC20 with mapping at slot 3)
     let weth = *onchain.contracts().weth.address();
     tracing::info!(?weth, "Testing WETH balance detection...");
-    let weth_strategy = detector
-        .detect(weth.into_legacy(), test_account.into_legacy())
-        .await;
+    let weth_strategy = detector.detect(weth, test_account).await;
     assert!(
         matches!(weth_strategy, Ok(Strategy::DirectSlot { .. })),
         "Should detect WETH balance slot via trace"
@@ -634,52 +632,43 @@ async fn trace_based_balance_detection(web3: Web3) {
     // Test with NonStandardERC20Balances - this is the key test case
     // The balance is at offset 2 within the UserData struct (epoch=0, approvals
     // mapping=1, balance=2)
-    tracing::info!(address = ?non_standard_token.address(), "Testing NonStandardERC20Balances detection...");
-    let non_standard_strategy = detector
-        .detect(
-            non_standard_token.address().into_legacy(),
-            test_account.into_legacy(),
-        )
+    tracing::info!(address = ?struct_offset_token.address(), "Testing NonStandardERC20Balances detection...");
+    let struct_offset_strategy = detector
+        .detect(*struct_offset_token.address(), test_account)
         .await;
     assert!(
-        matches!(non_standard_strategy, Ok(Strategy::DirectSlot { .. })),
+        matches!(struct_offset_strategy, Ok(Strategy::DirectSlot { .. })),
         "Should detect non-standard token balance slot via trace-based detection"
     );
     tracing::info!(
         "✓ NonStandardERC20Balances strategy detected: {:?}",
-        non_standard_strategy
+        struct_offset_strategy
     );
 
-    tracing::info!(address = ?entry_token_use_other.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
-    let remote_strategy = detector
-        .detect(
-            entry_token_use_other.address().into_legacy(),
-            test_account.into_legacy(),
-        )
+    tracing::info!(address = ?delegated_storage_token.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
+    let delegated_storage_strategy = detector
+        .detect(*delegated_storage_token.address(), test_account)
         .await;
     assert!(
-        matches!(remote_strategy, Ok(Strategy::DirectSlot { .. })),
+        matches!(delegated_storage_strategy, Ok(Strategy::DirectSlot { .. })),
         "Should detect non-standard token balance slot via trace-based detection"
     );
     tracing::info!(
         "✓ RemoteERC20Balances (remote) strategy detected: {:?}",
-        non_standard_strategy
+        delegated_storage_strategy
     );
 
-    tracing::info!(address = ?entry_token_use_self.address(), "Testing RemoteERC20Balances (using local contract slot) detection...");
-    let remote_self_strategy = detector
-        .detect(
-            entry_token_use_self.address().into_legacy(),
-            test_account.into_legacy(),
-        )
+    tracing::info!(address = ?local_storage_token.address(), "Testing RemoteERC20Balances (using local contract slot) detection...");
+    let local_storage_strategy = detector
+        .detect(*local_storage_token.address(), test_account)
         .await;
     assert!(
-        matches!(remote_self_strategy, Ok(Strategy::DirectSlot { .. })),
+        matches!(local_storage_strategy, Ok(Strategy::DirectSlot { .. })),
         "Should detect non-standard token balance slot via trace-based detection"
     );
     tracing::info!(
         "✓ RemoteERC20Balances (self) strategy detected: {:?}",
-        remote_self_strategy
+        local_storage_strategy
     );
 
     // Verify that the detected strategies actually work by testing balance
@@ -749,24 +738,24 @@ async fn trace_based_balance_detection(web3: Web3) {
     .await;
     test_balance_override(
         &web3,
-        *non_standard_token.address(),
-        non_standard_strategy.unwrap(),
+        *struct_offset_token.address(),
+        struct_offset_strategy.unwrap(),
         test_account,
         test_balance,
     )
     .await;
     test_balance_override(
         &web3,
-        *entry_token_use_other.address(),
-        remote_strategy.unwrap(),
+        *delegated_storage_token.address(),
+        delegated_storage_strategy.unwrap(),
         test_account,
         test_balance,
     )
     .await;
     test_balance_override(
         &web3,
-        *entry_token_use_self.address(),
-        remote_self_strategy.unwrap(),
+        *local_storage_token.address(),
+        local_storage_strategy.unwrap(),
         test_account,
         test_balance,
     )

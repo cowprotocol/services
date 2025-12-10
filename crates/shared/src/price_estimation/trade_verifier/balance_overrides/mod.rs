@@ -5,6 +5,7 @@ use {
     anyhow::Context as _,
     cached::{Cached, SizedCache},
     ethcontract::{Address, H160, H256, U256, state_overrides::StateOverride},
+    ethrpc::alloy::conversions::IntoAlloy,
     maplit::hashmap,
     std::{
         collections::HashMap,
@@ -294,7 +295,9 @@ impl BalanceOverrides {
             }
         }
 
-        let strategy = detector.detect(token, holder).await;
+        let strategy = detector
+            .detect(token.into_alloy(), holder.into_alloy())
+            .await;
 
         // Only cache when we successfully detect the token, or we can't find
         // it. Anything else is likely a temporary simulator (i.e. node) failure

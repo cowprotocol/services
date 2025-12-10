@@ -1,10 +1,21 @@
 use {
     super::Strategy,
     crate::tenderly_api::SimulationError,
+    alloy::{
+        eips::BlockId,
+        primitives::{Address, B256, TxKind},
+        providers::ext::DebugApi,
+        rpc::types::{
+            TransactionInput,
+            TransactionRequest,
+            trace::geth::{GethDebugTracingCallOptions, GethTrace},
+        },
+        sol_types::SolCall,
+    },
     anyhow::Context,
     contracts::alloy::ERC20,
-    ethcontract::{Address, H160, H256, U256, state_overrides::StateOverride},
-    ethrpc::{alloy::conversions::IntoAlloy, extensions::DebugNamespace},
+    ethcontract::{H160, H256, U256, state_overrides::StateOverride},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     maplit::hashmap,
     std::{
         collections::{HashMap, HashSet},
@@ -12,10 +23,7 @@ use {
         sync::Arc,
     },
     thiserror::Error,
-    web3::{
-        signing,
-        types::{BlockNumber, CallRequest},
-    },
+    web3::signing,
 };
 
 /// A heuristic balance override detector based on `eth_call` simulations.
@@ -72,8 +80,8 @@ fn merge_state_diffs_in_overrides(
 /// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
 ///    those storage slots first
 fn sort_storage_overrides(
-    storage_slots: &mut [(H160, H256)],
-    holder: &H160,
+    storage_slots: &mut [(Address, B256)],
+    holder: &Address,
     heuristic_depth: usize,
 ) {
     // We can also use heuristics to sort by slots most likely to actually be the
@@ -82,9 +90,9 @@ fn sort_storage_overrides(
 
     for i in 0..heuristic_depth {
         let mut buf = [0; 64];
-        buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+        buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(i).to_big_endian(&mut buf[32..64]);
-        heuristic_slots.insert(H256(signing::keccak256(&buf)));
+        heuristic_slots.insert(B256::from(signing::keccak256(&buf)));
     }
 
     // sort by whether or not its a heuristic slot or not (stable so it wont change
@@ -160,17 +168,21 @@ impl Detector {
         }
 
         // Fall back to the original heuristic-based detection
-        let strategies = self.generate_strategies(token);
-        let token = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
+        let strategies = self.generate_strategies(token.into_legacy());
+        let token_contract = ERC20::Instance::new(token, self.web3.alloy.clone());
         let overrides = merge_state_diffs_in_overrides(
             strategies
                 .iter()
-                .map(|helper| helper.strategy.state_override(&holder, &helper.balance))
+                .map(|helper| {
+                    helper
+                        .strategy
+                        .state_override(&holder.into_legacy(), &helper.balance)
+                })
                 .collect(),
         );
 
-        let balance = token
-            .balanceOf(holder.into_alloy())
+        let balance = token_contract
+            .balanceOf(holder)
             .state(overrides.into_alloy())
             .call()
             .await
@@ -196,24 +208,23 @@ impl Detector {
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError> {
-        use {alloy::sol_types::SolCall, web3::types::Bytes};
-
-        let balance_of_call = ERC20::ERC20::balanceOfCall {
-            account: holder.into_alloy(),
-        };
+        let balance_of_call = ERC20::ERC20::balanceOfCall { account: holder };
         let calldata = balance_of_call.abi_encode();
 
-        let call_request = CallRequest {
-            to: Some(token),
-            data: Some(Bytes(calldata)),
+        let call_request = TransactionRequest {
+            to: Some(TxKind::Call(token)),
+            input: TransactionInput::new(calldata.into()),
             ..Default::default()
         };
 
         let trace = self
             .web3
-            .legacy
-            .debug()
-            .trace_call(call_request, BlockNumber::Latest.into())
+            .alloy
+            .debug_trace_call(
+                call_request,
+                BlockId::latest(),
+                GethDebugTracingCallOptions::default(),
+            )
             .await
             .map_err(|e| {
                 tracing::debug!(?token, error = ?e, "debug_traceCall not supported for token");
@@ -223,7 +234,7 @@ impl Detector {
             })?;
 
         // Extract storage slots accessed via SLOAD operations
-        let mut storage_slots = self.extract_sload_slots(&trace, token);
+        let mut storage_slots = self.extract_sload_slots(trace, token);
 
         if storage_slots.is_empty() {
             tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
@@ -240,8 +251,8 @@ impl Detector {
                 "detected balance slot via trace (single SLOAD) for token",
             );
             return Ok(Strategy::DirectSlot {
-                target_contract: slot.0,
-                slot: slot.1,
+                target_contract: slot.0.into_legacy(),
+                slot: slot.1.into_legacy(),
             });
         }
 
@@ -287,24 +298,29 @@ impl Detector {
     /// Returns slots in the order they were accessed.
     fn extract_sload_slots(
         &self,
-        trace: &ethrpc::extensions::StructLogTrace,
-        initial_storage_context: H160,
-    ) -> Vec<(H160, H256)> {
+        trace: GethTrace,
+        initial_storage_context: Address,
+    ) -> Vec<(Address, B256)> {
         let mut storage_context = vec![initial_storage_context];
         let mut slots = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        for log in &trace.struct_logs {
-            match log.op.as_str() {
+        for log in &trace
+            .try_into_default_frame()
+            .unwrap_or_default()
+            .struct_logs
+        {
+            let stack = log.stack.clone().unwrap_or_default();
+            match log.op.as_ref() {
                 // CALL or STATICCALL calls another contract, possibly reading data
                 // we need to keep track of this contract being called so we know to update the
                 // state of this different contract
-                "CALL" | "STATICCALL" if log.stack.len() >= 2 => {
+                "CALL" | "STATICCALL" if stack.len() >= 2 => {
                     // CALL opcode takes the address of the contract to call as second element
                     tracing::trace!("Detected CALL into nested contract");
-                    storage_context.push(H160::from(log.stack[log.stack.len() - 2]));
+                    storage_context.push(Address::from_word(stack[stack.len() - 2].into()));
                 }
-                "DELEGATECALL" if log.stack.len() >= 2 => {
+                "DELEGATECALL" if stack.len() >= 2 => {
                     // DELEGATECALL opcode uses the same execution context as the previous contract
                     // but we still need to push it again so the RETURN does not
                     // break
@@ -324,14 +340,14 @@ impl Detector {
                 }
                 // SLOAD opcode reads from storage
                 // The storage key is on top of the stack (last element)
-                "SLOAD" if !log.stack.is_empty() => {
+                "SLOAD" if !stack.is_empty() => {
                     tracing::trace!("Detected SLOAD");
                     // Stack grows upward, so the top is the last element
-                    let slot = *log.stack.last().unwrap();
+                    let slot = *stack.last().unwrap();
 
                     // Only add unique slots, preserving order
                     if seen.insert((*storage_context.last().unwrap(), slot)) {
-                        slots.push((*storage_context.last().unwrap(), slot));
+                        slots.push((*storage_context.last().unwrap(), slot.into()));
                     }
                 }
                 _ => {} // Ignore other opcodes
@@ -347,7 +363,7 @@ impl Detector {
         &self,
         token: Address,
         holder: Address,
-        slot: (H160, H256),
+        slot: (Address, B256),
     ) -> Result<Strategy, DetectionError> {
         // Use a unique test value to verify this is the balance slot
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
@@ -357,18 +373,18 @@ impl Detector {
         test_balance.to_big_endian(&mut slot_value);
 
         let overrides = hashmap! {
-            slot.0 => StateOverride {
+            slot.0.into_legacy() => StateOverride {
                 state_diff: Some(hashmap! {
-                    slot.1 => H256(slot_value),
+                    slot.1.into_legacy() => H256(slot_value),
                 }),
                 ..Default::default()
             },
         };
 
         // Call balanceOf with the override
-        let token_contract = ERC20::Instance::new(token.into_alloy(), self.web3.alloy.clone());
+        let token_contract = ERC20::Instance::new(token, self.web3.alloy.clone());
         let balance = token_contract
-            .balanceOf(holder.into_alloy())
+            .balanceOf(holder)
             .state(overrides.into_alloy())
             .call()
             .await
@@ -381,8 +397,8 @@ impl Detector {
         // If the balance matches our test value, we found the right slot
         if balance == test_balance.into_alloy() {
             Ok(Strategy::DirectSlot {
-                target_contract: slot.0,
-                slot: slot.1,
+                target_contract: slot.0.into_legacy(),
+                slot: slot.1.into_legacy(),
             })
         } else {
             Err(DetectionError::NotFound)
@@ -446,12 +462,14 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
+        use alloy::primitives::address;
+
         let detector = Detector::new(Web3::new_from_env(), 60);
 
         let storage = detector
             .detect(
-                addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                addr!("0000000000000000000000000000000000000001"),
+                address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                address!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
@@ -465,8 +483,8 @@ mod tests {
 
         let storage = detector
             .detect(
-                addr!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
-                addr!("0000000000000000000000000000000000000001"),
+                address!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
+                address!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
@@ -480,8 +498,8 @@ mod tests {
 
         let storage = detector
             .detect(
-                addr!("0000000000c5dc95539589fbd24be07c6c14eca4"),
-                addr!("0000000000000000000000000000000000000001"),
+                address!("0000000000c5dc95539589fbd24be07c6c14eca4"),
+                address!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
@@ -499,13 +517,15 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
+        use alloy::primitives::address;
+
         let detector = Detector::new(Web3::new_from_env(), 60);
 
         // all bridged tokens on arbitrum require a ton of probing
         let storage = detector
             .detect(
-                addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
-                addr!("0000000000000000000000000000000000000001"),
+                address!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
+                address!("0000000000000000000000000000000000000001"),
             )
             .await
             .unwrap();
@@ -520,11 +540,13 @@ mod tests {
 
     #[test]
     fn test_sort_storage_overrides_reverses_order() {
-        let contract = addr!("0000000000000000000000000000000000000002");
-        let contract2 = addr!("0000000000000000000000000000000000000002");
-        let slot1 = H256::from_low_u64_be(1);
-        let slot2 = H256::from_low_u64_be(2);
-        let slot3 = H256::from_low_u64_be(3);
+        use alloy::primitives::{address, b256};
+
+        let contract = address!("0000000000000000000000000000000000000002");
+        let contract2 = address!("0000000000000000000000000000000000000002");
+        let slot1 = b256!("0000000000000000000000000000000000000000000000000000000000000001");
+        let slot2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
+        let slot3 = b256!("0000000000000000000000000000000000000000000000000000000000000003");
         let mut slots = vec![
             (contract, slot1),
             (contract2, slot3),
@@ -532,7 +554,7 @@ mod tests {
             (contract, slot3),
             (contract2, slot1),
         ];
-        let holder = addr!("0000000000000000000000000000000000000001");
+        let holder = address!("0000000000000000000000000000000000000001");
 
         // These slots don't match any heuristic, so should just be reversed
         sort_storage_overrides(&mut slots, &holder, 5);
@@ -551,25 +573,25 @@ mod tests {
 
     #[test]
     fn test_sort_storage_overrides_with_heuristic_slots_stable() {
-        use web3::signing;
+        use alloy::primitives::{address, b256};
 
-        let contract = addr!("0000000000000000000000000000000000000002");
-        let holder = addr!("1111111111111111111111111111111111111111");
+        let contract = address!("0000000000000000000000000000000000000002");
+        let holder = address!("1111111111111111111111111111111111111111");
 
         // Calculate what slot index 0 would hash to for this holder
         let mut buf = [0u8; 64];
-        buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+        buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(0).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot1 = H256(signing::keccak256(&buf));
+        let heuristic_slot1 = B256::from(signing::keccak256(&buf));
         U256::from(5).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot2 = H256(signing::keccak256(&buf));
+        let heuristic_slot2 = B256::from(signing::keccak256(&buf));
         U256::from(10).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot3 = H256(signing::keccak256(&buf));
+        let heuristic_slot3 = B256::from(signing::keccak256(&buf));
 
         // Create non-heuristic slots
-        let slot1 = H256::from_low_u64_be(999);
-        let slot2 = H256::from_low_u64_be(998);
-        let slot3 = H256::from_low_u64_be(995);
+        let slot1 = b256!("00000000000000000000000000000000000000000000000000000000000003e7");
+        let slot2 = b256!("00000000000000000000000000000000000000000000000000000000000003e6");
+        let slot3 = b256!("00000000000000000000000000000000000000000000000000000000000003e3");
 
         let mut slots = vec![
             (contract, slot1),
@@ -601,17 +623,19 @@ mod tests {
 
     #[test]
     fn test_sort_storage_overrides_zero_heuristic_depth() {
-        let contract = addr!("0000000000000000000000000000000000000002");
-        let holder = addr!("5555555555555555555555555555555555555555");
+        use alloy::primitives::{address, b256};
 
-        let slot1 = H256::from_low_u64_be(1);
-        let slot2 = H256::from_low_u64_be(2);
-        let slot3 = H256::from_low_u64_be(3);
+        let contract = address!("0000000000000000000000000000000000000002");
+        let holder = address!("5555555555555555555555555555555555555555");
+
+        let slot1 = b256!("0000000000000000000000000000000000000000000000000000000000000001");
+        let slot2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
+        let slot3 = b256!("0000000000000000000000000000000000000000000000000000000000000003");
 
         let mut buf = [0u8; 64];
-        buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+        buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(0).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot = H256(signing::keccak256(&buf));
+        let heuristic_slot = B256::from(signing::keccak256(&buf));
 
         let mut slots = vec![
             (contract, slot1),
