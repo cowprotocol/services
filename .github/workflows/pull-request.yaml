@@ -258,7 +258,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -296,7 +296,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! just test-e2e forked_node_mainnet_repay_debt_with_collateral_of_safe; then
+            if ! just test-e2e local_node_non_settling_solver; then
               exit 1
             fi
             attempt=$((attempt+1))
