@@ -174,9 +174,7 @@ impl Inner {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
                             let price = f64::from(self.native_token_price_estimation_amount)
-                                / f64::from(route
-                                    .input()
-                                    .amount);
+                                / f64::from(route.input().amount);
                             let Some(price) = to_normalized_price(price) else {
                                 continue;
                             };
