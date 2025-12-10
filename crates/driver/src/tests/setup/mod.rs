@@ -892,7 +892,6 @@ impl Setup {
         } = self;
 
         // Hardcoded trader account. Don't use this account for anything else!!!
-        let trader_address = TRADER_ADDRESS;
         let trader_secret_key = SecretKey::from_slice(
             &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
                 .unwrap(),
@@ -987,7 +986,7 @@ impl Setup {
             blockchain,
             driver,
             client: Default::default(),
-            trader_address,
+            trader_address: TRADER_ADDRESS,
             trades: solutions.into_iter().flat_map(|s| s.trades).collect(),
             trusted,
             deadline,

@@ -113,9 +113,8 @@ impl Trade {
                     .widening_mul(self.signed_buy.amount.0)
                     .checked_div(alloy::primitives::U512::from(self.signed_sell.amount.0))
                     .ok_or(Error::Math(Math::DivisionByZero))?;
-                let surplus_in_buy_tokens: eth::U256 =
-                    eth::U256::uint_try_from(surplus_in_buy_tokens)
-                        .map_err(|_| Error::Math(Math::Overflow))?;
+                let surplus_in_buy_tokens = eth::U256::uint_try_from(surplus_in_buy_tokens)
+                    .map_err(|_| Error::Math(Math::Overflow))?;
 
                 // Afterwards we convert the buy token surplus to the native token.
                 native_price_buy.in_eth(surplus_in_buy_tokens.into())
