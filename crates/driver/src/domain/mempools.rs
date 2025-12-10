@@ -164,7 +164,7 @@ impl Mempools {
         tracing::debug!(
             submission_block,
             blocks_until_deadline,
-            replacement_gas_price = ?replacement_gas_price.ok(),
+            ?replacement_gas_price,
             ?current_gas_price,
             ?final_gas_price,
             "submitting settlement tx"
