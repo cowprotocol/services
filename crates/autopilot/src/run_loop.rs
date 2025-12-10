@@ -162,13 +162,13 @@ impl RunLoop {
         while !control.should_shutdown() {
             leader_lock_tracker.try_acquire().await;
 
+            // Wait for notify about some significant state change (e.g. new
+            // order, new block). We only update the cache afterwards to update
+            // to the most recent state.
+            self_arc.wake_notify.notified().await;
             let start_block = self_arc
                 .update_caches(&mut last_block, leader_lock_tracker.is_leader())
                 .await;
-
-            // Wait for a new block or order before proceeding (we do this *after* caches
-            // are loaded to reduce auction start time)
-            self_arc.wake_notify.notified().await;
 
             // caches are warmed up, we're ready to do leader work
             if let Some(startup) = self_arc.probes.startup.as_ref() {
