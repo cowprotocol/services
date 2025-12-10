@@ -158,7 +158,7 @@ impl Mempools {
             {
                 *replacement_gas_price
             }
-            _ => current_gas_price,
+            _ => estimated_gas_price,
         };
 
         tracing::debug!(
