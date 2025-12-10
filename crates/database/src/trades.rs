@@ -25,6 +25,8 @@ pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,
     order_uid_filter: Option<&'a OrderUid>,
+    offset: i64,
+    limit: i64,
 ) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
     const COMMON_QUERY: &str = r#"
 SELECT
@@ -49,27 +51,44 @@ LEFT OUTER JOIN LATERAL (
 ) AS settlement ON true"#;
 
     const QUERY: &str = const_format::concatcp!(
+        "(",
         COMMON_QUERY,
         " JOIN orders o ON o.uid = t.order_uid",
         " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
+        " ORDER BY t.block_number DESC, t.log_index DESC",
+        " LIMIT $3 + $4",
+        ")",
         " UNION ",
+        "(",
         COMMON_QUERY,
         " JOIN orders o ON o.uid = t.order_uid",
         " LEFT OUTER JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
         " WHERE onchain_o.sender = $1",
         " AND ($2 IS NULL OR o.uid = $2)",
+        " ORDER BY t.block_number DESC, t.log_index DESC",
+        " LIMIT $3 + $4",
+        ")",
         " UNION ",
+        "(",
         COMMON_QUERY,
         " JOIN jit_orders o ON o.uid = t.order_uid",
         " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
+        " ORDER BY t.block_number DESC, t.log_index DESC",
+        " LIMIT $3 + $4",
+        ")",
+        " ORDER BY block_number DESC, log_index DESC",
+        " LIMIT $3",
+        " OFFSET $4",
     );
 
     sqlx::query_as(QUERY)
         .bind(owner_filter)
         .bind(order_uid_filter)
+        .bind(limit)
+        .bind(offset)
         .fetch(ex)
         .instrument(info_span!("trades"))
 }
@@ -213,7 +232,8 @@ mod tests {
         order_uid_filter: Option<&OrderUid>,
         expected: &[TradesQueryRow],
     ) {
-        let mut filtered = trades(db, owner_filter, order_uid_filter)
+        // Use large limit to get all trades
+        let mut filtered = trades(db, owner_filter, order_uid_filter, 0, 1000)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
@@ -287,7 +307,7 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        trades(&mut db, Some(&ByteArray([2u8; 20])), None)
+        trades(&mut db, Some(&ByteArray([2u8; 20])), None, 0, 100)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
@@ -654,5 +674,74 @@ mod tests {
             token_first_trade_block(&mut db, token).await.unwrap(),
             Some(123)
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_pagination() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // Create 5 trades with the same owner
+        let (owners, order_ids) = generate_owners_and_order_ids(1, 5).await;
+        let owner = owners[0];
+
+        let mut expected_trades = Vec::new();
+        for (i, order_id) in order_ids.iter().enumerate() {
+            let trade = add_order_and_trade(
+                &mut db,
+                owner,
+                *order_id,
+                EventIndex {
+                    block_number: i.try_into().unwrap(),
+                    log_index: 0,
+                },
+                None,
+                None,
+            )
+            .await;
+            expected_trades.push(trade);
+        }
+
+        // Sort expected trades by block_number DESC (matching query ORDER BY)
+        expected_trades.sort_by(|a, b| b.block_number.cmp(&a.block_number));
+
+        // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
+        let result = trades(&mut db, Some(&owner), None, 0, 2)
+            .into_inner()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], expected_trades[0]); // block 4
+        assert_eq!(result[1], expected_trades[1]); // block 3
+
+        // Test offset: skip first 2, get next 2 (blocks 2 and 1 in DESC order)
+        let result = trades(&mut db, Some(&owner), None, 2, 2)
+            .into_inner()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], expected_trades[2]); // block 2
+        assert_eq!(result[1], expected_trades[3]); // block 1
+
+        // Test offset beyond available trades
+        let result = trades(&mut db, Some(&owner), None, 10, 2)
+            .into_inner()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Test large limit returns all available trades in DESC order
+        let result = trades(&mut db, Some(&owner), None, 0, 100)
+            .into_inner()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result, expected_trades);
     }
 }
