@@ -1303,7 +1303,7 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_same_tokens_allow_sell() {
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().alloy);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
