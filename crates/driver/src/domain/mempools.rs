@@ -48,19 +48,18 @@ impl Mempools {
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
-        let (submission, _remaining_futures) =
-            select_ok(self.mempools.iter().cloned().map(|mempool| {
-                async move {
-                    let result = self
-                        .submit(&mempool, solver, settlement, submission_deadline)
-                        .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
-                        .await;
-                    observe::mempool_executed(&mempool, settlement, &result);
-                    result
-                }
-                .boxed()
-            }))
-            .await?;
+        let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
+            async move {
+                let result = self
+                    .submit(mempool, solver, settlement, submission_deadline)
+                    .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
+                    .await;
+                observe::mempool_executed(mempool, settlement, &result);
+                result
+            }
+            .boxed()
+        }))
+        .await?;
 
         Ok(submission.tx_hash)
     }
@@ -373,13 +372,19 @@ pub enum RevertProtection {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Mined reverted transaction: {tx_id:?}, block number: {reverted_at_block}")]
+    #[error(
+        "Mined reverted transaction: {tx_id:?}, submitted at: {submitted_at_block}, reverted at: \
+         {reverted_at_block}"
+    )]
     Revert {
         tx_id: eth::TxId,
         submitted_at_block: BlockNo,
         reverted_at_block: BlockNo,
     },
-    #[error("Simulation started reverting during submission, block number: {reverted_at_block}")]
+    #[error(
+        "Simulation started reverting during submission, submitted at: {submitted_at_block}, \
+         reverted at: {reverted_at_block}"
+    )]
     SimulationRevert {
         submitted_at_block: BlockNo,
         reverted_at_block: BlockNo,
