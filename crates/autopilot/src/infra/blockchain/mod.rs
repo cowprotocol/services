@@ -165,7 +165,7 @@ fn into_domain(
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into_alloy()
             .into(),
-        timestamp: u32::try_from(timestamp).expect("value should be lower than u32::MAX"),
+        timestamp: u32::try_from(timestamp)?,
         trace_calls: trace_calls.into(),
     })
 }
