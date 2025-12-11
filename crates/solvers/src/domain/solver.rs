@@ -193,6 +193,8 @@ impl Inner {
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrappers = request.wrappers.clone();
                 let solution = if order.sell.token == order.buy.token {
+                    // When sell and buy tokens are the same, the solution does not require routing
+                    // and incurs no additional gas since the liquidity comes from the user
                     let (input, mut output) = match order.side {
                         Side::Sell => (order.sell, order.buy),
                         Side::Buy => (order.buy, order.sell),

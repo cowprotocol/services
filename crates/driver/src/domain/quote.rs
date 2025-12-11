@@ -85,10 +85,10 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
-        let liquidity = match (solver.liquidity(), self.token_liquidity()) {
-            (solver::Liquidity::Fetch, pairs) if !pairs.is_empty() => {
+        let liquidity = match solver.liquidity() {
+            solver::Liquidity::Fetch => {
                 liquidity
-                    .fetch(&pairs, infra::liquidity::AtBlock::Recent)
+                    .fetch(&self.token_liquidity(), infra::liquidity::AtBlock::Recent)
                     .await
             }
             _ => Default::default(),

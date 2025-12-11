@@ -222,15 +222,25 @@ pub enum SameTokensPolicy {
 }
 
 impl SameTokensPolicy {
-    fn validate_same_sell_and_buy_token(&self, order: &PreOrderData) -> bool {
-        if order.sell_token != order.buy_token {
-            return true;
+    fn validate_same_sell_and_buy_token(
+        &self,
+        order: &PreOrderData,
+        native_token: &Address,
+    ) -> Result<(), PartialValidationError> {
+        // Check for orders selling wrapped native token for native token.
+        if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
+            return Err(PartialValidationError::SameBuyAndSellToken);
         }
-        matches!(
-            (self, order.kind),
-            /* (Self::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963 */
-            (Self::AllowSell, OrderKind::Sell)
-        )
+
+        if order.sell_token != order.buy_token {
+            return Ok(());
+        }
+
+        match (self, order.kind) {
+            // (Self::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
+            (Self::AllowSell, OrderKind::Sell) => Ok(()),
+            _ => Err(PartialValidationError::SameBuyAndSellToken),
+        }
     }
 }
 
@@ -505,18 +515,8 @@ impl OrderValidating for OrderValidator {
         }
 
         self.validity_configuration.validate_period(&order)?;
-
-        if !self
-            .same_tokens_policy
-            .validate_same_sell_and_buy_token(&order)
-        {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
-
-        // Check for orders selling wrapped native token for native token.
-        if &order.sell_token == self.native_token.address() && order.buy_token == BUY_ETH_ADDRESS {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
+        self.same_tokens_policy
+            .validate_same_sell_and_buy_token(&order, self.native_token.address())?;
 
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);

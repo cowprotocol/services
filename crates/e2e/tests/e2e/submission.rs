@@ -173,12 +173,18 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         .await
         .expect("Must be able to disable automine");
 
+    let initial_balance = token.balanceOf(trader.address()).call().await.unwrap();
+    assert_eq!(initial_balance, eth(10));
+
+    let sell_amount = eth(1); // Sell 1 wei
+    let buy_amount = eth(1) - U256::from(10).pow(U256::from(16)); // For 0.99 wei, for order to execute
+
     tracing::info!("Placing order");
     let order = OrderCreation {
         sell_token: *token.address(),
-        sell_amount: eth(1),
+        sell_amount,
         buy_token: *token.address(),
-        buy_amount: eth(1),
+        buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -189,6 +195,62 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    // Start tracking confirmed blocks so we can find the transaction later
+    let block_stream = web3
+        .eth_filter()
+        .create_blocks_filter()
+        .await
+        .expect("must be able to create blocks filter")
+        .stream(Duration::from_millis(50));
+
+    tracing::info!("Waiting for trade.");
+    onchain.mint_block().await;
+
+    // Wait for settlement tx to appear in txpool
+    wait_for_condition(TIMEOUT, || async {
+        get_pending_tx(solver.account().address(), &web3)
+            .await
+            .is_some()
+    })
+    .await
+    .unwrap();
+
+    // Continue mining to confirm the settlement
+    web3.api::<TestNodeApi<_>>()
+        .set_automine_enabled(true)
+        .await
+        .expect("Must be able to enable automine");
+
+    // Wait for the settlement to be confirmed on chain
+    let tx = tokio::time::timeout(
+        Duration::from_secs(5),
+        get_confirmed_transaction(solver.account().address(), &web3, block_stream),
+    )
+    .await
+    .unwrap();
+
+    // Verify the transaction is to the settlement contract (not a cancellation)
+    assert_eq!(
+        tx.to,
+        Some(onchain.contracts().gp_settlement.address().into_legacy())
+    );
+
+    // Verify that the balance changed (settlement happened on chain)
+    let trade_happened = || async {
+        let balance = token.balanceOf(trader.address()).call().await.unwrap();
+        // Balance should change due to fees even if sell token == buy token
+        balance != initial_balance
+    };
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+
+    let final_balance = token.balanceOf(trader.address()).call().await.unwrap();
+    tracing::info!(?initial_balance, ?final_balance, "Trade completed");
+
+    // Verify that the balance changed (settlement happened on chain)
+    assert!(
+        final_balance < initial_balance,
+        "Final balance should be smaller than initial balance due to fees"
+    );
 }
 
 async fn test_execute_same_sell_and_buy_token(web3: Web3) {
