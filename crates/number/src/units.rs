@@ -4,20 +4,20 @@ use alloy::primitives::{
 };
 
 pub trait EthUnit: std::marker::Sized {
-    /// Returns the current wei amount.
+    /// Converts this value to wei.
     fn wei(self) -> U256;
 
-    /// Returns the current Mwei amount as wei (i.e. 1e6 wei).
+    /// Converts this value from Mwei to wei (multiplies by 1e6).
     fn mwei(self) -> U256 {
         self.wei() * Unit::MWEI.wei()
     }
 
-    /// Returns the current Gwei amount as wei (i.e. 1e9 wei).
+    /// Converts this value from Gwei to wei (multiplies by 1e9).
     fn gwei(self) -> U256 {
         self.wei() * Unit::GWEI.wei()
     }
 
-    /// Returns the current Eth amount as wei (i.e. 1e18 wei).
+    /// Converts this value from Eth to wei (multiplies by 1e18).
     fn eth(self) -> U256 {
         self.wei() * Unit::ETHER.wei()
     }
