@@ -146,8 +146,8 @@ pub struct Arguments {
     #[clap(flatten)]
     pub volume_fee_config: Option<VolumeFeeConfig>,
 
-    /// Controls if same sell and buy token orders are allowed
-    /// Disallowed by default
+    /// Controls if same sell and buy token orders are allowed.
+    /// Disallowed by default.
     #[clap(long, env, default_value = "disallow")]
     pub same_tokens_policy: shared::order_validation::SameTokensPolicy,
 }
