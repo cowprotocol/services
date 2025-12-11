@@ -3,10 +3,8 @@ use {
         boundary,
         domain::{self, auction::order, eth},
     },
-    alloy::sol_types::SolCall,
+    alloy::{primitives::BlockNumber, sol_types::SolCall},
     contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement},
-    ethcontract::BlockId,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     std::collections::HashSet,
 };
 
@@ -20,7 +18,7 @@ pub trait Authenticator {
     async fn is_valid_solver(
         &self,
         prospective_solver: eth::Address,
-        block: BlockId,
+        block: BlockNumber,
     ) -> Result<bool, Error>;
 }
 
@@ -29,7 +27,7 @@ impl Authenticator for GPv2AllowListAuthentication::Instance {
     async fn is_valid_solver(
         &self,
         prospective_solver: eth::Address,
-        block: BlockId,
+        block: BlockNumber,
     ) -> Result<bool, Error> {
         // It's technically possible that some time passes between the transaction
         // happening and us indexing it. If the transaction was malicious and
@@ -38,7 +36,7 @@ impl Authenticator for GPv2AllowListAuthentication::Instance {
         // underlying call needs to happen on the same block the transaction happened.
         Ok(self
             .isSolver(prospective_solver)
-            .block(block.into_alloy())
+            .block(block.into())
             .call()
             .await
             .map_err(Error::Authentication)?)
@@ -84,7 +82,7 @@ impl Transaction {
         // In cases of solvers using EOA to submit solutions, the address is the sender
         // of the transaction. In cases of solvers using a smart contract to
         // submit solutions, the address is deduced from the calldata.
-        let block = BlockId::Number(transaction.block.0.into());
+        let block = BlockNumber::from(transaction.block.0);
         let solver = find_solver_address(authenticator, callers, block).await?;
 
         /// Number of bytes that may be appended to the calldata to store an
@@ -121,7 +119,7 @@ impl Transaction {
 
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
-                    let flags = tokenized::TradeFlags(trade.flags.into_legacy());
+                    let flags = tokenized::TradeFlags(trade.flags);
                     let sell_token_index = usize::try_from(trade.sellTokenIndex)
                         .expect("SC was able to look up this index");
                     let buy_token_index = usize::try_from(trade.buyTokenIndex)
@@ -210,7 +208,7 @@ fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address
 async fn find_solver_address(
     authenticator: &impl Authenticator,
     callers: Vec<eth::Address>,
-    block: BlockId,
+    block: BlockNumber,
 ) -> Result<Option<eth::Address>, Error> {
     let mut checked_callers = HashSet::new();
     for caller in &callers {

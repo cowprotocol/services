@@ -357,8 +357,7 @@ mod tests {
             eth,
             settlement::{OrderMatchKey, trade_to_key},
         },
-        alloy::primitives::address,
-        ethcontract::BlockId,
+        alloy::primitives::{BlockNumber, address},
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
     };
@@ -371,7 +370,7 @@ mod tests {
         async fn is_valid_solver(
             &self,
             _prospective_solver: eth::Address,
-            _block: BlockId,
+            _block: BlockNumber,
         ) -> Result<bool, super::transaction::Error> {
             return Ok(true);
         }
