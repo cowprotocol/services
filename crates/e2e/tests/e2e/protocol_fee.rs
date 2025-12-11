@@ -3,7 +3,7 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
-        setup::{eth, fee::*, *},
+        setup::{fee::*, *},
     },
     ethcontract::{Address, prelude::U256},
     ethrpc::alloy::{
@@ -22,6 +22,7 @@ use {
         },
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     reqwest::StatusCode,
     secp256k1::SecretKey,
     serde_json::json,
@@ -83,14 +84,14 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(200)).await;
-    let [trader] = onchain.make_accounts(eth(200)).await;
+    let [solver] = onchain.make_solvers(200u64.eth()).await;
+    let [trader] = onchain.make_accounts(200u64.eth()).await;
     let [
         limit_order_token,
         market_order_token,
         partner_fee_order_token,
     ] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
+        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth().into_legacy(), 20u64.eth().into_legacy())
         .await;
 
     for token in &[
@@ -98,17 +99,23 @@ async fn combined_protocol_fees(web3: Web3) {
         &market_order_token,
         &partner_fee_order_token,
     ] {
-        token.mint(solver.address(), eth(1000)).await;
+        token.mint(solver.address(), 1000u64.eth()).await;
 
         token
-            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+            .approve(
+                *onchain.contracts().uniswap_v2_router.address(),
+                1000u64.eth(),
+            )
             .from(solver.address())
             .send_and_watch()
             .await
             .unwrap();
 
         token
-            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(100))
+            .approve(
+                *onchain.contracts().uniswap_v2_router.address(),
+                100u64.eth(),
+            )
             .from(trader.address())
             .send_and_watch()
             .await
@@ -118,7 +125,7 @@ async fn combined_protocol_fees(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -128,14 +135,17 @@ async fn combined_protocol_fees(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(eth(100))
+        .value(100u64.eth())
         .send_and_watch()
         .await
         .unwrap();
     onchain
         .contracts()
         .weth
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(200))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            200u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -163,7 +173,7 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
-    let sell_amount = to_wei(10);
+    let sell_amount = 10u64.eth().into_legacy();
     let [limit_quote_before, market_quote_before, partner_fee_quote] =
         futures::future::try_join_all(
             [
@@ -224,13 +234,13 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
     onchain
-        .mint_token_to_weth_uni_v2_pool(&market_order_token, eth(1000))
+        .mint_token_to_weth_uni_v2_pool(&market_order_token, 1000u64.eth())
         .await;
     onchain
-        .mint_token_to_weth_uni_v2_pool(&limit_order_token, eth(1000))
+        .mint_token_to_weth_uni_v2_pool(&limit_order_token, 1000u64.eth())
         .await;
     onchain
-        .mint_token_to_weth_uni_v2_pool(&partner_fee_order_token, eth(1000))
+        .mint_token_to_weth_uni_v2_pool(&partner_fee_order_token, 1000u64.eth())
         .await;
 
     tracing::info!("Waiting for liquidity state to update");
@@ -450,23 +460,29 @@ async fn surplus_partner_fee(web3: Web3) {
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(200)).await;
-    let [trader] = onchain.make_accounts(eth(200)).await;
+    let [solver] = onchain.make_solvers(200u64.eth()).await;
+    let [trader] = onchain.make_accounts(200u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
+        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth().into_legacy(), 20u64.eth().into_legacy())
         .await;
 
-    token.mint(solver.address(), eth(1000)).await;
+    token.mint(solver.address(), 1000u64.eth()).await;
 
     token
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(100))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            100u64.eth(),
+        )
         .from(trader.address())
         .send_and_watch()
         .await
@@ -474,7 +490,7 @@ async fn surplus_partner_fee(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -484,14 +500,17 @@ async fn surplus_partner_fee(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(eth(100))
+        .value(100u64.eth())
         .send_and_watch()
         .await
         .unwrap();
     onchain
         .contracts()
         .weth
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(200))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            200u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -511,10 +530,10 @@ async fn surplus_partner_fee(web3: Web3) {
         .await;
 
     let order = OrderCreation {
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         sell_token: *onchain.contracts().weth.address(),
         // just set any low amount since it doesn't matter for this test
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         buy_token: *token.address(),
         app_data: partner_fee_app_data.clone(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -672,18 +691,21 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund trader accounts
-    token_gno.mint(trader.address(), eth(100)).await;
+    token_gno.mint(trader.address(), 100u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_gno.mint(solver.address(), eth(1000)).await;
-    token_dai.mint(solver.address(), eth(1000)).await;
+    token_gno.mint(solver.address(), 1000u64.eth()).await;
+    token_dai.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -694,14 +716,20 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         .unwrap();
 
     token_gno
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_dai
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -712,8 +740,8 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         .addLiquidity(
             *token_gno.address(),
             *token_dai.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             ::alloy::primitives::U256::ZERO,
             ::alloy::primitives::U256::ZERO,
             solver.address(),
@@ -727,7 +755,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -750,7 +778,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         token_gno.address().into_legacy(),
         token_dai.address().into_legacy(),
         OrderKind::Buy,
-        to_wei(5),
+        5u64.eth().into_legacy(),
         model::time::now_in_epoch_seconds() + 300,
     )
     .await
@@ -761,7 +789,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         sell_token: *token_gno.address(),
         sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
         buy_token: *token_dai.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -827,18 +855,21 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund trader accounts
-    token_gno.mint(trader.address(), eth(100)).await;
+    token_gno.mint(trader.address(), 100u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_gno.mint(solver.address(), eth(1000)).await;
-    token_dai.mint(solver.address(), eth(1000)).await;
+    token_gno.mint(solver.address(), 1000u64.eth()).await;
+    token_dai.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -849,14 +880,20 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         .unwrap();
 
     token_gno
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_dai
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -867,8 +904,8 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         .addLiquidity(
             *token_gno.address(),
             *token_dai.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             ::alloy::primitives::U256::ZERO,
             ::alloy::primitives::U256::ZERO,
             solver.address(),
@@ -882,7 +919,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -905,7 +942,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         token_gno.address().into_legacy(),
         token_dai.address().into_legacy(),
         OrderKind::Buy,
-        to_wei(5),
+        5u64.eth().into_legacy(),
         model::time::now_in_epoch_seconds() + 300,
     )
     .await
@@ -916,7 +953,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         sell_token: *token_gno.address(),
         sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
         buy_token: *token_dai.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
