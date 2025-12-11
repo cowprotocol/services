@@ -91,7 +91,7 @@ impl Order {
                     .fetch(&self.token_liquidity(), infra::liquidity::AtBlock::Recent)
                     .await
             }
-            _ => Default::default(),
+            solver::Liquidity::Skip => Default::default(),
         };
 
         let auction = self
