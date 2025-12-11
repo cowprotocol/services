@@ -94,7 +94,7 @@ impl Trade {
             self.order.metadata.owner.into_legacy(),
             sell_token_index,
             buy_token_index,
-            &self.executed_amount.into_legacy(),
+            self.executed_amount.into_legacy(),
         )
     }
 }

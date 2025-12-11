@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256 as AlloyU256,
+    ::alloy::primitives::{U256, utils::Unit},
     database::order_events::OrderEventLabel,
     e2e::setup::{eth, *},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
@@ -17,7 +17,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
@@ -95,7 +95,7 @@ async fn order_cancellation(web3: Web3) {
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
-                    value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+                    value: NonZeroU256::try_from(U256::ONE * Unit::ETHER.wei()).unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Full {
@@ -110,9 +110,9 @@ async fn order_cancellation(web3: Web3) {
                 kind: quote.kind,
                 sell_token: quote.sell_token,
                 sell_amount: quote.sell_amount,
-                fee_amount: ::alloy::primitives::U256::ZERO,
+                fee_amount: U256::ZERO,
                 buy_token: quote.buy_token,
-                buy_amount: ((quote.buy_amount * AlloyU256::from(99)) / AlloyU256::from(100)),
+                buy_amount: ((quote.buy_amount * U256::from(99)) / U256::from(100)),
                 valid_to: quote.valid_to,
                 app_data: quote.app_data,
                 ..Default::default()

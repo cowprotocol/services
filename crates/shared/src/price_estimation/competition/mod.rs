@@ -252,7 +252,7 @@ mod tests {
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
         std::time::Duration,
         tokio::time::sleep,
     };

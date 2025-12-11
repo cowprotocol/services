@@ -55,7 +55,7 @@ use {
         signature::{Signature, hashed_eip712_message},
         trade::Trade,
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     refunder::refund_service::{INVALIDATED_OWNER, NO_OWNER},
     reqwest::Client,
     shared::signature_validator::check_erc1271_result,
@@ -434,10 +434,7 @@ async fn test_submit_quote(
         panic!("untested!");
     };
 
-    assert_eq!(
-        response.quote.sell_amount,
-        sell_amount_after_fees.get().into_alloy()
-    );
+    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get());
 
     response
 }
@@ -862,7 +859,7 @@ impl EthFlowTradeIntent {
             },
             side: OrderQuoteSide::Sell {
                 sell_amount: model::quote::SellAmount::AfterFee {
-                    value: NonZeroU256::try_from(self.sell_amount.into_legacy()).unwrap(),
+                    value: NonZeroU256::try_from(self.sell_amount).unwrap(),
                 },
             },
             buy_token_balance: BuyTokenDestination::Erc20,

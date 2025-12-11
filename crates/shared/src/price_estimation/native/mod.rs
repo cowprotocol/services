@@ -4,7 +4,7 @@ use {
     bigdecimal::{BigDecimal, ToPrimitive},
     futures::FutureExt,
     model::order::OrderKind,
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     std::{
         sync::{Arc, LazyLock},
         time::Duration,
@@ -123,7 +123,6 @@ mod tests {
         super::*,
         crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         alloy::primitives::{Address, U256},
-        ethrpc::alloy::conversions::IntoLegacy,
         primitive_types::H160,
         std::str::FromStr,
     };
@@ -149,10 +148,8 @@ mod tests {
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
             native_token: Address::with_last_byte(7),
-            price_estimation_amount: NonZeroU256::try_from(
-                U256::from(10).pow(U256::from(18)).into_legacy(),
-            )
-            .unwrap(),
+            price_estimation_amount: NonZeroU256::try_from(U256::from(10).pow(U256::from(18)))
+                .unwrap(),
         };
 
         let result = native_price_estimator
@@ -173,10 +170,8 @@ mod tests {
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
             native_token: Address::with_last_byte(7),
-            price_estimation_amount: NonZeroU256::try_from(
-                U256::from(10).pow(U256::from(18)).into_legacy(),
-            )
-            .unwrap(),
+            price_estimation_amount: NonZeroU256::try_from(U256::from(10).pow(U256::from(18)))
+                .unwrap(),
         };
 
         let result = native_price_estimator

@@ -104,7 +104,7 @@ mod tests {
                 Validity,
             },
         },
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
         reqwest::StatusCode,
         serde_json::json,
         shared::order_quoting::CalculateQuoteError,

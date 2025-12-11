@@ -1,4 +1,5 @@
 use {
+    ::alloy::primitives::{U256, utils::Unit},
     e2e::setup::{eth, *},
     ethcontract::prelude::Address,
     ethrpc::alloy::{
@@ -10,7 +11,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -69,7 +70,7 @@ async fn eth_integration(web3: Web3) {
                 from: Address::default().into_alloy(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(to_wei(43)).unwrap(),
+                        value: NonZeroU256::try_from(U256::from(43) * Unit::ETHER.wei()).unwrap(),
                     },
                 },
                 ..Default::default()

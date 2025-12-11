@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["serde"] }
 bigdecimal = { workspace = true }
 num = { workspace = true }
 primitive-types = { workspace = true }
