@@ -24,14 +24,13 @@ use {
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
-    alloy::eips::BlockNumberOrTag,
+    alloy::{eips::BlockNumberOrTag, primitives::Address},
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
-    ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::conversions::IntoLegacy,
         block_stream::block_number_to_block_number_hash,
     },
     futures::StreamExt,
@@ -662,10 +661,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver
-                    .fairness_threshold
-                    .map(IntoAlloy::into_alloy)
-                    .map(Into::into),
+                driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
                 driver.requested_timeout_on_problems,
             )
@@ -722,10 +718,7 @@ async fn shadow_mode(args: Arguments) -> ! {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver
-                    .fairness_threshold
-                    .map(IntoAlloy::into_alloy)
-                    .map(Into::into),
+                driver.fairness_threshold.map(Into::into),
                 // HACK: the auction logic expects all drivers
                 // to use a different submission address. But
                 // in the shadow environment all drivers use
@@ -734,7 +727,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                 // Luckily the shadow autopilot doesn't use
                 // this address for anything important so we
                 // can simply generate random addresses here.
-                Account::Address(H160::random()),
+                Account::Address(Address::random()),
                 driver.requested_timeout_on_problems,
             )
             .await
