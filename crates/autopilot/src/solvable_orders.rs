@@ -8,7 +8,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
     itertools::Itertools,
@@ -596,16 +596,15 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
             return false;
         };
 
-        let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(
-            &order.into(),
-            balance.into_legacy(),
-        ) else {
+        let Ok(remaining) =
+            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
+        else {
             return false;
         };
 
         let (Ok(sell_amount), Ok(buy_amount)) = (
-            remaining.remaining(order.data.sell_amount.into_legacy()),
-            remaining.remaining(order.data.buy_amount.into_legacy()),
+            remaining.remaining(order.data.sell_amount),
+            remaining.remaining(order.data.buy_amount),
         ) else {
             return false;
         };
@@ -902,6 +901,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{Address, B256},
+        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
