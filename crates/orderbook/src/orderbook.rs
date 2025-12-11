@@ -13,7 +13,7 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -83,8 +83,8 @@ impl Metrics {
                     fee: order.data.fee_amount,
                 },
                 &Amounts {
-                    sell: quote.sell_amount.into_alloy(),
-                    buy: quote.buy_amount.into_alloy(),
+                    sell: quote.sell_amount,
+                    buy: quote.buy_amount,
                     fee: FeeParameters {
                         // safe to unwrap as these values were converted from f64 previously
                         gas_amount: quote.gas_amount.to_f64().unwrap(),

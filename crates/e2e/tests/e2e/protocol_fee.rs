@@ -647,7 +647,7 @@ async fn get_quote(
 }
 
 fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
-    (order.metadata.executed_fee.into_alloy() * quote.buy_amount / quote.sell_amount).into_legacy()
+    (order.metadata.executed_fee * quote.buy_amount / quote.sell_amount).into_legacy()
 }
 
 fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
@@ -813,8 +813,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
     assert!(
-        order.metadata.executed_fee.into_alloy()
-            >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
+        order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
     );
 
     // Check settlement contract balance
@@ -822,8 +821,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         .balanceOf(*onchain.contracts().gp_settlement.address())
         .call()
         .await
-        .unwrap()
-        .into_legacy();
+        .unwrap();
     assert_eq!(order.metadata.executed_fee, balance_after);
 }
 
@@ -977,8 +975,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
     assert!(
-        order.metadata.executed_fee.into_alloy()
-            >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
+        order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
     );
 
     // Check settlement contract balance
@@ -986,7 +983,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         .balanceOf(*onchain.contracts().gp_settlement.address())
         .call()
         .await
-        .unwrap()
-        .into_legacy();
+        .unwrap();
+
     assert_eq!(order.metadata.executed_fee, balance_after);
 }
