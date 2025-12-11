@@ -388,7 +388,7 @@ async fn get_zeroex_order_amounts(
                 feeRecipient: zeroex_order.order().fee_recipient,
                 pool: zeroex_order.order().pool,
                 expiry: zeroex_order.order().expiry,
-                salt: zeroex_order.order().salt.into_alloy(),
+                salt: zeroex_order.order().salt,
             },
             IZeroex::LibSignature::Signature {
                 signatureType: zeroex_order.order().signature.signature_type,
@@ -425,7 +425,7 @@ async fn fill_or_kill_zeroex_limit_order(
                 feeRecipient: order.fee_recipient,
                 pool: order.pool,
                 expiry: order.expiry,
-                salt: order.salt.into_alloy(),
+                salt: order.salt,
             },
             IZeroex::LibSignature::Signature {
                 signatureType: order.signature.signature_type,

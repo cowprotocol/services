@@ -12,7 +12,6 @@ use {
         util::conv::{rational_to_big_decimal, u256::U256Ext},
     },
     app_data::AppDataHash,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::order::{BuyTokenDestination, SellTokenSource},
     std::collections::HashMap,
 };
@@ -225,7 +224,7 @@ pub fn new(
                     solvers_dto::auction::Liquidity::Stable(solvers_dto::auction::StablePool {
                         id: liquidity.id.0.to_string(),
                         address: pool.id.address().into(),
-                        balancer_pool_id: pool.id.0.into_alloy(),
+                        balancer_pool_id: pool.id.0,
                         gas_estimate: liquidity.gas.into(),
                         tokens: pool
                             .reserves
@@ -252,7 +251,7 @@ pub fn new(
                         solvers_dto::auction::WeightedProductPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.id.address().into(),
-                            balancer_pool_id: pool.id.0.into_alloy(),
+                            balancer_pool_id: pool.id.0,
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves

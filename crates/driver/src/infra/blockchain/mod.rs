@@ -270,7 +270,7 @@ impl Ethereum {
     pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
             .eth()
-            .transaction_receipt(tx_hash.0)
+            .transaction_receipt(tx_hash.0.into_legacy())
             .await
             .map(|result| match result {
                 Some(web3::types::TransactionReceipt {
