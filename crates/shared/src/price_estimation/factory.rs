@@ -307,7 +307,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         )
     }
 
-    /// Creates a SanitizedPRiceEstimator that is used for native price
+    /// Creates a SanitizedPriceEstimator that is used for native price
     /// estimations
     fn sanitized_native_price(
         &self,
