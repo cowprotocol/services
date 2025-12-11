@@ -491,7 +491,7 @@ mod tests {
                     verification: Default::default(),
                     sell_token: Address::with_last_byte(1),
                     buy_token: Address::with_last_byte(1),
-                    in_amount: NonZeroU256::try_from(1).unwrap(),
+                    in_amount: Default::default(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
