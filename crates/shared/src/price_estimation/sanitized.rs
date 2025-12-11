@@ -11,7 +11,6 @@ use {
     },
     alloy::primitives::Address,
     anyhow::anyhow,
-    ethrpc::alloy::conversions::IntoAlloy,
     futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
     std::sync::Arc,
@@ -74,7 +73,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
             // be the same and should be priced as usual
             if self.is_estimating_native_price && query.buy_token == query.sell_token {
                 let estimation = Estimate {
-                    out_amount: query.in_amount.get().into_alloy(),
+                    out_amount: query.in_amount.get(),
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
@@ -87,7 +86,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
             // sell WETH for ETH => 1 to 1 conversion with cost for unwrapping
             if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                 let estimation = Estimate {
-                    out_amount: query.in_amount.get().into_alloy(),
+                    out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
                     verified: true,
@@ -100,7 +99,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
             // sell ETH for WETH => 1 to 1 conversion with cost for wrapping
             if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
                 let estimation = Estimate {
-                    out_amount: query.in_amount.get().into_alloy(),
+                    out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
                     verified: true,
@@ -161,19 +160,17 @@ mod tests {
             price_estimation::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         },
         alloy::primitives::{Address, U256 as AlloyU256},
-        ethrpc::alloy::conversions::IntoAlloy,
         model::order::OrderKind,
-        number::nonzero::U256 as NonZeroU256,
-        primitive_types::{H160, U256},
+        number::nonzero::NonZeroU256,
     };
 
-    const BAD_TOKEN: H160 = H160([0x12; 20]);
+    const BAD_TOKEN: Address = Address::repeat_byte(0x12);
 
     #[tokio::test]
     async fn handles_trivial_estimates_on_its_own() {
         let mut bad_token_detector = MockBadTokenDetecting::new();
         bad_token_detector.expect_detect().returning(|token| {
-            if token == BAD_TOKEN.into_alloy() {
+            if token == BAD_TOKEN {
                 Ok(TokenQuality::Bad {
                     reason: "Token not supported".into(),
                 })
@@ -234,7 +231,7 @@ mod tests {
                     verification: Default::default(),
                     sell_token: Address::with_last_byte(1),
                     buy_token: BUY_ETH_ADDRESS,
-                    in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
+                    in_amount: NonZeroU256::MAX,
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -349,7 +346,7 @@ mod tests {
             (
                 Query {
                     verification: Default::default(),
-                    sell_token: BAD_TOKEN.into_alloy(),
+                    sell_token: BAD_TOKEN,
                     buy_token: Address::with_last_byte(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
@@ -357,7 +354,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
-                    token: BAD_TOKEN.into_alloy(),
+                    token: BAD_TOKEN,
                     reason: "".to_string(),
                 }),
             ),
@@ -366,14 +363,14 @@ mod tests {
                 Query {
                     verification: Default::default(),
                     sell_token: Address::with_last_byte(1),
-                    buy_token: BAD_TOKEN.into_alloy(),
+                    buy_token: BAD_TOKEN,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
-                    token: BAD_TOKEN.into_alloy(),
+                    token: BAD_TOKEN,
                     reason: "".to_string(),
                 }),
             ),

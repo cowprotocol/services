@@ -39,7 +39,7 @@ use {
     num::BigRational,
     number::{
         conversions::{big_decimal_to_big_rational, u256_to_big_rational},
-        nonzero::U256 as NonZeroU256,
+        nonzero::NonZeroU256,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -137,10 +137,10 @@ impl TradeVerifier {
                 let tokens = vec![query.sell_token, query.buy_token];
                 let prices = match query.kind {
                     OrderKind::Sell => {
-                        vec![*out_amount, query.in_amount.get().into_alloy()]
+                        vec![*out_amount, query.in_amount.get()]
                     }
                     OrderKind::Buy => {
-                        vec![query.in_amount.get().into_alloy(), *out_amount]
+                        vec![query.in_amount.get(), *out_amount]
                     }
                 };
                 (tokens, prices)
@@ -240,8 +240,8 @@ impl TradeVerifier {
             // settlement buffers to make the quote happen. When the settlement contract
             // itself is the trader or receiver these values need to be adjusted slightly.
             let (sell_amount, buy_amount) = match query.kind {
-                OrderKind::Sell => (query.in_amount.get().into_alloy(), summary.out_amount),
-                OrderKind::Buy => (summary.out_amount, query.in_amount.get().into_alloy()),
+                OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
+                OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
             };
 
             // It looks like the contract lost a lot of sell tokens but only because it was
@@ -309,12 +309,12 @@ impl TradeVerifier {
                 token: query.sell_token.into_legacy(),
                 holder: Self::SPARDOSE.into_legacy(),
                 amount: match query.kind {
-                    OrderKind::Sell => query.in_amount.get(),
+                    OrderKind::Sell => query.in_amount.get().into_legacy(),
                     OrderKind::Buy => trade
                         .out_amount(
                             &query.buy_token,
                             &query.sell_token,
-                            &query.in_amount.get().into_alloy(),
+                            &query.in_amount.get(),
                             &query.kind,
                         )?
                         .into_legacy(),
@@ -467,7 +467,7 @@ impl TradeVerifying for TradeVerifier {
             .out_amount(
                 &query.buy_token,
                 &query.sell_token,
-                &query.in_amount.get().into_alloy(),
+                &query.in_amount.get(),
                 &query.kind,
             )
             .context("failed to compute trade out amount")?;
@@ -536,7 +536,7 @@ fn encode_settlement(
         // ourselves here.
         let buy_amount = match query.kind {
             OrderKind::Sell => *out_amount,
-            OrderKind::Buy => query.in_amount.get().into_alloy(),
+            OrderKind::Buy => query.in_amount.get(),
         };
         trade_interactions.push((
             native_token,
@@ -565,7 +565,7 @@ fn encode_settlement(
     // with helpful error messages.
     let trade_setup_interaction = {
         let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount.get().into_alloy(),
+            OrderKind::Sell => query.in_amount.get(),
             OrderKind::Buy => *out_amount,
         };
         let solver_address = trade.solver();
@@ -614,13 +614,10 @@ fn encode_fake_trade(
     // the [`Trade`] the simulation will still work and we can compute the actual
     // [`Trade::out_amount`] afterwards.
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (
-            query.in_amount.get().into_alloy(),
-            alloy::primitives::U256::ZERO,
-        ),
+        OrderKind::Sell => (query.in_amount.get(), alloy::primitives::U256::ZERO),
         OrderKind::Buy => (
             (*out_amount).max(alloy::primitives::U256::from(u128::MAX)),
-            query.in_amount.get().into_alloy(),
+            query.in_amount.get(),
         ),
     };
     let fake_order = OrderData {
@@ -652,7 +649,7 @@ fn encode_fake_trade(
             .iter()
             .position(|token| token == &query.buy_token)
             .context("missing buy token index")?,
-        &query.in_amount.get(),
+        query.in_amount.get().into_legacy(),
     );
 
     Ok(encoded_trade)
@@ -699,7 +696,7 @@ fn encode_jit_orders(
                     .iter()
                     .position(|token| token.into_legacy() == jit_order.buy_token)
                     .context("missing jit order buy token index")?,
-                &jit_order.executed_amount,
+                jit_order.executed_amount,
             ))
         })
         .collect::<Result<Vec<EncodedTrade>, Error>>()
@@ -853,8 +850,8 @@ fn ensure_quote_accuracy(
 ) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Buy => (summary.out_amount, query.in_amount.get().into_alloy()),
-        OrderKind::Sell => (query.in_amount.get().into_alloy(), summary.out_amount),
+        OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
+        OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
     };
     let (sell_amount, buy_amount) = (
         number::conversions::alloy::u256_to_big_rational(&sell_amount),

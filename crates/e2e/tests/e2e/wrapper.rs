@@ -1,6 +1,6 @@
 use {
     ::alloy::{
-        primitives::{Address, address},
+        primitives::{Address, U256, address, utils::Unit},
         providers::{
             Provider,
             ext::{AnvilApi, DebugApi, ImpersonateConfig},
@@ -137,7 +137,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
             buy_token: *token_usdc.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Both {

@@ -492,10 +492,10 @@ impl OrderQuoter {
             }
             | OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: sell_amount },
-            } => (sell_amount.get().into_alloy(), trade_estimate.out_amount),
+            } => (sell_amount.get(), trade_estimate.out_amount),
             OrderQuoteSide::Buy {
                 buy_amount_after_fee: buy_amount,
-            } => (trade_estimate.out_amount, buy_amount.get().into_alloy()),
+            } => (trade_estimate.out_amount, buy_amount.get()),
         };
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as _,
@@ -617,7 +617,6 @@ impl OrderQuoting for OrderQuoter {
         {
             let sell_amount = sell_amount_before_fee
                 .get()
-                .into_alloy()
                 .saturating_sub(quote.fee_amount);
             if sell_amount.is_zero() {
                 // We want a sell_amount of at least 1!
@@ -811,7 +810,7 @@ mod tests {
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
         model::time,
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
     };
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {

@@ -132,7 +132,7 @@ mod tests {
         alloy::primitives::Address,
         anyhow::anyhow,
         model::order::OrderKind,
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
     };
 
     #[tokio::test]
