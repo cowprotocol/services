@@ -219,7 +219,7 @@ impl Inner {
                                     liquidity: segment.liquidity.clone(),
                                     input: segment.input,
                                     output: segment.output,
-                                    // TODO does the baseline solver know about this
+                                    // NOTE(m-sz): does the baseline solver know about this
                                     // optimization?
                                     internalize: false,
                                 },
