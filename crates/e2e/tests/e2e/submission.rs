@@ -12,7 +12,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::time::Duration,
@@ -297,7 +297,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(quote_sell_amount.into_legacy()).unwrap(),
+                value: NonZeroU256::try_from(quote_sell_amount).unwrap(),
             },
         },
         ..Default::default()

@@ -147,7 +147,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Quoting");
-    let quote_sell_amount = to_wei(1);
+    let quote_sell_amount = eth(1);
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: *token.address(),
