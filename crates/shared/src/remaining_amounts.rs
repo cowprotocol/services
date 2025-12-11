@@ -174,7 +174,10 @@ mod tests {
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(U256::from(1000)).unwrap(), U256::from(1000));
+        assert_eq!(
+            remaining.remaining(U256::from(1000)).unwrap(),
+            U256::from(1000)
+        );
         assert_eq!(remaining.remaining(U256::MAX).unwrap(), U256::MAX);
 
         // For partially fillable orders that are untouched, returns the full
@@ -218,9 +221,18 @@ mod tests {
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(U256::from(100)).unwrap(), U256::from(10));
-        assert_eq!(remaining.remaining(U256::from(101)).unwrap(), U256::from(10));
-        assert_eq!(remaining.remaining(U256::from(200)).unwrap(), U256::from(20));
+        assert_eq!(
+            remaining.remaining(U256::from(100)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(
+            remaining.remaining(U256::from(101)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(
+            remaining.remaining(U256::from(200)).unwrap(),
+            U256::from(20)
+        );
 
         let order = ModelOrder {
             data: OrderData {
@@ -239,10 +251,19 @@ mod tests {
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(U256::from(100)).unwrap(), U256::from(10));
+        assert_eq!(
+            remaining.remaining(U256::from(100)).unwrap(),
+            U256::from(10)
+        );
         assert_eq!(remaining.remaining(U256::from(10)).unwrap(), U256::from(1));
-        assert_eq!(remaining.remaining(U256::from(101)).unwrap(), U256::from(10));
-        assert_eq!(remaining.remaining(U256::from(200)).unwrap(), U256::from(20));
+        assert_eq!(
+            remaining.remaining(U256::from(101)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(
+            remaining.remaining(U256::from(200)).unwrap(),
+            U256::from(20)
+        );
     }
 
     #[test]
@@ -326,8 +347,12 @@ mod tests {
             ..Default::default()
         }
         .into();
-        let remaining = Remaining::from_order_with_balance(&order, order.sell_amount - U256::from(1)).unwrap();
-        assert_eq!(remaining.remaining(U256::from(1000)).unwrap(), U256::from(0));
+        let remaining =
+            Remaining::from_order_with_balance(&order, order.sell_amount - U256::from(1)).unwrap();
+        assert_eq!(
+            remaining.remaining(U256::from(1000)).unwrap(),
+            U256::from(0)
+        );
 
         // A partially fillable order that has not been executed at all scales
         // to the available balance.
@@ -346,12 +371,18 @@ mod tests {
         {
             // More than enough balance for the full order.
             let remaining = Remaining::from_order_with_balance(&order, U256::from(5000)).unwrap();
-            assert_eq!(remaining.remaining(U256::from(800)).unwrap(), U256::from(800));
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(800)
+            );
         }
         {
             // Not enough balance for the full order.
             let remaining = Remaining::from_order_with_balance(&order, U256::from(500)).unwrap();
-            assert_eq!(remaining.remaining(U256::from(800)).unwrap(), U256::from(400));
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(400)
+            );
         }
 
         // A partially fillable order that has has been partially executed scales
@@ -375,12 +406,18 @@ mod tests {
         {
             // More than enough balance for the full order.
             let remaining = Remaining::from_order_with_balance(&order, U256::from(5000)).unwrap();
-            assert_eq!(remaining.remaining(U256::from(800)).unwrap(), U256::from(400));
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(400)
+            );
         }
         {
             // Not enough balance for the full order.
             let remaining = Remaining::from_order_with_balance(&order, U256::from(250)).unwrap();
-            assert_eq!(remaining.remaining(U256::from(800)).unwrap(), U256::from(200));
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(200)
+            );
         }
     }
 
