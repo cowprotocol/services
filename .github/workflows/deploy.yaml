@@ -45,16 +45,12 @@ jobs:
         run: |
           FEATURES=""
 
-          if [ "${{ github.event.inputs.predefined_feature }}" != "None" ] && [ -n "${{ github.event.inputs.predefined_feature }}" ]; then
+          if [ "${{ github.event.inputs.predefined_feature }}" != "None" ]; then
             FEATURES="${{ github.event.inputs.predefined_feature }}"
           fi
 
           if [ -n "${{ github.event.inputs.custom_features }}" ]; then
-            if [ -n "$FEATURES" ]; then
-              FEATURES="$FEATURES ${{ github.event.inputs.custom_features }}"
-            else
-              FEATURES="${{ github.event.inputs.custom_features }}"
-            fi
+            FEATURES="${FEATURES:+$FEATURES }${{ github.event.inputs.custom_features }}"
           fi
 
           if [ -n "$FEATURES" ]; then
