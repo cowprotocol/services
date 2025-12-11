@@ -1,5 +1,8 @@
 use {
-    alloy::providers::Provider,
+    alloy::{
+        primitives::{U256, utils::Unit},
+        providers::Provider,
+    },
     app_data::Hook,
     e2e::setup::{
         OnchainComponents,
@@ -21,7 +24,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSigningScheme, Signature, hashed_eip712_message},
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     reqwest::StatusCode,
     secp256k1::SecretKey,
     serde_json::json,
@@ -614,7 +617,7 @@ async fn quote_verification(web3: Web3) {
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: NonZeroU256::try_from(to_wei(5)).unwrap(),
+                    value: NonZeroU256::try_from(U256::from(5) * Unit::ETHER.wei()).unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Full {

@@ -31,7 +31,7 @@ pub fn encode_trade(
     owner: H160,
     sell_token_index: usize,
     buy_token_index: usize,
-    executed_amount: &U256,
+    executed_amount: U256,
 ) -> EncodedTrade {
     (
         sell_token_index.into(),
@@ -43,7 +43,7 @@ pub fn encode_trade(
         Bytes(order.app_data.0),
         order.fee_amount.into_legacy(),
         order_flags(order, signature),
-        *executed_amount,
+        executed_amount,
         Bytes(signature.encode_for_settlement(owner).to_vec()),
     )
 }
@@ -210,7 +210,7 @@ mod tests {
                 owner,
                 Default::default(),
                 Default::default(),
-                &Default::default(),
+                Default::default(),
             );
             assert_eq!(encoded_signature.0, bytes);
         }

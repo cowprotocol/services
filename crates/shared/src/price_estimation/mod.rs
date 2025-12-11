@@ -8,11 +8,10 @@ use {
     anyhow::{Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::H160,
-    ethrpc::alloy::conversions::IntoAlloy,
     futures::future::BoxFuture,
     itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
@@ -543,8 +542,8 @@ impl Estimate {
     /// Returns (sell_amount, buy_amount).
     pub fn amounts(&self, query: &Query) -> (U256, U256) {
         match query.kind {
-            OrderKind::Buy => (self.out_amount, query.in_amount.get().into_alloy()),
-            OrderKind::Sell => (query.in_amount.get().into_alloy(), self.out_amount),
+            OrderKind::Buy => (self.out_amount, query.in_amount.get()),
+            OrderKind::Sell => (query.in_amount.get(), self.out_amount),
         }
     }
 

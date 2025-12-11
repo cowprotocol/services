@@ -1,6 +1,6 @@
 use {
     ::alloy::{
-        primitives::{Address, U256, address},
+        primitives::{Address, U256, address, utils::Unit},
         providers::Provider,
     },
     bigdecimal::{BigDecimal, Zero},
@@ -15,7 +15,7 @@ use {
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     serde_json::json,
     shared::{
         price_estimation::{
@@ -113,7 +113,7 @@ async fn standard_verified_quote(web3: Web3) {
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -169,7 +169,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         sell_token: address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
                         buy_token: address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         kind: OrderKind::Sell,
-                        in_amount: NonZeroU256::new(12.into()).unwrap(),
+                        in_amount: NonZeroU256::new(U256::from(12)).unwrap(),
                     },
                     &Verification {
                         from: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
@@ -268,7 +268,7 @@ async fn verified_quote_eth_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -305,7 +305,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: to_wei(3).try_into().unwrap(),
+                value: (U256::from(3) * Unit::ETHER.wei()).try_into().unwrap(),
             },
         },
         ..Default::default()
@@ -410,7 +410,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -450,7 +450,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -468,7 +468,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -486,7 +486,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             app_data: model::order::OrderCreationAppData::Full {
@@ -540,7 +540,7 @@ async fn usdt_quote_verification(web3: Web3) {
             buy_token: usdc,
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei_with_exp(1000, 18).try_into().unwrap(),
+                    value: (U256::from(1000) * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()

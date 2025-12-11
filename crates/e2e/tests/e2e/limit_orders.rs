@@ -1,7 +1,7 @@
 use {
     crate::database::AuctionTransaction,
     ::alloy::{
-        primitives::{Address, U256, address},
+        primitives::{Address, U256, address, utils::Unit},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     bigdecimal::BigDecimal,
@@ -715,7 +715,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(to_wei(5)).unwrap(),
+                value: NonZeroU256::try_from(U256::from(5) * Unit::ETHER.wei()).unwrap(),
             },
         },
         ..Default::default()
@@ -871,7 +871,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
             buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei_with_exp(1000, 6).try_into().unwrap(),
+                    value: (U256::from(1000) * Unit::MWEI.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()

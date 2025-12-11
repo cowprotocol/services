@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, address},
+        primitives::{Address, U256, address, utils::Unit},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     contracts::alloy::ERC20,
@@ -96,7 +96,7 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
             buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei_with_exp(1000, 18).try_into().unwrap(),
+                    value: (U256::from(1000) * Unit::ETHER.wei()).try_into().unwrap(),
                 },
             },
             from: BANNED_USER,
