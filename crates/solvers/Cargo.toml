@@ -66,3 +66,4 @@ workspace = true
 
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
+tokio-console = ["observe/tokio-console"]
