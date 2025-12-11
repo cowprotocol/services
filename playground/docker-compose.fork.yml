@@ -213,6 +213,17 @@ services:
     ports:
       - 8000:80
 
+  otterscan:
+    image: otterscan/otterscan:latest
+    restart: always
+    environment:
+      - ERIGON_URL=http://localhost:8545
+    ports:
+      - 8003:80
+    depends_on:
+      chain:
+        condition: service_healthy
+        
   explorer:
     build:
       context: .
