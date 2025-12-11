@@ -1,7 +1,7 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
-    alloy::providers::Provider,
+    alloy::{primitives::U256, providers::Provider},
     chain::Chain,
     ethrpc::{
         Web3,
@@ -9,7 +9,6 @@ use {
         block_stream::CurrentBlockWatcher,
         extensions::DebugNamespace,
     },
-    primitive_types::U256,
     thiserror::Error,
     url::Url,
 };
@@ -134,7 +133,7 @@ impl Ethereum {
             .block(block_hash.into())
             .await?
             .ok_or(Error::TransactionNotFound)?;
-        into_domain(transaction, receipt, traces, block.timestamp)
+        into_domain(transaction, receipt, traces, block.timestamp.into_alloy())
             .map_err(Error::IncompleteTransactionData)
     }
 }
@@ -166,7 +165,7 @@ fn into_domain(
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into_alloy()
             .into(),
-        timestamp: timestamp.as_u32(),
+        timestamp: u32::try_from(timestamp)?,
         trace_calls: trace_calls.into(),
     })
 }

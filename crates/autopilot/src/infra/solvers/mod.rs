@@ -56,7 +56,7 @@ impl Driver {
                             tracing::error!(?name, ?key_id, "Unable to load KMS account");
                             Error::UnableToLoadKmsAccount
                         })?;
-                account.public_address()
+                account.public_address().into_alloy()
             }
             Account::Address(address) => address,
         };
@@ -76,7 +76,7 @@ impl Driver {
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
-            submission_address: submission_address.into_alloy(),
+            submission_address,
             requested_timeout_on_problems,
         })
     }

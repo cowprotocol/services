@@ -15,7 +15,7 @@ name = "autopilot"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 anyhow = { workspace = true }
@@ -45,7 +45,6 @@ model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }

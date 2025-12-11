@@ -1,10 +1,9 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Context, anyhow, ensure},
     chrono::{DateTime, Utc},
     clap::ValueEnum,
-    primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, display_secret_option},
         bad_token::token_owner_finder,
@@ -509,7 +508,7 @@ pub enum Account {
     /// AWS KMS is used to retrieve the solver public key
     Kms(Arn),
     /// Solver public key
-    Address(H160),
+    Address(Address),
 }
 
 // Wrapper type for AWS ARN identifiers
@@ -546,14 +545,16 @@ impl FromStr for Solver {
         let url: Url = url.parse()?;
         let submission_account = match Arn::from_str(parts[2]) {
             Ok(value) => Account::Kms(value),
-            _ => Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?),
+            _ => {
+                Account::Address(Address::from_str(parts[2]).context("failed to parse submission")?)
+            }
         };
 
         let mut fairness_threshold: Option<U256> = Default::default();
         let mut requested_timeout_on_problems = false;
 
         if let Some(value) = parts.get(3) {
-            match U256::from_dec_str(value) {
+            match U256::from_str_radix(value, 10) {
                 Ok(parsed_fairness_threshold) => {
                     fairness_threshold = Some(parsed_fairness_threshold);
                 }
@@ -744,12 +745,12 @@ impl FromStr for CowAmmConfig {
             .next()
             .context("config is missing factory")?
             .parse()
-            .context("could not parse factory as H160")?;
+            .context("could not parse factory as Address")?;
         let helper = parts
             .next()
             .context("config is missing helper")?
             .parse()
-            .context("could not parse helper as H160")?;
+            .context("could not parse helper as Address")?;
         let index_start = parts
             .next()
             .context("config is missing index_start")?
@@ -770,7 +771,7 @@ impl FromStr for CowAmmConfig {
 
 #[cfg(test)]
 mod test {
-    use {super::*, hex_literal::hex};
+    use {super::*, alloy::primitives::address};
 
     #[test]
     fn test_fee_factor_limits() {
@@ -807,9 +808,9 @@ mod test {
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
             requested_timeout_on_problems: false,
-            submission_account: Account::Address(H160::from_slice(&hex!(
+            submission_account: Account::Address(address!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
+            )),
         };
         assert_eq!(driver, expected);
     }
@@ -837,10 +838,10 @@ mod test {
         let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
+            submission_account: Account::Address(address!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
-            fairness_threshold: Some(U256::exp10(18)),
+            )),
+            fairness_threshold: Some(U256::from(10).pow(U256::from(18))),
             requested_timeout_on_problems: false,
         };
         assert_eq!(driver, expected);
@@ -854,9 +855,9 @@ mod test {
         let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
+            submission_account: Account::Address(address!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
+            )),
             fairness_threshold: None,
             requested_timeout_on_problems: true,
         };
@@ -870,10 +871,10 @@ mod test {
         let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
+            submission_account: Account::Address(address!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
-            fairness_threshold: Some(U256::exp10(18)),
+            )),
+            fairness_threshold: Some(U256::from(10).pow(U256::from(18))),
             requested_timeout_on_problems: true,
         };
         assert_eq!(driver, expected);

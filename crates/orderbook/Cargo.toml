@@ -27,7 +27,6 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
@@ -42,7 +41,6 @@ num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
 observe = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
