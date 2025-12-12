@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, Bytes, FixedBytes, U256, address},
+        primitives::{Address, Bytes, FixedBytes, U256, address, utils::Unit},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     contracts::alloy::{
@@ -602,7 +602,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             buy_token: *usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei_with_exp(1000, 6).try_into().unwrap(),
+                    value: (U256::from(1000) * Unit::MWEI.wei()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -983,7 +983,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
-                value: NonZeroU256::try_from(executed_amount.into_legacy()).unwrap(),
+                value: NonZeroU256::try_from(executed_amount).unwrap(),
             },
         },
         ..Default::default()

@@ -1,10 +1,7 @@
 use {
     app_data::{AppDataHash, hash_full_app_data},
     e2e::setup::{eth, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -118,7 +115,7 @@ async fn app_data(web3: Web3) {
             buy_token: order3.buy_token,
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
-                    value: order3.sell_amount.into_legacy().try_into().unwrap(),
+                    value: order3.sell_amount.try_into().unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Hash {

@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::primitives::{U256, utils::Unit},
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
@@ -58,7 +58,7 @@ async fn place_order_with_quote(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Quoting");
-    let quote_sell_amount = to_wei(1);
+    let quote_sell_amount = U256::ONE * Unit::ETHER.wei();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: *onchain.contracts().weth.address(),
@@ -86,7 +86,7 @@ async fn place_order_with_quote(web3: Web3) {
     let order = OrderCreation {
         quote_id: quote_response.id,
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount: quote_sell_amount.into_alloy(),
+        sell_amount: quote_sell_amount,
         buy_token: *token.address(),
         buy_amount: quote_response.quote.buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,

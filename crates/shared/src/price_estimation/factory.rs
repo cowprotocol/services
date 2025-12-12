@@ -30,9 +30,9 @@ use {
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    ethrpc::block_stream::CurrentBlockWatcher,
     gas_estimation::GasPriceEstimating,
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
@@ -125,16 +125,11 @@ impl<'a> PriceEstimatorFactory<'a> {
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {
-        NonZeroU256::try_from(
-            self.args
-                .amount_to_estimate_prices_with
-                .unwrap_or_else(|| {
-                    self.network
-                        .chain
-                        .default_amount_to_estimate_native_prices_with()
-                })
-                .into_legacy(),
-        )
+        NonZeroU256::try_from(self.args.amount_to_estimate_prices_with.unwrap_or_else(|| {
+            self.network
+                .chain
+                .default_amount_to_estimate_native_prices_with()
+        }))
     }
 
     fn rate_limiter(&self, name: &str) -> Arc<RateLimiter> {

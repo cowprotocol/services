@@ -1,6 +1,6 @@
 use {
     crate::domain::competition::Score,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::Context,
     database::{
         auction::AuctionId,
@@ -10,8 +10,6 @@ use {
     },
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
-    number::conversions::u256_to_big_decimal,
-    primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashMap, HashSet},
 };
 
@@ -21,9 +19,9 @@ pub struct Competition {
     pub reference_scores: HashMap<Address, Score>,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
-    pub participants: HashSet<H160>,
+    pub participants: HashSet<Address>,
     /// External prices for auction.
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<Address, U256>,
     /// Winner receives performance rewards if a settlement is finalized on
     /// chain before this block height.
     pub block_deadline: u64,
@@ -67,8 +65,8 @@ impl super::Postgres {
                 .into_iter()
                 .map(|(token, price)| AuctionPrice {
                     auction_id: competition.auction_id,
-                    token: ByteArray(token.0),
-                    price: u256_to_big_decimal(&price),
+                    token: ByteArray(token.0.0),
+                    price: number::conversions::alloy::u256_to_big_decimal(&price),
                 })
                 .collect::<Vec<_>>()
                 .as_slice(),

@@ -27,9 +27,10 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
+    alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::BlockInfo},
+    ethrpc::{alloy::conversions::IntoAlloy, block_stream::BlockInfo},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -40,7 +41,6 @@ use {
         SolverSettlement,
     },
     num::ToPrimitive,
-    primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
@@ -207,11 +207,11 @@ impl RunLoop {
         });
     }
 
-    async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
+    async fn update_caches(&self, prev_block: &mut Option<B256>, is_leader: bool) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
         let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
-            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
+            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash.into_alloy()) {
                 // don't emit warning if we finished prev run loop within the same block
                 tracing::warn!(
                     missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
@@ -249,7 +249,7 @@ impl RunLoop {
         &self,
         start_block: BlockInfo,
         prev_auction: &mut Option<domain::Auction>,
-        prev_block: &mut Option<H256>,
+        prev_block: &mut Option<B256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
         let auction = self.cut_auction().await?;
@@ -258,7 +258,8 @@ impl RunLoop {
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.clone());
         if previous.as_ref() == Some(&auction)
-            && prev_block.replace(start_block.hash) == Some(start_block.hash)
+            && prev_block.replace(start_block.hash.into_alloy())
+                == Some(start_block.hash.into_alloy())
         {
             return None;
         }
@@ -466,7 +467,7 @@ impl RunLoop {
 
         let participants = ranking
             .all()
-            .map(|participant| participant.solution().solver().into_legacy())
+            .map(|participant| participant.solution().solver())
             .collect::<HashSet<_>>();
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
@@ -545,7 +546,7 @@ impl RunLoop {
                 .prices
                 .clone()
                 .into_iter()
-                .map(|(key, value)| (key.0.into_legacy(), value.get().0.into_legacy()))
+                .map(|(key, value)| (key.0, value.get().0))
                 .collect(),
             block_deadline,
             competition_simulation_block,
@@ -612,12 +613,7 @@ impl RunLoop {
     ) -> Vec<competition::Participant<Unranked>> {
         let request = solve::Request::new(
             auction,
-            &self
-                .trusted_tokens
-                .all()
-                .into_iter()
-                .map(IntoLegacy::into_legacy)
-                .collect(),
+            &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
 

@@ -1,4 +1,5 @@
 use {
+    ::alloy::primitives::{U256, utils::Unit},
     e2e::setup::{colocation::SolverEngine, eth, mock::Mock, *},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     futures::FutureExt,
@@ -7,7 +8,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
@@ -93,7 +94,7 @@ async fn test(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+                value: NonZeroU256::try_from(U256::ONE * Unit::ETHER.wei()).unwrap(),
             },
         },
         ..Default::default()
@@ -231,7 +232,7 @@ async fn uses_stale_liquidity(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
-                value: NonZeroU256::new(to_wei(1)).unwrap(),
+                value: NonZeroU256::new(U256::ONE * Unit::ETHER.wei()).unwrap(),
             },
         },
         ..Default::default()
@@ -332,7 +333,7 @@ async fn quote_timeout(web3: Web3) {
         buy_token: *sell_token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+                value: NonZeroU256::try_from(U256::ONE * Unit::ETHER.wei()).unwrap(),
             },
         },
         timeout,
@@ -462,7 +463,7 @@ async fn volume_fee(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+                value: NonZeroU256::try_from(U256::ONE * Unit::ETHER.wei()).unwrap(),
             },
         },
         ..Default::default()
@@ -480,7 +481,7 @@ async fn volume_fee(web3: Web3) {
         sell_token: *onchain.contracts().weth.address(),
         buy_token: *token.address(),
         side: OrderQuoteSide::Buy {
-            buy_amount_after_fee: NonZeroU256::try_from(to_wei(1)).unwrap(),
+            buy_amount_after_fee: NonZeroU256::try_from(U256::ONE * Unit::ETHER.wei()).unwrap(),
         },
         ..Default::default()
     };

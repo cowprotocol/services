@@ -4,7 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -18,7 +18,6 @@ use {
         time::now_in_epoch_seconds,
     },
     number::conversions::alloy::u256_to_big_decimal,
-    primitive_types::{H256, U256},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
@@ -344,7 +343,7 @@ impl SolvableOrdersCache {
             .into_iter()
             .zip(fetched_balances)
             .filter_map(|(query, balance)| match balance {
-                Ok(balance) => Some((query, balance)),
+                Ok(balance) => Some((query, balance.into_alloy())),
                 Err(err) => {
                     tracing::warn!(
                         owner = ?query.owner,
@@ -512,11 +511,11 @@ async fn find_invalid_signature_orders(
 
         if let Signature::Eip1271(signature) = &order.signature {
             signature_check_futures.push(async {
-                let (H256(hash), signer, _) = order.metadata.uid.parts();
+                let (hash, signer, _) = order.metadata.uid.parts();
                 match signature_validator
                     .validate_signature(SignatureCheck {
                         signer,
-                        hash,
+                        hash: hash.0,
                         signature: signature.clone(),
                         interactions: order.interactions.pre.clone(),
                         // TODO delete balance and signature logic in the autopilot
@@ -570,7 +569,7 @@ fn orders_with_balance(
             Some(balance) => *balance,
         };
 
-        if order.data.partially_fillable && balance >= 1.into() {
+        if order.data.partially_fillable && balance >= U256::ONE {
             return true;
         }
 
@@ -578,7 +577,7 @@ fn orders_with_balance(
             None => return false,
             Some(balance) => balance,
         };
-        balance.into_alloy() >= needed_balance
+        balance >= needed_balance
     });
     orders
 }
@@ -597,9 +596,10 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
             return false;
         };
 
-        let Ok(remaining) =
-            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
-        else {
+        let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(
+            &order.into(),
+            balance.into_legacy(),
+        ) else {
             return false;
         };
 
@@ -901,7 +901,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
-        alloy::primitives::Address,
+        alloy::primitives::{Address, B256},
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -909,7 +909,6 @@ mod tests {
             interaction::InteractionData,
             order::{Interactions, OrderBuilder, OrderData, OrderMetadata, OrderUid},
         },
-        primitive_types::H160,
         shared::{
             bad_token::list_based::ListBasedDetector,
             price_estimation::{
@@ -1182,19 +1181,19 @@ mod tests {
     async fn filters_banned_users() {
         let banned_users = hashset!(Address::from([0xba; 20]), Address::from([0xbb; 20]));
         let orders = [
-            H160([1; 20]),
-            H160([1; 20]),
-            H160([0xba; 20]),
-            H160([2; 20]),
-            H160([0xba; 20]),
-            H160([0xbb; 20]),
-            H160([3; 20]),
+            Address::repeat_byte(1),
+            Address::repeat_byte(1),
+            Address::repeat_byte(0xba),
+            Address::repeat_byte(2),
+            Address::repeat_byte(0xba),
+            Address::repeat_byte(0xbb),
+            Address::repeat_byte(3),
         ]
         .into_iter()
         .enumerate()
         .map(|(i, owner)| Order {
             metadata: OrderMetadata {
-                owner: owner.into_alloy(),
+                owner,
                 uid: OrderUid([i as u8; 56]),
                 ..Default::default()
             },
@@ -1223,7 +1222,11 @@ mod tests {
         let orders = vec![
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(H256([1; 32]), H160([11; 20]), 1),
+                    uid: OrderUid::from_parts(
+                        B256::repeat_byte(1).into_legacy(),
+                        Address::repeat_byte(11).into_legacy(),
+                        1,
+                    ),
                     ..Default::default()
                 },
                 interactions: Interactions {
@@ -1242,7 +1245,11 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(H256([2; 32]), H160([22; 20]), 2),
+                    uid: OrderUid::from_parts(
+                        B256::repeat_byte(2).into_legacy(),
+                        Address::repeat_byte(22).into_legacy(),
+                        2,
+                    ),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![2, 2]),
@@ -1262,14 +1269,22 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(H256([3; 32]), H160([33; 20]), 3),
+                    uid: OrderUid::from_parts(
+                        B256::repeat_byte(3).into_legacy(),
+                        Address::repeat_byte(33).into_legacy(),
+                        3,
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4),
+                    uid: OrderUid::from_parts(
+                        B256::repeat_byte(4).into_legacy(),
+                        Address::repeat_byte(44).into_legacy(),
+                        4,
+                    ),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![4, 4, 4, 4]),
@@ -1277,7 +1292,11 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(H256([5; 32]), H160([55; 20]), 5),
+                    uid: OrderUid::from_parts(
+                        B256::repeat_byte(5).into_legacy(),
+                        Address::repeat_byte(55).into_legacy(),
+                        5,
+                    ),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
@@ -1289,7 +1308,7 @@ mod tests {
         signature_validator
             .expect_validate_signature()
             .with(eq(SignatureCheck {
-                signer: H160([22; 20]),
+                signer: Address::repeat_byte(22).into_legacy(),
                 hash: [2; 32],
                 signature: vec![2, 2],
                 interactions: vec![InteractionData {
@@ -1303,7 +1322,7 @@ mod tests {
         signature_validator
             .expect_validate_signature()
             .with(eq(SignatureCheck {
-                signer: H160([44; 20]),
+                signer: Address::repeat_byte(44).into_legacy(),
                 hash: [4; 32],
                 signature: vec![4, 4, 4, 4],
                 interactions: vec![],
@@ -1313,7 +1332,7 @@ mod tests {
         signature_validator
             .expect_validate_signature()
             .with(eq(SignatureCheck {
-                signer: H160([55; 20]),
+                signer: Address::repeat_byte(55).into_legacy(),
                 hash: [5; 32],
                 signature: vec![5, 5, 5, 5, 5],
                 interactions: vec![],
@@ -1325,7 +1344,11 @@ mod tests {
             find_invalid_signature_orders(&orders, &signature_validator, false).await;
         assert_eq!(
             invalid_signature_orders,
-            vec![OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4)]
+            vec![OrderUid::from_parts(
+                B256::repeat_byte(4).into_legacy(),
+                Address::repeat_byte(44).into_legacy(),
+                4
+            )]
         );
         let invalid_signature_orders_with_1271_filter_disabled =
             find_invalid_signature_orders(&orders, &signature_validator, true).await;
@@ -1484,11 +1507,11 @@ mod tests {
             },
         ];
         let balances = [
-            (Query::from_order(&orders[0]), 2.into()),
-            (Query::from_order(&orders[1]), 1.into()),
-            (Query::from_order(&orders[2]), 1.into()),
-            (Query::from_order(&orders[3]), 0.into()),
-            (Query::from_order(&orders[4]), 0.into()),
+            (Query::from_order(&orders[0]), U256::from(2)),
+            (Query::from_order(&orders[1]), U256::from(1)),
+            (Query::from_order(&orders[2]), U256::from(1)),
+            (Query::from_order(&orders[3]), U256::from(0)),
+            (Query::from_order(&orders[4]), U256::from(0)),
         ]
         .into_iter()
         .collect();

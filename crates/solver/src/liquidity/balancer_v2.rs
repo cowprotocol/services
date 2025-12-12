@@ -16,9 +16,9 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256},
     anyhow::Result,
-    ethcontract::H256,
+    ethrpc::alloy::conversions::IntoAlloy,
     model::TokenPair,
     shared::{
         ethrpc::Web3,
@@ -83,7 +83,7 @@ impl BalancerV2Liquidity {
                 fee: pool.common.swap_fee,
                 version: pool.version,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.id,
+                    pool_id: pool.common.id.into_alloy(),
                     inner: inner.clone(),
                 }),
             })
@@ -97,7 +97,7 @@ impl BalancerV2Liquidity {
                 fee: pool.common.swap_fee,
                 amplification_parameter: pool.amplification_parameter,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.id,
+                    pool_id: pool.common.id.into_alloy(),
                     inner: inner.clone(),
                 }),
             })
@@ -128,7 +128,7 @@ impl LiquidityCollecting for BalancerV2Liquidity {
 }
 
 pub struct SettlementHandler {
-    pool_id: H256,
+    pool_id: B256,
     inner: Arc<Inner>,
 }
 
@@ -139,7 +139,7 @@ struct Inner {
 }
 
 impl SettlementHandler {
-    pub fn new(pool_id: H256, settlement: Address, vault: Address, allowances: Allowances) -> Self {
+    pub fn new(pool_id: B256, settlement: Address, vault: Address, allowances: Allowances) -> Self {
         SettlementHandler {
             pool_id,
             inner: Arc::new(Inner {
@@ -154,7 +154,7 @@ impl SettlementHandler {
         &self.inner.vault
     }
 
-    pub fn pool_id(&self) -> H256 {
+    pub fn pool_id(&self) -> B256 {
         self.pool_id
     }
 
@@ -229,6 +229,7 @@ mod tests {
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
         alloy::primitives::U256,
         contracts::alloy::BalancerV2Vault,
+        ethrpc::alloy::conversions::IntoLegacy,
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
@@ -276,7 +277,7 @@ mod tests {
         let weighted_pools = vec![
             WeightedPool {
                 common: CommonPoolState {
-                    id: H256([0x90; 32]),
+                    id: B256::repeat_byte(0x90).into_legacy(),
                     address: Address::repeat_byte(0x90),
                     swap_fee: "0.002".parse().unwrap(),
                     paused: true,
@@ -308,7 +309,7 @@ mod tests {
             },
             WeightedPool {
                 common: CommonPoolState {
-                    id: H256([0x91; 32]),
+                    id: B256::repeat_byte(0x91).into_legacy(),
                     address: Address::repeat_byte(0x91),
                     swap_fee: "0.001".parse().unwrap(),
                     paused: true,
@@ -335,7 +336,7 @@ mod tests {
 
         let stable_pools = vec![StablePool {
             common: CommonPoolState {
-                id: H256([0x92; 32]),
+                id: B256::repeat_byte(0x92).into_legacy(),
                 address: Address::repeat_byte(0x92),
                 swap_fee: "0.002".parse().unwrap(),
                 paused: true,
@@ -473,7 +474,7 @@ mod tests {
             ),
         });
         let handler = SettlementHandler {
-            pool_id: H256([0x90; 32]),
+            pool_id: B256::repeat_byte(0x90),
             inner,
         };
 
@@ -513,7 +514,7 @@ mod tests {
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault: *vault.address(),
-                    pool_id: H256([0x90; 32]),
+                    pool_id: B256::repeat_byte(0x90),
                     asset_in_max: TokenAmount::new(Address::repeat_byte(0x70), U256::from(10)),
                     asset_out: TokenAmount::new(Address::repeat_byte(0x71), U256::from(11)),
                     user_data: Default::default(),
@@ -522,7 +523,7 @@ mod tests {
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault: *vault.address(),
-                    pool_id: H256([0x90; 32]),
+                    pool_id: B256::repeat_byte(0x90),
                     asset_in_max: TokenAmount::new(Address::repeat_byte(0x71), U256::from(12)),
                     asset_out: TokenAmount::new(Address::repeat_byte(0x72), U256::from(13)),
                     user_data: Default::default(),

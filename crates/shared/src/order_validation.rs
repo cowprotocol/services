@@ -904,7 +904,6 @@ async fn get_or_create_quote(
                     OrderKind::Buy => OrderQuoteSide::Buy {
                         buy_amount_after_fee: quote_search_parameters
                             .buy_amount
-                            .into_legacy()
                             .try_into()
                             .map_err(|_| ValidationError::ZeroAmount)?,
                     },
@@ -912,7 +911,6 @@ async fn get_or_create_quote(
                         sell_amount: SellAmount::AfterFee {
                             value: quote_search_parameters
                                 .sell_amount
-                                .into_legacy()
                                 .try_into()
                                 .map_err(|_| ValidationError::ZeroAmount)?,
                         },
@@ -1034,7 +1032,7 @@ mod tests {
             quote::default_verification_gas_limit,
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
         serde_json::json,
         std::str::FromStr,
     };
@@ -2320,10 +2318,7 @@ mod tests {
                 buy_token: quote_search_parameters.buy_token,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(
-                            quote_search_parameters.sell_amount.into_legacy(),
-                        )
-                        .unwrap(),
+                        value: NonZeroU256::new(quote_search_parameters.sell_amount).unwrap(),
                     },
                 },
                 verification,

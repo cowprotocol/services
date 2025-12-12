@@ -8,7 +8,7 @@ use {
     anyhow::bail,
     app_data::AppDataHash,
     chrono::{DateTime, Utc},
-    number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
+    number::{nonzero::NonZeroU256, serialization::HexOrDecimalU256},
     serde::{
         Deserialize,
         Deserializer,
@@ -162,7 +162,7 @@ pub enum OrderQuoteSide {
 impl Default for OrderQuoteSide {
     fn default() -> Self {
         Self::Buy {
-            buy_amount_after_fee: NonZeroU256::one(),
+            buy_amount_after_fee: NonZeroU256::ONE,
         }
     }
 }

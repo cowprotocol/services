@@ -7,7 +7,6 @@ use {
     },
     alloy::primitives::{Address, U256},
     contracts::alloy::UniswapV3QuoterV2,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::{
@@ -202,10 +201,9 @@ fn to_boundary_liquidity(
                     }
                 }
                 liquidity::State::Stable(pool) => {
-                    if let Some(boundary_pool) = boundary::liquidity::stable::to_boundary_pool(
-                        liquidity.address.into_legacy(),
-                        pool,
-                    ) {
+                    if let Some(boundary_pool) =
+                        boundary::liquidity::stable::to_boundary_pool(liquidity.address, pool)
+                    {
                         for pair in pool.reserves.token_pairs() {
                             let token_pair = to_boundary_token_pair(&pair);
                             onchain_liquidity.entry(token_pair).or_default().push(
@@ -249,7 +247,7 @@ fn to_boundary_liquidity(
                             source: LiquiditySource::Concentrated(
                                 boundary::liquidity::concentrated::Pool {
                                     uni_v3_quoter_contract: uni_v3_quoter_v2_arc.clone(),
-                                    address: liquidity.address.into_legacy(),
+                                    address: liquidity.address,
                                     tokens: token_pair,
                                     fee,
                                 },

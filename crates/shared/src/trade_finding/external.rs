@@ -61,7 +61,7 @@ impl ExternalTradeFinder {
             let order = dto::Order {
                 sell_token: query.sell_token.into_legacy(),
                 buy_token: query.buy_token.into_legacy(),
-                amount: query.in_amount.get(),
+                amount: query.in_amount.get().into_legacy(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
             };
@@ -219,7 +219,7 @@ impl TradeFinding for ExternalTradeFinder {
                 .out_amount(
                     &query.buy_token,
                     &query.sell_token,
-                    &query.in_amount.get().into_alloy(),
+                    &query.in_amount.get(),
                     &query.kind,
                 )
                 .map_err(TradeError::Other)?,

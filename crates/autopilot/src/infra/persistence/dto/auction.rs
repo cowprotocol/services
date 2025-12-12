@@ -1,9 +1,8 @@
 use {
     super::order::Order,
     crate::domain::{self, auction::Price, eth},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -20,12 +19,11 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
         prices: auction
             .prices
             .into_iter()
-            .map(|(key, value)| (key.0.into_legacy(), value.get().0.into_legacy()))
+            .map(|(key, value)| (key.0, value.get().0))
             .collect(),
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()
-            .map(IntoLegacy::into_legacy)
             .collect(),
     }
 }
@@ -37,14 +35,13 @@ pub struct RawAuctionData {
     pub block: u64,
     pub orders: Vec<Order>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<Address, U256>,
     #[serde(default)]
-    pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
 
 pub type AuctionId = i64;
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
@@ -69,15 +66,13 @@ impl Auction {
                 .prices
                 .into_iter()
                 .map(|(key, value)| {
-                    Price::try_new(value.into_alloy().into())
-                        .map(|price| (eth::TokenAddress(key.into_alloy()), price))
+                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
                 })
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners: self
                 .auction
                 .surplus_capturing_jit_order_owners
                 .into_iter()
-                .map(IntoAlloy::into_alloy)
                 .collect(),
         })
     }

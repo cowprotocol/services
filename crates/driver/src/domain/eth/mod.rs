@@ -20,7 +20,7 @@ pub use {
     alloy::primitives::{Address, U256},
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     primitive_types::{H256, U512},
 };
 

@@ -2,8 +2,8 @@
 
 use {
     crate::{domain::eth, util},
+    alloy::primitives::B256,
     eth::Address,
-    ethereum_types::H256,
     std::fmt::{self, Debug, Display, Formatter},
 };
 
@@ -108,16 +108,16 @@ pub enum Signature {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EcdsaSignature {
-    pub r: H256,
-    pub s: H256,
+    pub r: B256,
+    pub s: B256,
     pub v: u8,
 }
 
 impl EcdsaSignature {
     pub fn to_bytes(self) -> [u8; 65] {
         let mut bytes = [0u8; 65];
-        bytes[..32].copy_from_slice(self.r.as_bytes());
-        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[..32].copy_from_slice(self.r.as_slice());
+        bytes[32..64].copy_from_slice(self.s.as_slice());
         bytes[64] = self.v;
         bytes
     }

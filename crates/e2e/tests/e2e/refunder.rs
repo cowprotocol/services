@@ -3,14 +3,13 @@ use {
     ::alloy::primitives::Address,
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethcontract::U256,
     ethrpc::{
         Web3,
         alloy::conversions::TryIntoAlloyAsync,
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
-    number::nonzero::U256 as NonZeroU256,
+    number::nonzero::NonZeroU256,
     refunder::refund_service::RefundService,
     sqlx::PgPool,
 };
@@ -36,7 +35,7 @@ async fn refunder_tx(web3: Web3) {
     // Get quote id for order placement
     let buy_token = *token.address();
     let receiver = Some(Address::repeat_byte(42));
-    let sell_amount = U256::from("3000000000000000");
+    let sell_amount = NonZeroU256::try_from(3000000000000000u128).unwrap();
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
@@ -50,9 +49,7 @@ async fn refunder_tx(web3: Web3) {
             verification_gas_limit: 0,
         },
         side: OrderQuoteSide::Sell {
-            sell_amount: model::quote::SellAmount::AfterFee {
-                value: NonZeroU256::try_from(sell_amount).unwrap(),
-            },
+            sell_amount: model::quote::SellAmount::AfterFee { value: sell_amount },
         },
         ..Default::default()
     };
@@ -82,9 +79,7 @@ async fn refunder_tx(web3: Web3) {
             verification_gas_limit: 0,
         },
         side: OrderQuoteSide::Sell {
-            sell_amount: model::quote::SellAmount::AfterFee {
-                value: NonZeroU256::try_from(sell_amount).unwrap(),
-            },
+            sell_amount: model::quote::SellAmount::AfterFee { value: sell_amount },
         },
         ..Default::default()
     };

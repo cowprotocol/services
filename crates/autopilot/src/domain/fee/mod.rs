@@ -16,7 +16,6 @@ use {
     app_data::Validator,
     chrono::{DateTime, Utc},
     derive_more::Into,
-    primitive_types::H160,
     rust_decimal::Decimal,
     std::{collections::HashSet, str::FromStr},
 };
@@ -75,7 +74,7 @@ impl From<arguments::UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
     }
 }
 
-pub type ProtocolFeeExemptAddresses = HashSet<H160>;
+pub type ProtocolFeeExemptAddresses = HashSet<Address>;
 
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,

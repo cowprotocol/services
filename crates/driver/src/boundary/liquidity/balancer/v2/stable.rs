@@ -6,7 +6,7 @@ use {
             liquidity::{self, balancer},
         },
     },
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 
@@ -62,6 +62,7 @@ fn pool_id(pool: &StablePoolOrder) -> balancer::v2::Id {
         .downcast_ref::<balancer_v2::SettlementHandler>()
         .expect("downcast balancer settlement handler")
         .pool_id()
+        .into_legacy()
         .into()
 }
 

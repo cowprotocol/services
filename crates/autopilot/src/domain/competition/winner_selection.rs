@@ -478,7 +478,7 @@ mod tests {
         },
         alloy::primitives::{U256, address},
         ethcontract::H160,
-        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+        ethrpc::alloy::conversions::IntoAlloy,
         hex_literal::hex,
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,
@@ -1404,7 +1404,7 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             None,
-            crate::arguments::Account::Address(solver_address.into_legacy()),
+            crate::arguments::Account::Address(solver_address),
             false,
         )
         .await
