@@ -285,7 +285,6 @@ pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
 pub fn map_interactions_data(interactions: &[Interaction]) -> Vec<InteractionData> {
     interactions
         .iter()
-        .cloned()
         .map(|i| i.to_interaction_data())
         .collect()
 }
