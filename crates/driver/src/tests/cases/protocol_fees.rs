@@ -94,10 +94,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(is_approximately_equal(
-        result.score(),
-        test_case.expected_score
-    ));
     result.orders(&[order]);
 }
 

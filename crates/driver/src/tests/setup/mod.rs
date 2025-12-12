@@ -1262,17 +1262,8 @@ impl SolveOk<'_> {
         let solution = solutions[0].clone();
         assert!(solution.is_object());
         // response contains 1 optional field
-        assert!((5..=6).contains(&solution.as_object().unwrap().len()));
+        assert!((4..=5).contains(&solution.as_object().unwrap().len()));
         solution
-    }
-
-    /// Extracts the score from the response. Since response can contain
-    /// multiple solutions, it takes the score from the first solution.
-    pub fn score(&self) -> eth::U256 {
-        let solution = self.solution();
-        assert!(solution.get("score").is_some());
-        let score = solution.get("score").unwrap().as_str().unwrap();
-        eth::U256::from_str_radix(score, 10).unwrap()
     }
 
     /// Ensures that `/solve` returns no solutions.
