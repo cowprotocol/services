@@ -972,12 +972,12 @@ async fn volume_fee_overrides(web3: Web3) {
     let [trader] = onchain.make_accounts(eth(200)).await;
 
     // Deploy tokens: USDC, DAI, USDT (stablecoins), and WETH (non-stablecoin)
-    let [token_usdc, token_dai, token_usdt, token_weth_like] = onchain
+    let [token_usdc, token_dai, token_usdt, token_weth] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
         .await;
 
     // Fund solver and trader
-    for token in &[&token_usdc, &token_dai, &token_usdt, &token_weth_like] {
+    for token in &[&token_usdc, &token_dai, &token_usdt, &token_weth] {
         token.mint(solver.address(), eth(10000)).await;
         token.mint(trader.address(), eth(1000)).await;
 
@@ -999,29 +999,13 @@ async fn volume_fee_overrides(web3: Web3) {
     // Create liquidity pools for all token pairs
     for (token_a, token_b) in [
         (&token_usdc, &token_dai),
-        (&token_usdc, &token_usdt),
         (&token_dai, &token_usdt),
-        (&token_usdc, &token_weth_like),
-        (&token_dai, &token_weth_like),
+        (&token_usdc, &token_weth),
     ] {
         onchain
             .contracts()
             .uniswap_v2_factory
             .createPair(*token_a.address(), *token_b.address())
-            .from(solver.address())
-            .send_and_watch()
-            .await
-            .unwrap();
-
-        token_a
-            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(10000))
-            .from(solver.address())
-            .send_and_watch()
-            .await
-            .unwrap();
-
-        token_b
-            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(10000))
             .from(solver.address())
             .send_and_watch()
             .await
@@ -1174,7 +1158,7 @@ async fn volume_fee_overrides(web3: Web3) {
     let usdc_weth_quote = get_quote(
         &services,
         token_usdc.address().into_legacy(),
-        token_weth_like.address().into_legacy(),
+        token_weth.address().into_legacy(),
         OrderKind::Sell,
         sell_amount,
         quote_valid_to,
