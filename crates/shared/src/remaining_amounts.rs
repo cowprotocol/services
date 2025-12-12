@@ -255,7 +255,7 @@ mod tests {
             remaining.remaining(U256::from(100)).unwrap(),
             U256::from(10)
         );
-        assert_eq!(remaining.remaining(U256::from(10)).unwrap(), U256::from(1));
+        assert_eq!(remaining.remaining(U256::from(10)).unwrap(), U256::ONE);
         assert_eq!(
             remaining.remaining(U256::from(101)).unwrap(),
             U256::from(10)
@@ -348,11 +348,8 @@ mod tests {
         }
         .into();
         let remaining =
-            Remaining::from_order_with_balance(&order, order.sell_amount - U256::from(1)).unwrap();
-        assert_eq!(
-            remaining.remaining(U256::from(1000)).unwrap(),
-            U256::from(0)
-        );
+            Remaining::from_order_with_balance(&order, order.sell_amount - U256::ONE).unwrap();
+        assert!(remaining.remaining(U256::from(1000)).unwrap().is_zero());
 
         // A partially fillable order that has not been executed at all scales
         // to the available balance.
