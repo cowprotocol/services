@@ -38,6 +38,7 @@ use {
 };
 
 pub mod auction;
+pub mod bad_orders;
 pub mod bad_tokens;
 pub mod order;
 mod pre_processing;
@@ -67,6 +68,7 @@ pub struct Competition {
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
     pub bad_tokens: Arc<bad_tokens::Detector>,
+    pub bad_orders: Arc<bad_orders::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
@@ -82,6 +84,7 @@ impl Competition {
         simulator: Simulator,
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
+        bad_orders: Arc<bad_orders::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
@@ -97,6 +100,7 @@ impl Competition {
             settlements: Default::default(),
             settle_queue: settle_sender,
             bad_tokens,
+            bad_orders,
             fetcher,
             order_sorting_strategies,
         });
@@ -235,6 +239,7 @@ impl Competition {
             .map(|solution| async move {
                 let id = solution.id().clone();
                 let token_pairs = solution.token_pairs();
+                let order_uids = solution.order_uids();
                 observe::encoding(&id);
                 let settlement = solution
                     .encode(
@@ -244,19 +249,21 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, token_pairs, settlement)
+                (id, token_pairs, order_uids, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, token_pairs, result)| async move {
+            .filter_map(|(id, token_pairs, order_uids, result)| async move {
                 match result {
                     Ok(solution) => {
                         self.bad_tokens.encoding_succeeded(&token_pairs);
+                        self.bad_orders.encoding_succeeded(&order_uids);
                         Some(solution)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
                         self.bad_tokens.encoding_failed(&token_pairs);
+                        self.bad_orders.encoding_failed(&order_uids);
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None
@@ -742,9 +749,16 @@ impl Competition {
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
         }
-        self.bad_tokens
+        // First filter by bad tokens (simulation-based detection)
+        auction = self
+            .bad_tokens
             .filter_unsupported_orders_in_auction(auction)
-            .await
+            .await;
+        // Then filter by bad orders (metrics-based detection)
+        auction = self
+            .bad_orders
+            .filter_unsupported_orders_in_auction(auction);
+        auction
     }
 }
 
