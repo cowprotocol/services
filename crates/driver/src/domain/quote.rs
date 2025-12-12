@@ -16,10 +16,7 @@ use {
         util,
     },
     chrono::Utc,
-    std::{
-        collections::{HashMap, HashSet},
-        iter,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 /// A quote describing the expected outcome of an order.
@@ -91,7 +88,7 @@ impl Order {
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
-                    .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
+                    .fetch(&self.token_liquidity(), infra::liquidity::AtBlock::Recent)
                     .await
             }
             solver::Liquidity::Skip => Default::default(),
@@ -225,15 +222,14 @@ impl Order {
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        let pair = liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
-            .expect("sell != buy by construction");
-        iter::once(pair).collect()
+    fn token_liquidity(&self) -> HashSet<liquidity::TokenPair> {
+        liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
+            .ok()
+            .into_iter()
+            .collect()
     }
 }
 
-/// The sell and buy tokens to quote for. This type maintains the invariant that
-/// the sell and buy tokens are distinct.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Tokens {
     sell: eth::TokenAddress,
@@ -241,13 +237,8 @@ pub struct Tokens {
 }
 
 impl Tokens {
-    /// Creates a new instance of [`Tokens`], verifying that the input buy and
-    /// sell tokens are distinct.
-    pub fn try_new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
-        if sell == buy {
-            return Err(SameTokens);
-        }
-        Ok(Self { sell, buy })
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Self {
+        Self { sell, buy }
     }
 
     pub fn sell(&self) -> eth::TokenAddress {

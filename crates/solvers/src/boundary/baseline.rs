@@ -58,6 +58,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&sell.path, request.sell.token.0, sell.value)
                         .await?;
@@ -88,6 +89,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
                         .await?;

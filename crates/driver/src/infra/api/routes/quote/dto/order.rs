@@ -8,17 +8,16 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self) -> Result<quote::Order, Error> {
-        Ok(quote::Order {
-            tokens: quote::Tokens::try_new(self.sell_token.into(), self.buy_token.into())
-                .map_err(|quote::SameTokens| Error::SameTokens)?,
+    pub fn into_domain(self) -> quote::Order {
+        quote::Order {
+            tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into()),
             amount: self.amount.into(),
             side: match self.kind {
                 Kind::Sell => competition::order::Side::Sell,
                 Kind::Buy => competition::order::Side::Buy,
             },
             deadline: self.deadline,
-        })
+        }
     }
 }
 

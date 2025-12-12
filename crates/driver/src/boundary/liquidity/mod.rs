@@ -128,6 +128,10 @@ impl Fetcher {
         pairs: &HashSet<liquidity::TokenPair>,
         block: infra::liquidity::AtBlock,
     ) -> Result<Vec<liquidity::Liquidity>> {
+        if pairs.is_empty() {
+            return Ok(vec![]);
+        }
+
         let pairs = pairs
             .iter()
             .map(|pair| {

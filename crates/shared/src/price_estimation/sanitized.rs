@@ -23,6 +23,9 @@ pub struct SanitizedPriceEstimator {
     inner: Arc<dyn PriceEstimating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: Address,
+    /// Enables the short-circuiting logic in case the sell and buy tokens are
+    /// the same
+    is_estimating_native_price: bool,
 }
 
 impl SanitizedPriceEstimator {
@@ -30,11 +33,13 @@ impl SanitizedPriceEstimator {
         inner: Arc<dyn PriceEstimating>,
         native_token: Address,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        is_estimating_native_price: bool,
     ) -> Self {
         Self {
             inner,
             native_token,
             bad_token_detector,
+            is_estimating_native_price,
         }
     }
 
@@ -61,9 +66,10 @@ impl PriceEstimating for SanitizedPriceEstimator {
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async move {
             self.handle_bad_tokens(&query).await?;
-
-            // buy_token == sell_token => 1 to 1 conversion
-            if query.buy_token == query.sell_token {
+            // When estimating native price the sell token is substituted by
+            // native one. In that case, the output amount of the price
+            // estimation can be trivially computed as the same amount as input
+            if self.is_estimating_native_price && query.buy_token == query.sell_token {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
                     gas: 0,
@@ -451,15 +457,121 @@ mod tests {
                 }
                 .boxed()
             });
-
+        let bad_token_detector = Arc::new(bad_token_detector);
         let sanitized_estimator = SanitizedPriceEstimator {
             inner: Arc::new(wrapped_estimator),
-            bad_token_detector: Arc::new(bad_token_detector),
+            bad_token_detector: bad_token_detector.clone(),
             native_token,
+            is_estimating_native_price: true,
         };
 
         for (query, expectation) in queries {
             let result = sanitized_estimator.estimate(Arc::new(query)).await;
+            match result {
+                Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
+                Err(err) => {
+                    // we only compare the error variant; everything else would be a PITA
+                    let reported_error = std::mem::discriminant(&err);
+                    let expected_error = std::mem::discriminant(&expectation.unwrap_err());
+                    assert_eq!(reported_error, expected_error);
+                }
+            }
+        }
+
+        let queries = [
+            // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
+            // identical.
+            (
+                Query {
+                    verification: Default::default(),
+                    sell_token: Address::with_last_byte(1),
+                    buy_token: Address::with_last_byte(1),
+                    in_amount: Default::default(),
+                    kind: OrderKind::Sell,
+                    block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                },
+                Ok(Estimate {
+                    out_amount: AlloyU256::ONE,
+                    gas: 100,
+                    solver: Default::default(),
+                    verified: true,
+                    execution: Default::default(),
+                }),
+            ),
+            (
+                Query {
+                    verification: Default::default(),
+                    sell_token: native_token,
+                    buy_token: native_token,
+                    in_amount: NonZeroU256::try_from(1).unwrap(),
+                    kind: OrderKind::Sell,
+                    block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                },
+                Ok(Estimate {
+                    out_amount: AlloyU256::ONE,
+                    gas: 100,
+                    solver: Default::default(),
+                    verified: true,
+                    execution: Default::default(),
+                }),
+            ),
+        ];
+
+        // SanitizedPriceEstimator will simply forward the Query in the sell=buy case
+        // if it is not calculating native price
+        let first_forwarded_query = queries[0].0.clone();
+
+        // SanitizedPriceEstimator will simply forward the Query if sell=buy of native
+        // token case if it is not calculating the native price
+        let second_forwarded_query = queries[1].0.clone();
+
+        let mut wrapped_estimator = MockPriceEstimating::new();
+        wrapped_estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |query| **query == first_forwarded_query)
+            .returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: AlloyU256::ONE,
+                        gas: 100,
+                        solver: Default::default(),
+                        verified: true,
+                        execution: Default::default(),
+                    })
+                }
+                .boxed()
+            });
+        wrapped_estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |query| **query == second_forwarded_query)
+            .returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: AlloyU256::ONE,
+                        gas: 100,
+                        solver: Default::default(),
+                        verified: true,
+                        execution: Default::default(),
+                    })
+                }
+                .boxed()
+            });
+
+        let sanitized_estimator_non_native = SanitizedPriceEstimator {
+            inner: Arc::new(wrapped_estimator),
+            bad_token_detector,
+            native_token,
+            is_estimating_native_price: false,
+        };
+
+        for (query, expectation) in queries {
+            let result = sanitized_estimator_non_native
+                .estimate(Arc::new(query))
+                .await;
             match result {
                 Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
                 Err(err) => {
