@@ -176,7 +176,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     let initial_balance = token.balanceOf(trader.address()).call().await.unwrap();
     assert_eq!(initial_balance, eth(10));
 
-    let sell_amount = eth(1); // Sell 1 wei
+    let sell_amount = eth(1); // Sell 1 eth
     let buy_amount = eth(1) - U256::from(10).pow(U256::from(16)); // For 0.99 wei, for order to execute
 
     tracing::info!("Placing order");
