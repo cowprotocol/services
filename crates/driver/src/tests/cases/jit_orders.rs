@@ -5,7 +5,7 @@ use crate::{
     },
     tests::{
         self,
-        cases::{EtherExt, is_approximately_equal},
+        cases::EtherExt,
         setup::{
             self,
             ExpectedOrderAmounts,
@@ -43,7 +43,6 @@ struct JitOrder {
 
 struct Solution {
     jit_order: JitOrder,
-    expected_score: eth::U256,
 }
 
 struct TestCase {
@@ -147,9 +146,6 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
                     side: Side::Buy,
                 },
             },
-            // Surplus is 40 ETH worth of sell tokens, converted to buy tokens using the order's
-            // limit price (50 / 60 = 80%) this leaves us with a score of 32 ETH.
-            expected_score: 32.ether().into_wei(),
         },
     };
 

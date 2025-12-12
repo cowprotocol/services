@@ -3,7 +3,7 @@ use crate::{
     infra::config::file::FeeHandler,
     tests::{
         self,
-        cases::{EtherExt, is_approximately_equal},
+        cases::EtherExt,
         setup::{
             ExpectedOrderAmounts,
             Test,
