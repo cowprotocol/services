@@ -75,7 +75,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     };
     let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
 
-    let amount = 500u64.mwei();
+    let amount = 500u64.matom();
 
     // Give trader some USDC
     web3.alloy

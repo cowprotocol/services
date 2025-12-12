@@ -464,7 +464,7 @@ async fn cow_amm_driver_support(web3: Web3) {
     // Give trader some USDC
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
-            usdc.transfer(trader.address(), 1000u64.mwei())
+            usdc.transfer(trader.address(), 1000u64.matom())
                 .from(USDC_WHALE_MAINNET)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -479,7 +479,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         .unwrap();
 
     // Approve GPv2 for trading
-    usdc.approve(onchain.contracts().allowance.into_alloy(), 1000u64.mwei())
+    usdc.approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -582,9 +582,9 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     // Place Orders
     let order = OrderCreation {
         sell_token: *usdc.address(),
-        sell_amount: 1000u64.mwei(),
+        sell_amount: 1000u64.matom(),
         buy_token: *usdt.address(),
-        buy_amount: 2000u64.mwei(),
+        buy_amount: 2000u64.matom(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -603,7 +603,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             buy_token: *usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (1000u64.mwei()).try_into().unwrap(),
+                    value: (1000u64.matom()).try_into().unwrap(),
                 },
             },
             ..Default::default()
