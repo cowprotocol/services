@@ -1,11 +1,11 @@
 use {
-    ::alloy::primitives::U256 as AlloyU256,
+    ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
         setup::{fee::*, *},
     },
-    ethcontract::{Address, prelude::U256},
+    ethcontract::Address,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -200,7 +200,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let market_price_improvement_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
         // to make sure the order is in-market
-        buy_amount: market_quote_before.quote.buy_amount * AlloyU256::from(2) / AlloyU256::from(3),
+        buy_amount: market_quote_before.quote.buy_amount * U256::from(2) / U256::from(3),
         ..sell_order_from_quote(&market_quote_before)
     }
     .sign(
@@ -211,7 +211,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let limit_surplus_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
         // to make sure the order is out-of-market
-        buy_amount: limit_quote_before.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2),
+        buy_amount: limit_quote_before.quote.buy_amount * U256::from(3) / U256::from(2),
         ..sell_order_from_quote(&limit_quote_before)
     }
     .sign(
@@ -222,7 +222,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
         // to make sure the order is out-of-market
-        buy_amount: (partner_fee_quote.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        buy_amount: (partner_fee_quote.quote.buy_amount * U256::from(3) / U256::from(2)),
         app_data: partner_fee_app_data.clone(),
         ..sell_order_from_quote(&partner_fee_quote)
     }
@@ -261,7 +261,7 @@ async fn combined_protocol_fees(web3: Web3) {
         // progressing due to tiny fluctuations in gas price which would lead to
         // errors down the line.
         new_market_order_quote.quote.buy_amount
-            > market_quote_before.quote.buy_amount * AlloyU256::from(2)
+            > market_quote_before.quote.buy_amount * U256::from(2)
     })
     .await
     .expect("Timeout waiting for eviction of the cached liquidity");
@@ -349,7 +349,7 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `market_price_improvement_policy.factor`, which is 0.3
     assert!(
         market_executed_fee_in_buy_token.into_alloy()
-            >= (market_quote_diff * AlloyU256::from(3) / AlloyU256::from(10))
+            >= (market_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
@@ -358,7 +358,7 @@ async fn combined_protocol_fees(web3: Web3) {
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
         partner_fee_executed_fee_in_buy_token.into_alloy()
-            >= (partner_fee_quote.quote.buy_amount * AlloyU256::from(2) / AlloyU256::from(100))
+            >= (partner_fee_quote.quote.buy_amount * U256::from(2) / U256::from(100))
     );
     let limit_quote_diff = partner_fee_quote_after
         .quote
@@ -367,7 +367,7 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(
         partner_fee_executed_fee_in_buy_token.into_alloy()
-            >= (limit_quote_diff * AlloyU256::from(3) / AlloyU256::from(10))
+            >= (limit_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
@@ -380,7 +380,7 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(
         limit_executed_fee_in_buy_token.into_alloy()
-            >= (limit_quote_diff * AlloyU256::from(3) / AlloyU256::from(10))
+            >= (limit_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let [
@@ -623,7 +623,7 @@ async fn get_quote(
     sell_token: Address,
     buy_token: Address,
     kind: OrderKind,
-    amount: U256,
+    amount: ethcontract::U256,
     valid_to: u32,
 ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
     let side = match kind {
@@ -646,7 +646,7 @@ async fn get_quote(
     services.submit_quote(&quote_request).await
 }
 
-fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
+fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> ethcontract::U256 {
     (order.metadata.executed_fee * quote.buy_amount / quote.sell_amount).into_legacy()
 }
 
@@ -742,10 +742,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
             *token_dai.address(),
             1000u64.eth(),
             1000u64.eth(),
-            ::alloy::primitives::U256::ZERO,
-            ::alloy::primitives::U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
             solver.address(),
-            ::alloy::primitives::U256::MAX,
+            U256::MAX,
         )
         .from(solver.address())
         .send_and_watch()
@@ -787,7 +787,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_gno.address(),
-        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        sell_amount: (quote.sell_amount * U256::from(3) / U256::from(2)),
         buy_token: *token_dai.address(),
         buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -812,9 +812,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(
-        order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
-    );
+    assert!(order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / U256::from(10)));
 
     // Check settlement contract balance
     let balance_after = token_gno
@@ -904,10 +902,10 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
             *token_dai.address(),
             1000u64.eth(),
             1000u64.eth(),
-            ::alloy::primitives::U256::ZERO,
-            ::alloy::primitives::U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
             solver.address(),
-            ::alloy::primitives::U256::MAX,
+            U256::MAX,
         )
         .from(solver.address())
         .send_and_watch()
@@ -949,7 +947,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_gno.address(),
-        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        sell_amount: (quote.sell_amount * U256::from(3) / U256::from(2)),
         buy_token: *token_dai.address(),
         buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -974,9 +972,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(
-        order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
-    );
+    assert!(order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / U256::from(10)));
 
     // Check settlement contract balance
     let balance_after = token_gno
