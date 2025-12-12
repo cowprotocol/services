@@ -3,12 +3,15 @@ use {
     crate::tenderly_api::SimulationError,
     alloy::{
         eips::BlockId,
-        primitives::{Address, TxKind, B256},
+        primitives::{Address, B256, TxKind},
         providers::ext::DebugApi,
         rpc::types::{
-            trace::geth::{GethDebugTracingCallOptions, GethTrace}, TransactionInput, TransactionRequest
+            TransactionInput,
+            TransactionRequest,
+            trace::geth::{GethDebugTracingCallOptions, GethTrace},
         },
-        sol_types::SolCall, transports::{RpcError, TransportErrorKind},
+        sol_types::SolCall,
+        transports::{RpcError, TransportErrorKind},
     },
     contracts::alloy::ERC20,
     ethcontract::U256,
@@ -41,9 +44,9 @@ impl std::ops::Deref for Detector {
     }
 }
 
-/// Used by Detector.detect() when there are multiple slots to increase the chances we
-/// find the correct storage slot quickly. Returns a list of strategies to try.
-/// Strategies employed:
+/// Used by Detector.detect() when there are multiple slots to increase the
+/// chances we find the correct storage slot quickly. Returns a list of
+/// strategies to try. Strategies employed:
 /// 1. Reverse because the most recently accessed storage slots are most likely
 ///    to be the return value of `balanceOf`
 /// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
@@ -66,7 +69,7 @@ fn create_strategies_from_slots(
     }
 
     buf[0..20].copy_from_slice(holder.as_slice());
-    // These are the solady magic bytes for user balances, with padding 
+    // These are the solady magic bytes for user balances, with padding
     // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
     buf[20..32].copy_from_slice(&[
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
@@ -78,30 +81,31 @@ fn create_strategies_from_slots(
     let mut heuristic_strategies = Vec::new();
     let mut fallback_strategies = Vec::new();
     for (contract, slot) in storage_slots.iter().rev() {
-        let (strategy, is_heuristic) = if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
-            (
-                Strategy::SolidityMapping {
-                    target_contract: contract.into_legacy(),
-                    map_slot: U256::from(map_slot_index),
-                },
-                true,
-            )
-        } else if *slot == solady_slot {
-            (
-                Strategy::SoladyMapping {
-                    target_contract: contract.into_legacy(),
-                },
-                true,
-            )
-        } else {
-            (
-                Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot.into_legacy(),
-                },
-                false,
-            )
-        };
+        let (strategy, is_heuristic) =
+            if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
+                (
+                    Strategy::SolidityMapping {
+                        target_contract: contract.into_legacy(),
+                        map_slot: U256::from(map_slot_index),
+                    },
+                    true,
+                )
+            } else if *slot == solady_slot {
+                (
+                    Strategy::SoladyMapping {
+                        target_contract: contract.into_legacy(),
+                    },
+                    true,
+                )
+            } else {
+                (
+                    Strategy::DirectSlot {
+                        target_contract: contract.into_legacy(),
+                        slot: slot.into_legacy(),
+                    },
+                    false,
+                )
+            };
         if is_heuristic {
             heuristic_strategies.push(strategy);
         } else {
@@ -156,8 +160,8 @@ impl Detector {
             .map_err(|err| {
                 tracing::debug!(?token, ?err, "debug_traceCall not supported for token");
                 DetectionError::Rpc {
-                    source: err, 
-                    context: String::from("debug_traceCall for balance slot detection")
+                    source: err,
+                    context: String::from("debug_traceCall for balance slot detection"),
                 }
             })?;
 
@@ -335,8 +339,8 @@ pub enum DetectionError<E> {
     NotFound,
     #[error("error returned by the RPC server")]
     Rpc {
-        source: RpcError<E>, 
-        context: String
+        source: RpcError<E>,
+        context: String,
     },
     #[error(transparent)]
     Simulation(#[from] SimulationError),
@@ -497,8 +501,8 @@ mod tests {
         let heuristic_slot2 = B256::from(signing::keccak256(&buf));
         buf[0..20].copy_from_slice(holder.as_slice());
         buf[20..32].copy_from_slice(&[
-        // These are the solady magic bytes for user balances, with padding 
-        // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
+            // These are the solady magic bytes for user balances, with padding
+            // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
         ]);
         let heuristic_slot3 = B256::from(signing::keccak256(&buf[0..32]));
