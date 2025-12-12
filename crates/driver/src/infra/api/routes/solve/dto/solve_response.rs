@@ -30,6 +30,7 @@ impl Solution {
     pub fn new(solution_id: u64, solved: competition::Solved, solver: &Solver) -> Self {
         Self {
             solution_id,
+            score: solved.score.0,
             submission_address: solver.address(),
             orders: solved
                 .trades
@@ -71,6 +72,8 @@ pub struct Solution {
     /// in subsequent requests (reveal, settle).
     solution_id: u64,
     submission_address: eth::Address,
+    #[serde_as(as = "serialize::U256")]
+    score: eth::U256,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
     orders: HashMap<OrderId, TradedOrder>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
