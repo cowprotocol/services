@@ -730,57 +730,6 @@ mod test {
     }
 
     #[test]
-    fn test_volume_fee_pair_override() {
-        use alloy::primitives::address;
-
-        let usdc = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
-        let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-
-        // Use 2-token bucket as pair override
-        let bucket_override = TokenBucketFeeOverride {
-            tokens: [usdc, dai].into_iter().collect(),
-            factor: shared::arguments::FeeFactor(0.0005), // 0.05%
-        };
-
-        let config = arguments::FeePoliciesConfig {
-            fee_policies: vec![],
-            fee_policy_max_partner_fee: FeeFactor(0.01),
-            upcoming_fee_policies: arguments::UpcomingFeePolicies {
-                fee_policies: vec![],
-                effective_from_timestamp: None,
-            },
-            volume_fee_bucket_overrides: vec![bucket_override],
-        };
-
-        let protocol_fees = ProtocolFees::new(&config);
-
-        // USDC-DAI pair - should have override
-        let order_usdc_dai = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: usdc,
-                sell_token: dai,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = protocol_fees.get_volume_fee_override(&order_usdc_dai);
-        assert_eq!(override_, Some(FeeFactor(0.0005)));
-
-        // USDC-WETH pair - should not have override
-        let order_usdc_weth = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: usdc,
-                sell_token: weth,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = protocol_fees.get_volume_fee_override(&order_usdc_weth);
-        assert_eq!(override_, None);
-    }
-
-    #[test]
     fn test_volume_fee_bucket_override() {
         use alloy::primitives::address;
 
@@ -789,7 +738,11 @@ mod test {
         let usdt = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
         let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
 
-        let bucket_override = TokenBucketFeeOverride {
+        let bucket_pair_override = TokenBucketFeeOverride {
+            tokens: [usdc, dai].into_iter().collect(),
+            factor: shared::arguments::FeeFactor(0.0005), // 0.05%
+        };
+        let bucket_group_override = TokenBucketFeeOverride {
             tokens: [usdc, dai, usdt].into_iter().collect(),
             factor: shared::arguments::FeeFactor(0.0), // 0%
         };
@@ -801,12 +754,12 @@ mod test {
                 fee_policies: vec![],
                 effective_from_timestamp: None,
             },
-            volume_fee_bucket_overrides: vec![bucket_override],
+            volume_fee_bucket_overrides: vec![bucket_pair_override, bucket_group_override],
         };
 
         let protocol_fees = ProtocolFees::new(&config);
 
-        // USDC-DAI (both in bucket) - should have override
+        // USDC-DAI (matches both buckets) - pair bucket takes precedence
         let order_usdc_dai = boundary::Order {
             data: model::order::OrderData {
                 buy_token: usdc,
@@ -816,9 +769,9 @@ mod test {
             ..Default::default()
         };
         let override_ = protocol_fees.get_volume_fee_override(&order_usdc_dai);
-        assert_eq!(override_, Some(FeeFactor(0.0)));
+        assert_eq!(override_, Some(FeeFactor(0.0005)));
 
-        // DAI-USDT (both in bucket) - should have override
+        // DAI-USDT (only in 3-token bucket) - should have override
         let order_dai_usdt = boundary::Order {
             data: model::order::OrderData {
                 buy_token: dai,
@@ -841,69 +794,5 @@ mod test {
         };
         let override_ = protocol_fees.get_volume_fee_override(&order_weth_dai);
         assert_eq!(override_, None);
-    }
-
-    #[test]
-    fn test_volume_fee_override_precedence() {
-        use alloy::primitives::address;
-
-        let usdc = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
-        let usdt = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
-
-        // Set up multiple bucket overrides with different factors
-        // First bucket in the list should have precedence
-        let bucket_2token = TokenBucketFeeOverride {
-            tokens: [usdc, dai].into_iter().collect(),
-            factor: shared::arguments::FeeFactor(0.001), // 0.1%
-        };
-        let bucket_3token = TokenBucketFeeOverride {
-            tokens: [usdc, dai, usdt].into_iter().collect(),
-            factor: shared::arguments::FeeFactor(0.003), // 0.3%
-        };
-
-        let config = arguments::FeePoliciesConfig {
-            fee_policies: vec![],
-            fee_policy_max_partner_fee: FeeFactor(0.01),
-            upcoming_fee_policies: arguments::UpcomingFeePolicies {
-                fee_policies: vec![],
-                effective_from_timestamp: None,
-            },
-            volume_fee_bucket_overrides: vec![bucket_2token, bucket_3token],
-        };
-
-        let protocol_fees = ProtocolFees::new(&config);
-
-        // USDC-DAI: Both buckets apply, but first bucket (0.001) should win
-        let order_usdc_dai = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: usdc,
-                sell_token: dai,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = protocol_fees.get_volume_fee_override(&order_usdc_dai);
-        assert_eq!(
-            override_,
-            Some(FeeFactor(0.001)),
-            "first matching bucket should have precedence"
-        );
-
-        // DAI-USDT: Only 3-token bucket applies (0.003)
-        let order_dai_usdt = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: dai,
-                sell_token: usdt,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = protocol_fees.get_volume_fee_override(&order_dai_usdt);
-        assert_eq!(
-            override_,
-            Some(FeeFactor(0.003)),
-            "3-token bucket override should apply"
-        );
     }
 }
