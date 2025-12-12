@@ -260,7 +260,7 @@ pub trait OrderQuoting: Send + Sync {
 
 #[derive(Error, Debug)]
 pub enum CalculateQuoteError {
-    #[error("sell amount does not cover fee: {fee_amount}")]
+    #[error("sell amount does not cover fee {fee_amount:?}")]
     SellAmountDoesNotCoverFee { fee_amount: U256 },
 
     #[error("{estimator_kind:?} estimator failed: {source}")]

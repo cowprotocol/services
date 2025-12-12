@@ -847,7 +847,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(trader.address(), 1000u64.mwei())
+                .transfer(trader.address(), 1000u64.matom())
                 .from(USDC_WHALE_MAINNET)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -863,7 +863,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.mwei())
+        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -877,9 +877,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_usdc.address(),
-        sell_amount: 1000u64.mwei(),
+        sell_amount: 1000u64.matom(),
         buy_token: *token_usdt.address(),
-        buy_amount: 500u64.mwei(),
+        buy_amount: 500u64.matom(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -898,7 +898,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
             buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (1000u64.mwei()).try_into().unwrap(),
+                    value: (1000u64.matom()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -920,7 +920,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         let buy_token_balance_after = token_usdt.balanceOf(trader.address()).call().await.unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after >= buy_token_balance_before + 500u64.mwei())
+            && (buy_token_balance_after >= buy_token_balance_before + 500u64.matom())
     })
     .await
     .unwrap();
@@ -947,7 +947,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(trader.address(), 1000u64.mwei())
+                .transfer(trader.address(), 1000u64.matom())
                 .from(USDC_WHALE_GNOSIS)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -963,7 +963,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.mwei())
+        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -975,7 +975,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_usdc.address(),
-        sell_amount: 1000u64.mwei(),
+        sell_amount: 1000u64.matom(),
         buy_token: *token_wxdai.address(),
         buy_amount: 500u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,

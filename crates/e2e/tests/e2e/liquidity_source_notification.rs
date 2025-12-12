@@ -59,7 +59,7 @@ async fn liquidity_source_notification(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
     // Define trade params
-    let trade_amount = 500u64.mwei();
+    let trade_amount = 500u64.matom();
 
     // Create parties accounts
     // solver - represents both baseline solver engine for quoting and liquorice

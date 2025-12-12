@@ -373,8 +373,8 @@ pub enum RevertProtection {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(
-        "Mined reverted transaction: {tx_id:?}, submitted at: {submitted_at_block}, reverted at: \
-         {reverted_at_block}"
+        "Mined reverted transaction: {tx_id:?}, block number: {reverted_at_block}, submitted at \
+         block: {submitted_at_block}"
     )]
     Revert {
         tx_id: eth::TxId,
@@ -382,8 +382,8 @@ pub enum Error {
         reverted_at_block: BlockNo,
     },
     #[error(
-        "Simulation started reverting during submission, submitted at: {submitted_at_block}, \
-         reverted at: {reverted_at_block}"
+        "Simulation started reverting during submission, block number: {reverted_at_block}, \
+         submitted at block: {submitted_at_block}"
     )]
     SimulationRevert {
         submitted_at_block: BlockNo,
