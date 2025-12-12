@@ -1,10 +1,10 @@
 use {
     ::alloy::{
-        primitives::{Address, U256, address, utils::Unit},
+        primitives::{Address, U256, address},
         providers::Provider,
     },
     bigdecimal::{BigDecimal, Zero},
-    e2e::setup::{eth, *},
+    e2e::setup::*,
     ethcontract::H160,
     ethrpc::{
         Web3,
@@ -18,7 +18,7 @@ use {
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     },
-    number::nonzero::NonZeroU256,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
     shared::{
         price_estimation::{
@@ -95,16 +95,19 @@ async fn standard_verified_quote(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token.mint(trader.address(), eth(1)).await;
+    token.mint(trader.address(), 1u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
+        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -122,7 +125,7 @@ async fn standard_verified_quote(web3: Web3) {
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -243,10 +246,13 @@ async fn verified_quote_eth_balance(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
     let weth = &onchain.contracts().weth;
 
@@ -277,7 +283,7 @@ async fn verified_quote_eth_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -293,16 +299,19 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(3)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(3u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Send 3 ETH to the settlement contract so we can get verified quotes for
     // selling WETH.
     onchain
-        .send_wei(*onchain.contracts().gp_settlement.address(), eth(3))
+        .send_wei(*onchain.contracts().gp_settlement.address(), 3u64.eth())
         .await;
 
     tracing::info!("Starting services.");
@@ -314,7 +323,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: (U256::from(3) * Unit::ETHER.wei()).try_into().unwrap(),
+                value: (3u64.eth()).try_into().unwrap(),
             },
         },
         ..Default::default()
@@ -371,10 +380,13 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(0)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(0u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
     let weth = &onchain.contracts().weth;
 
@@ -419,7 +431,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -459,7 +471,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -477,7 +489,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -495,7 +507,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             app_data: model::order::OrderCreationAppData::Full {
@@ -526,7 +538,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 async fn usdt_quote_verification(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
     let usdc = address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
     let usdt = address!("dac17f958d2ee523a2206206994597c13d831ec7");
@@ -549,7 +561,7 @@ async fn usdt_quote_verification(web3: Web3) {
             buy_token: usdc,
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::from(1000) * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1000u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()

@@ -16,9 +16,7 @@ use {
         TIMEOUT,
         TRADES_ENDPOINT,
         TestAccount,
-        eth,
         run_test,
-        to_wei,
         wait_for_condition,
     },
     ethcontract::{Account, H160, H256, U256},
@@ -55,13 +53,13 @@ use {
         signature::{Signature, hashed_eip712_message},
         trade::Trade,
     },
-    number::nonzero::NonZeroU256,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     refunder::refund_service::{INVALIDATED_OWNER, NO_OWNER},
     reqwest::Client,
     shared::signature_validator::check_erc1271_result,
 };
 
-const DAI_PER_ETH: u32 = 1_000;
+const DAI_PER_ETH: u64 = 1_000;
 
 #[tokio::test]
 #[ignore]
@@ -92,18 +90,21 @@ async fn local_node_eth_flow_zero_buy_amount() {
 async fn eth_flow_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(2)).await;
-    let [trader] = onchain.make_accounts(eth(2)).await;
+    let [solver] = onchain.make_solvers(2u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            (DAI_PER_ETH * 1_000).eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Get a quote from the services
     let buy_token = *dai.address();
     let receiver = Address::repeat_byte(0x42);
-    let sell_amount = eth(1);
+    let sell_amount = 1u64.eth();
     let intent = EthFlowTradeIntent {
         sell_amount,
         buy_token,
@@ -114,7 +115,7 @@ async fn eth_flow_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     let approve_call_data = {
-        let call_builder = dai.approve(trader.address(), eth(10));
+        let call_builder = dai.approve(trader.address(), 10u64.eth());
         let calldata = call_builder.calldata();
         const_hex::encode_prefixed(calldata)
     };
@@ -227,7 +228,7 @@ async fn eth_flow_tx(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, eth(10));
+    assert_eq!(allowance, 10u64.eth());
 
     let allowance = onchain
         .contracts()
@@ -236,7 +237,7 @@ async fn eth_flow_tx(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, eth(10));
+    assert_eq!(allowance, 10u64.eth());
 
     // Just to be super sure we assert that we indeed were not
     // able to set an allowance on behalf of the settlement contract.
@@ -261,12 +262,15 @@ async fn eth_flow_tx(web3: Web3) {
 async fn eth_flow_without_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(2)).await;
-    let [trader] = onchain.make_accounts(eth(2)).await;
+    let [solver] = onchain.make_solvers(2u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            (DAI_PER_ETH * 1_000).eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     let services = Services::new(&onchain).await;
@@ -279,7 +283,7 @@ async fn eth_flow_without_quote(web3: Web3) {
         + 3600;
     let ethflow_order = ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
         buyToken: *dai.address(),
-        sellAmount: eth(1),
+        sellAmount: 1u64.eth(),
         buyAmount: alloy::primitives::U256::ONE,
         validTo: valid_to,
         partiallyFillable: false,
@@ -314,10 +318,13 @@ async fn eth_flow_without_quote(web3: Web3) {
 async fn eth_flow_indexing_after_refund(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(2)).await;
-    let [trader, dummy_trader] = onchain.make_accounts(eth(2)).await;
+    let [solver] = onchain.make_solvers(2u64.eth()).await;
+    let [trader, dummy_trader] = onchain.make_accounts(2u64.eth()).await;
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            (DAI_PER_ETH * 1000).eth().into_legacy(),
+            1000u64.eth().into_legacy(),
+        )
         .await;
 
     let services = Services::new(&onchain).await;
@@ -362,7 +369,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     // Create the actual order that should be picked up by the services and matched.
     let buy_token = *dai.address();
     let receiver = Address::repeat_byte(0x42);
-    let sell_amount = eth(1);
+    let sell_amount = 1u64.eth();
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3.alloy)
             .await
@@ -873,12 +880,15 @@ impl EthFlowTradeIntent {
 async fn eth_flow_zero_buy_amount(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(2)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(2)).await;
+    let [solver] = onchain.make_solvers(2u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(2u64.eth()).await;
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            (DAI_PER_ETH * 1_000).eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     let services = Services::new(&onchain).await;
@@ -892,7 +902,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
             + 3600;
         let ethflow_order = ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
             buyToken: *dai.address(),
-            sellAmount: eth(1),
+            sellAmount: 1u64.eth(),
             buyAmount: alloy::primitives::U256::from(buy_amount),
             validTo: valid_to,
             partiallyFillable: false,

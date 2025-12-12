@@ -1,6 +1,5 @@
 use {
     crate::domain::{self, eth},
-    ethrpc::alloy::conversions::IntoAlloy,
     shared::remaining_amounts,
 };
 
@@ -29,7 +28,7 @@ pub fn to_domain(
         receiver: order.data.receiver,
         owner: order.metadata.owner,
         partially_fillable: order.data.partially_fillable,
-        executed: remaining_order.executed_amount.into_alloy().into(),
+        executed: remaining_order.executed_amount.into(),
         pre_interactions: if order_is_untouched {
             order.interactions.pre.into_iter().map(Into::into).collect()
         } else {

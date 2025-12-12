@@ -14,9 +14,7 @@ use {
             TIMEOUT,
             TestAccount,
             colocation,
-            eth,
             run_forked_test_with_block_number,
-            to_wei_with_exp,
             wait_for_condition,
         },
     },
@@ -33,6 +31,7 @@ use {
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     web3::signing::SecretKeyRef,
 };
@@ -57,8 +56,8 @@ async fn forked_node_zero_ex_liquidity_mainnet() {
 async fn zero_ex_liquidity(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
-    let [trader, zeroex_maker] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
+    let [trader, zeroex_maker] = onchain.make_accounts(1u64.eth()).await;
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
@@ -76,7 +75,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     };
     let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
 
-    let amount = to_wei_with_exp(5, 8).into_alloy();
+    let amount = 500u64.matom();
 
     // Give trader some USDC
     web3.alloy

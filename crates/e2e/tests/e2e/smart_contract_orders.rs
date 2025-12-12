@@ -1,12 +1,16 @@
 use {
     ::alloy::primitives::Address,
-    e2e::setup::{eth, safe::Safe, *},
+    e2e::setup::{safe::Safe, *},
     ethcontract::U256,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
     },
+    number::units::EthUnit,
     reqwest::StatusCode,
     shared::ethrpc::Web3,
 };
@@ -26,20 +30,23 @@ async fn local_node_max_gas_limit() {
 async fn smart_contract_orders(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
 
     let safe = Safe::deploy(trader, web3.alloy.clone()).await;
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            100_000u64.eth().into_legacy(),
+            100_000u64.eth().into_legacy(),
+        )
         .await;
-    token.mint(safe.address(), eth(10)).await;
+    token.mint(safe.address(), 10u64.eth()).await;
 
     // Approve GPv2 for trading
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+            .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
             .into_transaction_request(),
     )
     .await;
@@ -50,9 +57,9 @@ async fn smart_contract_orders(web3: Web3) {
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: *token.address(),
-        sell_amount: eth(5),
+        sell_amount: 5u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(3),
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     };
@@ -145,7 +152,7 @@ async fn smart_contract_orders(web3: Web3) {
             .await
             .expect("Couldn't fetch native token balance");
 
-        token_balance.is_zero() && weth_balance > eth(6)
+        token_balance.is_zero() && weth_balance > 6u64.eth()
     })
     .await
     .unwrap();
@@ -154,22 +161,26 @@ async fn smart_contract_orders(web3: Web3) {
 async fn erc1271_gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
     let trader = contracts::alloy::test::GasHog::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
 
     let cow = onchain
-        .deploy_cow_weth_pool(to_wei(1_000_000), to_wei(1_000), to_wei(1_000))
+        .deploy_cow_weth_pool(
+            1_000_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund trader accounts and approve relayer
-    cow.fund(*trader.address(), eth(5)).await;
+    cow.fund(*trader.address(), 5u64.eth()).await;
     trader
         .approve(
             *cow.address(),
             onchain.contracts().allowance.into_alloy(),
-            eth(10),
+            10u64.eth(),
         )
         .from(solver.address())
         .send_and_watch()
@@ -193,9 +204,9 @@ async fn erc1271_gas_limit(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *cow.address(),
-        sell_amount: eth(4),
+        sell_amount: 4u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(3),
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         signature: Signature::Eip1271(signature.to_vec()),
