@@ -960,13 +960,11 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     assert_eq!(order.metadata.executed_fee, balance_after);
 }
 
-/// Tests that volume fee overrides work correctly for both token pairs and
-/// buckets. This test creates multiple stablecoin-like tokens and verifies
-/// that:
-/// 1. Default volume fee applies to regular trades
-/// 2. Token pair overrides take precedence (most specific)
-/// 3. Token bucket overrides apply when both tokens are in the bucket
-/// 4. Precedence is respected: pair > bucket > default
+/// Volume fees can be overriden by defining "buckets" of tokens that have differnt 
+/// vol fees than the default. If an order has both the buy and sell token in a bucket 
+/// its vol fees are used. We test that:
+/// - Earlier buckets take precedence 
+/// - Token bucket overrides apply when both tokens are in the bucket
 async fn volume_fee_overrides(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
