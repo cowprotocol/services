@@ -150,11 +150,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
 impl From<dto::Quote> for Trade {
     fn from(quote: dto::Quote) -> Self {
         Self {
-            clearing_prices: quote
-                .clearing_prices
-                .into_iter()
-                .map(|(k, v)| (k, v))
-                .collect(),
+            clearing_prices: quote.clearing_prices,
             gas_estimate: quote.gas,
             pre_interactions: quote
                 .pre_interactions
