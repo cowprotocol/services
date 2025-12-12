@@ -229,8 +229,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .vaultRelayer()
         .call()
         .await
-        .expect("Couldn't get vault relayer address")
-        .into_legacy();
+        .expect("Couldn't get vault relayer address");
 
     let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
         let chain_id = chain.id();
@@ -271,7 +270,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault_address.map(IntoLegacy::into_legacy),
+            vault_address,
             balance_overrider,
         ),
         eth.current_block().clone(),

@@ -56,7 +56,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-ethcontract = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

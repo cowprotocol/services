@@ -1,8 +1,8 @@
 use {
+    alloy::primitives::U256,
     anyhow::{Context, Result},
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     number::serialization::HexOrDecimalU256,
-    primitive_types::U256,
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
@@ -68,9 +68,9 @@ impl DriverGasEstimator {
             .context("failed to parse driver response")?;
 
         Ok(GasPrice1559 {
-            base_fee_per_gas: response.base_fee_per_gas.to_f64_lossy(),
-            max_fee_per_gas: response.max_fee_per_gas.to_f64_lossy(),
-            max_priority_fee_per_gas: response.max_priority_fee_per_gas.to_f64_lossy(),
+            base_fee_per_gas: f64::from(response.base_fee_per_gas),
+            max_fee_per_gas: f64::from(response.max_fee_per_gas),
+            max_priority_fee_per_gas: f64::from(response.max_priority_fee_per_gas),
         })
     }
 

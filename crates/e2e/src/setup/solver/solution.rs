@@ -1,7 +1,6 @@
 use {
+    alloy::primitives::Address,
     app_data::AppDataHash,
-    ethcontract::common::abi::ethereum_types::Address,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
@@ -28,7 +27,7 @@ impl JitOrder {
         OrderData {
             sell_token: self.sell.token,
             buy_token: self.buy.token,
-            receiver: Some(self.receiver.into_alloy()),
+            receiver: Some(self.receiver),
             sell_amount: self.sell.amount,
             buy_amount: self.buy.amount,
             valid_to: self.valid_to,

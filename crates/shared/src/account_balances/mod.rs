@@ -4,7 +4,7 @@ use {
         BalanceOverriding,
     },
     alloy::{
-        primitives::Address,
+        primitives::{Address, U256},
         sol_types::{SolCall, SolType, sol_data},
     },
     contracts::alloy::{GPv2Settlement, support::Balances},
@@ -14,7 +14,6 @@ use {
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
-    primitive_types::{H160, U256},
     std::sync::Arc,
     thiserror::Error,
 };
@@ -99,8 +98,8 @@ pub fn cached(
 pub struct BalanceSimulator {
     settlement: GPv2Settlement::Instance,
     balances: Balances::Instance,
-    vault_relayer: H160,
-    vault: H160,
+    vault_relayer: Address,
+    vault: Address,
     balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
@@ -108,8 +107,8 @@ impl BalanceSimulator {
     pub fn new(
         settlement: GPv2Settlement::Instance,
         balances: Balances::Instance,
-        vault_relayer: H160,
-        vault: Option<H160>,
+        vault_relayer: Address,
+        vault: Option<Address>,
         balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         Self {
@@ -121,18 +120,18 @@ impl BalanceSimulator {
         }
     }
 
-    pub fn vault_relayer(&self) -> H160 {
+    pub fn vault_relayer(&self) -> Address {
         self.vault_relayer
     }
 
-    pub fn vault(&self) -> H160 {
+    pub fn vault(&self) -> Address {
         self.vault
     }
 
     pub async fn simulate(
         &self,
-        owner: H160,
-        token: H160,
+        owner: Address,
+        token: Address,
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
@@ -157,12 +156,12 @@ impl BalanceSimulator {
         let balance_call = Balances::Balances::balanceCall {
             contracts: Balances::Balances::Contracts {
                 settlement: *self.settlement.address(),
-                vaultRelayer: self.vault_relayer.into_alloy(),
-                vault: self.vault.into_alloy(),
+                vaultRelayer: self.vault_relayer,
+                vault: self.vault,
             },
-            trader: owner.into_alloy(),
-            token: token.into_alloy(),
-            amount: amount.unwrap_or_default().into_alloy(),
+            trader: owner,
+            token,
+            amount: amount.unwrap_or_default(),
             source: source.as_bytes().into(),
             interactions: interactions
                 .iter()
@@ -196,9 +195,9 @@ impl BalanceSimulator {
             })?;
 
         let simulation = Simulation {
-            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
-            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
+            token_balance: U256::from_le_slice(&token_balance.as_le_bytes()),
+            allowance: U256::from_le_slice(&allowance.as_le_bytes()),
+            effective_balance: U256::from_le_slice(&effective_balance.as_le_bytes()),
             can_transfer,
         };
 

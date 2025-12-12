@@ -123,8 +123,8 @@ impl Ethereum {
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
-            contracts.vault_relayer().0.into_legacy(),
-            Some(contracts.vault().address().into_legacy()),
+            contracts.vault_relayer().0,
+            Some(*contracts.vault().address()),
             balance_overrider.clone(),
         );
 

@@ -6,8 +6,8 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         subgraph::{ContainsId, SubgraphClient},
     },
+    alloy::primitives::{Address, U256},
     anyhow::Result,
-    ethcontract::{H160, U256},
     num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
@@ -106,7 +106,7 @@ impl UniV3SubgraphClient {
             .paginated_query(&query, variables)
             .await?
             .into_iter()
-            .filter(|pool: &PoolData| pool.liquidity > U256::zero())
+            .filter(|pool: &PoolData| pool.liquidity > U256::ZERO)
             .collect())
     }
 
@@ -126,7 +126,7 @@ impl UniV3SubgraphClient {
 
     async fn get_pools_by_pool_ids(
         &self,
-        pool_ids: &[H160],
+        pool_ids: &[Address],
         block_number: u64,
     ) -> Result<Vec<PoolData>> {
         let variables = json_map! {
@@ -141,7 +141,7 @@ impl UniV3SubgraphClient {
     /// Retrieves the ticks data for pools with given pool ids
     async fn get_ticks_by_pools_ids(
         &self,
-        pool_ids: &[H160],
+        pool_ids: &[Address],
         block_number: u64,
     ) -> Result<Vec<TickData>> {
         let mut all = Vec::new();
@@ -166,7 +166,7 @@ impl UniV3SubgraphClient {
     /// Retrieves the pool data and ticks data for pools with given pool ids
     pub async fn get_pools_with_ticks_by_ids(
         &self,
-        ids: &[H160],
+        ids: &[Address],
         block_number: u64,
     ) -> Result<Vec<PoolData>> {
         let (pools, ticks) = futures::try_join!(
@@ -291,7 +291,7 @@ pub struct RegisteredPools {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
-    pub id: H160,
+    pub id: Address,
     pub token0: Token,
     pub token1: Token,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -321,7 +321,7 @@ pub struct TickData {
     pub tick_idx: BigInt,
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity_net: BigInt,
-    pub pool_address: H160,
+    pub pool_address: Address,
 }
 
 impl ContainsId for TickData {
@@ -334,7 +334,7 @@ impl ContainsId for TickData {
 #[derive(Debug, Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
-    pub id: H160,
+    pub id: Address,
     #[serde_as(as = "DisplayFromStr")]
     pub decimals: u8,
 }
@@ -367,7 +367,7 @@ mod block_number_query {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::subgraph::Data, serde_json::json, std::str::FromStr};
+    use {super::*, crate::subgraph::Data, alloy::primitives::address, serde_json::json};
 
     #[test]
     fn decode_pools_data() {
@@ -414,38 +414,34 @@ mod tests {
             Data {
                 inner: vec![
                     PoolData {
-                        id: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28").unwrap(),
+                        id: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28"),
                         token0: Token {
-                            id: H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f")
-                                .unwrap(),
+                            id: address!("0xbef81556ef066ec840a540595c8d12f516b6378f"),
                             decimals: 18,
                         },
                         token1: Token {
-                            id: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
-                                .unwrap(),
+                            id: address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                             decimals: 18,
                         },
-                        fee_tier: U256::from_dec_str("10000").unwrap(),
-                        liquidity: U256::from_dec_str("303015134493562686441").unwrap(),
-                        sqrt_price: U256::from_dec_str("792216481398733702759960397").unwrap(),
+                        fee_tier: U256::from(10000),
+                        liquidity: U256::from(303015134493562686441_u128),
+                        sqrt_price: U256::from(792216481398733702759960397_u128),
                         tick: BigInt::from(-92110),
                         ticks: None,
                     },
                     PoolData {
-                        id: H160::from_str("0x0002e63328169d7feea121f1e32e4f620abf0352").unwrap(),
+                        id: address!("0x0002e63328169d7feea121f1e32e4f620abf0352"),
                         token0: Token {
-                            id: H160::from_str("0x0d438f3b5175bebc262bf23753c1e53d03432bde")
-                                .unwrap(),
+                            id: address!("0x0d438f3b5175bebc262bf23753c1e53d03432bde"),
                             decimals: 18,
                         },
                         token1: Token {
-                            id: H160::from_str("0x903bef1736cddf2a537176cf3c64579c3867a881")
-                                .unwrap(),
+                            id: address!("0x903bef1736cddf2a537176cf3c64579c3867a881"),
                             decimals: 9,
                         },
-                        fee_tier: U256::from_dec_str("3000").unwrap(),
-                        liquidity: U256::from_dec_str("3125586395511534995").unwrap(),
-                        sqrt_price: U256::from_dec_str("5986323062404391218190509").unwrap(),
+                        fee_tier: U256::from(3000),
+                        liquidity: U256::from(3125586395511534995_u128),
+                        sqrt_price: U256::from(5986323062404391218190509_u128),
                         tick: BigInt::from(-189822),
                         ticks: None,
                     },
@@ -480,15 +476,13 @@ mod tests {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#0".to_string(),
                         tick_idx: BigInt::from(0),
                         liquidity_net: BigInt::from(-303015134493562686441i128),
-                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
-                            .unwrap(),
+                        pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                     TickData {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#-92200".to_string(),
                         tick_idx: BigInt::from(-92200),
                         liquidity_net: BigInt::from(303015134493562686441i128),
-                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
-                            .unwrap(),
+                        pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                 ],
             }
