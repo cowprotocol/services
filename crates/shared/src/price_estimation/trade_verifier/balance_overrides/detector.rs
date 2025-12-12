@@ -3,14 +3,12 @@ use {
     crate::tenderly_api::SimulationError,
     alloy::{
         eips::BlockId,
-        primitives::{Address, B256, TxKind},
+        primitives::{Address, TxKind, B256},
         providers::ext::DebugApi,
         rpc::types::{
-            TransactionInput,
-            TransactionRequest,
-            trace::geth::{GethDebugTracingCallOptions, GethTrace},
+            trace::geth::{GethDebugTracingCallOptions, GethTrace}, TransactionInput, TransactionRequest
         },
-        sol_types::SolCall,
+        sol_types::SolCall, transports::{RpcError, TransportErrorKind},
     },
     contracts::alloy::ERC20,
     ethcontract::U256,
@@ -43,7 +41,7 @@ impl std::ops::Deref for Detector {
     }
 }
 
-/// Used by detect when there are multiple to increase the chances we
+/// Used by Detector.detect() when there are multiple slots to increase the chances we
 /// find the correct storage slot quickly. Returns a list of strategies to try.
 /// Strategies employed:
 /// 1. Reverse because the most recently accessed storage slots are most likely
@@ -57,67 +55,64 @@ fn create_strategies_from_slots(
     heuristic_depth: usize,
 ) -> Vec<Strategy> {
     // Build a map from heuristic slot hash to the map_slot index
-    let mut heuristic_slot_to_index = HashMap::new();
+    let mut solidity_mapping_slot_to_index = HashMap::new();
 
     let mut buf = [0; 64];
     buf[12..32].copy_from_slice(holder.as_slice());
     for i in 0..heuristic_depth {
         U256::from(i).to_big_endian(&mut buf[32..64]);
         let slot_hash = B256::from(signing::keccak256(&buf));
-        heuristic_slot_to_index.insert(slot_hash, i);
+        solidity_mapping_slot_to_index.insert(slot_hash, i);
     }
 
     buf[0..20].copy_from_slice(holder.as_slice());
+    // These are the solady magic bytes for user balances, with padding 
+    // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
     buf[20..32].copy_from_slice(&[
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
     ]);
     let solady_slot = B256::from(signing::keccak256(&buf[0..32]));
 
-    // Create strategies for each slot
-    let mut strategies: Vec<(Strategy, bool)> = storage_slots
-        .iter()
-        .map(|(contract, slot)| {
-            if let Some(&map_slot_index) = heuristic_slot_to_index.get(slot) {
-                // This slot matches a SolidityMapping heuristic
-                (
-                    Strategy::SolidityMapping {
-                        target_contract: contract.into_legacy(),
-                        map_slot: U256::from(map_slot_index),
-                    },
-                    true, // is_heuristic
-                )
-            } else if *slot == solady_slot {
-                // This slot matches a SoladyMapping heuristic
-                (
-                    Strategy::SoladyMapping {
-                        target_contract: contract.into_legacy(),
-                    },
-                    true, // is_heuristic
-                )
-            } else {
-                // This slot doesn't match heuristic, use DirectSlot
-                (
-                    Strategy::DirectSlot {
-                        target_contract: contract.into_legacy(),
-                        slot: slot.into_legacy(),
-                    },
-                    false, // not heuristic
-                )
-            }
-        })
-        .collect();
+    // We separate heuristic and non-heuristic in a single pass,
+    // iterating in reverse so "most recently accessed" come first.
+    let mut heuristic_strategies = Vec::new();
+    let mut fallback_strategies = Vec::new();
+    for (contract, slot) in storage_slots.iter().rev() {
+        let (strategy, is_heuristic) = if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
+            (
+                Strategy::SolidityMapping {
+                    target_contract: contract.into_legacy(),
+                    map_slot: U256::from(map_slot_index),
+                },
+                true,
+            )
+        } else if *slot == solady_slot {
+            (
+                Strategy::SoladyMapping {
+                    target_contract: contract.into_legacy(),
+                },
+                true,
+            )
+        } else {
+            (
+                Strategy::DirectSlot {
+                    target_contract: contract.into_legacy(),
+                    slot: slot.into_legacy(),
+                },
+                false,
+            )
+        };
+        if is_heuristic {
+            heuristic_strategies.push(strategy);
+        } else {
+            fallback_strategies.push(strategy);
+        }
+    }
 
-    // Sort by whether it's a heuristic slot (stable sort preserves order)
-    strategies.sort_by_key(|(_, is_heuristic)| *is_heuristic);
-
-    // Reverse so most recently accessed come first
-    strategies.reverse();
-
-    // Extract just the strategies
-    strategies
-        .into_iter()
-        .map(|(strategy, _)| strategy)
-        .collect()
+    // Heuristics first, then non-heuristics, each already in
+    // "most recent first" order due to .rev() above.
+    heuristic_strategies.extend(fallback_strategies);
+    heuristic_strategies
 }
 
 impl Detector {
@@ -139,7 +134,7 @@ impl Detector {
         &self,
         token: Address,
         holder: Address,
-    ) -> Result<Strategy, DetectionError> {
+    ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
         let balance_of_call = ERC20::ERC20::balanceOfCall { account: holder };
         let calldata = balance_of_call.abi_encode();
 
@@ -160,8 +155,10 @@ impl Detector {
             .await
             .map_err(|err| {
                 tracing::debug!(?token, ?err, "debug_traceCall not supported for token");
-                DetectionError::Simulation(SimulationError::Other(err.into()))
-                .context("debug_traceCall failed")
+                DetectionError::Rpc {
+                    source: err, 
+                    context: String::from("debug_traceCall for balance slot detection")
+                }
             })?;
 
         // Extract storage slots accessed via SLOAD operations
@@ -294,7 +291,7 @@ impl Detector {
         token: Address,
         holder: Address,
         strategy: &Strategy,
-    ) -> Result<(), DetectionError> {
+    ) -> Result<(), DetectionError<TransportErrorKind>> {
         // Use a unique test value to verify this strategy works
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
 
@@ -333,9 +330,14 @@ impl Debug for Detector {
 
 /// An error detecting the balance override strategy for a token.
 #[derive(Debug, Error)]
-pub enum DetectionError {
+pub enum DetectionError<E> {
     #[error("could not detect a balance override strategy")]
     NotFound,
+    #[error("error returned by the RPC server")]
+    Rpc {
+        source: RpcError<E>, 
+        context: String
+    },
     #[error(transparent)]
     Simulation(#[from] SimulationError),
 }
@@ -495,6 +497,8 @@ mod tests {
         let heuristic_slot2 = B256::from(signing::keccak256(&buf));
         buf[0..20].copy_from_slice(holder.as_slice());
         buf[20..32].copy_from_slice(&[
+        // These are the solady magic bytes for user balances, with padding 
+        // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
         ]);
         let heuristic_slot3 = B256::from(signing::keccak256(&buf[0..32]));
