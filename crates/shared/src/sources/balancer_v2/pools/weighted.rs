@@ -154,8 +154,7 @@ mod tests {
             sol_types::SolCall,
         },
         ethcontract::H256,
-        ethcontract_mock::Mock,
-        ethrpc::alloy::conversions::IntoAlloy,
+        ethrpc::{Web3, alloy::conversions::IntoAlloy, mock::MockTransport},
         futures::future,
         maplit::btreemap,
     };
@@ -281,13 +280,12 @@ mod tests {
         let weights = [bfp!("0.8"), bfp!("0.2")];
         let swap_fee = bfp!("0.003");
 
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        asserter.push_success(&10);
+        let web3 = Web3::<MockTransport>::with_asserter(asserter);
 
-        let factory = BalancerV2WeightedPoolFactory::Instance::new(
-            Address::default(),
-            ethrpc::mock::web3().alloy,
-        );
+        let factory =
+            BalancerV2WeightedPoolFactory::Instance::new(Address::default(), web3.alloy.clone());
         let pool_info = PoolInfo {
             common: common::PoolInfo {
                 id: H256([0x90; 32]),
@@ -305,12 +303,12 @@ mod tests {
         };
 
         let pool_state = {
-            let block = web3.eth().block_number().await.unwrap();
+            let block = web3.alloy.get_block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
                 future::ready(common_pool_state.clone()).boxed(),
-                block.into(),
+                BlockId::Number(ethcontract::BlockNumber::Number(block.into())),
             );
 
             pool_state.await.unwrap()
