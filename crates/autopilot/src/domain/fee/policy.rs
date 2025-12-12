@@ -84,13 +84,23 @@ impl PriceImprovement {
 }
 
 impl Volume {
-    pub fn apply(&self, order: &boundary::Order) -> Option<domain::fee::Policy> {
+    pub fn apply(
+        &self,
+        order: &boundary::Order,
+        factor_override: Option<FeeFactor>,
+    ) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
-            boundary::OrderClass::Limit => Some(domain::fee::Policy::Volume {
-                factor: self.factor,
-            }),
+            boundary::OrderClass::Limit => {
+                // No volume fee for same-token trades
+                if order.data.buy_token == order.data.sell_token {
+                    return None;
+                }
+                Some(domain::fee::Policy::Volume {
+                    factor: factor_override.unwrap_or(self.factor),
+                })
+            }
         }
     }
 }

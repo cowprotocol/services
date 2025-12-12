@@ -3,12 +3,12 @@ use {
     chrono::{DateTime, Utc},
     reqwest::Url,
     shared::{
-        arguments::{display_option, display_secret_option},
+        arguments::{FeeFactor, TokenBucketFeeOverride, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
+    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
 
 #[derive(clap::Parser)]
@@ -166,42 +166,15 @@ pub struct VolumeFeeConfig {
         env = "VOLUME_FEE_EFFECTIVE_TIMESTAMP"
     )]
     pub effective_from_timestamp: Option<DateTime<Utc>>,
-}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeeFactor(f64);
-
-impl FeeFactor {
-    /// Number of basis points that make up 100%.
-    pub const MAX_BPS: u32 = 10_000;
-
-    /// Converts the fee factor to basis points (BPS).
-    /// For example, 0.0002 -> 2 BPS
-    pub fn to_bps(&self) -> u64 {
-        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
-    }
-}
-
-/// TryFrom implementation for the cases we want to enforce the constraint [0,
-/// 1)
-impl TryFrom<f64> for FeeFactor {
-    type Error = anyhow::Error;
-
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        anyhow::ensure!(
-            (0.0..1.0).contains(&value),
-            "Factor must be in the range [0, 1)"
-        );
-        Ok(FeeFactor(value))
-    }
-}
-
-impl FromStr for FeeFactor {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(FeeFactor::try_from)?
-    }
+    /// Custom volume fees for token buckets.
+    /// Format: "factor:token1,token2,..." (e.g.,
+    /// "0:0xA0b86...,0x6B175...,0xdAC17...") Orders where BOTH tokens are
+    /// in the bucket will use the custom fee. Useful for
+    /// stablecoin-to-stablecoin trades or specific token pairs (2-token
+    /// buckets). Multiple buckets can be separated by semicolons.
+    #[clap(long, env, value_delimiter = ';')]
+    pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
 }
 
 impl std::fmt::Display for Arguments {

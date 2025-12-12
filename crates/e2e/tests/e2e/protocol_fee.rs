@@ -53,6 +53,12 @@ async fn local_node_surplus_partner_fee() {
     run_test(surplus_partner_fee).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_volume_fee_overrides() {
+    run_test(volume_fee_overrides).await;
+}
+
 async fn combined_protocol_fees(web3: Web3) {
     let limit_surplus_policy = ProtocolFee {
         policy: FeePolicyKind::Surplus {
@@ -952,4 +958,407 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         .unwrap()
         .into_legacy();
     assert_eq!(order.metadata.executed_fee, balance_after);
+}
+
+/// Tests that volume fee overrides work correctly for both token pairs and
+/// buckets. This test creates multiple stablecoin-like tokens and verifies
+/// that:
+/// 1. Default volume fee applies to regular trades
+/// 2. Token pair overrides take precedence (most specific)
+/// 3. Token bucket overrides apply when both tokens are in the bucket
+/// 4. Precedence is respected: pair > bucket > default
+async fn volume_fee_overrides(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(eth(200)).await;
+    let [trader] = onchain.make_accounts(eth(200)).await;
+
+    // Deploy tokens: USDC, DAI, USDT (stablecoins), and WETH (non-stablecoin)
+    let [token_usdc, token_dai, token_usdt, token_weth_like] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
+        .await;
+
+    // Fund solver and trader
+    for token in &[&token_usdc, &token_dai, &token_usdt, &token_weth_like] {
+        token.mint(solver.address(), eth(10000)).await;
+        token.mint(trader.address(), eth(1000)).await;
+
+        token
+            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(10000))
+            .from(solver.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        token
+            .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
+            .from(trader.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+    }
+
+    // Create liquidity pools for all token pairs
+    for (token_a, token_b) in [
+        (&token_usdc, &token_dai),
+        (&token_usdc, &token_usdt),
+        (&token_dai, &token_usdt),
+        (&token_usdc, &token_weth_like),
+        (&token_dai, &token_weth_like),
+    ] {
+        onchain
+            .contracts()
+            .uniswap_v2_factory
+            .createPair(*token_a.address(), *token_b.address())
+            .from(solver.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        token_a
+            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(10000))
+            .from(solver.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        token_b
+            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(10000))
+            .from(solver.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        onchain
+            .contracts()
+            .uniswap_v2_router
+            .addLiquidity(
+                *token_a.address(),
+                *token_b.address(),
+                eth(1000),
+                eth(1000),
+                ::alloy::primitives::U256::ZERO,
+                ::alloy::primitives::U256::ZERO,
+                solver.address(),
+                ::alloy::primitives::U256::MAX,
+            )
+            .from(solver.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+    }
+
+    // Configure fee policies:
+    // - Default volume fee: 1% (0.01)
+    // - Bucket 1 (2-token pair): USDC-DAI has 0.05% fee (checked first)
+    // - Bucket 2 (stablecoins): USDC, DAI, USDT have 0% fee (checked second)
+    let default_volume_fee = ProtocolFee {
+        policy: FeePolicyKind::Volume { factor: 0.01 },
+        policy_order_class: FeePolicyOrderClass::Any,
+    };
+
+    let autopilot_config = [
+        ProtocolFeesConfig {
+            protocol_fees: vec![default_volume_fee],
+            ..Default::default()
+        }
+        .into_args(),
+        vec![
+            // Bucket overrides (semicolon-separated, checked in order, first match wins):
+            // 1. USDC-DAI pair (2-token bucket) has 0.05% fee
+            // 2. All stablecoin-to-stablecoin trades have 0% fee
+            {
+                let config_str = format!(
+                    "--volume-fee-bucket-overrides=0.0005:{},{};0:{},{},{}",
+                    token_usdc.address(),
+                    token_dai.address(),
+                    token_usdc.address(),
+                    token_dai.address(),
+                    token_usdt.address()
+                );
+                tracing::info!("Volume fee bucket config: {}", config_str);
+                config_str
+            },
+        ],
+    ]
+    .concat();
+
+    // Orderbook (API) also needs the same bucket overrides for accurate quote
+    // generation
+    let api_config = vec![
+        format!(
+            "--volume-fee-bucket-overrides=0.0005:{},{};0:{},{},{}",
+            token_usdc.address(),
+            token_dai.address(),
+            token_usdc.address(),
+            token_dai.address(),
+            token_usdt.address()
+        ),
+        "--volume-fee-factor=0.01".to_string(), // Default 1% volume fee
+    ];
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: autopilot_config,
+                api: api_config,
+            },
+            solver,
+        )
+        .await;
+
+    let sell_amount = to_wei(10);
+    let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
+
+    // Test Case 1: USDC-DAI should use first bucket (2-token bucket, 0.05%)
+    // This matches before the larger 3-token bucket
+    tracing::info!("Test Case 1: USDC-DAI bucket override (0.05%)");
+    tracing::info!(
+        "USDC address: {}, DAI address: {}",
+        token_usdc.address(),
+        token_dai.address()
+    );
+    let usdc_dai_quote = get_quote(
+        &services,
+        token_usdc.address().into_legacy(),
+        token_dai.address().into_legacy(),
+        OrderKind::Sell,
+        sell_amount,
+        quote_valid_to,
+    )
+    .await
+    .unwrap();
+
+    let usdc_dai_order = OrderCreation {
+        sell_amount: sell_amount.into_alloy(),
+        buy_amount: usdc_dai_quote.quote.buy_amount * AlloyU256::from(9) / AlloyU256::from(10),
+        ..sell_order_from_quote(&usdc_dai_quote)
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    let usdc_dai_uid = services.create_order(&usdc_dai_order).await.unwrap();
+
+    // Test Case 2: DAI-USDT pair should use bucket override (0%)
+    // Both tokens are in the stablecoin bucket
+    tracing::info!("Test Case 2: DAI-USDT bucket override");
+    let dai_usdt_quote = get_quote(
+        &services,
+        token_dai.address().into_legacy(),
+        token_usdt.address().into_legacy(),
+        OrderKind::Sell,
+        sell_amount,
+        quote_valid_to,
+    )
+    .await
+    .unwrap();
+
+    let dai_usdt_order = OrderCreation {
+        sell_amount: sell_amount.into_alloy(),
+        buy_amount: dai_usdt_quote.quote.buy_amount * AlloyU256::from(9) / AlloyU256::from(10),
+        ..sell_order_from_quote(&dai_usdt_quote)
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    let dai_usdt_uid = services.create_order(&dai_usdt_order).await.unwrap();
+
+    // Test Case 3: USDC-WETH should use default fee (1%)
+    // Only one token is in the stablecoin bucket
+    tracing::info!("Test Case 3: USDC-WETH default fee");
+    let usdc_weth_quote = get_quote(
+        &services,
+        token_usdc.address().into_legacy(),
+        token_weth_like.address().into_legacy(),
+        OrderKind::Sell,
+        sell_amount,
+        quote_valid_to,
+    )
+    .await
+    .unwrap();
+
+    let usdc_weth_order = OrderCreation {
+        sell_amount: sell_amount.into_alloy(),
+        buy_amount: usdc_weth_quote.quote.buy_amount * AlloyU256::from(9) / AlloyU256::from(10),
+        ..sell_order_from_quote(&usdc_weth_quote)
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    let usdc_weth_uid = services.create_order(&usdc_weth_order).await.unwrap();
+
+    onchain.mint_block().await;
+
+    // Wait for all orders to trade
+    tracing::info!("Waiting for orders to trade.");
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        futures::future::join_all(
+            [&usdc_dai_uid, &dai_usdt_uid, &usdc_weth_uid].map(|uid| async {
+                services
+                    .get_order(uid)
+                    .await
+                    .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+            }),
+        )
+        .await
+        .into_iter()
+        .all(std::convert::identity)
+    };
+    wait_for_condition(TIMEOUT, metadata_updated)
+        .await
+        .expect("Timeout waiting for the orders to trade");
+
+    // Verify fees
+    tracing::info!("Checking executions...");
+
+    // Get gas price from the node to verify network fee calculation
+    let gas_price_output = std::process::Command::new("cast")
+        .args(["gas-price", "--rpc-url", "http://localhost:8545"])
+        .output()
+        .expect("failed to get gas price");
+    let gas_price_str = String::from_utf8(gas_price_output.stdout).unwrap();
+    let gas_price = gas_price_str
+        .trim()
+        .parse::<u128>()
+        .expect("invalid gas price");
+    tracing::info!("Current gas price from node: {}", gas_price);
+
+    // Get all executed fees
+    let usdc_dai_order_executed = services.get_order(&usdc_dai_uid).await.unwrap();
+    let dai_usdt_order_executed = services.get_order(&dai_usdt_uid).await.unwrap();
+    let usdc_weth_order_executed = services.get_order(&usdc_weth_uid).await.unwrap();
+
+    let dai_usdt_fee = dai_usdt_order_executed.metadata.executed_fee.into_alloy();
+    let usdc_dai_fee = usdc_dai_order_executed.metadata.executed_fee.into_alloy();
+    let usdc_weth_fee = usdc_weth_order_executed.metadata.executed_fee.into_alloy();
+    tracing::info!(
+        "Executed fees - USDC-DAI: {}, DAI-USDT: {}, USDC-WETH: {}",
+        usdc_dai_fee,
+        dai_usdt_fee,
+        usdc_weth_fee
+    );
+
+    // Sanity check: fees should be ordered by protocol fee percentage: 0% < 0.05% <
+    // 1%
+    assert!(
+        dai_usdt_fee < usdc_dai_fee && usdc_dai_fee < usdc_weth_fee,
+        "Fees should be ordered: DAI-USDT (0%) < USDC-DAI (0.05%) < USDC-WETH (1%)"
+    );
+
+    // Verify quote's fee_amount represents pure gas cost (no volume fee)
+    // fee_amount should be: (gas_used * gas_price) / sell_token_price
+    let quote_fee = dai_usdt_quote.quote.fee_amount;
+    tracing::info!(
+        "DAI-USDT quote fee_amount: {} (should only include gas cost, no volume fee)",
+        quote_fee
+    );
+
+    // Fetch native price for DAI token
+    let native_price = services
+        .get_native_price(token_dai.address())
+        .await
+        .unwrap();
+    let sell_token_price_f64 = native_price.price;
+    tracing::info!(
+        "DAI native price (wei per token unit): {}",
+        sell_token_price_f64
+    );
+
+    // Calculate expected network fee: (gas * gas_price) / sell_token_price
+    // Using observed gas from logs: 166391
+    let estimated_gas = 166391u128;
+    let estimated_fee_in_wei = estimated_gas * gas_price;
+    let expected_fee_in_sell_token = (estimated_fee_in_wei as f64 / sell_token_price_f64) as u128;
+    tracing::info!(
+        "Expected network fee: ({} gas * {} wei/gas) / {} price = {} sell_token units",
+        estimated_gas,
+        gas_price,
+        sell_token_price_f64,
+        expected_fee_in_sell_token
+    );
+
+    // Verify quote fee_amount matches expected gas cost meaing no volume fee
+    // applied
+    let expected_network_fee = AlloyU256::from(expected_fee_in_sell_token);
+    assert!(
+        quote_fee >= expected_network_fee * AlloyU256::from(95) / AlloyU256::from(100)
+            && quote_fee <= expected_network_fee * AlloyU256::from(105) / AlloyU256::from(100),
+        "Quote fee_amount should match pure gas cost within ±5% (no volume fee). Expected: {}, \
+         Got: {}",
+        expected_network_fee,
+        quote_fee
+    );
+
+    // Verify executed fee for 0% protocol order matches the quote
+    assert!(
+        dai_usdt_fee >= quote_fee * AlloyU256::from(98) / AlloyU256::from(100)
+            && dai_usdt_fee <= quote_fee * AlloyU256::from(102) / AlloyU256::from(100),
+        "DAI-USDT executed fee (0% protocol) should match quote fee_amount (pure gas cost) within \
+         ±2%"
+    );
+
+    // executed_fee = network_fee + protocol_fee_in_sell_token
+    // DAI-USDT has 0% protocol fee, so it's our baseline (network fee only)
+    // We use the fee differences to verify protocol fees are applied correctly
+
+    // Test Case 2: USDC-DAI protocol fee component should be ~0.05% of sell_amount
+    // Allow ±2% tolerance for rounding and price conversion
+    let usdc_dai_protocol_fee = usdc_dai_fee - expected_network_fee;
+    let expected_usdc_dai_protocol =
+        sell_amount.into_alloy() * AlloyU256::from(5) / AlloyU256::from(10000); // 0.05%
+    tracing::info!(
+        "USDC-DAI protocol fee component: {} (expected ~{})",
+        usdc_dai_protocol_fee,
+        expected_usdc_dai_protocol
+    );
+    assert!(
+        usdc_dai_protocol_fee
+            >= expected_usdc_dai_protocol * AlloyU256::from(98) / AlloyU256::from(100)
+            && usdc_dai_protocol_fee
+                <= expected_usdc_dai_protocol * AlloyU256::from(102) / AlloyU256::from(100),
+        "USDC-DAI protocol fee should be within ±2% of 0.05% of sell_amount"
+    );
+
+    // Test Case 3: USDC-WETH protocol fee component should be ~1% of sell_amount
+    // Allow ±2% tolerance for rounding and price conversion
+    let usdc_weth_protocol_fee = usdc_weth_fee - expected_network_fee;
+    let expected_usdc_weth_protocol =
+        sell_amount.into_alloy() * AlloyU256::from(1) / AlloyU256::from(100); // 1%
+    tracing::info!(
+        "USDC-WETH protocol fee component: {} (expected ~{})",
+        usdc_weth_protocol_fee,
+        expected_usdc_weth_protocol
+    );
+    assert!(
+        usdc_weth_protocol_fee
+            >= expected_usdc_weth_protocol * AlloyU256::from(98) / AlloyU256::from(100)
+            && usdc_weth_protocol_fee
+                <= expected_usdc_weth_protocol * AlloyU256::from(102) / AlloyU256::from(100),
+        "USDC-WETH protocol fee should be within ±2% of 1% of sell_amount"
+    );
+
+    // Test Case 4: Ratio check - USDC-WETH protocol fee should be ~20x USDC-DAI
+    // protocol fee (1% / 0.05% = 20)
+    let fee_ratio = usdc_weth_protocol_fee / usdc_dai_protocol_fee;
+    tracing::info!(
+        "Protocol fee ratio (USDC-WETH / USDC-DAI): {}x (expected ~20x)",
+        fee_ratio
+    );
+    assert!(
+        fee_ratio >= AlloyU256::from(18) && fee_ratio <= AlloyU256::from(22),
+        "Protocol fee ratio should be approximately 20x (1% / 0.05%)"
+    );
+
+    tracing::info!("All test cases passed!");
 }

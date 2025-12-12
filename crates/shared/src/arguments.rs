@@ -12,9 +12,10 @@ use {
         tenderly_api,
     },
     alloy::primitives::Address,
-    anyhow::{Result, ensure},
+    anyhow::{Context, Result, ensure},
     observe::TracingConfig,
     std::{
+        collections::HashSet,
         fmt::{self, Display, Formatter},
         num::NonZeroU64,
         str::FromStr,
@@ -515,6 +516,86 @@ impl FromStr for ExternalSolver {
     }
 }
 
+/// Fee factor representing a percentage in range [0, 1)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeeFactor(pub f64);
+
+impl FeeFactor {
+    /// Number of basis points that make up 100%.
+    pub const MAX_BPS: u32 = 10_000;
+
+    /// Converts the fee factor to basis points (BPS).
+    /// For example, 0.0002 -> 2 BPS
+    pub fn to_bps(&self) -> u64 {
+        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
+    }
+
+    /// Get the inner value
+    pub fn get(&self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for FeeFactor {
+    type Error = anyhow::Error;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        ensure!(
+            (0.0..1.0).contains(&value),
+            "Factor must be in the range [0, 1)"
+        );
+        Ok(FeeFactor(value))
+    }
+}
+
+impl FromStr for FeeFactor {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value: f64 = s.parse().context("failed to parse fee factor as f64")?;
+        value.try_into()
+    }
+}
+
+/// Helper type for parsing token bucket fee overrides from strings
+#[derive(Debug, Clone)]
+pub struct TokenBucketFeeOverride {
+    pub tokens: HashSet<Address>,
+    pub factor: FeeFactor,
+}
+
+impl FromStr for TokenBucketFeeOverride {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        ensure!(
+            parts.len() == 2,
+            "invalid token bucket override format: expected 'factor:token1,token2,...', got '{}'",
+            s
+        );
+
+        let factor = parts[0]
+            .parse::<f64>()
+            .context("failed to parse fee factor")?
+            .try_into()
+            .context("fee factor out of range")?;
+
+        let tokens: Result<HashSet<Address>, _> = parts[1]
+            .split(',')
+            .map(|token| {
+                token
+                    .parse::<Address>()
+                    .with_context(|| format!("failed to parse token address '{}'", token))
+            })
+            .collect();
+
+        let tokens = tokens?;
+
+        Ok(TokenBucketFeeOverride { tokens, factor })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -531,6 +612,55 @@ mod test {
         // too many arguments
         assert!(
             ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
+        );
+    }
+
+    #[test]
+    fn parse_token_bucket_fee_override() {
+        // Valid inputs with 1 tokens
+        let valid = "0.5:0x0000000000000000000000000000000000000001";
+        let result = TokenBucketFeeOverride::from_str(valid).unwrap();
+        assert_eq!(result.factor.get(), 0.5);
+        assert_eq!(result.tokens.len(), 1);
+        // Valid inputs with 3 tokens
+        let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001,\
+                                  0x0000000000000000000000000000000000000002,\
+                                  0x0000000000000000000000000000000000000003";
+        let result = TokenBucketFeeOverride::from_str(valid_three_tokens).unwrap();
+        assert_eq!(result.factor.get(), 0.123);
+        assert_eq!(result.tokens.len(), 3);
+        // Invalid: wrong format (no colon)
+        assert!(
+            TokenBucketFeeOverride::from_str("0.5,0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: too many parts
+        assert!(
+            TokenBucketFeeOverride::from_str(
+                "0.5:0x0000000000000000000000000000000000000001:extra"
+            )
+            .is_err()
+        );
+        // Invalid: fee factor out of range
+        assert!(
+            TokenBucketFeeOverride::from_str("1.5:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        assert!(
+            TokenBucketFeeOverride::from_str("-0.1:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: not a number for fee factor
+        assert!(
+            TokenBucketFeeOverride::from_str("abc:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: bad token address
+        assert!(
+            TokenBucketFeeOverride::from_str(
+                "0.5:notanaddress,0x0000000000000000000000000000000000000002"
+            )
+            .is_err()
         );
     }
 }

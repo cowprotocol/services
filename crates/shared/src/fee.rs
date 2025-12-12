@@ -1,4 +1,7 @@
-use alloy::primitives::U256;
+use {
+    crate::arguments::{FeeFactor, TokenBucketFeeOverride},
+    alloy::primitives::{Address, U256},
+};
 
 /// Everything required to compute the fee amount in sell token
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,4 +46,21 @@ impl FeeParameters {
         // 2. When validating fees this consistently picks the same amount.
         U256::from((fee_in_eth / self.sell_token_price).ceil())
     }
+}
+
+/// Finds the applicable volume fee bucket override for a token pair.
+/// Returns None if no override is found.
+/// Both tokens must be in the same bucket for the override to apply.
+pub fn get_volume_fee_bucket_override(
+    bucket_overrides: &[TokenBucketFeeOverride],
+    buy_token: Address,
+    sell_token: Address,
+) -> Option<FeeFactor> {
+    // Find token bucket overrides (both tokens must be in the same bucket)
+    for fee_override in bucket_overrides {
+        if fee_override.tokens.contains(&buy_token) && fee_override.tokens.contains(&sell_token) {
+            return Some(fee_override.factor);
+        }
+    }
+    None
 }
