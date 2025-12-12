@@ -266,6 +266,9 @@ pub enum CalculateQuoteError {
     #[error("sell amount does not cover fee")]
     SellAmountDoesNotCoverFee { fee_amount: U256 },
 
+    #[error("buy amount is zero")]
+    ZeroBuyAmount,
+
     #[error("{estimator_kind:?} estimator failed: {source}")]
     Price {
         estimator_kind: EstimatorKind,
@@ -626,6 +629,10 @@ impl OrderQuoting for OrderQuoter {
             }
 
             quote = quote.with_scaled_sell_amount(sell_amount);
+        }
+
+        if quote.buy_amount.is_zero() {
+            return Err(CalculateQuoteError::ZeroBuyAmount);
         }
 
         tracing::debug!(?quote, "computed quote");
@@ -1327,6 +1334,68 @@ mod tests {
         assert!(matches!(
             quoter.calculate_quote(parameters).await.unwrap_err(),
             CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } if fee_amount == U256::from(200),
+        ));
+    }
+
+    #[tokio::test]
+    async fn compute_quote_zero_buy_amount_error() {
+        let parameters = QuoteParameters {
+            sell_token: Address::from([1; 20]),
+            buy_token: Address::from([2; 20]),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
+            },
+            verification: Verification {
+                from: Address::from([3; 20]),
+                ..Default::default()
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
+            timeout: None,
+        };
+        let gas_price = GasPrice1559 {
+            base_fee_per_gas: 1.,
+            max_fee_per_gas: 2.,
+            max_priority_fee_per_gas: 0.,
+        };
+
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator.expect_estimate().returning(|_| {
+            async {
+                Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::ZERO, // Zero buy amount
+                    gas: 200,
+                    solver: H160([1; 20]),
+                    verified: false,
+                    execution: Default::default(),
+                })
+            }
+            .boxed()
+        });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_price()
+            .returning(|_, _| async { Ok(1.) }.boxed());
+
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
+
+        let quoter = OrderQuoter {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(Utc::now),
+            validity: Validity::default(),
+            quote_verification: QuoteVerificationMode::Unverified,
+            balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+        };
+        assert!(matches!(
+            quoter.calculate_quote(parameters).await.unwrap_err(),
+            CalculateQuoteError::ZeroBuyAmount,
         ));
     }
 

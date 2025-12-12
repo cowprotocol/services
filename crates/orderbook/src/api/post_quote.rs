@@ -67,6 +67,12 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
                     StatusCode::BAD_REQUEST,
                 )
             }
+            CalculateQuoteError::ZeroBuyAmount => {
+                warp::reply::with_status(
+                    error("ZeroBuyAmount", "Buy amount is zero."),
+                    StatusCode::BAD_REQUEST,
+                )
+            }
             CalculateQuoteError::QuoteNotVerified => warp::reply::with_status(
                 error(
                     "QuoteNotVerified",
