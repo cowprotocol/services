@@ -294,7 +294,7 @@ impl std::fmt::Display for Arguments {
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
         writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
-        writeln!(f, "same_tokens_policy {same_tokens_policy:?}")?;
+        writeln!(f, "same_tokens_policy: {same_tokens_policy:?}")?;
 
         Ok(())
     }
