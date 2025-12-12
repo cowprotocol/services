@@ -159,8 +159,7 @@ impl Detector {
             .await
             .map_err(|err| {
                 tracing::debug!(?token, ?err, "debug_traceCall not supported for token");
-                DetectionError::Rpc(err) 
-
+                DetectionError::Rpc(err)
             })?;
 
         // Extract storage slots accessed via SLOAD operations
