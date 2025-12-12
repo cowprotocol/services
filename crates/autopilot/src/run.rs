@@ -607,7 +607,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
-            eth.contracts().settlement().address().into_legacy(),
+            *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
         );
 

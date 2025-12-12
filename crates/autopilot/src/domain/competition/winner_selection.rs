@@ -476,9 +476,7 @@ mod tests {
             },
             infra::Driver,
         },
-        alloy::primitives::{U256, address},
-        ethcontract::H160,
-        ethrpc::alloy::conversions::IntoAlloy,
+        alloy::primitives::{Address, U160, U256, address},
         hex_literal::hex,
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,
@@ -1101,7 +1099,7 @@ mod tests {
     #[serde_as]
     #[derive(Deserialize, Debug)]
     struct TestCase {
-        pub tokens: Vec<(String, H160)>,
+        pub tokens: Vec<(String, Address)>,
         pub auction: TestAuction,
         pub solutions: HashMap<String, TestSolution>,
         pub expected_fair_solutions: Vec<String>,
@@ -1119,7 +1117,12 @@ mod tests {
             let arbitrator = create_test_arbitrator();
 
             // map (token id -> token address) for later reference during the test
-            let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
+            let token_map: HashMap<String, TokenAddress> = self
+                .tokens
+                .iter()
+                .cloned()
+                .map(|(id, address)| (id, address.into()))
+                .collect();
 
             // map (order id -> order) for later reference during the test
             let order_map: HashMap<String, Order> = self
@@ -1158,7 +1161,7 @@ mod tests {
                 prices
                     .iter()
                     .map(|(token_id, price)| {
-                        let token_address = token_map.get(token_id).unwrap().into_alloy().into();
+                        let token_address = *token_map.get(token_id).unwrap();
                         let price = create_price(*price);
                         (token_address, price)
                     })
@@ -1228,8 +1231,8 @@ mod tests {
             let reference_scores = arbitrator.compute_reference_scores(&ranking);
             assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
             for (solver_id, expected_score) in &self.expected_reference_scores {
-                let solver_address = solver_map.get(solver_id).unwrap().into_alloy();
-                let score = reference_scores.get(&solver_address).unwrap();
+                let solver_address = solver_map.get(solver_id).unwrap();
+                let score = reference_scores.get(solver_address).unwrap();
                 assert_eq!(score.0, eth::Ether(*expected_score))
             }
         }
@@ -1279,15 +1282,15 @@ mod tests {
         }
     }
 
-    fn address(id: u64) -> H160 {
-        H160::from_low_u64_le(id)
+    fn address(id: u64) -> Address {
+        Address::from(U160::from(id))
     }
 
     fn create_order(
         uid: u64,
-        sell_token: H160,
+        sell_token: TokenAddress,
         sell_amount: eth::U256,
-        buy_token: H160,
+        buy_token: TokenAddress,
         buy_amount: eth::U256,
         side: order::Side,
     ) -> Order {
@@ -1295,11 +1298,11 @@ mod tests {
             uid: create_order_uid(uid),
             sell: eth::Asset {
                 amount: sell_amount.into(),
-                token: sell_token.into_alloy().into(),
+                token: sell_token,
             },
             buy: eth::Asset {
                 amount: buy_amount.into(),
-                token: buy_token.into_alloy().into(),
+                token: buy_token,
             },
             protocol_fees: vec![],
             side,
@@ -1373,7 +1376,7 @@ mod tests {
 
     async fn create_solution(
         solution_id: u64,
-        solver_address: H160,
+        solver_address: Address,
         trades: Vec<(OrderUid, TradedOrder)>,
         prices: Option<HashMap<TokenAddress, Price>>,
     ) -> Participant<Unranked> {
@@ -1389,7 +1392,6 @@ mod tests {
         });
 
         let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
-        let solver_address = solver_address.into_alloy();
 
         let solution = Solution::new(
             solution_id,
