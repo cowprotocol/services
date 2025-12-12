@@ -10,6 +10,7 @@ use {
 #[repr(u64)]
 pub enum Chain {
     Mainnet = 1,
+    MainnetFork = 123456789,
     Goerli = 5,
     Gnosis = 100,
     Sepolia = 11155111,
@@ -37,6 +38,7 @@ impl Chain {
         // https://chainid.network/chains.json
         match &self {
             Self::Mainnet => "Ethereum / Mainnet",
+            Self::MainnetFork => "Ethereum / Mainnet Fork",
             Self::Goerli => "Ethereum / Goerli",
             Self::Gnosis => "xDAI",
             Self::Sepolia => "Ethereum / Sepolia",
@@ -57,6 +59,7 @@ impl Chain {
     pub fn default_amount_to_estimate_native_prices_with(&self) -> U256 {
         match &self {
             Self::Mainnet
+            | Self::MainnetFork
             | Self::Goerli
             | Self::Sepolia
             | Self::ArbitrumOne
@@ -76,6 +79,7 @@ impl Chain {
     pub fn block_time_in_ms(&self) -> Duration {
         match self {
             Self::Mainnet => Duration::from_millis(12_000),
+            Self::MainnetFork => Duration::from_millis(12_000),
             Self::Goerli => Duration::from_millis(12_000),
             Self::Gnosis => Duration::from_millis(5_000),
             Self::Sepolia => Duration::from_millis(12_000),
@@ -107,6 +111,7 @@ impl TryFrom<u64> for Chain {
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         let network = match value {
             x if x == Self::Mainnet as u64 => Self::Mainnet,
+            x if x == Self::MainnetFork as u64 => Self::MainnetFork,
             x if x == Self::Goerli as u64 => Self::Goerli,
             x if x == Self::Gnosis as u64 => Self::Gnosis,
             x if x == Self::Sepolia as u64 => Self::Sepolia,
@@ -185,6 +190,7 @@ mod test {
         const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
 
         assert_eq!(Chain::Mainnet.blocks_in(TARGET_AGE).round(), 1800.0);
+        assert_eq!(Chain::MainnetFork.blocks_in(TARGET_AGE).round(), 1800.0);
         assert_eq!(Chain::Sepolia.blocks_in(TARGET_AGE).round(), 1800.0);
         assert_eq!(Chain::Goerli.blocks_in(TARGET_AGE).round(), 1800.0);
         assert_eq!(Chain::Gnosis.blocks_in(TARGET_AGE).round(), 4320.0);
@@ -198,6 +204,10 @@ mod test {
         let json_data = "1"; // Should deserialize to Network::Mainnet
         let network: Chain = serde_json::from_str(json_data).unwrap();
         assert_eq!(network, Chain::Mainnet);
+
+        let json_data = "123456789"; // Should deserialize to Network::MainnetFork
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::MainnetFork);
 
         let json_data = "5"; // Should deserialize to Network::Goerli
         let network: Chain = serde_json::from_str(json_data).unwrap();
@@ -219,6 +229,10 @@ mod test {
         let json_data = "\"1\""; // Should parse to u64 1 and then to Network::Mainnet
         let network: Chain = serde_json::from_str(json_data).unwrap();
         assert_eq!(network, Chain::Mainnet);
+
+        let json_data = "\"123456789\""; // Should parse to u64 123456789 and then to Network::MainnetFork
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::MainnetFork);
 
         let json_data = "\"5\""; // Should parse to u64 5 and then to Network::Goerli
         let network: Chain = serde_json::from_str(json_data).unwrap();

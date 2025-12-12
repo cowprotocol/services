@@ -143,6 +143,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
 
+    /// Skip domain separator verification. Useful for forks where contracts
+    /// were deployed with a different chain ID.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub skip_domain_separator_verification: bool,
+
     #[clap(flatten)]
     pub volume_fee_config: Option<VolumeFeeConfig>,
 }
@@ -233,6 +238,7 @@ impl std::fmt::Display for Arguments {
             db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
+            skip_domain_separator_verification,
             volume_fee_config,
         } = self;
 
@@ -286,6 +292,10 @@ impl std::fmt::Display for Arguments {
         writeln!(
             f,
             "active_order_competition_threshold: {active_order_competition_threshold}"
+        )?;
+        writeln!(
+            f,
+            "skip_domain_separator_verification: {skip_domain_separator_verification}"
         )?;
         writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
 
