@@ -764,7 +764,11 @@ fn main() {
                     SEPOLIA => "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59",
                     ARBITRUM_ONE => "0xcb8b5CD20BdCaea9a010aC1F8d835824F5C87A04",
                     BASE => "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69",
-                ])),
+                ]))
+                // Test Contract with non-standard ERC20 balance storage
+                .add_contract(Contract::new("NonStandardERC20Balances"))
+                // Test Contract which selectively pulls balance storage from another target
+                .add_contract(Contract::new("RemoteERC20Balances")),
         )
         .add_submodule(
             Submodule::new("support") // support module
