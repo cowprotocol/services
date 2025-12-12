@@ -444,11 +444,7 @@ impl Utilities {
             .into_iter()
             .filter_map(|(amm, result)| match result {
                 Ok(template) => Some(Order {
-                    uid: template
-                        .order
-                        .uid(&domain_separator, &amm.into_legacy())
-                        .0
-                        .into(),
+                    uid: template.order.uid(&domain_separator, amm).0.into(),
                     receiver: template.order.receiver,
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)

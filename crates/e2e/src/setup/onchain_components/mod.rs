@@ -27,6 +27,7 @@ use {
         DomainSeparator,
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
@@ -72,21 +73,6 @@ macro_rules! deploy {
             .await
             .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
     }};
-}
-
-pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
-    U256::from(base) * U256::exp10(exp)
-}
-
-pub fn to_wei(base: u32) -> U256 {
-    to_wei_with_exp(base, 18)
-}
-
-/// Returns the provided Eth amount in wei.
-///
-/// Equivalent to `amount * 10^18`.
-pub fn eth(amount: u32) -> ::alloy::primitives::U256 {
-    ::alloy::primitives::U256::from(amount) * ::alloy::primitives::utils::Unit::ETHER.wei()
 }
 
 #[derive(Clone, Debug)]
@@ -371,7 +357,7 @@ impl OnchainComponents {
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
         forked_node_api
-            .set_balance(&auth_manager, to_wei(100))
+            .set_balance(&auth_manager, 100u64.eth().into_legacy())
             .await
             .expect("could not set auth_manager balance");
 

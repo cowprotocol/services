@@ -514,7 +514,7 @@ async fn find_invalid_signature_orders(
                 let (hash, signer, _) = order.metadata.uid.parts();
                 match signature_validator
                     .validate_signature(SignatureCheck {
-                        signer,
+                        signer: signer.into_legacy(),
                         hash: hash.0,
                         signature: signature.clone(),
                         interactions: order.interactions.pre.clone(),
@@ -596,16 +596,15 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
             return false;
         };
 
-        let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(
-            &order.into(),
-            balance.into_legacy(),
-        ) else {
+        let Ok(remaining) =
+            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
+        else {
             return false;
         };
 
         let (Ok(sell_amount), Ok(buy_amount)) = (
-            remaining.remaining(order.data.sell_amount.into_legacy()),
-            remaining.remaining(order.data.buy_amount.into_legacy()),
+            remaining.remaining(order.data.sell_amount),
+            remaining.remaining(order.data.buy_amount),
         ) else {
             return false;
         };
@@ -902,6 +901,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{Address, B256},
+        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -1222,11 +1222,7 @@ mod tests {
         let orders = vec![
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(
-                        B256::repeat_byte(1).into_legacy(),
-                        Address::repeat_byte(11).into_legacy(),
-                        1,
-                    ),
+                    uid: OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1),
                     ..Default::default()
                 },
                 interactions: Interactions {
@@ -1245,11 +1241,7 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(
-                        B256::repeat_byte(2).into_legacy(),
-                        Address::repeat_byte(22).into_legacy(),
-                        2,
-                    ),
+                    uid: OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![2, 2]),
@@ -1269,22 +1261,14 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(
-                        B256::repeat_byte(3).into_legacy(),
-                        Address::repeat_byte(33).into_legacy(),
-                        3,
-                    ),
+                    uid: OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3),
                     ..Default::default()
                 },
                 ..Default::default()
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(
-                        B256::repeat_byte(4).into_legacy(),
-                        Address::repeat_byte(44).into_legacy(),
-                        4,
-                    ),
+                    uid: OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![4, 4, 4, 4]),
@@ -1292,11 +1276,7 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(
-                        B256::repeat_byte(5).into_legacy(),
-                        Address::repeat_byte(55).into_legacy(),
-                        5,
-                    ),
+                    uid: OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
@@ -1345,8 +1325,8 @@ mod tests {
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(
-                B256::repeat_byte(4).into_legacy(),
-                Address::repeat_byte(44).into_legacy(),
+                B256::repeat_byte(4),
+                Address::repeat_byte(44),
                 4
             )]
         );

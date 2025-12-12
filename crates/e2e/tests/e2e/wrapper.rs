@@ -1,6 +1,6 @@
 use {
     ::alloy::{
-        primitives::{Address, U256, address, utils::Unit},
+        primitives::{Address, address},
         providers::{
             Provider,
             ext::{AnvilApi, DebugApi, ImpersonateConfig},
@@ -19,6 +19,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
@@ -48,8 +49,8 @@ async fn forked_node_mainnet_wrapper() {
 async fn forked_mainnet_wrapper_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(2)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
 
     let token_weth = onchain.contracts().weth.clone();
     let token_usdc = ERC20::Instance::new(
@@ -75,7 +76,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
                 )
                 .into_transaction_request(),
             ImpersonateConfig {
-                fund_amount: Some(eth(1)),
+                fund_amount: Some(1u64.eth()),
                 stop_impersonate: true,
             },
         )
@@ -88,7 +89,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     // Trader deposits ETH to get WETH
     token_weth
         .deposit()
-        .value(eth(1))
+        .value(1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -96,7 +97,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
+        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -137,7 +138,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
             buy_token: *token_usdc.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::ONE * Unit::ETHER.wei()).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Both {
@@ -155,7 +156,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
             expected: app_data_hash,
         },
         sell_token: *token_weth.address(),
-        sell_amount: eth(1),
+        sell_amount: 1u64.eth(),
         buy_token: *token_usdc.address(),
         buy_amount: ::alloy::primitives::U256::ONE,
         valid_to: model::time::now_in_epoch_seconds() + 300,
