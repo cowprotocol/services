@@ -1,9 +1,6 @@
-use {
-    crate::{
-        domain::competition::{auction, solution},
-        infra::notify,
-    },
-    ethrpc::alloy::conversions::IntoLegacy,
+use crate::{
+    domain::competition::{auction, solution},
+    infra::notify,
 };
 
 pub fn new(
@@ -21,10 +18,10 @@ pub fn new(
                 solvers_dto::notification::Kind::SimulationFailed {
                     block: block.0,
                     tx: solvers_dto::notification::Tx {
-                        from: tx.from.into_legacy(),
-                        to: tx.to.into_legacy(),
+                        from: tx.from,
+                        to: tx.to,
                         input: tx.input.into(),
-                        value: tx.value.0.into_legacy(),
+                        value: tx.value.0,
                         access_list: tx.access_list.into(),
                     },
                     succeeded_once,
@@ -33,15 +30,12 @@ pub fn new(
             notify::Kind::ScoringFailed(scoring) => scoring.into(),
             notify::Kind::NonBufferableTokensUsed(tokens) => {
                 solvers_dto::notification::Kind::NonBufferableTokensUsed {
-                    tokens: tokens
-                        .into_iter()
-                        .map(|token| token.0.0.into_legacy())
-                        .collect(),
+                    tokens: tokens.into_iter().map(|token| token.0.0).collect(),
                 }
             }
             notify::Kind::SolverAccountInsufficientBalance(required) => {
                 solvers_dto::notification::Kind::SolverAccountInsufficientBalance {
-                    required: required.0.into_legacy(),
+                    required: required.0,
                 }
             }
             notify::Kind::DuplicatedSolutionId => {
@@ -100,7 +94,7 @@ impl From<notify::ScoreKind> for solvers_dto::notification::Kind {
             }
             notify::ScoreKind::MissingPrice(token_address) => {
                 solvers_dto::notification::Kind::MissingPrice {
-                    token_address: token_address.0.0.into_legacy(),
+                    token_address: token_address.0.0,
                 }
             }
         }

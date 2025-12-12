@@ -134,7 +134,7 @@ impl Mempool {
                     solver = ?solver.address(),
                     "successfully submitted tx to mempool"
                 );
-                Ok(eth::TxId(receipt.hash()))
+                Ok(eth::TxId(receipt.hash().into_alloy()))
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
