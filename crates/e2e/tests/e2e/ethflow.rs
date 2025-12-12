@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, Bytes, U256 as AlloyU256},
+        primitives::{Address, Bytes, U256},
         rpc::types::TransactionReceipt,
     },
     anyhow::bail,
@@ -19,7 +19,7 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethcontract::{Account, H160, H256, U256},
+    ethcontract::{Account, H160, H256},
     ethrpc::{
         Web3,
         alloy::{
@@ -206,7 +206,7 @@ async fn eth_flow_tx(web3: Web3) {
             )
             .await
             .unwrap();
-        order.metadata.executed_fee > U256::zero()
+        order.metadata.executed_fee > U256::ZERO
     };
     wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
 
@@ -423,13 +423,9 @@ async fn test_submit_quote(
     // Ideally the fee would be nonzero, but this is not the case in the test
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
-    let approx_output: AlloyU256 = response.quote.sell_amount * AlloyU256::from(DAI_PER_ETH);
-    assert!(
-        response.quote.buy_amount > (approx_output * AlloyU256::from(9u64) / AlloyU256::from(10))
-    );
-    assert!(
-        response.quote.buy_amount < (approx_output * AlloyU256::from(11u64) / AlloyU256::from(10))
-    );
+    let approx_output: U256 = response.quote.sell_amount * U256::from(DAI_PER_ETH);
+    assert!(response.quote.buy_amount > (approx_output * U256::from(9u64) / U256::from(10)));
+    assert!(response.quote.buy_amount < (approx_output * U256::from(11u64) / U256::from(10)));
 
     let OrderQuoteSide::Sell {
         sell_amount:
@@ -693,7 +689,7 @@ impl ExtendedEthFlowOrder {
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.appData.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
-            .with_eip1271(ethflow_contract.address().into_legacy(), vec![])
+            .with_eip1271(*ethflow_contract.address(), vec![])
             .build()
     }
 
@@ -822,7 +818,7 @@ impl ExtendedEthFlowOrder {
         );
         self.to_cow_swap_order(ethflow_contract, &contracts.weth)
             .data
-            .uid(&domain_separator, &ethflow_contract.address().into_legacy())
+            .uid(&domain_separator, *ethflow_contract.address())
     }
 }
 

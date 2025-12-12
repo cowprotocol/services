@@ -1,7 +1,7 @@
 use {
     app_data::AppDataHash,
     ethcontract::common::abi::ethereum_types::Address,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
@@ -57,10 +57,9 @@ impl JitOrder {
         .to_signature(signing_scheme);
         let order_uid = data.uid(
             domain,
-            &signature
+            signature
                 .recover_owner(&signature.to_bytes(), domain, &data.hash_struct())
-                .unwrap()
-                .into_legacy(),
+                .unwrap(),
         );
         let signature = match signature {
             model::signature::Signature::Eip712(signature) => signature.to_bytes().to_vec(),
