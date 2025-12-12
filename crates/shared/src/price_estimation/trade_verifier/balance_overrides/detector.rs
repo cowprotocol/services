@@ -159,10 +159,8 @@ impl Detector {
             .await
             .map_err(|err| {
                 tracing::debug!(?token, ?err, "debug_traceCall not supported for token");
-                DetectionError::Rpc {
-                    source: err,
-                    context: String::from("debug_traceCall for balance slot detection"),
-                }
+                DetectionError::Rpc(err) 
+
             })?;
 
         // Extract storage slots accessed via SLOAD operations
@@ -338,10 +336,7 @@ pub enum DetectionError<E> {
     #[error("could not detect a balance override strategy")]
     NotFound,
     #[error("error returned by the RPC server")]
-    Rpc {
-        source: RpcError<E>,
-        context: String,
-    },
+    Rpc(#[from] RpcError<E>),
     #[error(transparent)]
     Simulation(#[from] SimulationError),
 }
