@@ -158,11 +158,10 @@ impl Detector {
                 GethDebugTracingCallOptions::default(),
             )
             .await
-            .map_err(|e| {
-                tracing::debug!(?token, error = ?e, "debug_traceCall not supported for token");
-                DetectionError::Simulation(SimulationError::Other(anyhow::anyhow!(
-                    "debug_traceCall failed: {e}"
-                )))
+            .map_err(|err| {
+                tracing::debug!(?token, ?err, "debug_traceCall not supported for token");
+                DetectionError::Simulation(SimulationError::Other(err.into()))
+                .context("debug_traceCall failed")
             })?;
 
         // Extract storage slots accessed via SLOAD operations
