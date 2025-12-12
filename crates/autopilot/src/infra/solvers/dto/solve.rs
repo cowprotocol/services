@@ -110,7 +110,6 @@ impl Solution {
         Ok(domain::competition::Solution::new(
             self.solution_id,
             self.submission_address,
-            domain::competition::Score::try_new(self.score.into())?,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
@@ -186,8 +185,6 @@ pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
     /// it in subsequent requests (reveal, settle).
     pub solution_id: u64,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub score: U256,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: Address,
     pub orders: HashMap<boundary::OrderUid, TradedOrder>,
