@@ -66,11 +66,9 @@ impl PriceEstimating for SanitizedPriceEstimator {
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async move {
             self.handle_bad_tokens(&query).await?;
-
-            // buy_token == sell_token => 1 to 1 conversion
-            // Only in case of native price estimation.
-            // For regular price estimation, the sell and buy tokens can
-            // be the same and should be priced as usual
+            // When estimating native price the sell token is substituted by
+            // native one. In that case, the output amount of the price
+            // estimation can be trivially computed as the same amount as input
             if self.is_estimating_native_price && query.buy_token == query.sell_token {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),

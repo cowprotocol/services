@@ -227,7 +227,7 @@ impl Inner {
                         })
                         .collect();
                     let gas = route.gas() + self.solution_gas_offset;
-                    let mut output = route.output().expect("route is not empty");
+                    let mut output = route.output();
 
                     // The baseline solver generates a path with swapping
                     // for exact output token amounts. This leads to
@@ -391,8 +391,11 @@ impl<'a> Route<'a> {
         self.segments[0].input
     }
 
-    fn output(&self) -> Option<eth::Asset> {
-        self.segments.last().map(|segment| segment.output)
+    fn output(&self) -> eth::Asset {
+        self.segments
+            .last()
+            .expect("route has at least one segment by construction")
+            .output
     }
 
     fn gas(&self) -> eth::Gas {
