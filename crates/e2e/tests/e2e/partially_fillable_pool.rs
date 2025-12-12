@@ -1,11 +1,15 @@
 use {
     ::alloy::primitives::U256,
-    e2e::setup::{eth, *},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    e2e::setup::*,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -19,15 +23,18 @@ async fn local_node_partially_fillable_pool() {
 async fn test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token_a.mint(trader_a.address(), eth(500)).await;
-    token_a.mint(solver.address(), eth(1000)).await;
-    token_b.mint(solver.address(), eth(1000)).await;
+    token_a.mint(trader_a.address(), 500u64.eth()).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
 
     onchain
         .contracts()
@@ -39,14 +46,20 @@ async fn test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -57,8 +70,8 @@ async fn test(web3: Web3) {
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -70,7 +83,7 @@ async fn test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(500))
+        .approve(onchain.contracts().allowance.into_alloy(), 500u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -82,9 +95,9 @@ async fn test(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(500),
+        sell_amount: 500u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(390),
+        buy_amount: 390u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,

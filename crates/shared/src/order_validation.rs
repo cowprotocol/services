@@ -619,7 +619,7 @@ impl OrderValidating for OrderValidator {
             app_data: app_data.inner.hash,
             ..order.data()
         };
-        let uid = data.uid(domain_separator, &owner.into_legacy());
+        let uid = data.uid(domain_separator, owner);
 
         let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
             if self.eip1271_skip_creation_validation {

@@ -14,10 +14,8 @@ use {
             Services,
             TIMEOUT,
             colocation::{self, SolverEngine},
-            eth,
             mock::Mock,
             run_forked_test_with_block_number,
-            to_wei_with_exp,
             wait_for_condition,
         },
     },
@@ -32,6 +30,7 @@ use {
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
@@ -60,16 +59,16 @@ async fn liquidity_source_notification(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
     // Define trade params
-    let trade_amount = to_wei_with_exp(5, 8).into_alloy();
+    let trade_amount = 500u64.matom();
 
     // Create parties accounts
     // solver - represents both baseline solver engine for quoting and liquorice
     // solver engine for solving
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
     // trader - the account that will place CoW order
     // liquorice_maker - the account that will place Liquorice order to fill CoW
     // order with
-    let [trader, liquorice_maker] = onchain.make_accounts(eth(1)).await;
+    let [trader, liquorice_maker] = onchain.make_accounts(1u64.eth()).await;
 
     // Access trade tokens contracts
     let token_usdc = ERC20::Instance::new(
@@ -306,8 +305,8 @@ http-timeout = "10s"
     liquorice_solver_api_mock.configure_solution(Some(Solution {
         id: 1,
         prices: HashMap::from([
-            (*token_usdc.address(), eth(11)),
-            (*token_usdt.address(), eth(10)),
+            (*token_usdc.address(), 11u64.eth()),
+            (*token_usdt.address(), 10u64.eth()),
         ]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {

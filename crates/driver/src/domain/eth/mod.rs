@@ -17,11 +17,10 @@ mod gas;
 
 pub use {
     allowance::Allowance,
-    alloy::primitives::{Address, U256},
+    alloy::primitives::{Address, B256, U256, U512},
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::NonZeroU256,
-    primitive_types::{H256, U512},
 };
 
 // TODO This module is getting a little hectic with all kinds of different
@@ -66,7 +65,7 @@ impl From<web3::types::AccessList> for AccessList {
                         item.address.into_alloy(),
                         item.storage_keys
                             .into_iter()
-                            .map(|key| key.into())
+                            .map(|key| key.into_alloy().into())
                             .collect(),
                     )
                 })
@@ -83,14 +82,18 @@ impl From<AccessList> for web3::types::AccessList {
             .sorted_by_key(|&(address, _)| address)
             .map(|(address, storage_keys)| web3::types::AccessListItem {
                 address: address.into_legacy(),
-                storage_keys: storage_keys.into_iter().sorted().map(|key| key.0).collect(),
+                storage_keys: storage_keys
+                    .into_iter()
+                    .sorted()
+                    .map(|key| key.0.into_legacy())
+                    .collect(),
             })
             .collect()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
-struct StorageKey(pub H256);
+struct StorageKey(pub B256);
 
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
@@ -324,7 +327,7 @@ impl From<model::interaction::InteractionData> for Interaction {
 
 /// A transaction ID, AKA transaction hash.
 #[derive(Clone, Debug, From, Into)]
-pub struct TxId(pub H256);
+pub struct TxId(pub B256);
 
 pub enum TxStatus {
     /// The transaction has been included and executed successfully.
@@ -388,15 +391,15 @@ impl Tx {
 /// This value is meaningful in the context of the EVM `CREATE2` opcode in that
 /// it influences the deterministic address that the contract ends up on.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct CodeDigest(pub H256);
+pub struct CodeDigest(pub B256);
 
-impl From<H256> for CodeDigest {
-    fn from(value: H256) -> Self {
+impl From<B256> for CodeDigest {
+    fn from(value: B256) -> Self {
         Self(value)
     }
 }
 
-impl From<CodeDigest> for H256 {
+impl From<CodeDigest> for B256 {
     fn from(value: CodeDigest) -> Self {
         value.0
     }
@@ -404,7 +407,7 @@ impl From<CodeDigest> for H256 {
 
 impl From<[u8; 32]> for CodeDigest {
     fn from(value: [u8; 32]) -> Self {
-        Self(H256(value))
+        Self(B256::new(value))
     }
 }
 

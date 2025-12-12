@@ -1,13 +1,17 @@
 use {
-    ::alloy::primitives::{U256, utils::Unit},
+    ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::ops::DerefMut,
@@ -29,16 +33,19 @@ async fn local_node_disabled_same_sell_and_buy_token_order_feature() {
 async fn place_order_with_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -48,7 +55,7 @@ async fn place_order_with_quote(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(eth(3))
+        .value(3u64.eth())
         .send_and_watch()
         .await
         .unwrap();
@@ -64,7 +71,7 @@ async fn place_order_with_quote(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Quoting");
-    let quote_sell_amount = U256::ONE * Unit::ETHER.wei();
+    let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: *onchain.contracts().weth.address(),
@@ -121,16 +128,19 @@ async fn place_order_with_quote(web3: Web3) {
 async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10).into_alloy()).await;
-    let [trader] = onchain.make_accounts(to_wei(10).into_alloy()).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token.mint(trader.address(), eth(10)).await;
+    token.mint(trader.address(), 10u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -147,7 +157,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Quoting");
-    let quote_sell_amount = eth(1);
+    let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: *token.address(),

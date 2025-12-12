@@ -345,7 +345,7 @@ pub struct S3 {
 enum Account {
     /// A private key is used to sign transactions. Expects a 32-byte hex
     /// encoded string.
-    PrivateKey(eth::H256),
+    PrivateKey(eth::B256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
     /// An address is used to identify the account for signing, relying on the
@@ -499,7 +499,7 @@ enum UniswapV2Config {
         router: eth::Address,
 
         /// The digest of the pool initialization code.
-        pool_code: eth::H256,
+        pool_code: eth::B256,
 
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
@@ -532,7 +532,7 @@ enum SwaprConfig {
         router: eth::Address,
 
         /// The digest of the pool initialization code.
-        pool_code: eth::H256,
+        pool_code: eth::B256,
 
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
@@ -623,7 +623,7 @@ enum BalancerV2Config {
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
-        pool_deny_list: Vec<eth::H256>,
+        pool_deny_list: Vec<eth::B256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
@@ -664,7 +664,7 @@ enum BalancerV2Config {
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
-        pool_deny_list: Vec<eth::H256>,
+        pool_deny_list: Vec<eth::B256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,

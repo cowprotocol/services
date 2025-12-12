@@ -12,7 +12,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::nonzero::NonZeroU256,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::time::Duration,
@@ -40,17 +40,20 @@ async fn local_node_submit_same_sell_and_buy_token_order_without_quote() {
 async fn test_cancel_on_expiry(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
     let nonce = solver.nonce(&web3).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -60,7 +63,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(eth(3))
+        .value(3u64.eth())
         .send_and_watch()
         .await
         .unwrap();
@@ -80,9 +83,9 @@ async fn test_cancel_on_expiry(web3: Web3) {
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount: eth(2),
+        sell_amount: 2u64.eth(),
         buy_token: *token.address(),
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -140,16 +143,19 @@ async fn test_cancel_on_expiry(web3: Web3) {
 async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token.mint(trader.address(), eth(10)).await;
+    token.mint(trader.address(), 10u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -174,10 +180,10 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         .expect("Must be able to disable automine");
 
     let initial_balance = token.balanceOf(trader.address()).call().await.unwrap();
-    assert_eq!(initial_balance, eth(10));
+    assert_eq!(initial_balance, 10u64.eth());
 
-    let sell_amount = eth(1); // Sell 1 eth
-    let buy_amount = eth(1) - U256::from(10).pow(U256::from(16)); // For 0.99 wei, for order to execute
+    let sell_amount = 1u64.eth(); // Sell 1 eth
+    let buy_amount = 1u64.eth() - U256::from(10).pow(U256::from(16)); // For 0.99 wei, for order to execute
 
     tracing::info!("Placing order");
     let order = OrderCreation {
@@ -256,16 +262,19 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token.mint(trader.address(), eth(10)).await;
+    token.mint(trader.address(), 10u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -290,7 +299,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Quoting");
-    let quote_sell_amount = eth(1);
+    let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: *token.address(),
@@ -315,7 +324,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     tracing::info!("Placing order");
     let initial_balance = token.balanceOf(trader.address()).call().await.unwrap();
-    assert_eq!(initial_balance, eth(10));
+    assert_eq!(initial_balance, 10u64.eth());
 
     let order = OrderCreation {
         kind: OrderKind::Sell,

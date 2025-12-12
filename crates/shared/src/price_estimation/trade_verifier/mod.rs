@@ -38,7 +38,7 @@ use {
     },
     num::BigRational,
     number::{
-        conversions::{big_decimal_to_big_rational, u256_to_big_rational},
+        conversions::{alloy::u256_to_big_rational, big_decimal_to_big_rational},
         nonzero::NonZeroU256,
     },
     std::{
@@ -806,7 +806,7 @@ impl SettleOutput {
         // Get settlement contract balances before the trade
         for token in tokens_vec.iter() {
             // TODO: add alloy support to the numeric functions
-            let balance_before = u256_to_big_rational(&queriedBalances[i].into_legacy());
+            let balance_before = u256_to_big_rational(&queriedBalances[i]);
             tokens_lost.insert(*token, balance_before);
             i += 1;
         }
@@ -817,7 +817,7 @@ impl SettleOutput {
 
         // Get settlement contract balances after the trade
         for token in tokens_vec.iter() {
-            let balance_after = u256_to_big_rational(&queriedBalances[i].into_legacy());
+            let balance_after = u256_to_big_rational(&queriedBalances[i]);
             tokens_lost
                 .entry(*token)
                 .and_modify(|balance_before| *balance_before -= balance_after);

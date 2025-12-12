@@ -27,7 +27,9 @@ pub struct Order {
 
 impl Order {
     pub fn uid(&self) -> OrderUid {
-        self.build().data.uid(&self.domain_separator, &self.owner)
+        self.build()
+            .data
+            .uid(&self.domain_separator, self.owner.into_alloy())
     }
 
     pub fn signature(&self) -> Vec<u8> {
