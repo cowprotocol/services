@@ -137,7 +137,7 @@ async fn single_limit_order_test(web3: Web3) {
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     let (jit_order, jit_order_uid) = JitOrder {
-        owner: trader.address().into_legacy(),
+        owner: trader.address(),
         sell: Asset {
             amount: 10u64.eth(),
             token: *token.address(),
@@ -150,7 +150,7 @@ async fn single_limit_order_test(web3: Web3) {
         partially_fillable: false,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         app_data: Default::default(),
-        receiver: solver.address().into_legacy(),
+        receiver: solver.address(),
     }
     .sign(
         EcdsaSigningScheme::Eip712,
