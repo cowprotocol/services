@@ -9,6 +9,7 @@ use {
         order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
     },
+    number::units::EthUnit,
     orderbook::dto::order::Status,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -25,17 +26,17 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     // Use a shallow pool to make partial fills easier to setup.
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
+        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth().into_legacy(), 10u64.eth().into_legacy())
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(4))
+        .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -45,7 +46,7 @@ async fn test(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(eth(4))
+        .value(4u64.eth())
         .send_and_watch()
         .await
         .unwrap();
@@ -59,9 +60,9 @@ async fn test(web3: Web3) {
     assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount: eth(4),
+        sell_amount: 4u64.eth(),
         buy_token: *token.address(),
-        buy_amount: eth(3),
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,

@@ -1,14 +1,14 @@
 use {
     crate::database::AuctionTransaction,
     ::alloy::{
-        primitives::{Address, U256, address, utils::Unit},
+        primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
-    e2e::setup::{eth, *},
+    e2e::setup::*,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -19,7 +19,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::conversions::big_decimal_to_big_uint,
+    number::{conversions::big_decimal_to_big_uint, units::EthUnit},
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{collections::HashMap, ops::DerefMut},
@@ -97,18 +97,21 @@ async fn forked_node_gnosis_single_limit_order() {
 async fn single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund trader accounts
-    token_a.mint(trader_a.address(), eth(10)).await;
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_a.mint(solver.address(), eth(1000)).await;
-    token_b.mint(solver.address(), eth(1000)).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -119,14 +122,20 @@ async fn single_limit_order_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -137,8 +146,8 @@ async fn single_limit_order_test(web3: Web3) {
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -152,7 +161,7 @@ async fn single_limit_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -164,9 +173,9 @@ async fn single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -194,7 +203,7 @@ async fn single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
-        balance_after.checked_sub(balance_before).unwrap() >= eth(5)
+        balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth()
     })
     .await
     .unwrap();
@@ -212,17 +221,20 @@ async fn single_limit_order_test(web3: Web3) {
 async fn two_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund trader accounts and prepare funding Uniswap pool
-    token_a.mint(trader_a.address(), eth(10)).await;
-    token_b.mint(trader_b.address(), eth(10)).await;
-    token_a.mint(solver.address(), eth(1_000)).await;
-    token_b.mint(solver.address(), eth(1_000)).await;
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
+    token_b.mint(trader_b.address(), 10u64.eth()).await;
+    token_a.mint(solver.address(), 1_000u64.eth()).await;
+    token_b.mint(solver.address(), 1_000u64.eth()).await;
 
     // Create and fund Uniswap pool
     onchain
@@ -235,14 +247,20 @@ async fn two_limit_orders_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -253,8 +271,8 @@ async fn two_limit_orders_test(web3: Web3) {
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -268,14 +286,14 @@ async fn two_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -287,9 +305,9 @@ async fn two_limit_orders_test(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -311,9 +329,9 @@ async fn two_limit_orders_test(web3: Web3) {
 
     let order_b = OrderCreation {
         sell_token: *token_b.address(),
-        sell_amount: eth(5),
+        sell_amount: 5u64.eth(),
         buy_token: *token_a.address(),
-        buy_amount: eth(2),
+        buy_amount: 2u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -333,8 +351,8 @@ async fn two_limit_orders_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         let balance_after_a = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         let balance_after_b = token_a.balanceOf(trader_b.address()).call().await.unwrap();
-        let order_a_settled = balance_after_a.saturating_sub(balance_before_a) >= eth(5);
-        let order_b_settled = balance_after_b.saturating_sub(balance_before_b) >= eth(2);
+        let order_a_settled = balance_after_a.saturating_sub(balance_before_a) >= 5u64.eth();
+        let order_b_settled = balance_after_b.saturating_sub(balance_before_b) >= 2u64.eth();
         order_a_settled && order_b_settled
     })
     .await
@@ -344,40 +362,46 @@ async fn two_limit_orders_test(web3: Web3) {
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver_a, solver_b] = onchain.make_solvers(eth(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
+    let [solver_a, solver_b] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b, token_c, token_d] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund traders
-    token_a.mint(trader_a.address(), eth(10)).await;
-    token_b.mint(trader_b.address(), eth(10)).await;
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
+    token_b.mint(trader_b.address(), 10u64.eth()).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
     // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to offer different solution.
     let [base_a, base_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            10_000u64.eth().into_legacy(),
+            10_000u64.eth().into_legacy(),
+        )
         .await;
     onchain
-        .seed_uni_v2_pool((&token_a, eth(100_000)), (&base_a, eth(100_000)))
+        .seed_uni_v2_pool((&token_a, 100_000u64.eth()), (&base_a, 100_000u64.eth()))
         .await;
     onchain
-        .seed_uni_v2_pool((&token_b, eth(10_000)), (&base_b, eth(10_000)))
+        .seed_uni_v2_pool((&token_b, 10_000u64.eth()), (&base_b, 10_000u64.eth()))
         .await;
 
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -421,9 +445,9 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // Place Orders
     let order_a = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_c.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -437,9 +461,9 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let order_b = OrderCreation {
         sell_token: *token_b.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_d.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -586,17 +610,20 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
-    token_a.mint(trader.address(), eth(1)).await;
+    token_a.mint(trader.address(), 1u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(101))
+        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -629,9 +656,9 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(1),
+        sell_amount: 1u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -647,9 +674,9 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // one limit order per user.
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(1),
+        sell_amount: 1u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(2),
+        buy_amount: 2u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -668,17 +695,20 @@ async fn too_many_limit_orders_test(web3: Web3) {
 async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
-    token.mint(trader.address(), eth(100)).await;
+    token.mint(trader.address(), 100u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(101))
+        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -715,7 +745,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         buy_token: *onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(U256::from(5) * Unit::ETHER.wei()).unwrap(),
+                value: NonZeroU256::try_from(5u64.eth()).unwrap(),
             },
         },
         ..Default::default()
@@ -727,7 +757,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         sell_token: *token.address(),
         sell_amount: quote.quote.sell_amount,
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(eth(4)),
+        buy_amount: quote.quote.buy_amount.saturating_sub(4u64.eth()),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -742,9 +772,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Place a "limit" order
     let order = OrderCreation {
         sell_token: *token.address(),
-        sell_amount: eth(1),
+        sell_amount: 1u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(3),
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -763,7 +793,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         sell_token: *token.address(),
         sell_amount: quote.quote.sell_amount,
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(eth(2)),
+        buy_amount: quote.quote.buy_amount.saturating_sub(2u64.eth()),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -778,9 +808,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Place a "limit" order in order to see if fails
     let order = OrderCreation {
         sell_token: *token.address(),
-        sell_amount: eth(1),
+        sell_amount: 1u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(2),
+        buy_amount: 2u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -799,9 +829,9 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
@@ -817,7 +847,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(trader.address(), to_wei_with_exp(1000, 6).into_alloy())
+                .transfer(trader.address(), 1000u64.matom())
                 .from(USDC_WHALE_MAINNET)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -833,10 +863,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei_with_exp(1000, 6).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -850,9 +877,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_usdc.address(),
-        sell_amount: to_wei_with_exp(1000, 6).into_alloy(),
+        sell_amount: 1000u64.matom(),
         buy_token: *token_usdt.address(),
-        buy_amount: to_wei_with_exp(500, 6).into_alloy(),
+        buy_amount: 500u64.matom(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -871,7 +898,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
             buy_token: *token_usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: (U256::from(1000) * Unit::MWEI.wei()).try_into().unwrap(),
+                    value: (1000u64.matom()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -893,8 +920,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         let buy_token_balance_after = token_usdt.balanceOf(trader.address()).call().await.unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after
-                >= buy_token_balance_before + to_wei_with_exp(500, 6).into_alloy())
+            && (buy_token_balance_after >= buy_token_balance_before + 500u64.matom())
     })
     .await
     .unwrap();
@@ -903,9 +929,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
 
     let token_usdc = ERC20::Instance::new(
         address!("ddafbb505ad214d7b80b1f830fccc89b60fb7a83"),
@@ -921,7 +947,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
-                .transfer(trader.address(), to_wei_with_exp(1000, 6).into_alloy())
+                .transfer(trader.address(), 1000u64.matom())
                 .from(USDC_WHALE_GNOSIS)
                 .into_transaction_request(),
             ImpersonateConfig {
@@ -937,10 +963,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei_with_exp(1000, 6).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -952,9 +975,9 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_usdc.address(),
-        sell_amount: to_wei_with_exp(1000, 6).into_alloy(),
+        sell_amount: 1000u64.matom(),
         buy_token: *token_wxdai.address(),
-        buy_amount: eth(500),
+        buy_amount: 500u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -986,7 +1009,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
             .unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
-            && (buy_token_balance_after >= buy_token_balance_before + eth(500))
+            && (buy_token_balance_after >= buy_token_balance_before + 500u64.eth())
     })
     .await
     .unwrap();
@@ -995,17 +1018,17 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 async fn no_liquidity_limit_order(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10_000)).await;
-    let [trader_a] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(10_000u64.eth()).await;
+    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, unsupported] = onchain.deploy_tokens(solver.account()).await;
 
     // Fund trader accounts
-    token_a.mint(trader_a.address(), eth(10)).await;
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -1051,9 +1074,9 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Place order
     let mut order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -1089,7 +1112,11 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Create liquidity
     onchain
-        .seed_weth_uni_v2_pools([&token_a].iter().copied(), to_wei(1000), to_wei(1000))
+        .seed_weth_uni_v2_pools(
+            [&token_a].iter().copied(),
+            1000u64.eth().into_legacy(),
+            1000u64.eth().into_legacy(),
+        )
         .await;
 
     // Drive solution
@@ -1130,5 +1157,5 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= eth(5));
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
 }
