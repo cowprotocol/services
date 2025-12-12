@@ -73,6 +73,7 @@ impl CoinGecko {
 
         let chain = match chain {
             Chain::Mainnet => "ethereum".to_string(),
+            Chain::MainnetFork => "ethereum".to_string(),
             Chain::Gnosis => "xdai".to_string(),
             Chain::ArbitrumOne => "arbitrum-one".to_string(),
             Chain::Base => "base".to_string(),
@@ -338,7 +339,7 @@ mod tests {
             token_infos: Arc<dyn TokenInfoFetching>,
         ) -> Result<Self> {
             let (chain, denominator) = match chain {
-                Chain::Mainnet => (
+                Chain::Mainnet | Chain::MainnetFork => (
                     "ethereum".to_string(),
                     Denominator {
                         address: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),

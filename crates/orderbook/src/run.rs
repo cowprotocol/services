@@ -170,9 +170,13 @@ pub async fn run(args: Arguments) {
             .expect("load hooks trampoline contract"),
     };
 
-    verify_deployed_contract_constants(&settlement_contract, chain_id)
-        .await
-        .expect("Deployed contract constants don't match the ones in this binary");
+    if !args.skip_domain_separator_verification {
+        verify_deployed_contract_constants(&settlement_contract, chain_id)
+            .await
+            .expect("Deployed contract constants don't match the ones in this binary");
+    } else {
+        tracing::warn!("Skipping domain separator verification (useful for forks)");
+    }
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
