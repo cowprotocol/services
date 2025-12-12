@@ -5,11 +5,11 @@ use {
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::{
         Web3,
-        alloy::conversions::TryIntoAlloyAsync,
+        alloy::conversions::{IntoLegacy, TryIntoAlloyAsync},
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
-    number::nonzero::NonZeroU256,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     refunder::refund_service::RefundService,
     sqlx::PgPool,
 };
@@ -23,10 +23,13 @@ async fn local_node_refunder_tx() {
 async fn refunder_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [user, refunder] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [user, refunder] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     let services = Services::new(&onchain).await;

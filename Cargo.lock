@@ -6519,6 +6519,7 @@ dependencies = [
  "mimalloc",
  "model",
  "num",
+ "number",
  "observe",
  "prometheus",
  "prometheus-metric-storage",

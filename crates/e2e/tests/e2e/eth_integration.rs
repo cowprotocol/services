@@ -1,6 +1,5 @@
 use {
-    ::alloy::primitives::{U256, utils::Unit},
-    e2e::setup::{eth, *},
+    e2e::setup::*,
     ethcontract::prelude::Address,
     ethrpc::alloy::{
         CallBuilderExt,
@@ -11,7 +10,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::nonzero::NonZeroU256,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -26,27 +25,30 @@ async fn local_node_eth_integration() {
 async fn eth_integration(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            100_000u64.eth().into_legacy(),
+            100_000u64.eth().into_legacy(),
+        )
         .await;
-    token.mint(trader_a.address(), eth(51)).await;
-    token.mint(trader_b.address(), eth(51)).await;
+    token.mint(trader_a.address(), 51u64.eth()).await;
+    token.mint(trader_b.address(), 51u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(51))
+        .approve(onchain.contracts().allowance.into_alloy(), 51u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(51))
+        .approve(onchain.contracts().allowance.into_alloy(), 51u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -70,7 +72,7 @@ async fn eth_integration(web3: Web3) {
                 from: Address::default().into_alloy(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(U256::from(43) * Unit::ETHER.wei()).unwrap(),
+                        value: NonZeroU256::try_from(43u64.eth()).unwrap(),
                     },
                 },
                 ..Default::default()
@@ -88,9 +90,9 @@ async fn eth_integration(web3: Web3) {
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
         sell_token: *token.address(),
-        sell_amount: eth(50),
+        sell_amount: 50u64.eth(),
         buy_token: BUY_ETH_ADDRESS,
-        buy_amount: eth(49),
+        buy_amount: 49u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
@@ -103,9 +105,9 @@ async fn eth_integration(web3: Web3) {
     let order_buy_eth_b = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: *token.address(),
-        sell_amount: eth(50),
+        sell_amount: 50u64.eth(),
         buy_token: BUY_ETH_ADDRESS,
-        buy_amount: eth(49),
+        buy_amount: 49u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
@@ -130,8 +132,9 @@ async fn eth_integration(web3: Web3) {
             .await
             .unwrap();
 
-        let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == to_wei(49);
-        let trader_b_eth_increased = balance_b >= to_wei(49);
+        let trader_a_eth_decreased =
+            (balance_a - trader_a_eth_balance_before) == 49u64.eth().into_legacy();
+        let trader_b_eth_increased = balance_b >= 49u64.eth().into_legacy();
         trader_a_eth_decreased && trader_b_eth_increased
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

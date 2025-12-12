@@ -1,12 +1,16 @@
 use {
     app_data::{AppDataHash, hash_full_app_data},
-    e2e::setup::{eth, *},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    e2e::setup::*,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     reqwest::StatusCode,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -29,16 +33,19 @@ async fn local_node_app_data_full_format() {
 // Test that orders can be placed with the new app data format.
 async fn app_data(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token_a.mint(trader.address(), eth(10)).await;
+    token_a.mint(trader.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -49,9 +56,9 @@ async fn app_data(web3: Web3) {
         let order = OrderCreation {
             app_data,
             sell_token: *token_a.address(),
-            sell_amount: eth(2),
+            sell_amount: 2u64.eth(),
             buy_token: *token_b.address(),
-            buy_amount: eth(1),
+            buy_amount: 1u64.eth(),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()
@@ -191,16 +198,19 @@ async fn app_data(web3: Web3) {
 /// all supported features.
 async fn app_data_full_format(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
-    token_a.mint(trader.address(), eth(10)).await;
+    token_a.mint(trader.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -211,9 +221,9 @@ async fn app_data_full_format(web3: Web3) {
         let order = OrderCreation {
             app_data,
             sell_token: *token_a.address(),
-            sell_amount: eth(2),
+            sell_amount: 2u64.eth(),
             buy_token: *token_b.address(),
-            buy_amount: eth(1),
+            buy_amount: 1u64.eth(),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()
