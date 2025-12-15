@@ -995,7 +995,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 }
 
 /// Volume fees can be overriden by defining "buckets" of tokens that have
-/// differnt vol fees than the default. If an order has both the buy and sell
+/// different vol fees than the default. If an order has both the buy and sell
 /// token in a bucket its vol fees are used. We test that:
 /// - Earlier buckets take precedence
 /// - Token bucket overrides apply when both tokens are in the bucket
