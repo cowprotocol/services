@@ -175,6 +175,11 @@ pub struct VolumeFeeConfig {
     /// buckets). Multiple buckets can be separated by semicolons.
     #[clap(long, env, value_delimiter = ';')]
     pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+
+    /// Enable volume fees for trades where sell token equals buy token.
+    /// By default, volume fees are NOT applied to same-token trades.
+    #[clap(long, env)]
+    pub enable_sell_equals_buy_volume_fee: bool,
 }
 
 impl std::fmt::Display for Arguments {

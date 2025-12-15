@@ -1,9 +1,12 @@
-use crate::{
-    arguments,
-    boundary,
-    domain::{
-        self,
-        fee::{FeeFactor, Quote},
+use {
+    crate::{
+        arguments,
+        boundary,
+        domain::{self, fee::Quote},
+    },
+    shared::{
+        arguments::{FeeFactor, TokenBucketFeeOverride},
+        fee::get_applicable_volume_fee_factor,
     },
 };
 
@@ -87,19 +90,23 @@ impl Volume {
     pub fn apply(
         &self,
         order: &boundary::Order,
-        factor_override: Option<FeeFactor>,
+        bucket_overrides: &[TokenBucketFeeOverride],
+        enable_sell_equals_buy_volume_fee: bool,
     ) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => {
-                // No volume fee for same-token trades
-                if order.data.buy_token == order.data.sell_token {
-                    return None;
-                }
-                Some(domain::fee::Policy::Volume {
-                    factor: factor_override.unwrap_or(self.factor),
-                })
+                // Use shared function to determine applicable volume fee factor
+                let factor = get_applicable_volume_fee_factor(
+                    bucket_overrides,
+                    order.data.buy_token,
+                    order.data.sell_token,
+                    enable_sell_equals_buy_volume_fee,
+                    Some(self.factor),
+                )?;
+
+                Some(domain::fee::Policy::Volume { factor })
             }
         }
     }

@@ -15,10 +15,9 @@ use {
     alloy::primitives::{Address, U256},
     app_data::Validator,
     chrono::{DateTime, Utc},
-    derive_more::Into,
     rust_decimal::Decimal,
-    shared::arguments::TokenBucketFeeOverride,
-    std::{collections::HashSet, str::FromStr},
+    shared::arguments::{FeeFactor, TokenBucketFeeOverride},
+    std::collections::HashSet,
 };
 
 #[derive(Debug)]
@@ -82,6 +81,7 @@ pub struct ProtocolFees {
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
     volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+    enable_sell_equals_buy_volume_fee: bool,
 }
 
 impl ProtocolFees {
@@ -96,21 +96,8 @@ impl ProtocolFees {
             max_partner_fee: config.fee_policy_max_partner_fee,
             upcoming_fee_policies: config.upcoming_fee_policies.clone().into(),
             volume_fee_bucket_overrides: config.volume_fee_bucket_overrides.clone(),
+            enable_sell_equals_buy_volume_fee: config.enable_sell_equals_buy_volume_fee,
         }
-    }
-
-    /// Determines the volume fee factor for an order, considering any
-    /// overrides. Returns None if the default fee should be used.
-    ///
-    /// Checks token bucket overrides where both tokens must be in the same
-    /// bucket. A 2-token bucket acts as a pair override.
-    fn get_volume_fee_override(&self, order: &boundary::Order) -> Option<FeeFactor> {
-        shared::fee::get_volume_fee_bucket_override(
-            &self.volume_fee_bucket_overrides,
-            order.data.buy_token,
-            order.data.sell_token,
-        )
-        .map(Into::into)
     }
 
     /// Returns the capped aggregated partner fee
@@ -253,7 +240,7 @@ impl ProtocolFees {
         });
 
         let partner_fee =
-            Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.into());
+            Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.get());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
             return boundary::order::to_domain(order, partner_fee, quote);
@@ -295,9 +282,11 @@ impl ProtocolFees {
         match policy {
             policy::Policy::Surplus(variant) => variant.apply(order),
             policy::Policy::PriceImprovement(variant) => variant.apply(order, quote),
-            policy::Policy::Volume(variant) => {
-                variant.apply(order, self.get_volume_fee_override(order))
-            }
+            policy::Policy::Volume(variant) => variant.apply(
+                order,
+                &self.volume_fee_bucket_overrides,
+                self.enable_sell_equals_buy_volume_fee,
+            ),
         }
     }
 
@@ -350,36 +339,6 @@ pub enum Policy {
         /// fee.
         factor: FeeFactor,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Into)]
-pub struct FeeFactor(f64);
-
-/// TryFrom implementation for the cases we want to enforce the constrain [0, 1)
-impl TryFrom<f64> for FeeFactor {
-    type Error = anyhow::Error;
-
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        anyhow::ensure!(
-            (0.0..1.0).contains(&value),
-            "Factor must be in the range [0, 1)"
-        );
-        Ok(FeeFactor(value))
-    }
-}
-
-impl FromStr for FeeFactor {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(FeeFactor::try_from)?
-    }
-}
-
-impl From<shared::arguments::FeeFactor> for FeeFactor {
-    fn from(value: shared::arguments::FeeFactor) -> Self {
-        FeeFactor(value.get())
-    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

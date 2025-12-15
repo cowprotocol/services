@@ -8,7 +8,7 @@ use {
     },
     shared::{
         arguments::FeeFactor,
-        fee::get_volume_fee_bucket_override,
+        fee::get_applicable_volume_fee_factor,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
         order_validation::{
             AppDataValidationError,
@@ -188,15 +188,14 @@ fn get_vol_fee_adjusted_quote_data(
         return Ok(AdjustedQuoteData::unchanged(quote));
     };
 
-    // No volume fee for same-token trades
-    if buy_token == sell_token {
-        return Ok(AdjustedQuoteData::unchanged(quote));
-    }
-
-    // Determine applicable fee factor considering overrides
-    let factor =
-        get_volume_fee_bucket_override(&config.volume_fee_bucket_overrides, buy_token, sell_token)
-            .or(config.factor);
+    // Determine applicable fee factor considering same-token config and overrides
+    let factor = get_applicable_volume_fee_factor(
+        &config.volume_fee_bucket_overrides,
+        buy_token,
+        sell_token,
+        config.enable_sell_equals_buy_volume_fee,
+        config.factor,
+    );
 
     let Some(factor) = factor else {
         return Ok(AdjustedQuoteData {
@@ -324,6 +323,7 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
             volume_fee_bucket_overrides: vec![],
+            enable_sell_equals_buy_volume_fee: false,
         };
 
         // Selling 100 tokens, expecting to buy 100 tokens
@@ -365,6 +365,7 @@ mod tests {
             // Effective date in the past to ensure fee is applied
             effective_from_timestamp: Some(past_timestamp),
             volume_fee_bucket_overrides: vec![],
+            enable_sell_equals_buy_volume_fee: false,
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
@@ -402,6 +403,7 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
             volume_fee_bucket_overrides: vec![],
+            enable_sell_equals_buy_volume_fee: false,
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
@@ -444,6 +446,7 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
             volume_fee_bucket_overrides: vec![],
+            enable_sell_equals_buy_volume_fee: false,
         };
 
         // Selling 100 tokens, expecting to buy 200 tokens (2:1 price ratio)
@@ -487,6 +490,7 @@ mod tests {
                 factor: Some(volume_fee),
                 effective_from_timestamp: None,
                 volume_fee_bucket_overrides: vec![],
+                enable_sell_equals_buy_volume_fee: false,
             };
 
             let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -517,6 +521,7 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: Some(future_timestamp),
             volume_fee_bucket_overrides: vec![],
+            enable_sell_equals_buy_volume_fee: false,
         };
 
         // Selling 100 tokens, expecting to buy 100 tokens
