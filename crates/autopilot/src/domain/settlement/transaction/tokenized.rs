@@ -6,7 +6,6 @@ use {
     alloy::primitives::U256,
     app_data::AppDataHash,
     contracts::alloy::GPv2Settlement,
-    ethrpc::alloy::conversions::IntoLegacy,
 };
 
 /// Recover order uid from order data and signature
