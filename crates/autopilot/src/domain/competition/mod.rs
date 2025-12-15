@@ -23,31 +23,27 @@ pub struct Solution {
     /// A solution ID provided by the solver.
     id: SolutionId,
     solver: Address,
-    /// Score reported by the solver in their response.
-    score: Score,
     orders: HashMap<domain::OrderUid, TradedOrder>,
     prices: auction::Prices,
     /// Score computed by the autopilot based on the solution
     /// of the solver.
     // TODO: refactor this to compute the score in the constructor
-    computed_score: Option<Score>,
+    score: Option<Score>,
 }
 
 impl Solution {
     pub fn new(
         id: SolutionId,
         solver: Address,
-        score: Score,
         orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
     ) -> Self {
         Self {
             id,
             solver,
-            score,
             orders,
             prices,
-            computed_score: None,
+            score: None,
         }
     }
 
@@ -60,11 +56,9 @@ impl Solution {
     }
 
     pub fn score(&self) -> Score {
-        self.score
-    }
-
-    pub fn computed_score(&self) -> Option<&Score> {
-        self.computed_score.as_ref()
+        self.score.expect(
+            "this function only gets called after the winner selection populated this value",
+        )
     }
 
     pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {

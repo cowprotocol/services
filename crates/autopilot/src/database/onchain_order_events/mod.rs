@@ -573,7 +573,7 @@ async fn get_quote(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
-        Some(order_data.fee_amount.into_legacy()),
+        Some(order_data.fee_amount),
     )
     .await
     .map_err(|err| match err {
