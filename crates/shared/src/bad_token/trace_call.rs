@@ -403,7 +403,7 @@ mod tests {
             },
             sources::{BaselineSource, uniswap_v2},
         },
-        alloy::primitives::address,
+        alloy::{primitives::address, providers::Provider},
         chain::Chain,
         contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory},
         ethrpc::Web3,
@@ -555,7 +555,7 @@ mod tests {
         // observe::tracing::initialize("orderbook::bad_token=debug,
         // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let web3 = Web3::new_from_env();
-        let version = web3.eth().chain_id().await.unwrap().to_string();
+        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
 
         let base_tokens = &[
             testlib::tokens::WETH,

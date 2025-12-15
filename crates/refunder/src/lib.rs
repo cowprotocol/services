@@ -42,11 +42,10 @@ pub async fn run(args: arguments::Arguments) {
     let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
     if let Some(expected_chain_id) = args.chain_id {
         let chain_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
-            .expect("Could not get chainId")
-            .as_u64();
+            .expect("Could not get chainId");
         assert_eq!(
             chain_id, expected_chain_id,
             "connected to node with incorrect chain ID",

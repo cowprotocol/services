@@ -10,7 +10,7 @@ use {
             wait_for_condition,
         },
     },
-    alloy::primitives::Address,
+    alloy::{primitives::Address, providers::ext::AnvilApi},
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
@@ -716,11 +716,7 @@ impl<'a> Services<'a> {
 
     async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3
-            .transport()
-            .execute("evm_mine", vec![])
-            .await
-            .unwrap();
+        self.web3.alloy.evm_mine(None).await.unwrap();
     }
 }
 

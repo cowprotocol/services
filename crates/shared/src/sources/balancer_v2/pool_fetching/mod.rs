@@ -30,7 +30,11 @@ use {
         recent_block_cache::{Block, CacheConfig},
         token_info::TokenInfoFetching,
     },
-    alloy::{primitives::Address, providers::DynProvider},
+    alloy::{
+        eips::{BlockId, BlockNumberOrTag},
+        primitives::{Address, B256},
+        providers::{DynProvider, Provider},
+    },
     anyhow::{Context, Result},
     clap::ValueEnum,
     contracts::alloy::{
@@ -48,8 +52,11 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
     },
-    ethcontract::{BlockId, H256},
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethcontract::H256,
+    ethrpc::{
+        alloy::conversions::IntoLegacy,
+        block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    },
     model::TokenPair,
     reqwest::{Client, Url},
     std::{
@@ -458,12 +465,11 @@ async fn create_aggregate_pool_fetcher(
     let registered_pools = pool_initializer.initialize_pools().await?;
     let fetched_block_number = registered_pools.fetched_block_number;
     let fetched_block_hash = web3
-        .eth()
-        .block(BlockId::Number(fetched_block_number.into()))
+        .alloy
+        .get_block_by_number(BlockNumberOrTag::Number(fetched_block_number))
         .await?
         .context("failed to get block by block number")?
-        .hash
-        .context("missing hash from block")?;
+        .hash();
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
@@ -554,7 +560,7 @@ fn create_internal_pool_fetcher<Factory>(
     token_infos: Arc<dyn TokenInfoFetching>,
     factory_instance: &BalancerFactoryInstance,
     registered_pools: RegisteredPools,
-    fetched_block_hash: H256,
+    fetched_block_hash: B256,
 ) -> Result<Box<dyn InternalPoolFetching>>
 where
     Factory: FactoryIndexing,
@@ -564,7 +570,10 @@ where
         .iter()
         .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number))
         .collect::<Result<_>>()?;
-    let start_sync_at_block = Some((registered_pools.fetched_block_number, fetched_block_hash));
+    let start_sync_at_block = Some((
+        registered_pools.fetched_block_number,
+        fetched_block_hash.into_legacy(),
+    ));
 
     Ok(Box::new(Registry::new(
         block_retriever,

@@ -6,7 +6,7 @@ use {
     ::alloy::{
         network::{Ethereum, NetworkWallet, TransactionBuilder},
         primitives::Address,
-        providers::Provider,
+        providers::{Provider, ext::AnvilApi},
         rpc::types::TransactionRequest,
         signers::local::PrivateKeySigner,
     },
@@ -393,10 +393,11 @@ impl OnchainComponents {
     ) -> [MintableToken; N] {
         let minter = Account::Local(
             self.web3
-                .eth()
-                .accounts()
+                .alloy
+                .get_accounts()
                 .await
-                .expect("getting accounts failed")[0],
+                .expect("getting accounts failed")[0]
+                .into_legacy(),
             None,
         );
         let tokens = self.deploy_tokens::<N>(&minter).await;
@@ -665,11 +666,7 @@ impl OnchainComponents {
 
     pub async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3
-            .transport()
-            .execute("evm_mine", vec![])
-            .await
-            .unwrap();
+        self.web3.alloy.evm_mine(None).await.unwrap();
     }
 
     pub fn contracts(&self) -> &Contracts {

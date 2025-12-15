@@ -89,11 +89,10 @@ pub async fn run(args: Arguments) {
     });
 
     let chain_id = web3
-        .eth()
-        .chain_id()
+        .alloy
+        .get_chain_id()
         .await
-        .expect("Could not get chainId")
-        .as_u64();
+        .expect("Could not get chainId");
     if let Some(expected_chain_id) = args.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
