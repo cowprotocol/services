@@ -31,7 +31,7 @@ use {
         token_info::TokenInfoFetching,
     },
     alloy::{
-        eips::{BlockId, BlockNumberOrTag},
+        eips::BlockNumberOrTag,
         primitives::{Address, B256},
         providers::{DynProvider, Provider},
     },

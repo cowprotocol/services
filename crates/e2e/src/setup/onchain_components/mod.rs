@@ -31,10 +31,7 @@ use {
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
-    web3::{
-        Transport,
-        signing::{self, SecretKeyRef},
-    },
+    web3::signing::{self, SecretKeyRef},
 };
 
 pub mod alloy;

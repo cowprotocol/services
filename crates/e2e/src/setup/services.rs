@@ -31,7 +31,6 @@ use {
         time::Duration,
     },
     tokio::task::JoinHandle,
-    web3::Transport,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";

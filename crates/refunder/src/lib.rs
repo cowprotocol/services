@@ -4,7 +4,7 @@ pub mod submitter;
 
 use {
     crate::arguments::Arguments,
-    alloy::signers::local::PrivateKeySigner,
+    alloy::{providers::Provider, signers::local::PrivateKeySigner},
     clap::Parser,
     contracts::alloy::CoWSwapEthFlow,
     observe::metrics::LivenessChecking,
