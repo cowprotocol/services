@@ -25,6 +25,12 @@ use {
     web3::signing,
 };
 
+// These are the solady magic bytes for user balances, with padding
+// https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
+const SOLADY_MAGIC_BYTES: &'static [u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
+];
+
 /// A heuristic balance override detector based on `eth_call` simulations.
 ///
 /// This has the exact same node requirements as trade verification.
@@ -69,11 +75,7 @@ fn create_strategies_from_slots(
     }
 
     buf[0..20].copy_from_slice(holder.as_slice());
-    // These are the solady magic bytes for user balances, with padding
-    // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
-    buf[20..32].copy_from_slice(&[
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
-    ]);
+    buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
     let solady_slot = B256::from(signing::keccak256(&buf[0..32]));
 
     // We separate heuristic and non-heuristic in a single pass,
@@ -81,36 +83,21 @@ fn create_strategies_from_slots(
     let mut heuristic_strategies = Vec::new();
     let mut fallback_strategies = Vec::new();
     for (contract, slot) in storage_slots.iter().rev() {
-        let (strategy, is_heuristic) =
-            if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
-                (
-                    Strategy::SolidityMapping {
-                        target_contract: contract.into_legacy(),
-                        map_slot: U256::from(map_slot_index),
-                    },
-                    true,
-                )
-            } else if *slot == solady_slot {
-                (
-                    Strategy::SoladyMapping {
-                        target_contract: contract.into_legacy(),
-                    },
-                    true,
-                )
-            } else {
-                (
-                    Strategy::DirectSlot {
-                        target_contract: contract.into_legacy(),
-                        slot: slot.into_legacy(),
-                    },
-                    false,
-                )
-            };
-        if is_heuristic {
-            heuristic_strategies.push(strategy);
+        if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
+            heuristic_strategies.push(Strategy::SolidityMapping {
+                target_contract: contract.into_legacy(),
+                map_slot: U256::from(map_slot_index),
+            });
+        } else if *slot == solady_slot {
+            heuristic_strategies.push(Strategy::SoladyMapping {
+                target_contract: contract.into_legacy(),
+            });
         } else {
-            fallback_strategies.push(strategy);
-        }
+            fallback_strategies.push(Strategy::DirectSlot {
+                target_contract: contract.into_legacy(),
+                slot: slot.into_legacy(),
+            });
+        };
     }
 
     // Heuristics first, then non-heuristics, each already in
@@ -269,13 +256,22 @@ impl Detector {
                 // SLOAD opcode reads from storage
                 // The storage key is on top of the stack (last element)
                 "SLOAD" if !stack.is_empty() => {
-                    tracing::trace!("Detected SLOAD");
-                    // Stack grows upward, so the top is the last element
-                    let slot = *stack.last().unwrap();
+                    if let Some(current_storage) = storage_context.last() {
+                        tracing::trace!(?stack, "Detected SLOAD");
+                        // Stack grows upward, so the top is the last element
+                        let slot = *stack.last().unwrap();
 
-                    // Only add unique slots, preserving order
-                    if seen.insert((*storage_context.last().unwrap(), slot)) {
-                        slots.push((*storage_context.last().unwrap(), slot.into()));
+                        // Only add unique slots, preserving order
+                        if seen.insert((*current_storage, slot)) {
+                            slots.push((*current_storage, slot.into()));
+                        }
+                    } else {
+                        tracing::debug!(
+                            ?stack,
+                            "SLOAD called when not in a call context (is something wrong with the \
+                             struct log?)"
+                        );
+                        break;
                     }
                 }
                 _ => {} // Ignore other opcodes
@@ -494,11 +490,7 @@ mod tests {
         U256::from(5).to_big_endian(&mut buf[32..64]);
         let heuristic_slot2 = B256::from(signing::keccak256(&buf));
         buf[0..20].copy_from_slice(holder.as_slice());
-        buf[20..32].copy_from_slice(&[
-            // These are the solady magic bytes for user balances, with padding
-            // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
-        ]);
+        buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
         let heuristic_slot3 = B256::from(signing::keccak256(&buf[0..32]));
 
         // Create non-heuristic slots
