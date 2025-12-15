@@ -293,7 +293,6 @@ mod tests {
     const TEST_BUY_TOKEN: alloy::primitives::Address =
         alloy::primitives::address!("0000000000000000000000000000000000000002");
 
-
     fn create_test_quote(sell_amount: U256, buy_amount: U256) -> Quote {
         Quote {
             id: None,
