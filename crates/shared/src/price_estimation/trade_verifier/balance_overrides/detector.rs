@@ -27,7 +27,7 @@ use {
 
 // These are the solady magic bytes for user balances, with padding
 // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
-const SOLADY_MAGIC_BYTES: &'static [u8] = &[
+const SOLADY_MAGIC_BYTES: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
 ];
 

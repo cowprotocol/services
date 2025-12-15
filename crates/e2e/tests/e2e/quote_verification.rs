@@ -580,8 +580,8 @@ async fn trace_based_balance_detection(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
 
     // Test with WETH (standard ERC20 with mapping at slot 3)
     let weth = *onchain.contracts().weth.address();
@@ -616,14 +616,14 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     // Mint some tokens to the trader (so the contract has non-zero state)
     struct_offset_token
-        .mint(trader.address(), eth(100))
+        .mint(trader.address(), 100u64.eth())
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     local_storage_token
-        .mint(trader.address(), eth(123))
+        .mint(trader.address(), 123u64.eth())
         .from(solver.address())
         .send_and_watch()
         .await
