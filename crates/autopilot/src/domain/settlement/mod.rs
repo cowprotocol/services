@@ -357,8 +357,7 @@ mod tests {
             eth,
             settlement::{OrderMatchKey, trade_to_key},
         },
-        alloy::primitives::address,
-        ethcontract::BlockId,
+        alloy::{eips::BlockId, primitives::address},
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
     };
