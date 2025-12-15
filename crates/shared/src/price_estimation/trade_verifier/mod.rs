@@ -438,16 +438,16 @@ fn legacy_settlement_to_alloy(
             .trades
             .into_iter()
             .map(|t| GPv2Settlement::GPv2Trade::Data {
-                sellTokenIndex: t.0.into_alloy(),
-                buyTokenIndex: t.1.into_alloy(),
-                receiver: t.2.into_alloy(),
-                sellAmount: t.3.into_alloy(),
-                buyAmount: t.4.into_alloy(),
+                sellTokenIndex: t.0,
+                buyTokenIndex: t.1,
+                receiver: t.2,
+                sellAmount: t.3,
+                buyAmount: t.4,
                 validTo: t.5,
                 appData: t.6.0.into(),
-                feeAmount: t.7.into_alloy(),
-                flags: t.8.into_alloy(),
-                executedAmount: t.9.into_alloy(),
+                feeAmount: t.7,
+                flags: t.8,
+                executedAmount: t.9,
                 signature: t.10.into_alloy(),
             })
             .collect(),
@@ -639,7 +639,7 @@ fn encode_fake_trade(
     let encoded_trade = encode_trade(
         &fake_order,
         &fake_signature,
-        verification.from.into_legacy(),
+        verification.from,
         // the tokens set length is small so the linear search is acceptable
         tokens
             .iter()
@@ -649,7 +649,7 @@ fn encode_fake_trade(
             .iter()
             .position(|token| token == &query.buy_token)
             .context("missing buy token index")?,
-        query.in_amount.get().into_legacy(),
+        query.in_amount.get(),
     );
 
     Ok(encoded_trade)
@@ -664,11 +664,11 @@ fn encode_jit_orders(
         .iter()
         .map(|jit_order| {
             let order_data = OrderData {
-                sell_token: jit_order.sell_token.into_alloy(),
-                buy_token: jit_order.buy_token.into_alloy(),
-                receiver: Some(jit_order.receiver.into_alloy()),
-                sell_amount: jit_order.sell_amount.into_alloy(),
-                buy_amount: jit_order.buy_amount.into_alloy(),
+                sell_token: jit_order.sell_token,
+                buy_token: jit_order.buy_token,
+                receiver: Some(jit_order.receiver),
+                sell_amount: jit_order.sell_amount,
+                buy_amount: jit_order.buy_amount,
                 valid_to: jit_order.valid_to,
                 app_data: jit_order.app_data,
                 fee_amount: alloy::primitives::U256::ZERO,
@@ -690,11 +690,11 @@ fn encode_jit_orders(
                 // the tokens set length is small so the linear search is acceptable
                 tokens
                     .iter()
-                    .position(|token| token.into_legacy() == jit_order.sell_token)
+                    .position(|token| *token == jit_order.sell_token)
                     .context("missing jit order sell token index")?,
                 tokens
                     .iter()
-                    .position(|token| token.into_legacy() == jit_order.buy_token)
+                    .position(|token| *token == jit_order.buy_token)
                     .context("missing jit order buy token index")?,
                 jit_order.executed_amount,
             ))
@@ -707,16 +707,16 @@ fn recover_jit_order_owner(
     jit_order: &JitOrder,
     order_data: &OrderData,
     domain_separator: &DomainSeparator,
-) -> Result<(H160, Signature), Error> {
+) -> Result<(Address, Signature), Error> {
     let (owner, signature) = match jit_order.signing_scheme {
         SigningScheme::Eip1271 => {
             let (owner, signature) = jit_order.signature.split_at(20);
-            let owner = H160::from_slice(owner);
+            let owner = Address::from_slice(owner);
             let signature = Signature::from_bytes(jit_order.signing_scheme, signature)?;
             (owner, signature)
         }
         SigningScheme::PreSign => {
-            let owner = H160::from_slice(&jit_order.signature);
+            let owner = Address::from_slice(&jit_order.signature);
             let signature = Signature::from_bytes(jit_order.signing_scheme, Vec::new().as_slice())?;
             (owner, signature)
         }
@@ -725,8 +725,7 @@ fn recover_jit_order_owner(
             let owner = signature
                 .recover(domain_separator, &order_data.hash_struct())?
                 .context("could not recover the owner")?
-                .signer
-                .into_legacy();
+                .signer;
             (owner, signature)
         }
     };

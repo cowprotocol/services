@@ -581,10 +581,7 @@ impl OrderQuoter {
             balance_override: None,
         };
         let mut balances = self.balance_fetcher.get_balances(&[query]).await;
-        balances
-            .pop()
-            .map(|head| head.map(IntoAlloy::into_alloy))
-            .context("missing balance result")?
+        balances.pop().context("missing balance result")?
     }
 }
 
@@ -800,7 +797,6 @@ mod tests {
         U256 as AlloyU256,
         chrono::Utc,
         ethcontract::H160,
-        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
@@ -810,12 +806,8 @@ mod tests {
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
-        mock.expect_get_balances().returning(|addresses| {
-            addresses
-                .iter()
-                .map(|_| Ok(U256::MAX.into_legacy()))
-                .collect()
-        });
+        mock.expect_get_balances()
+            .returning(|addresses| addresses.iter().map(|_| Ok(U256::MAX)).collect());
         Arc::new(mock)
     }
 
@@ -1778,12 +1770,12 @@ mod tests {
                 },
             ],
             jit_orders: vec![dto::JitOrder {
-                buy_token: H160([4; 20]),
-                sell_token: H160([5; 20]),
-                sell_amount: U256::from(10).into_legacy(),
-                buy_amount: U256::from(20).into_legacy(),
-                executed_amount: U256::from(11).into_legacy(),
-                receiver: H160([6; 20]),
+                buy_token: Address::repeat_byte(4),
+                sell_token: Address::repeat_byte(5),
+                sell_amount: U256::from(10),
+                buy_amount: U256::from(20),
+                executed_amount: U256::from(11),
+                receiver: Address::repeat_byte(6),
                 valid_to: 1734084318,
                 app_data: Default::default(),
                 side: dto::Side::Sell,

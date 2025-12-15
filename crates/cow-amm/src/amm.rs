@@ -7,7 +7,6 @@ use {
         CowAmmLegacyHelper::CowAmmLegacyHelper::orderReturn,
     },
     database::byte_array::ByteArray,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -72,7 +71,7 @@ impl Amm {
         let hash = hashed_eip712_message(domain_separator, &template.order.hash_struct());
         validator
             .validate_signature_and_get_additional_gas(SignatureCheck {
-                signer: self.address.into_legacy(),
+                signer: self.address,
                 hash,
                 signature: template.signature.to_bytes(),
                 interactions: template.pre_interactions.clone(),

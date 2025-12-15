@@ -22,7 +22,6 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -142,7 +141,7 @@ pub async fn run(args: Arguments) {
         signature_validator::Contracts {
             settlement: settlement_contract.clone(),
             signatures: signatures_contract,
-            vault_relayer: vault_relayer.into_legacy(),
+            vault_relayer,
         },
         balance_overrider.clone(),
     );
@@ -190,8 +189,8 @@ pub async fn run(args: Arguments) {
         BalanceSimulator::new(
             settlement_contract.clone(),
             balances_contract.clone(),
-            vault_relayer.into_legacy(),
-            vault_address.map(IntoLegacy::into_legacy),
+            vault_relayer,
+            vault_address,
             balance_overrider,
         ),
     );

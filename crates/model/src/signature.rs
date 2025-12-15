@@ -2,7 +2,6 @@ use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
     alloy::primitives::{Address, B256},
     anyhow::{Context as _, Result, ensure},
-    primitive_types::H160,
     serde::{Deserialize, Serialize, de},
     std::{
         convert::TryInto as _,
@@ -159,11 +158,11 @@ impl Signature {
         }
     }
 
-    pub fn encode_for_settlement(&self, owner: H160) -> Vec<u8> {
+    pub fn encode_for_settlement(&self, owner: Address) -> Vec<u8> {
         match self {
             Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
-            Self::Eip1271(signature) => [owner.as_bytes(), signature].concat(),
-            Self::PreSign => owner.as_bytes().to_vec(),
+            Self::Eip1271(signature) => [owner.as_slice(), signature].concat(),
+            Self::PreSign => owner.to_vec(),
         }
     }
 
