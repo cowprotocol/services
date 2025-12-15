@@ -681,7 +681,7 @@ fn extract_order_data_from_onchain_order_placement_event(
             order_placement.order.buyTokenBalance.0,
         )?,
     };
-    let order_uid = order_data.uid(&domain_separator, &owner.into_legacy());
+    let order_uid = order_data.uid(&domain_separator, owner);
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
@@ -874,7 +874,7 @@ mod test {
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        let expected_uid = expected_order_data.uid(&domain_separator, &owner.into_legacy());
+        let expected_uid = expected_order_data.uid(&domain_separator, owner);
         assert_eq!(sender, order_placement.sender);
         assert_eq!(signing_scheme, SigningScheme::Eip1271);
         assert_eq!(order_data, expected_order_data);
@@ -1293,7 +1293,7 @@ mod test {
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        let expected_uid = expected_order_data.uid(&domain_separator, &owner.into_legacy());
+        let expected_uid = expected_order_data.uid(&domain_separator, owner);
         let expected_event_index = EventIndex {
             block_number: 1,
             log_index: 0,

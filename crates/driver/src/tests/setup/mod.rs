@@ -45,7 +45,6 @@ use {
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::serialization::HexOrDecimalU256,
-    primitive_types::H160,
     secp256k1::SecretKey,
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
@@ -1513,12 +1512,12 @@ impl QuoteOk<'_> {
             .as_object()
             .unwrap()
             .into_iter()
-            .map(|(token, price)| (H160::from_str(token).unwrap(), price.as_str().unwrap()))
+            .map(|(token, price)| (Address::from_str(token).unwrap(), price.as_str().unwrap()))
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
         };
 
         let expected = match quoted_order.order.side {

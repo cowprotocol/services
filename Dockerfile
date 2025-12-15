@@ -59,22 +59,12 @@ ENTRYPOINT [ "solvers" ]
 # Extract Binary
 FROM intermediate
 
-RUN apt-get update && \
-    apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev git netcat-openbsd
-RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
-    mkdir /heaptrack/build && cd /heaptrack/build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. && \
-    make -j$(nproc) && \
-    make install && \
-    cd / && rm -rf /heaptrack
+RUN apt-get update && apt-get install -y netcat-openbsd
 COPY --from=cargo-build /alerter /usr/local/bin/alerter
 COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
 COPY --from=cargo-build /driver /usr/local/bin/driver
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
-COPY ./entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/entrypoint.sh"]

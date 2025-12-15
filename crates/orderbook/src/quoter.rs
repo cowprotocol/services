@@ -281,22 +281,18 @@ impl From<PartialValidationError> for OrderQuoteError {
 mod tests {
     use {
         super::*,
-        alloy::primitives::{U256, utils::Unit},
+        crate::arguments::FeeFactor,
+        alloy::primitives::U256,
         model::quote::OrderQuoteSide,
-        shared::{
-            arguments::FeeFactor,
-            order_quoting::{Quote, QuoteData},
-        },
+        number::units::EthUnit,
+        shared::order_quoting::{Quote, QuoteData},
     };
-
-    fn eth(base: u32) -> U256 {
-        U256::from(base) * Unit::ETHER.wei()
-    }
 
     const TEST_SELL_TOKEN: alloy::primitives::Address =
         alloy::primitives::address!("0000000000000000000000000000000000000001");
     const TEST_BUY_TOKEN: alloy::primitives::Address =
         alloy::primitives::address!("0000000000000000000000000000000000000002");
+
 
     fn create_test_quote(sell_amount: U256, buy_amount: U256) -> Quote {
         Quote {
@@ -330,10 +326,10 @@ mod tests {
         };
 
         // Selling 100 tokens, expecting to buy 100 tokens
-        let quote = create_test_quote(eth(100), eth(100));
+        let quote = create_test_quote(100u64.eth(), 100u64.eth());
         let side = OrderQuoteSide::Sell {
             sell_amount: model::quote::SellAmount::BeforeFee {
-                value: number::nonzero::NonZeroU256::try_from(eth(100)).unwrap(),
+                value: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
             },
         };
 
@@ -350,12 +346,12 @@ mod tests {
         // - sell_amount stays the same
         // - buy_amount is reduced by 0.02% of original buy_amount
         // - protocol_fee_bps = "2"
-        assert_eq!(result.sell_amount, eth(100));
+        assert_eq!(result.sell_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, Some("2".to_string()));
 
         // buy_amount should be reduced by 0.02%
         // Expected: 100 - (100 * 0.0002) = 100 - 0.02 = 99.98
-        let expected_buy = eth(100) - (eth(100) / U256::from(5000)); // 0.02% = 1/5000
+        let expected_buy = 100u64.eth() - (100u64.eth() / U256::from(5000)); // 0.02% = 1/5000
         assert_eq!(result.buy_amount, expected_buy);
     }
 
@@ -371,9 +367,9 @@ mod tests {
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
-        let quote = create_test_quote(eth(100), eth(100));
+        let quote = create_test_quote(100u64.eth(), 100u64.eth());
         let side = OrderQuoteSide::Buy {
-            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(eth(100)).unwrap(),
+            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
         };
 
         let result = get_vol_fee_adjusted_quote_data(
@@ -389,12 +385,12 @@ mod tests {
         // - buy_amount stays the same
         // - sell_amount is increased by 0.02% of original sell_amount
         // - protocol_fee_bps = "2"
-        assert_eq!(result.buy_amount, eth(100));
+        assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, Some("2".to_string()));
 
         // sell_amount should be increased by 0.02% of sell_amount (no network fee)
         // Expected: 100 + (100 * 0.0002) = 100 + 0.02 = 100.02
-        let expected_sell = eth(100) + (eth(100) / U256::from(5000)); // 0.02% = 1/5000
+        let expected_sell = 100u64.eth() + (100u64.eth() / U256::from(5000)); // 0.02% = 1/5000
         assert_eq!(result.sell_amount, expected_sell);
     }
 
@@ -408,10 +404,10 @@ mod tests {
         };
 
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
-        let mut quote = create_test_quote(eth(100), eth(100));
-        quote.fee_amount = eth(5); // Network fee in sell token
+        let mut quote = create_test_quote(100u64.eth(), 100u64.eth());
+        quote.fee_amount = 5u64.eth(); // Network fee in sell token
         let side = OrderQuoteSide::Buy {
-            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(eth(100)).unwrap(),
+            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
         };
 
         let result = get_vol_fee_adjusted_quote_data(
@@ -427,16 +423,16 @@ mod tests {
         // - buy_amount stays the same
         // - protocol fee is calculated on (sell_amount + network_fee)
         // - sell_amount is increased by protocol fee
-        assert_eq!(result.buy_amount, eth(100));
+        assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, Some("2".to_string()));
 
         // Total volume = sell_amount + network_fee = 100 + 5 = 105
         // Protocol fee = 105 * 0.0002 = 0.021
         // sell_amount should be increased by protocol fee
         // Expected: 100 + 0.021 = 100.021
-        let total_volume = eth(100) + eth(5); // 105
+        let total_volume = 100u64.eth() + 5u64.eth(); // 105
         let expected_protocol_fee = total_volume / U256::from(5000); // 0.021
-        let expected_sell = eth(100) + expected_protocol_fee; // 100.021
+        let expected_sell = 100u64.eth() + expected_protocol_fee; // 100.021
         assert_eq!(result.sell_amount, expected_sell);
     }
 
@@ -450,10 +446,10 @@ mod tests {
         };
 
         // Selling 100 tokens, expecting to buy 200 tokens (2:1 price ratio)
-        let quote = create_test_quote(eth(100), eth(200));
+        let quote = create_test_quote(100u64.eth(), 200u64.eth());
         let side = OrderQuoteSide::Sell {
             sell_amount: model::quote::SellAmount::BeforeFee {
-                value: number::nonzero::NonZeroU256::try_from(eth(100)).unwrap(),
+                value: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
             },
         };
 
@@ -467,10 +463,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.protocol_fee_bps, Some("10".to_string()));
-        assert_eq!(result.sell_amount, eth(100));
+        assert_eq!(result.sell_amount, 100u64.eth());
 
         // buy_amount reduced by 0.1% of 200 = 0.2 tokens
-        let expected_buy = eth(200) - (eth(200) / U256::from(1000));
+        let expected_buy = 200u64.eth() - (200u64.eth() / U256::from(1000));
         assert_eq!(result.buy_amount, expected_buy);
     }
 
@@ -492,10 +488,10 @@ mod tests {
                 volume_fee_bucket_overrides: vec![],
             };
 
-            let quote = create_test_quote(eth(100), eth(100));
+            let quote = create_test_quote(100u64.eth(), 100u64.eth());
             let side = OrderQuoteSide::Sell {
                 sell_amount: model::quote::SellAmount::BeforeFee {
-                    value: number::nonzero::NonZeroU256::try_from(eth(100)).unwrap(),
+                    value: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
                 },
             };
 
@@ -523,10 +519,10 @@ mod tests {
         };
 
         // Selling 100 tokens, expecting to buy 100 tokens
-        let quote = create_test_quote(eth(100), eth(100));
+        let quote = create_test_quote(100u64.eth(), 100u64.eth());
         let side = OrderQuoteSide::Sell {
             sell_amount: model::quote::SellAmount::BeforeFee {
-                value: number::nonzero::NonZeroU256::try_from(eth(100)).unwrap(),
+                value: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
             },
         };
 
@@ -540,8 +536,8 @@ mod tests {
         .unwrap();
 
         // Since the effective date is in the future, no volume fee should be applied
-        assert_eq!(result.sell_amount, eth(100));
-        assert_eq!(result.buy_amount, eth(100));
+        assert_eq!(result.sell_amount, 100u64.eth());
+        assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, None);
     }
 }
