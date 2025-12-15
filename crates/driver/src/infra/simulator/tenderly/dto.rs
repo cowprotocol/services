@@ -48,7 +48,7 @@ pub struct AccessList(Vec<AccessListItem>);
 struct AccessListItem {
     address: eth::Address,
     #[serde(default)]
-    storage_keys: Vec<eth::H256>,
+    storage_keys: Vec<eth::B256>,
 }
 
 impl From<eth::AccessList> for AccessList {
@@ -58,7 +58,11 @@ impl From<eth::AccessList> for AccessList {
                 .into_iter()
                 .map(|item| AccessListItem {
                     address: item.address.into_alloy(),
-                    storage_keys: item.storage_keys,
+                    storage_keys: item
+                        .storage_keys
+                        .into_iter()
+                        .map(IntoAlloy::into_alloy)
+                        .collect(),
                 })
                 .collect(),
         )
@@ -72,7 +76,11 @@ impl From<AccessList> for eth::AccessList {
             .into_iter()
             .map(|item| web3::types::AccessListItem {
                 address: item.address.into_legacy(),
-                storage_keys: item.storage_keys,
+                storage_keys: item
+                    .storage_keys
+                    .into_iter()
+                    .map(IntoLegacy::into_legacy)
+                    .collect(),
             })
             .collect_vec()
             .into()

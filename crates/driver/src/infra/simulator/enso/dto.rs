@@ -37,7 +37,11 @@ impl From<eth::AccessList> for AccessList {
                 .into_iter()
                 .map(|item| AccessListItem {
                     address: item.address.into_alloy(),
-                    storage_keys: item.storage_keys,
+                    storage_keys: item
+                        .storage_keys
+                        .into_iter()
+                        .map(IntoAlloy::into_alloy)
+                        .collect(),
                 })
                 .collect(),
         )
@@ -49,7 +53,7 @@ impl From<eth::AccessList> for AccessList {
 #[serde(rename_all = "camelCase")]
 pub struct AccessListItem {
     pub address: eth::Address,
-    pub storage_keys: Vec<eth::H256>,
+    pub storage_keys: Vec<eth::B256>,
 }
 
 #[serde_as]

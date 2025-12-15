@@ -5,11 +5,10 @@
 //! <https://api.0x.org/>
 
 use {
-    alloy::primitives::{Address, B256, address},
+    alloy::primitives::{Address, B256, U256, address},
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
-    ethcontract::U256,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
     observe::tracing::tracing_headers,
@@ -194,7 +193,7 @@ impl OrderRecord {
 
         // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
         // in an u128
-        Ok(scaled_maker_amount.as_u128())
+        Ok(u128::try_from(scaled_maker_amount)?)
     }
 }
 
@@ -548,7 +547,7 @@ mod tests {
                         maker_amount: 500000000u128,
                         maker_token: address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                         pool: B256::ZERO,
-                        salt: 1645858724.into(),
+                        salt: U256::from(1645858724),
                         sender: Address::ZERO,
                         signature: ZeroExSignature {
                             signature_type: 3,

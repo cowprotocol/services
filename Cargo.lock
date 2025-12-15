@@ -2742,7 +2742,6 @@ dependencies = [
  "num",
  "number",
  "observe",
- "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",

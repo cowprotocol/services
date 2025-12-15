@@ -1,7 +1,6 @@
 use {
     alloy::primitives::U256,
     anyhow::{Context, Result},
-    ethrpc::alloy::conversions::IntoAlloy,
     model::order::{Order as ModelOrder, OrderKind},
     number::{conversions::alloy::big_uint_to_u256, ratio_ext::RatioExt},
 };
@@ -136,7 +135,7 @@ impl From<&ModelOrder> for Order {
                 OrderKind::Buy => {
                     big_uint_to_u256(&o.metadata.executed_buy_amount).unwrap_or(o.data.buy_amount)
                 }
-                OrderKind::Sell => o.metadata.executed_sell_amount_before_fees.into_alloy(),
+                OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,
             },
             partially_fillable: o.data.partially_fillable,
         }
@@ -192,7 +191,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 0.into(),
+                executed_sell_amount_before_fees: U256::ZERO,
                 ..Default::default()
             },
             ..Default::default()
@@ -214,7 +213,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 90.into(),
+                executed_sell_amount_before_fees: U256::from(90),
                 ..Default::default()
             },
             ..Default::default()
@@ -309,7 +308,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 2.into(),
+                executed_sell_amount_before_fees: U256::from(2),
                 ..Default::default()
             },
             ..Default::default()
@@ -386,15 +385,15 @@ mod tests {
         // to the remaining execution and available balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: alloy::primitives::U256::from(800),
-                buy_amount: alloy::primitives::U256::from(2000),
-                fee_amount: alloy::primitives::U256::from(200),
+                sell_amount: U256::from(800),
+                buy_amount: U256::from(2000),
+                fee_amount: U256::from(200),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 400.into(),
+                executed_sell_amount_before_fees: U256::from(400),
                 ..Default::default()
             },
             ..Default::default()

@@ -226,7 +226,7 @@ pub struct BalancerV2 {
     /// Since pools allow for custom controllers and logic, it is possible for
     /// pools to get "bricked". This configuration allows those pools to be
     /// ignored.
-    pub pool_deny_list: Vec<eth::H256>,
+    pub pool_deny_list: Vec<eth::B256>,
 
     /// The base URL used to connect to balancer v2 subgraph client.
     pub graph_url: Url,

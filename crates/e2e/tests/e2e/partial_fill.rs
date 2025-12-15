@@ -111,7 +111,7 @@ async fn test(web3: Web3) {
     let settlement_event_processed = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        order.metadata.executed_fee > U256::ZERO.into_legacy()
+        order.metadata.executed_fee > U256::ZERO
     };
     wait_for_condition(TIMEOUT, settlement_event_processed)
         .await

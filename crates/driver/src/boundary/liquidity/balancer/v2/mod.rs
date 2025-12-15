@@ -17,7 +17,7 @@ use {
         BalancerV2WeightedPoolFactoryV3,
     },
     ethrpc::{
-        alloy::conversions::IntoAlloy,
+        alloy::conversions::IntoLegacy,
         block_stream::{BlockRetrieving, CurrentBlockWatcher},
     },
     shared::{
@@ -51,7 +51,7 @@ fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = balancer_v2::SettlementHandler::new(
-        pool.id.0.into_alloy(),
+        pool.id.0,
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
@@ -181,7 +181,12 @@ async fn init_liquidity(
             boundary::liquidity::http_client(),
             web3.clone(),
             &contracts,
-            config.pool_deny_list.clone(),
+            config
+                .pool_deny_list
+                .iter()
+                .copied()
+                .map(IntoLegacy::into_legacy)
+                .collect(),
         )
         .await
         .context("failed to create balancer pool fetcher")?,
