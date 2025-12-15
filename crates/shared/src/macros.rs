@@ -15,13 +15,6 @@ macro_rules! bfp {
 }
 
 #[macro_export]
-macro_rules! bytes {
-    ($x:literal) => {
-        ::ethcontract::web3::types::Bytes(::hex_literal::hex!($x).to_vec())
-    };
-}
-
-#[macro_export]
 macro_rules! json_map {
     ($($key:expr_2021 => $value:expr_2021),* $(,)?) => {{
         #[allow(unused_mut)]

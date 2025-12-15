@@ -1,5 +1,5 @@
 pub use alloy::primitives::{Address, B256, U256};
-use {crate::util::bytes::Bytes, derive_more::From, web3::types::AccessList};
+use {crate::util::bytes::Bytes, alloy::rpc::types::AccessList, derive_more::From};
 
 /// A contract address.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -1,4 +1,7 @@
-use {alloy::primitives::Address, model::TokenPair, web3::signing::keccak256};
+use {
+    alloy::primitives::{Address, keccak256},
+    model::TokenPair,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct PairProvider {
