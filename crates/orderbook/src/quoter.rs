@@ -281,11 +281,13 @@ impl From<PartialValidationError> for OrderQuoteError {
 mod tests {
     use {
         super::*,
-        crate::arguments::FeeFactor,
         alloy::primitives::U256,
         model::quote::OrderQuoteSide,
         number::units::EthUnit,
-        shared::order_quoting::{Quote, QuoteData},
+        shared::{
+            arguments::FeeFactor,
+            order_quoting::{Quote, QuoteData},
+        },
     };
 
     const TEST_SELL_TOKEN: alloy::primitives::Address =
