@@ -341,19 +341,16 @@ impl Blockchain {
                 }
                 code
             };
-            let settlement_code = web3
-                .eth()
-                .code(settlement.address().into_legacy(), None)
-                .await
-                .unwrap()
-                .0;
-
             web3.alloy
                 .anvil_set_code(vault_relayer, vault_relayer_code.into())
                 .await
                 .unwrap();
+
+            // Note that (settlement.address() == authenticator_address) !=
+            // settlement_address
+            let settlement_code = web3.alloy.get_code_at(*settlement.address()).await.unwrap();
             web3.alloy
-                .anvil_set_code(*settlement.address(), settlement_code.into())
+                .anvil_set_code(settlement_address, settlement_code)
                 .await
                 .unwrap();
 
