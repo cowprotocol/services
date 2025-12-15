@@ -1,9 +1,13 @@
 use {
     self::dto::{reveal, settle, solve},
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
+    alloy::signers::{
+        Signer,
+        aws::{AwsSigner, aws_sdk_kms},
+    },
     anyhow::{Context, Result, anyhow},
     chrono::{DateTime, Utc},
-    ethrpc::alloy::conversions::IntoAlloy,
+    ethcontract::aws_config,
     observe::tracing::tracing_headers,
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},
@@ -48,15 +52,16 @@ impl Driver {
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
-                let config = ethcontract::aws_config::load_from_env().await;
-                let account =
-                    ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
-                        .await
-                        .map_err(|_| {
-                            tracing::error!(?name, ?key_id, "Unable to load KMS account");
-                            Error::UnableToLoadKmsAccount
-                        })?;
-                account.public_address().into_alloy()
+                let config = aws_config::load_from_env().await;
+                let account = aws_sdk_kms::Client::new(&config);
+                // Chain ID is None since we don't know it at this moment
+                let signer = AwsSigner::new(account, key_id.clone().0, None)
+                    .await
+                    .map_err(|_| {
+                        tracing::error!(?name, ?key_id, "Unable to load KMS account");
+                        Error::UnableToLoadKmsAccount
+                    })?;
+                signer.address()
             }
             Account::Address(address) => address,
         };
