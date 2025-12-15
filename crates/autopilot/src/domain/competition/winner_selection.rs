@@ -73,7 +73,7 @@ impl Arbitrator {
                 // winners before non-winners
                 std::cmp::Reverse(participant.is_winner()),
                 // high score before low score
-                std::cmp::Reverse(participant.solution().computed_score().cloned()),
+                std::cmp::Reverse(participant.solution().score()),
             )
         });
         Ranking {
@@ -94,12 +94,7 @@ impl Arbitrator {
         participants.sort_by_key(|participant| {
             std::cmp::Reverse(
                 // we use the computed score to not trust the score provided by solvers
-                participant
-                    .solution()
-                    .computed_score()
-                    .expect("every remaining participant has a computed score")
-                    .get()
-                    .0,
+                participant.solution().score().get().0,
             )
         });
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
@@ -180,7 +175,7 @@ impl Arbitrator {
             let score = solutions_without_solver
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
-                .filter_map(|(_, solution)| solution.computed_score)
+                .filter_map(|(_, solution)| solution.score)
                 .reduce(Score::saturating_add)
                 .unwrap_or_default();
             reference_scores.insert(solver, score);
@@ -267,7 +262,7 @@ fn compute_scores_by_solution(
                 },
                 score,
             );
-            p.set_computed_score(total_score);
+            p.set_score(total_score);
             true
         }
         Err(err) => {
@@ -471,7 +466,7 @@ mod tests {
                     Price,
                     order::{self, AppDataHash},
                 },
-                competition::{Participant, Score, Solution, TradedOrder, Unranked},
+                competition::{Participant, Solution, TradedOrder, Unranked},
                 eth::{self, TokenAddress},
             },
             infra::Driver,
@@ -1216,7 +1211,7 @@ mod tests {
                 // winners before non-winners
                 std::cmp::Reverse(a.is_winner()),
                 // high score before low score
-                std::cmp::Reverse(a.solution().computed_score().unwrap())
+                std::cmp::Reverse(a.solution().score())
             )));
             assert_eq!(winners.len(), self.expected_winners.len());
             for (actual, expected) in winners.iter().zip(&self.expected_winners) {
@@ -1391,14 +1386,7 @@ mod tests {
         let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
         let solver_address = solver_address.into_alloy();
 
-        let solution = Solution::new(
-            solution_id,
-            solver_address,
-            // provided score does not matter as it's computed automatically by the arbitrator
-            Score(eth::Ether(eth::U256::ZERO)),
-            trade_order_map,
-            prices,
-        );
+        let solution = Solution::new(solution_id, solver_address, trade_order_map, prices);
 
         let driver = Driver::try_new(
             url::Url::parse("http://localhost").unwrap(),
