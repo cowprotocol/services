@@ -27,6 +27,7 @@ use {
         DomainSeparator,
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
+    number::units::EthUnit,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
@@ -38,56 +39,6 @@ use {
 
 pub mod alloy;
 pub mod safe;
-
-#[macro_export]
-macro_rules! tx_value {
-    ($acc:expr_2021, $value:expr_2021, $call:expr_2021) => {{
-        const NAME: &str = stringify!($call);
-        $call
-            .from($acc.clone())
-            .value($value)
-            .send()
-            .await
-            .expect(&format!("{} failed", NAME))
-    }};
-}
-
-#[macro_export]
-macro_rules! tx {
-    ($acc:expr_2021, $call:expr_2021) => {
-        $crate::tx_value!($acc, ethcontract::U256::zero(), $call)
-    };
-}
-
-#[macro_export]
-macro_rules! deploy {
-    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
-        deploy!($web3, $contract ($($param),*) as stringify!($contract))
-    };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
-        let name = $name;
-        $contract::builder(&$web3 $(, $param)*)
-            .deploy()
-            .await
-            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
-    }};
-}
-
-pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
-    U256::from(base) * U256::exp10(exp)
-}
-
-pub fn to_wei(base: u32) -> U256 {
-    to_wei_with_exp(base, 18)
-}
-
-/// Returns the provided Eth amount in wei.
-///
-/// Equivalent to `amount * 10^18`.
-pub fn eth(amount: u32) -> ::alloy::primitives::U256 {
-    ::alloy::primitives::U256::from(amount) * ::alloy::primitives::utils::Unit::ETHER.wei()
-}
 
 #[derive(Clone, Debug)]
 pub struct TestAccount {
@@ -371,7 +322,7 @@ impl OnchainComponents {
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
         forked_node_api
-            .set_balance(&auth_manager, to_wei(100))
+            .set_balance(&auth_manager, 100u64.eth().into_legacy())
             .await
             .expect("could not set auth_manager balance");
 

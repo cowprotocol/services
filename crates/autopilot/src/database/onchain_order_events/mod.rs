@@ -27,7 +27,6 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, OrderClass, insert_quotes},
     },
-    ethcontract::H160,
     ethrpc::{
         Web3,
         alloy::conversions::IntoLegacy,
@@ -73,7 +72,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     quoter: Arc<dyn OrderQuoting>,
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
-    settlement_contract: H160,
+    settlement_contract: Address,
     metrics: &'static Metrics,
     trampoline: HooksTrampoline::Instance,
 }
@@ -89,7 +88,7 @@ where
         quoter: Arc<dyn OrderQuoting>,
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         trampoline: HooksTrampoline::Instance,
     ) -> Self {
         OnchainOrderParser {
@@ -454,7 +453,7 @@ async fn parse_general_onchain_order_placement_data<I>(
     quoter: &'_ dyn OrderQuoting,
     order_placement_events_and_quotes_zipped: I,
     domain_separator: DomainSeparator,
-    settlement_contract: H160,
+    settlement_contract: Address,
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData>
 where
@@ -489,7 +488,7 @@ where
                 order_data,
                 signing_scheme,
                 order_uid,
-                owner.into_legacy(),
+                owner,
                 settlement_contract,
                 metrics,
             );
@@ -574,7 +573,7 @@ async fn get_quote(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
-        Some(order_data.fee_amount.into_legacy()),
+        Some(order_data.fee_amount),
     )
     .await
     .map_err(|err| match err {
@@ -592,8 +591,8 @@ fn convert_onchain_order_placement(
     order_data: OrderData,
     signing_scheme: SigningScheme,
     order_uid: OrderUid,
-    owner: H160,
-    settlement_contract: H160,
+    owner: Address,
+    settlement_contract: Address,
     metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
     // eth flow orders are expected to be within the market price so they are
@@ -611,7 +610,7 @@ fn convert_onchain_order_placement(
 
     let order = database::orders::Order {
         uid: ByteArray(order_uid.0),
-        owner: ByteArray(owner.0),
+        owner: ByteArray(owner.0.0),
         creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
         sell_token: ByteArray(order_data.sell_token.0.0),
         buy_token: ByteArray(order_data.buy_token.0.0),
@@ -625,7 +624,7 @@ fn convert_onchain_order_placement(
         partially_fillable: order_data.partially_fillable,
         signature: order_placement.signature.data.to_vec(),
         signing_scheme: signing_scheme_into(signing_scheme),
-        settlement_contract: ByteArray(settlement_contract.0),
+        settlement_contract: ByteArray(settlement_contract.0.0),
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         cancellation_timestamp: None,
@@ -681,7 +680,7 @@ fn extract_order_data_from_onchain_order_placement_event(
             order_placement.order.buyTokenBalance.0,
         )?,
     };
-    let order_uid = order_data.uid(&domain_separator, &owner.into_legacy());
+    let order_uid = order_data.uid(&domain_separator, owner);
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
@@ -788,7 +787,6 @@ mod test {
         alloy::primitives::U256,
         contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
-        ethcontract::H160,
         ethrpc::Web3,
         model::{
             DomainSeparator,
@@ -874,7 +872,7 @@ mod test {
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        let expected_uid = expected_order_data.uid(&domain_separator, &owner.into_legacy());
+        let expected_uid = expected_order_data.uid(&domain_separator, owner);
         assert_eq!(sender, order_placement.sender);
         assert_eq!(signing_scheme, SigningScheme::Eip1271);
         assert_eq!(order_data, expected_order_data);
@@ -980,7 +978,7 @@ mod test {
                 },
             data: Default::default(),
         };
-        let settlement_contract = H160::from([8u8; 20]);
+        let settlement_contract = Address::repeat_byte(8);
         let quote = Quote::default();
         let order_uid = OrderUid([9u8; 56]);
         let signing_scheme = SigningScheme::Eip1271;
@@ -992,7 +990,7 @@ mod test {
             order_data,
             signing_scheme,
             order_uid,
-            owner.into_legacy(),
+            owner,
             settlement_contract,
             Metrics::get(),
         );
@@ -1033,7 +1031,7 @@ mod test {
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
-            settlement_contract: ByteArray(settlement_contract.0),
+            settlement_contract: ByteArray(settlement_contract.0.into()),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
@@ -1091,7 +1089,7 @@ mod test {
                 },
             data: Default::default(),
         };
-        let settlement_contract = H160::from([8u8; 20]);
+        let settlement_contract = Address::repeat_byte(8);
         let quote = Quote {
             sell_amount,
             buy_amount: buy_amount / U256::from(2),
@@ -1106,7 +1104,7 @@ mod test {
             order_data,
             signing_scheme,
             order_uid,
-            owner.into_legacy(),
+            owner,
             settlement_contract,
             Metrics::get(),
         );
@@ -1147,7 +1145,7 @@ mod test {
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
-            settlement_contract: ByteArray(settlement_contract.0),
+            settlement_contract: ByteArray(settlement_contract.0.into()),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
@@ -1269,7 +1267,7 @@ mod test {
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,
-            settlement_contract: H160::zero(),
+            settlement_contract: Address::ZERO,
             metrics: Metrics::get(),
         };
         let result = onchain_order_parser
@@ -1293,7 +1291,7 @@ mod test {
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        let expected_uid = expected_order_data.uid(&domain_separator, &owner.into_legacy());
+        let expected_uid = expected_order_data.uid(&domain_separator, owner);
         let expected_event_index = EventIndex {
             block_number: 1,
             log_index: 0,

@@ -1,7 +1,6 @@
 use {
+    alloy::primitives::Address,
     app_data::AppDataHash,
-    ethcontract::common::abi::ethereum_types::Address,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
@@ -28,7 +27,7 @@ impl JitOrder {
         OrderData {
             sell_token: self.sell.token,
             buy_token: self.buy.token,
-            receiver: Some(self.receiver.into_alloy()),
+            receiver: Some(self.receiver),
             sell_amount: self.sell.amount,
             buy_amount: self.buy.amount,
             valid_to: self.valid_to,
@@ -57,10 +56,9 @@ impl JitOrder {
         .to_signature(signing_scheme);
         let order_uid = data.uid(
             domain,
-            &signature
+            signature
                 .recover_owner(&signature.to_bytes(), domain, &data.hash_struct())
-                .unwrap()
-                .into_legacy(),
+                .unwrap(),
         );
         let signature = match signature {
             model::signature::Signature::Eip712(signature) => signature.to_bytes().to_vec(),

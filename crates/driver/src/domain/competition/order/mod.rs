@@ -213,9 +213,9 @@ impl Uid {
     }
 
     /// Splits an order UID into its parts.
-    fn parts(&self) -> (eth::H256, eth::Address, u32) {
+    fn parts(&self) -> (eth::B256, eth::Address, u32) {
         (
-            eth::H256::from_slice(&self.0.0[0..32]),
+            eth::B256::from_slice(&self.0.0[0..32]),
             eth::Address::from_slice(&self.0.0[32..52]),
             u32::from_le_bytes(self.0.0[52..].try_into().unwrap()),
         )
@@ -313,13 +313,13 @@ impl From<SellTokenSource> for SellTokenBalance {
 
 impl SellTokenBalance {
     /// Returns the hash value for the specified source.
-    pub fn hash(&self) -> eth::H256 {
+    pub fn hash(&self) -> eth::B256 {
         let name = match self {
             Self::Erc20 => "erc20",
             Self::Internal => "internal",
             Self::External => "external",
         };
-        eth::H256(web3::signing::keccak256(name.as_bytes()))
+        alloy::primitives::keccak256(name.as_bytes())
     }
 }
 

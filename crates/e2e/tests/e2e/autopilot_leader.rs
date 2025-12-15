@@ -1,15 +1,6 @@
 use {
     autopilot::shutdown_controller::ShutdownController,
-    e2e::setup::{
-        OnchainComponents,
-        Services,
-        TIMEOUT,
-        colocation,
-        eth,
-        run_test,
-        to_wei,
-        wait_for_condition,
-    },
+    e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
     ethrpc::{
         Web3,
         alloy::{
@@ -18,6 +9,7 @@ use {
         },
     },
     model::order::{OrderCreation, OrderKind},
+    number::units::EthUnit,
     secp256k1::SecretKey,
     std::time::Duration,
     web3::signing::SecretKeyRef,
@@ -33,21 +25,24 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // TODO: Implement test that checks auction creation frequency against db
     // to see that only one autopilot produces auctions
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
-    let [solver1, solver2] = onchain.make_solvers(eth(1)).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
+    let [solver1, solver2] = onchain.make_solvers(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(
+            1_000u64.eth().into_legacy(),
+            1_000u64.eth().into_legacy(),
+        )
         .await;
 
     // Fund trader, settlement accounts, and pool creation
-    token_a.mint(solver1.address(), eth(1000)).await;
-    token_a.mint(solver2.address(), eth(1000)).await;
+    token_a.mint(solver1.address(), 1000u64.eth()).await;
+    token_a.mint(solver2.address(), 1000u64.eth()).await;
 
-    token_a.mint(trader.address(), eth(200)).await;
+    token_a.mint(trader.address(), 200u64.eth()).await;
 
     // Approve GPv2 for trading
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
+        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -113,9 +108,9 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     let order = || {
         OrderCreation {
             sell_token: *token_a.address(),
-            sell_amount: eth(10),
+            sell_amount: 10u64.eth(),
             buy_token: *onchain.contracts().weth.address(),
-            buy_amount: eth(5),
+            buy_amount: 5u64.eth(),
             valid_to: model::time::now_in_epoch_seconds() + 300,
             kind: OrderKind::Sell,
             ..Default::default()

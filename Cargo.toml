@@ -19,7 +19,6 @@ mimalloc = "0.1.43"
 tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms", "profiling"] }
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
 ethcontract-generate = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e112a88988040cde6110379ee6d1be768a13244", default-features = false }
-ethcontract-mock = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e112a88988040cde6110379ee6d1be768a13244", default-features = false }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.3", features = ["web3_", "tokio_"] }

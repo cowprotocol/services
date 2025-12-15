@@ -152,7 +152,6 @@ impl Maintenance {
                         self_
                             .cow_amm_indexer
                             .iter()
-                            .cloned()
                             .map(|indexer| async move { indexer.run_maintenance().await }),
                     ),
                 )

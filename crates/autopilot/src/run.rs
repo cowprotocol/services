@@ -28,11 +28,7 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
-    ethrpc::{
-        Web3,
-        alloy::conversions::IntoLegacy,
-        block_stream::block_number_to_block_number_hash,
-    },
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -229,8 +225,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .vaultRelayer()
         .call()
         .await
-        .expect("Couldn't get vault relayer address")
-        .into_legacy();
+        .expect("Couldn't get vault relayer address");
 
     let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
         let chain_id = chain.id();
@@ -271,7 +266,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault_address.map(IntoLegacy::into_legacy),
+            vault_address,
             balance_overrider,
         ),
         eth.current_block().clone(),
@@ -607,7 +602,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
-            eth.contracts().settlement().address().into_legacy(),
+            *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
         );
 

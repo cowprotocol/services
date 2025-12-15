@@ -18,12 +18,11 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::alloy::{HooksTrampoline, WETH9},
-    ethcontract::{H160, H256, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
@@ -99,7 +98,7 @@ pub trait OrderValidating: Send + Sync {
         &self,
         order: OrderCreation,
         domain_separator: &DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError>;
 }
@@ -155,7 +154,7 @@ pub enum ValidationError {
     WrongOwner(signature::Recovered),
     /// An invalid EIP-1271 signature, where the on-chain validation check
     /// reverted or did not return the expected value.
-    InvalidEip1271Signature(H256),
+    InvalidEip1271Signature(B256),
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
@@ -375,7 +374,7 @@ impl OrderValidator {
     async fn ensure_token_is_transferable(
         &self,
         order: &OrderCreation,
-        owner: H160,
+        owner: Address,
         app_data: &OrderAppData,
     ) -> Result<(), ValidationError> {
         let mut res = Ok(());
@@ -394,7 +393,7 @@ impl OrderValidator {
                 .can_transfer(
                     &account_balances::Query {
                         token: order.data().sell_token,
-                        owner: owner.into_alloy(),
+                        owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
@@ -569,7 +568,7 @@ impl OrderValidating for OrderValidator {
         &self,
         order: OrderCreation,
         domain_separator: &DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
@@ -585,7 +584,7 @@ impl OrderValidating for OrderValidator {
             app_data: app_data.inner.hash,
             ..order.data()
         };
-        let uid = data.uid(domain_separator, &owner.into_legacy());
+        let uid = data.uid(domain_separator, owner);
 
         let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
             if self.eip1271_skip_creation_validation {
@@ -596,7 +595,7 @@ impl OrderValidating for OrderValidator {
                 let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
-                        signer: owner.into_legacy(),
+                        signer: owner,
                         hash,
                         signature: signature.to_owned(),
                         interactions: app_data.interactions.pre.clone(),
@@ -611,7 +610,7 @@ impl OrderValidating for OrderValidator {
                     .await
                     .map_err(|err| match err {
                         SignatureValidationError::Invalid => {
-                            ValidationError::InvalidEip1271Signature(H256(hash))
+                            ValidationError::InvalidEip1271Signature(B256::new(hash))
                         }
                         SignatureValidationError::Other(err) => ValidationError::Other(err),
                     })?
@@ -657,7 +656,7 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        self.ensure_token_is_transferable(&order, owner.into_legacy(), &app_data)
+        self.ensure_token_is_transferable(&order, owner, &app_data)
             .await?;
 
         // Check if we need to re-classify the market order if it is outside the market
@@ -670,7 +669,7 @@ impl OrderValidating for OrderValidator {
                     &*self.quoter,
                     &quote_parameters,
                     order.quote_id,
-                    Some(data.fee_amount.into_legacy()),
+                    Some(data.fee_amount),
                 )
                 .await?;
                 tracing::debug!(
@@ -772,7 +771,7 @@ impl OrderValidating for OrderValidator {
                 owner,
                 creation_date: chrono::offset::Utc::now(),
                 uid,
-                settlement_contract: settlement_contract.into_alloy(),
+                settlement_contract,
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
@@ -1438,7 +1437,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
-                signer: creation.from.unwrap().into_legacy(),
+                signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
@@ -1467,7 +1466,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
-                signer: creation.from.unwrap().into_legacy(),
+                signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
@@ -2261,7 +2260,7 @@ mod tests {
             fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
-        let fee_amount = 0.into();
+        let fee_amount = U256::ZERO;
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
@@ -2310,7 +2309,7 @@ mod tests {
             fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
-        let fee_amount = 0.into();
+        let fee_amount = U256::ZERO;
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
