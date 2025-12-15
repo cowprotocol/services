@@ -40,41 +40,6 @@ use {
 pub mod alloy;
 pub mod safe;
 
-#[macro_export]
-macro_rules! tx_value {
-    ($acc:expr_2021, $value:expr_2021, $call:expr_2021) => {{
-        const NAME: &str = stringify!($call);
-        $call
-            .from($acc.clone())
-            .value($value)
-            .send()
-            .await
-            .expect(&format!("{} failed", NAME))
-    }};
-}
-
-#[macro_export]
-macro_rules! tx {
-    ($acc:expr_2021, $call:expr_2021) => {
-        $crate::tx_value!($acc, ethcontract::U256::zero(), $call)
-    };
-}
-
-#[macro_export]
-macro_rules! deploy {
-    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
-        deploy!($web3, $contract ($($param),*) as stringify!($contract))
-    };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
-        let name = $name;
-        $contract::builder(&$web3 $(, $param)*)
-            .deploy()
-            .await
-            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
-    }};
-}
-
 #[derive(Clone, Debug)]
 pub struct TestAccount {
     account: Account,

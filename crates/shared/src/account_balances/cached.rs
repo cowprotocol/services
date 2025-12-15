@@ -1,10 +1,10 @@
 use {
     crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
+    alloy::primitives::U256,
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
-    primitive_types::U256,
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -224,15 +224,15 @@ mod tests {
             .expect_get_balances()
             .times(1)
             .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Ok(1.into())]);
+            .returning(|_| vec![Ok(U256::ONE)]);
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
         // Fetches balance from cache and skips calling `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
     }
 
     #[tokio::test]
@@ -261,14 +261,14 @@ mod tests {
             .expect_get_balances()
             .times(2)
             .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Ok(U256::one())]);
+            .returning(|_| vec![Ok(U256::ONE)]);
 
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
         // New block gets detected.
         sender
@@ -283,7 +283,7 @@ mod tests {
         // Balance was already updated so this will hit the cache and skip calling
         // `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
     }
 
     #[tokio::test]
@@ -293,26 +293,26 @@ mod tests {
             .expect_get_balances()
             .times(1)
             .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Ok(1.into())]);
+            .returning(|_| vec![Ok(U256::ONE)]);
         inner
             .expect_get_balances()
             .times(1)
             .withf(|arg| arg == [query(2)])
-            .returning(|_| vec![Ok(2.into())]);
+            .returning(|_| vec![Ok(U256::from(2))]);
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner` putting balance 1 into the cache.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
         // Fetches balance 1 from cache and balance 2 fresh. (2nd call to `inner`)
         let result = fetcher.get_balances(&[query(1), query(2)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
-        assert_eq!(result[1].as_ref().unwrap(), &2.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        assert_eq!(result[1].as_ref().unwrap(), &U256::from(2));
 
         // Now balance 2 is also in the cache. Skipping call to `inner`.
         let result = fetcher.get_balances(&[query(2)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &2.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::from(2));
     }
 
     #[tokio::test]
@@ -324,7 +324,7 @@ mod tests {
         inner
             .expect_get_balances()
             .times(7)
-            .returning(|_| vec![Ok(U256::one())]);
+            .returning(|_| vec![Ok(U256::ONE)]);
 
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
@@ -337,7 +337,7 @@ mod tests {
         assert!(cached_entry().is_none());
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
         for block in 1..=EVICTION_TIME + 1 {
             assert!(cached_entry().is_some());

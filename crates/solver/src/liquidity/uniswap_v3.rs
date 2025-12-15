@@ -12,7 +12,6 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     contracts::alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
     shared::{
@@ -130,14 +129,11 @@ impl LiquidityCollecting for UniswapV3Liquidity {
                 pool.tokens.len() == 2,
                 "two tokens required for uniswap v3 pools"
             );
-            let token_pair = TokenPair::new(
-                pool.tokens[0].id.into_alloy(),
-                pool.tokens[1].id.into_alloy(),
-            )
-            .context("cant create pair")?;
+            let token_pair =
+                TokenPair::new(pool.tokens[0].id, pool.tokens[1].id).context("cant create pair")?;
 
-            tokens.insert(pool.tokens[0].id.into_alloy());
-            tokens.insert(pool.tokens[1].id.into_alloy());
+            tokens.insert(pool.tokens[0].id);
+            tokens.insert(pool.tokens[1].id);
 
             result.push(Liquidity::Concentrated(ConcentratedLiquidity {
                 tokens: token_pair,
