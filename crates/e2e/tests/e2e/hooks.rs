@@ -122,11 +122,7 @@ async fn allowance(web3: Web3) {
 
     // Sign a permit pre-interaction for trading.
     let permit = cow
-        .permit(
-            &trader,
-            onchain.contracts().allowance.into_legacy(),
-            5u64.eth().into_legacy(),
-        )
+        .permit(&trader, onchain.contracts().allowance, 5u64.eth())
         .await;
     // Setup a malicious interaction for setting approvals to steal funds from
     // the settlement contract.

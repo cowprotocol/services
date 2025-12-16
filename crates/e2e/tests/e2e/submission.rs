@@ -16,7 +16,10 @@ use {
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::time::Duration,
-    web3::signing::SecretKeyRef,
+    web3::{
+        signing::SecretKeyRef,
+        types::{BlockId, H160, H256},
+    },
 };
 
 #[tokio::test]
