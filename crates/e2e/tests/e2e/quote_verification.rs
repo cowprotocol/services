@@ -5,10 +5,9 @@ use {
     },
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::*,
-    ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
+        alloy::{CallBuilderExt, conversions::IntoLegacy},
     },
     model::{
         interaction::InteractionData,
@@ -30,7 +29,7 @@ use {
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 #[tokio::test]
@@ -95,7 +94,7 @@ async fn standard_verified_quote(web3: Web3) {
     token.mint(trader.address(), 1u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -199,7 +198,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     let verified_quote = Estimate {
         out_amount: U256::from(16380122291179526144u128),
         gas: 225000,
-        solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99").unwrap(),
+        solver: address!("e3067c7c27c1038de4e8ad95a83b927d23dfbd99").into_legacy(),
         verified: true,
         execution: QuoteExecution {
             interactions: vec![InteractionData {
@@ -255,7 +254,7 @@ async fn verified_quote_eth_balance(web3: Web3) {
             .is_zero()
     );
     assert!(
-        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+        weth.allowance(trader.address(), onchain.contracts().allowance)
             .call()
             .await
             .unwrap()
@@ -393,7 +392,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         (
             token.balanceOf(trader.address()).call().await.unwrap(),
             token
-                .allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+                .allowance(trader.address(), onchain.contracts().allowance)
                 .call()
                 .await
                 .unwrap(),
@@ -437,7 +436,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             .is_zero()
     );
     assert!(
-        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+        weth.allowance(trader.address(), onchain.contracts().allowance)
             .call()
             .await
             .unwrap()

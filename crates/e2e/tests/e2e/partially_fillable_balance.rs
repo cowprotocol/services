@@ -1,7 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -78,7 +78,7 @@ async fn test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 500u64.eth())
+        .approve(onchain.contracts().allowance, 500u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await

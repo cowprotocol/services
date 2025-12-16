@@ -12,7 +12,7 @@ use {
     },
     ethrpc::alloy::{
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::{IntoLegacy},
     },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -72,7 +72,7 @@ async fn gas_limit(web3: Web3) {
 
     // Fund trader accounts and approve relayer
     cow.fund(trader.address(), 5u64.eth()).await;
-    cow.approve(onchain.contracts().allowance.into_alloy(), 5u64.eth())
+    cow.approve(onchain.contracts().allowance, 5u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -135,7 +135,7 @@ async fn allowance(web3: Web3) {
     let permit = cow
         .permit(
             &trader,
-            onchain.contracts().allowance,
+            onchain.contracts().allowance.into_legacy(),
             5u64.eth().into_legacy(),
         )
         .await;
@@ -313,7 +313,7 @@ async fn signature(web3: Web3) {
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
     let approval_call_data = token
-        .approve(onchain.contracts().allowance.into_alloy(), 5u64.eth())
+        .approve(onchain.contracts().allowance, 5u64.eth())
         .calldata()
         .to_vec();
     let approval_builder = safe.sign_transaction(
@@ -434,7 +434,7 @@ async fn partial_fills(web3: Web3) {
 
     let sell_token = onchain.contracts().weth.clone();
     sell_token
-        .approve(onchain.contracts().allowance.into_alloy(), 2u64.eth())
+        .approve(onchain.contracts().allowance, 2u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -587,7 +587,7 @@ async fn quote_verification(web3: Web3) {
     token.mint(safe.address(), 5u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 5u64.eth())
+        .approve(onchain.contracts().allowance, 5u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

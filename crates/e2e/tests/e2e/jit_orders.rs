@@ -1,7 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{CallBuilderExt},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -44,14 +44,14 @@ async fn single_limit_order_test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .approve(onchain.contracts().allowance, U256::MAX)
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .approve(onchain.contracts().allowance, U256::MAX)
         .from(solver.address())
         .send_and_watch()
         .await

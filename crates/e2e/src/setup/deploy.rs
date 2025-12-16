@@ -12,11 +12,8 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
-    ethcontract::{Address, H256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    alloy::primitives::{Address, B256},
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -37,7 +34,7 @@ pub struct Contracts {
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02::Instance,
     pub weth: WETH9::Instance,
-    pub allowance: Address,
+    pub allowance: alloy::primitives::Address,
     pub domain_separator: DomainSeparator,
     pub ethflows: Vec<CoWSwapEthFlow::Instance>,
     pub hooks: HooksTrampoline::Instance,
@@ -58,13 +55,13 @@ impl Contracts {
             .await
             .unwrap();
         let balances = match deployed.balances {
-            Some(address) => Balances::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
             None => Balances::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find balances contract"),
         };
         let signatures = match deployed.signatures {
-            Some(address) => Signatures::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            Some(address) => Signatures::Instance::new(address, web3.alloy.clone()),
             None => Signatures::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find signatures contract"),
@@ -93,8 +90,7 @@ impl Contracts {
                 .vaultRelayer()
                 .call()
                 .await
-                .expect("Couldn't get vault relayer address")
-                .into_legacy(),
+                .expect("Couldn't get vault relayer address"),
             domain_separator: DomainSeparator(
                 gp_settlement
                     .domainSeparator()
@@ -127,13 +123,20 @@ impl Contracts {
             .to_string();
         tracing::info!("connected to test network {}", network_id);
 
-        let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
+        let accounts: Vec<Address> = web3
+            .eth()
+            .accounts()
+            .await
+            .expect("get accounts failed")
+            .into_iter()
+            .map(|a| a.into_alloy())
+            .collect();
         let admin = accounts[0];
 
         let weth = WETH9::Instance::deploy(web3.alloy.clone()).await.unwrap();
 
         let balancer_authorizer =
-            BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin.into_alloy())
+            BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin)
                 .await
                 .unwrap();
         let balancer_vault = BalancerV2Vault::Instance::deploy(
@@ -147,7 +150,7 @@ impl Contracts {
         .unwrap();
 
         let uniswap_v2_factory =
-            UniswapV2Factory::Instance::deploy(web3.alloy.clone(), accounts[0].into_alloy())
+            UniswapV2Factory::Instance::deploy(web3.alloy.clone(), accounts[0])
                 .await
                 .unwrap();
         let uniswap_v2_router = UniswapV2Router02::Instance::deploy(
@@ -162,7 +165,7 @@ impl Contracts {
             .await
             .unwrap();
         gp_authenticator
-            .initializeManager(admin.into_alloy())
+            .initializeManager(admin)
             .send_and_watch()
             .await
             .expect("failed to initialize manager");
@@ -197,7 +200,7 @@ impl Contracts {
             .call()
             .await
             .expect("Couldn't get vault relayer address")
-            .into_legacy();
+;
         let domain_separator = DomainSeparator(
             gp_settlement
                 .domainSeparator()
@@ -250,10 +253,10 @@ impl Contracts {
         }
     }
 
-    pub fn default_pool_code(&self) -> H256 {
+    pub fn default_pool_code(&self) -> B256 {
         match self.chain_id {
-            100 => H256(shared::sources::uniswap_v2::HONEYSWAP_INIT),
-            _ => H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+            100 => B256::new(shared::sources::uniswap_v2::HONEYSWAP_INIT),
+            _ => B256::new(shared::sources::uniswap_v2::UNISWAP_INIT),
         }
     }
 }

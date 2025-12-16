@@ -9,7 +9,7 @@ use {
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{CallBuilderExt},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -155,7 +155,7 @@ async fn single_limit_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -277,14 +277,14 @@ async fn two_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -379,14 +379,14 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -605,7 +605,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
+        .approve(onchain.contracts().allowance, 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -687,7 +687,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
+        .approve(onchain.contracts().allowance, 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -842,7 +842,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+        .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -942,7 +942,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+        .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -1007,7 +1007,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await

@@ -22,7 +22,7 @@ use {
     ethcontract::{BlockId, BlockNumber},
     ethrpc::alloy::{
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::IntoAlloy,
     },
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
@@ -279,7 +279,7 @@ async fn cow_amm_jit(web3: Web3) {
         .contracts()
         .weth
         .approve(
-            onchain.contracts().allowance.into_alloy(),
+            onchain.contracts().allowance,
             alloy::primitives::U256::MAX,
         )
         .from(bob.address())
@@ -394,8 +394,8 @@ async fn cow_amm_driver_support(web3: Web3) {
             .await
             .unwrap();
         DeployedContracts {
-            balances: Some(balances.address().into_legacy()),
-            signatures: Some(signatures.address().into_legacy()),
+            balances: Some(*balances.address()),
+            signatures: Some(*signatures.address()),
         }
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
@@ -476,7 +476,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         .unwrap();
 
     // Approve GPv2 for trading
-    usdc.approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+    usdc.approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -897,7 +897,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     dai.mint(bob.address(), 250u64.eth()).await;
 
     dai.approve(
-        onchain.contracts().allowance.into_alloy(),
+        onchain.contracts().allowance,
         alloy::primitives::U256::MAX,
     )
     .from(bob.address())

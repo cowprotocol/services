@@ -21,7 +21,7 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
+        alloy::{CallBuilderExt},
     },
     model::{
         order::{OrderCreation, OrderKind},
@@ -118,7 +118,7 @@ async fn liquidity_source_notification(web3: Web3) {
     // Trader gives approval to the CoW allowance contract
     token_usdc
         .approve(
-            onchain.contracts().allowance.into_alloy(),
+            onchain.contracts().allowance,
             alloy::primitives::U256::MAX,
         )
         .from(trader.address())

@@ -5,7 +5,7 @@ use {
     },
     contracts::alloy::ERC20,
     e2e::setup::{OnchainComponents, Services, run_forked_test_with_block_number},
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::Web3,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     number::units::EthUnit,
     reqwest::StatusCode,
@@ -64,7 +64,7 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     web3.alloy
         .anvil_send_impersonated_transaction_with_config(
             token_dai
-                .approve(onchain.contracts().allowance.into_alloy(), 1000u64.eth())
+                .approve(onchain.contracts().allowance, 1000u64.eth())
                 .from(BANNED_USER)
                 .into_transaction_request(),
             ImpersonateConfig {

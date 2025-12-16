@@ -1,7 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{CallBuilderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -100,7 +100,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -279,14 +279,14 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -416,7 +416,7 @@ async fn single_replace_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

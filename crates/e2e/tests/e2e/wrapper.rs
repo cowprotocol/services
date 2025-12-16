@@ -10,7 +10,7 @@ use {
     app_data::{AppDataHash, hash_full_app_data},
     contracts::alloy::ERC20,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{CallBuilderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -94,7 +94,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_weth
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

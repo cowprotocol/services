@@ -1,6 +1,6 @@
 use {
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
@@ -41,7 +41,7 @@ async fn vault_balances(web3: Web3) {
         .balancer_vault
         .setRelayerApproval(
             trader.address(),
-            onchain.contracts().allowance.into_alloy(),
+            onchain.contracts().allowance,
             true,
         )
         .from(trader.address())

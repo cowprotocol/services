@@ -4,7 +4,7 @@ use {
     ethcontract::U256,
     ethrpc::alloy::{
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::{IntoLegacy},
     },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
@@ -43,7 +43,7 @@ async fn smart_contract_orders(web3: Web3) {
     // Approve GPv2 for trading
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+            .approve(onchain.contracts().allowance, 10u64.eth())
             .into_transaction_request(),
     )
     .await;
@@ -176,7 +176,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     trader
         .approve(
             *cow.address(),
-            onchain.contracts().allowance.into_alloy(),
+            onchain.contracts().allowance,
             10u64.eth(),
         )
         .from(solver.address())
