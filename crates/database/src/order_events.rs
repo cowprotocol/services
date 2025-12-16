@@ -33,9 +33,20 @@ pub enum OrderEventLabel {
     Cancelled,
 }
 
+/// Classifies order events as informational or error diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "OrderEventType")]
+#[sqlx(rename_all = "lowercase")]
+pub enum OrderEventType {
+    /// Informational diagnostic event
+    Info,
+    /// Error diagnostic event
+    Error,
+}
+
 /// Contains a single event of the life cycle of an order and when it was
 /// registered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::FromRow)]
 pub struct OrderEvent {
     /// Which order this event belongs to
     pub order_uid: OrderUid,
@@ -44,34 +55,45 @@ pub struct OrderEvent {
     pub timestamp: DateTime<Utc>,
     /// What kind of event happened
     pub label: OrderEventLabel,
+    /// Optional event type for diagnostic events
+    #[sqlx(rename = "type")]
+    pub event_type: Option<OrderEventType>,
+    /// Optional diagnostic message
+    #[sqlx(rename = "message")]
+    pub diag_message: Option<String>,
+    /// Optional component identifier (e.g., 'autopilot', 'orderbook', 'driver')
+    pub component: Option<String>,
 }
 
 /// Inserts a row into the `order_events` table only if the latest event for the
-/// corresponding order UID has a different label than the provided event..
+/// corresponding order UID has a different label than the provided event.
 pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
         WITH cte AS (
-            SELECT label
+            SELECT label, message, component
             FROM order_events
             WHERE order_uid = $1
             ORDER BY timestamp DESC
             LIMIT 1
         )
-        INSERT INTO order_events (order_uid, timestamp, label)
-        SELECT $1, $2, $3
+        INSERT INTO order_events (order_uid, timestamp, label, type, message, component)
+        SELECT $1, $2, $3, $4, $5, $6
         WHERE NOT EXISTS (
             SELECT 1
             FROM cte
-            WHERE label = $3
+            WHERE label = $3 AND message = $5 AND component = $6
         )
     "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
         .bind(event.timestamp)
         .bind(event.label)
+        .bind(event.event_type)
+        .bind(&event.diag_message)
+        .bind(&event.component)
         .execute(ex)
         .await
         .map(|_| ())
@@ -107,6 +129,44 @@ pub async fn get_latest(
         .await
 }
 
+impl OrderEvent {
+    /// Creates a lifecycle event.
+    /// @param order_uid The order UID the event belongs to.
+    /// @param label The status which has been assigned to the order due to this event
+    /// @param timestamp The time the event occured.
+    /// @param event_type Whether this situation is an error or just informational.
+    /// @param diag_message A diagnostic message describing the situation.
+    /// @param component The crate or subsystem where this event originates.
+    pub fn new(
+        order_uid: OrderUid,
+        label: OrderEventLabel,
+        event_type: OrderEventType,
+        diag_message: String,
+        component: String,
+        timestamp: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            order_uid,
+            timestamp,
+            label,
+            event_type: Some(event_type),
+            diag_message: Some(diag_message),
+            component: Some(component),
+        }
+    }
+
+    /// Creates a lifecycle event without the current timestamp.
+    pub fn new_without_timestamp(
+        order_uid: OrderUid,
+        label: OrderEventLabel,
+        event_type: OrderEventType,
+        diag_message: String,
+        component: String,
+    ) -> Self {
+        Self::new(order_uid, label, event_type, diag_message, component, Utc::now())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -128,29 +188,29 @@ mod tests {
         let now = Utc::now();
         let uid_a = ByteArray([1; 56]);
         let uid_b = ByteArray([2; 56]);
-        let event_a = OrderEvent {
-            order_uid: uid_a,
-            timestamp: now - chrono::Duration::milliseconds(300),
-            label: OrderEventLabel::Created,
-        };
+        let event_a = OrderEvent::lifecycle(
+            uid_a,
+            OrderEventLabel::Created,
+            now - chrono::Duration::milliseconds(300),
+        );
         insert_order_event(&mut ex, &event_a).await.unwrap();
-        let event_b = OrderEvent {
-            order_uid: uid_a,
-            timestamp: now - chrono::Duration::milliseconds(200),
-            label: OrderEventLabel::Invalid,
-        };
+        let event_b = OrderEvent::lifecycle(
+            uid_a,
+            OrderEventLabel::Invalid,
+            now - chrono::Duration::milliseconds(200),
+        );
         insert_order_event(&mut ex, &event_b).await.unwrap();
-        let event_c = OrderEvent {
-            order_uid: uid_b,
-            timestamp: now - chrono::Duration::milliseconds(100),
-            label: OrderEventLabel::Invalid,
-        };
+        let event_c = OrderEvent::lifecycle(
+            uid_b,
+            OrderEventLabel::Invalid,
+            now - chrono::Duration::milliseconds(100),
+        );
         insert_order_event(&mut ex, &event_c).await.unwrap();
-        let event_d = OrderEvent {
-            order_uid: uid_a,
-            timestamp: now,
-            label: OrderEventLabel::Invalid,
-        };
+        let event_d = OrderEvent::lifecycle(
+            uid_a,
+            OrderEventLabel::Invalid,
+            now,
+        );
         insert_order_event(&mut ex, &event_d).await.unwrap();
 
         ex.commit().await.unwrap();

@@ -108,6 +108,9 @@ async fn cancel_order(
             order_uid: uid,
             timestamp: now,
             label: OrderEventLabel::Cancelled,
+            event_type: None,
+            diag_message: Some("Order cancelled by user".to_string()),
+            component: Some("orderbook".to_string()),
         },
     )
     .await?;
@@ -123,6 +126,9 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             order_uid,
             timestamp: Utc::now(),
             label: OrderEventLabel::Created,
+            event_type: None,
+            diag_message: Some("Order created by user".to_string()),
+            component: Some("orderbook".to_string()),
         },
     )
     .await?;

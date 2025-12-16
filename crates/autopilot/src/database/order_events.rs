@@ -23,6 +23,7 @@ pub async fn store_order_events(
     order_uids: Vec<domain::OrderUid>,
     label: OrderEventLabel,
     timestamp: DateTime<Utc>,
+    diag_message: &str,
 ) {
     let start = Instant::now();
     let count = order_uids.len();
@@ -35,6 +36,9 @@ pub async fn store_order_events(
                 order_uid: ByteArray(uid.0),
                 timestamp,
                 label,
+                event_type: None,
+                diag_message: diag_message.to_string(),
+                component: "autopilot",
             };
 
             order_events::insert_order_event(&mut ex, &event).await?;

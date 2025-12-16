@@ -17,13 +17,19 @@ pub struct OnchainInvalidationRow {
     pub log_index: i64,
 }
 
+pub struct OnchainInvalidationEvent {
+    pub order_uid: OrderUid,
+    pub index: EventIndex,
+    pub diag_reason: String,
+}
+
 #[instrument(skip_all)]
 pub async fn insert_onchain_invalidations(
     ex: &mut PgTransaction<'_>,
-    events: &[(EventIndex, OrderUid)],
+    events: &[OnchainInvalidationEvent],
 ) -> Result<(), sqlx::Error> {
-    for (index, event) in events {
-        insert_onchain_invalidation(ex, index, event).await?;
+    for event in events {
+        insert_onchain_invalidation(ex, &event.index, &event.order_uid).await?;
         insert_order_event(
             ex,
             &OrderEvent {
@@ -31,7 +37,10 @@ pub async fn insert_onchain_invalidations(
                 // It would be more correct to use the timestamp of the event's block, but passing
                 // this is more involved, and now() should be good enough.
                 timestamp: Utc::now(),
-                order_uid: *event,
+                order_uid: event.order_uid,
+                event_type: None,
+                diag_message: Some("onchain invalidation: ".to_string() + &event.diag_reason),
+                component: Some("orderbook".to_string()),
             },
         )
         .await?;

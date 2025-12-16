@@ -13,7 +13,7 @@ use {
     database::{
         events::EventIndex,
         leader_pg_lock::LeaderLock,
-        order_events::OrderEventLabel,
+        order_events::{OrderEvent, OrderEventLabel, OrderEventType},
         order_execution::Asset,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
@@ -311,6 +311,41 @@ impl Persistence {
             async move {
                 let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
                 store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+            }
+            .instrument(tracing::Span::current()),
+        );
+    }
+
+    /// Inserts diagnostic order events (errors/info) with detailed messages.
+    /// Unlike lifecycle events, diagnostic events are always inserted without deduplication.
+    pub fn store_order_events_diagnostic(
+        &self,
+        events: impl IntoIterator<Item = (domain::OrderUid, OrderEventType, String, String)>,
+    ) {
+        use database::order_events::insert_order_event_diagnostic;
+
+        let db = self.postgres.clone();
+        let events: Vec<_> = events.into_iter().collect();
+
+        tokio::spawn(
+            async move {
+                let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
+                let timestamp = Utc::now();
+
+                for (order_uid, event_type, message, component) in events {
+                    let event = OrderEvent::diagnostic(
+                        ByteArray(order_uid.0),
+                        OrderEventLabel::Invalid,
+                        timestamp,
+                        event_type,
+                        message,
+                        component,
+                    );
+
+                    if let Err(err) = insert_order_event_diagnostic(&mut tx, &event).await {
+                        tracing::warn!(?err, ?order_uid, "failed to insert diagnostic event");
+                    }
+                }
             }
             .instrument(tracing::Span::current()),
         );
