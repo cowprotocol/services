@@ -572,21 +572,21 @@ impl FromStr for TokenBucketFeeOverride {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        ensure!(
-            parts.len() == 2,
-            "invalid token bucket override format: expected 'factor:token1,token2,...', got '{}'",
-            s
-        );
+        let (factor_str, tokens_str) = s.split_once(':').with_context(|| {
+            format!(
+                "invalid bucket override format: expected 'factor:token1;token2;...', got '{}'",
+                s
+            )
+        })?;
 
-        let factor = parts[0]
+        let factor = factor_str
             .parse::<f64>()
             .context("failed to parse fee factor")?
             .try_into()
             .context("fee factor out of range")?;
 
-        let tokens: Result<HashSet<Address>, _> = parts[1]
-            .split(',')
+        let tokens: Result<HashSet<Address>, _> = tokens_str
+            .split(';')
             .map(|token| {
                 token
                     .parse::<Address>()
@@ -627,8 +627,8 @@ mod test {
         assert_eq!(result.factor.get(), 0.5);
         assert_eq!(result.tokens.len(), 1);
         // Valid inputs with 3 tokens
-        let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001,\
-                                  0x0000000000000000000000000000000000000002,\
+        let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001;\
+                                  0x0000000000000000000000000000000000000002;\
                                   0x0000000000000000000000000000000000000003";
         let result = TokenBucketFeeOverride::from_str(valid_three_tokens).unwrap();
         assert_eq!(result.factor.get(), 0.123);

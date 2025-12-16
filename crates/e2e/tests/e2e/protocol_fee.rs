@@ -1079,11 +1079,11 @@ async fn volume_fee_overrides(web3: Web3) {
         policy_order_class: FeePolicyOrderClass::Any,
     };
 
-    // Bucket overrides (semicolon-separated, checked in order, first match wins):
+    // Bucket overrides (comma-separated, checked in order, first match wins):
     // 1. USDC-DAI pair (2-token bucket) has 0.05% fee
     // 2. All stablecoin-to-stablecoin trades have 0% fee
     let volume_fee_bucket_config = format!(
-        "--volume-fee-bucket-overrides=0.0005:{},{};0:{},{},{}",
+        "--volume-fee-bucket-overrides=0.0005:{};{},0:{};{};{}",
         token_usdc.address(),
         token_dai.address(),
         token_usdc.address(),

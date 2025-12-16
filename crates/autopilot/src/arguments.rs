@@ -601,12 +601,12 @@ pub struct FeePoliciesConfig {
     pub upcoming_fee_policies: UpcomingFeePolicies,
 
     /// Custom volume fees for token buckets.
-    /// Format: "factor:token1,token2,..." (e.g.,
-    /// "0:0xA0b86...,0x6B175...,0xdAC17...") Orders where BOTH tokens are
+    /// Format: "factor:token1;token2;..." (e.g.,
+    /// "0:0xA0b86...;0x6B175...;0xdAC17...") Orders where BOTH tokens are
     /// in the bucket will use the custom fee. Useful for
     /// stablecoin-to-stablecoin trades or specific token pairs (2-token
-    /// buckets). Multiple buckets can be separated by semicolons.
-    #[clap(long, env, value_delimiter = ';')]
+    /// buckets). Multiple buckets can be separated by commas.
+    #[clap(long, env)]
     pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
 
     /// Enable volume fees for trades where sell token equals buy token.
