@@ -373,9 +373,7 @@ impl Competition {
         }
 
         // pod submission - winning auction calculation
-        if let Some((pod, pod_auction_contract_address)) =
-            self.solver.pod().zip(self.solver.pod_auction_contract())
-        {
+        if let Some((pod, pod_auction_contract_address)) = self.solver.pod() {
             if let Some(auction_id) = auction.id {
                 let auction_clone = auction.clone();
                 let score_clone = score.clone();

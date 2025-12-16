@@ -258,12 +258,10 @@ impl Solver {
         self.config.fetch_liquidity_at_block.clone()
     }
 
-    pub fn pod(&self) -> Option<&PodProvider> {
-        self.pod_provider.as_ref()
-    }
-
-    pub fn pod_auction_contract(&self) -> Option<eth::H160> {
-        Some(self.config.pod.as_ref()?.auction_contract_address)
+    pub fn pod(&self) -> Option<(&PodProvider, eth::H160)> {
+        let pod = self.pod_provider.as_ref()?;
+        let auction_contract = self.config.pod.as_ref()?.auction_contract_address;
+        Some((pod, auction_contract))
     }
 
     pub fn arbitrator(&self) -> &LocalArbitrator {
