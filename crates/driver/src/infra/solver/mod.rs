@@ -30,7 +30,7 @@ use {
     anyhow::Result,
     derivative::Derivative,
     derive_more::{From, Into},
-    ethcontract::{Account, Account::Kms},
+    ethcontract::Account,
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     num::BigRational,
@@ -270,21 +270,19 @@ impl Solver {
         &self.arbitrator
     }
 
-    async fn build_pod_provider(
-        config: &Config,
-    ) -> Option<PodProvider> {
+    async fn build_pod_provider(config: &Config) -> Option<PodProvider> {
         let pod_config = match config.pod.as_ref() {
             Some(cfg) => cfg,
             None => return None,
         };
 
-        let signer = match Self::make_signer(config.account.clone()) {
+        let signer = match Self::make_signer(config.account.clone()).await {
             Ok(signer) => signer,
             Err(e) => {
                 tracing::error!(
-                error = %e,
-                "[pod] failed to create signer for pod provider"
-            );
+                    error = %e,
+                    "[pod] failed to create signer for pod provider"
+                );
                 return None;
             }
         };
@@ -300,9 +298,9 @@ impl Solver {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(
-                error = %e,
-                "[pod] failed to initialize pod provider"
-            );
+                    error = %e,
+                    "[pod] failed to initialize pod provider"
+                );
                 return None;
             }
         };
@@ -310,17 +308,17 @@ impl Solver {
         match provider.get_balance(signer_address).await {
             Ok(balance) => {
                 tracing::info!(
-                signer_address = %signer_address,
-                signer_balance = %balance,
-                "[pod] pod provider built with wallet",
-            );
+                    signer_address = %signer_address,
+                    signer_balance = %balance,
+                    "[pod] pod provider built with wallet",
+                );
             }
             Err(e) => {
                 tracing::error!(
-                error = %e,
-                signer_address = %signer_address,
-                "[pod] pod provider built but failed to fetch balance",
-            );
+                    error = %e,
+                    signer_address = %signer_address,
+                    "[pod] pod provider built but failed to fetch balance",
+                );
             }
         }
 
@@ -494,10 +492,9 @@ impl Solver {
         &self.config
     }
 
-    fn make_signer(
+    async fn make_signer(
         eth_account: ethcontract::Account,
-    ) -> std::result::Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error>
-    {
+    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error> {
         match eth_account {
             Account::Offline(pk, chain_id) => {
                 tracing::info!("[pod] make_signer Offline variant");
@@ -511,23 +508,24 @@ impl Solver {
                 let signer = LocalSigner::from(key).with_chain_id(chain_id);
                 Ok(Box::new(signer))
             }
-            Kms(kms_account, _) => {
+
+            Account::Kms(kms_account, _) => {
                 tracing::info!("[pod] make_signer Kms variant");
-                let signer = tokio::runtime::Handle::current().block_on(async {
-                    AwsSigner::new(
-                        kms_account.client().clone(),
-                        kms_account.key_id().to_string(),
-                        None,
-                    )
-                    .await
-                    .map_err(|e| {
-                        infra::pod::error::Error::FailedToConnect(format!(
-                            "[pod] failed to create AwsSigner: {e}"
-                        ))
-                    })
+                let signer = AwsSigner::new(
+                    kms_account.client().clone(),
+                    kms_account.key_id().to_string(),
+                    None,
+                )
+                .await
+                .map_err(|e| {
+                    infra::pod::error::Error::FailedToConnect(format!(
+                        "[pod] failed to create AwsSigner: {e}"
+                    ))
                 })?;
+
                 Ok(Box::new(signer))
             }
+
             other => Err(infra::pod::error::Error::FailedToConnect(format!(
                 "[pod] unsupported ethcontract::account variant: {other:?}"
             ))),
