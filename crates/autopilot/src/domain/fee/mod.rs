@@ -408,10 +408,10 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.05),
+                    factor: FeeFactor::try_from(0.05).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.2),
+                    factor: FeeFactor::try_from(0.2).unwrap(),
                 }
             ]
         );
@@ -482,7 +482,7 @@ mod test {
         assert_eq!(
             result,
             vec![Policy::Volume {
-                factor: FeeFactor(0.0),
+                factor: FeeFactor::try_from(0.0).unwrap(),
             }]
         );
     }
@@ -527,10 +527,10 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.0),
+                    factor: FeeFactor::try_from(0.0).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.0),
+                    factor: FeeFactor::try_from(0.0).unwrap(),
                 }
             ]
         );
@@ -571,7 +571,7 @@ mod test {
         assert_eq!(
             result,
             vec![Policy::Volume {
-                factor: FeeFactor(0.3),
+                factor: FeeFactor::try_from(0.3).unwrap(),
             }]
         );
     }
@@ -619,10 +619,10 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.1),
+                    factor: FeeFactor::try_from(0.1).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.18181818181818182),
+                    factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
                 }
             ]
         );
@@ -676,13 +676,13 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.1),
+                    factor: FeeFactor::try_from(0.1).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.18181818181818182),
+                    factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.0),
+                    factor: FeeFactor::try_from(0.0).unwrap(),
                 }
             ]
         );
@@ -699,24 +699,23 @@ mod test {
 
         let bucket_pair_override = TokenBucketFeeOverride {
             tokens: [usdc, dai].into_iter().collect(),
-            factor: shared::arguments::FeeFactor(0.0005), // 0.05%
+            factor: shared::arguments::FeeFactor::try_from(0.0005).unwrap(), // 0.05%
         };
         let bucket_group_override = TokenBucketFeeOverride {
             tokens: [usdc, dai, usdt].into_iter().collect(),
-            factor: shared::arguments::FeeFactor(0.0), // 0%
+            factor: shared::arguments::FeeFactor::try_from(0.0).unwrap(), // 0%
         };
 
         let config = arguments::FeePoliciesConfig {
             fee_policies: vec![],
-            fee_policy_max_partner_fee: FeeFactor(0.01),
+            fee_policy_max_partner_fee: FeeFactor::try_from(0.01).unwrap(),
             upcoming_fee_policies: arguments::UpcomingFeePolicies {
                 fee_policies: vec![],
                 effective_from_timestamp: None,
             },
             volume_fee_bucket_overrides: vec![bucket_pair_override, bucket_group_override],
+            enable_sell_equals_buy_volume_fee: false,
         };
-
-        let protocol_fees = ProtocolFees::new(&config);
 
         // USDC-DAI (matches both buckets) - pair bucket takes precedence
         let order_usdc_dai = boundary::Order {
@@ -727,8 +726,14 @@ mod test {
             },
             ..Default::default()
         };
-        let override_ = protocol_fees.get_volume_fee_override(&order_usdc_dai);
-        assert_eq!(override_, Some(FeeFactor(0.0005)));
+        let override_ = shared::fee::get_applicable_volume_fee_factor(
+            &config.volume_fee_bucket_overrides,
+            order_usdc_dai.data.buy_token,
+            order_usdc_dai.data.sell_token,
+            config.enable_sell_equals_buy_volume_fee,
+            None,
+        );
+        assert_eq!(override_, Some(FeeFactor::try_from(0.0005).unwrap()));
 
         // DAI-USDT (only in 3-token bucket) - should have override
         let order_dai_usdt = boundary::Order {
@@ -739,8 +744,14 @@ mod test {
             },
             ..Default::default()
         };
-        let override_ = protocol_fees.get_volume_fee_override(&order_dai_usdt);
-        assert_eq!(override_, Some(FeeFactor(0.0)));
+        let override_ = shared::fee::get_applicable_volume_fee_factor(
+            &config.volume_fee_bucket_overrides,
+            order_dai_usdt.data.buy_token,
+            order_dai_usdt.data.sell_token,
+            config.enable_sell_equals_buy_volume_fee,
+            None,
+        );
+        assert_eq!(override_, Some(FeeFactor::try_from(0.0).unwrap()));
 
         // WETH-DAI (only one in bucket) - should NOT have override
         let order_weth_dai = boundary::Order {
@@ -751,7 +762,13 @@ mod test {
             },
             ..Default::default()
         };
-        let override_ = protocol_fees.get_volume_fee_override(&order_weth_dai);
+        let override_ = shared::fee::get_applicable_volume_fee_factor(
+            &config.volume_fee_bucket_overrides,
+            order_weth_dai.data.buy_token,
+            order_weth_dai.data.sell_token,
+            config.enable_sell_equals_buy_volume_fee,
+            None,
+        );
         assert_eq!(override_, None);
     }
 }
