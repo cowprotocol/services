@@ -474,7 +474,7 @@ pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec!["http://localhost:8545".parse().unwrap()],
+        additional_mempools: vec![],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -504,8 +504,9 @@ pub struct Setup {
     balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
-    /// Via which mempool the solutions should be submitted
-    mempools: Vec<reqwest::Url>,
+    /// Mempools that should be used for solution submission in addition
+    /// to the main RPC URL.
+    additional_mempools: Vec<reqwest::Url>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
     /// List of jit orders returned by the solver
@@ -822,8 +823,8 @@ impl Setup {
         self
     }
 
-    pub fn mempools(mut self, mempools: Vec<reqwest::Url>) -> Self {
-        self.mempools = mempools;
+    pub fn additional_mempools(mut self, mempools: Vec<reqwest::Url>) -> Self {
+        self.additional_mempools = mempools;
         self
     }
 
@@ -959,11 +960,14 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
+        let mut mempools = self.additional_mempools.clone();
+        mempools.push(blockchain.web3_url.parse().unwrap());
+
         let driver = Driver::new(
             &driver::Config {
                 config_file,
                 enable_simulation: self.enable_simulation,
-                mempools: self.mempools,
+                mempools,
                 order_priority_strategies: self.order_priority_strategies,
                 orderbook,
             },

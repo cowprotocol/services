@@ -68,7 +68,7 @@ async fn private_rpc_with_high_risk_solution() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
-        .mempools(vec![
+        .additional_mempools(vec![
             "http://localhost:8545".parse().unwrap(),
             "http://non-existant:8545".parse().unwrap(),
         ])
