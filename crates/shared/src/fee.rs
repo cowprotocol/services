@@ -48,23 +48,6 @@ impl FeeParameters {
     }
 }
 
-/// Finds the applicable volume fee bucket override for a token pair.
-/// Returns None if no override is found.
-/// Both tokens must be in the same bucket for the override to apply.
-pub fn get_volume_fee_bucket_override(
-    bucket_overrides: &[TokenBucketFeeOverride],
-    buy_token: Address,
-    sell_token: Address,
-) -> Option<FeeFactor> {
-    // Find token bucket overrides (both tokens must be in the same bucket)
-    for fee_override in bucket_overrides {
-        if fee_override.tokens.contains(&buy_token) && fee_override.tokens.contains(&sell_token) {
-            return Some(fee_override.factor);
-        }
-    }
-    None
-}
-
 /// Determines the applicable volume fee factor for a token pair, considering
 /// same-token trade configuration, token bucket overrides and default fee
 /// factor.
@@ -80,6 +63,13 @@ pub fn get_applicable_volume_fee_factor(
         return None;
     }
 
-    // Check for token bucket overrides first, then fall back to default
-    get_volume_fee_bucket_override(bucket_overrides, buy_token, sell_token).or(default_factor)
+    // Check for token bucket overrides first (both tokens must be in the same bucket)
+    for fee_override in bucket_overrides {
+        if fee_override.tokens.contains(&buy_token) && fee_override.tokens.contains(&sell_token) {
+            return Some(fee_override.factor);
+        }
+    }
+
+    // Fall back to default factor
+    default_factor
 }
