@@ -596,6 +596,12 @@ impl FromStr for TokenBucketFeeOverride {
 
         let tokens = tokens?;
 
+        ensure!(
+            tokens.len() >= 2,
+            "bucket override must contain at least 2 tokens, got {}",
+            tokens.len()
+        );
+
         Ok(TokenBucketFeeOverride { tokens, factor })
     }
 }
@@ -621,11 +627,12 @@ mod test {
 
     #[test]
     fn parse_token_bucket_fee_override() {
-        // Valid inputs with 1 tokens
-        let valid = "0.5:0x0000000000000000000000000000000000000001";
-        let result = TokenBucketFeeOverride::from_str(valid).unwrap();
+        // Valid inputs with 2 tokens (minimum required)
+        let valid_two_tokens = "0.5:0x0000000000000000000000000000000000000001;\
+                                0x0000000000000000000000000000000000000002";
+        let result = TokenBucketFeeOverride::from_str(valid_two_tokens).unwrap();
         assert_eq!(result.factor.get(), 0.5);
-        assert_eq!(result.tokens.len(), 1);
+        assert_eq!(result.tokens.len(), 2);
         // Valid inputs with 3 tokens
         let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001;\
                                   0x0000000000000000000000000000000000000002;\
@@ -633,6 +640,11 @@ mod test {
         let result = TokenBucketFeeOverride::from_str(valid_three_tokens).unwrap();
         assert_eq!(result.factor.get(), 0.123);
         assert_eq!(result.tokens.len(), 3);
+        // Invalid: only 1 token (need at least 2)
+        assert!(
+            TokenBucketFeeOverride::from_str("0.5:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
         // Invalid: wrong format (no colon)
         assert!(
             TokenBucketFeeOverride::from_str("0.5,0x0000000000000000000000000000000000000001")
