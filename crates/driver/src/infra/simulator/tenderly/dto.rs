@@ -2,8 +2,6 @@
 
 use {
     crate::{domain::eth, util::serialize},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    itertools::Itertools,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -54,15 +52,11 @@ struct AccessListItem {
 impl From<eth::AccessList> for AccessList {
     fn from(value: eth::AccessList) -> Self {
         Self(
-            web3::types::AccessList::from(value)
+            value
                 .into_iter()
-                .map(|item| AccessListItem {
-                    address: item.address.into_alloy(),
-                    storage_keys: item
-                        .storage_keys
-                        .into_iter()
-                        .map(IntoAlloy::into_alloy)
-                        .collect(),
+                .map(|(address, storage_keys)| AccessListItem {
+                    address,
+                    storage_keys: storage_keys.into_iter().map(|k| k.0).collect(),
                 })
                 .collect(),
         )
@@ -71,19 +65,12 @@ impl From<eth::AccessList> for AccessList {
 
 impl From<AccessList> for eth::AccessList {
     fn from(value: AccessList) -> Self {
-        value
-            .0
-            .into_iter()
-            .map(|item| web3::types::AccessListItem {
-                address: item.address.into_legacy(),
-                storage_keys: item
-                    .storage_keys
-                    .into_iter()
-                    .map(IntoLegacy::into_legacy)
-                    .collect(),
-            })
-            .collect_vec()
-            .into()
+        Self::from_iter(
+            value
+                .0
+                .into_iter()
+                .map(|item| (item.address, item.storage_keys)),
+        )
     }
 }
 

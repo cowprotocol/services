@@ -110,7 +110,7 @@ impl Mempools {
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
-        if let Err(err) = self.ethereum.estimate_gas(tx).await {
+        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
             if err.is_revert() {
                 tracing::info!(
                     ?err,
@@ -222,7 +222,7 @@ impl Mempools {
                             });
                         }
                         // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(tx).await {
+                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                             if err.is_revert() {
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
@@ -277,7 +277,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         original_tx_gas_price: eth::GasPrice,
         solver: &Solver,
-        nonce: eth::U256,
+        nonce: u64,
     ) -> Result<TxId, Error> {
         let fallback_gas_price = original_tx_gas_price * GAS_PRICE_BUMP;
         let replacement_gas_price = self
@@ -324,7 +324,7 @@ impl Mempools {
         &self,
         mempool: &infra::Mempool,
         solver: &Solver,
-        nonce: eth::U256,
+        nonce: u64,
     ) -> anyhow::Result<Option<eth::GasPrice>> {
         let pending_tx = match mempool
             .find_pending_tx_in_mempool(solver.address(), nonce)

@@ -3,14 +3,16 @@ use {
         boundary,
         domain::{eth, eth::U256},
     },
-    alloy::{providers::Provider, rpc::types::TransactionReceipt, transports::TransportErrorKind},
+    alloy::{
+        network::TransactionBuilder,
+        providers::Provider,
+        rpc::types::{TransactionReceipt, TransactionRequest},
+        transports::TransportErrorKind,
+    },
+    anyhow::anyhow,
     chain::Chain,
     ethcontract::errors::ExecutionError,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         price_estimation::trade_verifier::balance_overrides::{
@@ -22,7 +24,6 @@ use {
     thiserror::Error,
     tracing::{Level, instrument},
     url::Url,
-    web3::{Transport, types::CallRequest},
 };
 
 pub mod contracts;
@@ -184,54 +185,65 @@ impl Ethereum {
     #[instrument(skip_all)]
     pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
     where
-        CallRequest: From<T>,
+        T: Into<TransactionRequest>,
     {
-        let mut tx: CallRequest = tx.into();
-        tx.gas = Some(self.inner.tx_gas_limit.into_legacy());
-        tx.gas_price = self
-            .simulation_gas_price()
-            .await
-            .map(IntoLegacy::into_legacy);
+        let tx = tx.into();
 
-        let json = self
-            .web3
-            .transport()
-            .execute(
-                "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap(), "latest".into()],
-            )
-            .await?;
-        if let Some(err) = json.get("error") {
-            return Err(Error::AccessList(err.to_owned()));
-        }
-        let access_list: web3::types::AccessList =
-            serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
-        Ok(access_list.into())
+        let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
+            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
+        })?;
+        let tx = tx.with_gas_limit(gas_limit);
+        let tx = match self.simulation_gas_price().await {
+            Some(gas_price) => {
+                let gas_price = gas_price.try_into().map_err(|err| {
+                    Error::GasPrice(anyhow!("failed to convert gas_limit to u128: {err:?}"))
+                })?;
+
+                tx.with_gas_price(gas_price)
+            }
+            _ => tx,
+        };
+
+        let access_list = self.web3.alloy.create_access_list(&tx).await?;
+
+        Ok(access_list
+            .ensure_ok()
+            .map_err(Error::AccessList)?
+            .access_list
+            .into())
     }
 
     /// Estimate gas used by a transaction.
-    pub async fn estimate_gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
-        self.web3
-            .eth()
-            .estimate_gas(
-                web3::types::CallRequest {
-                    from: Some(tx.from.into_legacy()),
-                    to: Some(tx.to.into_legacy()),
-                    value: Some(tx.value.0.into_legacy()),
-                    data: Some(tx.input.clone().into()),
-                    access_list: Some(tx.access_list.clone().into()),
-                    gas_price: self
-                        .simulation_gas_price()
-                        .await
-                        .map(IntoLegacy::into_legacy),
-                    ..Default::default()
-                },
-                None,
-            )
-            .await
-            .map(IntoAlloy::into_alloy)
-            .map(Into::into)
-            .map_err(Into::into)
+    pub async fn estimate_gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+        let tx = TransactionRequest::default()
+            .from(tx.from)
+            .to(tx.to)
+            .value(tx.value.0)
+            .input(tx.input.0.into())
+            .access_list(tx.access_list.into());
+
+        let tx = match self.simulation_gas_price().await {
+            Some(gas_price) => {
+                let gas_price = gas_price.try_into().map_err(|err| {
+                    Error::GasPrice(anyhow!("failed to convert gas_limit to u128: {err:?}"))
+                })?;
+
+                tx.with_gas_price(gas_price)
+            }
+            _ => tx,
+        };
+
+        tracing::error!("estimating gas");
+
+        Ok(U256::from(
+            self.web3
+                .alloy
+                .estimate_gas(tx)
+                .await
+                .map_err(anyhow::Error::from)
+                .map_err(Error::GasPrice)?,
+        )
+        .into())
     }
 
     /// The gas price is determined based on the deadline by which the
@@ -341,7 +353,7 @@ pub enum Error {
     #[error("gas price estimation error: {0}")]
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
-    AccessList(serde_json::Value),
+    AccessList(String),
 }
 
 impl Error {
