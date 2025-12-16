@@ -1,9 +1,6 @@
 use {
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::IntoAlloy,
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,

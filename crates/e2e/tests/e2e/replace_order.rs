@@ -1,10 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::IntoAlloy,
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,

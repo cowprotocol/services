@@ -406,7 +406,7 @@ impl OnchainComponents {
     }
 
     pub async fn seed_weth_uni_v2_pools(
-        &self,  
+        &self,
         tokens: impl IntoIterator<Item = &MintableToken>,
         token_amount: ::alloy::primitives::U256,
         weth_amount: ::alloy::primitives::U256,
@@ -437,10 +437,7 @@ impl OnchainComponents {
                 .unwrap();
 
             contract
-                .approve(
-                    *self.contracts.uniswap_v2_router.address(),
-                    token_amount,
-                )
+                .approve(*self.contracts.uniswap_v2_router.address(), token_amount)
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await
@@ -448,10 +445,7 @@ impl OnchainComponents {
 
             self.contracts
                 .weth
-                .approve(
-                    *self.contracts.uniswap_v2_router.address(),
-                    weth_amount,
-                )
+                .approve(*self.contracts.uniswap_v2_router.address(), weth_amount)
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await

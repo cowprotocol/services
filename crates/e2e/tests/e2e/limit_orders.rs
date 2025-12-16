@@ -1094,11 +1094,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Create liquidity
     onchain
-        .seed_weth_uni_v2_pools(
-            [&token_a].iter().copied(),
-            1000u64.eth(),
-            1000u64.eth(),
-        )
+        .seed_weth_uni_v2_pools([&token_a].iter().copied(), 1000u64.eth(), 1000u64.eth())
         .await;
 
     // Drive solution

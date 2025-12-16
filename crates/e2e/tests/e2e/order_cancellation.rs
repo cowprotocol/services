@@ -2,10 +2,7 @@ use {
     ::alloy::primitives::U256,
     database::order_events::OrderEventLabel,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::IntoAlloy,
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{
             CancellationPayload,
