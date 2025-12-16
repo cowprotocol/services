@@ -125,10 +125,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token.mint(trader.address(), 10u64.eth()).await;

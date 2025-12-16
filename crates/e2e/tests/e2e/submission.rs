@@ -2,7 +2,10 @@ use {
     ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{BlockId, H160, H256},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
@@ -140,10 +143,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token.mint(trader.address(), 10u64.eth()).await;
@@ -259,10 +259,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token.mint(trader.address(), 10u64.eth()).await;
