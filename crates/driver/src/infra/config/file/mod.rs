@@ -146,44 +146,34 @@ impl From<BlockNumber> for web3::types::BlockNumber {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(tag = "mempool")]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Mempool {
-    #[serde(rename_all = "kebab-case")]
-    Public {
-        /// Maximum additional tip in Gwei that we are willing to pay
-        /// above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are willing to
-        /// pay above regular gas price estimation. Expects a
-        /// floating point value between 0 and 1.
-        #[serde(default = "default_additional_tip_percentage")]
-        additional_tip_percentage: f64,
-    },
-    #[serde(rename_all = "kebab-case")]
-    MevBlocker {
-        /// The MEVBlocker URL to use.
-        url: Url,
-        /// Maximum additional tip in Gwei that we are willing to give to
-        /// MEVBlocker above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are giving to
-        /// MEVBlocker above regular gas price estimation. Expects a
-        /// floating point value between 0 and 1.
-        #[serde(default = "default_additional_tip_percentage")]
-        additional_tip_percentage: f64,
-        /// Configures whether the submission logic is allowed to assume the
-        /// submission nodes implement soft cancellations. With soft
-        /// cancellations a cancellation transaction doesn't have to get mined
-        /// to have an effect. On arrival in the node all pending transactions
-        /// with the same sender and nonce will get discarded immediately.
-        #[serde(default = "default_soft_cancellations_flag")]
-        use_soft_cancellations: bool,
-    },
+#[serde(rename_all = "kebab-case")]
+struct Mempool {
+    /// Name for better logging and metrics.
+    name: Option<String>,
+    /// The RPC URL to use.
+    url: Url,
+    /// Maximum additional tip in Gwei that we are willing to give to
+    /// MEVBlocker above regular gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serialize::U256")]
+    max_additional_tip: eth::U256,
+    /// Additional tip in percentage of max_fee_per_gas we are giving to
+    /// MEVBlocker above regular gas price estimation. Expects a
+    /// floating point value between 0 and 1.
+    #[serde(default = "default_additional_tip_percentage")]
+    additional_tip_percentage: f64,
+    /// Configures whether the submission logic is allowed to assume the
+    /// submission nodes implement soft cancellations. With soft
+    /// cancellations a cancellation transaction doesn't have to get mined
+    /// to have an effect. On arrival in the node all pending transactions
+    /// with the same sender and nonce will get discarded immediately.
+    #[serde(default = "default_soft_cancellations_flag")]
+    use_soft_cancellations: bool,
+    /// Informs the submission logic whether a reverting transaction will
+    /// actually be mined or just ignored. This is an advanced feature
+    /// for private mempools so for most configured mempools you have to
+    /// assume reverting transactions will get mined eventually.
+    mines_reverting_txs: bool,
 }
 
 #[derive(Debug, Deserialize)]
