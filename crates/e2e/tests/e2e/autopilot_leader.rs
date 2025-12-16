@@ -3,10 +3,7 @@ use {
     e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
     },
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
@@ -131,7 +128,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
             if let Some(trade) = services.get_trades(&uid).await.unwrap().first() {
                 services
-                    .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                    .get_solver_competition(trade.tx_hash.unwrap())
                     .await
                     .ok()
                     .as_ref()
@@ -167,7 +164,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
             if let Some(trade) = services.get_trades(&uid).await.unwrap().first() {
                 services
-                    .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                    .get_solver_competition(trade.tx_hash.unwrap())
                     .await
                     .ok()
                     .as_ref()

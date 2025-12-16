@@ -1,10 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -130,7 +127,7 @@ async fn solver_competition(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok(),
             None => false,
@@ -140,7 +137,7 @@ async fn solver_competition(web3: Web3) {
 
     let trades = services.get_trades(&uid).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
 
@@ -279,7 +276,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid_a).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok(),
             None => false,
@@ -290,7 +287,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // Verify that test_solver was excluded due to wrong driver address
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
@@ -492,7 +489,7 @@ async fn store_filtered_solutions(web3: Web3) {
         let trade = services.get_trades(&order_ab_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?.into_legacy())
+                .get_solver_competition(trade.tx_hash?)
                 .await
                 .is_ok(),
         )
@@ -508,7 +505,7 @@ async fn store_filtered_solutions(web3: Web3) {
         .unwrap();
 
     let competition = services
-        .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trade.tx_hash.unwrap())
         .await
         .unwrap();
 

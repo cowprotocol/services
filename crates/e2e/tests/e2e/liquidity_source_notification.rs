@@ -21,10 +21,7 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
     },
     model::{
         order::{OrderCreation, OrderKind},
@@ -343,7 +340,7 @@ http-timeout = "10s"
         let trade = services.get_trades(&order_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?.into_legacy())
+                .get_solver_competition(trade.tx_hash?)
                 .await
                 .is_ok(),
         )

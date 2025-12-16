@@ -9,10 +9,7 @@ use {
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -484,10 +481,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 matches!(
                     (
                         services
-                            .get_solver_competition(trade_a.tx_hash.unwrap().into_legacy())
+                            .get_solver_competition(trade_a.tx_hash.unwrap())
                             .await,
                         services
-                            .get_solver_competition(trade_b.tx_hash.unwrap().into_legacy())
+                            .get_solver_competition(trade_b.tx_hash.unwrap())
                             .await
                     ),
                     (Ok(_), Ok(_))
@@ -500,7 +497,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
     // Verify that both transactions were properly indexed
