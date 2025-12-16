@@ -178,55 +178,15 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
-        let pod_provider = if let Some(pod_config) = config.pod.clone() {
-            let signer = Self::make_signer(config.account.clone())
-                .inspect_err(|e| {
-                    tracing::error!(error = %e, "[pod] failed to create signer for pod provider");
-                })
-                .ok();
+        tracing::error!("pod provider trying to build....");
+        let pod_provider = Self::build_pod_provider(&config).await;
+        if pod_provider.is_none() {
+            tracing::error!("pod provider not built....");
+        }
+        else {
+            tracing::error!("pod provider OK built....");
+        }
 
-            if let Some(signer) = signer {
-                let signer_address = signer.address();
-                let wallet = EthereumWallet::from(signer);
-
-                let pod_provider = PodProviderBuilder::with_recommended_settings()
-                    .wallet(wallet)
-                    .on_url(pod_config.endpoint)
-                    .await
-                    .inspect_err(|e| {
-                        tracing::error!(error = %e, "[pod] failed to initialize pod provider");
-                    })
-                    .ok();
-
-                if let Some(provider) = pod_provider {
-                    match provider.get_balance(signer_address).await {
-                        Ok(balance) => {
-                            tracing::info!(
-                                "[pod] pod provider built with associated wallet:{} balance:{:?}",
-                                signer_address,
-                                balance
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                "[pod] pod provider built but failed to fetch balance for {}",
-                                signer_address
-                            );
-                        }
-                    }
-
-                    Some(provider)
-                } else {
-                    tracing::info!("[pod] pod provider not built");
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
         let arbitrator = LocalArbitrator {
             max_winners: 10,
             weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(), /* WrappedNativeToken is WETH */
@@ -318,6 +278,63 @@ impl Solver {
 
     pub fn arbitrator(&self) -> &LocalArbitrator {
         &self.arbitrator
+    }
+
+    async fn build_pod_provider(
+        config: &Config,
+    ) -> Option<PodProvider> {
+        let pod_config = match config.pod.as_ref() {
+            Some(cfg) => cfg,
+            None => return None,
+        };
+
+        let signer = match Self::make_signer(config.account.clone()) {
+            Ok(signer) => signer,
+            Err(e) => {
+                tracing::error!(
+                error = %e,
+                "[pod] failed to create signer for pod provider"
+            );
+                return None;
+            }
+        };
+
+        let signer_address = signer.address();
+        let wallet = EthereumWallet::from(signer);
+
+        let provider = match PodProviderBuilder::with_recommended_settings()
+            .wallet(wallet)
+            .on_url(pod_config.endpoint.clone())
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(
+                error = %e,
+                "[pod] failed to initialize pod provider"
+            );
+                return None;
+            }
+        };
+
+        match provider.get_balance(signer_address).await {
+            Ok(balance) => {
+                tracing::info!(
+                signer_address = %signer_address,
+                signer_balance = %balance,
+                "[pod] pod provider built with wallet",
+            );
+            }
+            Err(e) => {
+                tracing::error!(
+                error = %e,
+                signer_address = %signer_address,
+                "[pod] pod provider built but failed to fetch balance",
+            );
+            }
+        }
+
+        Some(provider)
     }
 
     /// Make a POST request instructing the solver to solve an auction.
