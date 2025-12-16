@@ -263,10 +263,7 @@ impl Solver {
     }
 
     pub fn pod_auction_contract(&self) -> Option<eth::H160> {
-        self.config
-            .pod
-            .as_ref()
-            .map(|pod| pod.auction_contract_address)
+        Some(self.config.pod.as_ref()?.auction_contract_address)
     }
 
     pub fn arbitrator(&self) -> &LocalArbitrator {
