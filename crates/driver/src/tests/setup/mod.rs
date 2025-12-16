@@ -469,21 +469,12 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
     (x + y - eth::U256::from(1)) / y
 }
 
-#[derive(Debug)]
-pub enum Mempool {
-    Public,
-    Private {
-        /// Uses ethrpc node if None
-        url: Option<String>,
-    },
-}
-
 /// Create a builder for the setup process.
 pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Public],
+        mempools: vec!["http://localhost:8545".parse().unwrap()],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -514,7 +505,7 @@ pub struct Setup {
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
     /// Via which mempool the solutions should be submitted
-    mempools: Vec<Mempool>,
+    mempools: Vec<reqwest::Url>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
     /// List of jit orders returned by the solver
@@ -831,7 +822,7 @@ impl Setup {
         self
     }
 
-    pub fn mempools(mut self, mempools: Vec<Mempool>) -> Self {
+    pub fn mempools(mut self, mempools: Vec<reqwest::Url>) -> Self {
         self.mempools = mempools;
         self
     }

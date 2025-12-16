@@ -173,6 +173,7 @@ struct Mempool {
     /// actually be mined or just ignored. This is an advanced feature
     /// for private mempools so for most configured mempools you have to
     /// assume reverting transactions will get mined eventually.
+    #[serde(default = "default_mines_reverting_txs")]
     mines_reverting_txs: bool,
 }
 
@@ -227,6 +228,10 @@ fn default_max_additional_tip() -> eth::U256 {
 
 fn default_soft_cancellations_flag() -> bool {
     false
+}
+
+fn default_mines_reverting_txs() -> bool {
+    true
 }
 
 pub fn default_http_time_buffer() -> Duration {

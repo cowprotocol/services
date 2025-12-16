@@ -69,10 +69,8 @@ async fn private_rpc_with_high_risk_solution() {
         .order(ab_order())
         .solution(ab_solution())
         .mempools(vec![
-            tests::setup::Mempool::Public,
-            tests::setup::Mempool::Private {
-                url: Some("http://non-existant:8545".to_string()),
-            },
+            "http://localhost:8545".parse().unwrap(),
+            "http://non-existant:8545".parse().unwrap(),
         ])
         .done()
         .await;

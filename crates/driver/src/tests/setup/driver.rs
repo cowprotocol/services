@@ -1,5 +1,5 @@
 use {
-    super::{Mempool, Partial, Solver, Test, blockchain::Blockchain},
+    super::{Partial, Solver, Test, blockchain::Blockchain},
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
@@ -17,7 +17,7 @@ pub struct Config {
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
-    pub mempools: Vec<Mempool>,
+    pub mempools: Vec<reqwest::Url>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub orderbook: Orderbook,
 }
@@ -241,31 +241,15 @@ async fn create_config_file(
     )
     .unwrap();
 
-    for mempool in &config.mempools {
-        match mempool {
-            Mempool::Public => {
-                write!(
-                    file,
-                    r#"[[submission.mempool]]
-                    mempool = "public"
-                    additional-tip-percentage = 0.0
-                    "#,
-                )
-                .unwrap();
-            }
-            Mempool::Private { url } => {
-                write!(
-                    file,
-                    r#"[[submission.mempool]]
-                    mempool = "mev-blocker"
-                    additional-tip-percentage = 0.0
-                    url = "{}"
-                    "#,
-                    url.clone().unwrap_or(blockchain.web3_url.clone()),
-                )
-                .unwrap();
-            }
-        }
+    for url in &config.mempools {
+        write!(
+            file,
+            r#"[[submission.mempool]]
+            url = "{url}"
+            additional-tip-percentage = 0.0
+            "#,
+        )
+        .unwrap();
     }
 
     for strategy in &config.order_priority_strategies {
