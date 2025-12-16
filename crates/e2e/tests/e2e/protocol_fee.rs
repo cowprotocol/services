@@ -1070,18 +1070,15 @@ async fn volume_fee_overrides(web3: Web3) {
             .unwrap();
     }
 
-    // Configure fee policies:
-    // - Default volume fee: 1% (0.01)
-    // - Bucket 1 (2-token pair): USDC-DAI has 0.05% fee (checked first)
-    // - Bucket 2 (stablecoins): USDC, DAI, USDT have 0% fee (checked second)
+    // Default volume fee: 1% (0.01)
     let default_volume_fee = ProtocolFee {
         policy: FeePolicyKind::Volume { factor: 0.01 },
         policy_order_class: FeePolicyOrderClass::Any,
     };
 
     // Bucket overrides (comma-separated, checked in order, first match wins):
-    // 1. USDC-DAI pair (2-token bucket) has 0.05% fee
-    // 2. All stablecoin-to-stablecoin trades have 0% fee
+    // - 2-token pair: USDC-DAI has 0.05% fee (checked first, has precedence)
+    // - Stablecoins: USDC, DAI, USDT have 0% fee (checked second)
     let volume_fee_bucket_config = format!(
         "--volume-fee-bucket-overrides=0.0005:{};{},0:{};{};{}",
         token_usdc.address(),
