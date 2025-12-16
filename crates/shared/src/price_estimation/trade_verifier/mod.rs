@@ -19,7 +19,7 @@ use {
     ::alloy::sol_types::SolCall,
     alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
-    bigdecimal::{BigDecimal, Zero},
+    bigdecimal::BigDecimal,
     contracts::alloy::{
         GPv2Settlement,
         WETH9,
@@ -264,6 +264,15 @@ impl TradeVerifier {
                     .and_modify(|balance| {
                         *balance += number::conversions::alloy::u256_to_big_rational(&buy_amount)
                     });
+            }
+            // It looks like the out_amount is 0 but only because the sell and buy tokens
+            // are the same.
+            if query.sell_token == query.buy_token {
+                summary.out_amount = query
+                    .in_amount
+                    .get()
+                    .checked_sub(summary.out_amount)
+                    .ok_or(Error::TooInaccurate)?;
             }
         }
 
@@ -768,10 +777,8 @@ fn add_balance_queries(
         query_balance_call.into(),
     );
 
-    // query the balance as the first middle interaction, the sell token has already
-    // been transferred into the settlement contract since the calculation is
-    // based on the out amount
-    settlement.interactions[1].insert(0, interaction.clone());
+    // query balance query at the end of pre-interactions
+    settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
     settlement.interactions[2].insert(0, interaction);
     settlement
@@ -868,9 +875,7 @@ fn ensure_quote_accuracy(
         .get(&query.buy_token)
         .context("summary buy token is missing")?;
 
-    if (!sell_token_lost.is_zero() && *sell_token_lost >= sell_token_lost_limit)
-        || (!buy_token_lost.is_zero() && *buy_token_lost >= buy_token_lost_limit)
-    {
+    if (*sell_token_lost >= sell_token_lost_limit) || (*buy_token_lost >= buy_token_lost_limit) {
         return Err(Error::TooInaccurate);
     }
 
