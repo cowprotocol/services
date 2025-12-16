@@ -43,7 +43,7 @@ use {
     },
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},

@@ -31,10 +31,9 @@ use {
     },
     futures::Future,
     secp256k1::SecretKey,
-    serde_json::json,
     solvers_dto::solution::Flashloan,
     std::collections::HashMap,
-    web3::{Transport, signing::Key},
+    web3::signing::Key,
 };
 // TODO Possibly might be a good idea to use an enum for tokens instead of
 // &'static str
