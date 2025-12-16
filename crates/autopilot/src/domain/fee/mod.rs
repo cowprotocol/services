@@ -138,7 +138,7 @@ impl ProtocolFees {
             // update the `accumulated` value
             *accumulated += value.min(cap - *accumulated);
 
-            FeeFactor(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
+            FeeFactor::new(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
         }
 
         fn fee_factor_from_bps(bps: u64) -> FeeFactor {

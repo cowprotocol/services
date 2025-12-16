@@ -518,11 +518,15 @@ impl FromStr for ExternalSolver {
 
 /// Fee factor representing a percentage in range [0, 1)
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeeFactor(pub f64);
+pub struct FeeFactor(f64);
 
 impl FeeFactor {
     /// Number of basis points that make up 100%.
     pub const MAX_BPS: u32 = 10_000;
+
+    pub fn new(factor: f64) -> Self {
+        Self(factor)
+    }
 
     /// Converts the fee factor to basis points (BPS).
     /// For example, 0.0002 -> 2 BPS

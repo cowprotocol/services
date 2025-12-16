@@ -66,7 +66,8 @@ pub fn get_volume_fee_bucket_override(
 }
 
 /// Determines the applicable volume fee factor for a token pair, considering
-/// same-token trade configuration, token bucket overrides and default fee factor.
+/// same-token trade configuration, token bucket overrides and default fee
+/// factor.
 pub fn get_applicable_volume_fee_factor(
     bucket_overrides: &[TokenBucketFeeOverride],
     buy_token: Address,
