@@ -100,10 +100,7 @@ async fn single_limit_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -224,10 +221,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts and prepare funding Uniswap pool
@@ -365,10 +359,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let [solver_a, solver_b] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b, token_c, token_d] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund traders
@@ -379,10 +370,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to offer different solution.
     let [base_a, base_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            10_000u64.eth().into_legacy(),
-            10_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     onchain
         .seed_uni_v2_pool((&token_a, 100_000u64.eth()), (&base_a, 100_000u64.eth()))
@@ -613,10 +601,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
     token_a.mint(trader.address(), 1u64.eth()).await;
 
@@ -698,10 +683,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
     token.mint(trader.address(), 100u64.eth()).await;
 
@@ -1112,11 +1094,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Create liquidity
     onchain
-        .seed_weth_uni_v2_pools(
-            [&token_a].iter().copied(),
-            1000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .seed_weth_uni_v2_pools([&token_a].iter().copied(), 1000u64.eth(), 1000u64.eth())
         .await;
 
     // Drive solution

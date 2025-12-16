@@ -28,10 +28,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [solver1, solver2] = onchain.make_solvers(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader, settlement accounts, and pool creation
