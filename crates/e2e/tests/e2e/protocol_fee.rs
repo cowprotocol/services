@@ -1232,15 +1232,12 @@ async fn volume_fee_overrides(web3: Web3) {
     tracing::info!("Checking executions...");
 
     // Get gas price from the node to verify network fee calculation
-    let gas_price_output = std::process::Command::new("cast")
-        .args(["gas-price", "--rpc-url", "http://localhost:8545"])
-        .output()
-        .expect("failed to get gas price");
-    let gas_price_str = String::from_utf8(gas_price_output.stdout).unwrap();
-    let gas_price = gas_price_str
-        .trim()
-        .parse::<u128>()
-        .expect("invalid gas price");
+    let gas_price = web3
+        .eth()
+        .gas_price()
+        .await
+        .expect("failed to get gas price")
+        .as_u128();
     tracing::info!("Current gas price from node: {}", gas_price);
 
     // Get all executed fees
