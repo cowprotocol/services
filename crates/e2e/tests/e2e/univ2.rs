@@ -3,7 +3,7 @@ use {
     contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,

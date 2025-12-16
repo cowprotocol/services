@@ -166,11 +166,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     // Fund trader accounts and approve relayer
     cow.fund(*trader.address(), 5u64.eth()).await;
     trader
-        .approve(
-            *cow.address(),
-            onchain.contracts().allowance,
-            10u64.eth(),
-        )
+        .approve(*cow.address(), onchain.contracts().allowance, 10u64.eth())
         .from(solver.address())
         .send_and_watch()
         .await

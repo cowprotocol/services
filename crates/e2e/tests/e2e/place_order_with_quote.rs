@@ -2,7 +2,7 @@ use {
     ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},

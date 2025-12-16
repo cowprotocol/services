@@ -1,7 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,

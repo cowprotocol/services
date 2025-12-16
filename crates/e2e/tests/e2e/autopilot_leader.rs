@@ -1,10 +1,7 @@
 use {
     autopilot::shutdown_controller::ShutdownController,
     e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
     secp256k1::SecretKey,

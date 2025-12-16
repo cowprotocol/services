@@ -10,7 +10,7 @@ use {
     app_data::{AppDataHash, hash_full_app_data},
     contracts::alloy::ERC20,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},

@@ -9,7 +9,7 @@ use {
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},

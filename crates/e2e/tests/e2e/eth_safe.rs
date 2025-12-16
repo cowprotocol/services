@@ -1,7 +1,7 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
     e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, safe::Safe, wait_for_condition},
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},

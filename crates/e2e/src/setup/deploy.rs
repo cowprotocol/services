@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::{Address, B256},
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -12,7 +13,6 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
-    alloy::primitives::{Address, B256},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::DomainSeparator,
     shared::ethrpc::Web3,
@@ -135,10 +135,9 @@ impl Contracts {
 
         let weth = WETH9::Instance::deploy(web3.alloy.clone()).await.unwrap();
 
-        let balancer_authorizer =
-            BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin)
-                .await
-                .unwrap();
+        let balancer_authorizer = BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin)
+            .await
+            .unwrap();
         let balancer_vault = BalancerV2Vault::Instance::deploy(
             web3.alloy.clone(),
             *balancer_authorizer.address(),
@@ -199,8 +198,7 @@ impl Contracts {
             .vaultRelayer()
             .call()
             .await
-            .expect("Couldn't get vault relayer address")
-;
+            .expect("Couldn't get vault relayer address");
         let domain_separator = DomainSeparator(
             gp_settlement
                 .domainSeparator()

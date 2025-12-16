@@ -10,10 +10,7 @@ use {
         safe::Safe,
         wait_for_condition,
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},

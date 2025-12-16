@@ -20,10 +20,7 @@ use {
         wait_for_condition,
     },
     ethcontract::{BlockId, BlockNumber},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::IntoAlloy,
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -278,10 +275,7 @@ async fn cow_amm_jit(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(
-            onchain.contracts().allowance,
-            alloy::primitives::U256::MAX,
-        )
+        .approve(onchain.contracts().allowance, alloy::primitives::U256::MAX)
         .from(bob.address())
         .send_and_watch()
         .await
@@ -896,14 +890,11 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // Fund trader "bob" with DAI and approve allowance
     dai.mint(bob.address(), 250u64.eth()).await;
 
-    dai.approve(
-        onchain.contracts().allowance,
-        alloy::primitives::U256::MAX,
-    )
-    .from(bob.address())
-    .send_and_watch()
-    .await
-    .unwrap();
+    dai.approve(onchain.contracts().allowance, alloy::primitives::U256::MAX)
+        .from(bob.address())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Get balances before the trade
     let amm_weth_balance_before = onchain

@@ -1,6 +1,6 @@
 use {
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,

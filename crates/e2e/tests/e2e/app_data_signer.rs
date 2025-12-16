@@ -1,7 +1,7 @@
 use {
     alloy::primitives::Address,
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe},
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,

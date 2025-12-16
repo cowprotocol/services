@@ -11,10 +11,7 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,

@@ -599,20 +599,14 @@ impl OnchainComponents {
             .send_and_watch()
             .await
             .unwrap();
-        cow.approve(
-            *self.contracts.uniswap_v2_router.address(),
-            cow_amount,
-        )
-        .from(cow.holder.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        cow.approve(*self.contracts.uniswap_v2_router.address(), cow_amount)
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
         self.contracts
             .weth
-            .approve(
-                *self.contracts.uniswap_v2_router.address(),
-                weth_amount,
-            )
+            .approve(*self.contracts.uniswap_v2_router.address(), weth_amount)
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await

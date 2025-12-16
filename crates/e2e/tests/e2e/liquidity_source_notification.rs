@@ -19,10 +19,7 @@ use {
             wait_for_condition,
         },
     },
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -117,10 +114,7 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Trader gives approval to the CoW allowance contract
     token_usdc
-        .approve(
-            onchain.contracts().allowance,
-            alloy::primitives::U256::MAX,
-        )
+        .approve(onchain.contracts().allowance, alloy::primitives::U256::MAX)
         .from(trader.address())
         .send_and_watch()
         .await

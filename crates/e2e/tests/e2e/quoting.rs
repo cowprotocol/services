@@ -1,6 +1,6 @@
 use {
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},

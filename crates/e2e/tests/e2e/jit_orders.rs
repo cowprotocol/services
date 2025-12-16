@@ -1,7 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
-    ethrpc::alloy::{CallBuilderExt},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
