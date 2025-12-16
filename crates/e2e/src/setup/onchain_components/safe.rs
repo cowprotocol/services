@@ -11,11 +11,7 @@ use {
         GnosisSafeProxy,
         GnosisSafeProxyFactory,
     },
-    ethcontract::transaction::TransactionBuilder,
-    ethrpc::{
-        AlloyProvider,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
-    },
+    ethrpc::{AlloyProvider, alloy::CallBuilderExt},
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -137,21 +133,6 @@ impl Safe {
             .send_and_watch()
             .await
             .unwrap();
-    }
-
-    pub async fn exec_call<T: ethcontract::tokens::Tokenize>(
-        &self,
-        tx: ethcontract::dyns::DynMethodBuilder<T>,
-    ) {
-        let TransactionBuilder {
-            data, value, to, ..
-        } = tx.tx;
-        self.exec_alloy_tx(
-            to.unwrap().into_alloy(),
-            value.unwrap_or_default().into_alloy(),
-            alloy::primitives::Bytes::from(data.unwrap_or_default().0),
-        )
-        .await;
     }
 
     pub async fn exec_alloy_call(&self, tx: TransactionRequest) {

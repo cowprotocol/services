@@ -64,7 +64,6 @@ mockall = { workspace = true, optional = true }
 alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
-ethcontract-mock = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 mockall = { workspace = true }
 regex = { workspace = true }

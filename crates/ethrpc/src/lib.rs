@@ -11,7 +11,7 @@ use {
     self::{buffered::BufferedTransport, http::HttpTransport},
     crate::alloy::MutWallet,
     ::alloy::providers::DynProvider,
-    ethcontract::{batch::CallBatch, transport::DynTransport},
+    ethcontract::transport::DynTransport,
     reqwest::{Client, Url},
     std::{num::NonZeroUsize, time::Duration},
     web3::Transport,
@@ -20,7 +20,6 @@ use {
 pub const MAX_BATCH_SIZE: usize = 100;
 
 pub type Web3Transport = DynTransport;
-pub type Web3CallBatch = CallBatch<Web3Transport>;
 pub type AlloyProvider = DynProvider;
 
 /// This is just a thin wrapper around providers (clients communicating

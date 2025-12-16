@@ -24,8 +24,8 @@ impl<T> Participant<T> {
         &self.solution
     }
 
-    pub fn set_computed_score(&mut self, score: Score) {
-        self.solution.computed_score = Some(score);
+    pub fn set_score(&mut self, score: Score) {
+        self.solution.score = Some(score);
     }
 
     pub fn driver(&self) -> &Arc<infra::Driver> {
