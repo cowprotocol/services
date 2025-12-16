@@ -3,7 +3,7 @@ use {
     e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, safe::Safe, wait_for_condition},
     ethrpc::alloy::{
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::IntoAlloy,
     },
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
@@ -27,10 +27,7 @@ async fn test(web3: Web3) {
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let safe = Safe::deploy(trader.clone(), web3.alloy.clone()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1000u64.eth(), 1000u64.eth())
         .await;
 
     token.mint(trader.address(), 4u64.eth()).await;

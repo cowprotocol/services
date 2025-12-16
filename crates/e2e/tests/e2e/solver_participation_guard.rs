@@ -15,7 +15,7 @@ use {
         Web3,
         alloy::{
             CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
+            conversions::IntoAlloy,
         },
     },
     model::{
@@ -235,10 +235,7 @@ async fn setup(
 ) -> (TestAccount, MintableToken, MintableToken) {
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts

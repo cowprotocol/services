@@ -3,7 +3,7 @@ use {
     e2e::setup::*,
     ethrpc::alloy::{
         CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
+        conversions::IntoAlloy,
     },
     model::{
         order::{OrderCreation, OrderKind},
@@ -27,10 +27,7 @@ async fn test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            10_000u64.eth().into_legacy(),
-            10_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token_a.mint(trader_a.address(), 50u64.eth()).await;
