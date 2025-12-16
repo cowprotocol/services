@@ -1220,110 +1220,45 @@ async fn volume_fee_overrides(web3: Web3) {
     let dai_usdt_trade = &services.get_trades(&dai_usdt_uid).await.unwrap()[0];
     let usdc_weth_trade = &services.get_trades(&usdc_weth_uid).await.unwrap()[0];
 
-    // Verify USDC-DAI trade has Volume policy with 0.05% factor (0.0005)
-    assert_eq!(
-        usdc_dai_trade.executed_protocol_fees.len(),
-        1,
-        "USDC-DAI should have exactly one protocol fee"
-    );
-    let usdc_dai_executed_fee = &usdc_dai_trade.executed_protocol_fees[0];
-    assert_eq!(
-        usdc_dai_executed_fee.token,
-        *token_dai.address(),
-        "Fee should be in surplus token (DAI - buy token for sell orders)"
-    );
-    match usdc_dai_executed_fee.policy {
-        FeePolicy::Volume { factor } => {
-            assert_eq!(
-                factor, 0.0005,
-                "USDC-DAI should have 0.0005 (0.05%) volume fee factor, got {}",
-                factor
-            );
-        }
-        _ => panic!(
-            "USDC-DAI should have Volume fee policy, got {:?}",
-            usdc_dai_executed_fee.policy
-        ),
-    }
-    // Verify fee amount is ~0.05% of trade volume (±2%)
-    let usdc_dai_fee_amount = AlloyU256::from(usdc_dai_executed_fee.amount);
-    let expected_usdc_dai_fee =
-        sell_amount.into_alloy() * AlloyU256::from(5) / AlloyU256::from(10000); // 0.05%
-    assert!(
-        usdc_dai_fee_amount > expected_usdc_dai_fee * AlloyU256::from(98) / AlloyU256::from(100)
-            && usdc_dai_fee_amount
-                < expected_usdc_dai_fee * AlloyU256::from(102) / AlloyU256::from(100),
-        "USDC-DAI fee should be ~0.05% (±2%). Expected {}, got {}",
-        expected_usdc_dai_fee,
-        usdc_dai_fee_amount
-    );
+    assert_volume_fee(usdc_dai_trade, *token_dai.address(), 0.0005, sell_amount);
+    assert_volume_fee(dai_usdt_trade, *token_usdt.address(), 0.0, sell_amount);
+    assert_volume_fee(usdc_weth_trade, *token_weth.address(), 0.01, sell_amount);
+}
 
-    // Verify DAI-USDT trade has Volume policy with 0% factor
+fn assert_volume_fee(
+    trade: &model::trade::Trade,
+    expected_fee_token: ::alloy::primitives::Address,
+    expected_factor: f64,
+    sell_amount: ethcontract::U256,
+) {
     assert_eq!(
-        dai_usdt_trade.executed_protocol_fees.len(),
+        trade.executed_protocol_fees.len(),
         1,
-        "DAI-USDT should have exactly one protocol fee"
+        "Trade should have exactly one protocol fee"
     );
-    let dai_usdt_executed_fee = &dai_usdt_trade.executed_protocol_fees[0];
-    assert_eq!(
-        dai_usdt_executed_fee.token,
-        *token_usdt.address(),
-        "Fee should be in surplus token (USDT - buy token for sell orders)"
-    );
-    match dai_usdt_executed_fee.policy {
+    let executed_fee = &trade.executed_protocol_fees[0];
+    assert_eq!(executed_fee.token, expected_fee_token, "Fee token mismatch");
+    match executed_fee.policy {
         FeePolicy::Volume { factor } => {
-            assert_eq!(
-                factor, 0.0,
-                "DAI-USDT should have 0 (0%) volume fee factor, got {}",
-                factor
-            );
+            assert_eq!(factor, expected_factor, "Volume fee factor mismatch");
         }
-        _ => panic!(
-            "DAI-USDT should have Volume fee policy, got {:?}",
-            dai_usdt_executed_fee.policy
-        ),
+        _ => panic!("Expected Volume fee policy, got {:?}", executed_fee.policy),
     }
-    // For 0% volume fee, the protocol fee should be zero
-    assert!(
-        AlloyU256::from(dai_usdt_executed_fee.amount).is_zero(),
-        "DAI-USDT protocol fee should be zero for 0% volume fee"
-    );
 
-    // Verify USDC-WETH trade has Volume policy with 1% factor
-    assert_eq!(
-        usdc_weth_trade.executed_protocol_fees.len(),
-        1,
-        "USDC-WETH should have exactly one protocol fee"
-    );
-    let usdc_weth_executed_fee = &usdc_weth_trade.executed_protocol_fees[0];
-    assert_eq!(
-        usdc_weth_executed_fee.token,
-        *token_weth.address(),
-        "Fee should be in surplus token (WETH - buy token for sell orders)"
-    );
-    match usdc_weth_executed_fee.policy {
-        FeePolicy::Volume { factor } => {
-            assert_eq!(
-                factor, 0.01,
-                "USDC-WETH should have 0.01 (1%) volume fee factor, got {}",
-                factor
-            );
-        }
-        _ => panic!(
-            "USDC-WETH should have Volume fee policy, got {:?}",
-            usdc_weth_executed_fee.policy
-        ),
+    let fee_amount = AlloyU256::from(executed_fee.amount);
+    if expected_factor == 0.0 {
+        assert!(fee_amount.is_zero(), "Fee should be zero for 0% factor");
+    } else {
+        // Integer math for: expected_fee = sell_amount * factor
+        let factor_scaled = (expected_factor * 10_000.0) as u64;
+        let expected_fee =
+            sell_amount.into_alloy() * AlloyU256::from(factor_scaled) / AlloyU256::from(10_000);
+
+        let lower = expected_fee * AlloyU256::from(98) / AlloyU256::from(100);
+        let upper = expected_fee * AlloyU256::from(102) / AlloyU256::from(100);
+        assert!(
+            fee_amount >= lower && fee_amount <= upper,
+            "Fee should be ~{expected_fee} (±2%), got {fee_amount}"
+        );
     }
-    // Verify fee amount is ~1% of trade volume (±2%)
-    let usdc_weth_fee_amount = AlloyU256::from(usdc_weth_executed_fee.amount);
-    let expected_usdc_weth_fee =
-        sell_amount.into_alloy() * AlloyU256::from(1) / AlloyU256::from(100); // 1%
-    assert!(
-        usdc_weth_fee_amount > expected_usdc_weth_fee * AlloyU256::from(98) / AlloyU256::from(100)
-            && usdc_weth_fee_amount
-                < expected_usdc_weth_fee * AlloyU256::from(102) / AlloyU256::from(100),
-        "USDC-WETH fee should be ~1% (±2%). Expected {}, got {}",
-        expected_usdc_weth_fee,
-        usdc_weth_fee_amount
-    );
 }
