@@ -29,4 +29,4 @@ preset = "uniswap-v2"
 
 [pod]
 endpoint = "ws://35.241.217.212:8545"
-auction-contract-address = "0xb19b36b1456E65E3A6D514D3F715f204BD59f431"
+auction-contract-address = "0xeDD0670497E00ded712a398563Ea938A29dD28c7"

@@ -370,11 +370,7 @@ impl LocalArbitrator {
         auction: &crate::domain::competition::Auction,
     ) -> Ranking {
         let mut participants = participants;
-        participants.sort_by(|a, b| {
-            let ha = hash_solution(a.solution());
-            let hb = hash_solution(b.solution());
-            ha.cmp(&hb)
-        });
+        participants.sort_by_cached_key(|p| hash_solution(p.solution()));
 
         let partitioned = self.partition_unfair_solutions(participants, auction);
         let filtered_out = partitioned

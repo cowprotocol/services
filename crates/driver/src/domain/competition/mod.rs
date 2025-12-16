@@ -54,7 +54,10 @@ pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solutio
 use crate::{
     domain::{
         BlockNo,
-        competition::local_selection_winner::{LocalArbitrator, ParticipantDetached, Unranked},
+        competition::{
+            auction::Id,
+            local_selection_winner::{LocalArbitrator, ParticipantDetached, Unranked},
+        },
     },
     infra::{
         api::routes::solve::dto,
@@ -373,73 +376,81 @@ impl Competition {
         if let Some((pod, pod_auction_contract_address)) =
             self.solver.pod().zip(self.solver.pod_auction_contract())
         {
-            let auction_clone = auction.clone();
-            let score_clone = score.clone();
-            let solver_clone = self.solver.clone();
-            let pod_clone = pod.clone();
+            if let Some(auction_id) = auction.id {
+                let auction_clone = auction.clone();
+                let score_clone = score.clone();
+                let solver_clone = self.solver.clone();
+                let pod_clone = pod.clone();
 
-            tokio::spawn(async move {
-                let pod_auction_client = AuctionClient::new(
-                    pod_clone,
-                    alloy_primitives::Address::from_slice(pod_auction_contract_address.as_bytes()),
-                );
-
-                if let Err(e) = Self::pod_solution_submission(
-                    &pod_auction_client,
-                    &auction_clone,
-                    deadline,
-                    score_clone,
-                    &solver_clone,
-                )
-                .await
-                {
-                    let auction_id = auction_clone.id().map(|id| id.0).unwrap_or_default();
-                    tracing::error!(
-                        error = %e,
-                        auction_id = %auction_id,
-                        deadline = ?deadline,
-                        solver_address = %solver_clone.address().0.to_string(),
-                        "[pod] solution submission failed, aborting"
+                tokio::spawn(async move {
+                    let pod_auction_client = AuctionClient::new(
+                        pod_clone,
+                        alloy_primitives::Address::from_slice(
+                            pod_auction_contract_address.as_bytes(),
+                        ),
                     );
-                    return;
-                }
 
-                let participants_result =
-                    Self::pod_fetch_participants(&pod_auction_client, &auction_clone, deadline)
-                        .await;
-
-                if let Ok(participants) = participants_result {
-                    let auction_id = auction_clone.id().map(|id| id.0).unwrap_or_default();
-                    tracing::info!(
-                        num_participants = participants.len(),
-                        auction_id = %auction_id,
-                        deadline = ?deadline,
-                        solver_address = %solver_clone.address().0.to_string(),
-                        "[pod] fetched bids"
-                    );
-                    let arbitrator = solver_clone.arbitrator();
-                    if let Err(e) =
-                        Self::local_winner_selection(&auction_clone, participants, arbitrator).await
+                    if let Err(e) = Self::pod_solution_submission(
+                        &pod_auction_client,
+                        auction_id,
+                        deadline,
+                        score_clone,
+                        &solver_clone,
+                    )
+                    .await
                     {
-                        let auction_id = auction_clone.id().map(|id| id.0).unwrap_or_default();
                         tracing::error!(
                             error = %e,
                             auction_id = %auction_id,
                             deadline = ?deadline,
                             solver_address = %solver_clone.address().0.to_string(),
-                            "[pod] winner selection failed, aborting"
+                            "[pod] solution submission failed, aborting"
+                        );
+                        return;
+                    }
+
+                    let participants_result =
+                        Self::pod_fetch_participants(&pod_auction_client, auction_id, deadline)
+                            .await;
+
+                    if let Ok(participants) = participants_result {
+                        tracing::info!(
+                            num_participants = participants.len(),
+                            auction_id = %auction_id,
+                            deadline = ?deadline,
+                            solver_address = %solver_clone.address().0.to_string(),
+                            "[pod] fetched bids"
+                        );
+                        let arbitrator = solver_clone.arbitrator();
+                        if let Err(e) = Self::local_winner_selection(
+                            &auction_clone,
+                            auction_id,
+                            participants,
+                            arbitrator,
+                        )
+                        .await
+                        {
+                            tracing::error!(
+                                error = %e,
+                                auction_id = %auction_id,
+                                deadline = ?deadline,
+                                solver_address = %solver_clone.address().0.to_string(),
+                                "[pod] winner selection failed, aborting"
+                            );
+                        }
+                    } else if let Err(e) = participants_result {
+                        tracing::error!(
+                            error = %e,
+                            auction_id = ?auction_clone.id(),
+                            deadline = ?deadline,
+                            solver_address = %solver_clone.address().0.to_string(),
+                            "[pod] failed to fetch participants, aborting"
                         );
                     }
-                } else if let Err(e) = participants_result {
-                    tracing::error!(
-                        error = %e,
-                        auction_id = ?auction_clone.id(),
-                        deadline = ?deadline,
-                        solver_address = %solver_clone.address().0.to_string(),
-                        "[pod] failed to fetch participants, aborting"
-                    );
-                }
-            });
+                });
+            } else {
+                tracing::warn!("[pod] skipping submission to pod. empty auction id");
+            }
         }
 
         // Re-simulate the solution on every new block until the deadline ends to make
@@ -479,18 +490,19 @@ impl Competition {
 
     pub async fn pod_solution_submission(
         pod_auction_client: &AuctionClient,
-        auction: &Auction,
+        auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
         score: Option<Solved>,
         solver: &Solver,
     ) -> Result<(), anyhow::Error> {
-        let pod_auction_id = match u64::try_from(auction.id().map(|id| id.0).unwrap_or_default()) {
-            Ok(id) => pod_sdk::U256::from(id),
-            Err(e) => {
-                tracing::error!(error = %e, "[pod] invalid auction id");
-                return Err(anyhow::Error::new(e));
-            }
-        };
+        let pod_auction_id = pod_sdk::U256::from(u64::try_from(auction_id.0).map_err(|e| {
+            tracing::error!(
+                error = %e,
+                auction_id = ?auction_id,
+                "[pod] invalid auction id"
+            );
+            e
+        })?);
 
         let solve_response = dto::SolveResponse::new(score.clone(), solver);
         let solution_data = match serde_json::to_string(&solve_response) {
@@ -500,7 +512,7 @@ impl Competition {
                     error = %e,
                     auction_id = %pod_auction_id,
                     deadline = %deadline,
-                    "[pod] ffailed to serialize SolveResponse"
+                    "[pod] failed to serialize SolveResponse"
                 );
                 return Err(anyhow::Error::new(e));
             }
@@ -557,16 +569,17 @@ impl Competition {
 
     pub async fn pod_fetch_participants(
         pod_auction_client: &AuctionClient,
-        auction: &Auction,
+        auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<ParticipantDetached<Unranked>>, anyhow::Error> {
-        let pod_auction_id = match u64::try_from(auction.id().map(|id| id.0).unwrap_or_default()) {
-            Ok(id) => pod_sdk::U256::from(id),
-            Err(e) => {
-                tracing::error!(error = %e, "[pod] invalid auction id");
-                return Err(anyhow::Error::new(e));
-            }
-        };
+        let pod_auction_id = pod_sdk::U256::from(u64::try_from(auction_id.0).map_err(|e| {
+            tracing::error!(
+                error = %e,
+                auction_id = ?auction_id,
+                "[pod] invalid auction id"
+            );
+            e
+        })?);
 
         if let Err(e) = pod_auction_client
             .wait_for_auction_end(deadline.into())
@@ -625,6 +638,7 @@ impl Competition {
 
     pub async fn local_winner_selection(
         auction: &Auction,
+        auction_id: Id,
         participants: Vec<ParticipantDetached<Unranked>>,
         arbitrator: &LocalArbitrator,
     ) -> Result<(), anyhow::Error> {
@@ -632,7 +646,6 @@ impl Competition {
             arbitrator.arbitrate(participants, auction)
         }));
 
-        let auction_id = auction.id().map(|id| id.0).unwrap_or_default();
         match result {
             Ok(rank) => {
                 let winners = rank.winners().collect::<Vec<_>>();
@@ -644,7 +657,7 @@ impl Competition {
                 );
                 for winner in winners {
                     tracing::info!(
-                        auction_id = ?auction_id,
+                        auction_id = ?auction_id.0,
                         submission_address = %winner.submission_address().to_string(),
                         computed_score = ?winner.computed_score(),
                         "[pod] local winner selected"
