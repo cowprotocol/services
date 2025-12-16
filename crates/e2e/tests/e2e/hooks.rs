@@ -306,10 +306,7 @@ async fn signature(web3: Web3) {
     );
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(safe.address(), 5u64.eth()).await;
 
@@ -432,10 +429,7 @@ async fn partial_fills(web3: Web3) {
         .unwrap();
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     let sell_token = onchain.contracts().weth.clone();
@@ -588,10 +582,7 @@ async fn quote_verification(web3: Web3) {
     );
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(safe.address(), 5u64.eth()).await;
 
