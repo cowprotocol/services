@@ -178,14 +178,7 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
-        tracing::error!("pod provider trying to build....");
         let pod_provider = Self::build_pod_provider(&config).await;
-        if pod_provider.is_none() {
-            tracing::error!("pod provider not built....");
-        }
-        else {
-            tracing::error!("pod provider OK built....");
-        }
 
         let arbitrator = LocalArbitrator {
             max_winners: 10,
