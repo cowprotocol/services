@@ -63,11 +63,7 @@ async fn gas_limit(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let cow = onchain
-        .deploy_cow_weth_pool(
-            1_000_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_cow_weth_pool(1_000_000u64.eth(), 1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts and approve relayer
@@ -121,11 +117,7 @@ async fn allowance(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let cow = onchain
-        .deploy_cow_weth_pool(
-            1_000_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_cow_weth_pool(1_000_000u64.eth(), 1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts

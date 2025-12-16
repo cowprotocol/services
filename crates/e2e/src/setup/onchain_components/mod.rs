@@ -561,14 +561,14 @@ impl OnchainComponents {
         .expect("Uniswap V2 pair couldn't mint");
     }
 
-    pub async fn deploy_cow_token(&self, supply: U256) -> CowToken {
+    pub async fn deploy_cow_token(&self, supply: ::alloy::primitives::U256) -> CowToken {
         let holder = NetworkWallet::<Ethereum>::default_signer_address(&self.web3().wallet);
         let holder = Account::Local(holder.into_legacy(), None);
         let contract = CowProtocolToken::CowProtocolToken::deploy(
             self.web3.alloy.clone(),
             holder.address().into_alloy(),
             holder.address().into_alloy(),
-            supply.into_alloy(),
+            supply,
         )
         .await
         .expect("CowProtocolToken deployment failed");
@@ -577,16 +577,16 @@ impl OnchainComponents {
 
     pub async fn deploy_cow_weth_pool(
         &self,
-        cow_supply: U256,
-        cow_amount: U256,
-        weth_amount: U256,
+        cow_supply: ::alloy::primitives::U256,
+        cow_amount: ::alloy::primitives::U256,
+        weth_amount: ::alloy::primitives::U256,
     ) -> CowToken {
         let cow = self.deploy_cow_token(cow_supply).await;
 
         self.contracts
             .weth
             .deposit()
-            .value(weth_amount.into_alloy())
+            .value(weth_amount)
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
@@ -601,7 +601,7 @@ impl OnchainComponents {
             .unwrap();
         cow.approve(
             *self.contracts.uniswap_v2_router.address(),
-            cow_amount.into_alloy(),
+            cow_amount,
         )
         .from(cow.holder.address().into_alloy())
         .send_and_watch()
@@ -611,7 +611,7 @@ impl OnchainComponents {
             .weth
             .approve(
                 *self.contracts.uniswap_v2_router.address(),
-                weth_amount.into_alloy(),
+                weth_amount,
             )
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
@@ -622,8 +622,8 @@ impl OnchainComponents {
             .addLiquidity(
                 *cow.address(),
                 *self.contracts.weth.address(),
-                cow_amount.into_alloy(),
-                weth_amount.into_alloy(),
+                cow_amount,
+                weth_amount,
                 ::alloy::primitives::U256::ZERO,
                 ::alloy::primitives::U256::ZERO,
                 cow.holder.address().into_alloy(),

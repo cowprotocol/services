@@ -172,7 +172,7 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
-    let sell_amount = 10u64.eth().into_legacy();
+    let sell_amount = 10u64.eth();
     let [limit_quote_before, market_quote_before, partner_fee_quote] =
         futures::future::try_join_all(
             [
@@ -186,7 +186,7 @@ async fn combined_protocol_fees(web3: Web3) {
                     *onchain.contracts().weth.address(),
                     *token.address(),
                     OrderKind::Sell,
-                    sell_amount.into_alloy(),
+                    sell_amount,
                     quote_valid_to,
                 )
             }),
@@ -197,7 +197,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .expect("Expected exactly four elements");
 
     let market_price_improvement_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is in-market
         buy_amount: market_quote_before.quote.buy_amount * U256::from(2) / U256::from(3),
         ..sell_order_from_quote(&market_quote_before)
@@ -208,7 +208,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let limit_surplus_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is out-of-market
         buy_amount: limit_quote_before.quote.buy_amount * U256::from(3) / U256::from(2),
         ..sell_order_from_quote(&limit_quote_before)
@@ -219,7 +219,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let partner_fee_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is out-of-market
         buy_amount: (partner_fee_quote.quote.buy_amount * U256::from(3) / U256::from(2)),
         app_data: partner_fee_app_data.clone(),
@@ -251,7 +251,7 @@ async fn combined_protocol_fees(web3: Web3) {
             *onchain.contracts().weth.address(),
             *market_order_token.address(),
             OrderKind::Sell,
-            sell_amount.into_alloy(),
+            sell_amount,
             model::time::now_in_epoch_seconds() + 300,
         )
         .await
@@ -281,7 +281,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 *onchain.contracts().weth.address(),
                 *token.address(),
                 OrderKind::Sell,
-                sell_amount.into_alloy(),
+                sell_amount,
                 quote_valid_to,
             )
         }),

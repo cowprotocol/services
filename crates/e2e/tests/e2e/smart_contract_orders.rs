@@ -1,11 +1,7 @@
 use {
     ::alloy::primitives::Address,
     e2e::setup::{safe::Safe, *},
-    ethcontract::U256,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -164,11 +160,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         .unwrap();
 
     let cow = onchain
-        .deploy_cow_weth_pool(
-            1_000_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_cow_weth_pool(1_000_000u64.eth(), 1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts and approve relayer
@@ -196,8 +188,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         .await;
 
     // Use 1M gas units during signature verification
-    let mut signature = [0; 32];
-    U256::exp10(6).to_big_endian(&mut signature);
+    let signature = ::alloy::primitives::U256::from(1_000_000).to_be_bytes::<32>();
 
     let order = OrderCreation {
         sell_token: *cow.address(),
