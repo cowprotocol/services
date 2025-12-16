@@ -6,6 +6,7 @@ use {
     },
     alloy::{
         primitives::{Address, U256},
+        providers::{Provider, ext::AnvilApi},
         signers::local::{MnemonicBuilder, PrivateKeySigner},
         sol_types::SolCall,
     },
@@ -340,15 +341,17 @@ impl Blockchain {
                 }
                 code
             };
-            let settlement_code = web3
-                .eth()
-                .code(settlement.address().into_legacy(), None)
+            web3.alloy
+                .anvil_set_code(vault_relayer, vault_relayer_code.into())
                 .await
-                .unwrap()
-                .0;
+                .unwrap();
 
-            set_code(&web3, vault_relayer, &vault_relayer_code).await;
-            set_code(&web3, settlement_address, &settlement_code).await;
+            // Note: (settlement.address() == authenticator_address) != settlement_address
+            let settlement_code = web3.alloy.get_code_at(*settlement.address()).await.unwrap();
+            web3.alloy
+                .anvil_set_code(settlement_address, settlement_code)
+                .await
+                .unwrap();
 
             settlement =
                 GPv2Settlement::GPv2Settlement::new(settlement_address, web3.alloy.clone());
@@ -980,7 +983,7 @@ impl Drop for Node {
 /// wait for transactions to be confirmed before proceeding with the test. When
 /// switching from geth back to hardhat, this function can be removed.
 pub async fn wait_for<T>(web3: &Web3, fut: impl Future<Output = T>) -> T {
-    let block = web3.eth().block_number().await.unwrap().as_u64();
+    let block = web3.alloy.get_block_number().await.unwrap();
     let result = fut.await;
     wait_for_block(web3, block + 1).await;
     result
@@ -990,7 +993,7 @@ pub async fn wait_for<T>(web3: &Web3, fut: impl Future<Output = T>) -> T {
 pub async fn wait_for_block(web3: &Web3, block: u64) {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
-            let next_block = web3.eth().block_number().await.unwrap().as_u64();
+            let next_block = web3.alloy.get_block_number().await.unwrap();
             if next_block >= block {
                 break;
             }
@@ -999,17 +1002,4 @@ pub async fn wait_for_block(web3: &Web3, block: u64) {
     })
     .await
     .expect("timeout while waiting for next block to be mined");
-}
-
-/// Sets code at a specific address for testing.
-pub async fn set_code(web3: &Web3, address: eth::Address, code: &[u8]) {
-    use web3::Transport;
-
-    web3.transport()
-        .execute(
-            "anvil_setCode",
-            vec![json!(address), json!(const_hex::encode_prefixed(code))],
-        )
-        .await
-        .unwrap();
 }

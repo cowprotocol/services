@@ -3033,6 +3033,7 @@ dependencies = [
  "futures",
  "hex-literal",
  "itertools 0.14.0",
+ "jsonrpc-core",
  "maplit",
  "mockall",
  "observe",
@@ -6443,7 +6444,6 @@ dependencies = [
  "tracing",
  "url",
  "vergen",
- "web3",
 ]
 
 [[package]]

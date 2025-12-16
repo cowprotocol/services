@@ -1,5 +1,4 @@
 use {
-    ethcontract::jsonrpc as jsonrpc_core,
     futures::{FutureExt, future::BoxFuture},
     jsonrpc_core::types::{Call, Output, Request, Value},
     observe::tracing::tracing_headers,
