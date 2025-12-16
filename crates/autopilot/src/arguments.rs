@@ -606,7 +606,7 @@ pub struct FeePoliciesConfig {
     /// in the bucket will use the custom fee. Useful for
     /// stablecoin-to-stablecoin trades or specific token pairs (2-token
     /// buckets). Multiple buckets can be separated by commas.
-    #[clap(long, env)]
+    #[clap(long, env, value_delimiter = ',')]
     pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
 
     /// Enable volume fees for trades where sell token equals buy token.
