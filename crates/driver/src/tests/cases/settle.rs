@@ -59,7 +59,7 @@ async fn solution_not_available() {
 }
 
 /// Checks that settlements with revert risk are not submitted via public
-/// mempool.
+/// mempool if at least 1 revert protected mempool exists.
 #[tokio::test]
 #[ignore]
 async fn private_rpc_with_high_risk_solution() {
@@ -68,9 +68,12 @@ async fn private_rpc_with_high_risk_solution() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
-        .additional_mempools(vec![
-            "http://localhost:8545".parse().unwrap(),
-            "http://non-existant:8545".parse().unwrap(),
+        .mempools(vec![
+            tests::setup::Mempool::Default,
+            tests::setup::Mempool::Private {
+                url: Some("http://non-existant:8545".to_string()),
+                mines_reverting_txs: false,
+            },
         ])
         .done()
         .await;
