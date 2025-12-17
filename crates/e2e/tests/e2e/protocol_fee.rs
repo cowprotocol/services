@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::U256,
+    ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
@@ -205,7 +205,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .expect("Expected exactly four elements");
 
     let market_price_improvement_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is in-market
         buy_amount: market_quote_before.quote.buy_amount * U256::from(2) / U256::from(3),
         ..sell_order_from_quote(&market_quote_before)
@@ -216,7 +216,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let limit_surplus_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is out-of-market
         buy_amount: limit_quote_before.quote.buy_amount * U256::from(3) / U256::from(2),
         ..sell_order_from_quote(&limit_quote_before)
@@ -227,7 +227,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let partner_fee_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is out-of-market
         buy_amount: (partner_fee_quote.quote.buy_amount * U256::from(3) / U256::from(2)),
         app_data: partner_fee_app_data.clone(),
@@ -1119,7 +1119,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .unwrap();
 
     let usdc_dai_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         buy_amount: usdc_dai_quote.quote.buy_amount * U256::from(9) / U256::from(10),
         ..sell_order_from_quote(&usdc_dai_quote)
     }
@@ -1144,7 +1144,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .unwrap();
 
     let dai_usdt_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         buy_amount: dai_usdt_quote.quote.buy_amount * U256::from(9) / U256::from(10),
         ..sell_order_from_quote(&dai_usdt_quote)
     }
@@ -1169,7 +1169,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .unwrap();
 
     let usdc_weth_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         buy_amount: usdc_weth_quote.quote.buy_amount * U256::from(9) / U256::from(10),
         ..sell_order_from_quote(&usdc_weth_quote)
     }
@@ -1214,7 +1214,7 @@ async fn volume_fee_overrides(web3: Web3) {
 
 fn assert_volume_fee(
     trade: &model::trade::Trade,
-    expected_fee_token: alloy::primitives::Address,
+    expected_fee_token: ::alloy::primitives::Address,
     expected_factor: f64,
     sell_amount: U256,
 ) {
