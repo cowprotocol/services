@@ -5,14 +5,13 @@ use {
         signers::{SignerSync, local::PrivateKeySigner},
     },
     anyhow::{Context as _, Result, ensure},
-    secp256k1::SecretKey,
     serde::{Deserialize, Serialize, de},
     std::{
         convert::TryInto as _,
         fmt::{self, Debug, Formatter},
     },
     web3::{
-        signing::{self, Key, SecretKeyRef},
+        signing::{self},
         types::{H256, Recovery},
     },
 };
@@ -349,28 +348,17 @@ impl EcdsaSignature {
         key: &PrivateKeySigner,
     ) -> Self {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
-        let binding = SecretKey::from_slice(key.to_bytes().as_slice()).unwrap();
-        let pk = SecretKeyRef::new(&binding);
-        let s1 = pk.sign(&message.0, None).unwrap();
-
-        let s1 = Self {
-            v: s1.v as u8,
-            r: s1.r.0.into(),
-            s: s1.s.0.into(),
-        };
-
         // Unwrap because the only error is for invalid messages which we don't create.
         let signature = key.sign_hash_sync(&message).unwrap();
-
-        let s2 = Self {
+        Self {
+            // The 27 is slightly magic, it comes from the Electrum notation
+            // https://github.com/tomusdrw/rust-web3/blob/8d889ae3270508f1e68b6a29bbe51b2bedf7fb1e/src/signing.rs#L107-L113
+            // we don't change the number according to the chain id as before the alloy migration
+            // we were not using chain replay protection
             v: signature.recid().to_byte() + 27,
             r: signature.r().into(),
             s: signature.s().into(),
-        };
-
-        assert_eq!(s1, s2);
-
-        s2
+        }
     }
 
     /// Returns an arbitrary non-zero signature that can be used for recovery
