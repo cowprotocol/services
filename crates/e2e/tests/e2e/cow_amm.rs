@@ -206,9 +206,7 @@ async fn cow_amm_jit(web3: Web3) {
     // the past so the computer's current time is way ahead of the blockchain.
     let block = web3
         .alloy
-        .get_block(alloy::eips::BlockId::Number(
-            alloy::eips::BlockNumberOrTag::Latest,
-        ))
+        .get_block(alloy::eips::BlockId::latest())
         .await
         .unwrap()
         .unwrap();
@@ -841,9 +839,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // Get the current block timestamp
     let block = web3
         .alloy
-        .get_block(alloy::eips::BlockId::Number(
-            alloy::eips::BlockNumberOrTag::Latest,
-        ))
+        .get_block(alloy::eips::BlockId::latest())
         .await
         .unwrap()
         .unwrap();
