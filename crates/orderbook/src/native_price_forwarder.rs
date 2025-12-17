@@ -49,15 +49,28 @@ impl ForwardingNativePriceEstimator {
                 Ok(price.price)
             }
             StatusCode::NOT_FOUND => Err(PriceEstimationError::NoLiquidity),
-            StatusCode::BAD_REQUEST => Err(PriceEstimationError::UnsupportedToken {
-                token,
-                reason: "unsupported token".to_string(),
-            }),
+            StatusCode::BAD_REQUEST => {
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "unknown error".to_string());
+                Err(PriceEstimationError::UnsupportedToken {
+                    token,
+                    reason: error_text,
+                })
+            }
             StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
-            _ => Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
-                "autopilot returned status {}",
-                response.status()
-            ))),
+            status => {
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| format!("HTTP {}", status));
+                Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
+                    "autopilot returned status {}: {}",
+                    status,
+                    error_text
+                )))
+            }
         }
     }
 }
