@@ -243,28 +243,28 @@ async fn create_config_file(
 
     for mempool in &config.mempools {
         match mempool {
-            Mempool::Public => {
-                write!(
-                    file,
-                    r#"[[submission.mempool]]
-                    mempool = "public"
-                    additional-tip-percentage = 0.0
-                    "#,
-                )
-                .unwrap();
-            }
-            Mempool::Private { url } => {
-                write!(
-                    file,
-                    r#"[[submission.mempool]]
-                    mempool = "mev-blocker"
-                    additional-tip-percentage = 0.0
+            Mempool::Default => write!(
+                file,
+                r#"[[submission.mempool]]
                     url = "{}"
+                    additional-tip-percentage = 0.0
                     "#,
-                    url.clone().unwrap_or(blockchain.web3_url.clone()),
-                )
-                .unwrap();
-            }
+                blockchain.web3_url,
+            )
+            .unwrap(),
+            Mempool::Private {
+                url,
+                mines_reverting_txs,
+            } => write!(
+                file,
+                r#"[[submission.mempool]]
+                    url = "{}"
+                    additional-tip-percentage = 0.0
+                    mines-reverting-txs = {mines_reverting_txs}
+                    "#,
+                url.clone().unwrap_or(blockchain.web3_url.clone()),
+            )
+            .unwrap(),
         }
     }
 
