@@ -46,7 +46,6 @@ impl NativePriceProxy {
                         .map(|pq: &axum::http::uri::PathAndQuery| pq.as_str())
                         .unwrap_or("");
 
-                    // Try current active backend
                     let active = *state.active.read().await;
                     let (current_url, fallback) = match active {
                         ActiveBackend::Primary => (
@@ -67,12 +66,10 @@ impl NativePriceProxy {
                                 ?active,
                                 "active backend failed, switching to fallback"
                             );
-                            // Switch to fallback
                             *state.active.write().await = fallback;
                         }
                     }
 
-                    // Try fallback backend
                     let fallback_url = match fallback {
                         ActiveBackend::Primary => format!("{}{}", state.primary, path),
                         ActiveBackend::Secondary => format!("{}{}", state.secondary, path),

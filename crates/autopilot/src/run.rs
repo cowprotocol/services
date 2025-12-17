@@ -530,12 +530,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
-    observe::metrics::serve_metrics(
-        liveness.clone(),
-        args.metrics_address,
-        Default::default(),
-        startup.clone(),
-    );
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let native_price_api_task = tokio::spawn(infra::api::serve(
@@ -544,6 +538,13 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
+
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        args.metrics_address,
+        Default::default(),
+        startup.clone(),
+    );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
