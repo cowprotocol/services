@@ -98,7 +98,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     onchain.mint_block().await;
 
     // Start tracking confirmed blocks so we can find the transaction later
-    let stream = web3
+    let block_stream = web3
         .alloy
         .watch_blocks()
         .await
@@ -130,7 +130,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     // Check that it's actually a cancellation
     let tx = tokio::time::timeout(
         TIMEOUT,
-        get_confirmed_transaction(solver.address(), &web3, stream),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
     )
     .await
     .unwrap();
@@ -196,7 +196,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     );
     services.create_order(&order).await.unwrap();
     // Start tracking confirmed blocks so we can find the transaction later
-    let stream = web3
+    let block_stream = web3
         .alloy
         .watch_blocks()
         .await
@@ -222,7 +222,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     // Wait for the settlement to be confirmed on chain
     let tx = tokio::time::timeout(
         Duration::from_secs(5),
-        get_confirmed_transaction(solver.address(), &web3, stream),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
     )
     .await
     .unwrap();
@@ -330,7 +330,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     assert!(services.create_order(&order).await.is_ok());
 
     // Start tracking confirmed blocks so we can find the transaction later
-    let stream = web3
+    let block_stream = web3
         .alloy
         .watch_blocks()
         .await
@@ -356,7 +356,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     // Wait for the settlement to be confirmed on chain
     let tx = tokio::time::timeout(
         Duration::from_secs(5),
-        get_confirmed_transaction(solver.address(), &web3, stream),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
     )
     .await
     .unwrap();
