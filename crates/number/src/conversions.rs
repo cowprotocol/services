@@ -121,8 +121,8 @@ pub mod alloy {
 
     // TODO: Figure out a nicer way to convert I512 to U256, as a follow-up task
     pub fn i512_to_u256(input: &I512) -> Result<U256> {
-        anyhow::ensure!(input >= &I512::ZERO, "input is not negative");
-        anyhow::ensure!(input < &I512::from(U256::MAX), "U256::MAX fits into I512");
+        anyhow::ensure!(input >= &I512::ZERO, "Negative input value");
+        anyhow::ensure!(input < &I512::from(U256::MAX), "Input exceeds U256::MAX");
         Ok(alloy::primitives::U256::from_be_slice(
             &input.to_be_bytes::<64>()[32..],
         ))

@@ -268,9 +268,7 @@ impl TradeVerifier {
                         *balance += number::conversions::alloy::i512_to_big_rational(&buy_amount)
                     });
             }
-            // It looks like the out_amount is 0 but only because the sell and buy tokens
-            // are the same.
-            //
+
             // The swap simulation computes the out_amount like this:
             // sell order => trader_balance_before - trader_balance_after
             // buy_order => trader_balance_after - trader_balance_before
@@ -301,11 +299,10 @@ impl TradeVerifier {
             // Meaning they can buy 1 wei for 0.1ETH + 1 wei, considering the costs
             //
             // The general formula being: correct_out_amount = query.input + out_amount
-            //
             if query.sell_token == query.buy_token {
                 summary.out_amount = I512::from(query.in_amount.get()) + summary.out_amount;
             } else if summary.out_amount < I512::ZERO {
-                tracing::error!("Trade out amount is negative");
+                tracing::debug!("Trade out amount is negative");
                 return Err(Error::TooInaccurate);
             }
         }
