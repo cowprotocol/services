@@ -63,7 +63,8 @@ pub fn get_applicable_volume_fee_factor(
         return None;
     }
 
-    // Check for token bucket overrides first (both tokens must be in the same bucket)
+    // Check for token bucket overrides first (both tokens must be in the same
+    // bucket)
     for fee_override in bucket_overrides {
         if fee_override.tokens.contains(&buy_token) && fee_override.tokens.contains(&sell_token) {
             return Some(fee_override.factor);
