@@ -61,10 +61,7 @@ async fn cow_amm_jit(web3: Web3) {
     let [bob, cow_amm_owner] = onchain.make_accounts(1000u64.eth()).await;
 
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            300_000u64.eth().into_legacy(),
-            100u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 100u64.eth())
         .await;
 
     // Fund the buffers with a lot of buy tokens so we can pay out the required
@@ -696,10 +693,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let [bob, cow_amm_owner] = onchain.make_accounts(1000u64.eth()).await;
 
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            300_000u64.eth().into_legacy(),
-            100u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 100u64.eth())
         .await;
 
     // No need to fund the buffers since we're testing the CoW AMM directly filling

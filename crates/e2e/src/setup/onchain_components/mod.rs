@@ -385,8 +385,8 @@ impl OnchainComponents {
     /// Deploy `N` tokens with WETH Uniswap pools.
     pub async fn deploy_tokens_with_weth_uni_v2_pools<const N: usize>(
         &self,
-        token_amount: U256,
-        weth_amount: U256,
+        token_amount: ::alloy::primitives::U256,
+        weth_amount: ::alloy::primitives::U256,
     ) -> [MintableToken; N] {
         let minter = Account::Local(
             self.web3
@@ -406,12 +406,12 @@ impl OnchainComponents {
     pub async fn seed_weth_uni_v2_pools(
         &self,
         tokens: impl IntoIterator<Item = &MintableToken>,
-        token_amount: U256,
-        weth_amount: U256,
+        token_amount: ::alloy::primitives::U256,
+        weth_amount: ::alloy::primitives::U256,
     ) {
         for MintableToken { contract, minter } in tokens {
             contract
-                .mint(minter.address().into_alloy(), token_amount.into_alloy())
+                .mint(minter.address().into_alloy(), token_amount)
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await
@@ -420,7 +420,7 @@ impl OnchainComponents {
             self.contracts
                 .weth
                 .deposit()
-                .value(weth_amount.into_alloy())
+                .value(weth_amount)
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await
@@ -435,10 +435,7 @@ impl OnchainComponents {
                 .unwrap();
 
             contract
-                .approve(
-                    *self.contracts.uniswap_v2_router.address(),
-                    token_amount.into_alloy(),
-                )
+                .approve(*self.contracts.uniswap_v2_router.address(), token_amount)
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await
@@ -446,10 +443,7 @@ impl OnchainComponents {
 
             self.contracts
                 .weth
-                .approve(
-                    *self.contracts.uniswap_v2_router.address(),
-                    weth_amount.into_alloy(),
-                )
+                .approve(*self.contracts.uniswap_v2_router.address(), weth_amount)
                 .from(minter.address().into_alloy())
                 .send_and_watch()
                 .await
@@ -460,8 +454,8 @@ impl OnchainComponents {
                 .addLiquidity(
                     *contract.address(),
                     *self.contracts.weth.address(),
-                    token_amount.into_alloy(),
-                    weth_amount.into_alloy(),
+                    token_amount,
+                    weth_amount,
                     ::alloy::primitives::U256::ZERO,
                     ::alloy::primitives::U256::ZERO,
                     minter.address().into_alloy(),
