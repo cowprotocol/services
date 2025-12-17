@@ -314,7 +314,7 @@ async fn create_config_file(
                endpoint = "http://{}"
                absolute-slippage = "{}"
                relative-slippage = "{}"
-               account = "0x{}"
+               account = "{}"
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
                fee-handler = {}
@@ -328,7 +328,7 @@ async fn create_config_file(
                 .map(|abs| abs.0)
                 .unwrap_or_default(),
             solver.slippage.relative,
-            const_hex::encode(solver.private_key.secret_bytes()),
+            solver.signer.to_bytes(),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),

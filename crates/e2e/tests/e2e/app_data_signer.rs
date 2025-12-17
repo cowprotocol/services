@@ -1,5 +1,5 @@
 use {
-    alloy::{primitives::Address, signers::local::PrivateKeySigner},
+    alloy::primitives::Address,
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
@@ -61,7 +61,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         order_creation.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            &PrivateKeySigner::from_slice(signer.private_key()).unwrap(),
+            &signer.signer,
         )
     };
 

@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    ::alloy::primitives::U256,
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::{
         CallBuilderExt,
@@ -121,7 +121,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
@@ -150,7 +150,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(solver.private_key()).unwrap(),
+        &solver.signer,
     );
 
     mock_solver.configure_solution(Some(Solution {

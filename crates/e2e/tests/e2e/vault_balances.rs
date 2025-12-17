@@ -1,5 +1,4 @@
 use {
-    ::alloy::signers::local::PrivateKeySigner,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
@@ -65,7 +64,7 @@ async fn vault_balances(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;

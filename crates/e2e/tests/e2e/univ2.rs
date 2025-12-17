@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    ::alloy::primitives::U256,
     contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::*,
@@ -65,7 +65,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 

@@ -2,7 +2,7 @@ use {
     alloy::{
         primitives::{Address, Bytes, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
-        signers::{SignerSync, local::PrivateKeySigner},
+        signers::SignerSync,
     },
     chrono::Utc,
     contracts::alloy::{ERC20, LiquoriceSettlement},
@@ -243,7 +243,7 @@ http-timeout = "10s"
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+            &trader.signer,
         );
         services.create_order(&order).await.unwrap()
     };
@@ -274,13 +274,14 @@ http-timeout = "10s"
             .unwrap();
 
         // Create Liquorice order signature
-        let signer = PrivateKeySigner::from_slice(liquorice_maker.private_key()).unwrap();
+        let liquorice_maker_address = liquorice_maker.address();
+        let signer = liquorice_maker.signer;
         let liquorice_order_signature = signer.sign_hash_sync(&liquorice_order_hash).unwrap();
 
         // Create Liquorice settlement calldata
         liquorice_settlement
             .settleSingle(
-                liquorice_maker.address(),
+                liquorice_maker_address,
                 liquorice_order.clone(),
                 LiquoriceSettlement::Signature::TypedSignature {
                     signatureType: 3,   // EIP712

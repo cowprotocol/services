@@ -1,5 +1,4 @@
 use {
-    ::alloy::signers::local::PrivateKeySigner,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     futures::FutureExt,
@@ -401,7 +400,7 @@ async fn quote_timeout(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     // order creation requests always use the default quote time

@@ -5,7 +5,6 @@ use {
             Provider,
             ext::{AnvilApi, ImpersonateConfig},
         },
-        signers::local::PrivateKeySigner,
     },
     contracts::alloy::{
         ERC20,
@@ -146,7 +145,7 @@ async fn cow_amm_jit(web3: Web3) {
             Bytes::copy_from_slice(&oracle_data),
             FixedBytes(APP_DATA),
         )
-        .from(cow_amm_owner.account().address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -301,7 +300,7 @@ async fn cow_amm_jit(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(bob.private_key()).unwrap(),
+        &bob.signer,
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
@@ -590,7 +589,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     // Warm up co-located driver by quoting the order (otherwise placing an order
@@ -782,7 +781,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             Bytes::copy_from_slice(&oracle_data),
             FixedBytes(APP_DATA),
         )
-        .from(cow_amm_owner.account().address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -1018,7 +1017,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(bob.private_key()).unwrap(),
+        &bob.signer,
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
