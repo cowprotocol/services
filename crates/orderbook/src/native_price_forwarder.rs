@@ -40,6 +40,7 @@ impl ForwardingNativePriceEstimator {
         let response = self
             .client
             .get(url)
+            .query(&[("timeout_ms", timeout.as_millis() as u64)])
             .timeout(timeout)
             .send()
             .await

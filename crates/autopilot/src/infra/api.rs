@@ -2,13 +2,14 @@ use {
     alloy::primitives::Address,
     axum::{
         Router,
-        extract::{Path, State as AxumState},
+        extract::{Path, Query, State as AxumState},
         http::StatusCode,
         response::{IntoResponse, Json, Response},
         routing::get,
     },
     model::quote::NativeTokenPrice,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
+    serde::Deserialize,
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
@@ -18,6 +19,14 @@ use {
 struct State {
     estimator: Arc<dyn NativePriceEstimating>,
     timeout: Duration,
+}
+
+#[derive(Debug, Deserialize)]
+struct NativePriceQuery {
+    /// Optional timeout in milliseconds for the price estimation request.
+    /// If not provided, uses the default timeout configured for autopilot.
+    #[serde(default)]
+    timeout_ms: Option<u64>,
 }
 
 pub async fn serve(
@@ -49,13 +58,15 @@ pub async fn serve(
 
 async fn get_native_price(
     Path(token): Path<Address>,
+    Query(query): Query<NativePriceQuery>,
     AxumState(state): AxumState<State>,
 ) -> Response {
-    match state
-        .estimator
-        .estimate_native_price(token, state.timeout)
-        .await
-    {
+    let timeout = query
+        .timeout_ms
+        .map(Duration::from_millis)
+        .unwrap_or(state.timeout);
+
+    match state.estimator.estimate_native_price(token, timeout).await {
         Ok(price) => Json(NativeTokenPrice { price }).into_response(),
         Err(err) => error_to_response(err),
     }
