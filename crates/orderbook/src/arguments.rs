@@ -46,6 +46,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub db_read_url: Option<Url>,
 
+    /// URL of the autopilot service's native price API.
+    /// If specified, forwards native price requests to autopilot.
+    /// Falls back to local estimation if autopilot is unreachable.
+    #[clap(long, env)]
+    pub autopilot_native_price_url: Option<Url>,
+
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
         long,
@@ -231,6 +237,7 @@ impl std::fmt::Display for Arguments {
             app_data_size_limit,
             db_write_url: db_url,
             db_read_url,
+            autopilot_native_price_url,
             max_gas_per_order,
             active_order_competition_threshold,
             volume_fee_config,
@@ -246,6 +253,7 @@ impl std::fmt::Display for Arguments {
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
+        display_option(f, "autopilot_native_price_url", autopilot_native_price_url)?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"

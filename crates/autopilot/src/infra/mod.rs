@@ -1,3 +1,4 @@
+pub mod api;
 pub mod blockchain;
 pub mod persistence;
 pub mod shadow;

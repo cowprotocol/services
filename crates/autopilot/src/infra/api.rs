@@ -1,0 +1,77 @@
+use {
+    alloy::primitives::Address,
+    axum::{
+        Router,
+        extract::{Path, State as AxumState},
+        http::StatusCode,
+        response::{IntoResponse, Json, Response},
+        routing::get,
+    },
+    model::quote::NativeTokenPrice,
+    observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
+    shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
+    std::{net::SocketAddr, sync::Arc, time::Duration},
+    tokio::sync::oneshot,
+};
+
+#[derive(Clone)]
+struct State {
+    estimator: Arc<dyn NativePriceEstimating>,
+    timeout: Duration,
+}
+
+pub async fn serve(
+    addr: SocketAddr,
+    estimator: Arc<dyn NativePriceEstimating>,
+    timeout: Duration,
+    shutdown: oneshot::Receiver<()>,
+) -> Result<(), hyper::Error> {
+    let state = State { estimator, timeout };
+
+    let app = Router::new()
+        .route("/native_price/:token", get(get_native_price))
+        .with_state(state)
+        .layer(
+            tower::ServiceBuilder::new()
+                .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
+                .map_request(record_trace_id),
+        );
+
+    let server = axum::Server::bind(&addr).serve(app.into_make_service());
+    tracing::info!(?addr, "serving native price API");
+
+    server
+        .with_graceful_shutdown(async {
+            shutdown.await.ok();
+        })
+        .await
+}
+
+async fn get_native_price(
+    Path(token): Path<Address>,
+    AxumState(state): AxumState<State>,
+) -> Response {
+    match state
+        .estimator
+        .estimate_native_price(token, state.timeout)
+        .await
+    {
+        Ok(price) => Json(NativeTokenPrice { price }).into_response(),
+        Err(err) => error_to_response(err),
+    }
+}
+
+fn error_to_response(err: PriceEstimationError) -> Response {
+    use PriceEstimationError::*;
+    match err {
+        NoLiquidity => (StatusCode::NOT_FOUND, "No liquidity").into_response(),
+        UnsupportedToken { .. } => (StatusCode::BAD_REQUEST, "Unsupported token").into_response(),
+        RateLimited => (StatusCode::TOO_MANY_REQUESTS, "Rate limited").into_response(),
+        UnsupportedOrderType(_) => {
+            (StatusCode::BAD_REQUEST, "Unsupported order type").into_response()
+        }
+        EstimatorInternal(_) | ProtocolInternal(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
+        }
+    }
+}

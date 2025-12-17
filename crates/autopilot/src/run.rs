@@ -537,6 +537,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         startup.clone(),
     );
 
+    let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
+    let native_price_api_task = tokio::spawn(infra::api::serve(
+        args.native_price_api_address,
+        native_price_estimator.clone(),
+        args.price_estimation.quote_timeout,
+        api_shutdown_receiver,
+    ));
+
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
         args.order_events_cleanup_threshold,
@@ -696,6 +704,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         competition_updates_sender,
     );
     run.run_forever(shutdown_controller).await;
+
+    api_shutdown_sender.send(()).ok();
+    native_price_api_task.await.ok();
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
