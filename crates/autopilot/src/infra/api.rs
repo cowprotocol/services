@@ -65,11 +65,17 @@ fn error_to_response(err: PriceEstimationError) -> Response {
     use PriceEstimationError::*;
     match err {
         NoLiquidity => (StatusCode::NOT_FOUND, "No liquidity").into_response(),
-        UnsupportedToken { .. } => (StatusCode::BAD_REQUEST, "Unsupported token").into_response(),
+        UnsupportedToken { token: _, reason } => (
+            StatusCode::BAD_REQUEST,
+            format!("Unsupported token, reason: {reason}"),
+        )
+            .into_response(),
         RateLimited => (StatusCode::TOO_MANY_REQUESTS, "Rate limited").into_response(),
-        UnsupportedOrderType(_) => {
-            (StatusCode::BAD_REQUEST, "Unsupported order type").into_response()
-        }
+        UnsupportedOrderType(reason) => (
+            StatusCode::BAD_REQUEST,
+            format!("Unsupported order type, reason: {reason}"),
+        )
+            .into_response(),
         EstimatorInternal(_) | ProtocolInternal(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
         }
