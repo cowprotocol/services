@@ -58,7 +58,7 @@ pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
 
 pub mod alloy {
     use {
-        alloy::primitives::U256,
+        alloy::primitives::{U256, aliases::I512},
         anyhow::{Result, ensure},
         bigdecimal::{BigDecimal, num_bigint::ToBigInt},
         num::{BigInt, BigRational, BigUint, Zero, bigint::Sign},
@@ -103,6 +103,29 @@ pub mod alloy {
     pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
         let big_uint = u256_to_big_uint(u256);
         BigDecimal::from(BigInt::from(big_uint))
+    }
+
+    pub fn i512_to_big_int(i512: &I512) -> BigInt {
+        BigInt::from_bytes_be(
+            match i512.sign() {
+                alloy::primitives::Sign::Positive => Sign::Plus,
+                alloy::primitives::Sign::Negative => Sign::Minus,
+            },
+            &i512.abs().to_be_bytes::<64>(),
+        )
+    }
+
+    pub fn i512_to_big_rational(input: &I512) -> BigRational {
+        BigRational::new(i512_to_big_int(input), 1.into())
+    }
+
+    // TODO: Figure out a nicer way to convert I512 to U256, as a follow-up task
+    pub fn i512_to_u256(input: &I512) -> Result<U256> {
+        anyhow::ensure!(input >= &I512::ZERO, "Negative input value");
+        anyhow::ensure!(input < &I512::from(U256::MAX), "Input exceeds U256::MAX");
+        Ok(alloy::primitives::U256::from_be_slice(
+            &input.to_be_bytes::<64>()[32..],
+        ))
     }
 }
 

@@ -57,19 +57,15 @@ impl GasPriceEstimator {
             GasEstimatorType::Web3 => Arc::new(web3.legacy.clone()),
             GasEstimatorType::Alloy => Arc::new(AlloyGasPriceEstimator::new(web3.alloy.clone())),
         };
+        // TODO: simplify logic by moving gas price adjustments out of the individual
+        // mempool configs
         let additional_tip = mempools
             .iter()
-            .map(|mempool| match mempool.kind {
-                mempool::Kind::MEVBlocker {
-                    max_additional_tip,
-                    additional_tip_percentage,
-                    ..
-                } => (max_additional_tip, additional_tip_percentage),
-                mempool::Kind::Public {
-                    max_additional_tip,
-                    additional_tip_percentage,
-                    ..
-                } => (max_additional_tip, additional_tip_percentage),
+            .map(|mempool| {
+                (
+                    mempool.max_additional_tip,
+                    mempool.additional_tip_percentage,
+                )
             })
             .next()
             .unwrap_or((eth::U256::ZERO, 0.));
