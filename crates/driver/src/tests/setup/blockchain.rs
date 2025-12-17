@@ -206,7 +206,7 @@ impl QuotedOrder {
             receiver: self.order.receiver.map(IntoLegacy::into_legacy),
             user_fee: self.order.fee_amount.into_legacy(),
             side: self.order.side,
-            secret_key,
+            secret_key: PrivateKeySigner::from_bytes((&secret_key.secret_bytes()).into()).unwrap(),
             domain_separator: blockchain.domain_separator,
             owner: (&secret_key).address(),
             partially_fillable: matches!(self.order.partial, Partial::Yes { .. }),
@@ -761,22 +761,21 @@ impl Blockchain {
             let pair = self.find_pair(order);
             let execution = self.execution(order);
 
+            // Register the trader account as a signer
+            let trader_private_key_signer =
+                PrivateKeySigner::from_bytes(self.trader_secret_key.as_ref().into()).unwrap();
+            let trader_address = trader_private_key_signer.address();
+            self.web3.wallet.register_signer(trader_private_key_signer);
+
             // Fund the trader account with tokens needed for the solution.
-            let trader_account = ethcontract::Account::Offline(
-                ethcontract::PrivateKey::from_slice(self.trader_secret_key.as_ref()).unwrap(),
-                None,
-            );
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
             } else if order.funded {
                 self.tokens
                     .get(order.sell_token)
                     .unwrap()
-                    .mint(
-                        trader_account.address().into_alloy(),
-                        "1e-7".ether().into_wei() * execution.sell,
-                    )
-                    .from(trader_account.address().into_alloy())
+                    .mint(trader_address, "1e-7".ether().into_wei() * execution.sell)
+                    .from(trader_address)
                     .send_and_watch()
                     .await
                     .unwrap();
@@ -789,7 +788,7 @@ impl Blockchain {
                 .get(order.sell_token)
                 .unwrap()
                 .approve(vault_relayer, U256::MAX)
-                .from(trader_account.address().into_alloy())
+                .from(trader_address)
                 .send_and_watch()
                 .await
                 .unwrap();

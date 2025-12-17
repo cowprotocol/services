@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
@@ -24,10 +24,8 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -206,7 +204,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let limit_surplus_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
@@ -217,7 +215,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let partner_fee_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
@@ -229,7 +227,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
@@ -542,7 +540,7 @@ async fn surplus_partner_fee(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let order_uid = services.create_order(&order).await.unwrap();
@@ -797,7 +795,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
 
@@ -957,7 +955,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
 

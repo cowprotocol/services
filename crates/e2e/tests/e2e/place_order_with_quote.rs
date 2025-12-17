@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::alloy::{
@@ -12,10 +12,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::ops::DerefMut,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -103,7 +101,7 @@ async fn place_order_with_quote(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let order_uid = services.create_order(&order).await.unwrap();
 

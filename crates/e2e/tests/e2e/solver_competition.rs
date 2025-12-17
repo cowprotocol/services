@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::{
         CallBuilderExt,
@@ -10,11 +10,9 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -113,7 +111,7 @@ async fn solver_competition(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -261,7 +259,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
@@ -279,7 +277,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_b.private_key()).unwrap(),
     );
     services.create_order(&order_b).await.unwrap();
 
@@ -415,7 +413,7 @@ async fn store_filtered_solutions(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let order_ac = OrderCreation {
@@ -430,7 +428,7 @@ async fn store_filtered_solutions(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let order_ab_id = services.create_order(&order_ab).await.unwrap();

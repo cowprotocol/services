@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, Bytes, U256},
+        primitives::{Address, B256, Bytes, U256},
         rpc::types::TransactionReceipt,
     },
     anyhow::bail,
@@ -19,7 +19,7 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethcontract::{Account, H160, H256},
+    ethcontract::{Account, H160},
     ethrpc::{
         Web3,
         alloy::{
@@ -711,7 +711,7 @@ impl ExtendedEthFlowOrder {
         ethflow_contract: &CoWSwapEthFlow::Instance,
     ) -> EthFlowOrderOnchainStatus {
         ethflow_contract
-            .orders(self.hash(contracts, ethflow_contract).await.0.into())
+            .orders(self.hash(contracts, ethflow_contract).await)
             .call()
             .await
             .expect("Couldn't fetch order status")
@@ -735,10 +735,7 @@ impl ExtendedEthFlowOrder {
 
         let result = ethflow_contract
             .isValidSignature(
-                self.hash(contracts, ethflow_contract)
-                    .await
-                    .to_fixed_bytes()
-                    .into(),
+                self.hash(contracts, ethflow_contract).await,
                 Bytes::from(bytes),
             )
             .call()
@@ -783,7 +780,7 @@ impl ExtendedEthFlowOrder {
         &self,
         contracts: &Contracts,
         ethflow_contract: &CoWSwapEthFlow::Instance,
-    ) -> H256 {
+    ) -> B256 {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
@@ -793,13 +790,13 @@ impl ExtendedEthFlowOrder {
                 .expect("Couldn't query domain separator")
                 .0,
         );
-        H256(hashed_eip712_message(
+        hashed_eip712_message(
             &domain_separator,
             &self
                 .to_cow_swap_order(ethflow_contract, &contracts.weth)
                 .data
                 .hash_struct(),
-        ))
+        )
     }
 
     pub async fn uid(

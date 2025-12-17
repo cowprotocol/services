@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     database::order_events::OrderEventLabel,
     e2e::setup::*,
     ethrpc::alloy::{
@@ -21,10 +21,8 @@ use {
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -126,7 +124,7 @@ async fn order_cancellation(web3: Web3) {
             .sign(
                 EcdsaSigningScheme::Eip712,
                 &onchain.contracts().domain_separator,
-                SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+                &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
             );
             services.create_order(&order).await.unwrap()
         }
@@ -137,7 +135,7 @@ async fn order_cancellation(web3: Web3) {
         let cancellation = OrderCancellation::for_order(
             order_uid,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
         );
 
         async move {
@@ -163,7 +161,7 @@ async fn order_cancellation(web3: Web3) {
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
             &cancellations.hash_struct(),
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
         );
 
         let signed_cancellations = SignedOrderCancellations {

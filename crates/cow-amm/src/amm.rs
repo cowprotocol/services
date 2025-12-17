@@ -72,7 +72,7 @@ impl Amm {
         validator
             .validate_signature_and_get_additional_gas(SignatureCheck {
                 signer: self.address,
-                hash,
+                hash: hash.0,
                 signature: template.signature.to_bytes(),
                 interactions: template.pre_interactions.clone(),
                 balance_override: None,

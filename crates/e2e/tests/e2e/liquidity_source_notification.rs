@@ -31,10 +31,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -245,7 +243,7 @@ http-timeout = "10s"
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
         );
         services.create_order(&order).await.unwrap()
     };

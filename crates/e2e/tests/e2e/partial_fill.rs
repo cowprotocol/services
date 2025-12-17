@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     e2e::setup::*,
     ethrpc::alloy::{
         CallBuilderExt,
@@ -11,9 +11,7 @@ use {
     },
     number::units::EthUnit,
     orderbook::dto::order::Status,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -72,7 +70,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
 
