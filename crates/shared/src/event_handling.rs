@@ -6,12 +6,11 @@ use {
         sol_types::SolEventInterface,
     },
     anyhow::{Context, Result},
-    ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
     ethrpc::{
         alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     },
-    futures::{Stream, StreamExt, TryStreamExt, future},
+    futures::{Stream, StreamExt, future},
     primitive_types::H256,
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
@@ -88,14 +87,6 @@ pub trait EventStoring<E>: Send + Sync {
 }
 
 pub type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send>>;
-
-/// Defines an interface for retrieving events from a `ethcontract` crate
-/// contract. Should be removed once fully migrated to alloy.
-pub trait EthcontractEventRetrieving {
-    type Event: ethcontract::contract::ParseLog + 'static;
-
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
-}
 
 pub trait AlloyEventRetrieving {
     type Event: SolEventInterface + Send + Sync + 'static;
@@ -195,45 +186,6 @@ where
             .copied()
             .map(IntoLegacy::into_legacy)
             .collect()
-    }
-}
-
-/// Common `ethcontract` crate-related event retrieval patterns are extracted to
-/// this trait to avoid code duplication and any dependencies on the
-/// `ethcontract` crate in the main event handling traits. This will be removed
-/// once fully migrated to alloy.
-#[async_trait::async_trait]
-impl<T> EventRetrieving for T
-where
-    T: EthcontractEventRetrieving + Send + Sync,
-{
-    type Event = ethcontract::Event<T::Event>;
-
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: ethcontract::H256,
-    ) -> Result<Vec<Self::Event>> {
-        Ok(self.get_events().block_hash(block_hash).query().await?)
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<Self::Event>> {
-        let stream = self
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
-    }
-
-    fn address(&self) -> Vec<ethcontract::Address> {
-        self.get_events().filter.address
     }
 }
 
@@ -719,37 +671,6 @@ impl EventIndex {
             log_index,
         }
     }
-}
-
-impl From<&EventMetadata> for EventIndex {
-    fn from(meta: &EventMetadata) -> Self {
-        EventIndex {
-            block_number: meta.block_number,
-            log_index: meta.log_index as u64,
-        }
-    }
-}
-
-#[macro_export]
-macro_rules! impl_event_retrieving {
-    ($vis:vis $name:ident for $($contract_module:tt)*) => {
-        $vis struct $name($($contract_module)*::Contract);
-
-        impl $name {
-            #[allow(dead_code)]
-            pub fn new(instance: $($contract_module)*::Contract) -> Self {
-                Self(instance)
-            }
-        }
-
-        impl $crate::event_handling::EthcontractEventRetrieving for $name {
-            type Event = $($contract_module)*::Event;
-
-            fn get_events(&self) -> ::ethcontract::dyns::DynAllEventsBuilder<Self::Event> {
-                self.0.all_events()
-            }
-        }
-    };
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]

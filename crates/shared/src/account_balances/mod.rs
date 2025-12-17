@@ -1,7 +1,10 @@
 use {
-    crate::price_estimation::trade_verifier::balance_overrides::{
-        BalanceOverrideRequest,
-        BalanceOverriding,
+    crate::{
+        SIMULATION_ADDRESS,
+        price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrideRequest,
+            BalanceOverriding,
+        },
     },
     alloy::{
         primitives::{Address, U256},
@@ -178,7 +181,7 @@ impl BalanceSimulator {
             .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
             .with_cloned_provider()
             .state(overrides.into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy())
+            .from(*SIMULATION_ADDRESS)
             .call()
             .await?;
 

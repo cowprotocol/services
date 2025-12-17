@@ -1,32 +1,7 @@
 use {
-    anyhow::{Result, ensure},
-    num::{BigInt, BigRational, rational::Ratio},
+    num::{BigInt, BigRational},
     primitive_types::U256,
 };
-
-pub fn into_gas_price(gas_price: &gas_estimation::GasPrice1559) -> ethcontract::GasPrice {
-    (
-        gas_price.max_fee_per_gas,
-        gas_price.max_priority_fee_per_gas,
-    )
-        .into()
-}
-
-// Convenience:
-
-pub trait RatioExt<T> {
-    fn new_checked(numerator: T, denominator: T) -> Result<Ratio<T>>;
-}
-
-impl<T: num::Integer + Clone> RatioExt<T> for Ratio<T> {
-    fn new_checked(numerator: T, denominator: T) -> Result<Ratio<T>> {
-        ensure!(
-            !denominator.is_zero(),
-            "Cannot create Ratio with 0 denominator"
-        );
-        Ok(Ratio::new(numerator, denominator))
-    }
-}
 
 pub trait U256Ext: Sized {
     fn to_big_int(&self) -> BigInt;

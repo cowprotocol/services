@@ -5,7 +5,10 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    crate::price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
+    crate::{
+        SIMULATION_ADDRESS,
+        price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
+    },
     alloy::{
         dyn_abi::SolType,
         primitives::Address,
@@ -135,7 +138,7 @@ impl Validator {
             .settlement
             .simulateDelegatecall(self.signatures_address, validate_call.abi_encode().into())
             .state(overrides.clone().into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.address().into_alloy());
+            .from(*SIMULATION_ADDRESS);
 
         let result = simulation.clone().call().await;
 
