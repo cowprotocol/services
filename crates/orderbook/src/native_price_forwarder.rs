@@ -32,11 +32,14 @@ impl ForwardingNativePriceEstimator {
     }
 
     async fn try_fetch(&self, token: Address, timeout: Duration) -> NativePriceEstimateResult {
-        let url = format!("{}/native_price/{:?}", self.autopilot_url, token);
+        let url = self
+            .autopilot_url
+            .join(format!("native_price/{:?}", token).as_str())
+            .context("failed to construct autopilot URL")?;
 
         let response = self
             .client
-            .get(&url)
+            .get(url)
             .timeout(timeout)
             .send()
             .await

@@ -242,7 +242,7 @@ impl<'a> Services<'a> {
             "--quote-verification=enforce-when-possible".to_string(),
             "--db-read-url".to_string(),
             LOCAL_READ_ONLY_DB_URL.clone(),
-            "--autopilot-native-price-url=http://127.0.0.1:12088".to_string(),
+            "--autopilot-native-price-url=http://localhost:12088".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
