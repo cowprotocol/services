@@ -17,7 +17,7 @@ use {
         },
     },
     ::alloy::sol_types::SolCall,
-    alloy::primitives::{Address, address},
+    alloy::primitives::{Address, address, aliases::I512},
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::alloy::{
@@ -38,7 +38,10 @@ use {
     },
     num::BigRational,
     number::{
-        conversions::{alloy::u256_to_big_rational, big_decimal_to_big_rational},
+        conversions::{
+            alloy::{i512_to_u256, u256_to_big_rational},
+            big_decimal_to_big_rational,
+        },
         nonzero::NonZeroU256,
     },
     std::{
@@ -240,8 +243,8 @@ impl TradeVerifier {
             // settlement buffers to make the quote happen. When the settlement contract
             // itself is the trader or receiver these values need to be adjusted slightly.
             let (sell_amount, buy_amount) = match query.kind {
-                OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
-                OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
+                OrderKind::Sell => (I512::from(query.in_amount.get()), summary.out_amount),
+                OrderKind::Buy => (summary.out_amount, I512::from(query.in_amount.get())),
             };
 
             // It looks like the contract lost a lot of sell tokens but only because it was
@@ -251,7 +254,7 @@ impl TradeVerifier {
                     .tokens_lost
                     .entry(query.sell_token)
                     .and_modify(|balance| {
-                        *balance -= number::conversions::alloy::u256_to_big_rational(&sell_amount)
+                        *balance -= number::conversions::alloy::i512_to_big_rational(&sell_amount)
                     });
             }
             // It looks like the contract gained a lot of buy tokens (negative loss) but
@@ -262,8 +265,45 @@ impl TradeVerifier {
                     .tokens_lost
                     .entry(query.buy_token)
                     .and_modify(|balance| {
-                        *balance += number::conversions::alloy::u256_to_big_rational(&buy_amount)
+                        *balance += number::conversions::alloy::i512_to_big_rational(&buy_amount)
                     });
+            }
+
+            // The swap simulation computes the out_amount like this:
+            // sell order => trader_balance_before - trader_balance_after
+            // buy_order => trader_balance_after - trader_balance_before
+            //
+            // In case of sell=buy, the balance is only ever getting smaller, as the trader
+            // will always get less tokens out, which causes the above calculations to be
+            // wrong, and result in a negative number for sell order
+            //
+            // Example sell order:
+            // Trader having 1 ETH in their account, selling 0.3 ETH, with tx hooks cost of
+            // 0.1 ETH: in_amount = 0.3 ETH
+            // trader_balance_before = 1 ETH
+            // trader_balance_after = 0.9 ETH
+            // out_amount = 0.9 ETH - 1 ETH = -0.1 ETH
+            // The correct out_amount = 0.3 ETH (input) + (-0.1ETH) (out_amount) = 0.2 ETH
+            //
+            // Meaning they can sell 0.3 ETH for 0.2 ETH, considering the costs
+            //
+            // Example buy order:
+            // Trader having 1 ETH in their account, buying 1 wei, with tx hooks cost of 0.1
+            // ETH in_amount = 1 wei
+            // trader_balance_before = 1 ETH
+            // trader_balance_after = 0.9 ETH
+            // out_amount = 1 ETH - 0.9 ETH = 0.1 ETH
+            // The correct out_amount = 1 wei (input) + 0.1 ETH (out_amount) = 0.1000...1
+            // ETH
+            //
+            // Meaning they can buy 1 wei for 0.1ETH + 1 wei, considering the costs
+            //
+            // The general formula being: correct_out_amount = query.input + out_amount
+            if query.sell_token == query.buy_token {
+                summary.out_amount = I512::from(query.in_amount.get()) + summary.out_amount;
+            } else if summary.out_amount < I512::ZERO {
+                tracing::debug!("Trade out amount is negative");
+                return Err(Error::TooInaccurate);
             }
         }
 
@@ -275,7 +315,7 @@ impl TradeVerifier {
             verified_out_amount = ?summary.out_amount,
             promised_gas = trade.gas_estimate(),
             verified_gas = ?summary.gas_used,
-            out_diff = ?out_amount.abs_diff(summary.out_amount),
+            out_diff = ?(I512::from(*out_amount) - summary.out_amount).abs(),
             ?query,
             ?verification,
             "verified quote",
@@ -767,6 +807,7 @@ fn add_balance_queries(
         alloy::primitives::U256::ZERO,
         query_balance_call.into(),
     );
+
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
@@ -781,7 +822,7 @@ struct SettleOutput {
     gas_used: alloy::primitives::U256,
     /// `out_amount` perceived by the trader (sell token for buy orders or buy
     /// token for sell order)
-    out_amount: alloy::primitives::U256,
+    out_amount: alloy::primitives::aliases::I512,
     /// Tokens difference of the settlement contract before and after the trade.
     tokens_lost: HashMap<Address, BigRational>,
 }
@@ -807,8 +848,8 @@ impl SettleOutput {
             i += 1;
         }
 
-        let trader_balance_before = queriedBalances[i];
-        let trader_balance_after = queriedBalances[i + 1];
+        let trader_balance_before = I512::from(queriedBalances[i]);
+        let trader_balance_after = I512::from(queriedBalances[i + 1]);
         i += 2;
 
         // Get settlement contract balances after the trade
@@ -822,11 +863,10 @@ impl SettleOutput {
 
         let out_amount = match kind {
             // for sell orders we track the buy_token amount which increases during the settlement
-            OrderKind::Sell => trader_balance_after.checked_sub(trader_balance_before),
+            OrderKind::Sell => trader_balance_after - trader_balance_before,
             // for buy orders we track the sell_token amount which decreases during the settlement
-            OrderKind::Buy => trader_balance_before.checked_sub(trader_balance_after),
+            OrderKind::Buy => trader_balance_before - trader_balance_after,
         };
-        let out_amount = out_amount.context("underflow during out_amount computation")?;
 
         Ok(SettleOutput {
             gas_used: gasUsed,
@@ -846,12 +886,12 @@ fn ensure_quote_accuracy(
 ) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
-        OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
+        OrderKind::Buy => (summary.out_amount, I512::from(query.in_amount.get())),
+        OrderKind::Sell => (I512::from(query.in_amount.get()), summary.out_amount),
     };
     let (sell_amount, buy_amount) = (
-        number::conversions::alloy::u256_to_big_rational(&sell_amount),
-        number::conversions::alloy::u256_to_big_rational(&buy_amount),
+        number::conversions::alloy::i512_to_big_rational(&sell_amount),
+        number::conversions::alloy::i512_to_big_rational(&buy_amount),
     );
     let sell_token_lost_limit = inaccuracy_limit * &sell_amount;
     let buy_token_lost_limit = inaccuracy_limit * &buy_amount;
@@ -865,12 +905,12 @@ fn ensure_quote_accuracy(
         .get(&query.buy_token)
         .context("summary buy token is missing")?;
 
-    if *sell_token_lost >= sell_token_lost_limit || *buy_token_lost >= buy_token_lost_limit {
+    if (*sell_token_lost >= sell_token_lost_limit) || (*buy_token_lost >= buy_token_lost_limit) {
         return Err(Error::TooInaccurate);
     }
 
     Ok(Estimate {
-        out_amount: summary.out_amount,
+        out_amount: i512_to_u256(&summary.out_amount)?,
         gas: summary.gas_used.saturating_to(),
         solver: trade.solver().into_legacy(),
         verified: true,
@@ -929,7 +969,7 @@ mod tests {
         };
         let summary = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
         let estimate =
@@ -942,7 +982,7 @@ mod tests {
         };
         let summary = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
 
@@ -957,7 +997,7 @@ mod tests {
         };
         let summary = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
         let estimate =
@@ -971,7 +1011,7 @@ mod tests {
 
         let sell_more = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
 
@@ -991,7 +1031,7 @@ mod tests {
 
         let pay_out_more = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
 
@@ -1011,7 +1051,7 @@ mod tests {
 
         let sell_less = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
@@ -1026,7 +1066,7 @@ mod tests {
 
         let pay_out_less = SettleOutput {
             gas_used: U256::ZERO,
-            out_amount: U256::from(2_000),
+            out_amount: I512::try_from(2_000).unwrap(),
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine

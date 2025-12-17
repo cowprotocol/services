@@ -697,6 +697,10 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
             class: OrderClass::Market,
+            kind: match quote_request.side {
+                OrderQuoteSide::Buy { .. } => OrderKind::Buy,
+                OrderQuoteSide::Sell { .. } => OrderKind::Sell,
+            },
         }
     }
 }
