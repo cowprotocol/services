@@ -5,7 +5,7 @@ use {
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoLegacy, TryIntoAlloyAsync},
+        alloy::conversions::TryIntoAlloyAsync,
         block_stream::timestamp_of_current_block_in_seconds,
     },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
@@ -26,10 +26,7 @@ async fn refunder_tx(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [user, refunder] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     let services = Services::new(&onchain).await;

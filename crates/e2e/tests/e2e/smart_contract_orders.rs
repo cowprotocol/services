@@ -36,10 +36,7 @@ async fn smart_contract_orders(web3: Web3) {
     let safe = Safe::deploy(trader, web3.alloy.clone()).await;
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(safe.address(), 10u64.eth()).await;
 
