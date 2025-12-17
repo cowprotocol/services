@@ -8,12 +8,8 @@ use {
         },
     },
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethcontract::{BlockId, H160, H256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
-    futures::{Stream, StreamExt},
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    futures::StreamExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
