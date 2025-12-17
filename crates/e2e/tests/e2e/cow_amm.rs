@@ -268,14 +268,14 @@ async fn cow_amm_jit(web3: Web3) {
         .weth
         .deposit()
         .from(bob.address())
-        .value(alloy::primitives::U256::from(10u64.pow(17)))
+        .value(U256::from(10u64.pow(17)))
         .send_and_watch()
         .await
         .unwrap();
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance, alloy::primitives::U256::MAX)
+        .approve(onchain.contracts().allowance, U256::MAX)
         .from(bob.address())
         .send_and_watch()
         .await
@@ -284,7 +284,7 @@ async fn cow_amm_jit(web3: Web3) {
     // place user order with the same limit price as the CoW AMM order
     let user_order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount: alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(17)), // 0.1 WETH
+        sell_amount: U256::from(10).pow(U256::from(17)), // 0.1 WETH
         buy_token: *dai.address(),
         buy_amount: 230u64.eth(), // 230 DAI
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -301,7 +301,7 @@ async fn cow_amm_jit(web3: Web3) {
     let amm_balance_before = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
     let bob_balance_before = dai.balanceOf(bob.address()).call().await.unwrap();
 
-    let fee = alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(16)); // 0.01 WETH
+    let fee = U256::from(10).pow(U256::from(16)); // 0.01 WETH
 
     mock_solver.configure_solution(Some(Solution {
         id: 1,
@@ -425,9 +425,7 @@ async fn cow_amm_driver_support(web3: Web3) {
     // Assuming that the pool is balanced, imbalance it by ~30%, so the driver can
     // crate a CoW AMM JIT order. This imbalance shouldn't exceed 50%, since
     // such an order will be rejected by the SC: <https://github.com/balancer/cow-amm/blob/84750b705a02dd600766c5e6a9dd4370386cf0f1/src/contracts/BPool.sol#L250-L252>
-    let weth_to_send = weth_balance
-        .checked_div(alloy::primitives::U256::from(3))
-        .unwrap();
+    let weth_to_send = weth_balance.checked_div(U256::from(3)).unwrap();
     onchain
         .contracts()
         .weth

@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, U256},
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -34,7 +34,7 @@ pub struct Contracts {
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02::Instance,
     pub weth: WETH9::Instance,
-    pub allowance: alloy::primitives::Address,
+    pub allowance: Address,
     pub domain_separator: DomainSeparator,
     pub ethflows: Vec<CoWSwapEthFlow::Instance>,
     pub hooks: HooksTrampoline::Instance,
@@ -142,8 +142,8 @@ impl Contracts {
             web3.alloy.clone(),
             *balancer_authorizer.address(),
             *weth.address(),
-            alloy::primitives::U256::ZERO,
-            alloy::primitives::U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
         )
         .await
         .unwrap();
