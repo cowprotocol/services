@@ -639,6 +639,16 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         );
     }
 
+    if args.transfer_listener_enabled {
+        let ignored_addresses = vec![*eth.contracts().settlement().address(), vault_relayer];
+        let transfer_listener = crate::database::transfer_listener::TransferListener::new(
+            db_write.clone(),
+            web3.clone(),
+            ignored_addresses,
+        );
+        Maintenance::spawn_transfer_listener(transfer_listener, eth.current_block().clone());
+    }
+
     let run_loop_config = run_loop::Config {
         submission_deadline: args.submission_deadline as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
