@@ -578,23 +578,19 @@ impl FromStr for TokenBucketFeeOverride {
                 s
             )
         })?;
-
         let factor = factor_str
             .parse::<f64>()
             .context("failed to parse fee factor")?
             .try_into()
             .context("fee factor out of range")?;
-
-        let tokens: Result<HashSet<Address>, _> = tokens_str
+        let tokens: HashSet<Address> = tokens_str
             .split(';')
             .map(|token| {
                 token
                     .parse::<Address>()
                     .with_context(|| format!("failed to parse token address '{}'", token))
             })
-            .collect();
-
-        let tokens = tokens?;
+            .collect::<Result<HashSet<Address>>>()?;
 
         ensure!(
             tokens.len() >= 2,
