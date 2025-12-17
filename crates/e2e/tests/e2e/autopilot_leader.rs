@@ -17,7 +17,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_dual_autopilot_only_leader_produces_auctions() {
+async fn ocal_node_dual_autopilot_only_leader_produces_auctions() {
     run_test(dual_autopilot_only_leader_produces_auctions).await;
 }
 
