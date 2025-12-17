@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256 as AlloyU256,
+    alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
@@ -180,7 +180,7 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
-    let sell_amount = 10u64.eth().into_legacy();
+    let sell_amount = 10u64.eth();
     let [limit_quote_before, market_quote_before, partner_fee_quote] =
         futures::future::try_join_all(
             [
@@ -207,7 +207,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let market_price_improvement_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
         // to make sure the order is in-market
-        buy_amount: market_quote_before.quote.buy_amount * AlloyU256::from(2) / AlloyU256::from(3),
+        buy_amount: market_quote_before.quote.buy_amount * U256::from(2) / U256::from(3),
         ..sell_order_from_quote(&market_quote_before)
     }
     .sign(
@@ -218,7 +218,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let limit_surplus_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
         // to make sure the order is out-of-market
-        buy_amount: limit_quote_before.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2),
+        buy_amount: limit_quote_before.quote.buy_amount * U256::from(3) / U256::from(2),
         ..sell_order_from_quote(&limit_quote_before)
     }
     .sign(
@@ -229,7 +229,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
         // to make sure the order is out-of-market
-        buy_amount: (partner_fee_quote.quote.buy_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        buy_amount: (partner_fee_quote.quote.buy_amount * U256::from(3) / U256::from(2)),
         app_data: partner_fee_app_data.clone(),
         ..sell_order_from_quote(&partner_fee_quote)
     }
@@ -268,7 +268,7 @@ async fn combined_protocol_fees(web3: Web3) {
         // progressing due to tiny fluctuations in gas price which would lead to
         // errors down the line.
         new_market_order_quote.quote.buy_amount
-            > market_quote_before.quote.buy_amount * AlloyU256::from(2)
+            > market_quote_before.quote.buy_amount * U256::from(2)
     })
     .await
     .expect("Timeout waiting for eviction of the cached liquidity");
@@ -356,7 +356,7 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `market_price_improvement_policy.factor`, which is 0.3
     assert!(
         market_executed_fee_in_buy_token.into_alloy()
-            >= (market_quote_diff * AlloyU256::from(3) / AlloyU256::from(10))
+            >= (market_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
@@ -365,7 +365,7 @@ async fn combined_protocol_fees(web3: Web3) {
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
         partner_fee_executed_fee_in_buy_token.into_alloy()
-            >= (partner_fee_quote.quote.buy_amount * AlloyU256::from(2) / AlloyU256::from(100))
+            >= (partner_fee_quote.quote.buy_amount * U256::from(2) / U256::from(100))
     );
     let limit_quote_diff = partner_fee_quote_after
         .quote
@@ -374,7 +374,7 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(
         partner_fee_executed_fee_in_buy_token.into_alloy()
-            >= (limit_quote_diff * AlloyU256::from(3) / AlloyU256::from(10))
+            >= (limit_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
@@ -387,7 +387,7 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(
         limit_executed_fee_in_buy_token.into_alloy()
-            >= (limit_quote_diff * AlloyU256::from(3) / AlloyU256::from(10))
+            >= (limit_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let [
@@ -630,17 +630,17 @@ async fn get_quote(
     sell_token: Address,
     buy_token: Address,
     kind: OrderKind,
-    amount: ethcontract::U256,
+    amount: U256,
     valid_to: u32,
 ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
     let side = match kind {
         OrderKind::Sell => OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(amount.as_u128()).unwrap(),
+                value: NonZeroU256::try_from(amount.to::<u128>()).unwrap(),
             },
         },
         OrderKind::Buy => OrderQuoteSide::Buy {
-            buy_amount_after_fee: NonZeroU256::try_from(amount.as_u128()).unwrap(),
+            buy_amount_after_fee: NonZeroU256::try_from(amount.to::<u128>()).unwrap(),
         },
     };
     let quote_request = OrderQuoteRequest {
@@ -746,10 +746,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
             *token_dai.address(),
             1000u64.eth(),
             1000u64.eth(),
-            AlloyU256::ZERO,
-            AlloyU256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
             solver.address(),
-            AlloyU256::MAX,
+            U256::MAX,
         )
         .from(solver.address())
         .send_and_watch()
@@ -782,7 +782,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         token_gno.address().into_legacy(),
         token_dai.address().into_legacy(),
         OrderKind::Buy,
-        5u64.eth().into_legacy(),
+        5u64.eth(),
         model::time::now_in_epoch_seconds() + 300,
     )
     .await
@@ -791,7 +791,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_gno.address(),
-        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        sell_amount: (quote.sell_amount * U256::from(3) / U256::from(2)),
         buy_token: *token_dai.address(),
         buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -816,9 +816,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(
-        order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
-    );
+    assert!(order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / U256::from(10)));
 
     // Check settlement contract balance
     let balance_after = token_gno
@@ -905,10 +903,10 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
             *token_dai.address(),
             1000u64.eth(),
             1000u64.eth(),
-            AlloyU256::ZERO,
-            AlloyU256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
             solver.address(),
-            AlloyU256::MAX,
+            U256::MAX,
         )
         .from(solver.address())
         .send_and_watch()
@@ -941,7 +939,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         token_gno.address().into_legacy(),
         token_dai.address().into_legacy(),
         OrderKind::Buy,
-        5u64.eth().into_legacy(),
+        5u64.eth(),
         model::time::now_in_epoch_seconds() + 300,
     )
     .await
@@ -950,7 +948,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_gno.address(),
-        sell_amount: (quote.sell_amount * AlloyU256::from(3) / AlloyU256::from(2)),
+        sell_amount: (quote.sell_amount * U256::from(3) / U256::from(2)),
         buy_token: *token_dai.address(),
         buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -975,9 +973,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(
-        order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / AlloyU256::from(10))
-    );
+    assert!(order.metadata.executed_fee >= fee_in_buy_token + (quote.sell_amount / U256::from(10)));
 
     // Check settlement contract balance
     let balance_after = token_gno
@@ -1051,10 +1047,10 @@ async fn volume_fee_overrides(web3: Web3) {
                 *token_b.address(),
                 1000u64.eth(),
                 1000u64.eth(),
-                ::alloy::primitives::U256::ZERO,
-                ::alloy::primitives::U256::ZERO,
+                U256::ZERO,
+                U256::ZERO,
                 solver.address(),
-                ::alloy::primitives::U256::MAX,
+                U256::MAX,
             )
             .from(solver.address())
             .send_and_watch()
@@ -1107,7 +1103,7 @@ async fn volume_fee_overrides(web3: Web3) {
         )
         .await;
 
-    let sell_amount = 10u64.eth().into_legacy();
+    let sell_amount = 10u64.eth();
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
 
     // Test Case 1: USDC-DAI uses first bucket (2-token bucket, 0.05%)
@@ -1124,7 +1120,7 @@ async fn volume_fee_overrides(web3: Web3) {
 
     let usdc_dai_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
-        buy_amount: usdc_dai_quote.quote.buy_amount * AlloyU256::from(9) / AlloyU256::from(10),
+        buy_amount: usdc_dai_quote.quote.buy_amount * U256::from(9) / U256::from(10),
         ..sell_order_from_quote(&usdc_dai_quote)
     }
     .sign(
@@ -1149,7 +1145,7 @@ async fn volume_fee_overrides(web3: Web3) {
 
     let dai_usdt_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
-        buy_amount: dai_usdt_quote.quote.buy_amount * AlloyU256::from(9) / AlloyU256::from(10),
+        buy_amount: dai_usdt_quote.quote.buy_amount * U256::from(9) / U256::from(10),
         ..sell_order_from_quote(&dai_usdt_quote)
     }
     .sign(
@@ -1174,7 +1170,7 @@ async fn volume_fee_overrides(web3: Web3) {
 
     let usdc_weth_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
-        buy_amount: usdc_weth_quote.quote.buy_amount * AlloyU256::from(9) / AlloyU256::from(10),
+        buy_amount: usdc_weth_quote.quote.buy_amount * U256::from(9) / U256::from(10),
         ..sell_order_from_quote(&usdc_weth_quote)
     }
     .sign(
@@ -1218,9 +1214,9 @@ async fn volume_fee_overrides(web3: Web3) {
 
 fn assert_volume_fee(
     trade: &model::trade::Trade,
-    expected_fee_token: ::alloy::primitives::Address,
+    expected_fee_token: alloy::primitives::Address,
     expected_factor: f64,
-    sell_amount: ethcontract::U256,
+    sell_amount: U256,
 ) {
     assert_eq!(
         trade.executed_protocol_fees.len(),
@@ -1236,17 +1232,16 @@ fn assert_volume_fee(
         _ => panic!("Expected Volume fee policy, got {:?}", executed_fee.policy),
     }
 
-    let fee_amount = AlloyU256::from(executed_fee.amount);
+    let fee_amount = U256::from(executed_fee.amount);
     if expected_factor == 0.0 {
         assert!(fee_amount.is_zero(), "Fee should be zero for 0% factor");
     } else {
         // Integer math for: expected_fee = sell_amount * factor
         let factor_scaled = (expected_factor * 10_000.0) as u64;
-        let expected_fee =
-            sell_amount.into_alloy() * AlloyU256::from(factor_scaled) / AlloyU256::from(10_000);
+        let expected_fee = sell_amount * U256::from(factor_scaled) / U256::from(10_000);
 
-        let lower = expected_fee * AlloyU256::from(98) / AlloyU256::from(100);
-        let upper = expected_fee * AlloyU256::from(102) / AlloyU256::from(100);
+        let lower = expected_fee * U256::from(98) / U256::from(100);
+        let upper = expected_fee * U256::from(102) / U256::from(100);
         assert!(
             fee_amount >= lower && fee_amount <= upper,
             "Fee should be ~{expected_fee} (±2%), got {fee_amount}"
