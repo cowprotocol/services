@@ -422,8 +422,8 @@ async fn volume_fee(web3: Web3) {
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token, override_token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
+            1_000u64.eth(),
+            1_000u64.eth(),
         )
         .await;
 

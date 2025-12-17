@@ -1003,8 +1003,8 @@ async fn volume_fee_overrides(web3: Web3) {
     // Deploy tokens: USDC, DAI, USDT (stablecoins), and WETH (non-stablecoin)
     let [token_usdc, token_dai, token_usdt, token_weth] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(
-            1000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
+            1000u64.eth(),
+            1000u64.eth(),
         )
         .await;
 
