@@ -29,10 +29,7 @@ async fn eth_integration(web3: Web3) {
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(trader_a.address(), 51u64.eth()).await;
     token.mint(trader_b.address(), 51u64.eth()).await;

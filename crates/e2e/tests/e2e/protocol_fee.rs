@@ -89,7 +89,7 @@ async fn combined_protocol_fees(web3: Web3) {
         market_order_token,
         partner_fee_order_token,
     ] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth().into_legacy(), 20u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth(), 20u64.eth())
         .await;
 
     for token in &[
@@ -461,7 +461,7 @@ async fn surplus_partner_fee(web3: Web3) {
     let [solver] = onchain.make_solvers(200u64.eth()).await;
     let [trader] = onchain.make_accounts(200u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth().into_legacy(), 20u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth(), 20u64.eth())
         .await;
 
     token.mint(solver.address(), 1000u64.eth()).await;
@@ -692,10 +692,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -852,10 +849,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1000u64.eth())
         .await;
 
     // Fund trader accounts

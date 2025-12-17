@@ -9,11 +9,12 @@ use {
         signers::local::PrivateKeySigner,
     },
     e2e::{nodes::local_node::TestNodeApi, setup::*},
+    ethcontract::{BlockId, H160, H256},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
     },
-    futures::StreamExt,
+    futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -35,10 +36,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     let nonce = solver.nonce(&web3).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     onchain

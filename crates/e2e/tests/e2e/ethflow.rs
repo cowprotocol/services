@@ -95,10 +95,7 @@ async fn eth_flow_tx(web3: Web3) {
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            (DAI_PER_ETH * 1_000).eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools((DAI_PER_ETH * 1_000).eth(), 1_000u64.eth())
         .await;
 
     // Get a quote from the services
@@ -267,10 +264,7 @@ async fn eth_flow_without_quote(web3: Web3) {
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            (DAI_PER_ETH * 1_000).eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools((DAI_PER_ETH * 1_000).eth(), 1_000u64.eth())
         .await;
 
     let services = Services::new(&onchain).await;
@@ -321,10 +315,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let [solver] = onchain.make_solvers(2u64.eth()).await;
     let [trader, dummy_trader] = onchain.make_accounts(2u64.eth()).await;
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            (DAI_PER_ETH * 1000).eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools((DAI_PER_ETH * 1000).eth(), 1000u64.eth())
         .await;
 
     let services = Services::new(&onchain).await;
@@ -878,10 +869,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            (DAI_PER_ETH * 1_000).eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools((DAI_PER_ETH * 1_000).eth(), 1_000u64.eth())
         .await;
 
     let services = Services::new(&onchain).await;

@@ -27,10 +27,7 @@ async fn single_limit_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(100u64.eth()).await;
     let [trader] = onchain.make_accounts(100u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            300_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
         .await;
 
     token.mint(solver.address(), 100u64.eth()).await;

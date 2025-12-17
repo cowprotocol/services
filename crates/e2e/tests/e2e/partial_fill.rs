@@ -28,7 +28,7 @@ async fn test(web3: Web3) {
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     // Use a shallow pool to make partial fills easier to setup.
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth().into_legacy(), 10u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth(), 10u64.eth())
         .await;
 
     onchain

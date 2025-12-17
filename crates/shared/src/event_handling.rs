@@ -1021,8 +1021,9 @@ mod tests {
         let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
-        let storage = EventStorage { events: vec![] };
-        let current_block = web3.alloy.get_chain_id().await.unwrap();
+        let storage: EventStorage<GPv2Settlement::GPv2Settlement::GPv2SettlementEvents> =
+            EventStorage { events: vec![] };
+        let current_block = web3.alloy.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
@@ -1054,7 +1055,7 @@ mod tests {
             .await
             .unwrap();
 
-        let current_block = web3.alloy.get_chain_id().await.unwrap();
+        let current_block = web3.alloy.get_block_number().await.unwrap();
         // In this test we query for events multiple times. Newer events might be
         // included each time we query again for the same events, but we want to
         // disregard them.
