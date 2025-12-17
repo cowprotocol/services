@@ -1,6 +1,14 @@
 use {
     autopilot::shutdown_controller::ShutdownController,
-    e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
+    e2e::setup::{
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        colocation,
+        proxy::NativePriceProxy,
+        run_test,
+        wait_for_condition,
+    },
     ethrpc::{
         Web3,
         alloy::{
@@ -17,7 +25,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn ocal_node_dual_autopilot_only_leader_produces_auctions() {
+async fn local_node_dual_autopilot_only_leader_produces_auctions() {
     run_test(dual_autopilot_only_leader_produces_auctions).await;
 }
 
@@ -77,6 +85,13 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     let services = Services::new(&onchain).await;
     let (manual_shutdown, control) = ShutdownController::new_manual_shutdown();
 
+    // Start proxy for native price API with automatic failover
+    let _proxy = NativePriceProxy::start(
+        "127.0.0.1:9588".parse().unwrap(),
+        "http://127.0.0.1:12088".parse().unwrap(), // primary: leader
+        "http://127.0.0.1:12089".parse().unwrap(), // secondary: follower
+    );
+
     // Configure autopilot-leader only with test_solver
     let autopilot_leader = services.start_autopilot_with_shutdown_controller(None, vec![
         format!("--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
@@ -84,6 +99,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         "--metrics-address=0.0.0.0:9590".to_string(),
+        "--native-price-api-address=0.0.0.0:12088".to_string(), // Leader on port 12088
         "--enable-leader-lock=true".to_string(),
     ], control).await;
 
@@ -93,12 +109,14 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             const_hex::encode(solver2.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        "--native-price-api-address=0.0.0.0:12089".to_string(), // Follower on port 12089
         "--enable-leader-lock=true".to_string(),
     ]).await;
 
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver1,test_solver2|http://localhost:11088/test_solver2".to_string(),
+            "--autopilot-native-price-url=http://127.0.0.1:9588".to_string(), // Connect to proxy
         ])
         .await;
 
