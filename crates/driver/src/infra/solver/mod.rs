@@ -20,9 +20,14 @@ use {
         },
         util,
     },
+    alloy::{
+        consensus::SignableTransaction,
+        network::TxSigner,
+        primitives::Address,
+        signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
+    },
     anyhow::Result,
     derive_more::{From, Into},
-    ethrpc::alloy::conversions::IntoAlloy,
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
@@ -102,6 +107,44 @@ pub struct Solver {
 }
 
 #[derive(Debug, Clone)]
+pub enum Account {
+    PrivateKey(PrivateKeySigner),
+    Kms(AwsSigner),
+}
+
+#[async_trait::async_trait]
+impl TxSigner<Signature> for Account {
+    fn address(&self) -> Address {
+        match self {
+            Account::PrivateKey(local_signer) => local_signer.address(),
+            Account::Kms(aws_signer) => aws_signer.address(),
+        }
+    }
+
+    async fn sign_transaction(
+        &self,
+        tx: &mut dyn SignableTransaction<Signature>,
+    ) -> alloy::signers::Result<Signature> {
+        match self {
+            Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
+            Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
+        }
+    }
+}
+
+impl From<PrivateKeySigner> for Account {
+    fn from(value: PrivateKeySigner) -> Self {
+        Self::PrivateKey(value)
+    }
+}
+
+impl From<AwsSigner> for Account {
+    fn from(value: AwsSigner) -> Self {
+        Self::Kms(value)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     /// The endpoint of the solver, including the path (commonly "/solve").
     pub endpoint: url::Url,
@@ -111,7 +154,7 @@ pub struct Config {
     /// Whether or not liquidity is used by this solver.
     pub liquidity: Liquidity,
     /// The private key of this solver, used for settlement submission.
-    pub account: ethcontract::Account,
+    pub account: Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
@@ -190,11 +233,11 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.account.address().into_alloy()
+        self.config.account.address()
     }
 
     /// The account which should be used to sign settlements for this solver.
-    pub fn account(&self) -> ethcontract::Account {
+    pub fn account(&self) -> Account {
         self.config.account.clone()
     }
 
