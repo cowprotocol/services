@@ -1,3 +1,16 @@
+//! Simple HTTP reverse proxy with automatic failover for e2e testing.
+//!
+//! This module provides a test-only reverse proxy that simulates how Kubernetes
+//! service pools work in production. In production, when multiple instances of
+//! a service run (e.g., autopilot with leader/follower pattern), Kubernetes
+//! routes traffic to the active instance and automatically fails over to a
+//! backup when the primary becomes unavailable.
+//!
+//! The proxy maintains two backend URLs (primary and secondary) and
+//! automatically switches between them when the currently active backend fails.
+//! This allows e2e tests to simulate production failover behavior without
+//! requiring a full k8s cluster.
+
 use {
     axum::{Router, body::Body, http::Request, response::IntoResponse},
     std::{net::SocketAddr, sync::Arc},
@@ -7,7 +20,10 @@ use {
 
 /// HTTP reverse proxy with automatic failover that permanently switches
 /// to the fallback backend when the current backend fails.
-pub struct NativePriceProxy {
+///
+/// This simulates k8s service pools where traffic is automatically routed
+/// to healthy backend instances.
+pub struct ReverseProxy {
     _server_handle: JoinHandle<()>,
 }
 
@@ -24,7 +40,7 @@ enum ActiveBackend {
     Secondary,
 }
 
-impl NativePriceProxy {
+impl ReverseProxy {
     /// Start a new proxy server with automatic failover between backends
     pub fn start(listen_addr: SocketAddr, primary: Url, secondary: Url) -> Self {
         let state = ProxyState {

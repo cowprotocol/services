@@ -5,7 +5,7 @@ use {
         Services,
         TIMEOUT,
         colocation,
-        proxy::NativePriceProxy,
+        proxy::ReverseProxy,
         run_test,
         wait_for_condition,
     },
@@ -80,7 +80,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     let (manual_shutdown, control) = ShutdownController::new_manual_shutdown();
 
     // Start proxy for native price API with automatic failover
-    let _proxy = NativePriceProxy::start(
+    let _proxy = ReverseProxy::start(
         "0.0.0.0:9588".parse().unwrap(),
         "http://0.0.0.0:12088".parse().unwrap(), // autopilot_leader
         "http://0.0.0.0:12089".parse().unwrap(), // autopilot_follower
