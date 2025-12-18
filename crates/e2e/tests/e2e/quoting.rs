@@ -1,7 +1,7 @@
 use {
     ::alloy::signers::local::PrivateKeySigner,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -57,7 +57,7 @@ async fn test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -205,7 +205,7 @@ async fn uses_stale_liquidity(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -382,7 +382,7 @@ async fn quote_timeout(web3: Web3) {
     sell_token.mint(trader.address(), 1u64.eth()).await;
 
     sell_token
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -426,7 +426,7 @@ async fn volume_fee(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

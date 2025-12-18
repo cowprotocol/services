@@ -14,10 +14,7 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -291,7 +288,7 @@ async fn setup(
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.eth())
+        .approve(onchain.contracts().allowance, 1000u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await

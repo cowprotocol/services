@@ -11,10 +11,7 @@ use {
     app_data::{AppDataHash, hash_full_app_data},
     contracts::alloy::ERC20,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -96,7 +93,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_weth
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -307,9 +304,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     // Sometimes the API isnt ready to respond to the request immediately so we wait
     // a bit for success
     wait_for_condition(TIMEOUT, || async {
-        let auction_info = services
-            .get_solver_competition(solve_tx_hash.into_legacy())
-            .await;
+        let auction_info = services.get_solver_competition(solve_tx_hash).await;
 
         if let Ok(a) = auction_info {
             tracing::info!("Pulled auction id {:?}", a.auction_id);

@@ -137,7 +137,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), amount)
+        .approve(onchain.contracts().allowance, amount)
         .from(trader.address())
         .send_and_watch()
         .await

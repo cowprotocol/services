@@ -1,8 +1,7 @@
 use {
-    ::alloy::{providers::Provider, signers::local::PrivateKeySigner},
+    ::alloy::{primitives::Address, providers::Provider, signers::local::PrivateKeySigner},
     e2e::setup::*,
-    ethcontract::prelude::Address,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -34,14 +33,14 @@ async fn eth_integration(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 51u64.eth())
+        .approve(onchain.contracts().allowance, 51u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 51u64.eth())
+        .approve(onchain.contracts().allowance, 51u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -58,7 +57,7 @@ async fn eth_integration(web3: Web3) {
             let request = OrderQuoteRequest {
                 sell_token,
                 buy_token,
-                from: Address::default().into_alloy(),
+                from: Address::default(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(43u64.eth()).unwrap(),
