@@ -5,7 +5,7 @@ use {
     },
     alloy::providers::Provider,
     chain::Chain,
-    ethcontract::errors::ExecutionError,
+    ethcontract::{BlockNumber, errors::ExecutionError},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -198,7 +198,7 @@ impl Ethereum {
             .transport()
             .execute(
                 "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap(), "latest".into()],
+                vec![serde_json::to_value(&tx).unwrap(), "pending".into()],
             )
             .await?;
         if let Some(err) = json.get("error") {
@@ -226,7 +226,7 @@ impl Ethereum {
                         .map(IntoLegacy::into_legacy),
                     ..Default::default()
                 },
-                None,
+                Some(BlockNumber::Pending),
             )
             .await
             .map(IntoAlloy::into_alloy)
