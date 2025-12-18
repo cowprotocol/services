@@ -270,6 +270,7 @@ async fn quote_timeout(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let solver_address = solver.address();
     let [trader] = onchain.make_accounts(2u64.eth()).await;
     let [sell_token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
@@ -306,6 +307,20 @@ async fn quote_timeout(web3: Web3) {
     /// The default and maximum quote timeout enforced by the backend.
     /// (configurable but always 500ms in e2e tests)
     const MAX_QUOTE_TIME_MS: u64 = 500;
+
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    const_hex::encode(solver_address)
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
 
     services
         .start_api(vec![
