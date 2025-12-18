@@ -121,10 +121,16 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .await
         .expect("Must be able to set mining interval");
 
+    tracing::error!(">>> solver addr {}", solver.address());
+
     // Wait for cancellation tx to appear
-    wait_for_condition(TIMEOUT, || async { solver.nonce(&web3).await == nonce + 1 })
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        let n = solver.nonce(&web3).await;
+        tracing::error!(">>> got {}, expected {}", n, nonce + 1);
+        n == nonce + 1
+    })
+    .await
+    .unwrap();
 
     // Check that it's actually a cancellation
     let tx = tokio::time::timeout(
