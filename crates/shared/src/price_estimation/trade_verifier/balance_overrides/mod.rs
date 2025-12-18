@@ -319,7 +319,7 @@ impl BalanceOverrides {
         // which we don't want to cache.
         if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
             tracing::debug!(?token, ?strategy, "caching auto-detected strategy");
-            if let Ok(s) = strategy.as_ref() {
+            if let Ok(strategy) = strategy.as_ref() {
                 let cache_key = (
                     token,
                     if s.is_valid_for_all_holders() {
