@@ -131,7 +131,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     token.mint(trader.address(), 10u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

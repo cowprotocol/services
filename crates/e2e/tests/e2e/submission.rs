@@ -1,11 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethcontract::{BlockId, H160, H256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoLegacy},
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
@@ -152,7 +148,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     token.mint(trader.address(), 10u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -180,7 +176,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     assert_eq!(initial_balance, 10u64.eth());
 
     let sell_amount = 1u64.eth(); // Sell 1 eth
-    let buy_amount = 1u64.eth() - U256::from(10).pow(U256::from(16)); // For 0.99 wei, for order to execute
+    let buy_amount = 0.99.eth(); // For 0.99 ETH, for order to execute
 
     tracing::info!("Placing order");
     let order = OrderCreation {
@@ -268,7 +264,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     token.mint(trader.address(), 10u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
