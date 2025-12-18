@@ -22,7 +22,6 @@ use {
         sync::Arc,
     },
     thiserror::Error,
-    web3::signing,
 };
 
 // These are the solady magic bytes for user balances, with padding
@@ -70,13 +69,13 @@ fn create_strategies_from_slots(
     buf[12..32].copy_from_slice(holder.as_slice());
     for i in 0..heuristic_depth {
         U256::from(i).to_big_endian(&mut buf[32..64]);
-        let slot_hash = B256::from(signing::keccak256(&buf));
+        let slot_hash = alloy::primitives::keccak256(buf);
         solidity_mapping_slot_to_index.insert(slot_hash, i);
     }
 
     buf[0..20].copy_from_slice(holder.as_slice());
     buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
-    let solady_slot = B256::from(signing::keccak256(&buf[0..32]));
+    let solady_slot = alloy::primitives::keccak256(&buf[0..32]);
 
     // We separate heuristic and non-heuristic in a single pass,
     // iterating in reverse so "most recently accessed" come first.
@@ -338,7 +337,11 @@ pub enum DetectionError<E> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::Web3};
+    use {
+        super::*,
+        alloy::primitives::{B256, address},
+        ethrpc::Web3,
+    };
 
     // <https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/blob/master/contracts/token/ERC20/ERC20Upgradeable.sol#L43-L44>
     const OPEN_ZEPPELIN_ERC20_UPGRADEABLE: &str =
@@ -350,14 +353,12 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
-        use alloy::primitives::address;
-
         let detector = Detector::new(Web3::new_from_env(), 60);
 
         let storage = detector
             .detect(
                 address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                address!("0000000000000000000000000000000000000001"),
+                Address::with_last_byte(1),
             )
             .await
             .unwrap();
@@ -372,7 +373,7 @@ mod tests {
         let storage = detector
             .detect(
                 address!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
-                address!("0000000000000000000000000000000000000001"),
+                Address::with_last_byte(1),
             )
             .await
             .unwrap();
@@ -387,7 +388,7 @@ mod tests {
         let storage = detector
             .detect(
                 address!("0000000000c5dc95539589fbd24be07c6c14eca4"),
-                address!("0000000000000000000000000000000000000001"),
+                Address::with_last_byte(1),
             )
             .await
             .unwrap();
@@ -405,15 +406,13 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
-        use alloy::primitives::address;
-
         let detector = Detector::new(Web3::new_from_env(), 60);
 
         // all bridged tokens on arbitrum require a ton of probing
         let storage = detector
             .detect(
                 address!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
-                address!("0000000000000000000000000000000000000001"),
+                Address::with_last_byte(1),
             )
             .await
             .unwrap();
@@ -428,13 +427,11 @@ mod tests {
 
     #[test]
     fn test_create_strategies_reverses_order() {
-        use alloy::primitives::{address, b256};
-
-        let contract = address!("0000000000000000000000000000000000000002");
-        let contract2 = address!("0000000000000000000000000000000000000002");
-        let slot1 = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-        let slot2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
-        let slot3 = b256!("0000000000000000000000000000000000000000000000000000000000000003");
+        let contract = Address::with_last_byte(2);
+        let contract2 = Address::with_last_byte(2);
+        let slot1 = B256::with_last_byte(1);
+        let slot2 = B256::with_last_byte(2);
+        let slot3 = B256::with_last_byte(3);
         let slots = vec![
             (contract, slot1),
             (contract2, slot3),
@@ -442,7 +439,7 @@ mod tests {
             (contract, slot3),
             (contract2, slot1),
         ];
-        let holder = address!("0000000000000000000000000000000000000001");
+        let holder = Address::with_last_byte(1);
 
         // These slots don't match any heuristic, so should just be reversed and return
         // DirectSlot
@@ -477,26 +474,24 @@ mod tests {
 
     #[test]
     fn test_create_strategies_with_heuristic_slots_stable() {
-        use alloy::primitives::{address, b256};
-
-        let contract = address!("0000000000000000000000000000000000000002");
+        let contract = Address::with_last_byte(2);
         let holder = address!("1111111111111111111111111111111111111111");
 
         // Calculate what slot index 0 would hash to for this holder
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(0).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot1 = B256::from(signing::keccak256(&buf));
+        let heuristic_slot1 = alloy::primitives::keccak256(buf);
         U256::from(5).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot2 = B256::from(signing::keccak256(&buf));
+        let heuristic_slot2 = alloy::primitives::keccak256(buf);
         buf[0..20].copy_from_slice(holder.as_slice());
         buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
-        let heuristic_slot3 = B256::from(signing::keccak256(&buf[0..32]));
+        let heuristic_slot3 = alloy::primitives::keccak256(&buf[0..32]);
 
         // Create non-heuristic slots
-        let slot1 = b256!("00000000000000000000000000000000000000000000000000000000000003e7");
-        let slot2 = b256!("00000000000000000000000000000000000000000000000000000000000003e6");
-        let slot3 = b256!("00000000000000000000000000000000000000000000000000000000000003e3");
+        let slot1 = B256::with_last_byte(0xe7);
+        let slot2 = B256::with_last_byte(0xe6);
+        let slot3 = B256::with_last_byte(0xe3);
 
         let slots = vec![
             (contract, slot1),
@@ -545,19 +540,17 @@ mod tests {
 
     #[test]
     fn test_create_strategies_zero_heuristic_depth() {
-        use alloy::primitives::{address, b256};
-
-        let contract = address!("0000000000000000000000000000000000000002");
+        let contract = Address::with_last_byte(2);
         let holder = address!("5555555555555555555555555555555555555555");
 
-        let slot1 = b256!("0000000000000000000000000000000000000000000000000000000000000001");
-        let slot2 = b256!("0000000000000000000000000000000000000000000000000000000000000002");
-        let slot3 = b256!("0000000000000000000000000000000000000000000000000000000000000003");
+        let slot1 = B256::with_last_byte(1);
+        let slot2 = B256::with_last_byte(2);
+        let slot3 = B256::with_last_byte(3);
 
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
         U256::from(0).to_big_endian(&mut buf[32..64]);
-        let heuristic_slot = B256::from(signing::keccak256(&buf));
+        let heuristic_slot = alloy::primitives::keccak256(buf);
 
         let slots = vec![
             (contract, slot1),
