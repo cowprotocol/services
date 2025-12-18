@@ -322,9 +322,12 @@ impl BalanceOverrides {
             if let Ok(strategy) = strategy.as_ref() {
                 let cache_key = (
                     token,
-                    (!s.is_valid_for_all_holders()).then_some(holder)
+                    (!strategy.is_valid_for_all_holders()).then_some(holder),
                 );
-                cache.lock().unwrap().cache_set(cache_key, Some(s.clone()));
+                cache
+                    .lock()
+                    .unwrap()
+                    .cache_set(cache_key, Some(strategy.clone()));
             } else {
                 // strategy is Err(DetectionError::NotFound)
                 cache.lock().unwrap().cache_set((token, Some(holder)), None);

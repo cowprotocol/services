@@ -7,10 +7,7 @@ use {
     e2e::setup::*,
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{CallBuilderExt, conversions::IntoLegacy},
     },
     model::{
         interaction::InteractionData,
