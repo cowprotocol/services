@@ -10,11 +10,9 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     solvers_dto::solution::{Asset, Solution},
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -29,10 +27,7 @@ async fn single_limit_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(100u64.eth()).await;
     let [trader] = onchain.make_accounts(100u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            300_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
         .await;
 
     token.mint(solver.address(), 100u64.eth()).await;
@@ -126,7 +121,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
@@ -155,7 +150,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(solver.private_key()).unwrap()),
+        &solver.signer,
     );
 
     mock_solver.configure_solution(Some(Solution {

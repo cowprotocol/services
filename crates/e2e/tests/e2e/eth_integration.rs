@@ -2,19 +2,14 @@ use {
     ::alloy::providers::Provider,
     e2e::setup::*,
     ethcontract::prelude::Address,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -31,10 +26,7 @@ async fn eth_integration(web3: Web3) {
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(trader_a.address(), 51u64.eth()).await;
     token.mint(trader_b.address(), 51u64.eth()).await;
@@ -96,7 +88,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
@@ -111,7 +103,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     services.create_order(&order_buy_eth_b).await.unwrap();
 

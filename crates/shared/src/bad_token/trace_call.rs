@@ -1,10 +1,14 @@
 use {
     super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
     crate::{ethrpc::Web3, trace_many},
-    alloy::{primitives::Address, sol_types::SolCall},
+    alloy::{
+        primitives::{Address, keccak256},
+        signers::local::PrivateKeySigner,
+        sol_types::SolCall,
+    },
     anyhow::{Context, Result, bail, ensure},
     contracts::alloy::ERC20,
-    ethcontract::{PrivateKey, jsonrpc::ErrorCode},
+    ethcontract::jsonrpc::ErrorCode,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
@@ -12,7 +16,6 @@ use {
     tracing::instrument,
     web3::{
         error::TransportError,
-        signing::keccak256,
         types::{BlockTrace, Bytes, CallRequest, Res},
     },
 };
@@ -154,10 +157,10 @@ impl TraceCallDetectorRaw {
     // For the out transfer we use an arbitrary address without balance to detect
     // tokens that usually apply fees but not if the the sender or receiver is
     // specifically exempt like their own uniswap pools.
-    fn arbitrary_recipient() -> H160 {
-        PrivateKey::from_raw(keccak256(b"moo"))
+    fn arbitrary_recipient() -> Address {
+        PrivateKeySigner::from_bytes(&keccak256(b"moo"))
             .unwrap()
-            .public_address()
+            .address()
     }
 
     fn create_trace_request(
@@ -167,7 +170,7 @@ impl TraceCallDetectorRaw {
         take_from: Address,
     ) -> Vec<CallRequest> {
         let mut requests = Vec::new();
-        let recipient = Self::arbitrary_recipient().into_alloy();
+        let recipient = Self::arbitrary_recipient();
         let settlement_contract = self.settlement_contract;
 
         // 0
@@ -541,11 +544,6 @@ mod tests {
         let result = TraceCallDetectorRaw::handle_response(traces, 1.into(), H160::zero()).unwrap();
         let expected = TokenQuality::Good;
         assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn arbitrary_recipient_() {
-        println!("{:?}", TraceCallDetectorRaw::arbitrary_recipient());
     }
 
     // cargo test -p shared mainnet_tokens -- --nocapture --ignored

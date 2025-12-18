@@ -11,9 +11,7 @@ use {
     },
     number::units::EthUnit,
     orderbook::dto::order::Status,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -30,7 +28,7 @@ async fn test(web3: Web3) {
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     // Use a shallow pool to make partial fills easier to setup.
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth().into_legacy(), 10u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth(), 10u64.eth())
         .await;
 
     onchain
@@ -72,7 +70,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 

@@ -67,18 +67,13 @@ impl Mempools {
     /// Defines if the mempools are configured in a way that guarantees that
     /// settled solution will not revert.
     pub fn revert_protection(&self) -> RevertProtection {
-        if self.mempools.iter().any(|mempool| {
-            matches!(
-                mempool.config().kind,
-                infra::mempool::Kind::Public {
-                    revert_protection: infra::mempool::RevertProtection::Disabled,
-                    ..
-                }
-            )
-        }) {
-            RevertProtection::Disabled
-        } else {
-            RevertProtection::Enabled
+        match self
+            .mempools
+            .iter()
+            .all(|mempool| mempool.reverts_can_get_mined())
+        {
+            true => RevertProtection::Disabled,
+            false => RevertProtection::Enabled,
         }
     }
 
@@ -93,7 +88,7 @@ impl Mempools {
         // enabled and the settlement may revert in this mempool.
         if settlement.may_revert()
             && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.may_revert()
+            && mempool.reverts_can_get_mined()
         {
             return Err(Error::Disabled);
         }

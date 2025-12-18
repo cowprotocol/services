@@ -24,10 +24,8 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -91,7 +89,7 @@ async fn combined_protocol_fees(web3: Web3) {
         market_order_token,
         partner_fee_order_token,
     ] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth().into_legacy(), 20u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth(), 20u64.eth())
         .await;
 
     for token in &[
@@ -206,7 +204,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let limit_surplus_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
@@ -217,7 +215,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let partner_fee_order = OrderCreation {
         sell_amount: sell_amount.into_alloy(),
@@ -229,7 +227,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
@@ -463,7 +461,7 @@ async fn surplus_partner_fee(web3: Web3) {
     let [solver] = onchain.make_solvers(200u64.eth()).await;
     let [trader] = onchain.make_accounts(200u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth().into_legacy(), 20u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(20u64.eth(), 20u64.eth())
         .await;
 
     token.mint(solver.address(), 1000u64.eth()).await;
@@ -542,7 +540,7 @@ async fn surplus_partner_fee(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let order_uid = services.create_order(&order).await.unwrap();
@@ -694,10 +692,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -797,7 +792,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 
@@ -854,10 +849,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -957,7 +949,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 

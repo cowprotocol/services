@@ -1,18 +1,13 @@
 use {
     alloy::primitives::Address,
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -26,10 +21,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader, adversary, safe_owner] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token_a.mint(trader.address(), 10u64.eth()).await;
@@ -69,7 +61,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         order_creation.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(signer.private_key()).unwrap()),
+            &signer.signer,
         )
     };
 

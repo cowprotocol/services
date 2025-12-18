@@ -1,6 +1,9 @@
 use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
-    alloy::primitives::{Address, B256},
+    alloy::{
+        primitives::{Address, B256},
+        signers::{SignerSync, local::PrivateKeySigner},
+    },
     anyhow::{Context as _, Result, ensure},
     serde::{Deserialize, Serialize, de},
     std::{
@@ -8,8 +11,8 @@ use {
         fmt::{self, Debug, Formatter},
     },
     web3::{
-        signing::{self, Key, SecretKeyRef},
-        types::Recovery,
+        signing::{self},
+        types::{H256, Recovery},
     },
 };
 
@@ -263,24 +266,21 @@ pub struct EcdsaSignature {
     pub v: u8,
 }
 
-pub fn hashed_eip712_message(
-    domain_separator: &DomainSeparator,
-    struct_hash: &[u8; 32],
-) -> [u8; 32] {
+pub fn hashed_eip712_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> B256 {
     let mut message = [0u8; 66];
     // 0x19 0x01 are the magic prefix bytes for the domain separator
     // https://eips.ethereum.org/EIPS/eip-712#eth_signTypedData
     message[0..2].copy_from_slice(&[0x19, 0x01]);
     message[2..34].copy_from_slice(&domain_separator.0);
     message[34..66].copy_from_slice(struct_hash);
-    signing::keccak256(&message)
+    alloy::primitives::keccak256(message)
 }
 
-fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> [u8; 32] {
+fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> B256 {
     let mut message = [0u8; 60];
     message[..28].copy_from_slice(b"\x19Ethereum Signed Message:\n32");
-    message[28..].copy_from_slice(&hashed_eip712_message(domain_separator, struct_hash));
-    signing::keccak256(&message)
+    message[28..].copy_from_slice(hashed_eip712_message(domain_separator, struct_hash).as_slice());
+    alloy::primitives::keccak256(message)
 }
 
 /// Orders are always hashed into 32 bytes according to EIP-712.
@@ -288,7 +288,7 @@ fn hashed_signing_message(
     signing_scheme: EcdsaSigningScheme,
     domain_separator: &DomainSeparator,
     struct_hash: &[u8; 32],
-) -> [u8; 32] {
+) -> B256 {
     match signing_scheme {
         EcdsaSigningScheme::Eip712 => hashed_eip712_message(domain_separator, struct_hash),
         EcdsaSigningScheme::EthSign => hashed_ethsign_message(domain_separator, struct_hash),
@@ -327,31 +327,37 @@ impl EcdsaSignature {
         struct_hash: &[u8; 32],
     ) -> Result<Recovered> {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
-        let recovery = Recovery::new(message, self.v as u64, self.r.0.into(), self.s.0.into());
+        let recovery = Recovery::new(
+            message.0,
+            self.v as u64,
+            H256(B256::from(self.r).0),
+            H256(B256::from(self.s).0),
+        );
         let (signature, recovery_id) = recovery
             .as_signature()
             .context("unexpectedly invalid signature")?;
-        let signer = Address::new(signing::recover(&message, &signature, recovery_id)?.0);
+        let signer = Address::new(signing::recover(&message.0, &signature, recovery_id)?.0);
 
-        Ok(Recovered {
-            message: message.into(),
-            signer,
-        })
+        Ok(Recovered { message, signer })
     }
 
     pub fn sign(
         signing_scheme: EcdsaSigningScheme,
         domain_separator: &DomainSeparator,
         struct_hash: &[u8; 32],
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         // Unwrap because the only error is for invalid messages which we don't create.
-        let signature = key.sign(&message, None).unwrap();
+        let signature = key.sign_hash_sync(&message).unwrap();
         Self {
-            v: signature.v as u8,
-            r: signature.r.0.into(),
-            s: signature.s.0.into(),
+            // The 27 is slightly magic, it comes from the Electrum notation
+            // https://github.com/tomusdrw/rust-web3/blob/8d889ae3270508f1e68b6a29bbe51b2bedf7fb1e/src/signing.rs#L107-L113
+            // we don't change the number according to the chain id as before the alloy migration
+            // we were not using chain replay protection
+            v: signature.recid().to_byte() + 27,
+            r: signature.r().into(),
+            s: signature.s().into(),
         }
     }
 

@@ -10,11 +10,9 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -41,10 +39,7 @@ async fn solver_competition(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader, settlement accounts, and pool creation
@@ -113,7 +108,7 @@ async fn solver_competition(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -163,10 +158,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund traders
@@ -177,10 +169,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // (base_b). base_a has more liquidity then base_b, leading to the solver that
     // knows about base_a to win
     let [base_a, base_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            10_000u64.eth().into_legacy(),
-            10_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(10_000u64.eth(), 10_000u64.eth())
         .await;
     onchain
         .seed_uni_v2_pool((&token_a, 100_000u64.eth()), (&base_a, 100_000u64.eth()))
@@ -261,7 +250,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
@@ -279,7 +268,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     services.create_order(&order_b).await.unwrap();
 
@@ -316,10 +305,7 @@ async fn store_filtered_solutions(web3: Web3) {
     let [good_solver_account, bad_solver_account] = onchain.make_solvers(100u64.eth()).await;
     let [trader] = onchain.make_accounts(100u64.eth()).await;
     let [token_a, token_b, token_c] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            300_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
         .await;
 
     // give the settlement contract a ton of the traded tokens so that the mocked
@@ -415,7 +401,7 @@ async fn store_filtered_solutions(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let order_ac = OrderCreation {
@@ -430,7 +416,7 @@ async fn store_filtered_solutions(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let order_ab_id = services.create_order(&order_ab).await.unwrap();
