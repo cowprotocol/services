@@ -1,10 +1,7 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -51,7 +48,7 @@ async fn solver_competition(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -131,7 +128,7 @@ async fn solver_competition(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok(),
             None => false,
@@ -141,7 +138,7 @@ async fn solver_competition(web3: Web3) {
 
     let trades = services.get_trades(&uid).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
 
@@ -184,14 +181,14 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -281,7 +278,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid_a).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok(),
             None => false,
@@ -292,7 +289,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // Verify that test_solver was excluded due to wrong driver address
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
@@ -325,7 +322,7 @@ async fn store_filtered_solutions(web3: Web3) {
     token_a.mint(trader.address(), 2u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 2u64.eth())
+        .approve(onchain.contracts().allowance, 2u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -495,7 +492,7 @@ async fn store_filtered_solutions(web3: Web3) {
         let trade = services.get_trades(&order_ab_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?.into_legacy())
+                .get_solver_competition(trade.tx_hash?)
                 .await
                 .is_ok(),
         )
@@ -511,7 +508,7 @@ async fn store_filtered_solutions(web3: Web3) {
         .unwrap();
 
     let competition = services
-        .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trade.tx_hash.unwrap())
         .await
         .unwrap();
 

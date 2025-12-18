@@ -324,49 +324,25 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             .submission
             .mempools
             .iter()
-            .map(|mempool| mempool::Config {
+            .enumerate()
+            .map(|(index, mempool)| mempool::Config {
                 min_priority_fee: config.submission.min_priority_fee,
                 gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 nonce_block_number: config.submission.nonce_block_number.map(Into::into),
-                kind: match mempool {
-                    file::Mempool::Public {
-                        max_additional_tip,
-                        additional_tip_percentage,
-                    } => {
-                        // If there is no private mempool, revert protection is
-                        // disabled, otherwise driver would not even try to settle revertable
-                        // settlements
-                        let revert_protection = if config
-                            .submission
-                            .mempools
-                            .iter()
-                            .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
-                        {
-                            mempool::RevertProtection::Enabled
-                        } else {
-                            mempool::RevertProtection::Disabled
-                        };
-
-                        mempool::Kind::Public {
-                            max_additional_tip: *max_additional_tip,
-                            additional_tip_percentage: *additional_tip_percentage,
-                            revert_protection,
-                        }
-                    }
-                    file::Mempool::MevBlocker {
-                        url,
-                        max_additional_tip,
-                        additional_tip_percentage,
-                        use_soft_cancellations,
-                    } => mempool::Kind::MEVBlocker {
-                        url: url.to_owned(),
-                        max_additional_tip: *max_additional_tip,
-                        additional_tip_percentage: *additional_tip_percentage,
-                        use_soft_cancellations: *use_soft_cancellations,
-                    },
+                name: mempool
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("mempool_{index}")),
+                url: mempool.url.clone(),
+                revert_protection: match mempool.mines_reverting_txs {
+                    true => mempool::RevertProtection::Disabled,
+                    false => mempool::RevertProtection::Enabled,
                 },
+                max_additional_tip: mempool.max_additional_tip,
+                additional_tip_percentage: mempool.additional_tip_percentage,
+                use_soft_cancellations: mempool.use_soft_cancellations,
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {
