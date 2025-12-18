@@ -1,13 +1,7 @@
 use {
     autopilot::shutdown_controller::ShutdownController,
     e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
-    ethrpc::{
-        Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
     secp256k1::SecretKey,
@@ -39,7 +33,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     // Approve GPv2 for trading
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.eth())
+        .approve(onchain.contracts().allowance, 1000u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -131,7 +125,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
             if let Some(trade) = services.get_trades(&uid).await.unwrap().first() {
                 services
-                    .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                    .get_solver_competition(trade.tx_hash.unwrap())
                     .await
                     .ok()
                     .as_ref()
@@ -167,7 +161,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
             if let Some(trade) = services.get_trades(&uid).await.unwrap().first() {
                 services
-                    .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                    .get_solver_competition(trade.tx_hash.unwrap())
                     .await
                     .ok()
                     .as_ref()
