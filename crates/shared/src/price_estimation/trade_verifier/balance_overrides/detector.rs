@@ -289,10 +289,10 @@ impl Detector {
         strategy: &Strategy,
     ) -> Result<(), DetectionError<TransportErrorKind>> {
         // Use a unique test value to verify this strategy works
-        let test_balance = U256::from(0x1337_1337_1337_1337_u64);
+        let test_balance = alloy::primitives::U256::from(0x1337_1337_1337_1337_u64);
 
         // Create state override using the strategy
-        let overrides = strategy.state_override(&holder.into_legacy(), &test_balance);
+        let overrides = strategy.state_override(&holder.into_legacy(), &test_balance.into_legacy());
 
         // Call balanceOf with the override
         let token_contract = ERC20::Instance::new(token, self.web3.alloy.clone());
@@ -308,7 +308,7 @@ impl Detector {
             })?;
 
         // If the balance matches our test value, the strategy works
-        if balance == test_balance.into_alloy() {
+        if balance == test_balance {
             Ok(())
         } else {
             Err(DetectionError::NotFound)
