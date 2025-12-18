@@ -4,11 +4,11 @@ pragma solidity ^0.8.17;
 import "./NonStandardERC20Balances.sol";
 
 contract RemoteERC20Balances is NonStandardERC20Balances {
-    bool internal immutable balanceFromHere;
+    bool internal immutable isLocalBalance;
     NonStandardERC20Balances public immutable target;
 
     constructor(NonStandardERC20Balances _target, bool _balanceFromHere) {
-        balanceFromHere = _balanceFromHere;
+        isLocalBalance = _balanceFromHere;
         target = _target;
     }
 
@@ -16,7 +16,7 @@ contract RemoteERC20Balances is NonStandardERC20Balances {
         // retrieve the balance from the target contract regardless (for testing)
         uint256 otherBalanceOf = target.balanceOf(user);
         
-        return balanceFromHere ? users[user].balance : otherBalanceOf;
+        return isLocalBalance ? users[user].balance : otherBalanceOf;
     }
 
 }

@@ -40,7 +40,7 @@ export ARTIFACTTEMPLATE
 $(ARTIFACTDIR)/%.json: $(TARGETDIR)/%.abi
 	@echo jq "'...'" '>' $@
 	@echo "$$ARTIFACTTEMPLATE" \
-		| jq -c \
+		| jq \
 			--argjson ABI   '$(shell cat $(TARGETDIR)/$*.abi)' \
 			--arg     BIN   '0x$(shell cat $(TARGETDIR)/$*.bin | head -n1)' \
 			--arg     BINRT '0x$(shell cat $(TARGETDIR)/$*.bin-runtime | head -n1)' \
