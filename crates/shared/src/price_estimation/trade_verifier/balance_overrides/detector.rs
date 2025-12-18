@@ -290,7 +290,7 @@ impl Detector {
         strategy: &Strategy,
     ) -> Result<(), DetectionError<TransportErrorKind>> {
         // Use a unique test value to verify this strategy works
-        let test_balance = U256::from(0x1337_1337_1337_1337_u64);
+        let test_balance = alloy::primitives::U256::from(0x1337_1337_1337_1337_u64);
 
         // Create state override using the strategy
         let overrides = strategy.state_override(&holder.into_legacy(), &test_balance);
