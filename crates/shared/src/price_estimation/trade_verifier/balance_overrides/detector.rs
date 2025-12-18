@@ -309,7 +309,7 @@ impl Detector {
             })?;
 
         // If the balance matches our test value, the strategy works
-        if balance == test_balance.into_alloy() {
+        if balance == test_balance {
             Ok(())
         } else {
             Err(DetectionError::NotFound)
