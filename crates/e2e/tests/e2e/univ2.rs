@@ -3,7 +3,7 @@ use {
     contracts::alloy::GPv2Settlement,
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -33,7 +33,7 @@ async fn test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

@@ -1,7 +1,7 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
     e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, safe::Safe, wait_for_condition},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
@@ -30,14 +30,14 @@ async fn test(web3: Web3) {
     token.mint(trader.address(), 4u64.eth()).await;
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
+            .approve(onchain.contracts().allowance, 4u64.eth())
             .into_transaction_request(),
     )
     .await;
     token.mint(safe.address(), 4u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

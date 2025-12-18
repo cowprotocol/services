@@ -10,11 +10,10 @@ use {
             wait_for_condition,
         },
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256},
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::{H160, H256},
     model::{
         order::{Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
@@ -54,11 +53,11 @@ fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
 }
 
-fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
+fn orders_for_tx_endpoint(tx_hash: &B256) -> String {
     format!("/api/v1/transactions/{tx_hash:?}/orders")
 }
 
-fn orders_for_owner(owner: &H160, offset: u64, limit: u64) -> String {
+fn orders_for_owner(owner: &Address, offset: u64, limit: u64) -> String {
     format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
 
@@ -436,7 +435,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_solver_competition(
         &self,
-        hash: H256,
+        hash: B256,
     ) -> Result<solver_competition_v2::Response, StatusCode> {
         let response = self
             .http
@@ -598,7 +597,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_orders_for_tx(
         &self,
-        tx_hash: &H256,
+        tx_hash: &B256,
     ) -> Result<Vec<Order>, (StatusCode, String)> {
         let response = self
             .http
@@ -618,7 +617,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_orders_for_owner(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>, (StatusCode, String)> {
