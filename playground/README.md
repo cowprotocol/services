@@ -115,6 +115,7 @@ await window.ethereum.request({
 | Postgres      | postgres           | 5432          | 5432               | N/A                    | Local/Fork |
 | Adminer       | adminer            | 8082          | 8080               | N/A                    | Local/Fork |
 | Grafana       | grafana            | 3000          | 3000               | N/A                    | Local/Fork |
+| Otterscan     | otterscan          | 8003          | 80                 | N/A                    | Local/Fork |
 
 **NOTE**: Currently only **FORK** mode is supported.
 
@@ -137,7 +138,7 @@ In this mode, the stack will spin up:
 - Postgres (with migrations)
 - Adminer
 - RPC (forked from `reth` or `erigon` node)
-- Otterscan (*not yet implemented*)
+- Otterscan
 - Orderbook
 - Autopilot
 - Driver
