@@ -95,6 +95,7 @@ async fn solver_competition(web3: Web3) {
     ).await;
     services.start_api(vec![
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
+        "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
     ]).await;
 
     // Place Order
@@ -236,6 +237,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 
@@ -387,6 +389,7 @@ async fn store_filtered_solutions(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 

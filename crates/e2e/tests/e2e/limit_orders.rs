@@ -427,6 +427,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 
@@ -636,6 +637,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 
@@ -718,6 +720,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 

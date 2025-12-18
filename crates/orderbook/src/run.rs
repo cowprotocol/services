@@ -331,20 +331,6 @@ pub async fn run(args: Arguments) {
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
-    let native_price_estimator: Arc<dyn NativePriceEstimating> =
-        if let Some(autopilot_url) = args.autopilot_native_price_url {
-            tracing::info!(?autopilot_url, "forwarding native prices to autopilot");
-            Arc::new(
-                crate::native_price_forwarder::ForwardingNativePriceEstimator::new(
-                    http_factory.create(),
-                    autopilot_url,
-                    Some(native_price_estimator),
-                ),
-            )
-        } else {
-            native_price_estimator
-        };
-
     let price_estimator = price_estimator_factory
         .price_estimator(
             &args

@@ -310,6 +310,7 @@ async fn quote_timeout(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms"),
         ])
         .await;

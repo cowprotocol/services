@@ -5,7 +5,7 @@ use {
         trade_finding::{Interaction, QuoteExecution},
     },
     alloy::primitives::{Address, U256},
-    anyhow::{Result, ensure},
+    anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::H160,
     futures::future::BoxFuture,
@@ -76,6 +76,7 @@ impl FromStr for ExternalSolver {
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
+    Forwarder(Url),
     OneInchSpotPriceApi,
     CoinGecko,
 }
@@ -83,7 +84,8 @@ pub enum NativePriceEstimator {
 impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let formatter = match self {
-            NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
+            NativePriceEstimator::Driver(s) => format!("Driver|{}|{}", &s.name, s.url),
+            NativePriceEstimator::Forwarder(url) => format!("Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
         };
@@ -136,9 +138,20 @@ impl FromStr for NativePriceEstimator {
         match s {
             "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
             "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
-            estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
-                estimator,
-            )?)),
+            estimator if estimator.starts_with("Driver|") => {
+                let rest = estimator.strip_prefix("Driver|").unwrap();
+                Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
+                    rest,
+                )?))
+            }
+            estimator if estimator.starts_with("Forwarder|") => {
+                let rest = estimator.strip_prefix("Forwarder|").unwrap();
+                Ok(NativePriceEstimator::Forwarder(
+                    rest.parse()
+                        .context("Forwarder price estimator invalid URL")?,
+                ))
+            }
+            _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
         }
     }
 }
@@ -637,9 +650,10 @@ mod tests {
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
+            &NativePriceEstimator::Forwarder("http://localhost:9588".parse().unwrap()).to_string(),
+            "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;Driver|three|http://localhost:3333/,Driver|four|http://localhost:4444/",
             &format!(
-                "one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/",
+                "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;{},Driver|four|http://localhost:4444/",
                 NativePriceEstimator::OneInchSpotPriceApi
             ),
         ] {

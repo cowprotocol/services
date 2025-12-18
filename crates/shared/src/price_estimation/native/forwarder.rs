@@ -1,33 +1,25 @@
 use {
+    super::{NativePriceEstimateResult, NativePriceEstimating},
+    crate::price_estimation::PriceEstimationError,
     alloy::primitives::Address,
     anyhow::Context,
     futures::{FutureExt, future::BoxFuture},
     model::quote::NativeTokenPrice,
     reqwest::StatusCode,
-    shared::price_estimation::{
-        PriceEstimationError,
-        native::{NativePriceEstimateResult, NativePriceEstimating},
-    },
-    std::{sync::Arc, time::Duration},
+    std::time::Duration,
     url::Url,
 };
 
-pub struct ForwardingNativePriceEstimator {
+pub struct Forwarder {
     client: reqwest::Client,
     autopilot_url: Url,
-    fallback: Option<Arc<dyn NativePriceEstimating>>,
 }
 
-impl ForwardingNativePriceEstimator {
-    pub fn new(
-        client: reqwest::Client,
-        autopilot_url: Url,
-        fallback: Option<Arc<dyn NativePriceEstimating>>,
-    ) -> Self {
+impl Forwarder {
+    pub fn new(client: reqwest::Client, autopilot_url: Url) -> Self {
         Self {
             client,
             autopilot_url,
-            fallback,
         }
     }
 
@@ -79,33 +71,12 @@ impl ForwardingNativePriceEstimator {
     }
 }
 
-impl NativePriceEstimating for ForwardingNativePriceEstimator {
+impl NativePriceEstimating for Forwarder {
     fn estimate_native_price(
         &self,
         token: Address,
         timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            match self.try_fetch(token, timeout).await {
-                Ok(price) => Ok(price),
-                Err(err) if should_fallback(&err) => {
-                    tracing::warn!(?token, ?err, "autopilot request failed, using fallback");
-                    if let Some(fallback) = &self.fallback {
-                        fallback.estimate_native_price(token, timeout).await
-                    } else {
-                        Err(err)
-                    }
-                }
-                Err(err) => Err(err),
-            }
-        }
-        .boxed()
+        async move { self.try_fetch(token, timeout).await }.boxed()
     }
-}
-
-fn should_fallback(err: &PriceEstimationError) -> bool {
-    matches!(
-        err,
-        PriceEstimationError::ProtocolInternal(_) | PriceEstimationError::EstimatorInternal(_)
-    )
 }
