@@ -424,7 +424,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
