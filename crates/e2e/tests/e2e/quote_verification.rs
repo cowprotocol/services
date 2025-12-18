@@ -5,10 +5,7 @@ use {
     },
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::*,
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, conversions::IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -29,7 +26,7 @@ use {
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },
-    std::sync::Arc,
+    std::{str::FromStr, sync::Arc},
 };
 
 #[tokio::test]
@@ -186,8 +183,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                             data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap(),
                             value: U256::ZERO,
                         }],
-                        solver: address!("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
-                            ,
+                        solver: address!("e3067c7c27c1038de4e8ad95a83b927d23dfbd99"),
                         tx_origin,
                     }),
                 )
@@ -198,12 +194,12 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     let verified_quote = Estimate {
         out_amount: U256::from(16380122291179526144u128),
         gas: 225000,
-        solver: address!("e3067c7c27c1038de4e8ad95a83b927d23dfbd99").into_legacy(),
+        solver: ethcontract::H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99").unwrap(),
         verified: true,
         execution: QuoteExecution {
             interactions: vec![InteractionData {
                 target: address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-                value: ::alloy::primitives::U256::ZERO,
+                value: U256::ZERO,
                 call_data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap()
             }],
             pre_interactions: vec![],
@@ -397,10 +393,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                 .await
                 .unwrap(),
         ),
-        (
-            ::alloy::primitives::U256::ZERO,
-            ::alloy::primitives::U256::ZERO
-        ),
+        (U256::ZERO, U256::ZERO),
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {

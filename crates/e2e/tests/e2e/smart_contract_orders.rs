@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::Address,
+    ::alloy::primitives::{Address, U256},
     e2e::setup::{safe::Safe, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -184,7 +184,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         .await;
 
     // Use 1M gas units during signature verification
-    let signature = ::alloy::primitives::U256::from(1_000_000).to_be_bytes::<32>();
+    let signature = U256::from(1_000_000).to_be_bytes::<32>();
 
     let order = OrderCreation {
         sell_token: *cow.address(),

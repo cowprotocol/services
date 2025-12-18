@@ -217,7 +217,7 @@ async fn cow_amm_jit(web3: Web3) {
         sellToken: *onchain.contracts().weth.address(),
         buyToken: *dai.address(),
         receiver: Default::default(),
-        sellAmount: U256::from(10).pow(U256::from(17)),
+        sellAmount: 0.1.eth(),
         buyAmount: 230u64.eth(),
         validTo: valid_to,
         appData: FixedBytes(APP_DATA),
@@ -268,7 +268,7 @@ async fn cow_amm_jit(web3: Web3) {
         .weth
         .deposit()
         .from(bob.address())
-        .value(U256::from(10u64.pow(17)))
+        .value(0.1.eth())
         .send_and_watch()
         .await
         .unwrap();
@@ -284,7 +284,7 @@ async fn cow_amm_jit(web3: Web3) {
     // place user order with the same limit price as the CoW AMM order
     let user_order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount: U256::from(10).pow(U256::from(17)), // 0.1 WETH
+        sell_amount: 0.1.eth(), // 0.1 WETH
         buy_token: *dai.address(),
         buy_amount: 230u64.eth(), // 230 DAI
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -301,7 +301,7 @@ async fn cow_amm_jit(web3: Web3) {
     let amm_balance_before = dai.balanceOf(*cow_amm.address()).call().await.unwrap();
     let bob_balance_before = dai.balanceOf(bob.address()).call().await.unwrap();
 
-    let fee = U256::from(10).pow(U256::from(16)); // 0.01 WETH
+    let fee = 0.01.eth(); // 0.01 WETH
 
     mock_solver.configure_solution(Some(Solution {
         id: 1,
@@ -841,7 +841,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         sellToken: *onchain.contracts().weth.address(),
         buyToken: *dai.address(),
         receiver: Default::default(),
-        sellAmount: U256::from(10).pow(U256::from(17)),
+        sellAmount: 0.1.eth(),
         buyAmount: executed_amount,
         validTo: valid_to,
         appData: FixedBytes(APP_DATA),
@@ -915,7 +915,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Set the fees appropriately
-    let fee_cow_amm = alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(16)); // 0.01 WETH
+    let fee_cow_amm = 0.01.eth(); // 0.01 WETH
     let fee_user = 1u64.eth(); // 1 DAI
 
     let mocked_solutions = |order_uid: OrderUid| {
@@ -986,19 +986,14 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     );
     // Ensure the amounts are the same as the solution proposes.
     assert_eq!(quote_response.quote.sell_amount, executed_amount);
-    assert_eq!(
-        quote_response.quote.buy_amount,
-        U256::from(10).pow(U256::from(17))
-    );
+    assert_eq!(quote_response.quote.buy_amount, 0.1.eth());
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)
     let user_order = OrderCreation {
         sell_token: *dai.address(),
         sell_amount: executed_amount, // 230 DAI
         buy_token: *onchain.contracts().weth.address(),
-        buy_amount: alloy::primitives::U256::from(90000000000000000u64), /* 0.09 WETH to generate
-                                                                          * some
-                                                                          * surplus */
+        buy_amount: 0.09.eth(), // 0.09 WETH to generate some surplus
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
