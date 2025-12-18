@@ -50,7 +50,7 @@ $(ARTIFACTDIR)/%.json: $(TARGETDIR)/%.abi
 $(TARGETDIR)/%.abi: %.sol
 	@mkdir -p $(TARGETDIR)
 	@echo solc $(SOLFLAGS) -o /target $<
-	@$(DOCKER) run -it --rm \
+	@$(DOCKER) run -t --rm \
 		-v "$(abspath .):/contracts" -w "/contracts" \
 		-v "$(abspath $(TARGETDIR)):/target" \
 		$(SOLC) \
@@ -59,7 +59,7 @@ $(TARGETDIR)/%.abi: %.sol
 $(TARGETDIR)/%.abi: tests/%.sol
 	@mkdir -p $(TARGETDIR)
 	@echo solc $(SOLFLAGS) -o /target $(notdir $<)
-	@$(DOCKER) run -it --rm \
+	@$(DOCKER) run -t --rm \
 		-v "$(abspath .)/tests:/contracts" -w "/contracts" \
 		-v "$(abspath $(TARGETDIR)):/target" \
 		$(SOLC) \
