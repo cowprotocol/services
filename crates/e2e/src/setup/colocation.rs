@@ -198,7 +198,7 @@ base-tokens = [{encoded_base_tokens}]
 gas-price-cap = "1000000000000"
 
 [[submission.mempool]]
-url = "{NODE_HOST}"
+mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
