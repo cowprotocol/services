@@ -229,25 +229,14 @@ services:
       timeout: 5s
       retries: 5
 
-  sourcify-migrations:
+  sourcify:
     build:
       context: .
-      dockerfile: Dockerfile.sourcify-migrations
-    restart: "no"
-    depends_on:
-      sourcify-db:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgres://sourcify:sourcify@sourcify-db:5432/sourcify?sslmode=disable
-
-  sourcify:
-    image: ghcr.io/ethereum/sourcify/server:latest
+      dockerfile: Dockerfile.sourcify
     restart: always
     depends_on:
       sourcify-db:
         condition: service_healthy
-      sourcify-migrations:
-        condition: service_completed_successfully
     environment:
       - SOURCIFY_POSTGRES_HOST=sourcify-db
       - SOURCIFY_POSTGRES_PORT=5432
@@ -256,7 +245,7 @@ services:
       - SOURCIFY_POSTGRES_DB=sourcify
       - NODE_ENV=development
     volumes:
-      - ./sourcify-chains.json:/home/app/services/server/dist/sourcify-chains.json
+      - ./sourcify-chains.json:/sourcify/services/server/dist/sourcify-chains.json
     ports:
       - 5555:5555
 
@@ -265,7 +254,7 @@ services:
     restart: always
     environment:
       - ERIGON_URL=http://127.0.0.1:8545
-      - OTTERSCAN_CONFIG={"erigonURL":"http://127.0.0.1:8545","sourcify":{"sources":{"Sourcify":{"url":"https://repo.sourcify.dev","backendFormat":"RepositoryV1"},"Local Sourcify":{"url":"http://localhost:5555/repository","backendFormat":"RepositoryV2"}}}}
+      - OTTERSCAN_CONFIG={"erigonURL":"http://127.0.0.1:8545","sourcify":{"sources":{"Local Sourcify":{"url":"http://localhost:5555/repository","backendFormat":"RepositoryV1"},"Sourcify":{"url":"https://repo.sourcify.dev","backendFormat":"RepositoryV1"}}}}
     ports:
       - 8003:80
     depends_on:
