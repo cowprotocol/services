@@ -253,12 +253,12 @@ jobs:
         run: make -B artifacts
       - name: Verify no JSON changes
         run: |
-          if git diff --exit-code crates/contracts/artifacts -- '*.json'; then
+          if git diff --exit-code -- 'crates/contracts/artifacts/*.json'; then
             echo "✓ Solidity artifacts are up-to-date"
           else
             echo "✗ Solidity artifacts are out-of-date. Please run 'cd crates/contracts/solidity && make -B artifacts' and commit the changes."
             # run the command again to show exactly what the changes would be
-            git diff --exit-code crates/contracts/artifacts -- '*.json'
+            git diff --exit-code -- 'crates/contracts/artifacts/*.json'
             exit 1
           fi
 
