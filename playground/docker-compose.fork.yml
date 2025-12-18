@@ -254,7 +254,7 @@ services:
     restart: always
     environment:
       - ERIGON_URL=http://127.0.0.1:8545
-      - OTTERSCAN_CONFIG={"erigonURL":"http://127.0.0.1:8545","sourcify":{"sources":{"Local Sourcify":{"url":"http://localhost:5555/repository","backendFormat":"RepositoryV1"},"Sourcify":{"url":"https://repo.sourcify.dev","backendFormat":"RepositoryV1"}}}}
+      - OTTERSCAN_CONFIG={"erigonURL":"http://127.0.0.1:8545","sourcify":{"sources":{"Sourcify":{"url":"https://repo.sourcify.dev","backendFormat":"RepositoryV1"},"Local Sourcify":{"url":"http://localhost:5555/repository","backendFormat":"RepositoryV1"}}}}
     ports:
       - 8003:80
     depends_on:
