@@ -112,7 +112,10 @@ impl Display for TokenConfiguration {
                 Strategy::SolidityMapping {
                     target_contract,
                     map_slot,
-                } => write!(f, "SolidityMapping({target_contract:?}@{map_slot})"),
+                } => write!(
+                    f,
+                    "SolidityMapping({addr:?}: {target_contract:?}@{map_slot})"
+                ),
                 Strategy::SoladyMapping { target_contract } => {
                     write!(f, "SoladyMapping({addr:?}: {target_contract})")
                 }
