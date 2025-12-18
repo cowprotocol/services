@@ -202,12 +202,60 @@ services:
     ports:
       - 8000:80
 
+  # Sourcify - Contract verification service
+  sourcify-db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=sourcify
+      - POSTGRES_PASSWORD=sourcify
+      - POSTGRES_DB=sourcify
+    volumes:
+      - sourcify-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sourcify"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sourcify-migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile.sourcify-migrations
+    restart: "no"
+    depends_on:
+      sourcify-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://sourcify:sourcify@sourcify-db:5432/sourcify?sslmode=disable
+
+  sourcify:
+    image: ghcr.io/ethereum/sourcify/server:latest
+    restart: always
+    depends_on:
+      sourcify-db:
+        condition: service_healthy
+      sourcify-migrations:
+        condition: service_completed_successfully
+    environment:
+      - SOURCIFY_POSTGRES_HOST=sourcify-db
+      - SOURCIFY_POSTGRES_PORT=5432
+      - SOURCIFY_POSTGRES_USER=sourcify
+      - SOURCIFY_POSTGRES_PASSWORD=sourcify
+      - SOURCIFY_POSTGRES_DB=sourcify
+      - NODE_ENV=development
+    volumes:
+      - ./sourcify-chains.json:/home/app/services/server/dist/sourcify-chains.json
+    ports:
+      - 5555:5555
+
   # Otterscan - Local blockchain block explorer for Anvil
   otterscan:
     image: otterscan/otterscan:latest
     restart: always
     environment:
       - ERIGON_URL=http://localhost:8545
+      - OTTERSCAN_CONFIG={"erigonURL":"http://localhost:8545","sourcify":{"sources":{"Sourcify":{"url":"https://repo.sourcify.dev","backendFormat":"RepositoryV1"},"Local Sourcify":{"url":"http://localhost:5555/repository","backendFormat":"RepositoryV2"}}}}
     ports:
       - 8003:80
     depends_on:
@@ -255,3 +303,4 @@ services:
 
 volumes:
   postgres:
+  sourcify-postgres:

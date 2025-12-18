@@ -1,0 +1,12 @@
+{
+  "1": {
+    "sourcifyName": "Mainnet (Forked)",
+    "supported": true,
+    "rpc": ["http://chain:8545"]
+  },
+  "31337": {
+    "sourcifyName": "Anvil Local",
+    "supported": true,
+    "rpc": ["http://chain:8545"]
+  }
+}
