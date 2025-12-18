@@ -16,7 +16,10 @@ use {
     app_data::Validator,
     chrono::{DateTime, Utc},
     rust_decimal::Decimal,
-    shared::arguments::{FeeFactor, TokenBucketFeeOverride},
+    shared::{
+        arguments::{FeeFactor, TokenBucketFeeOverride},
+        fee::VolumeFeeMath,
+    },
     std::collections::HashSet,
 };
 
@@ -80,12 +83,20 @@ pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
-    volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
-    enable_sell_equals_buy_volume_fee: bool,
+    volume_fee_math: VolumeFeeMath,
 }
 
 impl ProtocolFees {
-    pub fn new(config: &arguments::FeePoliciesConfig) -> Self {
+    pub fn new(
+        config: &arguments::FeePoliciesConfig,
+        volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+        enable_sell_equals_buy_volume_fee: bool,
+    ) -> Self {
+        let volume_fee_math = VolumeFeeMath::new(
+            volume_fee_bucket_overrides,
+            None, // contained within FeePoliciesConfig, set before use
+            enable_sell_equals_buy_volume_fee,
+        );
         Self {
             fee_policies: config
                 .fee_policies
@@ -95,8 +106,7 @@ impl ProtocolFees {
                 .collect(),
             max_partner_fee: config.fee_policy_max_partner_fee,
             upcoming_fee_policies: config.upcoming_fee_policies.clone().into(),
-            volume_fee_bucket_overrides: config.volume_fee_bucket_overrides.clone(),
-            enable_sell_equals_buy_volume_fee: config.enable_sell_equals_buy_volume_fee,
+            volume_fee_math,
         }
     }
 
@@ -282,11 +292,7 @@ impl ProtocolFees {
         match policy {
             policy::Policy::Surplus(variant) => variant.apply(order),
             policy::Policy::PriceImprovement(variant) => variant.apply(order, quote),
-            policy::Policy::Volume(variant) => variant.apply(
-                order,
-                &self.volume_fee_bucket_overrides,
-                self.enable_sell_equals_buy_volume_fee,
-            ),
+            policy::Policy::Volume(variant) => variant.apply(order, &self.volume_fee_math),
         }
     }
 

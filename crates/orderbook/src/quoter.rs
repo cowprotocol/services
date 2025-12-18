@@ -1,5 +1,8 @@
 use {
-    crate::{app_data, arguments::VolumeFeeConfig},
+    crate::{
+        app_data,
+        arguments::{VolumeFeeConfig},
+    },
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     chrono::{TimeZone, Utc},
     model::{
@@ -7,8 +10,8 @@ use {
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
     shared::{
-        arguments::FeeFactor,
-        fee::get_applicable_volume_fee_factor,
+        arguments::{FeeFactor, TokenBucketFeeOverride},
+        fee::VolumeFeeMath,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
         order_validation::{
             AppDataValidationError,
@@ -51,6 +54,7 @@ pub struct QuoteHandler {
     fast_quoter: Arc<dyn OrderQuoting>,
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
+    volume_fee_math: VolumeFeeMath,
 }
 
 impl QuoteHandler {
@@ -59,13 +63,21 @@ impl QuoteHandler {
         quoter: Arc<dyn OrderQuoting>,
         app_data: Arc<app_data::Registry>,
         volume_fee: Option<VolumeFeeConfig>,
+        volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+        enable_sell_equals_buy_volume_fee: bool,
     ) -> Self {
+        let volume_fee_math = VolumeFeeMath::new(
+            volume_fee_bucket_overrides,
+            volume_fee.as_ref().and_then(|config| config.factor),
+            enable_sell_equals_buy_volume_fee,
+        );
         Self {
             order_validator,
             optimal_quoter: quoter.clone(),
             fast_quoter: quoter,
             app_data,
             volume_fee,
+            volume_fee_math,
         }
     }
 
@@ -131,14 +143,14 @@ impl QuoteHandler {
             }
         };
 
-        let adjusted_quote = get_vol_fee_adjusted_quote_data(
-            &quote,
-            self.volume_fee.as_ref(),
-            &request.side,
-            request.buy_token,
-            request.sell_token,
-        )
-        .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
+        let adjusted_quote = self
+            .get_vol_fee_adjusted_quote_data(
+                &quote,
+                &request.side,
+                request.buy_token,
+                request.sell_token,
+            )
+            .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
         let response = OrderQuoteResponse {
             quote: OrderQuote {
                 sell_token: request.sell_token,
@@ -171,84 +183,84 @@ impl QuoteHandler {
         tracing::debug!(?response, "finished computing quote");
         Ok(response)
     }
-}
 
-/// Calculates the protocol fee based on volume fee and adjusts quote amounts.
-fn get_vol_fee_adjusted_quote_data(
-    quote: &Quote,
-    volume_fee: Option<&VolumeFeeConfig>,
-    side: &OrderQuoteSide,
-    buy_token: alloy::primitives::Address,
-    sell_token: alloy::primitives::Address,
-) -> anyhow::Result<AdjustedQuoteData> {
-    let Some(config) = volume_fee
+    /// Calculates the protocol fee based on volume fee and adjusts quote
+    /// amounts.
+    fn get_vol_fee_adjusted_quote_data(
+        &self,
+        quote: &Quote,
+        side: &OrderQuoteSide,
+        buy_token: alloy::primitives::Address,
+        sell_token: alloy::primitives::Address,
+    ) -> anyhow::Result<AdjustedQuoteData> {
+        let Some(_) = self.volume_fee.as_ref()
         // Only apply volume fee if effective timestamp has come
-        .filter(|config| config.effective_from_timestamp.is_none_or(|ts| ts <= Utc::now()))
-    else {
-        return Ok(AdjustedQuoteData::unchanged(quote));
-    };
+        .filter(|config| config.effective_from_timestamp.is_none_or(|ts| ts <= Utc::now())) else {
+            return Ok(AdjustedQuoteData::unchanged(quote));
+        };
 
-    // Determine applicable fee factor considering same-token config and overrides
-    let factor = get_applicable_volume_fee_factor(
-        &config.volume_fee_bucket_overrides,
-        buy_token,
-        sell_token,
-        config.enable_sell_equals_buy_volume_fee,
-        config.factor,
-    );
+        // Determine applicable fee factor considering same-token config and overrides
+        let factor = self
+            .volume_fee_math
+            .get_applicable_volume_fee_factor(buy_token, sell_token, None);
 
-    let Some(factor) = factor else {
-        return Ok(AdjustedQuoteData {
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            protocol_fee_bps: None,
-        });
-    };
-    // Calculate the volume (surplus token amount) to apply fee to
-    // Following driver's logic in
-    // crates/driver/src/domain/competition/solution/fee.rs:189-202:
-    let (adjusted_sell_amount, adjusted_buy_amount) = match side {
-        OrderQuoteSide::Sell { .. } => {
-            // For SELL orders, fee is calculated on buy amount
-            let protocol_fee = U256::uint_try_from(
-                quote
-                    .buy_amount
-                    .widening_mul(U256::from(factor.to_bps()))
-                    .checked_div(U512::from(FeeFactor::MAX_BPS))
-                    .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
-            )
-            .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
+        let Some(factor) = factor else {
+            return Ok(AdjustedQuoteData {
+                sell_amount: quote.sell_amount,
+                buy_amount: quote.buy_amount,
+                protocol_fee_bps: None,
+            });
+        };
+        // Calculate the volume (surplus token amount) to apply fee to
+        // Following driver's logic in
+        // crates/driver/src/domain/competition/solution/fee.rs:189-202:
+        let (adjusted_sell_amount, adjusted_buy_amount) = match side {
+            OrderQuoteSide::Sell { .. } => {
+                // For SELL orders, fee is calculated on buy amount
+                let protocol_fee = U256::uint_try_from(
+                    quote
+                        .buy_amount
+                        .widening_mul(U256::from(factor.to_bps()))
+                        .checked_div(U512::from(FeeFactor::MAX_BPS))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("volume fee calculation division by zero")
+                        })?,
+                )
+                .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
-            // Reduce buy amount by protocol fee
-            let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
+                // Reduce buy amount by protocol fee
+                let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
 
-            (quote.sell_amount, adjusted_buy)
-        }
-        OrderQuoteSide::Buy { .. } => {
-            // For BUY orders, fee is calculated on sell amount + network fee.
-            // Network fee is already in sell token, so it is added to get the total volume.
-            let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
-            let factor = U256::from(factor.to_bps());
-            let volume_bps: Uint<512, 8> = total_sell_volume.widening_mul(factor);
-            let protocol_fee = U256::uint_try_from(
-                volume_bps
-                    .checked_div(U512::from(FeeFactor::MAX_BPS))
-                    .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
-            )
-            .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
+                (quote.sell_amount, adjusted_buy)
+            }
+            OrderQuoteSide::Buy { .. } => {
+                // For BUY orders, fee is calculated on sell amount + network fee.
+                // Network fee is already in sell token, so it is added to get the total volume.
+                let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
+                let factor = U256::from(factor.to_bps());
+                let volume_bps: Uint<512, 8> = total_sell_volume.widening_mul(factor);
+                let protocol_fee = U256::uint_try_from(
+                    volume_bps
+                        .checked_div(U512::from(FeeFactor::MAX_BPS))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("volume fee calculation division by zero")
+                        })?,
+                )
+                .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
-            // Increase sell amount by protocol fee
-            let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
+                // Increase sell amount by protocol fee
+                let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
 
-            (adjusted_sell, quote.buy_amount)
-        }
-    };
+                (adjusted_sell, quote.buy_amount)
+            }
+        };
 
-    Ok(AdjustedQuoteData {
-        sell_amount: adjusted_sell_amount,
-        buy_amount: adjusted_buy_amount,
-        protocol_fee_bps: Some(factor.to_bps().to_string()),
-    })
+        Ok(AdjustedQuoteData {
+            sell_amount: adjusted_sell_amount,
+            buy_amount: adjusted_buy_amount,
+            protocol_fee_bps: Some(factor.to_bps().to_string()),
+        })
+    }
 }
 
 /// Result from handling a quote request.
