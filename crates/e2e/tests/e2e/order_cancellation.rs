@@ -2,7 +2,7 @@ use {
     ::alloy::primitives::U256,
     database::order_events::OrderEventLabel,
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{
             CancellationPayload,
@@ -44,7 +44,7 @@ async fn order_cancellation(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

@@ -1,11 +1,10 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::primitives::{Address, U256},
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
         setup::{fee::*, *},
     },
-    ethcontract::Address,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -125,7 +124,7 @@ async fn combined_protocol_fees(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -173,7 +172,7 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
-    let sell_amount = 10u64.eth().into_legacy();
+    let sell_amount = 10u64.eth();
     let [limit_quote_before, market_quote_before, partner_fee_quote] =
         futures::future::try_join_all(
             [
@@ -184,8 +183,8 @@ async fn combined_protocol_fees(web3: Web3) {
             .map(|token| {
                 get_quote(
                     &services,
-                    onchain.contracts().weth.address().into_legacy(),
-                    token.address().into_legacy(),
+                    *onchain.contracts().weth.address(),
+                    *token.address(),
                     OrderKind::Sell,
                     sell_amount,
                     quote_valid_to,
@@ -198,7 +197,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .expect("Expected exactly four elements");
 
     let market_price_improvement_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is in-market
         buy_amount: market_quote_before.quote.buy_amount * U256::from(2) / U256::from(3),
         ..sell_order_from_quote(&market_quote_before)
@@ -209,7 +208,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let limit_surplus_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is out-of-market
         buy_amount: limit_quote_before.quote.buy_amount * U256::from(3) / U256::from(2),
         ..sell_order_from_quote(&limit_quote_before)
@@ -220,7 +219,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let partner_fee_order = OrderCreation {
-        sell_amount: sell_amount.into_alloy(),
+        sell_amount,
         // to make sure the order is out-of-market
         buy_amount: (partner_fee_quote.quote.buy_amount * U256::from(3) / U256::from(2)),
         app_data: partner_fee_app_data.clone(),
@@ -249,8 +248,8 @@ async fn combined_protocol_fees(web3: Web3) {
         onchain.mint_block().await;
         let new_market_order_quote = get_quote(
             &services,
-            onchain.contracts().weth.address().into_legacy(),
-            market_order_token.address().into_legacy(),
+            *onchain.contracts().weth.address(),
+            *market_order_token.address(),
             OrderKind::Sell,
             sell_amount,
             model::time::now_in_epoch_seconds() + 300,
@@ -279,8 +278,8 @@ async fn combined_protocol_fees(web3: Web3) {
         .map(|token| {
             get_quote(
                 &services,
-                onchain.contracts().weth.address().into_legacy(),
-                token.address().into_legacy(),
+                *onchain.contracts().weth.address(),
+                *token.address(),
                 OrderKind::Sell,
                 sell_amount,
                 quote_valid_to,
@@ -490,7 +489,7 @@ async fn surplus_partner_fee(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -623,22 +622,22 @@ async fn get_quote(
     sell_token: Address,
     buy_token: Address,
     kind: OrderKind,
-    amount: ethcontract::U256,
+    amount: U256,
     valid_to: u32,
 ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
     let side = match kind {
         OrderKind::Sell => OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(amount.as_u128()).unwrap(),
+                value: NonZeroU256::try_from(amount.to::<u128>()).unwrap(),
             },
         },
         OrderKind::Buy => OrderQuoteSide::Buy {
-            buy_amount_after_fee: NonZeroU256::try_from(amount.as_u128()).unwrap(),
+            buy_amount_after_fee: NonZeroU256::try_from(amount.to::<u128>()).unwrap(),
         },
     };
     let quote_request = OrderQuoteRequest {
-        sell_token: sell_token.into_alloy(),
-        buy_token: buy_token.into_alloy(),
+        sell_token,
+        buy_token,
         side,
         validity: Validity::To(valid_to),
         ..Default::default()
@@ -752,7 +751,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -772,10 +771,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let quote = get_quote(
         &services,
-        token_gno.address().into_legacy(),
-        token_dai.address().into_legacy(),
+        *token_gno.address(),
+        *token_dai.address(),
         OrderKind::Buy,
-        5u64.eth().into_legacy(),
+        5u64.eth(),
         model::time::now_in_epoch_seconds() + 300,
     )
     .await
@@ -909,7 +908,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -929,10 +928,10 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let quote = get_quote(
         &services,
-        token_gno.address().into_legacy(),
-        token_dai.address().into_legacy(),
+        *token_gno.address(),
+        *token_dai.address(),
         OrderKind::Buy,
-        5u64.eth().into_legacy(),
+        5u64.eth(),
         model::time::now_in_epoch_seconds() + 300,
     )
     .await
