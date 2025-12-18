@@ -322,11 +322,7 @@ impl BalanceOverrides {
             if let Ok(strategy) = strategy.as_ref() {
                 let cache_key = (
                     token,
-                    if s.is_valid_for_all_holders() {
-                        None
-                    } else {
-                        Some(holder)
-                    },
+                    (!s.is_valid_for_all_holders()).then_some(holder)
                 );
                 cache.lock().unwrap().cache_set(cache_key, Some(s.clone()));
             } else {
