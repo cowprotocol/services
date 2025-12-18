@@ -457,12 +457,13 @@ impl Solver {
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
                     retry_interval: Default::default(),
-                    kind: infra::mempool::Kind::Public {
-                        max_additional_tip: eth::U256::ZERO,
-                        additional_tip_percentage: 0.,
-                        revert_protection: infra::mempool::RevertProtection::Disabled,
-                    },
+                    name: "default_rpc".to_string(),
+                    max_additional_tip: eth::U256::ZERO,
+                    additional_tip_percentage: 0.,
+                    revert_protection: infra::mempool::RevertProtection::Disabled,
                     nonce_block_number: None,
+                    use_soft_cancellations: false,
+                    url: config.blockchain.web3_url.parse().unwrap(),
                 }],
             )
             .await

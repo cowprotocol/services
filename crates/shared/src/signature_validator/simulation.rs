@@ -67,7 +67,7 @@ impl Validator {
         // change), the order's validity can be directly determined by whether
         // the signature matches the expected hash of the order data, checked
         // with isValidSignature method called on the owner's contract
-        let contract = ERC1271SignatureValidator::new(check.signer.into_alloy(), &self.web3.alloy);
+        let contract = ERC1271SignatureValidator::new(check.signer, &self.web3.alloy);
         let magic_bytes = contract
             .isValidSignature(check.hash.into(), check.signature.clone().into())
             .call()
@@ -118,7 +118,7 @@ impl Validator {
                 settlement: *self.settlement.address(),
                 vaultRelayer: self.vault_relayer,
             },
-            signer: check.signer.into_alloy(),
+            signer: check.signer,
             order: check.hash.into(),
             signature: check.signature.clone().into(),
             interactions: check

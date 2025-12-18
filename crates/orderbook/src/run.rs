@@ -22,7 +22,6 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -142,7 +141,7 @@ pub async fn run(args: Arguments) {
         signature_validator::Contracts {
             settlement: settlement_contract.clone(),
             signatures: signatures_contract,
-            vault_relayer: vault_relayer.into_legacy(),
+            vault_relayer,
         },
         balance_overrider.clone(),
     );
@@ -190,8 +189,8 @@ pub async fn run(args: Arguments) {
         BalanceSimulator::new(
             settlement_contract.clone(),
             balances_contract.clone(),
-            vault_relayer.into_legacy(),
-            vault_address.map(IntoLegacy::into_legacy),
+            vault_relayer,
+            vault_address,
             balance_overrider,
         ),
     );
@@ -402,7 +401,7 @@ pub async fn run(args: Arguments) {
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(
-        native_token.clone(),
+        native_token,
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             args.banned_users,
@@ -420,6 +419,7 @@ pub async fn run(args: Arguments) {
         code_fetcher,
         app_data_validator.clone(),
         args.max_gas_per_order,
+        args.same_tokens_policy,
     ));
     let ipfs = args
         .ipfs_gateway

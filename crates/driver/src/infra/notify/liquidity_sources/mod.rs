@@ -8,14 +8,13 @@
 /// need to know as early as possible that their quote will be used for the
 /// settlement. It is crucial for risk management and leads to better
 /// pricing.
-use futures::FutureExt;
 pub mod config;
 pub mod liquorice;
 
 pub use config::Config;
 use {
     crate::domain::competition::solution::settlement::Settlement,
-    ethcontract::jsonrpc::futures_util::future::join_all,
+    futures::{FutureExt, future::join_all},
     std::{collections::HashMap, sync::Arc},
 };
 
