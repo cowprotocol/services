@@ -4,10 +4,7 @@ use {
         boundary,
         domain::{self, fee::Quote},
     },
-    shared::{
-        arguments::{FeeFactor, TokenBucketFeeOverride},
-        fee::get_applicable_volume_fee_factor,
-    },
+    shared::{arguments::FeeFactor, fee::VolumeFeeMath},
 };
 
 pub enum Policy {
@@ -90,19 +87,16 @@ impl Volume {
     pub fn apply(
         &self,
         order: &boundary::Order,
-        bucket_overrides: &[TokenBucketFeeOverride],
-        enable_sell_equals_buy_volume_fee: bool,
+        volume_fee_math: &VolumeFeeMath,
     ) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => {
                 // Use shared function to determine applicable volume fee factor
-                let factor = get_applicable_volume_fee_factor(
-                    bucket_overrides,
+                let factor = volume_fee_math.get_applicable_volume_fee_factor(
                     order.data.buy_token,
                     order.data.sell_token,
-                    enable_sell_equals_buy_volume_fee,
                     Some(self.factor),
                 )?;
 
