@@ -3,6 +3,7 @@
 
 CONFIG_FILE="/usr/share/nginx/html/config.json"
 ERIGON_URL="${ERIGON_URL:-http://127.0.0.1:8545}"
+LOCAL_SOURCIFY_URL="${LOCAL_SOURCIFY_URL:-http://localhost:5555}"
 
 echo "=== Otterscan Entrypoint ==="
 echo "SOURCIFY_MODE: ${SOURCIFY_MODE}"
@@ -16,7 +17,7 @@ case "${SOURCIFY_MODE:-cloud}" in
   "sourcify": {
     "sources": {
       "Local Sourcify": {
-        "url": "http://localhost:5555/repository",
+        "url": "${LOCAL_SOURCIFY_URL}/repository",
         "backendFormat": "RepositoryV1"
       }
     }
