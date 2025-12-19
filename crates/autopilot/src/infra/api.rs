@@ -83,8 +83,19 @@ async fn get_native_price(
     };
 
     match state.estimator.estimate_native_price(token, timeout).await {
-        Ok(price) => Json(NativeTokenPrice { price }).into_response(),
-        Err(err) => error_to_response(err),
+        Ok(price) => {
+            tracing::debug!(?token, ?timeout, ?price, "estimated native token price");
+            Json(NativeTokenPrice { price }).into_response()
+        }
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                ?token,
+                ?timeout,
+                "failed to estimate native token price"
+            );
+            error_to_response(err)
+        }
     }
 }
 
