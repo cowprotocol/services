@@ -9,7 +9,10 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
-    alloy::primitives::{Address, B256, U256, U512},
+    alloy::{
+        primitives::{Address, B256, U256, U512, b256},
+        signers::local::PrivateKeySigner,
+    },
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -26,7 +29,7 @@ use {
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, VariantNames},
-    web3::signing::{self, Key, SecretKeyRef},
+    web3::signing::{self},
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -158,9 +161,9 @@ impl OrderBuilder {
         mut self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
-        let owner = Address::new(key.address().0);
+        let owner = key.address();
         self.0.metadata.owner = owner;
         self.0.metadata.uid = self.0.data.uid(domain, owner);
         self.0.signature =
@@ -262,10 +265,7 @@ impl OrderData {
 
     pub fn uid(&self, domain: &DomainSeparator, owner: Address) -> OrderUid {
         OrderUid::from_parts(
-            B256::new(super::signature::hashed_eip712_message(
-                domain,
-                &self.hash_struct(),
-            )),
+            super::signature::hashed_eip712_message(domain, &self.hash_struct()),
             owner,
             self.valid_to,
         )
@@ -376,7 +376,7 @@ impl OrderCreation {
         mut self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         self.signature =
             EcdsaSignature::sign(signing_scheme, domain, &self.data().hash_struct(), key)
@@ -563,12 +563,10 @@ impl Default for OrderCancellation {
         Self::for_order(
             OrderUid::default(),
             &DomainSeparator::default(),
-            SecretKeyRef::new(
-                &secp256k1::SecretKey::from_str(
-                    "0000000000000000000000000000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-            ),
+            &PrivateKeySigner::from_bytes(&b256!(
+                "0000000000000000000000000000000000000000000000000000000000000001"
+            ))
+            .unwrap(),
         )
     }
 }
@@ -582,7 +580,7 @@ impl OrderCancellation {
     pub fn for_order(
         order_uid: OrderUid,
         domain_separator: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         let mut result = Self {
             order_uid,
@@ -1063,11 +1061,10 @@ mod tests {
     use {
         super::*,
         crate::signature::{EcdsaSigningScheme, SigningScheme},
-        alloy::primitives::address,
+        alloy::primitives::{address, b256},
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
-        secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
         testlib::assert_json_matches,
     };
@@ -1149,14 +1146,8 @@ mod tests {
             },
             signature: EcdsaSignature {
                 v: 1,
-                r: B256::from_str(
-                    "0200000000000000000000000000000000000000000000000000000000000003",
-                )
-                .unwrap(),
-                s: B256::from_str(
-                    "0400000000000000000000000000000000000000000000000000000000000005",
-                )
-                .unwrap(),
+                r: b256!("0200000000000000000000000000000000000000000000000000000000000003"),
+                s: b256!("0400000000000000000000000000000000000000000000000000000000000005"),
             }
             .to_signature(signing_scheme),
             interactions: Interactions::default(),
@@ -1422,18 +1413,11 @@ mod tests {
         assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
-    pub fn address_from_public_key(key: PublicKey) -> Address {
-        let hash =
-            alloy::primitives::keccak256(&key.serialize_uncompressed()[1..] /* cut '04' */);
-        Address::from_slice(&hash[12..])
-    }
-
     #[test]
     fn order_builder_signature_recovery() {
-        const PRIVATE_KEY: [u8; 32] =
-            hex!("0000000000000000000000000000000000000000000000000000000000000001");
-        let sk = SecretKey::from_slice(&PRIVATE_KEY).unwrap();
-        let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+        const PRIVATE_KEY: B256 = B256::with_last_byte(1);
+        let signer = PrivateKeySigner::from_bytes(&PRIVATE_KEY).unwrap();
+
         let order = OrderBuilder::default()
             .with_sell_token(Address::ZERO)
             .with_sell_amount(alloy::primitives::U256::from(100))
@@ -1451,7 +1435,7 @@ mod tests {
             .sign_with(
                 EcdsaSigningScheme::Eip712,
                 &DomainSeparator::default(),
-                SecretKeyRef::from(&sk),
+                &signer,
             )
             .build();
 
@@ -1461,7 +1445,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(recovered.signer, address_from_public_key(public_key));
+        assert_eq!(recovered.signer, signer.address());
     }
 
     #[test]

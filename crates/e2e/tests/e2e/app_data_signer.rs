@@ -1,15 +1,13 @@
 use {
-    alloy::primitives::Address,
+    alloy::{primitives::Address, signers::local::PrivateKeySigner},
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -29,7 +27,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     token_a.mint(trader.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -37,7 +35,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     token_a.mint(adversary.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(adversary.address())
         .send_and_watch()
         .await
@@ -63,7 +61,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         order_creation.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(signer.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(signer.private_key()).unwrap(),
         )
     };
 
@@ -100,7 +98,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     token_a.mint(safe.address(), 10u64.eth()).await;
     safe.exec_alloy_call(
         token_a
-            .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+            .approve(onchain.contracts().allowance, 10u64.eth())
             .into_transaction_request(),
     )
     .await;

@@ -1,7 +1,8 @@
 use {
+    ::alloy::signers::local::PrivateKeySigner,
     app_data::{AppDataHash, hash_full_app_data},
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -9,10 +10,8 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::str::FromStr,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -39,7 +38,7 @@ async fn app_data(web3: Web3) {
     token_a.mint(trader.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -60,7 +59,7 @@ async fn app_data(web3: Web3) {
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
         );
         // Adjust valid to make sure we get unique UIDs.
         valid_to += 1;
@@ -201,7 +200,7 @@ async fn app_data_full_format(web3: Web3) {
     token_a.mint(trader.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -222,7 +221,7 @@ async fn app_data_full_format(web3: Web3) {
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
         );
         // Adjust valid to make sure we get unique UIDs.
         valid_to += 1;

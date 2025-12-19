@@ -3,9 +3,8 @@
 pub use model::{DomainSeparator, order::OrderUid};
 use {
     crate::domain::competition,
+    alloy::signers::local::PrivateKeySigner,
     ethrpc::alloy::conversions::IntoAlloy,
-    secp256k1::SecretKey,
-    web3::signing::SecretKeyRef,
 };
 
 /// Order data used for calculating the order UID and signing.
@@ -19,7 +18,7 @@ pub struct Order {
     pub receiver: Option<ethcontract::H160>,
     pub user_fee: ethcontract::U256,
     pub side: competition::order::Side,
-    pub secret_key: SecretKey,
+    pub secret_key: PrivateKeySigner,
     pub domain_separator: DomainSeparator,
     pub owner: ethcontract::H160,
     pub partially_fillable: bool,
@@ -53,7 +52,7 @@ impl Order {
             .sign_with(
                 model::signature::EcdsaSigningScheme::Eip712,
                 &self.domain_separator,
-                SecretKeyRef::new(&self.secret_key),
+                &self.secret_key,
             )
             .build()
     }

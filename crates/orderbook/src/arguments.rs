@@ -145,6 +145,11 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub volume_fee_config: Option<VolumeFeeConfig>,
+
+    /// Controls if same sell and buy token orders are allowed.
+    /// Disallowed by default.
+    #[clap(long, env, default_value = "disallow")]
+    pub same_tokens_policy: shared::order_validation::SameTokensPolicy,
 }
 
 /// Volume-based protocol fee factor to be applied to quotes.
@@ -198,6 +203,7 @@ impl std::fmt::Display for Arguments {
             max_gas_per_order,
             active_order_competition_threshold,
             volume_fee_config,
+            same_tokens_policy,
         } = self;
 
         write!(f, "{shared}")?;
@@ -252,6 +258,7 @@ impl std::fmt::Display for Arguments {
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
         writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
+        writeln!(f, "same_tokens_policy: {same_tokens_policy:?}")?;
 
         Ok(())
     }

@@ -1,7 +1,11 @@
 use {
     alloy::{
         primitives::{Address, address},
-        providers::ext::{AnvilApi, ImpersonateConfig},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
+        signers::local::PrivateKeySigner,
     },
     chrono::{NaiveDateTime, Utc},
     contracts::alloy::{ERC20, IZeroex},
@@ -32,8 +36,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
-    web3::signing::SecretKeyRef,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -135,7 +137,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), amount)
+        .approve(onchain.contracts().allowance, amount)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -166,10 +168,10 @@ async fn zero_ex_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
-    let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+    let chain_id = web3.alloy.get_chain_id().await.unwrap();
     let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
         order.clone(),
         zeroex_maker.clone(),

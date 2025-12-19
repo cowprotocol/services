@@ -1,5 +1,8 @@
 use {
-    alloy::primitives::{Address, U256},
+    alloy::{
+        primitives::{Address, U256},
+        signers::local::PrivateKeySigner,
+    },
     e2e::setup::{
         Db,
         ExtraServiceArgs,
@@ -11,19 +14,14 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     sqlx::Row,
     std::time::Instant,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -290,7 +288,7 @@ async fn setup(
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.eth())
+        .approve(onchain.contracts().allowance, 1000u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -342,7 +340,7 @@ async fn execute_order(
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();

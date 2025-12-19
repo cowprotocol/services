@@ -1,5 +1,9 @@
 use {
-    alloy::providers::Provider,
+    alloy::{
+        primitives::{Address, Bytes, U256},
+        providers::Provider,
+        signers::local::PrivateKeySigner,
+    },
     app_data::Hook,
     e2e::setup::{
         OnchainComponents,
@@ -10,10 +14,7 @@ use {
         safe::Safe,
         wait_for_condition,
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, conversions::IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -21,10 +22,8 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -63,16 +62,12 @@ async fn gas_limit(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let cow = onchain
-        .deploy_cow_weth_pool(
-            1_000_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_cow_weth_pool(1_000_000u64.eth(), 1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts and approve relayer
     cow.fund(trader.address(), 5u64.eth()).await;
-    cow.approve(onchain.contracts().allowance.into_alloy(), 5u64.eth())
+    cow.approve(onchain.contracts().allowance, 5u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -108,7 +103,7 @@ async fn gas_limit(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let error = services.create_order(&order).await.unwrap_err();
     assert_eq!(error.0, StatusCode::BAD_REQUEST);
@@ -121,11 +116,7 @@ async fn allowance(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let cow = onchain
-        .deploy_cow_weth_pool(
-            1_000_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_cow_weth_pool(1_000_000u64.eth(), 1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -133,17 +124,13 @@ async fn allowance(web3: Web3) {
 
     // Sign a permit pre-interaction for trading.
     let permit = cow
-        .permit(
-            &trader,
-            onchain.contracts().allowance,
-            5u64.eth().into_legacy(),
-        )
+        .permit(&trader, onchain.contracts().allowance, 5u64.eth())
         .await;
     // Setup a malicious interaction for setting approvals to steal funds from
     // the settlement contract.
     let steal_cow = {
         let tx = cow
-            .approve(trader.address(), alloy::primitives::U256::MAX)
+            .approve(trader.address(), U256::MAX)
             .from(solver.address());
         Hook {
             target: *cow.address(),
@@ -155,7 +142,7 @@ async fn allowance(web3: Web3) {
         let approve = onchain
             .contracts()
             .weth
-            .approve(trader.address(), ::alloy::primitives::U256::MAX);
+            .approve(trader.address(), U256::MAX);
         Hook {
             target: *onchain.contracts().weth.address(),
             call_data: approve.calldata().to_vec(),
@@ -189,7 +176,7 @@ async fn allowance(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -230,7 +217,7 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, alloy::primitives::U256::ZERO);
+    assert_eq!(allowance, U256::ZERO);
     let allowance = onchain
         .contracts()
         .weth
@@ -241,7 +228,7 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, ::alloy::primitives::U256::ZERO);
+    assert_eq!(allowance, U256::ZERO);
 
     // Note that the allowances were set with the `HooksTrampoline` contract!
     // This is OK since the `HooksTrampoline` contract is not used for holding
@@ -251,7 +238,7 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, alloy::primitives::U256::MAX);
+    assert_eq!(allowance, U256::MAX);
     let allowance = onchain
         .contracts()
         .weth
@@ -259,13 +246,13 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, ::alloy::primitives::U256::MAX);
+    assert_eq!(allowance, U256::MAX);
 }
 
 async fn signature(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let chain_id = alloy::primitives::U256::from(web3.alloy.get_chain_id().await.unwrap());
+    let chain_id = U256::from(web3.alloy.get_chain_id().await.unwrap());
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
@@ -279,14 +266,14 @@ async fn signature(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address()],                // owners
-                alloy::primitives::U256::ONE,          // threshold
-                alloy::primitives::Address::default(), // delegate call
-                alloy::primitives::Bytes::default(),   // delegate call bytes
+                vec![trader.address()], // owners
+                U256::ONE,              // threshold
+                Address::default(),     // delegate call
+                Bytes::default(),       // delegate call bytes
                 *safe_infra.fallback.address(),
-                alloy::primitives::Address::default(), // relayer payment token
-                alloy::primitives::U256::ZERO,         // relayer payment amount
-                alloy::primitives::Address::default(), // relayer address
+                Address::default(), // relayer payment token
+                U256::ZERO,         // relayer payment amount
+                Address::default(), // relayer address
             )
             .calldata()
             .clone(),
@@ -313,14 +300,10 @@ async fn signature(web3: Web3) {
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
     let approval_call_data = token
-        .approve(onchain.contracts().allowance.into_alloy(), 5u64.eth())
+        .approve(onchain.contracts().allowance, 5u64.eth())
         .calldata()
         .to_vec();
-    let approval_builder = safe.sign_transaction(
-        *token.address(),
-        approval_call_data,
-        alloy::primitives::U256::ZERO,
-    );
+    let approval_builder = safe.sign_transaction(*token.address(), approval_call_data, U256::ZERO);
     let call_data = approval_builder.calldata().to_vec();
     let target = approval_builder
         .into_transaction_request()
@@ -434,7 +417,7 @@ async fn partial_fills(web3: Web3) {
 
     let sell_token = onchain.contracts().weth.clone();
     sell_token
-        .approve(onchain.contracts().allowance.into_alloy(), 2u64.eth())
+        .approve(onchain.contracts().allowance, 2u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -494,7 +477,7 @@ async fn partial_fills(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -546,7 +529,7 @@ async fn partial_fills(web3: Web3) {
 async fn quote_verification(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let chain_id = alloy::primitives::U256::from(web3.alloy.get_chain_id().await.unwrap());
+    let chain_id = U256::from(web3.alloy.get_chain_id().await.unwrap());
 
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -560,14 +543,14 @@ async fn quote_verification(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address()],                // owners
-                alloy::primitives::U256::ONE,          // threshold
-                alloy::primitives::Address::default(), // delegate call
-                alloy::primitives::Bytes::default(),   // delegate call bytes
+                vec![trader.address()], // owners
+                U256::ONE,              // threshold
+                Address::default(),     // delegate call
+                Bytes::default(),       // delegate call bytes
                 *safe_infra.fallback.address(),
-                alloy::primitives::Address::default(), // relayer payment token
-                alloy::primitives::U256::ZERO,         // relayer payment amount
-                alloy::primitives::Address::default(), // relayer address
+                Address::default(), // relayer payment token
+                U256::ZERO,         // relayer payment amount
+                Address::default(), // relayer address
             )
             .calldata()
             .clone(),
@@ -587,7 +570,7 @@ async fn quote_verification(web3: Web3) {
     token.mint(safe.address(), 5u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 5u64.eth())
+        .approve(onchain.contracts().allowance, 5u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -601,7 +584,7 @@ async fn quote_verification(web3: Web3) {
             .transfer(trader.address(), 5u64.eth())
             .calldata()
             .to_vec(),
-        alloy::primitives::U256::ZERO,
+        U256::ZERO,
     );
     let call_data = transfer_builder.calldata().to_vec();
     let target = transfer_builder

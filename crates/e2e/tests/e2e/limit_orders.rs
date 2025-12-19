@@ -3,16 +3,14 @@ use {
     ::alloy::{
         primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
+        signers::local::PrivateKeySigner,
     },
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -20,10 +18,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{collections::HashMap, ops::DerefMut},
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -158,7 +154,7 @@ async fn single_limit_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -180,7 +176,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
@@ -280,14 +276,14 @@ async fn two_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -309,7 +305,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
 
     let balance_before_a = token_b.balanceOf(trader_a.address()).call().await.unwrap();
@@ -333,7 +329,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_b.private_key()).unwrap(),
     );
     let order_id = services.create_order(&order_b).await.unwrap();
 
@@ -382,14 +378,14 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -443,7 +439,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
@@ -459,7 +455,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_b.private_key()).unwrap(),
     );
     let uid_b = services.create_order(&order_b).await.unwrap();
 
@@ -484,10 +480,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 matches!(
                     (
                         services
-                            .get_solver_competition(trade_a.tx_hash.unwrap().into_legacy())
+                            .get_solver_competition(trade_a.tx_hash.unwrap())
                             .await,
                         services
-                            .get_solver_competition(trade_b.tx_hash.unwrap().into_legacy())
+                            .get_solver_competition(trade_b.tx_hash.unwrap())
                             .await
                     ),
                     (Ok(_), Ok(_))
@@ -500,7 +496,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
     // Verify that both transactions were properly indexed
@@ -608,7 +604,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
+        .approve(onchain.contracts().allowance, 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -651,7 +647,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     services.create_order(&order).await.unwrap();
 
@@ -669,7 +665,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let (status, body) = services.create_order(&order).await.unwrap_err();
@@ -690,7 +686,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
+        .approve(onchain.contracts().allowance, 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -747,7 +743,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     assert!(services.create_order(&order).await.is_ok());
 
@@ -764,7 +760,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -783,7 +779,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     assert!(services.create_order(&order).await.is_ok());
 
@@ -800,7 +796,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let (status, body) = services.create_order(&order).await.unwrap_err();
@@ -845,7 +841,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+        .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -869,7 +865,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     // Warm up co-located driver by quoting the order (otherwise placing an order
@@ -945,7 +941,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+        .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -967,7 +963,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let sell_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let buy_token_balance_before = token_wxdai
@@ -1010,7 +1006,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -1066,7 +1062,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -1079,7 +1075,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .create_order(&order.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
         ))
         .await
         .unwrap_err();

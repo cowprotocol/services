@@ -24,7 +24,7 @@ use {
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
-    alloy::{eips::BlockNumberOrTag, primitives::Address},
+    alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
@@ -184,12 +184,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     });
 
     let chain_id = web3
-        .eth()
-        .chain_id()
+        .alloy
+        .get_chain_id()
         .instrument(info_span!("chain_id"))
         .await
-        .expect("Could not get chainId")
-        .as_u64();
+        .expect("Could not get chainId");
     if let Some(expected_chain_id) = args.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
@@ -752,11 +751,10 @@ async fn shadow_mode(args: Arguments) -> ! {
 
     let trusted_tokens = {
         let chain_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
-            .expect("Could not get chainId")
-            .as_u64();
+            .expect("Could not get chainId");
         if let Some(expected_chain_id) = args.shared.chain_id {
             assert_eq!(
                 chain_id, expected_chain_id,

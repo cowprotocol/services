@@ -37,10 +37,13 @@ use {
             },
         },
     },
-    alloy::primitives::{Address, U256, address},
+    alloy::{
+        primitives::{Address, U256, address},
+        providers::Provider,
+    },
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -471,10 +474,12 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
 
 #[derive(Debug)]
 pub enum Mempool {
-    Public,
+    /// Uses the driver's main RPC URL
+    Default,
     Private {
         /// Uses ethrpc node if None
         url: Option<String>,
+        mines_reverting_txs: bool,
     },
 }
 
@@ -483,7 +488,7 @@ pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Public],
+        mempools: vec![Mempool::Default],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -513,7 +518,8 @@ pub struct Setup {
     balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
-    /// Via which mempool the solutions should be submitted
+    /// Mempools that should be used for solution submission in addition
+    /// to the main RPC URL.
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
@@ -968,6 +974,7 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
+
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -1175,10 +1182,9 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .eth()
-                .balance(self.trader_address.into_legacy(), None)
+                .alloy
+                .get_balance(self.trader_address)
                 .await
-                .map(IntoAlloy::into_alloy)
                 .unwrap(),
         );
         balances

@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy::{primitives::Address, signers::local::PrivateKeySigner},
     app_data::AppDataHash,
     model::{
         DomainSeparator,
@@ -7,7 +7,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     solvers_dto::solution::{Asset, Kind},
-    web3::signing::SecretKeyRef,
 };
 
 #[derive(Clone, Debug)]
@@ -44,7 +43,7 @@ impl JitOrder {
         self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> (solvers_dto::solution::JitOrder, OrderUid) {
         let data = self.data();
         let signature = model::signature::EcdsaSignature::sign(

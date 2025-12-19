@@ -5,8 +5,8 @@ use {
     },
     ::alloy::{
         network::{Ethereum, NetworkWallet, TransactionBuilder},
-        primitives::Address,
-        providers::Provider,
+        primitives::{Address, U256},
+        providers::{Provider, ext::AnvilApi},
         rpc::types::TransactionRequest,
         signers::local::PrivateKeySigner,
     },
@@ -16,7 +16,7 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
-    ethcontract::{Account, H160, PrivateKey, U256},
+    ethcontract::{Account, PrivateKey},
     ethrpc::alloy::{
         CallBuilderExt,
         ProviderSignerExt,
@@ -28,13 +28,9 @@ use {
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
-    web3::{
-        Transport,
-        signing::{self, SecretKeyRef},
-    },
+    web3::signing::{self},
 };
 
 pub mod alloy;
@@ -68,7 +64,7 @@ impl TestAccount {
             EcdsaSigningScheme::Eip712,
             domain_separator,
             struct_hash,
-            SecretKeyRef::from(&SecretKey::from_slice(self.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(self.private_key()).unwrap(),
         )
     }
 
@@ -122,7 +118,7 @@ pub struct MintableToken {
 }
 
 impl MintableToken {
-    pub async fn mint(&self, to: Address, amount: ::alloy::primitives::U256) {
+    pub async fn mint(&self, to: Address, amount: U256) {
         self.contract
             .mint(to, amount)
             .from(self.minter.address().into_alloy())
@@ -147,7 +143,7 @@ pub struct CowToken {
 }
 
 impl CowToken {
-    pub async fn fund(&self, to: Address, amount: ::alloy::primitives::U256) {
+    pub async fn fund(&self, to: Address, amount: U256) {
         self.contract
             .transfer(to, amount)
             .from(self.holder.address().into_alloy())
@@ -156,16 +152,10 @@ impl CowToken {
             .unwrap();
     }
 
-    pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
+    pub async fn permit(&self, owner: &TestAccount, spender: Address, value: U256) -> Hook {
         let domain = self.contract.DOMAIN_SEPARATOR().call().await.unwrap();
-        let nonce = self
-            .contract
-            .nonces(owner.address())
-            .call()
-            .await
-            .unwrap()
-            .into_legacy();
-        let deadline = U256::max_value();
+        let nonce = self.contract.nonces(owner.address()).call().await.unwrap();
+        let deadline = U256::MAX;
 
         let struct_hash = {
             let mut buffer = [0_u8; 192];
@@ -173,10 +163,10 @@ impl CowToken {
                 "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9"
             ));
             buffer[44..64].copy_from_slice(owner.address().as_slice());
-            buffer[76..96].copy_from_slice(spender.as_bytes());
-            value.to_big_endian(&mut buffer[96..128]);
-            nonce.to_big_endian(&mut buffer[128..160]);
-            deadline.to_big_endian(&mut buffer[160..192]);
+            buffer[76..96].copy_from_slice(spender.as_slice());
+            buffer[96..128].copy_from_slice(value.to_be_bytes::<32>().as_slice());
+            buffer[128..160].copy_from_slice(nonce.to_be_bytes::<32>().as_slice());
+            buffer[160..192].copy_from_slice(deadline.to_be_bytes::<32>().as_slice());
 
             signing::keccak256(&buffer)
         };
@@ -185,9 +175,9 @@ impl CowToken {
 
         let permit = self.contract.permit(
             owner.address(),
-            spender.into_alloy(),
-            value.into_alloy(),
-            deadline.into_alloy(),
+            spender,
+            value,
+            deadline,
             signature.v,
             signature.r.0.into(),
             signature.s.0.into(),
@@ -250,10 +240,7 @@ impl OnchainComponents {
     }
 
     /// Generate next `N` accounts with the given initial balance.
-    pub async fn make_accounts<const N: usize>(
-        &mut self,
-        with_wei: ::alloy::primitives::U256,
-    ) -> [TestAccount; N] {
+    pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
         assert_eq!(res.len(), N);
 
@@ -269,10 +256,7 @@ impl OnchainComponents {
 
     /// Generate next `N` accounts with the given initial balance and
     /// authenticate them as solvers.
-    pub async fn make_solvers<const N: usize>(
-        &mut self,
-        with_wei: ::alloy::primitives::U256,
-    ) -> [TestAccount; N] {
+    pub async fn make_solvers<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
@@ -313,7 +297,7 @@ impl OnchainComponents {
     /// authenticate them as solvers on a forked network.
     pub async fn make_solvers_forked<const N: usize>(
         &mut self,
-        with_wei: ::alloy::primitives::U256,
+        with_wei: U256,
     ) -> [TestAccount; N] {
         let authenticator = &self.contracts.gp_authenticator;
 
@@ -388,15 +372,16 @@ impl OnchainComponents {
     /// Deploy `N` tokens with WETH Uniswap pools.
     pub async fn deploy_tokens_with_weth_uni_v2_pools<const N: usize>(
         &self,
-        token_amount: ::alloy::primitives::U256,
-        weth_amount: ::alloy::primitives::U256,
+        token_amount: U256,
+        weth_amount: U256,
     ) -> [MintableToken; N] {
         let minter = Account::Local(
             self.web3
-                .eth()
-                .accounts()
+                .alloy
+                .get_accounts()
                 .await
-                .expect("getting accounts failed")[0],
+                .expect("getting accounts failed")[0]
+                .into_legacy(),
             None,
         );
         let tokens = self.deploy_tokens::<N>(&minter).await;
@@ -408,8 +393,8 @@ impl OnchainComponents {
     pub async fn seed_weth_uni_v2_pools(
         &self,
         tokens: impl IntoIterator<Item = &MintableToken>,
-        token_amount: ::alloy::primitives::U256,
-        weth_amount: ::alloy::primitives::U256,
+        token_amount: U256,
+        weth_amount: U256,
     ) {
         for MintableToken { contract, minter } in tokens {
             contract
@@ -458,10 +443,10 @@ impl OnchainComponents {
                     *self.contracts.weth.address(),
                     token_amount,
                     weth_amount,
-                    ::alloy::primitives::U256::ZERO,
-                    ::alloy::primitives::U256::ZERO,
+                    U256::ZERO,
+                    U256::ZERO,
                     minter.address().into_alloy(),
-                    ::alloy::primitives::U256::MAX,
+                    U256::MAX,
                 )
                 .from(minter.address().into_alloy())
                 .send_and_watch()
@@ -472,8 +457,8 @@ impl OnchainComponents {
 
     pub async fn seed_uni_v2_pool(
         &self,
-        asset_a: (&MintableToken, ::alloy::primitives::U256),
-        asset_b: (&MintableToken, ::alloy::primitives::U256),
+        asset_a: (&MintableToken, U256),
+        asset_b: (&MintableToken, U256),
     ) {
         let lp = &asset_a.0.minter;
         asset_a.0.mint(lp.address().into_alloy(), asset_a.1).await;
@@ -509,10 +494,10 @@ impl OnchainComponents {
                 *asset_b.0.address(),
                 asset_a.1,
                 asset_b.1,
-                ::alloy::primitives::U256::ZERO,
-                ::alloy::primitives::U256::ZERO,
+                U256::ZERO,
+                U256::ZERO,
                 lp.address().into_alloy(),
-                ::alloy::primitives::U256::MAX,
+                U256::MAX,
             )
             .from(lp.address().into_alloy())
             .send_and_watch()
@@ -523,11 +508,7 @@ impl OnchainComponents {
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
     ///
     /// This can be used to modify the pool reserves during a test.
-    pub async fn mint_token_to_weth_uni_v2_pool(
-        &self,
-        token: &MintableToken,
-        amount: ::alloy::primitives::U256,
-    ) {
+    pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
         let pair = contracts::alloy::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
@@ -541,17 +522,15 @@ impl OnchainComponents {
 
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
-        token
-            .mint(*pair.address(), amount + ::alloy::primitives::U256::ONE)
-            .await;
+        token.mint(*pair.address(), amount + U256::ONE).await;
         let (out0, out1) = if self.contracts.weth.address() < token.address() {
             (1, 0)
         } else {
             (0, 1)
         };
         pair.swap(
-            ::alloy::primitives::U256::from(out0),
-            ::alloy::primitives::U256::from(out1),
+            U256::from(out0),
+            U256::from(out1),
             token.minter.address().into_alloy(),
             Default::default(),
         )
@@ -568,7 +547,7 @@ impl OnchainComponents {
             self.web3.alloy.clone(),
             holder.address().into_alloy(),
             holder.address().into_alloy(),
-            supply.into_alloy(),
+            supply,
         )
         .await
         .expect("CowProtocolToken deployment failed");
@@ -586,7 +565,7 @@ impl OnchainComponents {
         self.contracts
             .weth
             .deposit()
-            .value(weth_amount.into_alloy())
+            .value(weth_amount)
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
@@ -599,20 +578,14 @@ impl OnchainComponents {
             .send_and_watch()
             .await
             .unwrap();
-        cow.approve(
-            *self.contracts.uniswap_v2_router.address(),
-            cow_amount.into_alloy(),
-        )
-        .from(cow.holder.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        cow.approve(*self.contracts.uniswap_v2_router.address(), cow_amount)
+            .from(cow.holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
         self.contracts
             .weth
-            .approve(
-                *self.contracts.uniswap_v2_router.address(),
-                weth_amount.into_alloy(),
-            )
+            .approve(*self.contracts.uniswap_v2_router.address(), weth_amount)
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
             .await
@@ -622,12 +595,12 @@ impl OnchainComponents {
             .addLiquidity(
                 *cow.address(),
                 *self.contracts.weth.address(),
-                cow_amount.into_alloy(),
-                weth_amount.into_alloy(),
-                ::alloy::primitives::U256::ZERO,
-                ::alloy::primitives::U256::ZERO,
+                cow_amount,
+                weth_amount,
+                U256::ZERO,
+                U256::ZERO,
                 cow.holder.address().into_alloy(),
-                ::alloy::primitives::U256::MAX,
+                U256::MAX,
             )
             .from(cow.holder.address().into_alloy())
             .send_and_watch()
@@ -637,7 +610,7 @@ impl OnchainComponents {
         cow
     }
 
-    pub async fn send_wei(&self, to: Address, amount: ::alloy::primitives::U256) {
+    pub async fn send_wei(&self, to: Address, amount: U256) {
         let balance_before = self.web3.alloy.get_balance(to).await.unwrap();
         self.web3
             .alloy
@@ -659,11 +632,7 @@ impl OnchainComponents {
 
     pub async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3
-            .transport()
-            .execute("evm_mine", vec![])
-            .await
-            .unwrap();
+        self.web3.alloy.evm_mine(None).await.unwrap();
     }
 
     pub fn contracts(&self) -> &Contracts {

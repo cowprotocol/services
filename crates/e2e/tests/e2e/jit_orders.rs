@@ -1,20 +1,15 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     solvers_dto::solution::{Asset, Solution},
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -47,14 +42,14 @@ async fn single_limit_order_test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .approve(onchain.contracts().allowance, U256::MAX)
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), U256::MAX)
+        .approve(onchain.contracts().allowance, U256::MAX)
         .from(solver.address())
         .send_and_watch()
         .await
@@ -123,7 +118,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
@@ -152,7 +147,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(solver.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(solver.private_key()).unwrap(),
     );
 
     mock_solver.configure_solution(Some(Solution {
@@ -215,14 +210,11 @@ async fn single_limit_order_test(web3: Web3) {
             .tx_hash?;
 
         // jit order can be found on /api/v1/transactions/{tx_hash}/orders
-        let orders_by_tx = services
-            .get_orders_for_tx(&tx_hash.into_legacy())
-            .await
-            .ok()?;
+        let orders_by_tx = services.get_orders_for_tx(&tx_hash).await.ok()?;
 
         // jit order can be found on /api/v1/account/{owner}/orders
         let orders_by_owner = services
-            .get_orders_for_owner(&jit_order_uid.parts().1.into_legacy(), 0, 10)
+            .get_orders_for_owner(&jit_order_uid.parts().1, 0, 10)
             .await
             .ok()?;
         let jit_order_by_owner = orders_by_owner
@@ -236,7 +228,7 @@ async fn single_limit_order_test(web3: Web3) {
 
     // make sure the offset works
     let orders_by_owner = services
-        .get_orders_for_owner(&jit_order_uid.parts().1.into_legacy(), 1, 1)
+        .get_orders_for_owner(&jit_order_uid.parts().1, 1, 1)
         .await
         .unwrap();
     assert!(orders_by_owner.is_empty());

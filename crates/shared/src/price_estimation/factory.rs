@@ -189,7 +189,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     driver.name.clone(),
                     Arc::new(InstrumentedPriceEstimator::new(
                         NativePriceEstimator::new(
-                            Arc::new(self.sanitized(estimator)),
+                            Arc::new(self.sanitized_native_price(estimator)),
                             self.network.native_token,
                             native_token_price_estimation_amount,
                         ),
@@ -298,6 +298,21 @@ impl<'a> PriceEstimatorFactory<'a> {
             estimator,
             self.network.native_token,
             self.components.bad_token_detector.clone(),
+            false, // not estimating native price
+        )
+    }
+
+    /// Creates a SanitizedPriceEstimator that is used for native price
+    /// estimations
+    fn sanitized_native_price(
+        &self,
+        estimator: Arc<dyn PriceEstimating>,
+    ) -> SanitizedPriceEstimator {
+        SanitizedPriceEstimator::new(
+            estimator,
+            self.network.native_token,
+            self.components.bad_token_detector.clone(),
+            true, // estimating native price
         )
     }
 

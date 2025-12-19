@@ -1,11 +1,13 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{
+        primitives::{Address, U256},
+        signers::local::PrivateKeySigner,
+    },
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
         setup::{fee::*, *},
     },
-    ethcontract::Address,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -25,10 +27,8 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -132,7 +132,7 @@ async fn combined_protocol_fees(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -191,8 +191,8 @@ async fn combined_protocol_fees(web3: Web3) {
             .map(|token| {
                 get_quote(
                     &services,
-                    onchain.contracts().weth.address().into_legacy(),
-                    token.address().into_legacy(),
+                    *onchain.contracts().weth.address(),
+                    *token.address(),
                     OrderKind::Sell,
                     sell_amount,
                     quote_valid_to,
@@ -213,7 +213,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let limit_surplus_order = OrderCreation {
         sell_amount,
@@ -224,7 +224,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let partner_fee_order = OrderCreation {
         sell_amount,
@@ -236,7 +236,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
@@ -256,8 +256,8 @@ async fn combined_protocol_fees(web3: Web3) {
         onchain.mint_block().await;
         let new_market_order_quote = get_quote(
             &services,
-            onchain.contracts().weth.address().into_legacy(),
-            market_order_token.address().into_legacy(),
+            *onchain.contracts().weth.address(),
+            *market_order_token.address(),
             OrderKind::Sell,
             sell_amount,
             model::time::now_in_epoch_seconds() + 300,
@@ -286,8 +286,8 @@ async fn combined_protocol_fees(web3: Web3) {
         .map(|token| {
             get_quote(
                 &services,
-                onchain.contracts().weth.address().into_legacy(),
-                token.address().into_legacy(),
+                *onchain.contracts().weth.address(),
+                *token.address(),
                 OrderKind::Sell,
                 sell_amount,
                 quote_valid_to,
@@ -497,7 +497,7 @@ async fn surplus_partner_fee(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -549,7 +549,7 @@ async fn surplus_partner_fee(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let order_uid = services.create_order(&order).await.unwrap();
@@ -644,8 +644,8 @@ async fn get_quote(
         },
     };
     let quote_request = OrderQuoteRequest {
-        sell_token: sell_token.into_alloy(),
-        buy_token: buy_token.into_alloy(),
+        sell_token,
+        buy_token,
         side,
         validity: Validity::To(valid_to),
         ..Default::default()
@@ -759,7 +759,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -779,8 +779,8 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     let quote = get_quote(
         &services,
-        token_gno.address().into_legacy(),
-        token_dai.address().into_legacy(),
+        *token_gno.address(),
+        *token_dai.address(),
         OrderKind::Buy,
         5u64.eth(),
         model::time::now_in_epoch_seconds() + 300,
@@ -801,7 +801,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
 
@@ -916,7 +916,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -936,8 +936,8 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
 
     let quote = get_quote(
         &services,
-        token_gno.address().into_legacy(),
-        token_dai.address().into_legacy(),
+        *token_gno.address(),
+        *token_dai.address(),
         OrderKind::Buy,
         5u64.eth(),
         model::time::now_in_epoch_seconds() + 300,
@@ -958,7 +958,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
 

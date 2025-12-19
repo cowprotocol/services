@@ -19,22 +19,14 @@ use {
             wait_for_condition,
         },
     },
-    ethrpc::{
-        Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -120,10 +112,7 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Trader gives approval to the CoW allowance contract
     token_usdc
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            alloy::primitives::U256::MAX,
-        )
+        .approve(onchain.contracts().allowance, U256::MAX)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -163,10 +152,7 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Maker gives approval to the Liquorice balance manager contract
     token_usdt
-        .approve(
-            liquorice_balance_manager_address,
-            alloy::primitives::U256::MAX,
-        )
+        .approve(liquorice_balance_manager_address, U256::MAX)
         .from(liquorice_maker.address())
         .send_and_watch()
         .await
@@ -245,7 +231,7 @@ http-timeout = "10s"
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
         );
         services.create_order(&order).await.unwrap()
     };
@@ -311,7 +297,7 @@ http-timeout = "10s"
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: trade_amount,
-                fee: Some(alloy::primitives::U256::ZERO),
+                fee: Some(U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_id.0),
             },
         )],
@@ -320,7 +306,7 @@ http-timeout = "10s"
             solvers_dto::solution::CustomInteraction {
                 target: *liquorice_settlement.address(),
                 calldata: liquorice_solution_calldata,
-                value: alloy::primitives::U256::ZERO,
+                value: U256::ZERO,
                 allowances: vec![solvers_dto::solution::Allowance {
                     token: *token_usdc.address(),
                     spender: liquorice_balance_manager_address,
@@ -343,7 +329,7 @@ http-timeout = "10s"
         let trade = services.get_trades(&order_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?.into_legacy())
+                .get_solver_competition(trade.tx_hash?)
                 .await
                 .is_ok(),
         )

@@ -1,6 +1,7 @@
 //! Module containing Ethereum RPC extension methods.
 
 use {
+    alloy::primitives::Address,
     ethcontract::state_overrides::StateOverrides,
     serde::Deserialize,
     tracing::{Instrument, instrument::Instrumented},
@@ -97,12 +98,12 @@ impl<T: Transport> Debug<T> {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct CallFrame {
     /// The address of that initiated the call.
-    pub from: primitive_types::H160,
+    pub from: Address,
     /// The address of the contract that was called.
     #[serde(default)]
-    pub to: Option<primitive_types::H160>,
+    pub to: Option<Address>,
     /// Calldata input.
-    pub input: Bytes,
+    pub input: alloy::primitives::Bytes,
     /// Recorded child calls.
     #[serde(default)]
     pub calls: Vec<CallFrame>,

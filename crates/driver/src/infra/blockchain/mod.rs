@@ -3,9 +3,9 @@ use {
         boundary,
         domain::{eth, eth::U256},
     },
-    alloy::providers::Provider,
+    alloy::{providers::Provider, rpc::types::TransactionReceipt, transports::TransportErrorKind},
     chain::Chain,
-    ethcontract::errors::ExecutionError,
+    ethcontract::{BlockNumber, errors::ExecutionError},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -170,8 +170,8 @@ impl Ethereum {
 
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
-        let code = self.web3.eth().code(address.into_legacy(), None).await?;
-        Ok(!code.0.is_empty())
+        let code = self.web3.alloy.get_code_at(address).await?;
+        Ok(!code.is_empty())
     }
 
     /// Returns a type that monitors the block chain to inform about the current
@@ -198,7 +198,7 @@ impl Ethereum {
             .transport()
             .execute(
                 "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap(), "latest".into()],
+                vec![serde_json::to_value(&tx).unwrap(), "pending".into()],
             )
             .await?;
         if let Some(err) = json.get("error") {
@@ -226,7 +226,7 @@ impl Ethereum {
                         .map(IntoLegacy::into_legacy),
                     ..Default::default()
                 },
-                None,
+                Some(BlockNumber::Pending),
             )
             .await
             .map(IntoAlloy::into_alloy)
@@ -253,10 +253,9 @@ impl Ethereum {
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
-            .eth()
-            .balance(address.into_legacy(), None)
+            .alloy
+            .get_balance(address)
             .await
-            .map(IntoAlloy::into_alloy)
             .map(Into::into)
             .map_err(Into::into)
     }
@@ -269,26 +268,29 @@ impl Ethereum {
     /// Returns the transaction's on-chain inclusion status.
     pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
-            .eth()
-            .transaction_receipt(tx_hash.0.into_legacy())
+            .alloy
+            .get_transaction_receipt(tx_hash.0)
             .await
-            .map(|result| match result {
-                Some(web3::types::TransactionReceipt {
-                    status: Some(status),
-                    block_number: Some(block),
-                    ..
-                }) => {
-                    if status.is_zero() {
-                        eth::TxStatus::Reverted {
-                            block_number: eth::BlockNo(block.as_u64()),
-                        }
-                    } else {
-                        eth::TxStatus::Executed {
-                            block_number: eth::BlockNo(block.as_u64()),
-                        }
+            .map(|result| {
+                let Some(
+                    receipt @ TransactionReceipt {
+                        block_number: Some(block_number),
+                        ..
+                    },
+                ) = result
+                else {
+                    return eth::TxStatus::Pending;
+                };
+
+                if receipt.status() {
+                    eth::TxStatus::Executed {
+                        block_number: eth::BlockNo(block_number),
+                    }
+                } else {
+                    eth::TxStatus::Reverted {
+                        block_number: eth::BlockNo(block_number),
                     }
                 }
-                _ => eth::TxStatus::Pending,
             })
             .map_err(Into::into)
     }
@@ -329,7 +331,9 @@ impl fmt::Debug for Ethereum {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
-    Rpc(#[from] alloy::contract::Error),
+    ContractRpc(#[from] alloy::contract::Error),
+    #[error("alloy rpc error: {0:?}")]
+    Rpc(#[from] alloy::transports::RpcError<TransportErrorKind>),
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
     #[error("web3 error: {0:?}")]
@@ -353,7 +357,8 @@ impl Error {
             }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
-            Error::Rpc(_) => true,
+            Error::ContractRpc(_) => true,
+            Error::Rpc(_) => false,
         }
     }
 }
@@ -362,7 +367,7 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
-            contracts::Error::Rpc(err) => Self::Rpc(err),
+            contracts::Error::Rpc(err) => Self::ContractRpc(err),
         }
     }
 }
@@ -370,7 +375,7 @@ impl From<contracts::Error> for Error {
 impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
-            SimulationError::Method(err) => Self::Rpc(err),
+            SimulationError::Method(err) => Self::ContractRpc(err),
             SimulationError::Web3(err) => Self::Web3(err),
         }
     }

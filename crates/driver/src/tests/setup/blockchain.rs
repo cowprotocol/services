@@ -31,10 +31,9 @@ use {
     },
     futures::Future,
     secp256k1::SecretKey,
-    serde_json::json,
     solvers_dto::solution::Flashloan,
     std::collections::HashMap,
-    web3::{Transport, signing::Key},
+    web3::signing::Key,
 };
 // TODO Possibly might be a good idea to use an enum for tokens instead of
 // &'static str
@@ -207,7 +206,7 @@ impl QuotedOrder {
             receiver: self.order.receiver.map(IntoLegacy::into_legacy),
             user_fee: self.order.fee_amount.into_legacy(),
             side: self.order.side,
-            secret_key,
+            secret_key: PrivateKeySigner::from_bytes((&secret_key.secret_bytes()).into()).unwrap(),
             domain_separator: blockchain.domain_separator,
             owner: (&secret_key).address(),
             partially_fillable: matches!(self.order.partial, Partial::Yes { .. }),
@@ -238,6 +237,9 @@ impl Blockchain {
         let web3 = Web3::new_from_url(&node.url());
 
         let private_key = config.main_trader_secret_key.as_ref();
+        web3.wallet
+            .register_signer(PrivateKeySigner::from_bytes(private_key.into()).unwrap());
+
         let main_trader_account = ethcontract::Account::Offline(
             ethcontract::PrivateKey::from_slice(private_key).unwrap(),
             None,
@@ -261,14 +263,18 @@ impl Blockchain {
         let primary_address = primary_account.address();
 
         // Use the primary account to fund the trader, cow amm and the solver with ETH.
-        let balance = web3.eth().balance(primary_address, None).await.unwrap();
+        let balance = web3
+            .alloy
+            .get_balance(primary_address.into_alloy())
+            .await
+            .unwrap();
         wait_for(
             &web3,
             web3.eth()
                 .send_transaction(web3::types::TransactionRequest {
                     from: primary_address,
                     to: Some(main_trader_account.address()),
-                    value: Some(balance / 5),
+                    value: Some((balance / alloy::primitives::U256::from(5)).into_legacy()),
                     ..Default::default()
                 }),
         )
@@ -286,7 +292,7 @@ impl Blockchain {
             ethcontract::transaction::TransactionBuilder::new(web3.legacy.clone())
                 .from(primary_account)
                 .to(weth.address().into_legacy())
-                .value(balance / 5)
+                .value((balance / alloy::primitives::U256::from(5)).into_legacy())
                 .send(),
         )
         .await
@@ -328,11 +334,12 @@ impl Blockchain {
                 // replace the vault relayer code to allow the settlement
                 // contract at a specific address.
                 let mut code = web3
-                    .eth()
-                    .code(vault_relayer.into_legacy(), None)
+                    .alloy
+                    .get_code_at(vault_relayer)
                     .await
                     .unwrap()
-                    .0;
+                    .to_vec();
+
                 for i in 0..code.len() - 20 {
                     let window = &mut code[i..][..20];
                     if window == settlement.address().as_slice() {
@@ -754,22 +761,21 @@ impl Blockchain {
             let pair = self.find_pair(order);
             let execution = self.execution(order);
 
+            // Register the trader account as a signer
+            let trader_private_key_signer =
+                PrivateKeySigner::from_bytes(self.trader_secret_key.as_ref().into()).unwrap();
+            let trader_address = trader_private_key_signer.address();
+            self.web3.wallet.register_signer(trader_private_key_signer);
+
             // Fund the trader account with tokens needed for the solution.
-            let trader_account = ethcontract::Account::Offline(
-                ethcontract::PrivateKey::from_slice(self.trader_secret_key.as_ref()).unwrap(),
-                None,
-            );
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
             } else if order.funded {
                 self.tokens
                     .get(order.sell_token)
                     .unwrap()
-                    .mint(
-                        trader_account.address().into_alloy(),
-                        "1e-7".ether().into_wei() * execution.sell,
-                    )
-                    .from(trader_account.address().into_alloy())
+                    .mint(trader_address, "1e-7".ether().into_wei() * execution.sell)
+                    .from(trader_address)
                     .send_and_watch()
                     .await
                     .unwrap();
@@ -782,7 +788,7 @@ impl Blockchain {
                 .get(order.sell_token)
                 .unwrap()
                 .approve(vault_relayer, U256::MAX)
-                .from(trader_account.address().into_alloy())
+                .from(trader_address)
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -877,15 +883,18 @@ impl Blockchain {
 
     pub async fn set_auto_mining(&self, enabled: bool) {
         self.web3
-            .transport()
-            .execute("evm_setAutomine", vec![json!(enabled)])
+            .alloy
+            .raw_request::<_, ()>("evm_setAutomine".into(), (enabled,))
             .await
             .unwrap();
     }
 }
 
 async fn primary_account(web3: &Web3) -> ethcontract::Account {
-    ethcontract::Account::Local(web3.eth().accounts().await.unwrap()[0], None)
+    ethcontract::Account::Local(
+        web3.alloy.get_accounts().await.unwrap()[0].into_legacy(),
+        None,
+    )
 }
 
 /// A blockchain node for development purposes. Dropping this type will

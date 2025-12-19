@@ -1,7 +1,7 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -12,10 +12,8 @@ use {
         orderbook::{OrderCancellationError, OrderReplacementError},
     },
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     warp::reply::Reply,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -100,7 +98,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -128,7 +126,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let balance_before = token_a.balanceOf(trader.address()).call().await.unwrap();
     onchain.mint_block().await;
@@ -165,7 +163,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let response = services.create_order(&new_order).await;
     let (error_code, error_message) = response.err().unwrap();
@@ -279,14 +277,14 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -311,7 +309,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     let order_id = services.create_order(&order).await.unwrap();
 
@@ -334,7 +332,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_b.private_key()).unwrap(),
     );
     let balance_before = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     let response = services.create_order(&new_order).await;
@@ -416,7 +414,7 @@ async fn single_replace_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -453,7 +451,7 @@ async fn single_replace_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let order_id = services.create_order(&order).await.unwrap();
 
@@ -486,7 +484,7 @@ async fn single_replace_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 

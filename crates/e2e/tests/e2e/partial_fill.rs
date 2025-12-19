@@ -1,19 +1,14 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
     },
     number::units::EthUnit,
     orderbook::dto::order::Status,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -36,7 +31,7 @@ async fn test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -72,7 +67,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     let uid = services.create_order(&order).await.unwrap();
 
@@ -118,10 +113,7 @@ async fn test(web3: Web3) {
         .unwrap();
 
     let tx_hash = services.get_trades(&uid).await.unwrap()[0].tx_hash.unwrap();
-    let competition = services
-        .get_solver_competition(tx_hash.into_legacy())
-        .await
-        .unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
     assert!(!competition.solutions.is_empty());
     assert!(competition.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();
