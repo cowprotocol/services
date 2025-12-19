@@ -89,23 +89,24 @@ async fn get_native_price(
 }
 
 fn error_to_response(err: PriceEstimationError) -> Response {
-    use PriceEstimationError::*;
     match err {
-        NoLiquidity | EstimatorInternal(_) => {
+        PriceEstimationError::NoLiquidity | PriceEstimationError::EstimatorInternal(_) => {
             (StatusCode::NOT_FOUND, "No liquidity").into_response()
         }
-        UnsupportedToken { token: _, reason } => (
+        PriceEstimationError::UnsupportedToken { token: _, reason } => (
             StatusCode::BAD_REQUEST,
             format!("Unsupported token, reason: {reason}"),
         )
             .into_response(),
-        RateLimited => (StatusCode::TOO_MANY_REQUESTS, "Rate limited").into_response(),
-        UnsupportedOrderType(reason) => (
+        PriceEstimationError::RateLimited => {
+            (StatusCode::TOO_MANY_REQUESTS, "Rate limited").into_response()
+        }
+        PriceEstimationError::UnsupportedOrderType(reason) => (
             StatusCode::BAD_REQUEST,
             format!("Unsupported order type, reason: {reason}"),
         )
             .into_response(),
-        ProtocolInternal(_) => {
+        PriceEstimationError::ProtocolInternal(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
         }
     }
