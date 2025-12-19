@@ -116,69 +116,6 @@ impl From<AccessList> for alloy::eips::eip2930::AccessList {
     }
 }
 
-impl IntoIterator for AccessList {
-    type IntoIter = std::collections::hash_map::IntoIter<Address, HashSet<StorageKey>>;
-    type Item = (Address, HashSet<StorageKey>);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<I> FromIterator<(Address, I)> for AccessList
-where
-    I: IntoIterator<Item = B256>,
-{
-    fn from_iter<T: IntoIterator<Item = (Address, I)>>(iter: T) -> Self {
-        Self(
-            iter.into_iter()
-                .map(|(address, i)| {
-                    (
-                        address,
-                        i.into_iter().map(StorageKey).collect::<HashSet<_>>(),
-                    )
-                })
-                .collect(),
-        )
-    }
-}
-
-impl From<alloy::eips::eip2930::AccessList> for AccessList {
-    fn from(value: alloy::eips::eip2930::AccessList) -> Self {
-        Self(
-            value
-                .0
-                .into_iter()
-                .map(|item| {
-                    (
-                        item.address,
-                        item.storage_keys
-                            .into_iter()
-                            .map(StorageKey)
-                            .collect::<HashSet<_>>(),
-                    )
-                })
-                .collect(),
-        )
-    }
-}
-
-impl From<AccessList> for alloy::eips::eip2930::AccessList {
-    fn from(value: AccessList) -> Self {
-        Self(
-            value
-                .into_iter()
-                .map(
-                    |(address, storage_keys)| alloy::eips::eip2930::AccessListItem {
-                        address,
-                        storage_keys: storage_keys.into_iter().map(|k| k.0).collect(),
-                    },
-                )
-                .collect(),
-        )
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
 pub struct StorageKey(pub B256);
 
