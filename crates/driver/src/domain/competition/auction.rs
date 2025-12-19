@@ -60,7 +60,7 @@ impl Auction {
             id,
             orders,
             tokens,
-            gas_price: eth.gas_price(None).await?,
+            gas_price: eth.gas_price().await?,
             deadline,
             surplus_capturing_jit_order_owners,
         })
