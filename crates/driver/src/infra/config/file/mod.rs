@@ -162,13 +162,6 @@ struct Mempool {
     /// floating point value between 0 and 1.
     #[serde(default = "default_additional_tip_percentage")]
     additional_tip_percentage: f64,
-    /// Configures whether the submission logic is allowed to assume the
-    /// submission nodes implement soft cancellations. With soft
-    /// cancellations a cancellation transaction doesn't have to get mined
-    /// to have an effect. On arrival in the node all pending transactions
-    /// with the same sender and nonce will get discarded immediately.
-    #[serde(default = "default_soft_cancellations_flag")]
-    use_soft_cancellations: bool,
     /// Informs the submission logic whether a reverting transaction will
     /// actually be mined or just ignored. This is an advanced feature
     /// for private mempools so for most configured mempools you have to
@@ -224,10 +217,6 @@ fn default_retry_interval() -> Duration {
 /// 3 gwei
 fn default_max_additional_tip() -> eth::U256 {
     eth::U256::from(3) * eth::U256::from(10).pow(eth::U256::from(9))
-}
-
-fn default_soft_cancellations_flag() -> bool {
-    false
 }
 
 fn default_mines_reverting_txs() -> bool {
