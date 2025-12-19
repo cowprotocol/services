@@ -1,6 +1,5 @@
 use {
     alloy::{network::TxSigner, signers::Signature},
-    anyhow::Context,
     std::collections::HashMap,
 };
 
@@ -155,42 +154,6 @@ impl IntoAlloy for ethcontract::state_overrides::StateOverrides {
 pub enum Account {
     Address(alloy::primitives::Address),
     Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),
-}
-
-#[async_trait::async_trait]
-pub trait TryIntoAlloyAsync {
-    type Into;
-
-    async fn try_into_alloy(self) -> anyhow::Result<Self::Into>;
-}
-
-#[async_trait::async_trait]
-impl TryIntoAlloyAsync for ethcontract::Account {
-    type Into = Account;
-
-    async fn try_into_alloy(self) -> anyhow::Result<Self::Into> {
-        match self {
-            ethcontract::Account::Offline(pk, _) => {
-                let signer =
-                    alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())
-                        .context("invalid private key bytes")?;
-                Ok(Account::Signer(Box::new(signer)))
-            }
-            ethcontract::Account::Kms(account, chain_id) => {
-                let signer = alloy::signers::aws::AwsSigner::new(
-                    account.client().clone(),
-                    account.key_id().to_string(),
-                    chain_id,
-                )
-                .await?;
-                Ok(Account::Signer(Box::new(signer)))
-            }
-            ethcontract::Account::Local(address, _) => Ok(Account::Address(address.into_alloy())),
-            ethcontract::Account::Locked(_, _, _) => {
-                anyhow::bail!("Locked accounts are not currently supported")
-            }
-        }
-    }
 }
 
 //////////////////////////////////

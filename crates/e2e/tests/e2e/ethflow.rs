@@ -19,7 +19,7 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethcontract::{Account, H160},
+    ethcontract::H160,
     ethrpc::{
         Web3,
         alloy::{
@@ -154,10 +154,7 @@ async fn eth_flow_tx(web3: Web3) {
         app_data: OrderCreationAppData::Hash {
             hash: app_data::AppDataHash(const_hex::decode(&hash[2..]).unwrap().try_into().unwrap()),
         },
-        ..intent.to_quote_request(
-            trader.account().address().into_alloy(),
-            &onchain.contracts().weth,
-        )
+        ..intent.to_quote_request(trader.address(), &onchain.contracts().weth)
     };
 
     let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
@@ -173,7 +170,7 @@ async fn eth_flow_tx(web3: Web3) {
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     submit_order(
         &ethflow_order,
-        trader.account(),
+        trader.address(),
         onchain.contracts(),
         ethflow_contract,
     )
@@ -290,7 +287,7 @@ async fn eth_flow_without_quote(web3: Web3) {
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     submit_order(
         &ethflow_order,
-        trader.account(),
+        trader.address(),
         onchain.contracts(),
         ethflow_contract,
     )
@@ -334,10 +331,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token: *dai.address(),
                 receiver: Address::repeat_byte(42),
             })
-            .to_quote_request(
-                dummy_trader.account().address().into_alloy(),
-                &onchain.contracts().weth,
-            ),
+            .to_quote_request(dummy_trader.address(), &onchain.contracts().weth),
         )
         .await,
         valid_to,
@@ -346,7 +340,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     submit_order(
         &dummy_order,
-        dummy_trader.account(),
+        dummy_trader.address(),
         onchain.contracts(),
         ethflow_contract,
     )
@@ -374,10 +368,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token,
                 receiver,
             })
-            .to_quote_request(
-                trader.account().address().into_alloy(),
-                &onchain.contracts().weth,
-            ),
+            .to_quote_request(trader.address(), &onchain.contracts().weth),
         )
         .await,
         valid_to,
@@ -385,7 +376,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     .include_slippage_bps(300);
     submit_order(
         &ethflow_order,
-        trader.account(),
+        trader.address(),
         onchain.contracts(),
         ethflow_contract,
     )
@@ -435,7 +426,7 @@ async fn test_submit_quote(
 
 async fn submit_order(
     ethflow_order: &ExtendedEthFlowOrder,
-    user: &Account,
+    user: Address,
     contracts: &Contracts,
     ethflow_contract: &CoWSwapEthFlow::Instance,
 ) {
@@ -445,12 +436,12 @@ async fn submit_order(
     );
 
     let result = ethflow_order
-        .mine_order_creation(user.address().into_alloy(), ethflow_contract)
+        .mine_order_creation(user, ethflow_contract)
         .await;
     assert!(result.status()); // success
     assert_eq!(
         ethflow_order.status(contracts, ethflow_contract).await,
-        EthFlowOrderOnchainStatus::Created(user.address(), ethflow_order.0.validTo)
+        EthFlowOrderOnchainStatus::Created(user, ethflow_order.0.validTo)
     );
 }
 
@@ -813,7 +804,7 @@ impl ExtendedEthFlowOrder {
 #[derive(Debug, PartialEq, Eq)]
 pub enum EthFlowOrderOnchainStatus {
     Invalidated,
-    Created(H160, u32),
+    Created(Address, u32),
     Free,
 }
 
@@ -822,7 +813,7 @@ impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for EthFlowOrderOnchainS
         match value.owner {
             owner if owner == NO_OWNER => Self::Free,
             owner if owner == INVALIDATED_OWNER => Self::Invalidated,
-            _ => Self::Created(value.owner.into_legacy(), value.validTo),
+            _ => Self::Created(value.owner, value.validTo),
         }
     }
 }
@@ -896,7 +887,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
         let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
         submit_order(
             &ethflow_order,
-            trader.account(),
+            trader.address(),
             onchain.contracts(),
             ethflow_contract,
         )

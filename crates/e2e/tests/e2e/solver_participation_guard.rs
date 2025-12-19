@@ -1,8 +1,5 @@
 use {
-    alloy::{
-        primitives::{Address, U256},
-        signers::local::PrivateKeySigner,
-    },
+    alloy::primitives::{Address, U256},
     e2e::setup::{
         Db,
         ExtraServiceArgs,
@@ -340,7 +337,7 @@ async fn execute_order(
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
+        &trader_a.signer,
     );
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();

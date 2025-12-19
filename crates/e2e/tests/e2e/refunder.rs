@@ -3,11 +3,7 @@ use {
     ::alloy::primitives::Address,
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::{
-        Web3,
-        alloy::conversions::TryIntoAlloyAsync,
-        block_stream::timestamp_of_current_block_in_seconds,
-    },
+    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     number::{nonzero::NonZeroU256, units::EthUnit},
     refunder::refund_service::RefundService,
@@ -125,19 +121,13 @@ async fn refunder_tx(web3: Web3) {
 
     // Create the refund service and execute the refund tx
     let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
-    let refunder_signer = {
-        match refunder.account().clone().try_into_alloy().await.unwrap() {
-            ethrpc::alloy::Account::Signer(signer) => signer,
-            _ => panic!("Refunder account must be a signer"),
-        }
-    };
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
         vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
         10i64,
-        refunder_signer,
+        Box::new(refunder.signer),
         2_000_000_000_000, // max_gas_price: 2000 Gwei
         30_000_000_000,    // start_priority_fee_tip: 30 Gwei
     );

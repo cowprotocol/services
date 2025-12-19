@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    ::alloy::primitives::U256,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -67,7 +67,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 

@@ -141,7 +141,7 @@ pub fn start_driver_with_config_override(
                  base_tokens: _,
                  merge_solutions,
              }| {
-                let account = const_hex::encode(account.private_key());
+                let account = account.signer.to_bytes();
                 format!(
                     r#"
 [[solver]]

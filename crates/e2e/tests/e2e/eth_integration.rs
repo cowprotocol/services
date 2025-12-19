@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::Address, providers::Provider, signers::local::PrivateKeySigner},
+    ::alloy::{primitives::Address, providers::Provider},
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -87,7 +87,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
+        &trader_a.signer,
     );
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
@@ -102,7 +102,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader_b.private_key()).unwrap(),
+        &trader_b.signer,
     );
     services.create_order(&order_buy_eth_b).await.unwrap();
 

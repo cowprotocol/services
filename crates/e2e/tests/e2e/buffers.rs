@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    ::alloy::primitives::U256,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -98,7 +98,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
 
@@ -125,7 +125,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
 

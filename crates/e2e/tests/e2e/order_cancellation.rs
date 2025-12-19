@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    ::alloy::primitives::U256,
     database::order_events::OrderEventLabel,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
@@ -118,7 +118,7 @@ async fn order_cancellation(web3: Web3) {
             .sign(
                 EcdsaSigningScheme::Eip712,
                 &onchain.contracts().domain_separator,
-                &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+                &trader.signer,
             );
             services.create_order(&order).await.unwrap()
         }
@@ -129,7 +129,7 @@ async fn order_cancellation(web3: Web3) {
         let cancellation = OrderCancellation::for_order(
             order_uid,
             &onchain.contracts().domain_separator,
-            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+            &trader.signer,
         );
 
         async move {
@@ -155,7 +155,7 @@ async fn order_cancellation(web3: Web3) {
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
             &cancellations.hash_struct(),
-            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+            &trader.signer,
         );
 
         let signed_cancellations = SignedOrderCancellations {
