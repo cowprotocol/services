@@ -194,13 +194,7 @@ impl Ethereum {
         })?;
         let tx = tx.with_gas_limit(gas_limit);
         let tx = match self.simulation_gas_price().await {
-            Some(gas_price) => {
-                let gas_price = gas_price.try_into().map_err(|err| {
-                    Error::GasPrice(anyhow!("failed to convert gas_limit to u128: {err:?}"))
-                })?;
-
-                tx.with_gas_price(gas_price)
-            }
+            Some(gas_price) => tx.with_gas_price(gas_price),
             _ => tx,
         };
 
@@ -223,28 +217,21 @@ impl Ethereum {
             .access_list(tx.access_list.into());
 
         let tx = match self.simulation_gas_price().await {
-            Some(gas_price) => {
-                let gas_price = gas_price.try_into().map_err(|err| {
-                    Error::GasPrice(anyhow!("failed to convert gas_limit to u128: {err:?}"))
-                })?;
-
-                tx.with_gas_price(gas_price)
-            }
+            Some(gas_price) => tx.with_gas_price(gas_price),
             _ => tx,
         };
 
-        tracing::error!("estimating gas");
+        let estimated_gas = self
+            .web3
+            .alloy
+            .estimate_gas(tx)
+            .pending()
+            .await
+            .map_err(anyhow::Error::from)
+            .map_err(Error::GasPrice)?
+            .into();
 
-        Ok(U256::from(
-            self.web3
-                .alloy
-                .estimate_gas(tx)
-                .pending()
-                .await
-                .map_err(anyhow::Error::from)
-                .map_err(Error::GasPrice)?,
-        )
-        .into())
+        Ok(estimated_gas)
     }
 
     /// The gas price is determined based on the deadline by which the
@@ -309,7 +296,7 @@ impl Ethereum {
     }
 
     #[instrument(skip(self), ret(level = Level::DEBUG))]
-    pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
+    pub(super) async fn simulation_gas_price(&self) -> Option<u128> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
         // paths that detect that case to try to behave differently during simulations
@@ -323,6 +310,16 @@ impl Ethereum {
             .await
             .ok()
             .map(|gas| gas.effective().0.0)
+            .and_then(|gas| {
+                u128::try_from(gas)
+                    .inspect_err(|err| {
+                        tracing::debug!(
+                            ?err,
+                            "failed to convert gas estimate to u128, returning None"
+                        );
+                    })
+                    .ok()
+            })
     }
 
     pub fn web3(&self) -> &Web3 {
