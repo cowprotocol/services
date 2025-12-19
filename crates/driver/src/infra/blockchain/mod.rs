@@ -204,7 +204,7 @@ impl Ethereum {
             _ => tx,
         };
 
-        let access_list = self.web3.alloy.create_access_list(&tx).await?;
+        let access_list = self.web3.alloy.create_access_list(&tx).pending().await?;
 
         Ok(access_list
             .ensure_ok()
@@ -239,6 +239,7 @@ impl Ethereum {
             self.web3
                 .alloy
                 .estimate_gas(tx)
+                .pending()
                 .await
                 .map_err(anyhow::Error::from)
                 .map_err(Error::GasPrice)?,

@@ -1,5 +1,8 @@
 use {
-    alloy::providers::Provider,
+    alloy::{
+        primitives::{Address, B256, U256},
+        providers::Provider,
+    },
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -13,11 +16,7 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
-    ethcontract::{Address, H256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -59,13 +58,13 @@ impl Contracts {
             .await
             .unwrap();
         let balances = match deployed.balances {
-            Some(address) => Balances::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
             None => Balances::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find balances contract"),
         };
         let signatures = match deployed.signatures {
-            Some(address) => Signatures::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            Some(address) => Signatures::Instance::new(address, web3.alloy.clone()),
             None => Signatures::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find signatures contract"),
@@ -94,8 +93,7 @@ impl Contracts {
                 .vaultRelayer()
                 .call()
                 .await
-                .expect("Couldn't get vault relayer address")
-                .into_legacy(),
+                .expect("Couldn't get vault relayer address"),
             domain_separator: DomainSeparator(
                 gp_settlement
                     .domainSeparator()
@@ -144,8 +142,8 @@ impl Contracts {
             web3.alloy.clone(),
             *balancer_authorizer.address(),
             *weth.address(),
-            alloy::primitives::U256::ZERO,
-            alloy::primitives::U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
         )
         .await
         .unwrap();
@@ -199,8 +197,7 @@ impl Contracts {
             .vaultRelayer()
             .call()
             .await
-            .expect("Couldn't get vault relayer address")
-            .into_legacy();
+            .expect("Couldn't get vault relayer address");
         let domain_separator = DomainSeparator(
             gp_settlement
                 .domainSeparator()
@@ -253,10 +250,10 @@ impl Contracts {
         }
     }
 
-    pub fn default_pool_code(&self) -> H256 {
+    pub fn default_pool_code(&self) -> B256 {
         match self.chain_id {
-            100 => H256(shared::sources::uniswap_v2::HONEYSWAP_INIT),
-            _ => H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+            100 => B256::new(shared::sources::uniswap_v2::HONEYSWAP_INIT),
+            _ => B256::new(shared::sources::uniswap_v2::UNISWAP_INIT),
         }
     }
 }

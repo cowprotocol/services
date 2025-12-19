@@ -110,6 +110,7 @@ pub struct Solver {
 pub enum Account {
     PrivateKey(PrivateKeySigner),
     Kms(AwsSigner),
+    Address(Address),
 }
 
 #[async_trait::async_trait]
@@ -118,6 +119,7 @@ impl TxSigner<Signature> for Account {
         match self {
             Account::PrivateKey(local_signer) => local_signer.address(),
             Account::Kms(aws_signer) => aws_signer.address(),
+            Account::Address(address) => *address,
         }
     }
 
@@ -128,6 +130,10 @@ impl TxSigner<Signature> for Account {
         match self {
             Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
             Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
+            // The address actually can't sign anything but for TxSigner only the Tx matters
+            Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
+                alloy::signers::UnsupportedSignerOperation::SignHash,
+            )),
         }
     }
 }

@@ -6,6 +6,7 @@ use {
     },
     alloy::{
         consensus::Transaction,
+        eips::BlockNumberOrTag,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
     },
@@ -21,9 +22,8 @@ pub struct Config {
     pub retry_interval: std::time::Duration,
     /// Optional block number to use when fetching nonces. If None, uses the
     /// web3 lib's default behavior, which is `latest`.
-    pub nonce_block_number: Option<web3::types::BlockNumber>,
+    pub nonce_block_number: Option<BlockNumberOrTag>,
     pub url: reqwest::Url,
-    pub use_soft_cancellations: bool,
     pub name: String,
     pub revert_protection: RevertProtection,
     pub max_additional_tip: eth::U256,
@@ -56,6 +56,7 @@ impl std::fmt::Display for Mempool {
 impl Mempool {
     pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
         let transport = unbuffered_web3_client(&config.url);
+        // Register the solver accounts into the wallet to submit txs on their behalf
         for account in solver_accounts {
             transport.wallet.register_signer(account);
         }
@@ -64,16 +65,16 @@ impl Mempool {
 
     /// Fetches the transaction count (nonce) for the given address at the
     /// specified block number. If no block number is provided in the config,
-    /// uses the web3 lib's default behavior.
+    /// uses the alloy's default behavior.
     pub async fn get_nonce(&self, address: eth::Address) -> Result<u64, mempools::Error> {
         let call = self.transport.alloy.get_transaction_count(address);
         match self.config.nonce_block_number {
-            Some(ethcontract::BlockNumber::Latest) => call.latest(),
-            Some(ethcontract::BlockNumber::Earliest) => call.earliest(),
-            Some(ethcontract::BlockNumber::Finalized) => call.finalized(),
-            Some(ethcontract::BlockNumber::Number(number)) => call.number(number.as_u64()),
-            Some(ethcontract::BlockNumber::Pending) => call.pending(),
-            Some(ethcontract::BlockNumber::Safe) => call.safe(),
+            Some(BlockNumberOrTag::Latest) => call.latest(),
+            Some(BlockNumberOrTag::Earliest) => call.earliest(),
+            Some(BlockNumberOrTag::Finalized) => call.finalized(),
+            Some(BlockNumberOrTag::Number(number)) => call.number(number),
+            Some(BlockNumberOrTag::Pending) => call.pending(),
+            Some(BlockNumberOrTag::Safe) => call.safe(),
             None => call,
         }
         .await
@@ -122,10 +123,7 @@ impl Mempool {
             .alloy
             .send_transaction(tx_request)
             .await
-            .map_err(|err| {
-                tracing::error!(?err, ">>> failed to submit send tx");
-                anyhow::Error::from(err)
-            });
+            .map_err(anyhow::Error::from);
 
         match submission {
             Ok(tx) => {
@@ -153,7 +151,7 @@ impl Mempool {
                     solver = ?solver.address(),
                     "failed to submit tx to mempool"
                 );
-                Err(mempools::Error::Other(err.into()))
+                Err(mempools::Error::Other(err))
             }
         }
     }

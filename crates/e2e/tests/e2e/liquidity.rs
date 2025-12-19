@@ -24,10 +24,7 @@ use {
     ethcontract::H256,
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::{CallBuilderExt, conversions::IntoLegacy},
     },
     model::{
         order::{OrderCreation, OrderKind},
@@ -132,7 +129,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), amount)
+        .approve(onchain.contracts().allowance, amount)
         .from(trader.address())
         .send_and_watch()
         .await

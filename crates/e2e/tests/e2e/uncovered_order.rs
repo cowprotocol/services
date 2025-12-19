@@ -1,6 +1,6 @@
 use {
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -29,7 +29,7 @@ async fn test(web3: Web3) {
         .await;
     let weth = &onchain.contracts().weth;
 
-    weth.approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
+    weth.approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await

@@ -64,11 +64,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 file::Account::Kms(arn) => {
                     let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
                     let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
-                    AwsSigner::new(client, arn.0, config.chain_id.map(Into::into))
+                    AwsSigner::new(client, arn.0, config.chain_id)
                         .await
                         .expect("unable to load kms account {arn:?}")
                         .into()
                 }
+                file::Account::Address(address) => Account::Address(address),
             };
             solver::Config {
                 endpoint: solver_config.endpoint,
@@ -343,7 +344,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 max_additional_tip: mempool.max_additional_tip,
                 additional_tip_percentage: mempool.additional_tip_percentage,
-                use_soft_cancellations: mempool.use_soft_cancellations,
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {
