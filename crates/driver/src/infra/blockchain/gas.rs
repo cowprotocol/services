@@ -10,13 +10,11 @@ use {
     },
     ethrpc::Web3,
     gas_estimation::{
-        DEFAULT_GAS_LIMIT,
-        DEFAULT_TIME_LIMIT,
         GasPriceEstimating,
         nativegasestimator::{NativeGasEstimator, Params},
     },
     shared::gas_price_estimation::alloy::AlloyGasPriceEstimator,
-    std::{sync::Arc, time::Duration},
+    std::sync::Arc,
 };
 
 type MaxAdditionalTip = eth::U256;
@@ -98,12 +96,8 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
-    pub async fn estimate(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
-        let estimate = self
-            .gas
-            .estimate_with_limits(DEFAULT_GAS_LIMIT, time_limit.unwrap_or(DEFAULT_TIME_LIMIT))
-            .await
-            .map_err(Error::GasPrice)?;
+    pub async fn estimate(&self) -> Result<eth::GasPrice, Error> {
+        let estimate = self.gas.estimate().await.map_err(Error::GasPrice)?;
 
         let max_priority_fee_per_gas = {
             // the driver supports tweaking the tx gas price tip in case the gas
