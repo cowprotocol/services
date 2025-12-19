@@ -250,11 +250,13 @@ services:
       - 5555:5555
 
   otterscan:
-    image: otterscan/otterscan:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.otterscan
     restart: always
     environment:
       - ERIGON_URL=http://127.0.0.1:8545
-      - OTTERSCAN_CONFIG={"erigonURL":"http://127.0.0.1:8545","sourcify":{"sources":{"Sourcify":{"url":"https://repo.sourcify.dev","backendFormat":"RepositoryV1"},"Local Sourcify":{"url":"http://localhost:5555/repository","backendFormat":"RepositoryV1"}}}}
+      - SOURCIFY_MODE=${SOURCIFY_MODE:-cloud}
     ports:
       - 8003:80
     depends_on:
