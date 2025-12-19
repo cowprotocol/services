@@ -12,10 +12,11 @@
 //! cluster.
 
 use {
-    axum::{Router, body::Body, http::Request, response::IntoResponse},
+    axum::{Router, http::Request, response::IntoResponse},
     std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},
     url::Url,
+    warp::hyper::Body,
 };
 
 /// HTTP reverse proxy with automatic failover that permanently switches
@@ -49,11 +50,24 @@ impl ReverseProxy {
                 let client = client.clone();
                 let state = state.clone();
                 async move {
-                    let path = req
-                        .uri()
+                    let (parts, body) = req.into_parts();
+                    let path = parts
+                        .uri
                         .path_and_query()
                         .map(|pq: &axum::http::uri::PathAndQuery| pq.as_str())
                         .unwrap_or("");
+
+                    // Convert body to bytes once for reuse across retries
+                    let body_bytes = match warp::hyper::body::to_bytes(body).await {
+                        Ok(bytes) => bytes,
+                        Err(err) => {
+                            return (
+                                axum::http::StatusCode::BAD_REQUEST,
+                                format!("Failed to read request body: {}", err),
+                            )
+                                .into_response();
+                        }
+                    };
 
                     let backend_count = state.backends.read().await.len();
 
@@ -66,7 +80,7 @@ impl ReverseProxy {
                         if let Some(backend) = current_backend {
                             let url = format!("{}{}", backend, path);
 
-                            match try_backend(&client, &url).await {
+                            match try_backend(&client, &parts, &body_bytes, &url).await {
                                 Ok(response) => return response.into_response(),
                                 Err(err) => {
                                     tracing::warn!(
@@ -111,9 +125,22 @@ impl ReverseProxy {
 
 async fn try_backend(
     client: &reqwest::Client,
+    parts: &axum::http::request::Parts,
+    body: impl AsRef<[u8]>,
     url: &str,
 ) -> Result<(axum::http::StatusCode, Vec<u8>), reqwest::Error> {
-    let backend_resp = client.get(url).send().await?;
+    // Build a reqwest request with the same method
+    let mut backend_req = client.request(parts.method.clone(), url);
+
+    // Forward all headers from the original request
+    for (name, value) in &parts.headers {
+        backend_req = backend_req.header(name, value);
+    }
+
+    // Attach the body
+    backend_req = backend_req.body(body.as_ref().to_vec());
+
+    let backend_resp = backend_req.send().await?;
     let status = axum::http::StatusCode::from_u16(backend_resp.status().as_u16()).unwrap();
     let bytes = backend_resp.bytes().await?;
     Ok((status, bytes.to_vec()))
