@@ -14,7 +14,7 @@ use {
     instrumentation::{InstrumentationLayer, LabelingLayer},
     std::time::Duration,
 };
-pub use {conversions::Account, instrumentation::ProviderLabelingExt, wallet::MutWallet};
+pub use {instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
 /// [`InstrumentationLayer`] and [`BatchCallLayer`].

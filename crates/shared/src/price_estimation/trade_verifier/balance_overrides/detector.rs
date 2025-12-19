@@ -3,7 +3,7 @@ use {
     crate::tenderly_api::SimulationError,
     alloy::{
         eips::BlockId,
-        primitives::{Address, B256, TxKind},
+        primitives::{Address, B256, TxKind, U256},
         providers::ext::DebugApi,
         rpc::types::{
             TransactionInput,
@@ -14,8 +14,6 @@ use {
         transports::{RpcError, TransportErrorKind},
     },
     contracts::alloy::ERC20,
-    ethcontract::U256,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},
@@ -68,7 +66,7 @@ fn create_strategies_from_slots(
     let mut buf = [0; 64];
     buf[12..32].copy_from_slice(holder.as_slice());
     for i in 0..heuristic_depth {
-        U256::from(i).to_big_endian(&mut buf[32..64]);
+        buf[32..64].copy_from_slice(&U256::from(i).to_be_bytes::<32>());
         let slot_hash = alloy::primitives::keccak256(buf);
         solidity_mapping_slot_to_index.insert(slot_hash, i);
     }
@@ -84,17 +82,17 @@ fn create_strategies_from_slots(
     for (contract, slot) in storage_slots.iter().rev() {
         if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
             heuristic_strategies.push(Strategy::SolidityMapping {
-                target_contract: contract.into_legacy(),
+                target_contract: *contract,
                 map_slot: U256::from(map_slot_index),
             });
         } else if *slot == solady_slot {
             heuristic_strategies.push(Strategy::SoladyMapping {
-                target_contract: contract.into_legacy(),
+                target_contract: *contract,
             });
         } else {
             fallback_strategies.push(Strategy::DirectSlot {
-                target_contract: contract.into_legacy(),
-                slot: slot.into_legacy(),
+                target_contract: *contract,
+                slot: *slot,
             });
         };
     }
@@ -292,13 +290,13 @@ impl Detector {
         let test_balance = alloy::primitives::U256::from(0x1337_1337_1337_1337_u64);
 
         // Create state override using the strategy
-        let overrides = strategy.state_override(&holder.into_legacy(), &test_balance.into_legacy());
+        let overrides = strategy.state_override(&holder, &test_balance);
 
         // Call balanceOf with the override
         let token_contract = ERC20::Instance::new(token, self.web3.alloy.clone());
         let balance = token_contract
             .balanceOf(holder)
-            .state(overrides.into_alloy())
+            .state(overrides)
             .call()
             .await
             .map_err(|e| {
@@ -339,13 +337,13 @@ pub enum DetectionError<E> {
 mod tests {
     use {
         super::*,
-        alloy::primitives::{B256, address},
+        alloy::primitives::{B256, address, b256},
         ethrpc::Web3,
     };
 
     // <https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/blob/master/contracts/token/ERC20/ERC20Upgradeable.sol#L43-L44>
-    const OPEN_ZEPPELIN_ERC20_UPGRADEABLE: &str =
-        "52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00";
+    const OPEN_ZEPPELIN_ERC20_UPGRADEABLE: B256 =
+        b256!("52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00");
 
     /// Tests that we can detect storage slots by probing the first
     /// n slots or by checking hardcoded known slots.
@@ -365,8 +363,8 @@ mod tests {
         assert_eq!(
             storage,
             Strategy::SolidityMapping {
-                target_contract: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                map_slot: 3.into()
+                target_contract: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                map_slot: U256::from(3)
             }
         );
 
@@ -380,8 +378,8 @@ mod tests {
         assert_eq!(
             storage,
             Strategy::SolidityMapping {
-                target_contract: addr!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
-                map_slot: U256::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
+                target_contract: address!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
+                map_slot: <U256 as From<_>>::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
             }
         );
 
@@ -395,7 +393,7 @@ mod tests {
         assert_eq!(
             storage,
             Strategy::SoladyMapping {
-                target_contract: addr!("0000000000c5dc95539589fbd24be07c6c14eca4")
+                target_contract: address!("0000000000c5dc95539589fbd24be07c6c14eca4")
             }
         );
     }
@@ -419,8 +417,8 @@ mod tests {
         assert_eq!(
             storage,
             Strategy::SolidityMapping {
-                target_contract: addr!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
-                map_slot: 51.into()
+                target_contract: address!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
+                map_slot: U256::from(51)
             }
         );
     }
@@ -449,24 +447,24 @@ mod tests {
             strategies,
             vec![
                 Strategy::DirectSlot {
-                    target_contract: contract2.into_legacy(),
-                    slot: slot1.into_legacy(),
+                    target_contract: contract2,
+                    slot: slot1,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot3.into_legacy(),
+                    target_contract: contract,
+                    slot: slot3,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot2.into_legacy(),
+                    target_contract: contract,
+                    slot: slot2,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract2.into_legacy(),
-                    slot: slot3.into_legacy(),
+                    target_contract: contract2,
+                    slot: slot3,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot1.into_legacy(),
+                    target_contract: contract,
+                    slot: slot1,
                 },
             ]
         );
@@ -480,9 +478,9 @@ mod tests {
         // Calculate what slot index 0 would hash to for this holder
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
-        U256::from(0).to_big_endian(&mut buf[32..64]);
+        buf[32..64].copy_from_slice(&U256::ZERO.to_be_bytes::<32>());
         let heuristic_slot1 = alloy::primitives::keccak256(buf);
-        U256::from(5).to_big_endian(&mut buf[32..64]);
+        buf[32..64].copy_from_slice(&U256::from(5).to_be_bytes::<32>());
         let heuristic_slot2 = alloy::primitives::keccak256(buf);
         buf[0..20].copy_from_slice(holder.as_slice());
         buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
@@ -512,27 +510,27 @@ mod tests {
             strategies,
             vec![
                 Strategy::SolidityMapping {
-                    target_contract: contract.into_legacy(),
-                    map_slot: U256::from(0),
+                    target_contract: contract,
+                    map_slot: U256::ZERO,
                 },
                 Strategy::SoladyMapping {
-                    target_contract: contract.into_legacy(),
+                    target_contract: contract,
                 },
                 Strategy::SolidityMapping {
-                    target_contract: contract.into_legacy(),
+                    target_contract: contract,
                     map_slot: U256::from(5),
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot2.into_legacy(),
+                    target_contract: contract,
+                    slot: slot2,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot3.into_legacy(),
+                    target_contract: contract,
+                    slot: slot3,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot1.into_legacy(),
+                    target_contract: contract,
+                    slot: slot1,
                 },
             ]
         );
@@ -549,7 +547,7 @@ mod tests {
 
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
-        U256::from(0).to_big_endian(&mut buf[32..64]);
+        buf[32..64].copy_from_slice(&U256::ZERO.to_be_bytes::<32>());
         let heuristic_slot = alloy::primitives::keccak256(buf);
 
         let slots = vec![
@@ -567,20 +565,20 @@ mod tests {
             strategies,
             vec![
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot3.into_legacy(),
+                    target_contract: contract,
+                    slot: slot3,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: heuristic_slot.into_legacy(),
+                    target_contract: contract,
+                    slot: heuristic_slot,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot2.into_legacy(),
+                    target_contract: contract,
+                    slot: slot2,
                 },
                 Strategy::DirectSlot {
-                    target_contract: contract.into_legacy(),
-                    slot: slot1.into_legacy(),
+                    target_contract: contract,
+                    slot: slot1,
                 },
             ]
         );

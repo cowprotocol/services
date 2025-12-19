@@ -1,7 +1,4 @@
-use {
-    alloy::{network::TxSigner, signers::Signature},
-    std::collections::HashMap,
-};
+use std::collections::HashMap;
 
 /////////////////////////////////
 // Conversions to the alloy types
@@ -123,39 +120,6 @@ impl IntoAlloy for HashMap<ethcontract::H256, ethcontract::H256> {
     }
 }
 
-impl IntoAlloy for ethcontract::state_overrides::StateOverride {
-    type To = alloy::rpc::types::eth::state::AccountOverride;
-
-    fn into_alloy(self) -> Self::To {
-        Self::To {
-            balance: self.balance.map(IntoAlloy::into_alloy),
-            nonce: self.nonce.map(|u| u.as_u64()),
-            code: self.code.map(IntoAlloy::into_alloy),
-            state: self.state.map(IntoAlloy::into_alloy),
-            state_diff: self.state_diff.map(IntoAlloy::into_alloy),
-            move_precompile_to: None,
-        }
-    }
-}
-
-impl IntoAlloy for ethcontract::state_overrides::StateOverrides {
-    type To = alloy::rpc::types::eth::state::StateOverride;
-
-    fn into_alloy(self) -> Self::To {
-        alloy::rpc::types::eth::state::StateOverridesBuilder::new(
-            self.into_iter()
-                .map(|(k, v)| (k.into_alloy(), v.into_alloy()))
-                .collect(),
-        )
-        .build()
-    }
-}
-
-pub enum Account {
-    Address(alloy::primitives::Address),
-    Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),
-}
-
 //////////////////////////////////
 // Conversions to the legacy types
 //////////////////////////////////
@@ -205,35 +169,5 @@ impl IntoLegacy for alloy::primitives::Bytes {
 
     fn into_legacy(self) -> Self::To {
         web3::types::Bytes(self.to_vec())
-    }
-}
-
-impl IntoLegacy
-    for HashMap<
-        alloy::primitives::B256,
-        alloy::primitives::B256,
-        alloy::primitives::map::FbBuildHasher<32>,
-    >
-{
-    type To = HashMap<ethcontract::H256, ethcontract::H256>;
-
-    fn into_legacy(self) -> Self::To {
-        self.into_iter()
-            .map(|(k, v)| (k.into_legacy(), v.into_legacy()))
-            .collect()
-    }
-}
-
-impl IntoLegacy for alloy::rpc::types::eth::state::AccountOverride {
-    type To = ethcontract::state_overrides::StateOverride;
-
-    fn into_legacy(self) -> Self::To {
-        Self::To {
-            balance: self.balance.map(IntoLegacy::into_legacy),
-            nonce: self.nonce.map(Into::into),
-            code: self.code.map(IntoLegacy::into_legacy),
-            state: self.state.map(IntoLegacy::into_legacy),
-            state_diff: self.state_diff.map(IntoLegacy::into_legacy),
-        }
     }
 }

@@ -1,14 +1,11 @@
 use {
     ::alloy::{
-        primitives::{Address, U256, address},
+        primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
     },
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::*,
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, conversions::IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -669,7 +666,7 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     // Verify that the detected strategies actually work by testing balance
     // overrides
-    use {contracts::alloy::ERC20, ethrpc::alloy::conversions::IntoAlloy};
+    use contracts::alloy::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,
@@ -684,15 +681,15 @@ async fn trace_based_balance_detection(web3: Web3) {
         };
 
         let balance_overrides = BalanceOverrides {
-            hardcoded: HashMap::from([(token.into_legacy(), strategy)]),
+            hardcoded: HashMap::from([(token, strategy)]),
             detector: None,
         };
 
         let override_result = balance_overrides
             .state_override(BalanceOverrideRequest {
-                token: token.into_legacy(),
-                holder: test_account.into_legacy(),
-                amount: test_balance.into_legacy(),
+                token,
+                holder: test_account,
+                amount: test_balance,
             })
             .await;
 
@@ -703,7 +700,10 @@ async fn trace_based_balance_detection(web3: Web3) {
         let token_contract = ERC20::Instance::new(token, web3.alloy.clone());
         let balance = token_contract
             .balanceOf(test_account)
-            .state(HashMap::from([(override_token, state_override.clone())]).into_alloy())
+            .state(AddressMap::from_iter([(
+                override_token,
+                state_override.clone(),
+            )]))
             .call()
             .await
             .unwrap();

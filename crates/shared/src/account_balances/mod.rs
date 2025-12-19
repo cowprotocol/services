@@ -5,11 +5,11 @@ use {
     },
     alloy::{
         primitives::{Address, U256},
+        rpc::types::state::StateOverride,
         sol_types::{SolCall, SolType, sol_data},
     },
     contracts::alloy::{GPv2Settlement, support::Balances},
-    ethcontract::state_overrides::StateOverrides,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -137,7 +137,7 @@ impl BalanceSimulator {
         amount: Option<U256>,
         balance_override: Option<BalanceOverrideRequest>,
     ) -> Result<Simulation, SimulationError> {
-        let overrides: StateOverrides = match balance_override {
+        let overrides: StateOverride = match balance_override {
             Some(overrides) => self
                 .balance_overrider
                 .state_override(overrides)
@@ -177,8 +177,8 @@ impl BalanceSimulator {
             .settlement
             .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
             .with_cloned_provider()
-            .state(overrides.into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy())
+            .state(overrides)
+            .from(*crate::SIMULATION_ACCOUNT)
             .call()
             .await?;
 

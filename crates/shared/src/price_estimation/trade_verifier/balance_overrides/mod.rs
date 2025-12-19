@@ -2,18 +2,23 @@ pub mod detector;
 
 use {
     self::detector::{DetectionError, Detector},
+    alloy::{
+        primitives::{
+            Address,
+            B256,
+            U256,
+            map::{AddressMap, B256Map},
+        },
+        rpc::types::state::AccountOverride,
+    },
     anyhow::Context as _,
     cached::{Cached, SizedCache},
-    ethcontract::{Address, H160, H256, U256, state_overrides::StateOverride},
-    ethrpc::alloy::conversions::IntoAlloy,
-    maplit::hashmap,
     std::{
         collections::HashMap,
         fmt::{self, Display, Formatter},
         str::FromStr,
         sync::{Arc, Mutex},
     },
-    web3::signing,
 };
 
 /// Balance override configuration arguments.
@@ -177,18 +182,18 @@ pub trait BalanceOverriding: Send + Sync + 'static {
     async fn state_override(
         &self,
         request: BalanceOverrideRequest,
-    ) -> Option<(Address, StateOverride)>;
+    ) -> Option<(Address, AccountOverride)>;
 }
 
 /// Parameters for computing a balance override request.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct BalanceOverrideRequest {
     /// The token for the override.
-    pub token: Address,
+    pub token: alloy::primitives::Address,
     /// The account to override the balance for.
-    pub holder: Address,
+    pub holder: alloy::primitives::Address,
     /// The token amount (in atoms) to set the balance to.
-    pub amount: U256,
+    pub amount: alloy::primitives::U256,
 }
 
 /// Balance override strategy for a token.
@@ -202,40 +207,43 @@ pub enum Strategy {
     ///
     /// [^1]: <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>
     SolidityMapping {
-        target_contract: H160,
+        target_contract: Address,
         map_slot: U256,
     },
     /// Strategy computing storage slot for balances based on the Solady library
     /// [^1].
     ///
     /// [^1]: <https://github.com/Vectorized/solady/blob/6122858a3aed96ee9493b99f70a245237681a95f/src/tokens/ERC20.sol#L75-L81>
-    SoladyMapping { target_contract: H160 },
+    SoladyMapping { target_contract: Address },
     /// Strategy that directly uses the storage slot discovered via
     /// debug_traceCall. This is similar to Foundry's `deal` approach where
     /// we trace a balanceOf call to find which storage slot is accessed for
     /// a given account.
-    DirectSlot { target_contract: H160, slot: H256 },
+    DirectSlot {
+        target_contract: Address,
+        slot: B256,
+    },
 }
 
 impl Strategy {
     /// Computes the storage slot and value to override for a particular token
     /// holder and amount.
-    fn state_override(&self, holder: &Address, amount: &U256) -> HashMap<H160, StateOverride> {
+    fn state_override(&self, holder: &Address, amount: &U256) -> AddressMap<AccountOverride> {
         let (target_contract, key) = match self {
             Self::SolidityMapping {
                 target_contract,
                 map_slot,
             } => {
                 let mut buf = [0; 64];
-                buf[12..32].copy_from_slice(holder.as_fixed_bytes());
-                map_slot.to_big_endian(&mut buf[32..64]);
-                (target_contract, H256(signing::keccak256(&buf)))
+                buf[12..32].copy_from_slice(holder.as_slice());
+                buf[32..64].copy_from_slice(&map_slot.to_be_bytes::<32>());
+                (target_contract, alloy::primitives::keccak256(buf))
             }
             Self::SoladyMapping { target_contract } => {
                 let mut buf = [0; 32];
-                buf[0..20].copy_from_slice(holder.as_fixed_bytes());
+                buf[0..20].copy_from_slice(holder.as_slice());
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
-                (target_contract, H256(signing::keccak256(&buf)))
+                (target_contract, alloy::primitives::keccak256(buf))
             }
             Self::DirectSlot {
                 target_contract,
@@ -243,18 +251,16 @@ impl Strategy {
             } => (target_contract, *slot),
         };
 
-        let value = {
-            let mut buf = [0; 32];
-            amount.to_big_endian(&mut buf);
-            H256(buf)
-        };
-
-        let state_override = StateOverride {
-            state_diff: Some(hashmap! { key => value }),
+        let state_override = AccountOverride {
+            state_diff: Some({
+                let mut map = B256Map::default();
+                map.insert(key, B256::new(amount.to_be_bytes::<32>()));
+                map
+            }),
             ..Default::default()
         };
 
-        hashmap! { *target_contract => state_override }
+        AddressMap::from_iter([(*target_contract, state_override)])
     }
 
     fn is_valid_for_all_holders(&self) -> bool {
@@ -310,9 +316,7 @@ impl BalanceOverrides {
             }
         }
 
-        let strategy = detector
-            .detect(token.into_alloy(), holder.into_alloy())
-            .await;
+        let strategy = detector.detect(token, holder).await;
 
         // Only cache when we successfully detect the token, or we can't find
         // it. Anything else is likely a temporary simulator (i.e. node) failure
@@ -349,7 +353,7 @@ impl BalanceOverriding for BalanceOverrides {
     async fn state_override(
         &self,
         request: BalanceOverrideRequest,
-    ) -> Option<(Address, StateOverride)> {
+    ) -> Option<(Address, AccountOverride)> {
         let strategy = if let Some(strategy) = self.hardcoded.get(&request.token) {
             tracing::trace!(token = ?request.token, "using pre-configured balance override strategy");
             Some(strategy.clone())
@@ -373,18 +377,23 @@ impl BalanceOverriding for DummyOverrider {
     async fn state_override(
         &self,
         _request: BalanceOverrideRequest,
-    ) -> Option<(Address, StateOverride)> {
+    ) -> Option<(Address, AccountOverride)> {
         None
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::mock, hex_literal::hex};
+    use {
+        super::*,
+        alloy::primitives::{address, b256},
+        ethrpc::mock,
+        maplit::hashmap,
+    };
 
     #[tokio::test]
     async fn balance_override_computation() {
-        let cow = addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
+        let cow = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
                 cow => Strategy::SolidityMapping {
@@ -399,16 +408,24 @@ mod tests {
             balance_overrides
                 .state_override(BalanceOverrideRequest {
                     token: cow,
-                    holder: addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
-                    amount: 0x42_u64.into(),
+                    holder: address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
+                    amount: U256::from(0x42),
                 })
                 .await,
             Some((
                 cow,
-                StateOverride {
-                    state_diff: Some(hashmap! {
-                        H256(hex!("fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33")) =>
-                            H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
+                AccountOverride {
+                    state_diff: Some({
+                        let mut map = B256Map::default();
+                        map.insert(
+                            b256!(
+                                "fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33"
+                            ),
+                            b256!(
+                                "0000000000000000000000000000000000000000000000000000000000000042"
+                            ),
+                        );
+                        map
                     }),
                     ..Default::default()
                 }
@@ -446,9 +463,9 @@ mod tests {
         assert_eq!(
             balance_overrides
                 .state_override(BalanceOverrideRequest {
-                    token: addr!("0000000000000000000000000000000000000000"),
-                    holder: addr!("0000000000000000000000000000000000000001"),
-                    amount: U256::zero(),
+                    token: address!("0000000000000000000000000000000000000000"),
+                    holder: address!("0000000000000000000000000000000000000001"),
+                    amount: U256::ZERO,
                 })
                 .await,
             None,
@@ -457,10 +474,10 @@ mod tests {
 
     #[tokio::test]
     async fn balance_override_computation_solady() {
-        let token = addr!("0000000000c5dc95539589fbd24be07c6c14eca4");
+        let token = address!("0000000000c5dc95539589fbd24be07c6c14eca4");
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
-                token => Strategy::SoladyMapping { target_contract: addr!("0000000000c5dc95539589fbd24be07c6c14eca4") },
+                token => Strategy::SoladyMapping { target_contract: address!("0000000000c5dc95539589fbd24be07c6c14eca4") },
             },
             ..Default::default()
         };
@@ -469,16 +486,24 @@ mod tests {
             balance_overrides
                 .state_override(BalanceOverrideRequest {
                     token,
-                    holder: addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
-                    amount: 0x42_u64.into(),
+                    holder: address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
+                    amount: U256::from(0x42),
                 })
                 .await,
             Some((
                 token,
-                StateOverride {
-                    state_diff: Some(hashmap! {
-                        H256(hex!("f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f")) =>
-                            H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
+                AccountOverride {
+                    state_diff: Some({
+                        let mut map = B256Map::default();
+                        map.insert(
+                            b256!(
+                                "f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f"
+                            ),
+                            b256!(
+                                "0000000000000000000000000000000000000000000000000000000000000042"
+                            ),
+                        );
+                        map
                     }),
                     ..Default::default()
                 }
@@ -512,10 +537,10 @@ mod tests {
 
     #[tokio::test]
     async fn cached_detection_caches_holder_agnostic_strategies_without_holder() {
-        let token = addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
-        let holder1 = addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let holder2 = addr!("0000000000000000000000000000000000000001");
-        let target_contract = addr!("0000000000000000000000000000000000000002");
+        let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
+        let holder1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
+        let holder2 = address!("0000000000000000000000000000000000000001");
+        let target_contract = address!("0000000000000000000000000000000000000002");
 
         let strategy = Strategy::SolidityMapping {
             target_contract,
@@ -565,18 +590,18 @@ mod tests {
 
     #[tokio::test]
     async fn cached_detection_caches_holder_specific_strategies_with_holder() {
-        let token = addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
-        let holder1 = addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let holder2 = addr!("0000000000000000000000000000000000000001");
-        let target_contract = addr!("0000000000000000000000000000000000000002");
+        let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
+        let holder1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
+        let holder2 = address!("0000000000000000000000000000000000000001");
+        let target_contract = address!("0000000000000000000000000000000000000002");
 
         let strategy_h1 = Strategy::DirectSlot {
             target_contract,
-            slot: H256::from_slice(&[1u8; 32]),
+            slot: B256::repeat_byte(1),
         };
         let strategy_h2 = Strategy::DirectSlot {
             target_contract,
-            slot: H256::from_slice(&[2u8; 32]),
+            slot: B256::repeat_byte(2),
         };
 
         // Create a mock web3 and convert it to the expected type

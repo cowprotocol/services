@@ -12,7 +12,6 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
@@ -298,9 +297,9 @@ impl Utilities {
                             .app_data
                             .flashloan()
                             .map(|loan| BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                amount: loan.amount.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
+                                token: loan.token,
+                                amount: loan.amount,
+                                holder: loan.receiver,
                             })
                     } else {
                         None

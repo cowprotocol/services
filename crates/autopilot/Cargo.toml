@@ -29,7 +29,6 @@ cow-amm = { workspace = true }
 dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }

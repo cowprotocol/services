@@ -39,7 +39,6 @@ jsonrpc-core.workspace = true
 
 [dev-dependencies]
 mockall = { workspace = true }
-maplit = { workspace = true }
 testlib = { workspace = true }
 
 [features]
