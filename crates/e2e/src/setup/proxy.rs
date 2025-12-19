@@ -43,84 +43,87 @@ impl ReverseProxy {
         };
 
         let backends_log: Vec<Url> = backends.to_vec();
-        let server_handle = tokio::spawn(async move {
-            let client = reqwest::Client::new();
-
-            let proxy_handler = move |req: Request<Body>| {
-                let client = client.clone();
-                let state = state.clone();
-                async move {
-                    let (parts, body) = req.into_parts();
-                    let path = parts
-                        .uri
-                        .path_and_query()
-                        .map(|pq: &axum::http::uri::PathAndQuery| pq.as_str())
-                        .unwrap_or("");
-
-                    // Convert body to bytes once for reuse across retries
-                    let body_bytes = match warp::hyper::body::to_bytes(body).await {
-                        Ok(bytes) => bytes,
-                        Err(err) => {
-                            return (
-                                axum::http::StatusCode::BAD_REQUEST,
-                                format!("Failed to read request body: {}", err),
-                            )
-                                .into_response();
-                        }
-                    };
-
-                    let backend_count = state.backends.read().await.len();
-
-                    for attempt in 0..backend_count {
-                        let current_backend = {
-                            let backends = state.backends.read().await;
-                            backends.front().cloned()
-                        };
-
-                        if let Some(backend) = current_backend {
-                            let url = format!("{}{}", backend, path);
-
-                            match try_backend(&client, &parts, &body_bytes, &url).await {
-                                Ok(response) => return response.into_response(),
-                                Err(err) => {
-                                    tracing::warn!(
-                                        ?err,
-                                        ?backend,
-                                        attempt,
-                                        "backend failed, rotating to next"
-                                    );
-
-                                    // Rotate
-                                    let mut backends = state.backends.write().await;
-                                    if let Some(failed) = backends.pop_front() {
-                                        backends.push_back(failed);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    (
-                        axum::http::StatusCode::BAD_GATEWAY,
-                        "All backends unavailable",
-                    )
-                        .into_response()
-                }
-            };
-
-            let app = Router::new().fallback(proxy_handler);
-
-            tracing::info!(?listen_addr, ?backends_log, "starting reverse proxy");
-            axum::Server::bind(&listen_addr)
-                .serve(app.into_make_service())
-                .await
-                .unwrap();
-        });
+        let server_handle = tokio::spawn(serve(listen_addr, backends_log, state));
 
         Self {
             _server_handle: server_handle,
         }
     }
+}
+
+async fn serve(listen_addr: SocketAddr, backends: Vec<Url>, state: ProxyState) {
+    let client = reqwest::Client::new();
+
+    let proxy_handler = move |req: Request<Body>| {
+        let client = client.clone();
+        let state = state.clone();
+        async move { handle_request(client, state, req).await }
+    };
+
+    let app = Router::new().fallback(proxy_handler);
+
+    tracing::info!(?listen_addr, ?backends, "starting reverse proxy");
+    axum::Server::bind(&listen_addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+}
+
+async fn handle_request(
+    client: reqwest::Client,
+    state: ProxyState,
+    req: Request<Body>,
+) -> impl IntoResponse {
+    let (parts, body) = req.into_parts();
+    let path = parts
+        .uri
+        .path_and_query()
+        .map(|pq: &axum::http::uri::PathAndQuery| pq.as_str())
+        .unwrap_or("");
+
+    // Convert body to bytes once for reuse across retries
+    let body_bytes = match warp::hyper::body::to_bytes(body).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Failed to read request body: {}", err),
+            )
+                .into_response();
+        }
+    };
+
+    let backend_count = state.backends.read().await.len();
+
+    for attempt in 0..backend_count {
+        let current_backend = {
+            let backends = state.backends.read().await;
+            backends.front().cloned()
+        };
+
+        if let Some(backend) = current_backend {
+            let url = format!("{}{}", backend, path);
+
+            match try_backend(&client, &parts, &body_bytes, &url).await {
+                Ok(response) => return response.into_response(),
+                Err(err) => {
+                    tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
+
+                    // Rotate
+                    let mut backends = state.backends.write().await;
+                    if let Some(failed) = backends.pop_front() {
+                        backends.push_back(failed);
+                    }
+                }
+            }
+        }
+    }
+
+    (
+        axum::http::StatusCode::BAD_GATEWAY,
+        "All backends unavailable",
+    )
+        .into_response()
 }
 
 async fn try_backend(
