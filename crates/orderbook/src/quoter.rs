@@ -51,7 +51,7 @@ pub struct QuoteHandler {
     fast_quoter: Arc<dyn OrderQuoting>,
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
-    volume_fee_math: VolumeFeePolicy,
+    volume_fee_policy: VolumeFeePolicy,
 }
 
 impl QuoteHandler {
@@ -63,7 +63,7 @@ impl QuoteHandler {
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
     ) -> Self {
-        let volume_fee_math = VolumeFeePolicy::new(
+        let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
             volume_fee.as_ref().and_then(|config| config.factor),
             enable_sell_equals_buy_volume_fee,
@@ -74,7 +74,7 @@ impl QuoteHandler {
             fast_quoter: quoter,
             app_data,
             volume_fee,
-            volume_fee_math,
+            volume_fee_policy,
         }
     }
 
@@ -144,7 +144,7 @@ impl QuoteHandler {
             &quote,
             &request.side,
             self.volume_fee.as_ref(),
-            &self.volume_fee_math,
+            &self.volume_fee_policy,
             request.buy_token,
             request.sell_token,
         )
@@ -189,7 +189,7 @@ fn get_vol_fee_adjusted_quote_data(
     quote: &Quote,
     side: &OrderQuoteSide,
     volume_fee: Option<&VolumeFeeConfig>,
-    volume_fee_math: &VolumeFeePolicy,
+    volume_fee_policy: &VolumeFeePolicy,
     buy_token: alloy::primitives::Address,
     sell_token: alloy::primitives::Address,
 ) -> anyhow::Result<AdjustedQuoteData> {
@@ -201,7 +201,7 @@ fn get_vol_fee_adjusted_quote_data(
     };
 
     // Determine applicable fee factor considering same-token config and overrides
-    let factor = volume_fee_math.get_applicable_volume_fee_factor(buy_token, sell_token, None);
+    let factor = volume_fee_policy.get_applicable_volume_fee_factor(buy_token, sell_token, None);
 
     let Some(factor) = factor else {
         return Ok(AdjustedQuoteData {
