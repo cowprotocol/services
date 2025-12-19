@@ -48,13 +48,13 @@ impl FeeParameters {
     }
 }
 
-pub struct VolumeFeeMath {
+pub struct VolumeFeePolicy {
     bucket_overrides: Vec<TokenBucketFeeOverride>,
     default_factor: Option<FeeFactor>,
     enable_sell_equals_buy_volume_fee: bool,
 }
 
-impl VolumeFeeMath {
+impl VolumeFeePolicy {
     pub fn new(
         bucket_overrides: Vec<TokenBucketFeeOverride>,
         default_factor: Option<FeeFactor>,
@@ -96,8 +96,45 @@ impl VolumeFeeMath {
         // Fall back to default factor either from argument or configured default
         fee_factor.or(self.default_factor)
     }
+}
 
-    pub fn set_default_factor(&mut self, factor: Option<FeeFactor>) {
-        self.default_factor = factor;
+#[cfg(test)]
+mod tests {
+    use {super::*, alloy::primitives::address};
+
+    #[test]
+    fn test_volume_fee_bucket_override() {
+        let usdc = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
+        let usdt = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
+        let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+
+        let bucket_pair_override = TokenBucketFeeOverride {
+            tokens: [usdc, dai].into_iter().collect(),
+            factor: FeeFactor::try_from(0.0005).unwrap(), // 0.05%
+        };
+        let bucket_group_override = TokenBucketFeeOverride {
+            tokens: [usdc, dai, usdt].into_iter().collect(),
+            factor: FeeFactor::try_from(0.0).unwrap(), // 0%
+        };
+
+        let default_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1%
+        let volume_fee_policy = VolumeFeePolicy::new(
+            vec![bucket_pair_override, bucket_group_override],
+            Some(default_fee),
+            false,
+        );
+
+        // USDC-DAI (matches both buckets) - pair bucket takes precedence
+        let override_ = volume_fee_policy.get_applicable_volume_fee_factor(usdc, dai, None);
+        assert_eq!(override_, Some(FeeFactor::try_from(0.0005).unwrap()));
+
+        // DAI-USDT (only in 3-token bucket) - should have override
+        let override_ = volume_fee_policy.get_applicable_volume_fee_factor(dai, usdt, None);
+        assert_eq!(override_, Some(FeeFactor::try_from(0.0).unwrap()));
+
+        // WETH-DAI (only one in bucket) - should fall back to default fee
+        let override_ = volume_fee_policy.get_applicable_volume_fee_factor(weth, dai, None);
+        assert_eq!(override_, Some(default_fee));
     }
 }

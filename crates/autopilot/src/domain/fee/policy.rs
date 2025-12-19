@@ -4,7 +4,7 @@ use {
         boundary,
         domain::{self, fee::Quote},
     },
-    shared::{arguments::FeeFactor, fee::VolumeFeeMath},
+    shared::{arguments::FeeFactor, fee::VolumeFeePolicy},
 };
 
 pub enum Policy {
@@ -87,7 +87,7 @@ impl Volume {
     pub fn apply(
         &self,
         order: &boundary::Order,
-        volume_fee_math: &VolumeFeeMath,
+        volume_fee_math: &VolumeFeePolicy,
     ) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,

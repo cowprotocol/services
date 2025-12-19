@@ -18,7 +18,7 @@ use {
     rust_decimal::Decimal,
     shared::{
         arguments::{FeeFactor, TokenBucketFeeOverride},
-        fee::VolumeFeeMath,
+        fee::VolumeFeePolicy,
     },
     std::collections::HashSet,
 };
@@ -83,7 +83,7 @@ pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
-    volume_fee_math: VolumeFeeMath,
+    volume_fee_math: VolumeFeePolicy,
 }
 
 impl ProtocolFees {
@@ -92,7 +92,7 @@ impl ProtocolFees {
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
     ) -> Self {
-        let volume_fee_math = VolumeFeeMath::new(
+        let volume_fee_math = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
             None, // contained within FeePoliciesConfig, set before use
             enable_sell_equals_buy_volume_fee,
@@ -692,89 +692,5 @@ mod test {
                 }
             ]
         );
-    }
-
-    #[test]
-    fn test_volume_fee_bucket_override() {
-        use alloy::primitives::address;
-
-        let usdc = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
-        let usdt = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
-        let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-
-        let bucket_pair_override = TokenBucketFeeOverride {
-            tokens: [usdc, dai].into_iter().collect(),
-            factor: shared::arguments::FeeFactor::try_from(0.0005).unwrap(), // 0.05%
-        };
-        let bucket_group_override = TokenBucketFeeOverride {
-            tokens: [usdc, dai, usdt].into_iter().collect(),
-            factor: shared::arguments::FeeFactor::try_from(0.0).unwrap(), // 0%
-        };
-
-        let config = arguments::FeePoliciesConfig {
-            fee_policies: vec![],
-            fee_policy_max_partner_fee: FeeFactor::try_from(0.01).unwrap(),
-            upcoming_fee_policies: arguments::UpcomingFeePolicies {
-                fee_policies: vec![],
-                effective_from_timestamp: None,
-            },
-            volume_fee_bucket_overrides: vec![bucket_pair_override, bucket_group_override],
-            enable_sell_equals_buy_volume_fee: false,
-        };
-
-        // USDC-DAI (matches both buckets) - pair bucket takes precedence
-        let order_usdc_dai = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: usdc,
-                sell_token: dai,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = shared::fee::get_applicable_volume_fee_factor(
-            &config.volume_fee_bucket_overrides,
-            order_usdc_dai.data.buy_token,
-            order_usdc_dai.data.sell_token,
-            config.enable_sell_equals_buy_volume_fee,
-            None,
-        );
-        assert_eq!(override_, Some(FeeFactor::try_from(0.0005).unwrap()));
-
-        // DAI-USDT (only in 3-token bucket) - should have override
-        let order_dai_usdt = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: dai,
-                sell_token: usdt,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = shared::fee::get_applicable_volume_fee_factor(
-            &config.volume_fee_bucket_overrides,
-            order_dai_usdt.data.buy_token,
-            order_dai_usdt.data.sell_token,
-            config.enable_sell_equals_buy_volume_fee,
-            None,
-        );
-        assert_eq!(override_, Some(FeeFactor::try_from(0.0).unwrap()));
-
-        // WETH-DAI (only one in bucket) - should NOT have override
-        let order_weth_dai = boundary::Order {
-            data: model::order::OrderData {
-                buy_token: weth,
-                sell_token: dai,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let override_ = shared::fee::get_applicable_volume_fee_factor(
-            &config.volume_fee_bucket_overrides,
-            order_weth_dai.data.buy_token,
-            order_weth_dai.data.sell_token,
-            config.enable_sell_equals_buy_volume_fee,
-            None,
-        );
-        assert_eq!(override_, None);
     }
 }
