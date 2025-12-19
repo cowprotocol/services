@@ -1,7 +1,7 @@
 pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
-    alloy::primitives::Address,
+    alloy::{eips::BlockNumberOrTag, primitives::Address},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
@@ -140,6 +140,16 @@ impl From<BlockNumber> for web3::types::BlockNumber {
             BlockNumber::Pending => web3::types::BlockNumber::Pending,
             BlockNumber::Latest => web3::types::BlockNumber::Latest,
             BlockNumber::Earliest => web3::types::BlockNumber::Earliest,
+        }
+    }
+}
+
+impl From<BlockNumber> for BlockNumberOrTag {
+    fn from(value: BlockNumber) -> Self {
+        match value {
+            BlockNumber::Pending => Self::Pending,
+            BlockNumber::Latest => Self::Latest,
+            BlockNumber::Earliest => Self::Earliest,
         }
     }
 }

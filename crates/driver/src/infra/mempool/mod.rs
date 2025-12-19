@@ -6,6 +6,7 @@ use {
     },
     alloy::{
         consensus::Transaction,
+        eips::BlockNumberOrTag,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
     },
@@ -21,7 +22,7 @@ pub struct Config {
     pub retry_interval: std::time::Duration,
     /// Optional block number to use when fetching nonces. If None, uses the
     /// web3 lib's default behavior, which is `latest`.
-    pub nonce_block_number: Option<web3::types::BlockNumber>,
+    pub nonce_block_number: Option<BlockNumberOrTag>,
     pub url: reqwest::Url,
     pub name: String,
     pub revert_protection: RevertProtection,
@@ -64,15 +65,22 @@ impl Mempool {
 
     /// Fetches the transaction count (nonce) for the given address at the
     /// specified block number. If no block number is provided in the config,
-    /// uses the web3 lib's default behavior.
+    /// uses the alloy's default behavior.
     pub async fn get_nonce(&self, address: eth::Address) -> Result<u64, mempools::Error> {
-        self.transport
-            .alloy
-            .get_transaction_count(address)
-            .await
-            .map_err(|err| {
-                mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
-            })
+        let call = self.transport.alloy.get_transaction_count(address);
+        match self.config.nonce_block_number {
+            Some(BlockNumberOrTag::Latest) => call.latest(),
+            Some(BlockNumberOrTag::Earliest) => call.earliest(),
+            Some(BlockNumberOrTag::Finalized) => call.finalized(),
+            Some(BlockNumberOrTag::Number(number)) => call.number(number),
+            Some(BlockNumberOrTag::Pending) => call.pending(),
+            Some(BlockNumberOrTag::Safe) => call.safe(),
+            None => call,
+        }
+        .await
+        .map_err(|err| {
+            mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
+        })
     }
 
     /// Submits a transaction to the mempool. Returns optimistically as soon as
