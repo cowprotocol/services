@@ -1,4 +1,5 @@
 use {
+    ::alloy::signers::local::PrivateKeySigner,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -6,9 +7,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -56,7 +55,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     // This order can't be created because we require the trader
     // to have at least 1 wei of sell tokens.

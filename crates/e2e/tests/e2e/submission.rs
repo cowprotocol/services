@@ -6,6 +6,7 @@ use {
             client::PollerStream,
             types::{Transaction, TransactionReceipt},
         },
+        signers::local::PrivateKeySigner,
     },
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::alloy::CallBuilderExt,
@@ -16,10 +17,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::time::Duration,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -93,7 +92,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -193,7 +192,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_bytes(trader.private_key().into()).unwrap(),
     );
     services.create_order(&order).await.unwrap();
     // Start tracking confirmed blocks so we can find the transaction later
@@ -326,7 +325,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_bytes(trader.private_key().into()).unwrap(),
     );
     assert!(services.create_order(&order).await.is_ok());
 

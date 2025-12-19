@@ -1,5 +1,5 @@
 use {
-    ::alloy::{primitives::Address, providers::Provider},
+    ::alloy::{primitives::Address, providers::Provider, signers::local::PrivateKeySigner},
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -8,9 +8,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -89,7 +87,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_a.private_key()).unwrap(),
     );
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
@@ -104,7 +102,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader_b.private_key()).unwrap(),
     );
     services.create_order(&order_buy_eth_b).await.unwrap();
 

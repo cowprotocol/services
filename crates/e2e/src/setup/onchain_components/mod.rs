@@ -28,10 +28,9 @@ use {
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
-    web3::signing::{self, SecretKeyRef},
+    web3::signing::{self},
 };
 
 pub mod alloy;
@@ -65,7 +64,7 @@ impl TestAccount {
             EcdsaSigningScheme::Eip712,
             domain_separator,
             struct_hash,
-            SecretKeyRef::from(&SecretKey::from_slice(self.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(self.private_key()).unwrap(),
         )
     }
 

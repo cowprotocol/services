@@ -1,4 +1,5 @@
 use {
+    ::alloy::signers::local::PrivateKeySigner,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
@@ -8,14 +9,12 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
     std::{
         sync::Arc,
         time::{Duration, Instant},
     },
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -402,7 +401,7 @@ async fn quote_timeout(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     // order creation requests always use the default quote time

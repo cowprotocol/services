@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy::{primitives::Address, signers::local::PrivateKeySigner},
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -7,9 +7,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -63,7 +61,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         order_creation.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(signer.private_key()).unwrap()),
+            &PrivateKeySigner::from_slice(signer.private_key()).unwrap(),
         )
     };
 
