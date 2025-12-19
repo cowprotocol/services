@@ -64,7 +64,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 file::Account::Kms(arn) => {
                     let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
                     let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
-                    AwsSigner::new(client, arn.0, config.chain_id.map(Into::into))
+                    AwsSigner::new(client, arn.0, config.chain_id)
                         .await
                         .expect("unable to load kms account {arn:?}")
                         .into()

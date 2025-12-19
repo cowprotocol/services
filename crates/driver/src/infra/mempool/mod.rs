@@ -144,7 +144,7 @@ impl Mempool {
                     solver = ?solver.address(),
                     "failed to submit tx to mempool"
                 );
-                Err(mempools::Error::Other(err.into()))
+                Err(mempools::Error::Other(err))
             }
         }
     }

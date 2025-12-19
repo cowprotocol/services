@@ -16,7 +16,6 @@ use {
             solver::Solver,
         },
     },
-    alloy::network::TxSigner,
     clap::Parser,
     futures::future::join_all,
     shared::arguments::tracing_config,
