@@ -22,7 +22,6 @@ pub struct Config {
     /// web3 lib's default behavior, which is `latest`.
     pub nonce_block_number: Option<web3::types::BlockNumber>,
     pub url: reqwest::Url,
-    pub use_soft_cancellations: bool,
     pub name: String,
     pub revert_protection: RevertProtection,
     pub max_additional_tip: eth::U256,
