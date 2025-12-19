@@ -26,6 +26,7 @@ paths:
           description: |
             Optional timeout in milliseconds for the price estimation request.
             If not provided, uses the default timeout configured for autopilot.
+            Must be greater than 0 and cannot exceed the configured maximum timeout.
           schema:
             type: integer
             format: int64
@@ -40,7 +41,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/NativeTokenPrice"
         "400":
-          description: Unsupported token.
+          description: |
+            Bad request. Possible causes:
+            - Unsupported token
+            - Invalid timeout_ms (must be > 0)
+            - timeout_ms exceeds configured maximum
           content:
             text/plain:
               schema:

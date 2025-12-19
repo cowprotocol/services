@@ -47,7 +47,7 @@ pub async fn serve(
         );
 
     let server = axum::Server::bind(&addr).serve(app.into_make_service());
-    tracing::info!(?addr, "serving native price API");
+    tracing::info!(?addr, "serving HTTP API");
 
     server
         .with_graceful_shutdown(async {
@@ -61,10 +61,26 @@ async fn get_native_price(
     Query(query): Query<NativePriceQuery>,
     AxumState(state): AxumState<State>,
 ) -> Response {
-    let timeout = query
-        .timeout_ms
-        .map(Duration::from_millis)
-        .unwrap_or(state.timeout);
+    let timeout = match query.timeout_ms {
+        Some(0) => {
+            return (StatusCode::BAD_REQUEST, "timeout_ms must be greater than 0").into_response();
+        }
+        Some(requested_ms) => {
+            let requested = Duration::from_millis(requested_ms);
+            if requested > state.timeout {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "timeout_ms cannot exceed configured maximum of {}ms",
+                        state.timeout.as_millis()
+                    ),
+                )
+                    .into_response();
+            }
+            requested
+        }
+        None => state.timeout,
+    };
 
     match state.estimator.estimate_native_price(token, timeout).await {
         Ok(price) => Json(NativeTokenPrice { price }).into_response(),
@@ -75,7 +91,9 @@ async fn get_native_price(
 fn error_to_response(err: PriceEstimationError) -> Response {
     use PriceEstimationError::*;
     match err {
-        NoLiquidity => (StatusCode::NOT_FOUND, "No liquidity").into_response(),
+        NoLiquidity | EstimatorInternal(_) => {
+            (StatusCode::NOT_FOUND, "No liquidity").into_response()
+        }
         UnsupportedToken { token: _, reason } => (
             StatusCode::BAD_REQUEST,
             format!("Unsupported token, reason: {reason}"),
@@ -87,7 +105,7 @@ fn error_to_response(err: PriceEstimationError) -> Response {
             format!("Unsupported order type, reason: {reason}"),
         )
             .into_response(),
-        EstimatorInternal(_) | ProtocolInternal(_) => {
+        ProtocolInternal(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
         }
     }

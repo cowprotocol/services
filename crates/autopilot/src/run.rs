@@ -532,8 +532,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let startup = Arc::new(Some(AtomicBool::new(false)));
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
-    let native_price_api_task = tokio::spawn(infra::api::serve(
-        args.native_price_api_address,
+    let api_task = tokio::spawn(infra::api::serve(
+        args.api_address,
         native_price_estimator.clone(),
         args.price_estimation.quote_timeout,
         api_shutdown_receiver,
@@ -707,7 +707,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     run.run_forever(shutdown_controller).await;
 
     api_shutdown_sender.send(()).ok();
-    native_price_api_task.await.ok();
+    api_task.await.ok();
 }
 
 async fn shadow_mode(args: Arguments) -> ! {

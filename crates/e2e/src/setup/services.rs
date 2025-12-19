@@ -203,7 +203,7 @@ impl<'a> Services<'a> {
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contracts={ethflow_contracts}"),
             "--skip-event-sync=true".to_string(),
-            "--native-price-api-address=0.0.0.0:12088".to_string(),
+            "--api-address=0.0.0.0:12088".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
         ]
         .into_iter()
