@@ -345,15 +345,7 @@ impl EcdsaSignature {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         // Unwrap because the only error is for invalid messages which we don't create.
         let signature = key.sign_hash_sync(&message).unwrap();
-        Self {
-            // The 27 is slightly magic, it comes from the Electrum notation
-            // https://github.com/tomusdrw/rust-web3/blob/8d889ae3270508f1e68b6a29bbe51b2bedf7fb1e/src/signing.rs#L107-L113
-            // we don't change the number according to the chain id as before the alloy migration
-            // we were not using chain replay protection
-            v: signature.recid().to_byte() + 27,
-            r: signature.r().into(),
-            s: signature.s().into(),
-        }
+        Self::from_bytes(&signature.as_bytes())
     }
 
     /// Returns an arbitrary non-zero signature that can be used for recovery
