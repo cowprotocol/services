@@ -71,7 +71,8 @@ async fn get_native_price(
                 return (
                     StatusCode::BAD_REQUEST,
                     format!(
-                        "timeout_ms cannot exceed configured maximum of {}ms",
+                        "timeout_ms({}ms) cannot exceed configured maximum of {}ms",
+                        requested.as_millis(),
                         state.timeout.as_millis()
                     ),
                 )

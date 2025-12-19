@@ -143,6 +143,7 @@ impl<'a> Services<'a> {
 
     fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         self.api_arguments().chain([
+            "--quote-timeout=10s".to_string(),
             "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                 .to_string(),
         ])

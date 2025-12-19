@@ -82,8 +82,10 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // Start proxy for native price API with automatic failover
     let _proxy = ReverseProxy::start(
         "0.0.0.0:9588".parse().unwrap(),
-        "http://0.0.0.0:12088".parse().unwrap(), // autopilot_leader
-        "http://0.0.0.0:12089".parse().unwrap(), // autopilot_follower
+        &[
+            "http://0.0.0.0:12088".parse().unwrap(), // autopilot_leader
+            "http://0.0.0.0:12089".parse().unwrap(), // autopilot_follower
+        ],
     );
 
     // Configure autopilot-leader only with test_solver

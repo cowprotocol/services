@@ -6,14 +6,14 @@
 //! routes traffic to the active instance and automatically fails over to a
 //! backup when the primary becomes unavailable.
 //!
-//! The proxy maintains two backend URLs (primary and secondary) and
-//! automatically switches between them when the currently active backend fails.
-//! This allows e2e tests to simulate production failover behavior without
-//! requiring a full k8s cluster.
+//! The proxy maintains a queue of backend URLs and automatically rotates
+//! through them when the currently active backend fails. This allows e2e tests
+//! to simulate production failover behavior without requiring a full k8s
+//! cluster.
 
 use {
     axum::{Router, body::Body, http::Request, response::IntoResponse},
-    std::{net::SocketAddr, sync::Arc},
+    std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},
     url::Url,
 };
@@ -29,26 +29,19 @@ pub struct ReverseProxy {
 
 #[derive(Clone)]
 struct ProxyState {
-    primary: Url,
-    secondary: Url,
-    active: Arc<RwLock<ActiveBackend>>,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum ActiveBackend {
-    Primary,
-    Secondary,
+    backends: Arc<RwLock<VecDeque<Url>>>,
 }
 
 impl ReverseProxy {
     /// Start a new proxy server with automatic failover between backends
-    pub fn start(listen_addr: SocketAddr, primary: Url, secondary: Url) -> Self {
+    pub fn start(listen_addr: SocketAddr, backends: &[Url]) -> Self {
+        let backends_queue: VecDeque<Url> = backends.iter().cloned().collect();
+
         let state = ProxyState {
-            primary: primary.clone(),
-            secondary: secondary.clone(),
-            active: Arc::new(RwLock::new(ActiveBackend::Primary)),
+            backends: Arc::new(RwLock::new(backends_queue)),
         };
 
+        let backends_log: Vec<Url> = backends.to_vec();
         let server_handle = tokio::spawn(async move {
             let client = reqwest::Client::new();
 
@@ -62,54 +55,48 @@ impl ReverseProxy {
                         .map(|pq: &axum::http::uri::PathAndQuery| pq.as_str())
                         .unwrap_or("");
 
-                    let active = *state.active.read().await;
-                    let (current_url, fallback) = match active {
-                        ActiveBackend::Primary => (
-                            format!("{}{}", state.primary, path),
-                            ActiveBackend::Secondary,
-                        ),
-                        ActiveBackend::Secondary => (
-                            format!("{}{}", state.secondary, path),
-                            ActiveBackend::Primary,
-                        ),
-                    };
+                    let backend_count = state.backends.read().await.len();
 
-                    match try_backend(&client, &current_url).await {
-                        Ok(response) => return response.into_response(),
-                        Err(err) => {
-                            tracing::warn!(
-                                ?err,
-                                ?active,
-                                "active backend failed, switching to fallback"
-                            );
-                            *state.active.write().await = fallback;
+                    for attempt in 0..backend_count {
+                        let current_backend = {
+                            let backends = state.backends.read().await;
+                            backends.front().cloned()
+                        };
+
+                        if let Some(backend) = current_backend {
+                            let url = format!("{}{}", backend, path);
+
+                            match try_backend(&client, &url).await {
+                                Ok(response) => return response.into_response(),
+                                Err(err) => {
+                                    tracing::warn!(
+                                        ?err,
+                                        ?backend,
+                                        attempt,
+                                        "backend failed, rotating to next"
+                                    );
+
+                                    // Rotate
+                                    let mut backends = state.backends.write().await;
+                                    if let Some(failed) = backends.pop_front() {
+                                        backends.push_back(failed);
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    let fallback_url = match fallback {
-                        ActiveBackend::Primary => format!("{}{}", state.primary, path),
-                        ActiveBackend::Secondary => format!("{}{}", state.secondary, path),
-                    };
-
-                    match try_backend(&client, &fallback_url).await {
-                        Ok(response) => response.into_response(),
-                        Err(_) => (
-                            axum::http::StatusCode::BAD_GATEWAY,
-                            "Both backends unavailable",
-                        )
-                            .into_response(),
-                    }
+                    (
+                        axum::http::StatusCode::BAD_GATEWAY,
+                        "All backends unavailable",
+                    )
+                        .into_response()
                 }
             };
 
             let app = Router::new().fallback(proxy_handler);
 
-            tracing::info!(
-                ?listen_addr,
-                ?primary,
-                ?secondary,
-                "starting native price proxy"
-            );
+            tracing::info!(?listen_addr, ?backends_log, "starting reverse proxy");
             axum::Server::bind(&listen_addr)
                 .serve(app.into_make_service())
                 .await

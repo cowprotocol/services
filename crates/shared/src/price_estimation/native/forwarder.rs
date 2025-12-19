@@ -45,17 +45,17 @@ impl Forwarder {
                 Ok(price.price)
             }
             StatusCode::NOT_FOUND => Err(PriceEstimationError::NoLiquidity),
+            StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
             StatusCode::BAD_REQUEST => {
                 let error_text = response
                     .text()
                     .await
                     .unwrap_or_else(|_| "unknown error".to_string());
-                Err(PriceEstimationError::UnsupportedToken {
-                    token,
-                    reason: error_text,
-                })
+                Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
+                    "bad request: {}",
+                    error_text
+                )))
             }
-            StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
             status => {
                 let error_text = response
                     .text()
