@@ -6,7 +6,7 @@ use {
         signers::Signature,
         transports::impl_future,
     },
-    std::{sync::Arc, thread},
+    std::{fmt::Debug, sync::Arc, thread},
     tokio::sync::RwLock,
 };
 
@@ -42,6 +42,14 @@ impl MutWallet {
             // default one.
             let register_default = {
                 let r_lock = wallet.0.blocking_read();
+                if <EthereumWallet as NetworkWallet<Ethereum>>::has_signer_for(
+                    &r_lock,
+                    &signer.address(),
+                ) {
+                    // Signer already registered, no need to change anything
+                    return;
+                }
+
                 let default_address =
                     <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(&r_lock);
 
