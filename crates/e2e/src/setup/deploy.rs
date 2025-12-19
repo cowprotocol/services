@@ -1,5 +1,8 @@
 use {
-    alloy::primitives::{Address, B256, U256},
+    alloy::{
+        primitives::{Address, B256, U256},
+        providers::Provider,
+    },
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -13,7 +16,7 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -44,8 +47,8 @@ pub struct Contracts {
 impl Contracts {
     pub async fn deployed_with(web3: &Web3, deployed: DeployedContracts) -> Self {
         let network_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
             .expect("get network ID failed")
             .to_string();
@@ -116,21 +119,18 @@ impl Contracts {
 
     pub async fn deploy(web3: &Web3) -> Self {
         let network_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
             .expect("get network ID failed")
             .to_string();
         tracing::info!("connected to test network {}", network_id);
 
-        let accounts: Vec<Address> = web3
-            .eth()
-            .accounts()
+        let accounts = web3
+            .alloy
+            .get_accounts()
             .await
-            .expect("get accounts failed")
-            .into_iter()
-            .map(|a| a.into_alloy())
-            .collect();
+            .expect("get accounts failed");
         let admin = accounts[0];
 
         let weth = WETH9::Instance::deploy(web3.alloy.clone()).await.unwrap();
@@ -148,10 +148,9 @@ impl Contracts {
         .await
         .unwrap();
 
-        let uniswap_v2_factory =
-            UniswapV2Factory::Instance::deploy(web3.alloy.clone(), accounts[0])
-                .await
-                .unwrap();
+        let uniswap_v2_factory = UniswapV2Factory::Instance::deploy(web3.alloy.clone(), admin)
+            .await
+            .unwrap();
         let uniswap_v2_router = UniswapV2Router02::Instance::deploy(
             web3.alloy.clone(),
             *uniswap_v2_factory.address(),

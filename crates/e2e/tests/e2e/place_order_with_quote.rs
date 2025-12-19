@@ -9,10 +9,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::ops::DerefMut,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -103,7 +101,7 @@ async fn place_order_with_quote(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let order_uid = services.create_order(&order).await.unwrap();
 

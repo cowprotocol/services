@@ -13,10 +13,9 @@ use {
         infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
         tests::setup::blockchain::Trade,
     },
-    alloy::primitives::Address,
+    alloy::{primitives::Address, signers::local::PrivateKeySigner},
     const_hex::ToHexExt,
     contracts::alloy::ERC20,
-    ethrpc::alloy::conversions::IntoAlloy,
     itertools::Itertools,
     serde_json::json,
     solvers_dto::auction::FlashloanHint,
@@ -25,7 +24,6 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex},
     },
-    web3::signing::Key,
 };
 
 pub const NAME: &str = "test-solver";
@@ -44,7 +42,7 @@ pub struct Config<'a> {
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
     pub fee_handler: FeeHandler,
-    pub private_key: ethcontract::PrivateKey,
+    pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
 }
@@ -351,7 +349,7 @@ impl Solver {
                             jit.quoted_order.order = jit
                                 .quoted_order
                                 .order
-                                .receiver(Some(config.private_key.address().into_alloy()));
+                                .receiver(Some(config.private_key.address()));
                             let fee_amount = jit.quoted_order.order.solver_fee.unwrap_or_default();
                             let order = json!({
                                 "sellToken": config.blockchain.get_token(jit.quoted_order.order.sell_token),
@@ -367,7 +365,7 @@ impl Solver {
                                 },
                                 "sellTokenBalance": jit.quoted_order.order.sell_token_source,
                                 "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
-                                "signature": const_hex::encode_prefixed(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key)),
+                                "signature": const_hex::encode_prefixed(jit.quoted_order.order_signature_with_private_key(config.blockchain, config.private_key.clone())),
                                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
                             });
                             trades_json.push(json!({
@@ -462,7 +460,6 @@ impl Solver {
                     additional_tip_percentage: 0.,
                     revert_protection: infra::mempool::RevertProtection::Disabled,
                     nonce_block_number: None,
-                    use_soft_cancellations: false,
                     url: config.blockchain.web3_url.parse().unwrap(),
                 }],
             )

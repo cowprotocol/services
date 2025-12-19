@@ -23,10 +23,8 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -205,7 +203,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let limit_surplus_order = OrderCreation {
         sell_amount,
@@ -216,7 +214,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let partner_fee_order = OrderCreation {
         sell_amount,
@@ -228,7 +226,7 @@ async fn combined_protocol_fees(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
@@ -541,7 +539,7 @@ async fn surplus_partner_fee(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let order_uid = services.create_order(&order).await.unwrap();
@@ -793,7 +791,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 
@@ -950,7 +948,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 

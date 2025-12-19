@@ -630,7 +630,7 @@ impl OrderValidating for OrderValidator {
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
-                        hash,
+                        hash: hash.0,
                         signature: signature.to_owned(),
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
@@ -644,7 +644,7 @@ impl OrderValidating for OrderValidator {
                     .await
                     .map_err(|err| match err {
                         SignatureValidationError::Invalid => {
-                            ValidationError::InvalidEip1271Signature(B256::new(hash))
+                            ValidationError::InvalidEip1271Signature(hash)
                         }
                         SignatureValidationError::Other(err) => ValidationError::Other(err),
                     })?
@@ -1046,10 +1046,10 @@ mod tests {
             signature_validator::MockSignatureValidating,
         },
         alloy::{
-            primitives::{Address, U160, address},
+            primitives::{Address, U160, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
+            signers::local::PrivateKeySigner,
         },
-        ethcontract::web3::signing::SecretKeyRef,
         futures::FutureExt,
         maplit::hashset,
         mockall::predicate::{always, eq},
@@ -1059,7 +1059,6 @@ mod tests {
         },
         number::nonzero::NonZeroU256,
         serde_json::json,
-        std::str::FromStr,
     };
 
     #[tokio::test]
@@ -1507,7 +1506,7 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
-                hash: order_hash,
+                hash: order_hash.0,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
                 balance_override: None,
@@ -1536,7 +1535,7 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
-                hash: order_hash,
+                hash: order_hash.0,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
                 balance_override: None,
@@ -2130,7 +2129,10 @@ mod tests {
                         order.clone().sign(
                             signing_scheme,
                             &Default::default(),
-                            SecretKeyRef::new(&secp256k1::SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap()),
+                            &PrivateKeySigner::from_bytes(&b256!(
+                                "0000000000000000000000000000000000000000000000000000000000000001"
+                            ))
+                            .unwrap(),
                         ),
                         &Default::default(),
                         Default::default(),

@@ -21,10 +21,8 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -104,7 +102,7 @@ async fn gas_limit(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let error = services.create_order(&order).await.unwrap_err();
     assert_eq!(error.0, StatusCode::BAD_REQUEST);
@@ -177,7 +175,7 @@ async fn allowance(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -478,7 +476,7 @@ async fn partial_fills(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;

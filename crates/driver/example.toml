@@ -26,7 +26,6 @@ url = "https://your.custom.rpc.endpoint"
 name = "custom_name"
 max-additional-tip = "5000000000"
 additional-tip-percentage = 0.05
-use-soft-cancellations = false
 mines-reverting-txs = true
 
 [contracts] # Optionally override the contract addresses, necessary on less popular blockchains

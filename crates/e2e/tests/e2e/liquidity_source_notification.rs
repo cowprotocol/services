@@ -2,7 +2,7 @@ use {
     alloy::{
         primitives::{Address, Bytes, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
-        signers::{SignerSync, local::PrivateKeySigner},
+        signers::SignerSync,
     },
     chrono::Utc,
     contracts::alloy::{ERC20, LiquoriceSettlement},
@@ -25,10 +25,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -233,7 +231,7 @@ http-timeout = "10s"
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &trader.signer,
         );
         services.create_order(&order).await.unwrap()
     };
@@ -264,13 +262,14 @@ http-timeout = "10s"
             .unwrap();
 
         // Create Liquorice order signature
-        let signer = PrivateKeySigner::from_slice(liquorice_maker.private_key()).unwrap();
+        let liquorice_maker_address = liquorice_maker.address();
+        let signer = liquorice_maker.signer;
         let liquorice_order_signature = signer.sign_hash_sync(&liquorice_order_hash).unwrap();
 
         // Create Liquorice settlement calldata
         liquorice_settlement
             .settleSingle(
-                liquorice_maker.address(),
+                liquorice_maker_address,
                 liquorice_order.clone(),
                 LiquoriceSettlement::Signature::TypedSignature {
                     signatureType: 3,   // EIP712
