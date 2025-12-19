@@ -1,7 +1,10 @@
 use {
     alloy::{
         primitives::{Address, address},
-        providers::ext::{AnvilApi, ImpersonateConfig},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
     },
     chrono::{NaiveDateTime, Utc},
     contracts::alloy::{ERC20, IZeroex},
@@ -169,7 +172,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+    let chain_id = web3.alloy.get_chain_id().await.unwrap();
     let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
         order.clone(),
         zeroex_maker.clone(),

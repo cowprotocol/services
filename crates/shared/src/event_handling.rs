@@ -774,7 +774,7 @@ mod tests {
         super::*,
         alloy::eips::BlockNumberOrTag,
         contracts::alloy::GPv2Settlement,
-        ethcontract::{BlockNumber, H256},
+        ethcontract::H256,
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
         std::str::FromStr,
     };
@@ -991,20 +991,18 @@ mod tests {
             .await
             .unwrap();
         let storage = EventStorage { events: vec![] };
-        let current_block = web3.eth().block_number().await.unwrap();
+        let current_block = web3.alloy.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
         //get block in history (current_block - NUMBER_OF_BLOCKS)
         let block = web3
-            .eth()
-            .block(
-                BlockNumber::Number(current_block.saturating_sub(NUMBER_OF_BLOCKS.into())).into(),
-            )
+            .alloy
+            .get_block_by_number(current_block.saturating_sub(NUMBER_OF_BLOCKS).into())
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let block = (block.number(), block.hash().into_legacy());
         let mut event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
@@ -1023,21 +1021,20 @@ mod tests {
         let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
-        let storage = EventStorage { events: vec![] };
-        let current_block = web3.eth().block_number().await.unwrap();
+        let storage: EventStorage<GPv2Settlement::GPv2Settlement::GPv2SettlementEvents> =
+            EventStorage { events: vec![] };
+        let current_block = web3.alloy.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
         //get block in history (current_block - NUMBER_OF_BLOCKS)
         let block = web3
-            .eth()
-            .block(
-                BlockNumber::Number(current_block.saturating_sub(NUMBER_OF_BLOCKS.into())).into(),
-            )
+            .alloy
+            .get_block_by_number(current_block.saturating_sub(NUMBER_OF_BLOCKS).into())
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let block = (block.number(), block.hash().into_legacy());
         let mut event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
@@ -1058,7 +1055,7 @@ mod tests {
             .await
             .unwrap();
 
-        let current_block = web3.eth().block_number().await.unwrap();
+        let current_block = web3.alloy.get_block_number().await.unwrap();
         // In this test we query for events multiple times. Newer events might be
         // included each time we query again for the same events, but we want to
         // disregard them.
@@ -1069,7 +1066,7 @@ mod tests {
             v.into_iter()
                 .filter(|(_, log)| {
                     // We make the test robust against reorgs by removing events that are too new
-                    log.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT).as_u64()
+                    log.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT)
                 })
                 .collect::<Vec<_>>()
         };
@@ -1081,7 +1078,7 @@ mod tests {
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
             &web3.alloy,
-            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+            BlockNumberOrTag::Number(current_block - RANGE_SIZE),
         )
         .await
         .unwrap();
@@ -1103,7 +1100,7 @@ mod tests {
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
             &web3.alloy,
-            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+            BlockNumberOrTag::Number(current_block - RANGE_SIZE),
         )
         .await
         .unwrap();
