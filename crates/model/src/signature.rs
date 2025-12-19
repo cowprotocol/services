@@ -12,7 +12,7 @@ use {
     },
     web3::{
         signing::{self},
-        types::{H256, Recovery},
+        types::Recovery,
     },
 };
 
