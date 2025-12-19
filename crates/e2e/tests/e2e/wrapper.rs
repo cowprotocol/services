@@ -6,7 +6,6 @@ use {
             ext::{AnvilApi, DebugApi, ImpersonateConfig},
         },
         rpc::types::trace::geth::{CallConfig, GethDebugTracingOptions},
-        signers::local::PrivateKeySigner,
     },
     app_data::{AppDataHash, hash_full_app_data},
     contracts::alloy::ERC20,
@@ -162,7 +161,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     let sell_token_balance_before = token_weth.balanceOf(trader.address()).call().await.unwrap();

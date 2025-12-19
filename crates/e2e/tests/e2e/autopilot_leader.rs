@@ -1,5 +1,4 @@
 use {
-    alloy::signers::local::PrivateKeySigner,
     autopilot::shutdown_controller::ShutdownController,
     e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
     ethrpc::{Web3, alloy::CallBuilderExt},
@@ -108,7 +107,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .sign(
             model::signature::EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+            &trader.signer,
         )
     };
 

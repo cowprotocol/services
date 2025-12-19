@@ -1,5 +1,4 @@
 use {
-    ::alloy::signers::local::PrivateKeySigner,
     app_data::{AppDataHash, hash_full_app_data},
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
@@ -59,7 +58,7 @@ async fn app_data(web3: Web3) {
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+            &trader.signer,
         );
         // Adjust valid to make sure we get unique UIDs.
         valid_to += 1;
@@ -221,7 +220,7 @@ async fn app_data_full_format(web3: Web3) {
         .sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+            &trader.signer,
         );
         // Adjust valid to make sure we get unique UIDs.
         valid_to += 1;

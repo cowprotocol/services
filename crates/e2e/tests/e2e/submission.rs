@@ -6,7 +6,6 @@ use {
             client::PollerStream,
             types::{Transaction, TransactionReceipt},
         },
-        signers::local::PrivateKeySigner,
     },
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::alloy::CallBuilderExt,
@@ -92,7 +91,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -192,7 +191,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_bytes(trader.private_key().into()).unwrap(),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
     // Start tracking confirmed blocks so we can find the transaction later
@@ -325,7 +324,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_bytes(trader.private_key().into()).unwrap(),
+        &trader.signer,
     );
     assert!(services.create_order(&order).await.is_ok());
 

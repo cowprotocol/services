@@ -5,7 +5,6 @@ use {
             Provider,
             ext::{AnvilApi, ImpersonateConfig},
         },
-        signers::local::PrivateKeySigner,
     },
     chrono::{NaiveDateTime, Utc},
     contracts::alloy::{ERC20, IZeroex},
@@ -22,14 +21,10 @@ use {
             wait_for_condition,
         },
     },
-    ethcontract::{Account, H256},
+    ethcontract::H256,
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            ProviderSignerExt,
-            conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-        },
+        alloy::{CallBuilderExt, conversions::IntoLegacy},
     },
     model::{
         order::{OrderCreation, OrderKind},
@@ -71,11 +66,8 @@ async fn zero_ex_liquidity(web3: Web3) {
         web3.alloy.clone(),
     );
 
-    let zeroex_provider = {
-        let signer = solver.account().clone().try_into_alloy().await.unwrap();
-        web3.alloy.with_signer(signer)
-    };
-    let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
+    web3.wallet.register_signer(solver.signer.clone());
+    let zeroex = IZeroex::Instance::deployed(&web3.alloy).await.unwrap();
 
     let amount = 500u64.matom();
 
@@ -168,7 +160,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     let chain_id = web3.alloy.get_chain_id().await.unwrap();
@@ -282,7 +274,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         salt: alloy::primitives::U256::from(Utc::now().timestamp()),
     }
     .to_order_record(chain_id, *zeroex.address(), zeroex_maker);
-    fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.account().clone())
+    fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.address())
         .await
         .unwrap();
     let zeroex_order_amounts = get_zeroex_order_amounts(&zeroex, &zeroex_order)
@@ -410,7 +402,7 @@ async fn get_zeroex_order_amounts(
 async fn fill_or_kill_zeroex_limit_order(
     zeroex: &IZeroex::Instance,
     zeroex_order: &shared::zeroex_api::OrderRecord,
-    from_account: Account,
+    from: Address,
 ) -> anyhow::Result<H256> {
     let order = zeroex_order.order();
     let tx_hash = zeroex
@@ -437,7 +429,7 @@ async fn fill_or_kill_zeroex_limit_order(
             },
             zeroex_order.order().taker_amount,
         )
-        .from(from_account.address().into_alloy())
+        .from(from)
         .send()
         .await?
         .watch()
