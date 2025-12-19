@@ -1,3 +1,9 @@
+//! Forwards native price estimation requests to autopilot's HTTP API.
+//!
+//! This allows orderbook instances to share autopilot's native price cache
+//! instead of maintaining independent caches, avoiding cache inconsistencies
+//! and reducing rate limiting from external price estimators.
+
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
