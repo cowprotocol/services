@@ -1123,7 +1123,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     let usdc_dai_uid = services.create_order(&usdc_dai_order).await.unwrap();
@@ -1148,7 +1148,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     let dai_usdt_uid = services.create_order(&dai_usdt_order).await.unwrap();
@@ -1173,7 +1173,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
+        &trader.signer,
     );
 
     let usdc_weth_uid = services.create_order(&usdc_weth_order).await.unwrap();
