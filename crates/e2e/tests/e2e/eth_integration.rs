@@ -1,7 +1,7 @@
 use {
-    ::alloy::primitives::Address,
+    ::alloy::{primitives::Address, providers::Provider},
     e2e::setup::*,
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoLegacy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -48,11 +48,7 @@ async fn eth_integration(web3: Web3) {
         .await
         .unwrap();
 
-    let trader_a_eth_balance_before = web3
-        .eth()
-        .balance(trader_a.address().into_legacy(), None)
-        .await
-        .unwrap();
+    let trader_a_eth_balance_before = web3.alloy.get_balance(trader_a.address()).await.unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -115,20 +111,11 @@ async fn eth_integration(web3: Web3) {
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     let trade_happened = || async {
-        let balance_a = web3
-            .eth()
-            .balance(trader_a.address().into_legacy(), None)
-            .await
-            .unwrap();
-        let balance_b = web3
-            .eth()
-            .balance(trader_b.address().into_legacy(), None)
-            .await
-            .unwrap();
+        let balance_a = web3.alloy.get_balance(trader_a.address()).await.unwrap();
+        let balance_b = web3.alloy.get_balance(trader_b.address()).await.unwrap();
 
-        let trader_a_eth_decreased =
-            (balance_a - trader_a_eth_balance_before) == 49u64.eth().into_legacy();
-        let trader_b_eth_increased = balance_b >= 49u64.eth().into_legacy();
+        let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == 49u64.eth();
+        let trader_b_eth_increased = balance_b >= 49u64.eth();
         trader_a_eth_decreased && trader_b_eth_increased
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

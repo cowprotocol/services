@@ -1,7 +1,10 @@
 use {
     alloy::{
         primitives::{Address, Bytes, FixedBytes, U256, address},
-        providers::ext::{AnvilApi, ImpersonateConfig},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
     },
     contracts::alloy::{
         ERC20,
@@ -19,7 +22,6 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethcontract::{BlockId, BlockNumber},
     ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
@@ -200,12 +202,12 @@ async fn cow_amm_jit(web3: Web3) {
     // a relatively small valid_to and we initialize the chain with a date in
     // the past so the computer's current time is way ahead of the blockchain.
     let block = web3
-        .eth()
-        .block(BlockId::Number(BlockNumber::Latest))
+        .alloy
+        .get_block(alloy::eips::BlockId::latest())
         .await
         .unwrap()
         .unwrap();
-    let valid_to = block.timestamp.as_u32() + 300;
+    let valid_to = u32::try_from(block.header.timestamp).unwrap() + 300;
 
     // CoW AMM order with a limit price extremely close to the AMM's current price.
     // current price => 1 WETH == 2000 DAI
@@ -828,12 +830,12 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Get the current block timestamp
     let block = web3
-        .eth()
-        .block(BlockId::Number(BlockNumber::Latest))
+        .alloy
+        .get_block(alloy::eips::BlockId::latest())
         .await
         .unwrap()
         .unwrap();
-    let valid_to = block.timestamp.as_u32() + 300;
+    let valid_to = u32::try_from(block.header.timestamp).unwrap() + 300;
     let executed_amount = 230u64.eth();
 
     // CoW AMM order remains the same (selling WETH for DAI)

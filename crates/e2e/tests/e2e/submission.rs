@@ -1,8 +1,15 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{
+        primitives::{Address, B256, U256},
+        providers::{Provider, ext::TxPoolApi},
+        rpc::{
+            client::PollerStream,
+            types::{Transaction, TransactionReceipt},
+        },
+    },
     e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoLegacy},
-    futures::{Stream, StreamExt},
+    ethrpc::alloy::CallBuilderExt,
+    futures::StreamExt,
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -12,10 +19,7 @@ use {
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::time::Duration,
-    web3::{
-        signing::SecretKeyRef,
-        types::{BlockId, H160, H256},
-    },
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -96,28 +100,26 @@ async fn test_cancel_on_expiry(web3: Web3) {
 
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
-        .eth_filter()
-        .create_blocks_filter()
+        .alloy
+        .watch_blocks()
         .await
         .expect("must be able to create blocks filter")
-        .stream(Duration::from_millis(50));
+        .into_stream();
 
     // Wait for settlement tx to appear in txpool
     wait_for_condition(TIMEOUT, || async {
-        get_pending_tx(solver.account().address(), &web3)
-            .await
-            .is_some()
+        get_pending_tx(solver.address(), &web3).await.is_some()
     })
     .await
     .unwrap();
 
     // Restart mining, but with blocks that are too small to fit the settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_block_gas_limit(100_000)
+    web3.alloy
+        .raw_request::<(u64,), bool>("evm_setBlockGasLimit".into(), (100_000,))
         .await
         .expect("Must be able to set block gas limit");
-    web3.api::<TestNodeApi<_>>()
-        .set_mining_interval(1)
+    web3.alloy
+        .raw_request::<(u64,), ()>("evm_setIntervalMining".into(), (1,))
         .await
         .expect("Must be able to set mining interval");
 
@@ -129,11 +131,11 @@ async fn test_cancel_on_expiry(web3: Web3) {
     // Check that it's actually a cancellation
     let tx = tokio::time::timeout(
         TIMEOUT,
-        get_confirmed_transaction(solver.account().address(), &web3, block_stream),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
     )
     .await
     .unwrap();
-    assert_eq!(tx.to, Some(solver.account().address()))
+    assert_eq!(tx.to, Some(solver.address()))
 }
 
 async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
@@ -196,20 +198,18 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     services.create_order(&order).await.unwrap();
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
-        .eth_filter()
-        .create_blocks_filter()
+        .alloy
+        .watch_blocks()
         .await
         .expect("must be able to create blocks filter")
-        .stream(Duration::from_millis(50));
+        .into_stream();
 
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
 
     // Wait for settlement tx to appear in txpool
     wait_for_condition(TIMEOUT, || async {
-        get_pending_tx(solver.account().address(), &web3)
-            .await
-            .is_some()
+        get_pending_tx(solver.address(), &web3).await.is_some()
     })
     .await
     .unwrap();
@@ -223,16 +223,13 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     // Wait for the settlement to be confirmed on chain
     let tx = tokio::time::timeout(
         Duration::from_secs(5),
-        get_confirmed_transaction(solver.account().address(), &web3, block_stream),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
     )
     .await
     .unwrap();
 
     // Verify the transaction is to the settlement contract (not a cancellation)
-    assert_eq!(
-        tx.to,
-        Some(onchain.contracts().gp_settlement.address().into_legacy())
-    );
+    assert_eq!(tx.to, Some(*onchain.contracts().gp_settlement.address()));
 
     // Verify that the balance changed (settlement happened on chain)
     let trade_happened = || async {
@@ -335,20 +332,18 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
-        .eth_filter()
-        .create_blocks_filter()
+        .alloy
+        .watch_blocks()
         .await
         .expect("must be able to create blocks filter")
-        .stream(Duration::from_millis(50));
+        .into_stream();
 
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
 
     // Wait for settlement tx to appear in txpool
     wait_for_condition(TIMEOUT, || async {
-        get_pending_tx(solver.account().address(), &web3)
-            .await
-            .is_some()
+        get_pending_tx(solver.address(), &web3).await.is_some()
     })
     .await
     .unwrap();
@@ -362,16 +357,13 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     // Wait for the settlement to be confirmed on chain
     let tx = tokio::time::timeout(
         Duration::from_secs(5),
-        get_confirmed_transaction(solver.account().address(), &web3, block_stream),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
     )
     .await
     .unwrap();
 
     // Verify the transaction is to the settlement contract (not a cancellation)
-    assert_eq!(
-        tx.to,
-        Some(onchain.contracts().gp_settlement.address().into_legacy())
-    );
+    assert_eq!(tx.to, Some(*onchain.contracts().gp_settlement.address()));
 
     // Verify that the balance changed (settlement happened on chain)
     let trade_happened = || async {
@@ -391,32 +383,36 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     );
 }
 
-async fn get_pending_tx(account: H160, web3: &Web3) -> Option<web3::types::Transaction> {
+async fn get_pending_tx(account: Address, web3: &Web3) -> Option<Transaction> {
     let txpool = web3
-        .txpool()
-        .content()
+        .alloy
+        .txpool_content()
         .await
         .expect("must be able to inspect mempool");
     txpool.pending.get(&account)?.values().next().cloned()
 }
 
 async fn get_confirmed_transaction(
-    account: H160,
+    account: Address,
     web3: &Web3,
-    block_stream: impl Stream<Item = Result<H256, web3::Error>>,
-) -> web3::types::Transaction {
-    let mut block_stream = Box::pin(block_stream);
+    block_hash_stream: PollerStream<Vec<B256>>,
+) -> TransactionReceipt {
+    let mut block_hash_stream = Box::pin(block_hash_stream);
     loop {
-        let block_hash = block_stream.next().await.unwrap().unwrap();
-        let block = web3
-            .eth()
-            .block_with_txs(BlockId::Hash(block_hash))
-            .await
-            .expect("must be able to get block by hash")
-            .expect("block not found");
-        for tx in block.transactions {
-            if tx.from == Some(account) {
-                return tx;
+        let block_hashes = block_hash_stream.next().await.unwrap();
+        for block_hash in block_hashes {
+            let transaction_senders = web3
+                .alloy
+                .get_block_receipts(block_hash.into())
+                .await
+                .unwrap()
+                .into_iter()
+                .flatten();
+
+            for tx in transaction_senders {
+                if tx.from == account {
+                    return tx;
+                }
             }
         }
     }
