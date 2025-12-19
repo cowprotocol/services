@@ -5,13 +5,7 @@ use {
     chrono::{DateTime, Utc},
     clap::ValueEnum,
     shared::{
-        arguments::{
-            FeeFactor,
-            TokenBucketFeeOverride,
-            display_list,
-            display_option,
-            display_secret_option,
-        },
+        arguments::{FeeFactor, display_list, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
@@ -599,20 +593,6 @@ pub struct FeePoliciesConfig {
     /// Volume fee policies that will become effective at a future timestamp.
     #[clap(flatten)]
     pub upcoming_fee_policies: UpcomingFeePolicies,
-
-    /// Custom volume fees for token buckets.
-    /// Format: "factor:token1;token2;..." (e.g.,
-    /// "0:0xA0b86...;0x6B175...;0xdAC17...") Orders where BOTH tokens are
-    /// in the bucket will use the custom fee. Useful for
-    /// stablecoin-to-stablecoin trades or specific token pairs (2-token
-    /// buckets). Multiple buckets can be separated by commas.
-    #[clap(long, env, value_delimiter = ',')]
-    pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
-
-    /// Enable volume fees for trades where sell token equals buy token.
-    /// By default, volume fees are NOT applied to same-token trades.
-    #[clap(long, env)]
-    pub enable_sell_equals_buy_volume_fee: bool,
 }
 
 /// A fee policy to be used for orders base on it's class.

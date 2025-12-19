@@ -296,6 +296,20 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub token_quality_cache_prefetch_time: Duration,
+
+    /// Custom volume fees for token buckets.
+    /// Format: "factor:token1;token2;..." (e.g.,
+    /// "0:0xA0b86...;0x6B175...;0xdAC17...") Orders where BOTH tokens are
+    /// in the bucket will use the custom fee. Useful for
+    /// stablecoin-to-stablecoin trades or specific token pairs (2-token
+    /// buckets). Multiple buckets can be separated by commas.
+    #[clap(long, env, value_delimiter = ',')]
+    pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+
+    /// Enable volume fees for trades where sell token equals buy token.
+    /// By default, volume fees are NOT applied to same-token trades.
+    #[clap(long, env)]
+    pub enable_sell_equals_buy_volume_fee: bool,
 }
 
 pub fn display_secret_option<T>(
@@ -397,6 +411,8 @@ impl Display for Arguments {
             token_quality_cache_expiry,
             token_quality_cache_prefetch_time,
             tracing,
+            volume_fee_bucket_overrides,
+            enable_sell_equals_buy_volume_fee,
         } = self;
 
         write!(f, "{ethrpc}")?;
@@ -486,7 +502,14 @@ impl Display for Arguments {
             "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
         write!(f, "{tracing:?}")?;
-
+        writeln!(
+            f,
+            "volume_fee_bucket_overrides: {volume_fee_bucket_overrides:?}"
+        )?;
+        writeln!(
+            f,
+            "enable_sell_equals_buy_volume_fee: {enable_sell_equals_buy_volume_fee}"
+        )?;
         Ok(())
     }
 }
