@@ -1017,7 +1017,7 @@ async fn volume_fee_overrides(web3: Web3) {
             .unwrap();
 
         token
-            .approve(onchain.contracts().allowance.into_alloy(), 1000u64.eth())
+            .approve(onchain.contracts().allowance, 1000u64.eth())
             .from(trader.address())
             .send_and_watch()
             .await
@@ -1109,8 +1109,8 @@ async fn volume_fee_overrides(web3: Web3) {
     // Test Case 1: USDC-DAI uses first bucket (2-token bucket, 0.05%)
     let usdc_dai_quote = get_quote(
         &services,
-        token_usdc.address().into_legacy(),
-        token_dai.address().into_legacy(),
+        *token_usdc.address(),
+        *token_dai.address(),
         OrderKind::Sell,
         sell_amount,
         quote_valid_to,
@@ -1126,7 +1126,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let usdc_dai_uid = services.create_order(&usdc_dai_order).await.unwrap();
@@ -1134,8 +1134,8 @@ async fn volume_fee_overrides(web3: Web3) {
     // Test Case 2: DAI-USDT uses stablecoin bucket (0%)
     let dai_usdt_quote = get_quote(
         &services,
-        token_dai.address().into_legacy(),
-        token_usdt.address().into_legacy(),
+        *token_dai.address(),
+        *token_usdt.address(),
         OrderKind::Sell,
         sell_amount,
         quote_valid_to,
@@ -1151,7 +1151,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let dai_usdt_uid = services.create_order(&dai_usdt_order).await.unwrap();
@@ -1159,8 +1159,8 @@ async fn volume_fee_overrides(web3: Web3) {
     // Test Case 3: USDC-WETH uses default fee (1%)
     let usdc_weth_quote = get_quote(
         &services,
-        token_usdc.address().into_legacy(),
-        token_weth.address().into_legacy(),
+        *token_usdc.address(),
+        *token_weth.address(),
         OrderKind::Sell,
         sell_amount,
         quote_valid_to,
@@ -1176,7 +1176,7 @@ async fn volume_fee_overrides(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &PrivateKeySigner::from_slice(trader.private_key()).unwrap(),
     );
 
     let usdc_weth_uid = services.create_order(&usdc_weth_order).await.unwrap();
