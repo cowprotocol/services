@@ -16,7 +16,6 @@ use {
             solver::Solver,
         },
     },
-    alloy::network::TxSigner,
     clap::Parser,
     futures::future::join_all,
     shared::arguments::tracing_config,
@@ -177,12 +176,6 @@ async fn ethereum(
             .await
             .expect("initialize gas price estimator"),
     );
-
-    for solver in &config.solvers {
-        tracing::error!(">>> registering signer for {}", solver.account.address());
-        ethrpc.web3().wallet.register_signer(solver.account.clone());
-    }
-
     Ethereum::new(
         ethrpc,
         config.contracts.clone(),
