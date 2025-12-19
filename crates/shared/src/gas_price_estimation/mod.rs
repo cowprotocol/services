@@ -8,6 +8,7 @@ use {
         gas_price_estimation::alloy::AlloyGasPriceEstimator,
         http_client::HttpClientFactory,
     },
+    ::alloy::providers::Provider,
     anyhow::Result,
     gas_estimation::{
         GasPriceEstimating,
@@ -49,7 +50,7 @@ pub async fn create_priority_estimator(
     web3: &Web3,
     estimator_types: &[GasEstimatorType],
 ) -> Result<impl GasPriceEstimating + use<>> {
-    let network_id = web3.eth().chain_id().await?.to_string();
+    let network_id = web3.alloy.get_chain_id().await?.to_string();
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
 
     for estimator_type in estimator_types {

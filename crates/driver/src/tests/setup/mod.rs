@@ -37,10 +37,13 @@ use {
             },
         },
     },
-    alloy::primitives::{Address, U256, address},
+    alloy::{
+        primitives::{Address, U256, address},
+        providers::Provider,
+    },
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -1179,10 +1182,9 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .eth()
-                .balance(self.trader_address.into_legacy(), None)
+                .alloy
+                .get_balance(self.trader_address)
                 .await
-                .map(IntoAlloy::into_alloy)
                 .unwrap(),
         );
         balances
