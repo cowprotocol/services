@@ -127,6 +127,7 @@ impl<'a> Services<'a> {
 
     fn api_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             format!("--node-ws-url={NODE_WS_HOST}"),
@@ -307,7 +308,6 @@ impl<'a> Services<'a> {
                 vec![
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
-                    "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
                 ],
                 args.api,
@@ -358,7 +358,6 @@ impl<'a> Services<'a> {
             ];
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
@@ -376,7 +375,6 @@ impl<'a> Services<'a> {
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             ];
             (autopilot_args, api_args)
         };

@@ -84,7 +84,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 

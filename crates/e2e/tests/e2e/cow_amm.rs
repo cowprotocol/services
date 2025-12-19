@@ -193,7 +193,6 @@ async fn cow_amm_jit(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 
@@ -564,7 +563,6 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     services
         .start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 
@@ -825,7 +823,6 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
-            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
         ])
         .await;
 
