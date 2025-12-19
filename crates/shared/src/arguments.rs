@@ -627,7 +627,7 @@ impl FromStr for TokenBucketFeeOverride {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use {super::*, alloy::primitives::address};
 
     #[test]
     fn parse_drivers_wrong_arguments() {
@@ -652,6 +652,17 @@ mod test {
         let result = TokenBucketFeeOverride::from_str(valid_two_tokens).unwrap();
         assert_eq!(result.factor.get(), 0.5);
         assert_eq!(result.tokens.len(), 2);
+        assert!(
+            result
+                .tokens
+                .contains(&address!("0000000000000000000000000000000000000001"))
+        );
+        assert!(
+            result
+                .tokens
+                .contains(&address!("0000000000000000000000000000000000000002"))
+        );
+
         // Valid inputs with 3 tokens
         let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001;\
                                   0x0000000000000000000000000000000000000002;\
