@@ -342,6 +342,10 @@ enum Account {
     PrivateKey(eth::B256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
+    /// Used to start the driver in the dry-run mode. This account type is
+    /// *unable* to sign transactions as alloy does not support *implicit*
+    /// node-side signing.
+    Address(eth::Address),
 }
 
 #[serde_as]

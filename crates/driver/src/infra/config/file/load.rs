@@ -69,6 +69,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .expect("unable to load kms account {arn:?}")
                         .into()
                 }
+                file::Account::Address(address) => Account::Address(address),
             };
             solver::Config {
                 endpoint: solver_config.endpoint,
