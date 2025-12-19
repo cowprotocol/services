@@ -897,6 +897,7 @@ impl Setup {
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
+            // This PK is publicly known - don't send any funds to its account onchain!!!
             main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
                 "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
             ))
