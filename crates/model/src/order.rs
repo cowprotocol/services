@@ -1065,7 +1065,6 @@ mod tests {
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
-        secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
         testlib::assert_json_matches,
     };
@@ -1414,18 +1413,11 @@ mod tests {
         assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
-    pub fn address_from_public_key(key: PublicKey) -> Address {
-        let hash =
-            alloy::primitives::keccak256(&key.serialize_uncompressed()[1..] /* cut '04' */);
-        Address::from_slice(&hash[12..])
-    }
-
     #[test]
     fn order_builder_signature_recovery() {
-        const PRIVATE_KEY: [u8; 32] =
-            hex!("0000000000000000000000000000000000000000000000000000000000000001");
-        let sk = SecretKey::from_slice(&PRIVATE_KEY).unwrap();
-        let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+        const PRIVATE_KEY: B256 = B256::with_last_byte(1);
+        let signer = PrivateKeySigner::from_bytes(&PRIVATE_KEY).unwrap();
+
         let order = OrderBuilder::default()
             .with_sell_token(Address::ZERO)
             .with_sell_amount(alloy::primitives::U256::from(100))
@@ -1443,7 +1435,7 @@ mod tests {
             .sign_with(
                 EcdsaSigningScheme::Eip712,
                 &DomainSeparator::default(),
-                &PrivateKeySigner::from_bytes(&PRIVATE_KEY.into()).unwrap(),
+                &signer,
             )
             .build();
 
@@ -1453,7 +1445,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(recovered.signer, address_from_public_key(public_key));
+        assert_eq!(recovered.signer, signer.address());
     }
 
     #[test]

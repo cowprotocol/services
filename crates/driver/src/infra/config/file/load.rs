@@ -343,7 +343,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 max_additional_tip: mempool.max_additional_tip,
                 additional_tip_percentage: mempool.additional_tip_percentage,
-                use_soft_cancellations: mempool.use_soft_cancellations,
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {

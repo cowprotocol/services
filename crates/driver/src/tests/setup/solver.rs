@@ -460,7 +460,6 @@ impl Solver {
                     additional_tip_percentage: 0.,
                     revert_protection: infra::mempool::RevertProtection::Disabled,
                     nonce_block_number: None,
-                    use_soft_cancellations: false,
                     url: config.blockchain.web3_url.parse().unwrap(),
                 }],
             )
