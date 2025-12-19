@@ -135,22 +135,17 @@ impl FromStr for NativePriceEstimator {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        let (variant, args) = s.split_once('|').unwrap_or((s, ""));
+        match variant {
             "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
             "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
-            estimator if estimator.starts_with("Driver|") => {
-                let rest = estimator.strip_prefix("Driver|").unwrap();
-                Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
-                    rest,
-                )?))
-            }
-            estimator if estimator.starts_with("Forwarder|") => {
-                let rest = estimator.strip_prefix("Forwarder|").unwrap();
-                Ok(NativePriceEstimator::Forwarder(
-                    rest.parse()
-                        .context("Forwarder price estimator invalid URL")?,
-                ))
-            }
+            "Driver" => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
+                args,
+            )?)),
+            "Forwarder" => Ok(NativePriceEstimator::Forwarder(
+                args.parse()
+                    .context("Forwarder price estimator invalid URL")?,
+            )),
             _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
         }
     }
