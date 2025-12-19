@@ -1,7 +1,7 @@
 pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
-    alloy::primitives::Address,
+    alloy::{eips::BlockNumberOrTag, primitives::Address},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
@@ -140,6 +140,16 @@ impl From<BlockNumber> for web3::types::BlockNumber {
             BlockNumber::Pending => web3::types::BlockNumber::Pending,
             BlockNumber::Latest => web3::types::BlockNumber::Latest,
             BlockNumber::Earliest => web3::types::BlockNumber::Earliest,
+        }
+    }
+}
+
+impl From<BlockNumber> for BlockNumberOrTag {
+    fn from(value: BlockNumber) -> Self {
+        match value {
+            BlockNumber::Pending => Self::Pending,
+            BlockNumber::Latest => Self::Latest,
+            BlockNumber::Earliest => Self::Earliest,
         }
     }
 }
@@ -332,9 +342,9 @@ enum Account {
     PrivateKey(eth::B256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
-    /// An address is used to identify the account for signing, relying on the
-    /// connected node's account management features. This can also be used to
-    /// start the driver in a dry-run mode.
+    /// Used to start the driver in the dry-run mode. This account type is
+    /// *unable* to sign transactions as alloy does not support *implicit*
+    /// node-side signing.
     Address(eth::Address),
 }
 

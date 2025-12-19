@@ -1,5 +1,6 @@
 use {
     crate::util::{Bytes, conv::u256::U256Ext},
+    alloy::rpc::types::TransactionRequest,
     derive_more::{From, Into},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
@@ -92,8 +93,71 @@ impl From<AccessList> for web3::types::AccessList {
     }
 }
 
+impl IntoIterator for AccessList {
+    type IntoIter = std::collections::hash_map::IntoIter<Address, HashSet<StorageKey>>;
+    type Item = (Address, HashSet<StorageKey>);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<I> FromIterator<(Address, I)> for AccessList
+where
+    I: IntoIterator<Item = B256>,
+{
+    fn from_iter<T: IntoIterator<Item = (Address, I)>>(iter: T) -> Self {
+        Self(
+            iter.into_iter()
+                .map(|(address, i)| {
+                    (
+                        address,
+                        i.into_iter().map(StorageKey).collect::<HashSet<_>>(),
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+impl From<alloy::eips::eip2930::AccessList> for AccessList {
+    fn from(value: alloy::eips::eip2930::AccessList) -> Self {
+        Self(
+            value
+                .0
+                .into_iter()
+                .map(|item| {
+                    (
+                        item.address,
+                        item.storage_keys
+                            .into_iter()
+                            .map(StorageKey)
+                            .collect::<HashSet<_>>(),
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+impl From<AccessList> for alloy::eips::eip2930::AccessList {
+    fn from(value: AccessList) -> Self {
+        Self(
+            value
+                .into_iter()
+                .map(
+                    |(address, storage_keys)| alloy::eips::eip2930::AccessListItem {
+                        address,
+                        storage_keys: storage_keys.into_iter().map(|k| k.0).collect(),
+                    },
+                )
+                .collect(),
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
-struct StorageKey(pub B256);
+pub struct StorageKey(pub B256);
 
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
@@ -374,6 +438,17 @@ impl std::fmt::Debug for Tx {
             .field("input", &self.input)
             .field("access_list", &self.access_list)
             .finish()
+    }
+}
+
+impl From<Tx> for TransactionRequest {
+    fn from(value: Tx) -> Self {
+        TransactionRequest::default()
+            .from(value.from)
+            .to(value.to)
+            .value(value.value.0)
+            .input(value.input.0.into())
+            .access_list(value.access_list.into())
     }
 }
 

@@ -21,7 +21,6 @@ use {
         },
         util::{Bytes, math},
     },
-    ethrpc::alloy::conversions::IntoAlloy,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     std::{
@@ -128,7 +127,7 @@ impl Competition {
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
         let settlement_contract = *self.eth.contracts().settlement().address();
-        let solver_address = self.solver.account().address().into_alloy();
+        let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         // Add the CoW AMM orders to the auction

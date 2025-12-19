@@ -79,7 +79,16 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             config
                 .mempools
                 .iter()
-                .map(|mempool| crate::infra::mempool::Mempool::new(mempool.to_owned()))
+                .map(|mempool| {
+                    crate::infra::mempool::Mempool::new(
+                        mempool.to_owned(),
+                        config
+                            .solvers
+                            .iter()
+                            .map(|config| config.account.clone())
+                            .collect(),
+                    )
+                })
                 .collect(),
             eth.clone(),
         )
