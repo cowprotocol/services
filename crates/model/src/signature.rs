@@ -327,12 +327,7 @@ impl EcdsaSignature {
         struct_hash: &[u8; 32],
     ) -> Result<Recovered> {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
-        let recovery = Recovery::new(
-            message.0,
-            self.v as u64,
-            H256(B256::from(self.r).0),
-            H256(B256::from(self.s).0),
-        );
+        let recovery = Recovery::new(message.0, self.v as u64, self.r.0.into(), self.s.0.into());
         let (signature, recovery_id) = recovery
             .as_signature()
             .context("unexpectedly invalid signature")?;
