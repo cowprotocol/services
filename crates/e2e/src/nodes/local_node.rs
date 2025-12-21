@@ -1,6 +1,6 @@
 use {
+    alloy::primitives::{Address, U256},
     chrono::{DateTime, Utc},
-    ethcontract::{H160, U256},
     std::fmt::Debug,
     web3::{Transport, api::Namespace, helpers::CallFuture},
 };
@@ -70,7 +70,7 @@ impl<T: Transport> TestNodeApi<T> {
         )
     }
 
-    pub fn set_balance(&self, address: &H160, balance: &U256) -> CallFuture<(), T::Out> {
+    pub fn set_balance(&self, address: &Address, balance: &U256) -> CallFuture<(), T::Out> {
         let json_address = serde_json::json!(address);
         let json_balance = serde_json::json!(format!("{:#032x}", balance));
         CallFuture::new(
