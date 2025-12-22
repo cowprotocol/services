@@ -33,9 +33,45 @@ struct ProxyState {
     backends: Arc<RwLock<VecDeque<Url>>>,
 }
 
+impl ProxyState {
+    /// Returns the current active backend URL.
+    async fn get_current_backend(&self) -> Url {
+        self.backends
+            .read()
+            .await
+            .front()
+            .cloned()
+            .expect("backends should never be empty")
+    }
+
+    /// Rotates to the next backend by moving the current backend to the end of
+    /// the queue.
+    async fn rotate_backends(&self) {
+        let mut backends = self.backends.write().await;
+        if let Some(current) = backends.pop_front() {
+            backends.push_back(current);
+        }
+    }
+
+    /// Returns the total number of backends configured.
+    ///
+    /// Used to determine how many retry attempts to make before giving up.
+    async fn backend_count(&self) -> usize {
+        self.backends.read().await.len()
+    }
+}
+
 impl ReverseProxy {
     /// Start a new proxy server with automatic failover between backends
+    ///
+    /// # Panics
+    /// Panics if `backends` is empty. At least one backend URL is required.
     pub fn start(listen_addr: SocketAddr, backends: &[Url]) -> Self {
+        assert!(
+            !backends.is_empty(),
+            "At least one backend URL is required for the proxy"
+        );
+
         let backends_queue: VecDeque<Url> = backends.iter().cloned().collect();
 
         let state = ProxyState {
@@ -93,28 +129,17 @@ async fn handle_request(
         }
     };
 
-    let backend_count = state.backends.read().await.len();
+    let backend_count = state.backend_count().await;
 
     for attempt in 0..backend_count {
-        let current_backend = {
-            let backends = state.backends.read().await;
-            backends.front().cloned()
-        };
+        let backend = state.get_current_backend().await;
+        let url = format!("{}{}", backend, path);
 
-        if let Some(backend) = current_backend {
-            let url = format!("{}{}", backend, path);
-
-            match try_backend(&client, &parts, &body_bytes, &url).await {
-                Ok(response) => return response.into_response(),
-                Err(err) => {
-                    tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
-
-                    // Rotate
-                    let mut backends = state.backends.write().await;
-                    if let Some(failed) = backends.pop_front() {
-                        backends.push_back(failed);
-                    }
-                }
+        match try_backend(&client, &parts, &body_bytes, &url).await {
+            Ok(response) => return response.into_response(),
+            Err(err) => {
+                tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
+                state.rotate_backends().await;
             }
         }
     }

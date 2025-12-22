@@ -125,7 +125,7 @@ impl<'a> Services<'a> {
         ServicesBuilder::new()
     }
 
-    fn api_arguments(&self) -> impl Iterator<Item = String> + use<> {
+    fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
             "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
@@ -143,7 +143,7 @@ impl<'a> Services<'a> {
     }
 
     fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        self.api_arguments().chain([
+        self.api_autopilot_arguments().chain([
             "--quote-timeout=10s".to_string(),
             "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                 .to_string(),
@@ -252,7 +252,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(self.api_arguments())
+        .chain(self.api_autopilot_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);

@@ -83,6 +83,6 @@ impl NativePriceEstimating for Forwarder {
         token: Address,
         timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
-        async move { self.try_fetch(token, timeout).await }.boxed()
+        self.try_fetch(token, timeout).boxed()
     }
 }
