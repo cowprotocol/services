@@ -27,13 +27,13 @@ pub trait EvmProviderExt {
     /// block mining with the given `interval` of milliseconds.
     fn evm_set_interval_mining(
         &self,
-        interval: u64,
+        interval_ms: u64,
     ) -> impl std::future::Future<Output = Result<(), RpcError<TransportErrorKind>>> + Send;
 
     /// Sets the block gas limit for the following blocks.
     fn evm_set_block_gas_limit(
         &self,
-        interval: u64,
+        gas_limit: u64,
     ) -> impl std::future::Future<Output = Result<bool, RpcError<TransportErrorKind>>> + Send;
 }
 
@@ -53,17 +53,17 @@ impl<T: Provider> EvmProviderExt for T {
 
     async fn evm_set_interval_mining(
         &self,
-        interval: u64,
+        interval_ms: u64,
     ) -> Result<(), RpcError<TransportErrorKind>> {
-        self.raw_request("evm_setIntervalMining".into(), (interval,))
+        self.raw_request("evm_setIntervalMining".into(), (interval_ms,))
             .await
     }
 
     async fn evm_set_block_gas_limit(
         &self,
-        limit: u64,
+        gas_limit: u64,
     ) -> Result<bool, RpcError<TransportErrorKind>> {
-        self.raw_request("evm_setBlockGasLimit".into(), (limit,))
+        self.raw_request("evm_setBlockGasLimit".into(), (gas_limit,))
             .await
     }
 }
