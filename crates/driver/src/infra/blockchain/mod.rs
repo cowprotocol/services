@@ -304,7 +304,7 @@ impl Ethereum {
         // default value we estimate the current gas price upfront. But because it's
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
-        let gas_price = self.inner.gas.estimate().await.ok()?.gas.effective().0.0;
+        let gas_price = self.inner.gas.estimate().await.ok()?.effective().0.0;
         u128::try_from(gas_price)
             .inspect_err(|err| {
                 tracing::debug!(
