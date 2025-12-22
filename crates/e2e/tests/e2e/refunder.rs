@@ -2,8 +2,8 @@ use {
     crate::ethflow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     ::alloy::{primitives::Address, providers::ext::AnvilApi},
     chrono::{TimeZone, Utc},
-    e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
+    e2e::setup::*,
+    ethrpc::{Web3, alloy::EvmProviderExt, block_stream::timestamp_of_current_block_in_seconds},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     number::{nonzero::NonZeroU256, units::EthUnit},
     refunder::refund_service::RefundService,
@@ -106,10 +106,14 @@ async fn refunder_tx(web3: Web3) {
     .unwrap();
 
     let time_after_expiration = valid_to as i64 + 60;
-    web3.api::<TestNodeApi<_>>()
-        .set_next_block_timestamp(
-            &Utc.timestamp_millis_opt(time_after_expiration * 1_000)
-                .unwrap(),
+    web3.alloy
+        .evm_set_next_block_timestamp(
+            u64::try_from(
+                Utc.timestamp_millis_opt(time_after_expiration * 1_000)
+                    .unwrap()
+                    .timestamp(),
+            )
+            .expect("timestamp should be positive"),
         )
         .await
         .expect("Must be able to set block timestamp");

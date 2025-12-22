@@ -1,8 +1,8 @@
 use {
-    ::alloy::{primitives::U256, providers::Provider},
+    ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
-    ethrpc::alloy::CallBuilderExt,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -58,7 +58,7 @@ async fn place_order_with_quote(web3: Web3) {
 
     // Disable auto-mine so we don't accidentally mine a settlement
     web3.alloy
-        .raw_request::<_, ()>("evm_setAutomine".into(), (false,))
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 
@@ -141,7 +141,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
 
     // Disable auto-mine so we don't accidentally mine a settlement
     web3.alloy
-        .raw_request::<_, ()>("evm_setAutomine".into(), (false,))
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 

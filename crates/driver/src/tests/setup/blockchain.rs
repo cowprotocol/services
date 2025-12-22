@@ -24,7 +24,7 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::{CallBuilderExt, ProviderExt, conversions::IntoLegacy},
+        alloy::{CallBuilderExt, EvmProviderExt, ProviderExt, conversions::IntoLegacy},
     },
     futures::Future,
     solvers_dto::solution::Flashloan,
@@ -859,11 +859,7 @@ impl Blockchain {
     }
 
     pub async fn set_auto_mining(&self, enabled: bool) {
-        self.web3
-            .alloy
-            .raw_request::<_, ()>("evm_setAutomine".into(), (enabled,))
-            .await
-            .unwrap();
+        self.web3.alloy.evm_set_automine(enabled).await.unwrap();
     }
 }
 
