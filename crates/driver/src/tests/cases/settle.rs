@@ -7,10 +7,10 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
+    alloy::providers::Provider,
     futures::future::join_all,
     itertools::Itertools,
     std::{sync::Arc, time::Duration},
-    web3::Transport,
 };
 
 /// Run a matrix of tests for all meaningful combinations of order kind and
@@ -118,8 +118,8 @@ async fn submits_huge_solution() {
     // half of the block gas limit, we want it to be submitted/settled as long as it
     // fits in the block.
     test.web3()
-        .transport()
-        .execute("evm_setBlockGasLimit", vec![serde_json::json!(9_000_000)])
+        .alloy
+        .raw_request::<_, ()>("evm_setBlockGasLimit".into(), (9_000_000,))
         .await
         .unwrap();
     test.settle(id).await.ok().await;
