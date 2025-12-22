@@ -2,14 +2,11 @@ use {
     crate::util::{Bytes, conv::u256::U256Ext},
     alloy::rpc::types::TransactionRequest,
     derive_more::{From, Into},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    itertools::Itertools,
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},
         ops::{Div, Mul, Sub},
     },
-    web3::types::CallRequest,
 };
 
 pub mod allowance;
@@ -53,43 +50,6 @@ impl AccessList {
             self.0.entry(address).or_default().extend(storage_keys);
         }
         self
-    }
-}
-
-impl From<web3::types::AccessList> for AccessList {
-    fn from(value: web3::types::AccessList) -> Self {
-        Self(
-            value
-                .into_iter()
-                .map(|item| {
-                    (
-                        item.address.into_alloy(),
-                        item.storage_keys
-                            .into_iter()
-                            .map(|key| key.into_alloy().into())
-                            .collect(),
-                    )
-                })
-                .collect(),
-        )
-    }
-}
-
-impl From<AccessList> for web3::types::AccessList {
-    fn from(value: AccessList) -> Self {
-        value
-            .0
-            .into_iter()
-            .sorted_by_key(|&(address, _)| address)
-            .map(|(address, storage_keys)| web3::types::AccessListItem {
-                address: address.into_legacy(),
-                storage_keys: storage_keys
-                    .into_iter()
-                    .sorted()
-                    .map(|key| key.0.into_legacy())
-                    .collect(),
-            })
-            .collect()
     }
 }
 
@@ -410,23 +370,6 @@ pub struct Tx {
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
-}
-
-impl From<Tx> for CallRequest {
-    fn from(value: Tx) -> Self {
-        Self {
-            from: Some(value.from.into_legacy()),
-            to: Some(value.to.into_legacy()),
-            gas: None,
-            gas_price: None,
-            value: Some(value.value.0.into_legacy()),
-            data: Some(value.input.into()),
-            transaction_type: None,
-            access_list: Some(value.access_list.into()),
-            max_fee_per_gas: None,
-            max_priority_fee_per_gas: None,
-        }
-    }
 }
 
 impl std::fmt::Debug for Tx {

@@ -1,12 +1,14 @@
 use {
     super::serialize,
-    alloy::primitives::{Address, B256, U256},
+    alloy::{
+        primitives::{Address, B256, U256},
+        rpc::types::AccessList,
+    },
     chrono::{DateTime, Utc},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::collections::BTreeSet,
-    web3::types::AccessList,
 };
 
 #[serde_as]
