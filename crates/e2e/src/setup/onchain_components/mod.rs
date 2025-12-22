@@ -16,11 +16,7 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -284,12 +280,12 @@ impl OnchainComponents {
     ) -> [TestAccount; N] {
         let authenticator = &self.contracts.gp_authenticator;
 
-        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
+        let auth_manager = authenticator.manager().call().await.unwrap();
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
         forked_node_api
-            .set_balance(&auth_manager, 100u64.eth().into_legacy())
+            .set_balance(&auth_manager, 100u64.eth())
             .await
             .expect("could not set auth_manager balance");
 
@@ -312,7 +308,7 @@ impl OnchainComponents {
         for solver in &solvers {
             impersonated_authenticator
                 .addSolver(solver.address())
-                .from(auth_manager.into_alloy())
+                .from(auth_manager)
                 .send_and_watch()
                 .await
                 .expect("failed to add solver");
@@ -321,7 +317,7 @@ impl OnchainComponents {
         if let Some(router) = &self.contracts.flashloan_router {
             impersonated_authenticator
                 .addSolver(*router.address())
-                .from(auth_manager.into_alloy())
+                .from(auth_manager)
                 .send_and_watch()
                 .await
                 .expect("failed to add flashloan wrapper");

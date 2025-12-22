@@ -19,15 +19,7 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethcontract::H160,
-    ethrpc::{
-        Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
-        block_stream::timestamp_of_current_block_in_seconds,
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt, block_stream::timestamp_of_current_block_in_seconds},
     model::{
         DomainSeparator,
         order::{
@@ -207,7 +199,7 @@ async fn eth_flow_tx(web3: Web3) {
     test_trade_availability_in_api(
         services.client(),
         &ethflow_order,
-        &trader.address().into_legacy(),
+        &trader.address(),
         onchain.contracts(),
         ethflow_contract,
     )
@@ -457,23 +449,16 @@ async fn test_order_availability_in_api(
     let is_available = || async { services.get_order(&uid).await.is_ok() };
     wait_for_condition(TIMEOUT, is_available).await.unwrap();
 
-    test_orders_query(
-        services,
-        order,
-        &owner.into_legacy(),
-        contracts,
-        ethflow_contract,
-    )
-    .await;
+    test_orders_query(services, order, owner, contracts, ethflow_contract).await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
     for address in [owner, ethflow_contract.address()] {
         test_account_query(
-            &address.into_legacy(),
+            address,
             services.client(),
             order,
-            &owner.into_legacy(),
+            owner,
             contracts,
             ethflow_contract,
         )
@@ -484,7 +469,7 @@ async fn test_order_availability_in_api(
 async fn test_trade_availability_in_api(
     client: &Client,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
+    owner: &Address,
     contracts: &Contracts,
     ethflow_contract: &CoWSwapEthFlow::Instance,
 ) {
@@ -498,7 +483,7 @@ async fn test_trade_availability_in_api(
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [owner, &ethflow_contract.address().into_legacy()] {
+    for address in [owner, ethflow_contract.address()] {
         test_trade_query(
             &TradeQuery::ByOwner(*address),
             client,
@@ -529,7 +514,7 @@ async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, onchain: &
 async fn test_orders_query(
     services: &Services<'_>,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
+    owner: &Address,
     contracts: &Contracts,
     ethflow_contract: &CoWSwapEthFlow::Instance,
 ) {
@@ -541,10 +526,10 @@ async fn test_orders_query(
 }
 
 async fn test_account_query(
-    queried_account: &H160,
+    queried_account: &Address,
     client: &Client,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
+    owner: &Address,
     contracts: &Contracts,
     ethflow_contract: &CoWSwapEthFlow::Instance,
 ) {
@@ -564,7 +549,7 @@ async fn test_account_query(
 
 enum TradeQuery {
     ByUid(OrderUid),
-    ByOwner(H160),
+    ByOwner(Address),
 }
 
 async fn test_trade_query(
@@ -594,7 +579,7 @@ async fn test_trade_query(
 async fn test_order_parameters(
     response: &Order,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
+    owner: &Address,
     contracts: &Contracts,
     ethflow_contract: &CoWSwapEthFlow::Instance,
 ) {
@@ -614,7 +599,7 @@ async fn test_order_parameters(
     assert_eq!(
         response.metadata.onchain_order_data,
         Some(OnchainOrderData {
-            sender: owner.into_alloy(),
+            sender: *owner,
             placement_error: None,
         })
     );
