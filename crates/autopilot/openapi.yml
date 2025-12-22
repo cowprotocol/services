@@ -26,11 +26,12 @@ paths:
           description: |
             Optional timeout in milliseconds for the price estimation request.
             If not provided, uses the default timeout configured for autopilot.
-            Must be greater than 0 and cannot exceed the configured maximum timeout.
+            Values below 250ms are automatically clamped to the minimum (250ms).
+            Values exceeding the configured maximum are clamped to the maximum.
           schema:
             type: integer
             format: int64
-            minimum: 1
+            minimum: 250
             example: 5000
           required: false
       responses:
@@ -44,8 +45,6 @@ paths:
           description: |
             Bad request. Possible causes:
             - Unsupported token
-            - Invalid timeout_ms (must be > 0)
-            - timeout_ms exceeds configured maximum
           content:
             text/plain:
               schema:

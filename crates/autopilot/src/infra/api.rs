@@ -34,6 +34,8 @@ struct State {
 struct NativePriceQuery {
     /// Optional timeout in milliseconds for the price estimation request.
     /// If not provided, uses the default timeout configured for autopilot.
+    /// Values below 250ms are automatically clamped to the minimum (250ms).
+    /// Values exceeding the configured maximum are clamped to the maximum.
     #[serde(default)]
     timeout_ms: Option<u64>,
 }
