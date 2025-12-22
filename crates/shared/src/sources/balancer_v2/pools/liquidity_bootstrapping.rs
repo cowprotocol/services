@@ -12,7 +12,7 @@ use {
         BalancerV2LiquidityBootstrappingPoolFactory,
     },
     ethcontract::BlockId,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt as _, future::BoxFuture},
 };
 
@@ -98,7 +98,7 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory::Instance {
                         address,
                         TokenState {
                             common,
-                            weight: Bfp::from_wei(weight.into_legacy()),
+                            weight: Bfp::from_wei(weight),
                         },
                     )
                 })
