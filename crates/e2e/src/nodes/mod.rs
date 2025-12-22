@@ -1,6 +1,3 @@
-pub mod forked_node;
-pub mod local_node;
-
 /// The default node URL that should be used for e2e tests.
 pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 

@@ -1,6 +1,7 @@
 mod buffering;
 pub mod conversions;
 pub mod errors;
+mod evm_ext;
 mod instrumentation;
 mod wallet;
 
@@ -14,7 +15,7 @@ use {
     instrumentation::{InstrumentationLayer, LabelingLayer},
     std::time::Duration,
 };
-pub use {instrumentation::ProviderLabelingExt, wallet::MutWallet};
+pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
 /// [`InstrumentationLayer`] and [`BatchCallLayer`].

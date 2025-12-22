@@ -14,11 +14,13 @@ path = "src/lib.rs"
 alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "rpc-types-trace", "transports", "transport-ws", "provider-ws", "provider-debug-api", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "pubsub", "contract"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+const-hex = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
-const-hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
+jsonrpc-core.workspace = true
+mockall = { workspace = true, optional = true }
 observe = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
@@ -34,8 +36,6 @@ tower = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 web3 = { workspace = true }
-mockall = { workspace = true, optional = true }
-jsonrpc-core.workspace = true
 
 [dev-dependencies]
 mockall = { workspace = true }

@@ -1,7 +1,7 @@
 use {
     ::alloy::primitives::U256,
-    e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::CallBuilderExt,
+    e2e::setup::*,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -105,10 +105,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         .unwrap();
 
     // disable auto mining to prevent order being immediately executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
-        .await
-        .unwrap();
+    web3.alloy.evm_set_automine(false).await.unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -181,8 +178,8 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     assert_eq!(error_message, expected_body);
 
     // Continue automining so our order can be executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(true)
+    web3.alloy
+        .evm_set_automine(true)
         .await
         .expect("Must be able to disable auto-mining");
 
