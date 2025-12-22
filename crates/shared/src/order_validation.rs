@@ -196,7 +196,7 @@ impl From<CalculateQuoteError> for ValidationError {
             | CalculateQuoteError::Other(err) => ValidationError::Other(err),
             CalculateQuoteError::Price { source, .. } => ValidationError::PriceForQuote(source),
             CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
-            CalculateQuoteError::ZeroBuyAmount =>  ValidationError::ZeroAmount,
+            CalculateQuoteError::ZeroBuyAmount => ValidationError::ZeroAmount,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
             // need to be higher than the computed fee amount. Don't bubble up
