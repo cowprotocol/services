@@ -119,7 +119,7 @@ async fn submits_huge_solution() {
     // fits in the block.
     test.web3()
         .alloy
-        .raw_request::<_, ()>("evm_setBlockGasLimit".into(), (9_000_000,))
+        .raw_request::<_, bool>("evm_setBlockGasLimit".into(), (9_000_000,))
         .await
         .unwrap();
     test.settle(id).await.ok().await;
