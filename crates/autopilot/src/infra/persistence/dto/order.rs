@@ -1,13 +1,14 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, OrderUid, eth, fee::FeeFactor},
+        domain::{self, OrderUid, eth},
     },
     alloy::primitives::{Address, U256},
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
+    shared::arguments::FeeFactor,
 };
 
 #[serde_as]
@@ -277,16 +278,16 @@ impl FeePolicy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor: factor.into(),
-                max_volume_factor: max_volume_factor.into(),
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
             },
             domain::fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor: factor.into(),
-                max_volume_factor: max_volume_factor.into(),
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
                 quote: Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
@@ -295,7 +296,7 @@ impl FeePolicy {
                 },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume {
-                factor: factor.into(),
+                factor: factor.get(),
             },
         }
     }
