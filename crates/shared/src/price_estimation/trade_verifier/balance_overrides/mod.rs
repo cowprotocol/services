@@ -3,12 +3,7 @@ pub mod detector;
 use {
     self::detector::{DetectionError, Detector},
     alloy::{
-        primitives::{
-            Address,
-            B256,
-            U256,
-            map::{AddressMap, B256Map},
-        },
+        primitives::{Address, B256, U256, keccak256, map::AddressMap},
         rpc::types::state::AccountOverride,
     },
     anyhow::Context as _,
@@ -16,6 +11,7 @@ use {
     std::{
         collections::HashMap,
         fmt::{self, Display, Formatter},
+        iter,
         str::FromStr,
         sync::{Arc, Mutex},
     },
@@ -189,11 +185,11 @@ pub trait BalanceOverriding: Send + Sync + 'static {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct BalanceOverrideRequest {
     /// The token for the override.
-    pub token: alloy::primitives::Address,
+    pub token: Address,
     /// The account to override the balance for.
-    pub holder: alloy::primitives::Address,
+    pub holder: Address,
     /// The token amount (in atoms) to set the balance to.
-    pub amount: alloy::primitives::U256,
+    pub amount: U256,
 }
 
 /// Balance override strategy for a token.
@@ -237,13 +233,13 @@ impl Strategy {
                 let mut buf = [0; 64];
                 buf[12..32].copy_from_slice(holder.as_slice());
                 buf[32..64].copy_from_slice(&map_slot.to_be_bytes::<32>());
-                (target_contract, alloy::primitives::keccak256(buf))
+                (target_contract, keccak256(buf))
             }
             Self::SoladyMapping { target_contract } => {
                 let mut buf = [0; 32];
                 buf[0..20].copy_from_slice(holder.as_slice());
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
-                (target_contract, alloy::primitives::keccak256(buf))
+                (target_contract, keccak256(buf))
             }
             Self::DirectSlot {
                 target_contract,
@@ -252,15 +248,11 @@ impl Strategy {
         };
 
         let state_override = AccountOverride {
-            state_diff: Some({
-                let mut map = B256Map::default();
-                map.insert(key, B256::new(amount.to_be_bytes::<32>()));
-                map
-            }),
+            state_diff: Some(iter::once((key, B256::new(amount.to_be_bytes::<32>()))).collect()),
             ..Default::default()
         };
 
-        AddressMap::from_iter([(*target_contract, state_override)])
+        iter::once((*target_contract, state_override)).collect()
     }
 
     fn is_valid_for_all_holders(&self) -> bool {
@@ -415,18 +407,17 @@ mod tests {
             Some((
                 cow,
                 AccountOverride {
-                    state_diff: Some({
-                        let mut map = B256Map::default();
-                        map.insert(
+                    state_diff: Some(
+                        iter::once((
                             b256!(
                                 "fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33"
                             ),
                             b256!(
                                 "0000000000000000000000000000000000000000000000000000000000000042"
-                            ),
-                        );
-                        map
-                    }),
+                            )
+                        ))
+                        .collect()
+                    ),
                     ..Default::default()
                 }
             )),
@@ -494,16 +485,15 @@ mod tests {
                 token,
                 AccountOverride {
                     state_diff: Some({
-                        let mut map = B256Map::default();
-                        map.insert(
+                        iter::once((
                             b256!(
                                 "f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f"
                             ),
                             b256!(
                                 "0000000000000000000000000000000000000000000000000000000000000042"
                             ),
-                        );
-                        map
+                        ))
+                        .collect()
                     }),
                     ..Default::default()
                 }
