@@ -1,12 +1,12 @@
 use {
-    crate::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{DeployedContracts, deploy::Contracts},
-    },
+    crate::setup::{DeployedContracts, deploy::Contracts},
     ::alloy::{
         network::{Ethereum, NetworkWallet, TransactionBuilder},
         primitives::{Address, U256},
-        providers::{Provider, ext::AnvilApi},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
         rpc::types::TransactionRequest,
         signers::local::PrivateKeySigner,
     },
@@ -16,11 +16,7 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -283,22 +279,9 @@ impl OnchainComponents {
         with_wei: U256,
     ) -> [TestAccount; N] {
         let authenticator = &self.contracts.gp_authenticator;
+        let auth_manager = authenticator.manager().call().await.unwrap();
 
-        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
-
-        let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
-
-        forked_node_api
-            .set_balance(&auth_manager, 100u64.eth().into_legacy())
-            .await
-            .expect("could not set auth_manager balance");
-
-        let impersonated_authenticator = {
-            forked_node_api
-                .impersonate(&auth_manager)
-                .await
-                .expect("could not impersonate auth_manager");
-
+        let gpv2_auth = {
             // we create a new provider without a wallet so that
             // alloy does not try to sign the tx with it and instead
             // forwards the tx to the node for signing. This will
@@ -310,21 +293,43 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            impersonated_authenticator
-                .addSolver(solver.address())
-                .from(auth_manager.into_alloy())
-                .send_and_watch()
+            self.web3
+                .alloy
+                .anvil_send_impersonated_transaction_with_config(
+                    gpv2_auth
+                        .addSolver(solver.address())
+                        .from(auth_manager)
+                        .into_transaction_request(),
+                    ImpersonateConfig {
+                        fund_amount: Some(100u64.eth()),
+                        stop_impersonate: true,
+                    },
+                )
                 .await
-                .expect("failed to add solver");
+                .unwrap()
+                .watch()
+                .await
+                .unwrap();
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            impersonated_authenticator
-                .addSolver(*router.address())
-                .from(auth_manager.into_alloy())
-                .send_and_watch()
+            self.web3
+                .alloy
+                .anvil_send_impersonated_transaction_with_config(
+                    gpv2_auth
+                        .addSolver(*router.address())
+                        .from(auth_manager)
+                        .into_transaction_request(),
+                    ImpersonateConfig {
+                        fund_amount: Some(100u64.eth()),
+                        stop_impersonate: true,
+                    },
+                )
                 .await
-                .expect("failed to add flashloan wrapper");
+                .unwrap()
+                .watch()
+                .await
+                .unwrap();
         }
 
         solvers

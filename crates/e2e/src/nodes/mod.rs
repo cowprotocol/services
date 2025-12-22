@@ -1,4 +1,3 @@
-pub mod forked_node;
 pub mod local_node;
 
 /// The default node URL that should be used for e2e tests.

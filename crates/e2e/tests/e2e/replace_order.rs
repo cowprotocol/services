@@ -1,5 +1,5 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::{primitives::U256, providers::Provider},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -181,8 +181,8 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     assert_eq!(error_message, expected_body);
 
     // Continue automining so our order can be executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(true)
+    web3.alloy
+        .raw_request::<_, ()>("evm_setAutomine".into(), (true,))
         .await
         .expect("Must be able to disable auto-mining");
 

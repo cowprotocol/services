@@ -1,6 +1,6 @@
 use {
     crate::ethflow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-    ::alloy::primitives::Address,
+    ::alloy::{primitives::Address, providers::ext::AnvilApi},
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
@@ -113,9 +113,10 @@ async fn refunder_tx(web3: Web3) {
         )
         .await
         .expect("Must be able to set block timestamp");
+
     // mine next block to push time forward
-    web3.api::<TestNodeApi<_>>()
-        .mine_pending_block()
+    web3.alloy
+        .evm_mine(None)
         .await
         .expect("Unable to mine next block");
 
