@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types"] }
+alloy = { workspace = true, features = ["sol-types", "signer-local"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
@@ -64,7 +64,6 @@ mockall = { workspace = true, optional = true }
 alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
-ethcontract-mock = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 mockall = { workspace = true }
 regex = { workspace = true }

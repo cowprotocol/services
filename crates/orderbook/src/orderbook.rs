@@ -13,7 +13,6 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{
@@ -83,8 +82,8 @@ impl Metrics {
                     fee: order.data.fee_amount,
                 },
                 &Amounts {
-                    sell: quote.sell_amount.into_alloy(),
-                    buy: quote.buy_amount.into_alloy(),
+                    sell: quote.sell_amount,
+                    buy: quote.buy_amount,
                     fee: FeeParameters {
                         // safe to unwrap as these values were converted from f64 previously
                         gas_amount: quote.gas_amount.to_f64().unwrap(),
@@ -286,7 +285,7 @@ impl Orderbook {
             .validate_and_construct_order(
                 payload,
                 &self.domain_separator,
-                self.settlement_contract.into_legacy(),
+                self.settlement_contract,
                 full_app_data_override,
             )
             .await?;

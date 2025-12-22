@@ -9,7 +9,6 @@ use {
         util::Bytes,
     },
     app_data::AppDataHash,
-    ethrpc::alloy::conversions::IntoLegacy,
     itertools::Itertools,
     model::{
         DomainSeparator,
@@ -333,7 +332,7 @@ impl JitOrder {
         let order_data = self.raw_order_data();
         let signature = self.signature(domain)?;
         Ok(order_data
-            .uid(&DomainSeparator(domain.0), &signature.signer.into_legacy())
+            .uid(&DomainSeparator(domain.0), signature.signer)
             .0
             .into())
     }

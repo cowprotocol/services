@@ -1,8 +1,8 @@
 use {
-    ::alloy::primitives::{U256, utils::Unit},
+    ::alloy::primitives::U256,
     database::order_events::OrderEventLabel,
-    e2e::setup::{eth, *},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    e2e::setup::*,
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{
             CancellationPayload,
@@ -17,11 +17,9 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
-    number::nonzero::NonZeroU256,
-    secp256k1::SecretKey,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -33,18 +31,18 @@ async fn local_node_order_cancellation() {
 async fn order_cancellation(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    token.mint(trader.address(), eth(10)).await;
+    token.mint(trader.address(), 10u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -95,7 +93,7 @@ async fn order_cancellation(web3: Web3) {
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
-                    value: NonZeroU256::try_from(U256::ONE * Unit::ETHER.wei()).unwrap(),
+                    value: NonZeroU256::try_from(1u64.eth()).unwrap(),
                 },
             },
             app_data: OrderCreationAppData::Full {
@@ -120,7 +118,7 @@ async fn order_cancellation(web3: Web3) {
             .sign(
                 EcdsaSigningScheme::Eip712,
                 &onchain.contracts().domain_separator,
-                SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+                &trader.signer,
             );
             services.create_order(&order).await.unwrap()
         }
@@ -131,7 +129,7 @@ async fn order_cancellation(web3: Web3) {
         let cancellation = OrderCancellation::for_order(
             order_uid,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &trader.signer,
         );
 
         async move {
@@ -157,7 +155,7 @@ async fn order_cancellation(web3: Web3) {
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
             &cancellations.hash_struct(),
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &trader.signer,
         );
 
         let signed_cancellations = SignedOrderCancellations {

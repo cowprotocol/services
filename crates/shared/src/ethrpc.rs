@@ -1,4 +1,4 @@
-pub use ethrpc::{Web3, Web3CallBatch, Web3Transport};
+pub use ethrpc::{Web3, Web3Transport};
 use {
     crate::http_client::HttpClientFactory,
     reqwest::Url,

@@ -1,13 +1,13 @@
 mod buffering;
 pub mod conversions;
 pub mod errors;
+mod evm_ext;
 mod instrumentation;
 mod wallet;
 
 use {
     crate::{AlloyProvider, Config},
     alloy::{
-        network::EthereumWallet,
         providers::{Provider, ProviderBuilder},
         rpc::client::{ClientBuilder, RpcClient},
     },
@@ -15,7 +15,7 @@ use {
     instrumentation::{InstrumentationLayer, LabelingLayer},
     std::time::Duration,
 };
-pub use {conversions::Account, instrumentation::ProviderLabelingExt, wallet::MutWallet};
+pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
 /// [`InstrumentationLayer`] and [`BatchCallLayer`].
@@ -102,9 +102,6 @@ impl RpcClientRandomIdExt for RpcClient {
 }
 
 pub trait ProviderSignerExt {
-    /// Creates a new provider with the given signer.
-    fn with_signer(&self, signer: Account) -> Self;
-
     /// Creates a new provider without any signers.
     /// This is only ever useful if you configured
     /// anvil to impersonate some account and want
@@ -114,24 +111,6 @@ pub trait ProviderSignerExt {
 }
 
 impl ProviderSignerExt for AlloyProvider {
-    fn with_signer(&self, signer: Account) -> Self {
-        let Account::Signer(signer) = signer else {
-            // Otherwise an unlocked account is used, not need to change anything.
-            return self.clone();
-        };
-
-        let is_local = self.client().is_local();
-        let transport = self.client().transport().clone();
-        let wallet = EthereumWallet::new(signer);
-        let client = RpcClient::with_random_id(transport, is_local);
-
-        ProviderBuilder::new()
-            .wallet(wallet)
-            .with_simple_nonce_management()
-            .connect_client(client)
-            .erased()
-    }
-
     fn without_wallet(&self) -> Self {
         let is_local = self.client().is_local();
         let transport = self.client().transport().clone();

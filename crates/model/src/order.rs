@@ -9,7 +9,10 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
-    alloy::primitives::{Address, B256, U512},
+    alloy::{
+        primitives::{Address, B256, U256, U512, b256},
+        signers::local::PrivateKeySigner,
+    },
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -18,7 +21,6 @@ use {
     hex_literal::hex,
     num::BigUint,
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, H256, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::{DisplayFromStr, serde_as},
     std::{
@@ -27,7 +29,7 @@ use {
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, VariantNames},
-    web3::signing::{self, Key, SecretKeyRef},
+    web3::signing::{self},
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -159,24 +161,25 @@ impl OrderBuilder {
         mut self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
-        self.0.metadata.owner = Address::new(key.address().0);
-        self.0.metadata.uid = self.0.data.uid(domain, &key.address());
+        let owner = key.address();
+        self.0.metadata.owner = owner;
+        self.0.metadata.uid = self.0.data.uid(domain, owner);
         self.0.signature =
             EcdsaSignature::sign(signing_scheme, domain, &self.0.data.hash_struct(), key)
                 .to_signature(signing_scheme);
         self
     }
 
-    pub fn with_eip1271(mut self, owner: H160, signature: Vec<u8>) -> Self {
-        self.0.metadata.owner = Address::new(owner.0);
+    pub fn with_eip1271(mut self, owner: Address, signature: Vec<u8>) -> Self {
+        self.0.metadata.owner = owner;
         self.0.signature = Signature::Eip1271(signature);
         self
     }
 
-    pub fn with_presign(mut self, owner: H160) -> Self {
-        self.0.metadata.owner = Address::new(owner.0);
+    pub fn with_presign(mut self, owner: Address) -> Self {
+        self.0.metadata.owner = owner;
         self.0.signature = Signature::PreSign;
         self
     }
@@ -260,13 +263,10 @@ impl OrderData {
         TokenPair::new(self.buy_token, self.sell_token)
     }
 
-    pub fn uid(&self, domain: &DomainSeparator, owner: &H160) -> OrderUid {
+    pub fn uid(&self, domain: &DomainSeparator, owner: Address) -> OrderUid {
         OrderUid::from_parts(
-            H256(super::signature::hashed_eip712_message(
-                domain,
-                &self.hash_struct(),
-            )),
-            *owner,
+            super::signature::hashed_eip712_message(domain, &self.hash_struct()),
+            owner,
             self.valid_to,
         )
     }
@@ -376,7 +376,7 @@ impl OrderCreation {
         mut self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         self.signature =
             EcdsaSignature::sign(signing_scheme, domain, &self.data().hash_struct(), key)
@@ -563,12 +563,10 @@ impl Default for OrderCancellation {
         Self::for_order(
             OrderUid::default(),
             &DomainSeparator::default(),
-            SecretKeyRef::new(
-                &secp256k1::SecretKey::from_str(
-                    "0000000000000000000000000000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-            ),
+            &PrivateKeySigner::from_bytes(&b256!(
+                "0000000000000000000000000000000000000000000000000000000000000001"
+            ))
+            .unwrap(),
         )
     }
 }
@@ -582,7 +580,7 @@ impl OrderCancellation {
     pub fn for_order(
         order_uid: OrderUid,
         domain_separator: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         let mut result = Self {
             order_uid,
@@ -747,19 +745,19 @@ impl OrderUid {
     }
 
     /// Create a UID from its parts.
-    pub fn from_parts(hash: H256, owner: H160, valid_to: u32) -> Self {
+    pub fn from_parts(hash: B256, owner: Address, valid_to: u32) -> Self {
         let mut uid = [0; 56];
-        uid[0..32].copy_from_slice(hash.as_bytes());
-        uid[32..52].copy_from_slice(owner.as_bytes());
+        uid[0..32].copy_from_slice(hash.as_slice());
+        uid[32..52].copy_from_slice(owner.as_slice());
         uid[52..56].copy_from_slice(&valid_to.to_be_bytes());
         Self(uid)
     }
 
     /// Splits an order UID into its parts.
-    pub fn parts(&self) -> (H256, H160, u32) {
+    pub fn parts(&self) -> (B256, Address, u32) {
         (
-            H256::from_slice(&self.0[0..32]),
-            H160::from_slice(&self.0[32..52]),
+            B256::from_slice(&self.0[0..32]),
+            Address::from_slice(&self.0[32..52]),
             u32::from_le_bytes(self.0[52..].try_into().unwrap()),
         )
     }
@@ -1053,7 +1051,7 @@ pub struct OrderQuote {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
-    pub solver: H160,
+    pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
 }
@@ -1063,14 +1061,12 @@ mod tests {
     use {
         super::*,
         crate::signature::{EcdsaSigningScheme, SigningScheme},
-        alloy::primitives::address,
+        alloy::primitives::{address, b256},
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
-        secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
         testlib::assert_json_matches,
-        web3::signing::keccak256,
     };
 
     #[test]
@@ -1122,9 +1118,9 @@ mod tests {
                 available_balance: None,
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
                 executed_sell_amount: BigUint::from_bytes_be(&[5]),
-                executed_sell_amount_before_fees: 4.into(),
-                executed_fee_amount: 1.into(),
-                executed_fee: 1.into(),
+                executed_sell_amount_before_fees: U256::from(4),
+                executed_fee_amount: U256::from(1),
+                executed_fee: U256::from(1),
                 executed_fee_token: Address::with_last_byte(10),
                 invalidated: true,
                 status: OrderStatus::Open,
@@ -1150,14 +1146,8 @@ mod tests {
             },
             signature: EcdsaSignature {
                 v: 1,
-                r: B256::from_str(
-                    "0200000000000000000000000000000000000000000000000000000000000003",
-                )
-                .unwrap(),
-                s: B256::from_str(
-                    "0400000000000000000000000000000000000000000000000000000000000005",
-                )
-                .unwrap(),
+                r: b256!("0200000000000000000000000000000000000000000000000000000000000003"),
+                s: b256!("0400000000000000000000000000000000000000000000000000000000000005"),
             }
             .to_signature(signing_scheme),
             interactions: Interactions::default(),
@@ -1337,7 +1327,7 @@ mod tests {
         let domain_separator = DomainSeparator(hex!(
             "74e0b11bd18120612556bae4578cfd3a254d7e2495f543c569a92ff5794d9b09"
         ));
-        let owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8").into();
+        let owner = address!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let order = OrderData {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
@@ -1356,7 +1346,7 @@ mod tests {
         };
 
         assert_eq!(
-            order.uid(&domain_separator, &owner).0,
+            order.uid(&domain_separator, owner).0,
             hex!(
                 "0e45d31fd31b28c26031cdd81b35a8938b2ccca2cc425fcf440fd3bfed1eede9
                  70997970c51812dc3a010c7d01b50e0d17dc79c8
@@ -1423,17 +1413,11 @@ mod tests {
         assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
-    pub fn h160_from_public_key(key: PublicKey) -> H160 {
-        let hash = keccak256(&key.serialize_uncompressed()[1..] /* cut '04' */);
-        H160::from_slice(&hash[12..])
-    }
-
     #[test]
     fn order_builder_signature_recovery() {
-        const PRIVATE_KEY: [u8; 32] =
-            hex!("0000000000000000000000000000000000000000000000000000000000000001");
-        let sk = SecretKey::from_slice(&PRIVATE_KEY).unwrap();
-        let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+        const PRIVATE_KEY: B256 = B256::with_last_byte(1);
+        let signer = PrivateKeySigner::from_bytes(&PRIVATE_KEY).unwrap();
+
         let order = OrderBuilder::default()
             .with_sell_token(Address::ZERO)
             .with_sell_amount(alloy::primitives::U256::from(100))
@@ -1446,12 +1430,12 @@ mod tests {
             .with_sell_token_balance(SellTokenSource::External)
             .with_buy_token_balance(BuyTokenDestination::Internal)
             .with_creation_date(Utc.timestamp_opt(3, 0).unwrap())
-            .with_presign(H160::from_low_u64_be(1))
+            .with_presign(Address::with_last_byte(1))
             .with_kind(OrderKind::Sell)
             .sign_with(
                 EcdsaSigningScheme::Eip712,
                 &DomainSeparator::default(),
-                SecretKeyRef::from(&sk),
+                &signer,
             )
             .build();
 
@@ -1461,10 +1445,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            recovered.signer,
-            Address::new(h160_from_public_key(public_key).0)
-        );
+        assert_eq!(recovered.signer, signer.address());
     }
 
     #[test]

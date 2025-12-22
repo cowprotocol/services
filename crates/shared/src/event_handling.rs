@@ -6,12 +6,11 @@ use {
         sol_types::SolEventInterface,
     },
     anyhow::{Context, Result},
-    ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
     ethrpc::{
         alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     },
-    futures::{Stream, StreamExt, TryStreamExt, future},
+    futures::{Stream, StreamExt, future},
     primitive_types::H256,
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
@@ -88,14 +87,6 @@ pub trait EventStoring<E>: Send + Sync {
 }
 
 pub type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send>>;
-
-/// Defines an interface for retrieving events from a `ethcontract` crate
-/// contract. Should be removed once fully migrated to alloy.
-pub trait EthcontractEventRetrieving {
-    type Event: ethcontract::contract::ParseLog + 'static;
-
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
-}
 
 pub trait AlloyEventRetrieving {
     type Event: SolEventInterface + Send + Sync + 'static;
@@ -195,45 +186,6 @@ where
             .copied()
             .map(IntoLegacy::into_legacy)
             .collect()
-    }
-}
-
-/// Common `ethcontract` crate-related event retrieval patterns are extracted to
-/// this trait to avoid code duplication and any dependencies on the
-/// `ethcontract` crate in the main event handling traits. This will be removed
-/// once fully migrated to alloy.
-#[async_trait::async_trait]
-impl<T> EventRetrieving for T
-where
-    T: EthcontractEventRetrieving + Send + Sync,
-{
-    type Event = ethcontract::Event<T::Event>;
-
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: ethcontract::H256,
-    ) -> Result<Vec<Self::Event>> {
-        Ok(self.get_events().block_hash(block_hash).query().await?)
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<Self::Event>> {
-        let stream = self
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
-    }
-
-    fn address(&self) -> Vec<ethcontract::Address> {
-        self.get_events().filter.address
     }
 }
 
@@ -721,15 +673,6 @@ impl EventIndex {
     }
 }
 
-impl From<&EventMetadata> for EventIndex {
-    fn from(meta: &EventMetadata) -> Self {
-        EventIndex {
-            block_number: meta.block_number,
-            log_index: meta.log_index as u64,
-        }
-    }
-}
-
 #[macro_export]
 macro_rules! impl_event_retrieving {
     ($vis:vis $name:ident for $($contract_module:tt)*) => {
@@ -774,7 +717,7 @@ mod tests {
         super::*,
         alloy::eips::BlockNumberOrTag,
         contracts::alloy::GPv2Settlement,
-        ethcontract::{BlockNumber, H256},
+        ethcontract::H256,
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
         std::str::FromStr,
     };
@@ -991,20 +934,18 @@ mod tests {
             .await
             .unwrap();
         let storage = EventStorage { events: vec![] };
-        let current_block = web3.eth().block_number().await.unwrap();
+        let current_block = web3.alloy.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
         //get block in history (current_block - NUMBER_OF_BLOCKS)
         let block = web3
-            .eth()
-            .block(
-                BlockNumber::Number(current_block.saturating_sub(NUMBER_OF_BLOCKS.into())).into(),
-            )
+            .alloy
+            .get_block_by_number(current_block.saturating_sub(NUMBER_OF_BLOCKS).into())
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let block = (block.number(), block.hash().into_legacy());
         let mut event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
@@ -1023,21 +964,20 @@ mod tests {
         let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
             .await
             .unwrap();
-        let storage = EventStorage { events: vec![] };
-        let current_block = web3.eth().block_number().await.unwrap();
+        let storage: EventStorage<GPv2Settlement::GPv2Settlement::GPv2SettlementEvents> =
+            EventStorage { events: vec![] };
+        let current_block = web3.alloy.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
         //get block in history (current_block - NUMBER_OF_BLOCKS)
         let block = web3
-            .eth()
-            .block(
-                BlockNumber::Number(current_block.saturating_sub(NUMBER_OF_BLOCKS.into())).into(),
-            )
+            .alloy
+            .get_block_by_number(current_block.saturating_sub(NUMBER_OF_BLOCKS).into())
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let block = (block.number(), block.hash().into_legacy());
         let mut event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
@@ -1058,7 +998,7 @@ mod tests {
             .await
             .unwrap();
 
-        let current_block = web3.eth().block_number().await.unwrap();
+        let current_block = web3.alloy.get_block_number().await.unwrap();
         // In this test we query for events multiple times. Newer events might be
         // included each time we query again for the same events, but we want to
         // disregard them.
@@ -1069,7 +1009,7 @@ mod tests {
             v.into_iter()
                 .filter(|(_, log)| {
                     // We make the test robust against reorgs by removing events that are too new
-                    log.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT).as_u64()
+                    log.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT)
                 })
                 .collect::<Vec<_>>()
         };
@@ -1081,7 +1021,7 @@ mod tests {
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
             &web3.alloy,
-            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+            BlockNumberOrTag::Number(current_block - RANGE_SIZE),
         )
         .await
         .unwrap();
@@ -1103,7 +1043,7 @@ mod tests {
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
             &web3.alloy,
-            BlockNumberOrTag::Number((current_block - RANGE_SIZE).as_u64()),
+            BlockNumberOrTag::Number(current_block - RANGE_SIZE),
         )
         .await
         .unwrap();

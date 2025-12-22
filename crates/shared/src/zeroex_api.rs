@@ -5,11 +5,10 @@
 //! <https://api.0x.org/>
 
 use {
-    alloy::primitives::{Address, B256, address},
+    alloy::primitives::{Address, B256, U256, address},
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
-    ethcontract::U256,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
     observe::tracing::tracing_headers,
@@ -194,7 +193,7 @@ impl OrderRecord {
 
         // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
         // in an u128
-        Ok(scaled_maker_amount.as_u128())
+        Ok(u128::try_from(scaled_maker_amount)?)
     }
 }
 
@@ -451,7 +450,7 @@ impl Metrics {
 mod tests {
     use {
         super::*,
-        alloy::primitives::address,
+        alloy::primitives::{address, b256},
         chrono::{DateTime, NaiveDate},
     };
 
@@ -548,17 +547,15 @@ mod tests {
                         maker_amount: 500000000u128,
                         maker_token: address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                         pool: B256::ZERO,
-                        salt: 1645858724.into(),
+                        salt: U256::from(1645858724),
                         sender: Address::ZERO,
                         signature: ZeroExSignature {
                             signature_type: 3,
-                            r: B256::from_slice(
-                                &const_hex::decode("db60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237")
-                                    .unwrap()
+                            r: b256!(
+                                "db60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237"
                             ),
-                            s: B256::from_slice(
-                                &const_hex::decode("4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd")
-                                    .unwrap()
+                            s: b256!(
+                                "4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd"
                             ),
                             v: 28u8,
                         },
@@ -569,12 +566,18 @@ mod tests {
                         verifying_contract: address!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     },
                     OrderMetadata {
-                        order_hash:
-                            const_hex::decode(
-                                "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
-                            ).unwrap(),
+                        order_hash: const_hex::decode(
+                            "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
+                        )
+                        .unwrap(),
                         remaining_fillable_taker_amount: 262467000000000000u128,
-                        created_at: DateTime::from_naive_utc_and_offset(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
+                        created_at: DateTime::from_naive_utc_and_offset(
+                            NaiveDate::from_ymd_opt(2022, 2, 26)
+                                .unwrap()
+                                .and_hms_nano_opt(6, 59, 0, 440_000_000)
+                                .unwrap(),
+                            Utc
+                        ),
                     },
                 )],
             }

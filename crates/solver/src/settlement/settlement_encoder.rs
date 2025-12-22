@@ -3,7 +3,6 @@ use {
     crate::interactions::UnwrapWethInteraction,
     alloy::primitives::{Address, U256},
     anyhow::{Context as _, Result, ensure},
-    ethrpc::alloy::conversions::IntoLegacy,
     itertools::Either,
     model::{
         interaction::InteractionData,
@@ -572,18 +571,10 @@ impl PricedTrade<'_> {
 pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
     let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
-        (true, OrderKind::Sell) => {
-            executed.into_legacy() <= remaining.remaining(order.data.sell_amount.into_legacy())?
-        }
-        (true, OrderKind::Buy) => {
-            executed.into_legacy() <= remaining.remaining(order.data.buy_amount.into_legacy())?
-        }
-        (false, OrderKind::Sell) => {
-            executed.into_legacy() == remaining.remaining(order.data.sell_amount.into_legacy())?
-        }
-        (false, OrderKind::Buy) => {
-            executed.into_legacy() == remaining.remaining(order.data.buy_amount.into_legacy())?
-        }
+        (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
+        (true, OrderKind::Buy) => executed <= remaining.remaining(order.data.buy_amount)?,
+        (false, OrderKind::Sell) => executed == remaining.remaining(order.data.sell_amount)?,
+        (false, OrderKind::Buy) => executed == remaining.remaining(order.data.buy_amount)?,
     };
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())
@@ -710,11 +701,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[1].1, // <-- is the buy token index of liquidity order
-            3.into()
+            U256::from(3)
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of normal order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -754,11 +745,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
-            0.into()
+            U256::ZERO
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of liquidity order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -995,11 +986,11 @@ pub mod tests {
 
         // dropping unnecessary tokens did not change the sell_token_index
         let updated_sell_token_index = encoded_trade.0;
-        assert_eq!(updated_sell_token_index, 0.into());
+        assert_eq!(updated_sell_token_index, U256::ZERO);
 
         // dropping unnecessary tokens decreased the buy_token_index by one
         let updated_buy_token_index = encoded_trade.1;
-        assert_eq!(updated_buy_token_index, 1.into());
+        assert_eq!(updated_buy_token_index, U256::ONE);
     }
 
     #[derive(Debug)]

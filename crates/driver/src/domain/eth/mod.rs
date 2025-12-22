@@ -1,14 +1,12 @@
 use {
     crate::util::{Bytes, conv::u256::U256Ext},
+    alloy::rpc::types::TransactionRequest,
     derive_more::{From, Into},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    itertools::Itertools,
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},
         ops::{Div, Mul, Sub},
     },
-    web3::types::CallRequest,
 };
 
 pub mod allowance;
@@ -17,11 +15,10 @@ mod gas;
 
 pub use {
     allowance::Allowance,
-    alloy::primitives::{Address, U256},
+    alloy::primitives::{Address, B256, U256, U512},
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::NonZeroU256,
-    primitive_types::{H256, U512},
 };
 
 // TODO This module is getting a little hectic with all kinds of different
@@ -56,18 +53,26 @@ impl AccessList {
     }
 }
 
-impl From<web3::types::AccessList> for AccessList {
-    fn from(value: web3::types::AccessList) -> Self {
+impl IntoIterator for AccessList {
+    type IntoIter = std::collections::hash_map::IntoIter<Address, HashSet<StorageKey>>;
+    type Item = (Address, HashSet<StorageKey>);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<I> FromIterator<(Address, I)> for AccessList
+where
+    I: IntoIterator<Item = B256>,
+{
+    fn from_iter<T: IntoIterator<Item = (Address, I)>>(iter: T) -> Self {
         Self(
-            value
-                .into_iter()
-                .map(|item| {
+            iter.into_iter()
+                .map(|(address, i)| {
                     (
-                        item.address.into_alloy(),
-                        item.storage_keys
-                            .into_iter()
-                            .map(|key| key.into())
-                            .collect(),
+                        address,
+                        i.into_iter().map(StorageKey).collect::<HashSet<_>>(),
                     )
                 })
                 .collect(),
@@ -75,22 +80,44 @@ impl From<web3::types::AccessList> for AccessList {
     }
 }
 
-impl From<AccessList> for web3::types::AccessList {
+impl From<alloy::eips::eip2930::AccessList> for AccessList {
+    fn from(value: alloy::eips::eip2930::AccessList) -> Self {
+        Self(
+            value
+                .0
+                .into_iter()
+                .map(|item| {
+                    (
+                        item.address,
+                        item.storage_keys
+                            .into_iter()
+                            .map(StorageKey)
+                            .collect::<HashSet<_>>(),
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+impl From<AccessList> for alloy::eips::eip2930::AccessList {
     fn from(value: AccessList) -> Self {
-        value
-            .0
-            .into_iter()
-            .sorted_by_key(|&(address, _)| address)
-            .map(|(address, storage_keys)| web3::types::AccessListItem {
-                address: address.into_legacy(),
-                storage_keys: storage_keys.into_iter().sorted().map(|key| key.0).collect(),
-            })
-            .collect()
+        Self(
+            value
+                .into_iter()
+                .map(
+                    |(address, storage_keys)| alloy::eips::eip2930::AccessListItem {
+                        address,
+                        storage_keys: storage_keys.into_iter().map(|k| k.0).collect(),
+                    },
+                )
+                .collect(),
+        )
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
-struct StorageKey(pub H256);
+pub struct StorageKey(pub B256);
 
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
@@ -324,7 +351,7 @@ impl From<model::interaction::InteractionData> for Interaction {
 
 /// A transaction ID, AKA transaction hash.
 #[derive(Clone, Debug, From, Into)]
-pub struct TxId(pub H256);
+pub struct TxId(pub B256);
 
 pub enum TxStatus {
     /// The transaction has been included and executed successfully.
@@ -345,23 +372,6 @@ pub struct Tx {
     pub access_list: AccessList,
 }
 
-impl From<Tx> for CallRequest {
-    fn from(value: Tx) -> Self {
-        Self {
-            from: Some(value.from.into_legacy()),
-            to: Some(value.to.into_legacy()),
-            gas: None,
-            gas_price: None,
-            value: Some(value.value.0.into_legacy()),
-            data: Some(value.input.into()),
-            transaction_type: None,
-            access_list: Some(value.access_list.into()),
-            max_fee_per_gas: None,
-            max_priority_fee_per_gas: None,
-        }
-    }
-}
-
 impl std::fmt::Debug for Tx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tx")
@@ -371,6 +381,17 @@ impl std::fmt::Debug for Tx {
             .field("input", &self.input)
             .field("access_list", &self.access_list)
             .finish()
+    }
+}
+
+impl From<Tx> for TransactionRequest {
+    fn from(value: Tx) -> Self {
+        TransactionRequest::default()
+            .from(value.from)
+            .to(value.to)
+            .value(value.value.0)
+            .input(value.input.0.into())
+            .access_list(value.access_list.into())
     }
 }
 
@@ -388,15 +409,15 @@ impl Tx {
 /// This value is meaningful in the context of the EVM `CREATE2` opcode in that
 /// it influences the deterministic address that the contract ends up on.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct CodeDigest(pub H256);
+pub struct CodeDigest(pub B256);
 
-impl From<H256> for CodeDigest {
-    fn from(value: H256) -> Self {
+impl From<B256> for CodeDigest {
+    fn from(value: B256) -> Self {
         Self(value)
     }
 }
 
-impl From<CodeDigest> for H256 {
+impl From<CodeDigest> for B256 {
     fn from(value: CodeDigest) -> Self {
         value.0
     }
@@ -404,7 +425,7 @@ impl From<CodeDigest> for H256 {
 
 impl From<[u8; 32]> for CodeDigest {
     fn from(value: [u8; 32]) -> Self {
-        Self(H256(value))
+        Self(B256::new(value))
     }
 }
 

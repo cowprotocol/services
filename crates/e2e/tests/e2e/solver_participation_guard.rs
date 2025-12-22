@@ -8,23 +8,17 @@ use {
         Services,
         TIMEOUT,
         TestAccount,
-        eth,
         run_test,
-        to_wei,
         wait_for_condition,
     },
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, conversions::IntoAlloy},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    secp256k1::SecretKey,
+    number::units::EthUnit,
     sqlx::Row,
     std::time::Instant,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -48,7 +42,7 @@ async fn local_node_not_allowed_solver() {
 async fn non_settling_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver, solver_b] = onchain.make_solvers(eth(1)).await;
+    let [solver, solver_b] = onchain.make_solvers(1u64.eth()).await;
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let services = Services::new(&onchain).await;
@@ -119,7 +113,7 @@ async fn non_settling_solver(web3: Web3) {
 async fn low_settling_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver, solver_b] = onchain.make_solvers(eth(1)).await;
+    let [solver, solver_b] = onchain.make_solvers(1u64.eth()).await;
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let services = Services::new(&onchain).await;
@@ -187,7 +181,7 @@ async fn low_settling_solver(web3: Web3) {
 async fn not_allowed_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let solver_address = solver.address();
@@ -231,17 +225,17 @@ async fn setup(
     onchain: &mut OnchainComponents,
     solver: &TestAccount,
 ) -> (TestAccount, MintableToken, MintableToken) {
-    let [trader_a] = onchain.make_accounts(eth(1)).await;
+    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
-    token_a.mint(trader_a.address(), eth(1000)).await;
+    token_a.mint(trader_a.address(), 1000u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_a.mint(solver.address(), eth(1000)).await;
-    token_b.mint(solver.address(), eth(1000)).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -252,14 +246,20 @@ async fn setup(
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -270,8 +270,8 @@ async fn setup(
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -285,7 +285,7 @@ async fn setup(
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
+        .approve(onchain.contracts().allowance, 1000u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -327,9 +327,9 @@ async fn execute_order(
 ) -> anyhow::Result<()> {
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -337,7 +337,7 @@ async fn execute_order(
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
@@ -350,7 +350,7 @@ async fn execute_order(
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
-        let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= eth(5);
+        let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth();
         let auction_ids_after =
             fetch_last_settled_auction_ids(services.db()).await.len() > auction_ids_before;
         balance_changes && auction_ids_after

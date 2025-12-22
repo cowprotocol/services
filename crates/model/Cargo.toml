@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types"] }
+alloy = { workspace = true, features = ["sol-types", "signers", "signer-local"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 bigdecimal = { workspace = true }
@@ -20,7 +20,6 @@ derive_more = { workspace = true }
 hex-literal = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
-primitive-types = { workspace = true }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

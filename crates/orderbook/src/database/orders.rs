@@ -12,7 +12,6 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
         order::{
@@ -31,13 +30,8 @@ use {
     },
     num::Zero,
     number::conversions::{
-        alloy::{
-            big_decimal_to_u256 as alloy_big_decimal_to_u256,
-            u256_to_big_decimal as alloy_u256_to_big_decimal,
-        },
+        alloy::{big_decimal_to_u256, u256_to_big_decimal},
         big_decimal_to_big_uint,
-        big_decimal_to_u256,
-        u256_to_big_decimal,
     },
     shared::{
         db_order_conversions::{
@@ -151,7 +145,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .map(
             |(index, (interaction, execution))| database::orders::Interaction {
                 target: ByteArray(*interaction.target.0),
-                value: u256_to_big_decimal(&interaction.value.into_legacy()),
+                value: u256_to_big_decimal(&interaction.value),
                 data: interaction.call_data.clone(),
                 index: index
                     .try_into()
@@ -168,11 +162,11 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         sell_token: ByteArray(order.data.sell_token.0.0),
         buy_token: ByteArray(order.data.buy_token.0.0),
         receiver: order.data.receiver.map(|addr| ByteArray(addr.0.0)),
-        sell_amount: alloy_u256_to_big_decimal(&order.data.sell_amount),
-        buy_amount: alloy_u256_to_big_decimal(&order.data.buy_amount),
+        sell_amount: u256_to_big_decimal(&order.data.sell_amount),
+        buy_amount: u256_to_big_decimal(&order.data.buy_amount),
         valid_to: order.data.valid_to as i64,
         app_data: ByteArray(order.data.app_data.0),
-        fee_amount: alloy_u256_to_big_decimal(&order.data.fee_amount),
+        fee_amount: u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
         class: order_class_into(&order.metadata.class),
         partially_fillable: order.data.partially_fillable,
@@ -206,7 +200,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             sell_token_price: quote.sell_token_price.to_f64().unwrap(),
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            solver: ByteArray(quote.solver.0),
+            solver: ByteArray(quote.solver.0.0),
             verified: quote.verified,
             metadata: quote.metadata.clone(),
         };
@@ -470,21 +464,13 @@ impl LimitOrderCounting for Postgres {
         .filter(|order_with_quote| {
             is_order_outside_market_price(
                 &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount)
-                        .unwrap()
-                        .into_alloy(),
-                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount)
-                        .unwrap()
-                        .into_alloy(),
+                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
                     fee: alloy::primitives::U256::from(0),
                 },
                 &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount)
-                        .unwrap()
-                        .into_alloy(),
-                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount)
-                        .unwrap()
-                        .into_alloy(),
+                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
                     fee: FeeParameters {
                         gas_amount: order_with_quote.quote_gas_amount,
                         gas_price: order_with_quote.quote_gas_price,
@@ -601,14 +587,11 @@ fn full_order_with_quote_into_model_order(
         sell_token: Address::new(order.sell_token.0),
         buy_token: Address::new(order.buy_token.0),
         receiver: order.receiver.map(|address| Address::new(address.0)),
-        sell_amount: alloy_big_decimal_to_u256(&order.sell_amount)
-            .context("sell_amount is not U256")?,
-        buy_amount: alloy_big_decimal_to_u256(&order.buy_amount)
-            .context("buy_amount is not U256")?,
+        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount: alloy_big_decimal_to_u256(&order.fee_amount)
-            .context("fee_amount is not U256")?,
+        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),

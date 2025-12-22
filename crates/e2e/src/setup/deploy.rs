@@ -1,4 +1,8 @@
 use {
+    alloy::{
+        primitives::{Address, B256, U256},
+        providers::Provider,
+    },
     contracts::alloy::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -12,11 +16,7 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
-    ethcontract::{Address, H256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -47,8 +47,8 @@ pub struct Contracts {
 impl Contracts {
     pub async fn deployed_with(web3: &Web3, deployed: DeployedContracts) -> Self {
         let network_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
             .expect("get network ID failed")
             .to_string();
@@ -58,13 +58,13 @@ impl Contracts {
             .await
             .unwrap();
         let balances = match deployed.balances {
-            Some(address) => Balances::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
             None => Balances::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find balances contract"),
         };
         let signatures = match deployed.signatures {
-            Some(address) => Signatures::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            Some(address) => Signatures::Instance::new(address, web3.alloy.clone()),
             None => Signatures::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find signatures contract"),
@@ -93,8 +93,7 @@ impl Contracts {
                 .vaultRelayer()
                 .call()
                 .await
-                .expect("Couldn't get vault relayer address")
-                .into_legacy(),
+                .expect("Couldn't get vault relayer address"),
             domain_separator: DomainSeparator(
                 gp_settlement
                     .domainSeparator()
@@ -120,36 +119,38 @@ impl Contracts {
 
     pub async fn deploy(web3: &Web3) -> Self {
         let network_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
             .expect("get network ID failed")
             .to_string();
         tracing::info!("connected to test network {}", network_id);
 
-        let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
+        let accounts = web3
+            .alloy
+            .get_accounts()
+            .await
+            .expect("get accounts failed");
         let admin = accounts[0];
 
         let weth = WETH9::Instance::deploy(web3.alloy.clone()).await.unwrap();
 
-        let balancer_authorizer =
-            BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin.into_alloy())
-                .await
-                .unwrap();
+        let balancer_authorizer = BalancerV2Authorizer::Instance::deploy(web3.alloy.clone(), admin)
+            .await
+            .unwrap();
         let balancer_vault = BalancerV2Vault::Instance::deploy(
             web3.alloy.clone(),
             *balancer_authorizer.address(),
             *weth.address(),
-            alloy::primitives::U256::ZERO,
-            alloy::primitives::U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
         )
         .await
         .unwrap();
 
-        let uniswap_v2_factory =
-            UniswapV2Factory::Instance::deploy(web3.alloy.clone(), accounts[0].into_alloy())
-                .await
-                .unwrap();
+        let uniswap_v2_factory = UniswapV2Factory::Instance::deploy(web3.alloy.clone(), admin)
+            .await
+            .unwrap();
         let uniswap_v2_router = UniswapV2Router02::Instance::deploy(
             web3.alloy.clone(),
             *uniswap_v2_factory.address(),
@@ -162,7 +163,7 @@ impl Contracts {
             .await
             .unwrap();
         gp_authenticator
-            .initializeManager(admin.into_alloy())
+            .initializeManager(admin)
             .send_and_watch()
             .await
             .expect("failed to initialize manager");
@@ -196,8 +197,7 @@ impl Contracts {
             .vaultRelayer()
             .call()
             .await
-            .expect("Couldn't get vault relayer address")
-            .into_legacy();
+            .expect("Couldn't get vault relayer address");
         let domain_separator = DomainSeparator(
             gp_settlement
                 .domainSeparator()
@@ -250,10 +250,10 @@ impl Contracts {
         }
     }
 
-    pub fn default_pool_code(&self) -> H256 {
+    pub fn default_pool_code(&self) -> B256 {
         match self.chain_id {
-            100 => H256(shared::sources::uniswap_v2::HONEYSWAP_INIT),
-            _ => H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+            100 => B256::new(shared::sources::uniswap_v2::HONEYSWAP_INIT),
+            _ => B256::new(shared::sources::uniswap_v2::UNISWAP_INIT),
         }
     }
 }

@@ -1,20 +1,12 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
-    e2e::setup::{
-        OnchainComponents,
-        Services,
-        TIMEOUT,
-        eth,
-        run_test,
-        safe::Safe,
-        to_wei,
-        wait_for_condition,
-    },
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, safe::Safe, wait_for_condition},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
     },
+    number::units::EthUnit,
     shared::ethrpc::Web3,
 };
 
@@ -28,24 +20,24 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let safe = Safe::deploy(trader.clone(), web3.alloy.clone()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(1000u64.eth(), 1000u64.eth())
         .await;
 
-    token.mint(trader.address(), eth(4)).await;
+    token.mint(trader.address(), 4u64.eth()).await;
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), eth(4))
+            .approve(onchain.contracts().allowance, 4u64.eth())
             .into_transaction_request(),
     )
     .await;
-    token.mint(safe.address(), eth(4)).await;
+    token.mint(safe.address(), 4u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(4))
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -67,9 +59,9 @@ async fn test(web3: Web3) {
     let mut order = OrderCreation {
         from: Some(safe.address()),
         sell_token: *token.address(),
-        sell_amount: eth(4),
+        sell_amount: 4u64.eth(),
         buy_token: BUY_ETH_ADDRESS,
-        buy_amount: eth(3),
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,

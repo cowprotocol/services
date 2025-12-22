@@ -1,11 +1,14 @@
 use {
     super::serialize,
+    alloy::{
+        primitives::{Address, B256, U256},
+        rpc::types::AccessList,
+    },
     chrono::{DateTime, Utc},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::collections::BTreeSet,
-    web3::types::{AccessList, H160, H256, U256},
 };
 
 #[serde_as]
@@ -43,21 +46,21 @@ pub enum Kind {
     InvalidClearingPrices,
     #[serde(rename_all = "camelCase")]
     MissingPrice {
-        token_address: H160,
+        token_address: Address,
     },
     InvalidExecutedAmount,
     NonBufferableTokensUsed {
-        tokens: BTreeSet<H160>,
+        tokens: BTreeSet<Address>,
     },
     SolverAccountInsufficientBalance {
         #[serde_as(as = "HexOrDecimalU256")]
         required: U256,
     },
     Success {
-        transaction: H256,
+        transaction: B256,
     },
     Revert {
-        transaction: H256,
+        transaction: B256,
     },
     DriverError {
         reason: String,
@@ -81,8 +84,8 @@ type BlockNo = u64;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tx {
-    pub from: H160,
-    pub to: H160,
+    pub from: Address,
+    pub to: Address,
     #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
     #[serde_as(as = "HexOrDecimalU256")]

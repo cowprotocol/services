@@ -55,7 +55,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     ));
 
     let ethrpc = ethrpc(&args).await;
-    let web3 = ethrpc.web3().clone();
     let config = config::file::load(ethrpc.chain(), &args.config).await;
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
@@ -81,7 +80,14 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                 .mempools
                 .iter()
                 .map(|mempool| {
-                    crate::infra::mempool::Mempool::new(mempool.to_owned(), web3.clone())
+                    crate::infra::mempool::Mempool::new(
+                        mempool.to_owned(),
+                        config
+                            .solvers
+                            .iter()
+                            .map(|config| config.account.clone())
+                            .collect(),
+                    )
                 })
                 .collect(),
             eth.clone(),

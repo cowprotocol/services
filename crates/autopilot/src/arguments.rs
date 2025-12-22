@@ -1,11 +1,11 @@
 use {
-    crate::{domain::fee::FeeFactor, infra},
+    crate::infra,
     alloy::primitives::{Address, U256},
     anyhow::{Context, anyhow, ensure},
     chrono::{DateTime, Utc},
     clap::ValueEnum,
     shared::{
-        arguments::{display_list, display_option, display_secret_option},
+        arguments::{FeeFactor, display_list, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},

@@ -1,23 +1,19 @@
 use {
     ::alloy::primitives::U256,
-    e2e::{
-        nodes::local_node::TestNodeApi,
-        setup::{eth, *},
-    },
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    e2e::setup::*,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
     },
+    number::units::EthUnit,
     orderbook::{
         api::IntoWarpReply,
         orderbook::{OrderCancellationError, OrderReplacementError},
     },
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     warp::reply::Reply,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -41,18 +37,18 @@ async fn local_node_try_replace_executed_order() {
 async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
-    token_a.mint(trader.address(), eth(30)).await;
+    token_a.mint(trader.address(), 30u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_a.mint(solver.address(), eth(1000)).await;
-    token_b.mint(solver.address(), eth(1000)).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -63,14 +59,20 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -81,8 +83,8 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -96,17 +98,14 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
     // disable auto mining to prevent order being immediately executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
-        .await
-        .unwrap();
+    web3.alloy.evm_set_automine(false).await.unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -114,9 +113,9 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -124,7 +123,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let balance_before = token_a.balanceOf(trader.address()).call().await.unwrap();
     onchain.mint_block().await;
@@ -145,9 +144,9 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Replace order
     let new_order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(3),
+        sell_amount: 3u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -161,7 +160,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let response = services.create_order(&new_order).await;
     let (error_code, error_message) = response.err().unwrap();
@@ -179,15 +178,15 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     assert_eq!(error_message, expected_body);
 
     // Continue automining so our order can be executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(true)
+    web3.alloy
+        .evm_set_automine(true)
         .await
         .expect("Must be able to disable auto-mining");
 
     tracing::info!("Waiting for the old order to be executed");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balanceOf(trader.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == eth(10)
+        balance_before.saturating_sub(balance_after) == 10u64.eth()
             && !services.get_trades(&order_id).await.unwrap().is_empty()
     })
     .await
@@ -213,19 +212,19 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 async fn try_replace_someone_else_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
-    token_a.mint(trader_a.address(), eth(30)).await;
-    token_a.mint(trader_b.address(), eth(30)).await;
+    token_a.mint(trader_a.address(), 30u64.eth()).await;
+    token_a.mint(trader_b.address(), 30u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_a.mint(solver.address(), eth(1000)).await;
-    token_b.mint(solver.address(), eth(1000)).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -236,14 +235,20 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -254,8 +259,8 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -269,14 +274,14 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -290,9 +295,9 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: false,
         kind: OrderKind::Sell,
@@ -301,16 +306,16 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
 
     // Replace order
     let new_order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(3),
+        sell_amount: 3u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -324,7 +329,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let balance_before = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     let response = services.create_order(&new_order).await;
@@ -336,7 +341,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
         let balance_after = token_a.balanceOf(trader_a.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == eth(10)
+        balance_before.saturating_sub(balance_after) == 10u64.eth()
     })
     .await
     .unwrap();
@@ -345,18 +350,18 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
 async fn single_replace_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
-    token_a.mint(trader.address(), eth(30)).await;
+    token_a.mint(trader.address(), 30u64.eth()).await;
 
     // Create and fund Uniswap pool
-    token_a.mint(solver.address(), eth(1000)).await;
-    token_b.mint(solver.address(), eth(1000)).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
     onchain
         .contracts()
         .uniswap_v2_factory
@@ -367,14 +372,20 @@ async fn single_replace_order_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
         .from(solver.address())
         .send_and_watch()
         .await
@@ -385,8 +396,8 @@ async fn single_replace_order_test(web3: Web3) {
         .addLiquidity(
             *token_a.address(),
             *token_b.address(),
-            eth(1000),
-            eth(1000),
+            1000u64.eth(),
+            1000u64.eth(),
             U256::ZERO,
             U256::ZERO,
             solver.address(),
@@ -400,7 +411,7 @@ async fn single_replace_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -427,9 +438,9 @@ async fn single_replace_order_test(web3: Web3) {
     let balance_before = token_a.balanceOf(trader.address()).call().await.unwrap();
     let order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(10),
+        sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(5),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -437,7 +448,7 @@ async fn single_replace_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
 
@@ -456,9 +467,9 @@ async fn single_replace_order_test(web3: Web3) {
     // Replace order
     let new_order = OrderCreation {
         sell_token: *token_a.address(),
-        sell_amount: eth(3),
+        sell_amount: 3u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: eth(1),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -470,7 +481,7 @@ async fn single_replace_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 
@@ -505,7 +516,7 @@ async fn single_replace_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balanceOf(trader.address()).call().await.unwrap();
         onchain.mint_block().await;
-        balance_before.saturating_sub(balance_after) == eth(3)
+        balance_before.saturating_sub(balance_after) == 3u64.eth()
     })
     .await
     .unwrap();

@@ -9,7 +9,6 @@ use {
         byte_array::ByteArray,
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
     },
-    ethcontract::EventMetadata,
     ethrpc::alloy::conversions::IntoLegacy,
     number::conversions::u256_to_big_decimal,
     std::convert::TryInto,
@@ -112,13 +111,6 @@ pub async fn replace_events(
         .await
         .context("insert_events failed")?;
     Ok(())
-}
-
-pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
-    EventIndex {
-        block_number: i64::try_from(meta.block_number).unwrap_or(i64::MAX),
-        log_index: i64::try_from(meta.log_index).unwrap_or(i64::MAX),
-    }
 }
 
 pub fn log_to_event_index(log: &Log) -> Option<EventIndex> {

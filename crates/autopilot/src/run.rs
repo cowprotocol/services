@@ -24,15 +24,11 @@ use {
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
-    alloy::{eips::BlockNumberOrTag, primitives::Address},
+    alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
-    ethrpc::{
-        Web3,
-        alloy::conversions::IntoLegacy,
-        block_stream::block_number_to_block_number_hash,
-    },
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -188,12 +184,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     });
 
     let chain_id = web3
-        .eth()
-        .chain_id()
+        .alloy
+        .get_chain_id()
         .instrument(info_span!("chain_id"))
         .await
-        .expect("Could not get chainId")
-        .as_u64();
+        .expect("Could not get chainId");
     if let Some(expected_chain_id) = args.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
@@ -229,8 +224,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .vaultRelayer()
         .call()
         .await
-        .expect("Couldn't get vault relayer address")
-        .into_legacy();
+        .expect("Couldn't get vault relayer address");
 
     let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
         let chain_id = chain.id();
@@ -271,7 +265,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault_address.map(IntoLegacy::into_legacy),
+            vault_address,
             balance_overrider,
         ),
         eth.current_block().clone(),
@@ -524,7 +518,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies_config),
+        domain::ProtocolFees::new(
+            &args.fee_policies_config,
+            args.shared.volume_fee_bucket_overrides.clone(),
+            args.shared.enable_sell_equals_buy_volume_fee,
+        ),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         *eth.contracts().settlement().address(),
@@ -607,7 +605,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
-            eth.contracts().settlement().address().into_legacy(),
+            *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
         );
 
@@ -753,11 +751,10 @@ async fn shadow_mode(args: Arguments) -> ! {
 
     let trusted_tokens = {
         let chain_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
-            .expect("Could not get chainId")
-            .as_u64();
+            .expect("Could not get chainId");
         if let Some(expected_chain_id) = args.shared.chain_id {
             assert_eq!(
                 chain_id, expected_chain_id,

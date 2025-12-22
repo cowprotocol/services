@@ -37,16 +37,17 @@ use {
             },
         },
     },
-    alloy::primitives::{Address, U256, address},
+    alloy::{
+        primitives::{Address, U256, address, b256},
+        providers::Provider,
+        signers::local::PrivateKeySigner,
+    },
     bigdecimal::{BigDecimal, FromPrimitive},
-    ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::Web3,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::serialization::HexOrDecimalU256,
-    primitive_types::H160,
-    secp256k1::SecretKey,
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
@@ -349,7 +350,7 @@ pub struct Solver {
     /// How much ETH balance should the solver be funded with? 1 ETH by default.
     balance: eth::U256,
     /// The private key for this solver.
-    private_key: ethcontract::PrivateKey,
+    signer: PrivateKeySigner,
     /// The slippage for this solver.
     slippage: Slippage,
     /// The fraction of time used for solving
@@ -371,10 +372,9 @@ pub fn test_solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
         balance: eth::U256::from(10).pow(eth::U256::from(18)),
-        private_key: ethcontract::PrivateKey::from_slice(
-            const_hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
-                .unwrap(),
-        )
+        signer: PrivateKeySigner::from_bytes(&b256!(
+            "a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326"
+        ))
         .unwrap(),
         slippage: Slippage {
             relative: BigDecimal::from_f64(0.3).unwrap(),
@@ -391,7 +391,7 @@ pub fn test_solver() -> Solver {
 
 impl Solver {
     pub fn address(&self) -> eth::Address {
-        self.private_key.public_address().into_alloy()
+        self.signer.address()
     }
 
     pub fn name(self, name: &str) -> Self {
@@ -472,10 +472,12 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
 
 #[derive(Debug)]
 pub enum Mempool {
-    Public,
+    /// Uses the driver's main RPC URL
+    Default,
     Private {
         /// Uses ethrpc node if None
         url: Option<String>,
+        mines_reverting_txs: bool,
     },
 }
 
@@ -484,7 +486,7 @@ pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Public],
+        mempools: vec![Mempool::Default],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -514,7 +516,8 @@ pub struct Setup {
     balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
-    /// Via which mempool the solutions should be submitted
+    /// Mempools that should be used for solution submission in addition
+    /// to the main RPC URL.
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
@@ -891,17 +894,14 @@ impl Setup {
             ..
         } = self;
 
-        // Hardcoded trader account. Don't use this account for anything else!!!
-        let trader_secret_key = SecretKey::from_slice(
-            &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
-                .unwrap(),
-        )
-        .unwrap();
-
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            main_trader_secret_key: trader_secret_key,
+            // This PK is publicly known - don't send any funds to its account onchain!!!
+            main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
+                "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
+            ))
+            .unwrap(),
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
             balances_address: self.balances_address,
@@ -959,7 +959,7 @@ impl Setup {
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
-                private_key: solver.private_key.clone(),
+                private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
@@ -969,6 +969,7 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
+
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -1176,16 +1177,15 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .eth()
-                .balance(self.trader_address.into_legacy(), None)
+                .alloy
+                .get_balance(self.trader_address)
                 .await
-                .map(IntoAlloy::into_alloy)
                 .unwrap(),
         );
         balances
     }
 
-    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+    pub fn web3(&self) -> &Web3 {
         &self.blockchain.web3
     }
 
@@ -1513,12 +1513,12 @@ impl QuoteOk<'_> {
             .as_object()
             .unwrap()
             .into_iter()
-            .map(|(token, price)| (H160::from_str(token).unwrap(), price.as_str().unwrap()))
+            .map(|(token, price)| (Address::from_str(token).unwrap(), price.as_str().unwrap()))
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
         };
 
         let expected = match quoted_order.order.side {

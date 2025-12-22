@@ -13,7 +13,7 @@ use {
             auction,
             eth,
             liquidity,
-            order::{self, Order},
+            order::{self, Order, Side},
             solution,
         },
         infra::metrics,
@@ -192,38 +192,53 @@ impl Inner {
 
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrappers = request.wrappers.clone();
-                let route = boundary_solver.route(request, self.max_hops).await?;
-                let interactions = route
-                    .segments
-                    .iter()
-                    .map(|segment| {
-                        solution::Interaction::Liquidity(Box::new(solution::LiquidityInteraction {
-                            liquidity: segment.liquidity.clone(),
-                            input: segment.input,
-                            output: segment.output,
-                            // TODO does the baseline solver know about this optimization?
-                            internalize: false,
-                        }))
-                    })
-                    .collect();
+                let solution = if order.sell.token == order.buy.token {
+                    // When sell and buy tokens are the same, the solution does not require routing
+                    // and incurs no additional gas since the liquidity comes from the user
+                    let (input, mut output) = match order.side {
+                        Side::Sell => (order.sell, order.buy),
+                        Side::Buy => (order.buy, order.sell),
+                    };
+                    output.amount = input.amount;
+                    solution::Single {
+                        order: order.clone(),
+                        input,
+                        output,
+                        interactions: Vec::default(),
+                        gas: eth::Gas(U256::ZERO) + self.solution_gas_offset,
+                        wrappers,
+                    }
+                } else {
+                    let route = boundary_solver.route(request, self.max_hops).await?;
+                    let interactions = route
+                        .segments
+                        .iter()
+                        .map(|segment| {
+                            solution::Interaction::Liquidity(Box::new(
+                                solution::LiquidityInteraction {
+                                    liquidity: segment.liquidity.clone(),
+                                    input: segment.input,
+                                    output: segment.output,
+                                    // NOTE(m-sz): does the baseline solver know about this
+                                    // optimization?
+                                    internalize: false,
+                                },
+                            ))
+                        })
+                        .collect();
+                    let gas = route.gas() + self.solution_gas_offset;
+                    let mut output = route.output();
 
-                // The baseline solver generates a path with swapping
-                // for exact output token amounts. This leads to
-                // potential rounding errors for buy orders, where we
-                // can buy slightly more than intended. Fix this by
-                // capping the output amount to the order's buy amount
-                // for buy orders.
-                let mut output = route.output();
-                if let order::Side::Buy = order.side {
-                    output.amount = cmp::min(output.amount, order.buy.amount);
-                }
+                    // The baseline solver generates a path with swapping
+                    // for exact output token amounts. This leads to
+                    // potential rounding errors for buy orders, where we
+                    // can buy slightly more than intended. Fix this by
+                    // capping the output amount to the order's buy amount
+                    // for buy orders.
+                    if let order::Side::Buy = order.side {
+                        output.amount = cmp::min(output.amount, order.buy.amount);
+                    }
 
-                let gas = route.gas() + self.solution_gas_offset;
-                let fee = sell_token_price
-                    .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0.0)?))?
-                    .into();
-
-                Some(
                     solution::Single {
                         order: order.clone(),
                         input: route.input(),
@@ -232,9 +247,19 @@ impl Inner {
                         gas,
                         wrappers,
                     }
-                    .into_solution(fee)?
-                    .with_id(solution::Id(i as u64))
-                    .with_buffers_internalizations(&auction.tokens),
+                };
+
+                let fee = sell_token_price
+                    .ether_value(eth::Ether(
+                        solution.gas.0.checked_mul(auction.gas_price.0.0)?,
+                    ))?
+                    .into();
+
+                Some(
+                    solution
+                        .into_solution(fee)?
+                        .with_id(solution::Id(i as u64))
+                        .with_buffers_internalizations(&auction.tokens),
                 )
             };
 

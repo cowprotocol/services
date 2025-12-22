@@ -1,7 +1,7 @@
 pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
-    alloy::primitives::Address,
+    alloy::{eips::BlockNumberOrTag, primitives::Address},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
@@ -144,46 +144,40 @@ impl From<BlockNumber> for web3::types::BlockNumber {
     }
 }
 
+impl From<BlockNumber> for BlockNumberOrTag {
+    fn from(value: BlockNumber) -> Self {
+        match value {
+            BlockNumber::Pending => Self::Pending,
+            BlockNumber::Latest => Self::Latest,
+            BlockNumber::Earliest => Self::Earliest,
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(tag = "mempool")]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Mempool {
-    #[serde(rename_all = "kebab-case")]
-    Public {
-        /// Maximum additional tip in Gwei that we are willing to pay
-        /// above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are willing to
-        /// pay above regular gas price estimation. Expects a
-        /// floating point value between 0 and 1.
-        #[serde(default = "default_additional_tip_percentage")]
-        additional_tip_percentage: f64,
-    },
-    #[serde(rename_all = "kebab-case")]
-    MevBlocker {
-        /// The MEVBlocker URL to use.
-        url: Url,
-        /// Maximum additional tip in Gwei that we are willing to give to
-        /// MEVBlocker above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are giving to
-        /// MEVBlocker above regular gas price estimation. Expects a
-        /// floating point value between 0 and 1.
-        #[serde(default = "default_additional_tip_percentage")]
-        additional_tip_percentage: f64,
-        /// Configures whether the submission logic is allowed to assume the
-        /// submission nodes implement soft cancellations. With soft
-        /// cancellations a cancellation transaction doesn't have to get mined
-        /// to have an effect. On arrival in the node all pending transactions
-        /// with the same sender and nonce will get discarded immediately.
-        #[serde(default = "default_soft_cancellations_flag")]
-        use_soft_cancellations: bool,
-    },
+#[serde(rename_all = "kebab-case")]
+struct Mempool {
+    /// Name for better logging and metrics.
+    name: Option<String>,
+    /// The RPC URL to use.
+    url: Url,
+    /// Maximum additional tip in Gwei that we are willing to give to
+    /// the validator above regular gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serialize::U256")]
+    max_additional_tip: eth::U256,
+    /// Additional tip in percentage of max_fee_per_gas we are giving to
+    /// validator above regular gas price estimation. Expects a
+    /// floating point value between 0 and 1.
+    #[serde(default = "default_additional_tip_percentage")]
+    additional_tip_percentage: f64,
+    /// Informs the submission logic whether a reverting transaction will
+    /// actually be mined or just ignored. This is an advanced feature
+    /// for private mempools so for most configured mempools you have to
+    /// assume reverting transactions will get mined eventually.
+    #[serde(default = "default_mines_reverting_txs")]
+    mines_reverting_txs: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,8 +229,8 @@ fn default_max_additional_tip() -> eth::U256 {
     eth::U256::from(3) * eth::U256::from(10).pow(eth::U256::from(9))
 }
 
-fn default_soft_cancellations_flag() -> bool {
-    false
+fn default_mines_reverting_txs() -> bool {
+    true
 }
 
 pub fn default_http_time_buffer() -> Duration {
@@ -345,12 +339,12 @@ pub struct S3 {
 enum Account {
     /// A private key is used to sign transactions. Expects a 32-byte hex
     /// encoded string.
-    PrivateKey(eth::H256),
+    PrivateKey(eth::B256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
-    /// An address is used to identify the account for signing, relying on the
-    /// connected node's account management features. This can also be used to
-    /// start the driver in a dry-run mode.
+    /// Used to start the driver in the dry-run mode. This account type is
+    /// *unable* to sign transactions as alloy does not support *implicit*
+    /// node-side signing.
     Address(eth::Address),
 }
 
@@ -499,7 +493,7 @@ enum UniswapV2Config {
         router: eth::Address,
 
         /// The digest of the pool initialization code.
-        pool_code: eth::H256,
+        pool_code: eth::B256,
 
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
@@ -532,7 +526,7 @@ enum SwaprConfig {
         router: eth::Address,
 
         /// The digest of the pool initialization code.
-        pool_code: eth::H256,
+        pool_code: eth::B256,
 
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
@@ -623,7 +617,7 @@ enum BalancerV2Config {
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
-        pool_deny_list: Vec<eth::H256>,
+        pool_deny_list: Vec<eth::B256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
@@ -664,7 +658,7 @@ enum BalancerV2Config {
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
-        pool_deny_list: Vec<eth::H256>,
+        pool_deny_list: Vec<eth::B256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
