@@ -9,6 +9,7 @@ use {
     alloy::{
         dyn_abi::SolType,
         primitives::Address,
+        rpc::types::state::StateOverride,
         sol_types::{SolCall, sol_data},
         transports::RpcError,
     },
@@ -18,11 +19,7 @@ use {
         GPv2Settlement,
         support::Signatures,
     },
-    ethcontract::state_overrides::StateOverrides,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::conversions::IntoLegacy},
     primitive_types::U256,
     std::sync::Arc,
     tracing::instrument,
@@ -99,7 +96,7 @@ impl Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        let overrides: StateOverrides = match &check.balance_override {
+        let overrides: StateOverride = match &check.balance_override {
             Some(overrides) => self
                 .balance_overrider
                 .state_override(overrides.clone())
@@ -134,8 +131,8 @@ impl Validator {
         let simulation = self
             .settlement
             .simulateDelegatecall(self.signatures_address, validate_call.abi_encode().into())
-            .state(overrides.clone().into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.address().into_alloy());
+            .state(overrides.clone())
+            .from(*crate::SIMULATION_ACCOUNT);
 
         let result = simulation.clone().call().await;
 

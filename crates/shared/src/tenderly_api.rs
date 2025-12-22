@@ -6,14 +6,14 @@ use {
         http_client::HttpClientFactory,
     },
     alloy::{
-        primitives::TxKind,
+        primitives::{Address, B256, TxKind, map::B256Map},
         rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
     },
     anyhow::{Result, ensure},
     bytes_hex::BytesHex,
     clap::Parser,
     contracts::errors::EthcontractErrorType,
-    ethcontract::{errors::ExecutionError, state_overrides::StateOverride},
+    ethcontract::errors::ExecutionError,
     ethrpc::alloy::conversions::IntoLegacy,
     prometheus::IntGaugeVec,
     reqwest::{
@@ -28,7 +28,7 @@ use {
     },
     thiserror::Error,
     tracing::instrument,
-    web3::types::{Bytes, H160, H256, U256},
+    web3::types::{H160, H256, U256},
 };
 /// Trait for abstracting Tenderly API.
 #[async_trait::async_trait]
@@ -195,7 +195,7 @@ pub struct SimulationRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate_access_list: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_objects: Option<HashMap<H160, StateObject>>,
+    pub state_objects: Option<HashMap<Address, StateObject>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_list: Option<Vec<AccessListItem>>,
 }
@@ -211,16 +211,16 @@ pub enum SimulationKind {
 pub struct StateObject {
     /// Fake balance to set for the account before executing the call.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<U256>,
+    pub balance: Option<alloy::primitives::U256>,
 
     /// Fake EVM bytecode to inject into the account before executing the call.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<Bytes>,
+    pub code: Option<alloy::primitives::Bytes>,
 
     /// Fake key-value mapping to override **individual** slots in the account
     /// storage before executing the call.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub storage: Option<HashMap<H256, H256>>,
+    pub storage: Option<B256Map<B256>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -419,7 +419,7 @@ impl TenderlyCodeSimulator {
             state_objects: Some(
                 overrides
                     .into_iter()
-                    .map(|(key, value)| Ok((key.into_legacy(), value.into_legacy().try_into()?)))
+                    .map(|(key, value)| Ok((key, value.try_into()?)))
                     .collect::<Result<_>>()?,
             ),
             ..Default::default()
@@ -441,10 +441,12 @@ impl TenderlyCodeSimulator {
     }
 }
 
-impl TryFrom<StateOverride> for StateObject {
+impl TryFrom<alloy::rpc::types::eth::state::AccountOverride> for StateObject {
     type Error = anyhow::Error;
 
-    fn try_from(value: StateOverride) -> Result<Self, Self::Error> {
+    fn try_from(
+        value: alloy::rpc::types::eth::state::AccountOverride,
+    ) -> std::result::Result<Self, Self::Error> {
         ensure!(
             value.nonce.is_none() && value.state.is_none(),
             "full state and nonce overrides not supported on Tenderly",

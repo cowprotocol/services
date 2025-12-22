@@ -433,9 +433,9 @@ impl OrderValidator {
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
-                                amount: loan.amount.into_legacy(),
+                                token: loan.token,
+                                holder: loan.receiver,
+                                amount: loan.amount,
                             }
                         }),
                     },
@@ -635,9 +635,9 @@ impl OrderValidating for OrderValidator {
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
-                                amount: loan.amount.into_legacy(),
+                                token: loan.token,
+                                holder: loan.receiver,
+                                amount: loan.amount,
                             }
                         }),
                     })

@@ -3,39 +3,42 @@
 
 use {
     crate::ethrpc::Web3,
+    alloy::{
+        primitives::{Address, Bytes},
+        providers::Provider,
+    },
     anyhow::Result,
     cached::{Cached, SizedCache},
     std::sync::{Arc, Mutex},
     tracing::instrument,
-    web3::types::{Bytes, H160},
 };
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait CodeFetching: Send + Sync + 'static {
     /// Fetches the code for the specified address.
-    async fn code(&self, address: H160) -> Result<Bytes>;
+    async fn code(&self, address: Address) -> Result<Bytes>;
 
     /// Fetches the code size at the specified address.
-    async fn code_size(&self, address: H160) -> Result<usize>;
+    async fn code_size(&self, address: Address) -> Result<usize>;
 }
 
 #[async_trait::async_trait]
 impl CodeFetching for Web3 {
     #[instrument(skip_all)]
-    async fn code(&self, address: H160) -> Result<Bytes> {
-        Ok(self.eth().code(address, None).await?)
+    async fn code(&self, address: Address) -> Result<Bytes> {
+        Ok(self.alloy.get_code_at(address).await?)
     }
 
     #[instrument(skip_all)]
-    async fn code_size(&self, address: H160) -> Result<usize> {
+    async fn code_size(&self, address: Address) -> Result<usize> {
         Ok(self.code(address).await?.0.len())
     }
 }
 
 pub struct CachedCodeFetcher {
     inner: Arc<dyn CodeFetching>,
-    cache: Mutex<SizedCache<H160, Bytes>>,
+    cache: Mutex<SizedCache<Address, Bytes>>,
 }
 
 impl CachedCodeFetcher {
@@ -48,7 +51,7 @@ impl CachedCodeFetcher {
         }
     }
 
-    async fn cached_code<T, F>(&self, address: H160, handle: F) -> Result<T>
+    async fn cached_code<T, F>(&self, address: Address, handle: F) -> Result<T>
     where
         F: FnOnce(&Bytes) -> T,
     {
@@ -68,11 +71,11 @@ impl CachedCodeFetcher {
 
 #[async_trait::async_trait]
 impl CodeFetching for CachedCodeFetcher {
-    async fn code(&self, address: H160) -> Result<Bytes> {
+    async fn code(&self, address: Address) -> Result<Bytes> {
         self.cached_code(address, |code| code.clone()).await
     }
 
-    async fn code_size(&self, address: H160) -> Result<usize> {
+    async fn code_size(&self, address: Address) -> Result<usize> {
         self.cached_code(address, |code| code.0.len()).await
     }
 }
@@ -91,22 +94,28 @@ mod tests {
         inner
             .expect_code()
             .times(1)
-            .with(predicate::eq(H160([1; 20])))
-            .returning(|_| Ok(Bytes(vec![1; 1])))
+            .with(predicate::eq(Address::repeat_byte(1)))
+            .returning(|_| Ok(Bytes::from(vec![1; 1])))
             .in_sequence(&mut seq);
         inner
             .expect_code()
             .times(1)
-            .with(predicate::eq(H160([2; 20])))
-            .returning(|_| Ok(Bytes(vec![2; 2])))
+            .with(predicate::eq(Address::repeat_byte(2)))
+            .returning(|_| Ok(Bytes::from(vec![2; 2])))
             .in_sequence(&mut seq);
 
         let cached = CachedCodeFetcher::new(Arc::new(inner));
 
-        assert_eq!(cached.code(H160([1; 20])).await.unwrap().0, [1]);
-        assert_eq!(cached.code_size(H160([1; 20])).await.unwrap(), 1);
+        assert_eq!(
+            cached.code(Address::repeat_byte(1)).await.unwrap(),
+            Bytes::from_static(&[1])
+        );
+        assert_eq!(cached.code_size(Address::repeat_byte(1)).await.unwrap(), 1);
 
-        assert_eq!(cached.code_size(H160([2; 20])).await.unwrap(), 2);
-        assert_eq!(cached.code(H160([2; 20])).await.unwrap().0, [2; 2]);
+        assert_eq!(cached.code_size(Address::repeat_byte(2)).await.unwrap(), 2);
+        assert_eq!(
+            cached.code(Address::repeat_byte(2)).await.unwrap(),
+            Bytes::from_static(&[2; 2])
+        );
     }
 }

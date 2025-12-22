@@ -17,7 +17,10 @@ use {
         },
     },
     ::alloy::sol_types::SolCall,
-    alloy::primitives::{Address, address, aliases::I512},
+    alloy::{
+        primitives::{Address, Bytes, U256, address, aliases::I512, map::AddressMap},
+        rpc::types::{eth::state::StateOverride, state::AccountOverride},
+    },
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::alloy::{
@@ -25,7 +28,6 @@ use {
         WETH9,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    ethcontract::{H160, U256, state_overrides::StateOverride},
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
@@ -43,6 +45,7 @@ use {
             big_decimal_to_big_rational,
         },
         nonzero::NonZeroU256,
+        units::EthUnit,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -119,7 +122,7 @@ impl TradeVerifier {
         query: &PriceQuery,
         mut verification: Verification,
         trade: &TradeKind,
-        out_amount: &alloy::primitives::U256,
+        out_amount: &U256,
     ) -> Result<Estimate, Error> {
         let start = std::time::Instant::now();
 
@@ -331,8 +334,8 @@ impl TradeVerifier {
         verification: &mut Verification,
         query: &PriceQuery,
         trade: &TradeKind,
-    ) -> Result<alloy::rpc::types::eth::state::StateOverride> {
-        let mut overrides = HashMap::with_capacity(6);
+    ) -> Result<StateOverride> {
+        let mut overrides = AddressMap::default();
 
         // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
@@ -346,18 +349,16 @@ impl TradeVerifier {
         match self
             .balance_overrides
             .state_override(BalanceOverrideRequest {
-                token: query.sell_token.into_legacy(),
-                holder: Self::SPARDOSE.into_legacy(),
+                token: query.sell_token,
+                holder: Self::SPARDOSE,
                 amount: match query.kind {
-                    OrderKind::Sell => query.in_amount.get().into_legacy(),
-                    OrderKind::Buy => trade
-                        .out_amount(
-                            &query.buy_token,
-                            &query.sell_token,
-                            &query.in_amount.get(),
-                            &query.kind,
-                        )?
-                        .into_legacy(),
+                    OrderKind::Sell => query.in_amount.get(),
+                    OrderKind::Buy => trade.out_amount(
+                        &query.buy_token,
+                        &query.sell_token,
+                        &query.in_amount.get(),
+                        &query.kind,
+                    )?,
                 },
             })
             .await
@@ -367,7 +368,7 @@ impl TradeVerifier {
                 overrides.insert(token, solver_balance_override);
 
                 if verification.from.is_zero() {
-                    verification.from = H160::random().into_alloy();
+                    verification.from = Address::random();
                     tracing::debug!(
                         trader = ?verification.from,
                         "use random trader address with fake balances"
@@ -383,9 +384,9 @@ impl TradeVerifier {
 
         // Set up mocked trader.
         overrides.insert(
-            verification.from.into_legacy(),
-            StateOverride {
-                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone().into_legacy()),
+            verification.from,
+            AccountOverride {
+                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone()),
                 ..Default::default()
             },
         );
@@ -394,13 +395,13 @@ impl TradeVerifier {
         // to proxy into it during the simulation.
         let trader_impl = self
             .code_fetcher
-            .code(verification.from.into_legacy())
+            .code(verification.from)
             .await
             .context("failed to fetch trader code")?;
         if !trader_impl.0.is_empty() {
             overrides.insert(
-                Self::TRADER_IMPL.into_legacy(),
-                StateOverride {
+                Self::TRADER_IMPL,
+                AccountOverride {
                     code: Some(trader_impl),
                     ..Default::default()
                 },
@@ -412,18 +413,18 @@ impl TradeVerifier {
         // simulations (Solidity reverts on attempts to call addresses without
         // any code).
         overrides.insert(
-            Self::SPARDOSE.into_legacy(),
-            StateOverride {
-                code: Some(Spardose::Spardose::DEPLOYED_BYTECODE.clone().into_legacy()),
+            Self::SPARDOSE,
+            AccountOverride {
+                code: Some(Spardose::Spardose::DEPLOYED_BYTECODE.clone()),
                 ..Default::default()
             },
         );
 
         // Set up mocked solver.
-        let solver_override = StateOverride {
-            code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone().into()),
+        let solver_override = AccountOverride {
+            code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone()),
             // Allow solver simulations to proceed even if the real account holds no ETH.
-            balance: Some(U256::exp10(18)),
+            balance: Some(1u64.eth()),
             ..Default::default()
         };
 
@@ -440,21 +441,18 @@ impl TradeVerifier {
                 .await
                 .context("could not fetch authenticator")?;
             overrides.insert(
-                authenticator.into_legacy(),
-                StateOverride {
-                    code: Some(web3::types::Bytes::from(
+                authenticator,
+                AccountOverride {
+                    code: Some(Bytes::from(
                         AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.to_vec(),
                     )),
                     ..Default::default()
                 },
             );
         }
-        overrides.insert(
-            trade.tx_origin().unwrap_or(trade.solver()).into_legacy(),
-            solver_override,
-        );
+        overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 
-        Ok(overrides.into_alloy())
+        Ok(overrides)
     }
 }
 
@@ -562,8 +560,8 @@ fn encode_settlement(
     verification: &Verification,
     trade: &TradeKind,
     tokens: &[Address],
-    clearing_prices: &[alloy::primitives::U256],
-    out_amount: &alloy::primitives::U256,
+    clearing_prices: &[U256],
+    out_amount: &U256,
     native_token: Address,
     domain_separator: &DomainSeparator,
     settlement: Address,
@@ -580,7 +578,7 @@ fn encode_settlement(
         };
         trade_interactions.push((
             native_token,
-            alloy::primitives::U256::ZERO,
+            U256::ZERO,
             WETH9::WETH9::withdrawCall { wad: buy_amount }
                 .abi_encode()
                 .into(),
@@ -620,7 +618,7 @@ fn encode_settlement(
         .abi_encode();
         Interaction {
             target: solver_address,
-            value: alloy::primitives::U256::ZERO,
+            value: U256::ZERO,
             data: setup_call,
         }
     };
@@ -646,7 +644,7 @@ fn encode_settlement(
 fn encode_fake_trade(
     query: &PriceQuery,
     verification: &Verification,
-    out_amount: &alloy::primitives::U256,
+    out_amount: &U256,
     tokens: &[Address],
 ) -> Result<EncodedTrade, Error> {
     // Configure the most disadvantageous trade possible (while taking possible
@@ -654,9 +652,9 @@ fn encode_fake_trade(
     // the [`Trade`] the simulation will still work and we can compute the actual
     // [`Trade::out_amount`] afterwards.
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (query.in_amount.get(), alloy::primitives::U256::ZERO),
+        OrderKind::Sell => (query.in_amount.get(), U256::ZERO),
         OrderKind::Buy => (
-            (*out_amount).max(alloy::primitives::U256::from(u128::MAX)),
+            (*out_amount).max(U256::from(u128::MAX)),
             query.in_amount.get(),
         ),
     };
@@ -668,7 +666,7 @@ fn encode_fake_trade(
         receiver: Some(verification.receiver),
         valid_to: u32::MAX,
         app_data: Default::default(),
-        fee_amount: alloy::primitives::U256::ZERO,
+        fee_amount: U256::ZERO,
         kind: query.kind,
         partially_fillable: false,
         sell_token_balance: verification.sell_token_source,
@@ -711,7 +709,7 @@ fn encode_jit_orders(
                 buy_amount: jit_order.buy_amount,
                 valid_to: jit_order.valid_to,
                 app_data: jit_order.app_data,
-                fee_amount: alloy::primitives::U256::ZERO,
+                fee_amount: U256::ZERO,
                 kind: match &jit_order.side {
                     dto::Side::Buy => OrderKind::Buy,
                     dto::Side::Sell => OrderKind::Sell,
@@ -802,11 +800,7 @@ fn add_balance_queries(
     }
     .abi_encode();
 
-    let interaction = (
-        solver_address,
-        alloy::primitives::U256::ZERO,
-        query_balance_call.into(),
-    );
+    let interaction = (solver_address, U256::ZERO, query_balance_call.into());
 
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
@@ -819,7 +813,7 @@ fn add_balance_queries(
 #[derive(Debug)]
 struct SettleOutput {
     /// Gas used for the `settle()` call.
-    gas_used: alloy::primitives::U256,
+    gas_used: U256,
     /// `out_amount` perceived by the trader (sell token for buy orders or buy
     /// token for sell order)
     out_amount: alloy::primitives::aliases::I512,
@@ -944,7 +938,7 @@ enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::U256, maplit::hashmap, std::str::FromStr};
+    use {super::*, U256, maplit::hashmap, std::str::FromStr};
 
     #[test]
     fn discards_inaccurate_quotes() {
