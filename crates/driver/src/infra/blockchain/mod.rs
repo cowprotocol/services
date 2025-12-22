@@ -304,22 +304,15 @@ impl Ethereum {
         // default value we estimate the current gas price upfront. But because it's
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
-        self.inner
-            .gas
-            .estimate()
-            .await
-            .ok()
-            .map(|gas| gas.effective().0.0)
-            .and_then(|gas| {
-                u128::try_from(gas)
-                    .inspect_err(|err| {
-                        tracing::debug!(
-                            ?err,
-                            "failed to convert gas estimate to u128, returning None"
-                        );
-                    })
-                    .ok()
+        let gas_price = self.inner.gas.estimate().await.ok()?.gas.effective().0.0;
+        u128::try_from(gas_price)
+            .inspect_err(|err| {
+                tracing::debug!(
+                    ?err,
+                    "failed to convert gas estimate to u128, returning None"
+                );
             })
+            .ok()
     }
 
     pub fn web3(&self) -> &Web3 {
