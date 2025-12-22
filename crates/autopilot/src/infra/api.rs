@@ -11,14 +11,18 @@ use {
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
     serde::Deserialize,
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
-    std::{net::SocketAddr, sync::Arc, time::Duration},
+    std::{net::SocketAddr, ops::RangeInclusive, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
+
+/// Minimum allowed timeout for price estimation requests.
+/// Values below this are not useful as they don't give estimators enough time.
+const MIN_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 struct State {
     estimator: Arc<dyn NativePriceEstimating>,
-    timeout: Duration,
+    allowed_timeout: RangeInclusive<Duration>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,10 +36,13 @@ struct NativePriceQuery {
 pub async fn serve(
     addr: SocketAddr,
     estimator: Arc<dyn NativePriceEstimating>,
-    timeout: Duration,
+    max_timeout: Duration,
     shutdown: oneshot::Receiver<()>,
 ) -> Result<(), hyper::Error> {
-    let state = State { estimator, timeout };
+    let state = State {
+        estimator,
+        allowed_timeout: MIN_TIMEOUT..=max_timeout,
+    };
 
     let app = Router::new()
         .route("/native_price/:token", get(get_native_price))
@@ -61,27 +68,11 @@ async fn get_native_price(
     Query(query): Query<NativePriceQuery>,
     AxumState(state): AxumState<State>,
 ) -> Response {
-    let timeout = match query.timeout_ms {
-        Some(0) => {
-            return (StatusCode::BAD_REQUEST, "timeout_ms must be greater than 0").into_response();
-        }
-        Some(requested_ms) => {
-            let requested = Duration::from_millis(requested_ms);
-            if requested > state.timeout {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    format!(
-                        "timeout_ms({}ms) cannot exceed configured maximum of {}ms",
-                        requested.as_millis(),
-                        state.timeout.as_millis()
-                    ),
-                )
-                    .into_response();
-            }
-            requested
-        }
-        None => state.timeout,
-    };
+    let timeout = query
+        .timeout_ms
+        .map(Duration::from_millis)
+        .unwrap_or(*state.allowed_timeout.end())
+        .clamp(*state.allowed_timeout.start(), *state.allowed_timeout.end());
 
     match state.estimator.estimate_native_price(token, timeout).await {
         Ok(price) => {
