@@ -135,7 +135,7 @@ async fn handle_request(
         let backend = state.get_current_backend().await;
         let url = format!("{}{}", backend, path);
 
-        match try_backend(&client, &parts, &body_bytes, &url).await {
+        match try_backend(&client, &parts, body_bytes.to_vec(), &url).await {
             Ok(response) => return response.into_response(),
             Err(err) => {
                 tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
@@ -154,7 +154,7 @@ async fn handle_request(
 async fn try_backend(
     client: &reqwest::Client,
     parts: &axum::http::request::Parts,
-    body: impl AsRef<[u8]>,
+    body: Vec<u8>,
     url: &str,
 ) -> Result<(axum::http::StatusCode, Vec<u8>), reqwest::Error> {
     // Build a reqwest request with the same method
@@ -166,7 +166,7 @@ async fn try_backend(
     }
 
     // Attach the body
-    backend_req = backend_req.body(body.as_ref().to_vec());
+    backend_req = backend_req.body(body);
 
     let backend_resp = backend_req.send().await?;
     let status = axum::http::StatusCode::from_u16(backend_resp.status().as_u16()).unwrap();
