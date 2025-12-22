@@ -8,14 +8,12 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
     std::{
         sync::Arc,
         time::{Duration, Instant},
     },
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -404,7 +402,7 @@ async fn quote_timeout(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     // order creation requests always use the default quote time
@@ -422,7 +420,7 @@ async fn volume_fee(web3: Web3) {
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
-    let [token] = onchain
+    let [token, override_token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
@@ -446,12 +444,19 @@ async fn volume_fee(web3: Web3) {
 
     tracing::info!("Starting services with volume fee.");
     let services = Services::new(&onchain).await;
-    // Start API with 0.02% (2 bps) volume fee
+    // Start API with 0.02% (2 bps) default volume fee
+    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
+    // in bucket)
     let args = ExtraServiceArgs {
         api: vec![
             "--volume-fee-factor=0.0002".to_string(),
             // Set a past effective timestamp to ensure the fee is applied
             "--volume-fee-effective-timestamp=2000-01-01T10:00:00Z".to_string(),
+            format!(
+                "--volume-fee-bucket-overrides=0.0005:{};{}",
+                onchain.contracts().weth.address(),
+                override_token.address()
+            ),
         ],
         ..Default::default()
     };
@@ -492,4 +497,29 @@ async fn volume_fee(web3: Web3) {
     // Verify protocol fee fields are present
     assert!(buy_quote.protocol_fee_bps.is_some());
     assert_eq!(buy_quote.protocol_fee_bps.as_ref().unwrap(), "2");
+
+    // Test bucket override: override_token should get 5 bps instead of 2 bps
+    tracing::info!("Testing quote with bucket override (5 bps)");
+    let override_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *override_token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(1u64.eth()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    let override_quote = services.submit_quote(&override_request).await.unwrap();
+
+    // Verify override token gets 5 bps (from bucket override) instead of 2 bps
+    // (default)
+    assert!(override_quote.protocol_fee_bps.is_some());
+    assert_eq!(
+        override_quote.protocol_fee_bps.as_ref().unwrap(),
+        "5",
+        "Bucket override should apply 5 bps, not default 2 bps"
+    );
 }

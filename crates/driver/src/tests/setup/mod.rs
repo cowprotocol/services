@@ -37,15 +37,17 @@ use {
             },
         },
     },
-    alloy::primitives::{Address, U256, address},
+    alloy::{
+        primitives::{Address, U256, address, b256},
+        providers::Provider,
+        signers::local::PrivateKeySigner,
+    },
     bigdecimal::{BigDecimal, FromPrimitive},
-    ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::Web3,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::serialization::HexOrDecimalU256,
-    secp256k1::SecretKey,
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
@@ -348,7 +350,7 @@ pub struct Solver {
     /// How much ETH balance should the solver be funded with? 1 ETH by default.
     balance: eth::U256,
     /// The private key for this solver.
-    private_key: ethcontract::PrivateKey,
+    signer: PrivateKeySigner,
     /// The slippage for this solver.
     slippage: Slippage,
     /// The fraction of time used for solving
@@ -370,10 +372,9 @@ pub fn test_solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
         balance: eth::U256::from(10).pow(eth::U256::from(18)),
-        private_key: ethcontract::PrivateKey::from_slice(
-            const_hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
-                .unwrap(),
-        )
+        signer: PrivateKeySigner::from_bytes(&b256!(
+            "a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326"
+        ))
         .unwrap(),
         slippage: Slippage {
             relative: BigDecimal::from_f64(0.3).unwrap(),
@@ -390,7 +391,7 @@ pub fn test_solver() -> Solver {
 
 impl Solver {
     pub fn address(&self) -> eth::Address {
-        self.private_key.public_address().into_alloy()
+        self.signer.address()
     }
 
     pub fn name(self, name: &str) -> Self {
@@ -893,17 +894,14 @@ impl Setup {
             ..
         } = self;
 
-        // Hardcoded trader account. Don't use this account for anything else!!!
-        let trader_secret_key = SecretKey::from_slice(
-            &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
-                .unwrap(),
-        )
-        .unwrap();
-
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            main_trader_secret_key: trader_secret_key,
+            // This PK is publicly known - don't send any funds to its account onchain!!!
+            main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
+                "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
+            ))
+            .unwrap(),
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
             balances_address: self.balances_address,
@@ -961,7 +959,7 @@ impl Setup {
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
-                private_key: solver.private_key.clone(),
+                private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
@@ -1179,16 +1177,15 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .eth()
-                .balance(self.trader_address.into_legacy(), None)
+                .alloy
+                .get_balance(self.trader_address)
                 .await
-                .map(IntoAlloy::into_alloy)
                 .unwrap(),
         );
         balances
     }
 
-    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+    pub fn web3(&self) -> &Web3 {
         &self.blockchain.web3
     }
 

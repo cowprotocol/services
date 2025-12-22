@@ -7,9 +7,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -100,7 +98,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
 
@@ -127,7 +125,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
 

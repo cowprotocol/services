@@ -15,7 +15,7 @@ name = "autopilot"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true, features = ["rand"] }
+alloy = { workspace = true, features = ["rand", "provider-debug-api", "provider-trace-api"] }
 app-data = { workspace = true }
 axum = { workspace = true }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
@@ -30,7 +30,6 @@ cow-amm = { workspace = true }
 dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }

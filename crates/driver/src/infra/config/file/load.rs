@@ -9,11 +9,11 @@ use {
             mempool,
             notify,
             simulator,
-            solver::{self, BadTokenDetection, SolutionMerging},
+            solver::{self, Account, BadTokenDetection, SolutionMerging},
         },
     },
+    alloy::signers::{aws::AwsSigner, local::PrivateKeySigner},
     chain::Chain,
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
     std::path::Path,
@@ -52,22 +52,24 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     );
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
-            let account = match solver_config.account {
-                file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
-                    ethcontract::PrivateKey::from_raw(private_key.0).unwrap(),
-                    None,
-                ),
-                file::Account::Kms(key_id) => {
-                    let config = ethcontract::aws_config::load_from_env().await;
-                    let account =
-                        ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
-                            .await
-                            .unwrap_or_else(|_| panic!("Unable to load KMS account {key_id:?}"));
-                    ethcontract::Account::Kms(account, None)
+            let account: Account = match solver_config.account {
+                file::Account::PrivateKey(private_key) => {
+                    PrivateKeySigner::from_bytes(&private_key)
+                        .expect(
+                            "private key should
+                                            be valid",
+                        )
+                        .into()
                 }
-                file::Account::Address(address) => {
-                    ethcontract::Account::Local(address.into_legacy(), None)
+                file::Account::Kms(arn) => {
+                    let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
+                    let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
+                    AwsSigner::new(client, arn.0, config.chain_id)
+                        .await
+                        .expect("unable to load kms account {arn:?}")
+                        .into()
                 }
+                file::Account::Address(address) => Account::Address(address),
             };
             solver::Config {
                 endpoint: solver_config.endpoint,
@@ -342,7 +344,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 max_additional_tip: mempool.max_additional_tip,
                 additional_tip_percentage: mempool.additional_tip_percentage,
-                use_soft_cancellations: mempool.use_soft_cancellations,
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {

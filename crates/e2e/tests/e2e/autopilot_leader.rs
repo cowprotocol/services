@@ -12,9 +12,7 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
-    secp256k1::SecretKey,
     std::time::Duration,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -129,7 +127,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .sign(
             model::signature::EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            &trader.signer,
         )
     };
 

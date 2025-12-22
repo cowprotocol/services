@@ -15,6 +15,7 @@ use {
             solver::{ManageNativeToken, Solver},
         },
     },
+    alloy::network::TxSigner,
     chrono::Utc,
     futures::future::try_join_all,
     itertools::Itertools,

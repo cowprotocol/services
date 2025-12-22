@@ -1,10 +1,14 @@
 use {
     super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
     crate::{ethrpc::Web3, trace_many},
-    alloy::{primitives::Address, sol_types::SolCall},
+    alloy::{
+        primitives::{Address, keccak256},
+        signers::local::PrivateKeySigner,
+        sol_types::SolCall,
+    },
     anyhow::{Context, Result, bail, ensure},
     contracts::alloy::ERC20,
-    ethcontract::{PrivateKey, jsonrpc::ErrorCode},
+    ethcontract::jsonrpc::ErrorCode,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
@@ -12,7 +16,6 @@ use {
     tracing::instrument,
     web3::{
         error::TransportError,
-        signing::keccak256,
         types::{BlockTrace, Bytes, CallRequest, Res},
     },
 };
@@ -154,10 +157,10 @@ impl TraceCallDetectorRaw {
     // For the out transfer we use an arbitrary address without balance to detect
     // tokens that usually apply fees but not if the the sender or receiver is
     // specifically exempt like their own uniswap pools.
-    fn arbitrary_recipient() -> H160 {
-        PrivateKey::from_raw(keccak256(b"moo"))
+    fn arbitrary_recipient() -> Address {
+        PrivateKeySigner::from_bytes(&keccak256(b"moo"))
             .unwrap()
-            .public_address()
+            .address()
     }
 
     fn create_trace_request(
@@ -167,7 +170,7 @@ impl TraceCallDetectorRaw {
         take_from: Address,
     ) -> Vec<CallRequest> {
         let mut requests = Vec::new();
-        let recipient = Self::arbitrary_recipient().into_alloy();
+        let recipient = Self::arbitrary_recipient();
         let settlement_contract = self.settlement_contract;
 
         // 0
@@ -403,7 +406,7 @@ mod tests {
             },
             sources::{BaselineSource, uniswap_v2},
         },
-        alloy::primitives::address,
+        alloy::{primitives::address, providers::Provider},
         chain::Chain,
         contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory},
         ethrpc::Web3,
@@ -543,11 +546,6 @@ mod tests {
         assert_eq!(result, expected);
     }
 
-    #[test]
-    fn arbitrary_recipient_() {
-        println!("{:?}", TraceCallDetectorRaw::arbitrary_recipient());
-    }
-
     // cargo test -p shared mainnet_tokens -- --nocapture --ignored
     #[tokio::test]
     #[ignore]
@@ -555,7 +553,7 @@ mod tests {
         // observe::tracing::initialize("orderbook::bad_token=debug,
         // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let web3 = Web3::new_from_env();
-        let version = web3.eth().chain_id().await.unwrap().to_string();
+        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
 
         let base_tokens = &[
             testlib::tokens::WETH,

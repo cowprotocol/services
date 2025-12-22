@@ -1,7 +1,10 @@
 use {
     alloy::{
         primitives::{Address, Bytes, FixedBytes, U256, address},
-        providers::ext::{AnvilApi, ImpersonateConfig},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
     },
     contracts::alloy::{
         ERC20,
@@ -19,15 +22,13 @@ use {
         run_test,
         wait_for_condition,
     },
-    ethcontract::{BlockId, BlockNumber},
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoAlloy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     solvers_dto::solution::{
         BuyTokenBalance,
@@ -38,7 +39,6 @@ use {
         Solution,
     },
     std::collections::{HashMap, HashSet},
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -142,7 +142,7 @@ async fn cow_amm_jit(web3: Web3) {
             Bytes::copy_from_slice(&oracle_data),
             FixedBytes(APP_DATA),
         )
-        .from(cow_amm_owner.account().address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -200,12 +200,12 @@ async fn cow_amm_jit(web3: Web3) {
     // a relatively small valid_to and we initialize the chain with a date in
     // the past so the computer's current time is way ahead of the blockchain.
     let block = web3
-        .eth()
-        .block(BlockId::Number(BlockNumber::Latest))
+        .alloy
+        .get_block(alloy::eips::BlockId::latest())
         .await
         .unwrap()
         .unwrap();
-    let valid_to = block.timestamp.as_u32() + 300;
+    let valid_to = u32::try_from(block.header.timestamp).unwrap() + 300;
 
     // CoW AMM order with a limit price extremely close to the AMM's current price.
     // current price => 1 WETH == 2000 DAI
@@ -294,7 +294,7 @@ async fn cow_amm_jit(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(bob.private_key()).unwrap()),
+        &bob.signer,
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
@@ -581,7 +581,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     // Warm up co-located driver by quoting the order (otherwise placing an order
@@ -773,7 +773,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             Bytes::copy_from_slice(&oracle_data),
             FixedBytes(APP_DATA),
         )
-        .from(cow_amm_owner.account().address().into_alloy())
+        .from(cow_amm_owner.address())
         .send_and_watch()
         .await
         .unwrap();
@@ -828,12 +828,12 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Get the current block timestamp
     let block = web3
-        .eth()
-        .block(BlockId::Number(BlockNumber::Latest))
+        .alloy
+        .get_block(alloy::eips::BlockId::latest())
         .await
         .unwrap()
         .unwrap();
-    let valid_to = block.timestamp.as_u32() + 300;
+    let valid_to = u32::try_from(block.header.timestamp).unwrap() + 300;
     let executed_amount = 230u64.eth();
 
     // CoW AMM order remains the same (selling WETH for DAI)
@@ -1001,7 +1001,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(bob.private_key()).unwrap()),
+        &bob.signer,
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 

@@ -10,7 +10,10 @@ use {
             wait_for_condition,
         },
     },
-    alloy::primitives::{Address, B256},
+    alloy::{
+        primitives::{Address, B256},
+        providers::ext::AnvilApi,
+    },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
@@ -30,7 +33,6 @@ use {
         time::Duration,
     },
     tokio::task::JoinHandle,
-    web3::Transport,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -721,11 +723,7 @@ impl<'a> Services<'a> {
 
     async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3
-            .transport()
-            .execute("evm_mine", vec![])
-            .await
-            .unwrap();
+        self.web3.alloy.evm_mine(None).await.unwrap();
     }
 }
 

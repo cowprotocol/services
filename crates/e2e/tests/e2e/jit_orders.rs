@@ -7,11 +7,9 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     solvers_dto::solution::{Asset, Solution},
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -120,7 +118,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
@@ -149,7 +147,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(solver.private_key()).unwrap()),
+        &solver.signer,
     );
 
     mock_solver.configure_solution(Some(Solution {

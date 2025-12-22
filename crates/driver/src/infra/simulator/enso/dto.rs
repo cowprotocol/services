@@ -2,7 +2,7 @@
 
 use {
     crate::{domain::eth, util::serialize},
-    ethrpc::alloy::conversions::IntoAlloy,
+    alloy::rpc::types::AccessList,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -24,36 +24,6 @@ pub struct Request {
     pub block_timestamp: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_list: Option<AccessList>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(transparent)]
-pub struct AccessList(Vec<AccessListItem>);
-
-impl From<eth::AccessList> for AccessList {
-    fn from(value: eth::AccessList) -> Self {
-        Self(
-            web3::types::AccessList::from(value)
-                .into_iter()
-                .map(|item| AccessListItem {
-                    address: item.address.into_alloy(),
-                    storage_keys: item
-                        .storage_keys
-                        .into_iter()
-                        .map(IntoAlloy::into_alloy)
-                        .collect(),
-                })
-                .collect(),
-        )
-    }
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccessListItem {
-    pub address: eth::Address,
-    pub storage_keys: Vec<eth::B256>,
 }
 
 #[serde_as]

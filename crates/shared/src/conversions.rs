@@ -4,14 +4,6 @@ use {
     primitive_types::U256,
 };
 
-pub fn into_gas_price(gas_price: &gas_estimation::GasPrice1559) -> ethcontract::GasPrice {
-    (
-        gas_price.max_fee_per_gas,
-        gas_price.max_priority_fee_per_gas,
-    )
-        .into()
-}
-
 // Convenience:
 
 pub trait RatioExt<T> {

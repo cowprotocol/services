@@ -1,18 +1,16 @@
 use {
     ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
-    e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::CallBuilderExt,
+    e2e::setup::*,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::ops::DerefMut,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -59,8 +57,8 @@ async fn place_order_with_quote(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
+    web3.alloy
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 
@@ -103,7 +101,7 @@ async fn place_order_with_quote(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let order_uid = services.create_order(&order).await.unwrap();
 
@@ -142,8 +140,8 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
+    web3.alloy
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 

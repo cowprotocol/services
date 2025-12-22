@@ -17,10 +17,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{collections::HashMap, ops::DerefMut},
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -177,7 +175,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
@@ -306,7 +304,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
 
     let balance_before_a = token_b.balanceOf(trader_a.address()).call().await.unwrap();
@@ -330,7 +328,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let order_id = services.create_order(&order_b).await.unwrap();
 
@@ -442,7 +440,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
@@ -458,7 +456,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let uid_b = services.create_order(&order_b).await.unwrap();
 
@@ -664,7 +662,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
 
@@ -682,7 +680,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let (status, body) = services.create_order(&order).await.unwrap_err();
@@ -774,7 +772,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     assert!(services.create_order(&order).await.is_ok());
 
@@ -791,7 +789,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -810,7 +808,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     assert!(services.create_order(&order).await.is_ok());
 
@@ -827,7 +825,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let (status, body) = services.create_order(&order).await.unwrap_err();
@@ -896,7 +894,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     // Warm up co-located driver by quoting the order (otherwise placing an order
@@ -994,7 +992,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let sell_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let buy_token_balance_before = token_wxdai
@@ -1029,7 +1027,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     let [solver] = onchain.make_solvers(10_000u64.eth()).await;
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
-    let [token_a, unsupported] = onchain.deploy_tokens(solver.account()).await;
+    let [token_a, unsupported] = onchain.deploy_tokens(solver.address()).await;
 
     // Fund trader accounts
     token_a.mint(trader_a.address(), 10u64.eth()).await;
@@ -1093,7 +1091,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -1106,7 +1104,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .create_order(&order.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+            &trader_a.signer,
         ))
         .await
         .unwrap_err();
