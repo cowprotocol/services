@@ -43,7 +43,7 @@ use {
         signers::local::PrivateKeySigner,
     },
     bigdecimal::{BigDecimal, FromPrimitive},
-    ethcontract::dyns::DynTransport,
+    ethrpc::Web3,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -1185,7 +1185,7 @@ impl Test {
         balances
     }
 
-    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+    pub fn web3(&self) -> &Web3 {
         &self.blockchain.web3
     }
 
