@@ -6,7 +6,6 @@ use {
             liquidity::{self, balancer},
         },
     },
-    ethrpc::alloy::conversions::IntoAlloy,
     shared::sources::balancer_v2::pool_fetching::WeightedPoolVersion,
     solver::liquidity::{WeightedProductOrder, balancer_v2},
 };
@@ -29,19 +28,19 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
                         Ok(balancer::v2::weighted::Reserve {
                             asset: eth::Asset {
                                 token: token.into(),
-                                amount: reserve.common.balance.into_alloy().into(),
+                                amount: reserve.common.balance.into(),
                             },
                             weight: balancer::v2::weighted::Weight::from_raw(
-                                reserve.weight.as_uint256().into_alloy(),
+                                reserve.weight.as_uint256(),
                             ),
                             scale: balancer::v2::ScalingFactor::from_raw(
-                                reserve.common.scaling_factor.as_uint256().into_alloy(),
+                                reserve.common.scaling_factor.as_uint256(),
                             )?,
                         })
                     })
                     .collect::<Result<_>>()?,
             )?,
-            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256().into_alloy()),
+            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256()),
             version: match pool.version {
                 WeightedPoolVersion::V0 => balancer::v2::weighted::Version::V0,
                 WeightedPoolVersion::V3Plus => balancer::v2::weighted::Version::V3Plus,

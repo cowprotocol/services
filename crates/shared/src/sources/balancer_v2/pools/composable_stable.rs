@@ -9,7 +9,7 @@ use {
     anyhow::Result,
     contracts::alloy::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
     ethcontract::BlockId,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt as _, future::BoxFuture},
 };
 
@@ -81,8 +81,8 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
             )?;
             let amplification_parameter = {
                 AmplificationParameter::try_new(
-                    amplification_parameter.value.into_legacy(),
-                    amplification_parameter.precision.into_legacy(),
+                    amplification_parameter.value,
+                    amplification_parameter.precision,
                 )?
             };
 
@@ -95,7 +95,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
                         (
                             address,
                             common::TokenState {
-                                scaling_factor: Bfp::from_wei(scaling_factor.into_legacy()),
+                                scaling_factor: Bfp::from_wei(scaling_factor),
                                 ..token
                             },
                         )

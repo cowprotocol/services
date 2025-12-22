@@ -233,6 +233,7 @@ mod tests {
             pools::{MockFactoryIndexing, common::MockPoolInfoFetching, weighted},
             swap::fixed_point::Bfp,
         },
+        alloy::primitives::U256,
         maplit::{hashmap, hashset},
         mockall::predicate::eq,
     };
@@ -256,7 +257,9 @@ mod tests {
         let tokens: Vec<Address> = (start..=end + 1)
             .map(|i| Address::with_last_byte(i as u8))
             .collect();
-        let weights: Vec<Bfp> = (start..=end + 1).map(|i| Bfp::from_wei(i.into())).collect();
+        let weights: Vec<Bfp> = (start..=end + 1)
+            .map(|i| Bfp::from_wei(U256::from(i)))
+            .collect();
         let creation_events: Vec<(PoolCreated, u64)> = (start..=end)
             .map(|i| {
                 (
@@ -284,8 +287,8 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
                     ],
                 },
                 weighted::PoolInfo {
@@ -301,9 +304,9 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(250_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(250_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(250_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(250_000_000_000_000_000_u128)),
                     ],
                 },
                 weighted::PoolInfo {
@@ -315,8 +318,8 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
                     ],
                 },
             ],
@@ -444,7 +447,7 @@ mod tests {
                 scaling_factors: vec![Bfp::exp10(0)],
                 block_created: 3,
             },
-            weights: vec![Bfp::from_wei(1337.into())],
+            weights: vec![Bfp::from_wei(U256::from(1337u64))],
         };
         let new_creation = PoolCreated {
             pool: new_pool.common.address,
