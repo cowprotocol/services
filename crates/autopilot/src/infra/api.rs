@@ -11,7 +11,12 @@ use {
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
     serde::Deserialize,
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
-    std::{net::SocketAddr, ops::RangeInclusive, sync::Arc, time::Duration},
+    std::{
+        net::SocketAddr,
+        ops::RangeInclusive,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tokio::sync::oneshot,
 };
 
@@ -74,16 +79,26 @@ async fn get_native_price(
         .unwrap_or(*state.allowed_timeout.end())
         .clamp(*state.allowed_timeout.start(), *state.allowed_timeout.end());
 
+    let start = Instant::now();
     match state.estimator.estimate_native_price(token, timeout).await {
         Ok(price) => {
-            tracing::debug!(?token, ?timeout, ?price, "estimated native token price");
+            let elapsed = start.elapsed();
+            tracing::debug!(
+                ?token,
+                ?timeout,
+                ?elapsed,
+                ?price,
+                "estimated native token price"
+            );
             Json(NativeTokenPrice { price }).into_response()
         }
         Err(err) => {
+            let elapsed = start.elapsed();
             tracing::warn!(
                 ?err,
                 ?token,
                 ?timeout,
+                ?elapsed,
                 "failed to estimate native token price"
             );
             error_to_response(err)
