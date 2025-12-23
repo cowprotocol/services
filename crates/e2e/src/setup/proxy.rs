@@ -151,7 +151,6 @@ async fn try_backend(
     body: Vec<u8>,
     backend: &Url,
 ) -> Result<(axum::http::StatusCode, Vec<u8>), reqwest::Error> {
-    // Extract path and query from the original request
     let path = parts
         .uri
         .path_and_query()
@@ -160,10 +159,8 @@ async fn try_backend(
 
     // Build the full URL by combining backend and path
     let url = format!("{}{}", backend, path);
-
     // Build a reqwest request with the same method
     let mut backend_req = client.request(parts.method.clone(), &url);
-
     // Forward all headers from the original request
     for (name, value) in &parts.headers {
         backend_req = backend_req.header(name, value);
