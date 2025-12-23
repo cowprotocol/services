@@ -116,6 +116,33 @@ impl Maintenance {
         });
     }
 
+    /// Spawns the Transfer event listener that cancels orders when tokens are
+    /// transferred.
+    pub fn spawn_transfer_listener(
+        transfer_listener: crate::database::transfer_listener::TransferListener,
+        current_block: CurrentBlockWatcher,
+    ) {
+        tracing::info!(?current_block, "spawning transfer listener task");
+        tokio::task::spawn(async move {
+            let mut stream = into_stream(current_block);
+            loop {
+                if let Some(block) = stream.next().await {
+                    if let Err(err) = Self::timed_future(
+                        "transfer_listener",
+                        transfer_listener.process_block(block.number),
+                    )
+                    .await
+                    {
+                        tracing::warn!(?err, "transfer listener failed an iteration");
+                    }
+                } else {
+                    tracing::error!("block stream terminated unexpectedly");
+                    break;
+                }
+            }
+        });
+    }
+
     pub fn with_cow_amms(&mut self, registry: &cow_amm::Registry) {
         self.cow_amm_indexer = registry.maintenance_tasks().clone();
     }
