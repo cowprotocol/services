@@ -6,6 +6,7 @@ WORKDIR /usr/src/app
 ARG REACT_APP_NETWORK_URL_1=https://rpc.mevblocker.io
 ARG REACT_APP_NETWORK_URL_5=https://ethereum-goerli.publicnode.com
 ARG REACT_APP_NETWORK_URL_100=https://gnosis.publicnode.com
+ARG REACT_APP_EXPLORER_URL_DEV=http://localhost:8001
 
 # Orderbook URL args
 ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://api.cow.fi/goerli","5":"https://api.cow.fi/xdai"}'
@@ -34,6 +35,7 @@ ENV REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1
 ENV REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5
 ENV REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100
 ENV REACT_APP_ORDER_BOOK_URLS=$REACT_APP_ORDER_BOOK_URLS
+ENV REACT_APP_EXPLORER_URL_DEV=$REACT_APP_EXPLORER_URL_DEV
 
 # Update environment variables based on "chain" and "ETH_RPC_URL" and build the frontend
 RUN if [ -n "$ETH_RPC_URL" ]; then \
@@ -54,7 +56,8 @@ RUN if [ -n "$ETH_RPC_URL" ]; then \
         NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true yarn build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
                    --env REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5 \
                    --env REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100 \
-                   --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"; \
+                   --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS" \
+                   --env REACT_APP_EXPLORER_URL_DEV="$REACT_APP_EXPLORER_URL_DEV"; \
     fi
 
 # Stage 2: Copy the frontend to the nginx container
