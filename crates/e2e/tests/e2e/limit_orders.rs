@@ -422,6 +422,8 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
+                .to_string(),
         ])
         .await;
 
@@ -594,6 +596,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let solver_address = solver.address();
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
@@ -627,6 +630,19 @@ async fn too_many_limit_orders_test(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    const_hex::encode(solver_address)
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
@@ -676,6 +692,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let solver_address = solver.address();
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
@@ -709,6 +726,19 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    const_hex::encode(solver_address)
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),

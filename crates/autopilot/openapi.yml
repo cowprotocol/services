@@ -1,0 +1,94 @@
+openapi: 3.0.3
+info:
+  title: Autopilot Native Price API
+  description: |
+    Internal API for retrieving native token prices from the autopilot service.
+    This API is intended to be used by orderbook instances to query the shared
+    native price cache maintained by autopilot.
+  version: 0.0.1
+paths:
+  /native_price/{token}:
+    get:
+      operationId: getNativePrice
+      summary: Get the native price for a token
+      description: |
+        Returns the price of the specified token denominated in the native token
+        (e.g., ETH on Ethereum mainnet, xDAI on Gnosis Chain).
+      parameters:
+        - in: path
+          name: token
+          description: The address of the token to get the price for.
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - in: query
+          name: timeout_ms
+          description: |
+            Optional timeout in milliseconds for the price estimation request.
+            If not provided, uses the default timeout configured for autopilot.
+            Values below 250ms are automatically clamped to the minimum (250ms).
+            Values exceeding the configured maximum are clamped to the maximum.
+          schema:
+            type: integer
+            format: int64
+            minimum: 250
+            example: 5000
+          required: false
+      responses:
+        "200":
+          description: Native price retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NativeTokenPrice"
+        "400":
+          description: |
+            Bad request. Possible causes:
+            - Unsupported token
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Unsupported token"
+        "404":
+          description: No liquidity available for this token.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "No liquidity"
+        "429":
+          description: Rate limited by upstream price estimator.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Rate limited"
+        "500":
+          description: Internal server error.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Internal error"
+components:
+  schemas:
+    Address:
+      description: |
+        An Ethereum address encoded as a hex with `0x` prefix.
+      type: string
+      example: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    NativeTokenPrice:
+      description: |
+        The price of a token denominated in the native token (e.g., ETH).
+      type: object
+      properties:
+        price:
+          type: number
+          format: double
+          description: |
+            The price of the token in terms of the native token. For example, if
+            1 USDC = 0.0005 ETH, the price would be 0.0005.
+          example: 0.0005
+      required:
+        - price

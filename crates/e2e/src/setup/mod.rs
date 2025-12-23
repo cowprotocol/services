@@ -3,6 +3,7 @@ mod deploy;
 #[macro_use]
 pub mod onchain_components;
 pub mod fee;
+pub mod proxy;
 mod services;
 mod solver;
 

@@ -59,6 +59,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
+    /// Address to bind the HTTP API server
+    #[clap(long, env, default_value = "0.0.0.0:12088")]
+    pub api_address: SocketAddr,
+
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
@@ -370,6 +374,7 @@ impl std::fmt::Display for Arguments {
             ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
+            api_address,
             skip_event_sync,
             allowed_tokens,
             unsupported_tokens,
@@ -417,6 +422,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
+        writeln!(f, "api_address: {api_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;

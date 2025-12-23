@@ -533,6 +533,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
+
+    let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
+    let api_task = tokio::spawn(infra::api::serve(
+        args.api_address,
+        native_price_estimator.clone(),
+        args.price_estimation.quote_timeout,
+        api_shutdown_receiver,
+    ));
+
     observe::metrics::serve_metrics(
         liveness.clone(),
         args.metrics_address,
@@ -699,6 +708,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         competition_updates_sender,
     );
     run.run_forever(shutdown_controller).await;
+
+    api_shutdown_sender.send(()).ok();
+    api_task.await.ok();
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
