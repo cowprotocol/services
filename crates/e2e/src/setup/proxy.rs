@@ -111,11 +111,6 @@ async fn handle_request(
     req: Request<Body>,
 ) -> impl IntoResponse {
     let (parts, body) = req.into_parts();
-    let path = parts
-        .uri
-        .path_and_query()
-        .map(|pq: &axum::http::uri::PathAndQuery| pq.as_str())
-        .unwrap_or("");
 
     // Convert body to bytes once for reuse across retries
     let body_bytes = match warp::hyper::body::to_bytes(body).await {
@@ -133,9 +128,8 @@ async fn handle_request(
 
     for attempt in 0..backend_count {
         let backend = state.get_current_backend().await;
-        let url = format!("{}{}", backend, path);
 
-        match try_backend(&client, &parts, body_bytes.to_vec(), &url).await {
+        match try_backend(&client, &parts, body_bytes.to_vec(), &backend).await {
             Ok(response) => return response.into_response(),
             Err(err) => {
                 tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
@@ -155,10 +149,20 @@ async fn try_backend(
     client: &reqwest::Client,
     parts: &axum::http::request::Parts,
     body: Vec<u8>,
-    url: &str,
+    backend: &Url,
 ) -> Result<(axum::http::StatusCode, Vec<u8>), reqwest::Error> {
+    // Extract path and query from the original request
+    let path = parts
+        .uri
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("");
+
+    // Build the full URL by combining backend and path
+    let url = format!("{}{}", backend, path);
+
     // Build a reqwest request with the same method
-    let mut backend_req = client.request(parts.method.clone(), url);
+    let mut backend_req = client.request(parts.method.clone(), &url);
 
     // Forward all headers from the original request
     for (name, value) in &parts.headers {
