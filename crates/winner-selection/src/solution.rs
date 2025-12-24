@@ -35,6 +35,13 @@ pub struct Solution {
     /// These are the prices at which all orders trading these tokens are
     /// settled.
     pub prices: HashMap<TokenAddress, Price>,
+
+    /// Total score for this solution.
+    ///
+    /// This is computed during winner selection and is not part of the
+    /// minimal data sent to the Pod Service.
+    #[serde(skip)]
+    pub score: Option<crate::primitives::Score>,
 }
 
 /// Minimal order data needed for winner selection.
