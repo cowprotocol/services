@@ -8113,6 +8113,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
+name = "winner-selection"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "derive_more 1.0.0",
+ "hex",
+ "itertools 0.14.0",
+ "num",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.61",
+ "tracing",
+]
+
+[[package]]
 name = "winnow"
 version = "0.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
