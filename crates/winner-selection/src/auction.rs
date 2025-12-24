@@ -5,7 +5,7 @@
 //! and is the same for all solutions.
 
 use {
-    crate::primitives::{OrderUid, Price, TokenAddress},
+    crate::primitives::{FeePolicy, OrderUid, Price, TokenAddress},
     alloy::primitives::Address,
     std::collections::{HashMap, HashSet},
 };
@@ -15,10 +15,7 @@ use {
 /// This contains auction-level data that's needed to run the winner selection
 /// algorithm but isn't part of individual solutions. Both autopilot and driver
 /// build this from their respective auction representations.
-///
-/// Generic over `FeePolicy` type to allow both autopilot and driver to use
-/// their own fee policy types without requiring conversions.
-pub struct AuctionContext<FeePolicy = ()> {
+pub struct AuctionContext {
     /// Fee policies for each order in the auction.
     ///
     /// Maps order UID to the list of fee policies that apply to that order.
@@ -39,7 +36,7 @@ pub struct AuctionContext<FeePolicy = ()> {
     pub native_prices: HashMap<TokenAddress, Price>,
 }
 
-impl<FeePolicy> AuctionContext<FeePolicy> {
+impl AuctionContext {
     /// Check if an order contributes to the solution's score.
     ///
     /// An order contributes to score if:
@@ -53,8 +50,8 @@ impl<FeePolicy> AuctionContext<FeePolicy> {
     }
 }
 
-/// Default implementation for contexts without fee policies.
-impl Default for AuctionContext<()> {
+/// Default implementation for empty contexts.
+impl Default for AuctionContext {
     fn default() -> Self {
         Self {
             fee_policies: HashMap::new(),

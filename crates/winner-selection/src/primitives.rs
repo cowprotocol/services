@@ -260,3 +260,27 @@ pub enum Side {
     Buy,
     Sell,
 }
+
+/// Protocol fee policy.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum FeePolicy {
+    /// Fee as a percentage of surplus over limit price.
+    Surplus { factor: f64, max_volume_factor: f64 },
+    /// Fee as a percentage of price improvement over quote.
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    /// Fee as a percentage of order volume.
+    Volume { factor: f64 },
+}
+
+/// Quote data for price improvement fee calculation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Quote {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee: U256,
+    pub solver: Address,
+}

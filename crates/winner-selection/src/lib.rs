@@ -9,6 +9,7 @@ pub mod arbitrator;
 pub mod auction;
 pub mod primitives;
 pub mod solution;
+pub mod util;
 
 // Re-export key types for convenience
 pub use {
