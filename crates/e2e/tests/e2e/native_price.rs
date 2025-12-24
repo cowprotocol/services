@@ -1,8 +1,12 @@
 use {
-    e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, wait_for_condition},
+    autopilot::shutdown_controller::ShutdownController,
+    e2e::setup::{OnchainComponents, Services, TIMEOUT, colocation, run_test, wait_for_condition},
     number::units::EthUnit,
     shared::ethrpc::Web3,
-    std::sync::{Arc, Mutex},
+    std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    },
 };
 
 #[tokio::test]
@@ -38,7 +42,49 @@ async fn native_price_forwarding(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+
+    // Start services manually (instead of start_protocol) to get shutdown control
+    // over autopilot, allowing us to verify the forwarding dependency.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    let (shutdown_signal, shutdown_controller) = ShutdownController::new_manual_shutdown();
+    let autopilot_handle = services
+        .start_autopilot_with_shutdown_controller(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
+                    const_hex::encode(solver.address())
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+            ],
+            shutdown_controller,
+        )
+        .await;
+
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        ])
+        .await;
 
     // Test 1: Token with liquidity returns a valid price via forwarding chain
     tracing::info!("Testing native price for token with liquidity.");
@@ -90,4 +136,28 @@ async fn native_price_forwarding(web3: Web3) {
         weth_price
     );
     tracing::info!(weth_price, "Got native price for WETH");
+
+    // Test 3: Stop autopilot and verify price estimation fails (proves forwarding dependency)
+    tracing::info!("Stopping autopilot to verify forwarding dependency.");
+    shutdown_signal.shutdown();
+    // Autopilot checks shutdown signal during its run loop, which is triggered by new blocks
+    onchain.mint_block().await;
+    tokio::time::timeout(Duration::from_secs(15), autopilot_handle)
+        .await
+        .expect("autopilot should shut down within timeout")
+        .expect("autopilot task should complete without panic");
+
+    // Wait for native price cache to expire (configured as 2s in services.rs)
+    tracing::info!("Waiting for native price cache to expire.");
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    tracing::info!("Verifying native price fails without autopilot.");
+    let result = services.get_native_price(token.address()).await;
+    assert!(
+        result.is_err(),
+        "Expected price request to fail after autopilot shutdown, proving the forwarding \
+         dependency. Got: {:?}",
+        result
+    );
+    tracing::info!("Confirmed: orderbook forwards native price requests to autopilot");
 }
