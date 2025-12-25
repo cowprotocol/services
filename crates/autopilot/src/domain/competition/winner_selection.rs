@@ -27,24 +27,19 @@
 use {
     crate::domain::{
         self,
-        OrderUid,
-        auction::{
-            Prices,
-            order::{self, TargetAmount},
-        },
-        competition::{Participant, Ranked, Score, Solution, Unranked},
+        auction::order,
+        competition::{Participant, Ranked, Score, Solution, TradedOrder, Unranked},
         eth::{self, WrappedNativeToken},
         fee,
-        settlement::{
-            math,
-            transaction::{self, ClearingPrices},
-        },
     },
-    anyhow::{Context, Result},
-    itertools::{Either, Itertools},
-    num::Saturating,
-    std::collections::{HashMap, HashSet},
+    std::collections::HashMap,
+    winner_selection as ws,
 };
+
+pub struct Arbitrator {
+    pub max_winners: usize,
+    pub weth: WrappedNativeToken,
+}
 
 /// Implements auction arbitration in 3 phases:
 /// 1. filter unfair solutions
@@ -60,357 +55,242 @@ impl Arbitrator {
         participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
     ) -> Ranking {
-        let partitioned = self.partition_unfair_solutions(participants, auction);
-        let filtered_out = partitioned
-            .discarded
-            .into_iter()
-            .map(|participant| participant.rank(Ranked::FilteredOut))
-            .collect();
+        let context = to_ws_context(auction);
+        let mut participant_by_key = HashMap::with_capacity(participants.len());
+        let mut solutions = Vec::with_capacity(participants.len());
 
-        let mut ranked = self.mark_winners(partitioned.kept);
-        ranked.sort_by_key(|participant| {
-            (
-                // winners before non-winners
-                std::cmp::Reverse(participant.is_winner()),
-                // high score before low score
-                std::cmp::Reverse(participant.solution().score()),
-            )
-        });
+        for participant in participants {
+            let key = SolutionKey::from(participant.solution());
+            let solution = to_ws_solution(participant.solution(), None);
+            participant_by_key.insert(key, participant);
+            solutions.push(solution);
+        }
+
+        let ws_ranking = self.ws_arbitrator().arbitrate(solutions, &context);
+
+        let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
+        for ws_solution in ws_ranking.filtered_out {
+            let key = SolutionKey::from(&ws_solution);
+            let mut participant = participant_by_key
+                .remove(&key)
+                .expect("every ranked solution has a matching participant");
+            let score = ws_solution
+                .score
+                .expect("winner selection should compute scores");
+            participant.set_score(ws_score_to_domain(score));
+            filtered_out.push(participant.rank(Ranked::FilteredOut));
+        }
+
+        let mut ranked = Vec::with_capacity(ws_ranking.ranked.len());
+        for ranked_solution in ws_ranking.ranked {
+            let key = SolutionKey::from(&ranked_solution.solution);
+            let mut participant = participant_by_key
+                .remove(&key)
+                .expect("every ranked solution has a matching participant");
+            let score = ranked_solution
+                .solution
+                .score
+                .expect("winner selection should compute scores");
+            participant.set_score(ws_score_to_domain(score));
+            let rank = if ranked_solution.is_winner {
+                Ranked::Winner
+            } else {
+                Ranked::NonWinner
+            };
+            ranked.push(participant.rank(rank));
+        }
+
         Ranking {
             filtered_out,
             ranked,
         }
     }
 
-    /// Removes unfair solutions from the set of all solutions.
-    fn partition_unfair_solutions(
-        &self,
-        mut participants: Vec<Participant<Unranked>>,
-        auction: &domain::Auction,
-    ) -> PartitionedSolutions {
-        // Discard all solutions where we can't compute the aggregate scores
-        // accurately because the fairness guarantees heavily rely on them.
-        let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
-        participants.sort_by_key(|participant| {
-            std::cmp::Reverse(
-                // we use the computed score to not trust the score provided by solvers
-                participant.solution().score().get().0,
-            )
-        });
-        let baseline_scores = compute_baseline_scores(&scores_by_solution);
-        let (fair, unfair) = participants.into_iter().partition_map(|p| {
-            let aggregated_scores = scores_by_solution
-                .get(&SolutionKey {
-                    driver: p.driver().submission_address,
-                    solution_id: p.solution().id(),
-                })
-                .expect("every remaining participant has an entry");
-            // only keep solutions where each order execution is at least as good as
-            // the baseline solution.
-            // we only filter out unfair solutions with more than one token pair,
-            // to avoid reference scores set to 0.
-            // see https://github.com/fhenneke/comb_auctions/issues/2
-            if aggregated_scores.len() == 1
-                || aggregated_scores.iter().all(|(pair, score)| {
-                    baseline_scores
-                        .get(pair)
-                        .is_none_or(|baseline| score >= baseline)
-                })
-            {
-                Either::Left(p)
-            } else {
-                Either::Right(p)
-            }
-        });
-        PartitionedSolutions {
-            kept: fair,
-            discarded: unfair,
-        }
-    }
-
-    /// Picks winners and sorts all solutions where winners come before
-    /// non-winners and higher scores come before lower scores.
-    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
-        let winner_indexes = self.pick_winners(participants.iter().map(|p| p.solution()));
-        participants
-            .into_iter()
-            .enumerate()
-            .map(|(index, participant)| {
-                let rank = match winner_indexes.contains(&index) {
-                    true => Ranked::Winner,
-                    false => Ranked::NonWinner,
-                };
-                participant.rank(rank)
-            })
-            .collect()
-    }
-
     /// Computes the reference scores which are used to compute
     /// rewards for the winning solvers.
     pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
-        let mut reference_scores = HashMap::default();
-
-        for participant in &ranking.ranked {
-            let solver = participant.driver().submission_address;
-            if reference_scores.len() >= self.max_winners {
-                // all winners have been processed
-                return reference_scores;
-            }
-            if reference_scores.contains_key(&solver) {
-                // we already computed this solver's reference score
-                continue;
-            }
-            if !participant.is_winner() {
-                // we only want to compute the reference score of winners
-                continue;
-            }
-
-            let solutions_without_solver = ranking
-                .ranked
-                .iter()
-                .filter(|p| p.driver().submission_address != solver)
-                .map(|p| p.solution());
-            let winner_indices = self.pick_winners(solutions_without_solver.clone());
-
-            let score = solutions_without_solver
-                .enumerate()
-                .filter(|(index, _)| winner_indices.contains(index))
-                .filter_map(|(_, solution)| solution.score)
-                .reduce(Score::saturating_add)
-                .unwrap_or_default();
-            reference_scores.insert(solver, score);
-        }
-
-        reference_scores
+        let ws_ranking = to_ws_ranking(ranking);
+        self.ws_arbitrator()
+            .compute_reference_scores(&ws_ranking)
+            .into_iter()
+            .map(|(solver, score)| (solver, ws_score_to_domain(score)))
+            .collect()
     }
 
-    /// Returns indices of winning solutions.
-    /// Assumes that `solutions` is sorted by score descendingly.
-    /// This logic was moved into a helper function to avoid a ton of `.clone()`
-    /// operations in `compute_reference_scores()`.
-    fn pick_winners<'a>(&self, solutions: impl Iterator<Item = &'a Solution>) -> HashSet<usize> {
-        // Winners are selected one by one, starting from the best solution,
-        // until `max_winners` are selected. A solution can only
-        // win if none of the (sell_token, buy_token) pairs of the executed
-        // orders have been covered by any previously selected winning solution.
-        // In other words this enforces a uniform **directional** clearing price.
-        let mut already_swapped_tokens_pairs = HashSet::new();
-        let mut winners = HashSet::default();
-        for (index, solution) in solutions.enumerate() {
-            if winners.len() >= self.max_winners {
-                return winners;
-            }
-
-            let swapped_token_pairs = solution
-                .orders()
-                .values()
-                .map(|order| DirectedTokenPair {
-                    sell: order.sell.token.as_erc20(self.weth),
-                    buy: order.buy.token.as_erc20(self.weth),
-                })
-                .collect::<HashSet<_>>();
-
-            if swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs) {
-                winners.insert(index);
-                already_swapped_tokens_pairs.extend(swapped_token_pairs);
-            }
+    fn ws_arbitrator(&self) -> ws::Arbitrator {
+        ws::Arbitrator {
+            max_winners: self.max_winners,
+            weth: ws_weth(self.weth),
         }
-        winners
     }
 }
 
-/// Let's call a solution that only trades 1 directed token pair a baseline
-/// solution. Returns the best baseline solution (highest score) for
-/// each token pair if one exists.
-fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDirection {
-    let mut baseline_directional_scores = ScoreByDirection::default();
-    for scores in scores_by_solution.values() {
-        let Ok((token_pair, score)) = scores.iter().exactly_one() else {
-            // base solutions must contain exactly 1 directed token pair
-            continue;
-        };
-        let current_best_score = baseline_directional_scores
-            .entry(token_pair.clone())
-            .or_default();
-        if score > current_best_score {
-            *current_best_score = *score;
-        }
+fn to_ws_context(auction: &domain::Auction) -> ws::AuctionContext {
+    ws::AuctionContext {
+        fee_policies: auction
+            .orders
+            .iter()
+            .map(|order| {
+                let uid = ws::OrderUid(order.uid.0);
+                let policies = order
+                    .protocol_fees
+                    .iter()
+                    .copied()
+                    .map(to_ws_fee_policy)
+                    .collect();
+                (uid, policies)
+            })
+            .collect(),
+        surplus_capturing_jit_order_owners: auction
+            .surplus_capturing_jit_order_owners
+            .iter()
+            .copied()
+            .collect(),
+        native_prices: auction
+            .prices
+            .iter()
+            .map(|(token, price)| (to_ws_token(*token), to_ws_price(*price)))
+            .collect(),
     }
-    baseline_directional_scores
 }
 
-/// Computes the `DirectionalScores` for all solutions and discards
-/// solutions as invalid whenever that computation is not possible.
-/// Solutions get discarded because fairness guarantees heavily
-/// depend on these scores being accurate.
-fn compute_scores_by_solution(
-    participants: &mut Vec<Participant<Unranked>>,
-    auction: &domain::Auction,
-) -> ScoresBySolution {
-    let auction = Auction::from(auction);
-    let mut scores = HashMap::default();
-
-    participants.retain_mut(|p| match score_by_token_pair(p.solution(), &auction) {
-        Ok(score) => {
-            let total_score = score
-                .values()
-                .fold(Score::default(), |acc, score| acc.saturating_add(*score));
-            scores.insert(
-                SolutionKey {
-                    driver: p.driver().submission_address,
-                    solution_id: p.solution().id,
-                },
-                score,
-            );
-            p.set_score(total_score);
-            true
-        }
-        Err(err) => {
-            tracing::warn!(
-                driver = p.driver().name,
-                ?err,
-                solution = ?p.solution(),
-                "discarding solution where scores could not be computed"
-            );
-            false
-        }
-    });
-
-    scores
-}
-
-/// Returns the total scores for each directed token pair of the solution.
-/// E.g. if a solution contains 3 orders like:
-///     sell A for B with a score of 10
-///     sell A for B with a score of 5
-///     sell B for C with a score of 5
-/// it will return a map like:
-///     (A, B) => 15
-///     (B, C) => 5
-fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreByDirection> {
-    let mut scores: HashMap<DirectedTokenPair, Score> = HashMap::default();
-    for (uid, trade) in solution.orders() {
-        if !auction.contributes_to_score(uid) {
-            continue;
-        }
-
-        let uniform_sell_price = solution
+fn to_ws_solution(solution: &Solution, score: Option<Score>) -> ws::Solution {
+    ws::Solution {
+        id: solution.id(),
+        solver: solution.solver(),
+        orders: solution
+            .orders()
+            .iter()
+            .map(|(uid, order)| to_ws_order(*uid, order))
+            .collect(),
+        prices: solution
             .prices()
-            .get(&trade.sell.token)
-            .context("no uniform clearing price for sell token")?;
-        let uniform_buy_price = solution
-            .prices()
-            .get(&trade.buy.token)
-            .context("no uniform clearing price for buy token")?;
+            .iter()
+            .map(|(token, price)| (to_ws_token(*token), to_ws_price(*price)))
+            .collect(),
+        score: score.map(domain_score_to_ws),
+    }
+}
 
-        let trade = math::Trade {
-            uid: *uid,
-            sell: trade.sell,
-            buy: trade.buy,
-            side: trade.side,
-            executed: match trade.side {
-                order::Side::Buy => TargetAmount(trade.executed_buy.into()),
-                order::Side::Sell => TargetAmount(trade.executed_sell.into()),
+fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
+    ws::Order {
+        uid: ws::OrderUid(uid.0),
+        sell_token: to_ws_token(order.sell.token),
+        buy_token: to_ws_token(order.buy.token),
+        sell_amount: to_ws_amount(order.sell.amount),
+        buy_amount: to_ws_amount(order.buy.amount),
+        executed_sell: to_ws_amount(order.executed_sell),
+        executed_buy: to_ws_amount(order.executed_buy),
+        side: to_ws_side(order.side),
+    }
+}
+
+fn to_ws_side(side: order::Side) -> ws::Side {
+    match side {
+        order::Side::Buy => ws::Side::Buy,
+        order::Side::Sell => ws::Side::Sell,
+    }
+}
+
+fn to_ws_token(token: eth::TokenAddress) -> ws::TokenAddress {
+    ws::TokenAddress(token.0)
+}
+
+fn to_ws_amount(amount: eth::TokenAmount) -> ws::TokenAmount {
+    ws::TokenAmount(amount.0)
+}
+
+fn to_ws_price(price: domain::auction::Price) -> ws::Price {
+    ws::Price(ws::Ether(price.get().0))
+}
+
+fn ws_score_to_domain(score: ws::Score) -> Score {
+    Score(eth::Ether(score.0.0))
+}
+
+fn domain_score_to_ws(score: Score) -> ws::Score {
+    ws::Score(ws::Ether(score.get().0))
+}
+
+fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
+    let ranked = ranking
+        .ranked
+        .iter()
+        .map(|participant| ws::arbitrator::RankedSolution {
+            solution: to_ws_solution(participant.solution(), participant.solution().score),
+            is_winner: participant.is_winner(),
+        })
+        .collect();
+
+    let filtered_out = ranking
+        .filtered_out
+        .iter()
+        .map(|participant| to_ws_solution(participant.solution(), participant.solution().score))
+        .collect();
+
+    ws::Ranking {
+        filtered_out,
+        ranked,
+    }
+}
+
+fn to_ws_fee_policy(policy: fee::Policy) -> ws::primitives::FeePolicy {
+    match policy {
+        fee::Policy::Surplus {
+            factor,
+            max_volume_factor,
+        } => ws::primitives::FeePolicy::Surplus {
+            factor: factor.get(),
+            max_volume_factor: max_volume_factor.get(),
+        },
+        fee::Policy::PriceImprovement {
+            factor,
+            max_volume_factor,
+            quote,
+        } => ws::primitives::FeePolicy::PriceImprovement {
+            factor: factor.get(),
+            max_volume_factor: max_volume_factor.get(),
+            quote: ws::primitives::Quote {
+                sell_amount: quote.sell_amount,
+                buy_amount: quote.buy_amount,
+                fee: quote.fee,
+                solver: quote.solver,
             },
-            prices: transaction::Prices {
-                // clearing prices are denominated in the same underlying
-                // unit so we assign sell to sell and buy to buy
-                uniform: ClearingPrices {
-                    sell: uniform_sell_price.get().into(),
-                    buy: uniform_buy_price.get().into(),
-                },
-                // for custom clearing prices we only need to know how
-                // much the traded tokens are worth relative to each
-                // other so we can simply use the swapped executed
-                // amounts here
-                custom: ClearingPrices {
-                    sell: trade.executed_buy.into(),
-                    buy: trade.executed_sell.into(),
-                },
-            },
-        };
-        let score = trade
-            .score(&auction.fee_policies, auction.native_prices)
-            .context("failed to compute score")?;
-
-        let token_pair = DirectedTokenPair {
-            sell: trade.sell.token,
-            buy: trade.buy.token,
-        };
-
-        scores
-            .entry(token_pair)
-            .or_default()
-            .saturating_add_assign(Score(score));
-    }
-    Ok(scores)
-}
-
-pub struct Arbitrator {
-    pub max_winners: usize,
-    pub weth: WrappedNativeToken,
-}
-
-/// Relevant data from `domain::Auction` but with data structures
-/// optimized for the winner selection logic.
-/// Avoids clones whenever possible.
-struct Auction<'a> {
-    /// Fee policies for **all** orders that were in the original auction.
-    fee_policies: HashMap<OrderUid, &'a Vec<fee::Policy>>,
-    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
-    native_prices: &'a Prices,
-}
-
-impl Auction<'_> {
-    /// Returns whether an order is allowed to capture surplus and
-    /// therefore contributes to the total score of a solution.
-    fn contributes_to_score(&self, uid: &OrderUid) -> bool {
-        self.fee_policies.contains_key(uid)
-            || self
-                .surplus_capturing_jit_order_owners
-                .contains(&uid.owner())
+        },
+        fee::Policy::Volume { factor } => ws::primitives::FeePolicy::Volume {
+            factor: factor.get(),
+        },
     }
 }
 
-impl<'a> From<&'a domain::Auction> for Auction<'a> {
-    fn from(original: &'a domain::Auction) -> Self {
-        Self {
-            fee_policies: original
-                .orders
-                .iter()
-                .map(|o| (o.uid, &o.protocol_fees))
-                .collect(),
-            native_prices: &original.prices,
-            surplus_capturing_jit_order_owners: original
-                .surplus_capturing_jit_order_owners
-                .iter()
-                .cloned()
-                .collect(),
-        }
-    }
+fn ws_weth(weth: WrappedNativeToken) -> ws::WrappedNativeToken {
+    let token: eth::TokenAddress = weth.into();
+    ws::WrappedNativeToken::from(token.0)
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct DirectedTokenPair {
-    sell: eth::TokenAddress,
-    buy: eth::TokenAddress,
-}
-
-/// Key to uniquely identify every solution.
-#[derive(PartialEq, Eq, std::hash::Hash)]
+#[derive(Clone, Copy, Hash, Eq, PartialEq)]
 struct SolutionKey {
-    driver: eth::Address,
+    solver: eth::Address,
     solution_id: u64,
 }
 
-/// Scores of all trades in a solution aggregated by the directional
-/// token pair. E.g. all trades (WETH -> USDC) are aggregated into
-/// one value and all trades (USDC -> WETH) into another.
-type ScoreByDirection = HashMap<DirectedTokenPair, Score>;
+impl From<&Solution> for SolutionKey {
+    fn from(solution: &Solution) -> Self {
+        Self {
+            solver: solution.solver(),
+            solution_id: solution.id(),
+        }
+    }
+}
 
-/// Mapping from solution to `DirectionalScores` for all solutions
-/// of the auction.
-type ScoresBySolution = HashMap<SolutionKey, ScoreByDirection>;
+impl From<&ws::Solution> for SolutionKey {
+    fn from(solution: &ws::Solution) -> Self {
+        Self {
+            solver: solution.solver,
+            solution_id: solution.id,
+        }
+    }
+}
 
 pub struct Ranking {
     /// Solutions that were discarded because they were malformed
@@ -447,11 +327,6 @@ impl Ranking {
     pub fn ranked(&self) -> impl Iterator<Item = &Participant<Ranked>> {
         self.ranked.iter()
     }
-}
-
-struct PartitionedSolutions {
-    kept: Vec<Participant<Unranked>>,
-    discarded: Vec<Participant<Unranked>>,
 }
 
 #[cfg(test)]

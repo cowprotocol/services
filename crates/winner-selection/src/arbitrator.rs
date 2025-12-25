@@ -10,7 +10,6 @@ use {
         primitives::{
             DirectedTokenPair,
             FeePolicy,
-            Price,
             Quote,
             Score,
             Side,
@@ -24,7 +23,10 @@ use {
     anyhow::{Context, Result},
     itertools::{Either, Itertools},
     num::Saturating,
-    std::collections::{HashMap, HashSet},
+    std::{
+        cmp::Reverse,
+        collections::{HashMap, HashSet},
+    },
 };
 
 /// Auction arbitrator responsible for selecting winning solutions.
@@ -42,7 +44,14 @@ impl Arbitrator {
     pub fn arbitrate(&self, solutions: Vec<Solution>, context: &AuctionContext) -> Ranking {
         let partitioned = self.partition_unfair_solutions(solutions, context);
         let filtered_out = partitioned.discarded;
-        let ranked = self.mark_winners(partitioned.kept);
+        let mut ranked = self.mark_winners(partitioned.kept);
+
+        ranked.sort_by_key(|ranked_solution| {
+            (
+                Reverse(ranked_solution.is_winner),
+                Reverse(ranked_solution.solution.score.unwrap_or_default()),
+            )
+        });
 
         Ranking {
             filtered_out,
@@ -61,14 +70,17 @@ impl Arbitrator {
         let scores_by_solution = self.compute_scores_by_solution(&mut solutions, context);
 
         // Sort by score descending
-        solutions.sort_by_key(|solution| std::cmp::Reverse(solution.score.unwrap_or_default()));
+        solutions.sort_by_key(|solution| Reverse(solution.score.unwrap_or_default()));
 
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
 
         // Partition into fair and unfair solutions
         let (kept, discarded): (Vec<_>, Vec<_>) = solutions.into_iter().partition_map(|solution| {
             let aggregated_scores = scores_by_solution
-                .get(&solution.id)
+                .get(&SolutionKey {
+                    solver: solution.solver,
+                    solution_id: solution.id,
+                })
                 .expect("every remaining solution has an entry");
 
             // Only keep solutions where each order execution is at least as good as
@@ -113,7 +125,7 @@ impl Arbitrator {
         &self,
         solutions: &mut Vec<Solution>,
         context: &AuctionContext,
-    ) -> HashMap<u64, HashMap<DirectedTokenPair, Score>> {
+    ) -> ScoresBySolution {
         let mut scores = HashMap::default();
 
         solutions.retain_mut(
@@ -122,7 +134,13 @@ impl Arbitrator {
                     let total_score = score
                         .values()
                         .fold(Score::default(), |acc, s| acc.saturating_add(*s));
-                    scores.insert(solution.id, score);
+                    scores.insert(
+                        SolutionKey {
+                            solver: solution.solver,
+                            solution_id: solution.id,
+                        },
+                        score,
+                    );
                     solution.score = Some(total_score);
                     true
                 }
@@ -163,8 +181,8 @@ impl Arbitrator {
             let score = self.compute_order_score(order, solution, context)?;
 
             let token_pair = DirectedTokenPair {
-                sell: order.sell_token.as_erc20(self.weth),
-                buy: order.buy_token.as_erc20(self.weth),
+                sell: order.sell_token,
+                buy: order.buy_token,
             };
 
             scores
@@ -193,30 +211,22 @@ impl Arbitrator {
             .get(&order.buy_token)
             .context("missing native price for buy token")?;
 
-        let uniform_sell_price = solution
+        let _uniform_sell_price = solution
             .prices
             .get(&order.sell_token)
             .context("missing uniform clearing price for sell token")?;
-        let uniform_buy_price = solution
+        let _uniform_buy_price = solution
             .prices
             .get(&order.buy_token)
             .context("missing uniform clearing price for buy token")?;
 
+        let custom_prices = self.calculate_custom_prices_from_executed(order);
+
         // Calculate surplus in surplus token (buy token for sell orders, sell token for
         // buy orders)
         let surplus_in_surplus_token = {
-            let user_surplus =
-                self.calculate_surplus(order, uniform_sell_price, uniform_buy_price)?;
-
-            // Add protocol fees from fee policies
-            let fees = self.protocol_fees(
-                order,
-                context,
-                ClearingPrices {
-                    sell: uniform_sell_price.0.0,
-                    buy: uniform_buy_price.0.0,
-                },
-            )?;
+            let user_surplus = self.surplus_over_limit_price(order, &custom_prices)?;
+            let fees = self.protocol_fees(order, context, &custom_prices)?;
 
             user_surplus
                 .checked_add(fees)
@@ -250,53 +260,7 @@ impl Arbitrator {
             }
         };
 
-        Score::new(score_eth).context("zero score")
-    }
-
-    /// Calculate user surplus over limit price.
-    ///
-    /// Returns surplus in the "surplus token" (buy token for sell orders, sell
-    /// token for buy orders).
-    fn calculate_surplus(
-        &self,
-        order: &Order,
-        uniform_sell_price: &Price,
-        uniform_buy_price: &Price,
-    ) -> Result<U256> {
-        match order.side {
-            Side::Sell => {
-                // For sell orders, surplus = bought - limit_buy
-                // bought = executed_sell * uniform_sell / uniform_buy
-                let bought = order.executed_sell.0.saturating_mul(uniform_sell_price.0.0)
-                    / uniform_buy_price.0.0;
-
-                // Scale limit buy for partially fillable orders
-                let limit_buy = order
-                    .executed_sell
-                    .0
-                    .saturating_mul(order.buy_amount.0)
-                    .saturating_add(order.sell_amount.0 - U256::from(1u64)) // Ceiling division
-                    / order.sell_amount.0;
-
-                bought
-                    .checked_sub(limit_buy)
-                    .context("negative surplus (unfair trade)")
-            }
-            Side::Buy => {
-                // For buy orders, surplus = limit_sell - sold
-                // sold = executed_buy * uniform_buy / uniform_sell
-                let sold = order.executed_buy.0.saturating_mul(uniform_buy_price.0.0)
-                    / uniform_sell_price.0.0;
-
-                // Scale limit sell for partially fillable orders
-                let limit_sell =
-                    order.executed_buy.0.saturating_mul(order.sell_amount.0) / order.buy_amount.0;
-
-                limit_sell
-                    .checked_sub(sold)
-                    .context("negative surplus (unfair trade)")
-            }
-        }
+        Ok(Score(score_eth))
     }
 
     /// Calculate total protocol fees for an order.
@@ -306,7 +270,7 @@ impl Arbitrator {
         &self,
         order: &Order,
         context: &AuctionContext,
-        uniform_prices: ClearingPrices,
+        base_prices: &ClearingPrices,
     ) -> Result<U256> {
         let policies = context
             .fee_policies
@@ -315,12 +279,11 @@ impl Arbitrator {
             .unwrap_or_default();
 
         let mut total_fee = U256::ZERO;
-        let mut custom_prices =
-            self.calculate_custom_prices_from_executed(order, uniform_prices)?;
+        let mut current_prices = *base_prices;
 
         // Process policies in reverse order, updating custom prices as we go
         for (i, policy) in policies.iter().enumerate().rev() {
-            let fee = self.protocol_fee(order, policy, &custom_prices, &uniform_prices)?;
+            let fee = self.protocol_fee(order, policy, &current_prices)?;
 
             total_fee = total_fee
                 .checked_add(fee)
@@ -328,7 +291,7 @@ impl Arbitrator {
 
             // Update custom prices for next iteration (except last iteration)
             if i != 0 {
-                custom_prices = self.calculate_custom_prices(order, total_fee, uniform_prices)?;
+                current_prices = self.calculate_custom_prices(order, total_fee, base_prices)?;
             }
         }
 
@@ -341,10 +304,7 @@ impl Arbitrator {
         order: &Order,
         policy: &FeePolicy,
         custom_prices: &ClearingPrices,
-        _uniform_prices: &ClearingPrices,
-    ) -> Result<U256> {
-        use crate::primitives::FeePolicy;
-
+    ) -> MathResult<U256> {
         match policy {
             FeePolicy::Surplus {
                 factor,
@@ -352,7 +312,7 @@ impl Arbitrator {
             } => {
                 let surplus = self.surplus_over_limit_price(order, custom_prices)?;
                 let surplus_fee = self.surplus_fee(surplus, *factor)?;
-                let volume_fee = self.volume_fee(order, *max_volume_factor)?;
+                let volume_fee = self.volume_fee(order, custom_prices, *max_volume_factor)?;
                 Ok(surplus_fee.min(volume_fee))
             }
             FeePolicy::PriceImprovement {
@@ -363,15 +323,15 @@ impl Arbitrator {
                 let price_improvement =
                     self.price_improvement_over_quote(order, custom_prices, quote)?;
                 let surplus_fee = self.surplus_fee(price_improvement, *factor)?;
-                let volume_fee = self.volume_fee(order, *max_volume_factor)?;
+                let volume_fee = self.volume_fee(order, custom_prices, *max_volume_factor)?;
                 Ok(surplus_fee.min(volume_fee))
             }
-            FeePolicy::Volume { factor } => self.volume_fee(order, *factor),
+            FeePolicy::Volume { factor } => self.volume_fee(order, custom_prices, *factor),
         }
     }
 
     /// Calculate surplus over limit price using custom clearing prices.
-    fn surplus_over_limit_price(&self, order: &Order, prices: &ClearingPrices) -> Result<U256> {
+    fn surplus_over_limit_price(&self, order: &Order, prices: &ClearingPrices) -> MathResult<U256> {
         self.surplus_over(
             order,
             prices,
@@ -388,37 +348,45 @@ impl Arbitrator {
         order: &Order,
         prices: &ClearingPrices,
         limits: PriceLimits,
-    ) -> Result<U256> {
+    ) -> MathResult<U256> {
+        let executed = match order.side {
+            Side::Buy => order.executed_buy.0,
+            Side::Sell => order.executed_sell.0,
+        };
+
         match order.side {
             Side::Buy => {
                 // Scale limit sell to support partially fillable orders
-                let limit_sell = limits.sell.saturating_mul(order.executed_buy.0) / limits.buy;
+                let limit_sell = limits
+                    .sell
+                    .checked_mul(executed)
+                    .ok_or(MathError::Overflow)?
+                    .checked_div(limits.buy)
+                    .ok_or(MathError::DivisionByZero)?;
 
-                let sold = order.executed_buy.0.saturating_mul(prices.buy) / prices.sell;
+                let sold = executed
+                    .checked_mul(prices.buy)
+                    .ok_or(MathError::Overflow)?
+                    .checked_div(prices.sell)
+                    .ok_or(MathError::DivisionByZero)?;
 
-                limit_sell
-                    .checked_sub(sold)
-                    .context("negative surplus (unfair trade)")
+                limit_sell.checked_sub(sold).ok_or(MathError::Negative)
             }
             Side::Sell => {
                 // Scale limit buy to support partially fillable orders (ceiling division)
-                let limit_buy = order
-                    .executed_sell
-                    .0
-                    .saturating_mul(limits.buy)
-                    .saturating_add(limits.sell - U256::from(1u64)) // Ceiling division
-                    / limits.sell;
+                let limit_buy = executed
+                    .checked_mul(limits.buy)
+                    .ok_or(MathError::Overflow)?
+                    .checked_ceil_div(&limits.sell)
+                    .ok_or(MathError::DivisionByZero)?;
 
-                let bought = order
-                    .executed_sell
-                    .0
-                    .saturating_mul(prices.sell)
-                    .saturating_add(prices.buy - U256::from(1u64)) // Ceiling division
-                    / prices.buy;
+                let bought = executed
+                    .checked_mul(prices.sell)
+                    .ok_or(MathError::Overflow)?
+                    .checked_ceil_div(&prices.buy)
+                    .ok_or(MathError::DivisionByZero)?;
 
-                bought
-                    .checked_sub(limit_buy)
-                    .context("negative surplus (unfair trade)")
+                bought.checked_sub(limit_buy).ok_or(MathError::Negative)
             }
         }
     }
@@ -431,27 +399,42 @@ impl Arbitrator {
         order: &Order,
         prices: &ClearingPrices,
         quote: &Quote,
-    ) -> Result<U256> {
+    ) -> MathResult<U256> {
         let adjusted_quote = self.adjust_quote_to_order_limits(order, quote)?;
         match self.surplus_over(order, prices, adjusted_quote) {
             Ok(surplus) => Ok(surplus),
-            Err(_) => Ok(U256::ZERO), // No improvement is not an error
+            Err(MathError::Negative) => Ok(U256::ZERO),
+            Err(err) => Err(err),
         }
     }
 
     /// Adjust quote amounts to be comparable with order limits.
-    fn adjust_quote_to_order_limits(&self, order: &Order, quote: &Quote) -> Result<PriceLimits> {
+    fn adjust_quote_to_order_limits(
+        &self,
+        order: &Order,
+        quote: &Quote,
+    ) -> MathResult<PriceLimits> {
         match order.side {
             Side::Sell => {
                 // Quote buy amount after fees
                 let quote_buy_amount = quote
                     .buy_amount
-                    .checked_sub(quote.fee.saturating_mul(quote.buy_amount) / quote.sell_amount)
-                    .context("quote fee exceeds buy amount")?;
+                    .checked_sub(
+                        quote
+                            .fee
+                            .checked_mul(quote.buy_amount)
+                            .ok_or(MathError::Overflow)?
+                            .checked_div(quote.sell_amount)
+                            .ok_or(MathError::DivisionByZero)?,
+                    )
+                    .ok_or(MathError::Negative)?;
 
                 // Scale to order's sell amount
-                let scaled_buy_amount =
-                    quote_buy_amount.saturating_mul(order.sell_amount.0) / quote.sell_amount;
+                let scaled_buy_amount = quote_buy_amount
+                    .checked_mul(order.sell_amount.0)
+                    .ok_or(MathError::Overflow)?
+                    .checked_div(quote.sell_amount)
+                    .ok_or(MathError::DivisionByZero)?;
 
                 // Use max to handle out-of-market orders
                 let buy_amount = order.buy_amount.0.max(scaled_buy_amount);
@@ -466,11 +449,14 @@ impl Arbitrator {
                 let quote_sell_amount = quote
                     .sell_amount
                     .checked_add(quote.fee)
-                    .context("overflow adding quote fee")?;
+                    .ok_or(MathError::Overflow)?;
 
                 // Scale to order's buy amount
-                let scaled_sell_amount =
-                    quote_sell_amount.saturating_mul(order.buy_amount.0) / quote.buy_amount;
+                let scaled_sell_amount = quote_sell_amount
+                    .checked_mul(order.buy_amount.0)
+                    .ok_or(MathError::Overflow)?
+                    .checked_div(quote.buy_amount)
+                    .ok_or(MathError::DivisionByZero)?;
 
                 // Use min to handle out-of-market orders
                 let sell_amount = order.sell_amount.0.min(scaled_sell_amount);
@@ -486,7 +472,7 @@ impl Arbitrator {
     /// Calculate surplus fee as a cut of surplus.
     ///
     /// Uses adjusted factor: fee = surplus * factor / (1 - factor)
-    fn surplus_fee(&self, surplus: U256, factor: f64) -> Result<U256> {
+    fn surplus_fee(&self, surplus: U256, factor: f64) -> MathResult<U256> {
         // Surplus fee is specified as a `factor` from raw surplus (before fee).
         // Since we work with trades that already have the protocol fee applied,
         // we need to calculate the protocol fee using an adjusted factor.
@@ -496,11 +482,11 @@ impl Arbitrator {
         // fee = surplus_after_fee * factor / (1 - factor)
         surplus
             .checked_mul_f64(factor / (1.0 - factor))
-            .context("overflow calculating surplus fee")
+            .ok_or(MathError::Overflow)
     }
 
     /// Calculate volume fee as a cut of trade volume.
-    fn volume_fee(&self, order: &Order, factor: f64) -> Result<U256> {
+    fn volume_fee(&self, order: &Order, prices: &ClearingPrices, factor: f64) -> MathResult<U256> {
         // Volume fee is specified as a factor from raw volume (before fee).
         // We need to calculate using an adjusted factor based on order side.
         //
@@ -508,8 +494,8 @@ impl Arbitrator {
         // Buy:  fee = traded_sell_amount * factor / (1 + factor)
 
         let executed_in_surplus_token = match order.side {
-            Side::Sell => order.executed_buy.0,
-            Side::Buy => order.executed_sell.0,
+            Side::Sell => self.buy_amount(order, prices)?,
+            Side::Buy => self.sell_amount(order, prices)?,
         };
 
         let adjusted_factor = match order.side {
@@ -519,18 +505,17 @@ impl Arbitrator {
 
         executed_in_surplus_token
             .checked_mul_f64(adjusted_factor)
-            .context("overflow calculating volume fee")
+            .ok_or(MathError::Overflow)
     }
 
     /// Calculate custom clearing prices from executed amounts.
     ///
     /// Custom prices are derived from what was actually executed.
-    fn calculate_custom_prices_from_executed(
-        &self,
-        order: &Order,
-        uniform_prices: ClearingPrices,
-    ) -> Result<ClearingPrices> {
-        self.calculate_custom_prices(order, U256::ZERO, uniform_prices)
+    fn calculate_custom_prices_from_executed(&self, order: &Order) -> ClearingPrices {
+        ClearingPrices {
+            sell: order.executed_buy.0,
+            buy: order.executed_sell.0,
+        }
     }
 
     /// Calculate custom clearing prices excluding protocol fees.
@@ -540,48 +525,53 @@ impl Arbitrator {
         &self,
         order: &Order,
         protocol_fee: U256,
-        uniform_prices: ClearingPrices,
-    ) -> Result<ClearingPrices> {
-        let sell_amount = self.sell_amount(order, &uniform_prices)?;
-        let buy_amount = self.buy_amount(order, &uniform_prices)?;
+        prices: &ClearingPrices,
+    ) -> MathResult<ClearingPrices> {
+        let sell_amount = self.sell_amount(order, prices)?;
+        let buy_amount = self.buy_amount(order, prices)?;
 
         Ok(ClearingPrices {
             sell: match order.side {
                 Side::Sell => buy_amount
                     .checked_add(protocol_fee)
-                    .context("overflow adding protocol fee to buy amount")?,
+                    .ok_or(MathError::Overflow)?,
                 Side::Buy => buy_amount,
             },
             buy: match order.side {
                 Side::Sell => sell_amount,
                 Side::Buy => sell_amount
                     .checked_sub(protocol_fee)
-                    .context("protocol fee exceeds sell amount")?,
+                    .ok_or(MathError::Negative)?,
             },
         })
     }
 
     /// Calculate effective sell amount (what left user's wallet).
-    fn sell_amount(&self, order: &Order, prices: &ClearingPrices) -> Result<U256> {
-        Ok(match order.side {
-            Side::Sell => order.executed_sell.0,
-            Side::Buy => order.executed_buy.0.saturating_mul(prices.buy) / prices.sell,
-        })
+    fn sell_amount(&self, order: &Order, prices: &ClearingPrices) -> MathResult<U256> {
+        match order.side {
+            Side::Sell => Ok(order.executed_sell.0),
+            Side::Buy => order
+                .executed_buy
+                .0
+                .checked_mul(prices.buy)
+                .ok_or(MathError::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(MathError::DivisionByZero),
+        }
     }
 
     /// Calculate effective buy amount (what user received).
-    fn buy_amount(&self, order: &Order, prices: &ClearingPrices) -> Result<U256> {
-        Ok(match order.side {
-            Side::Sell => {
-                order
+    fn buy_amount(&self, order: &Order, prices: &ClearingPrices) -> MathResult<U256> {
+        match order.side {
+            Side::Sell => order
                 .executed_sell
                 .0
-                .saturating_mul(prices.sell)
-                .saturating_add(prices.buy - U256::from(1u64)) // Ceiling division
-                / prices.buy
-            }
-            Side::Buy => order.executed_buy.0,
-        })
+                .checked_mul(prices.sell)
+                .ok_or(MathError::Overflow)?
+                .checked_ceil_div(&prices.buy)
+                .ok_or(MathError::DivisionByZero),
+            Side::Buy => Ok(order.executed_buy.0),
+        }
     }
 
     /// Pick winners based on directional token pairs.
@@ -641,7 +631,7 @@ impl Arbitrator {
             let score = solutions_without_solver
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
-                .map(|(_, _solution)| Score::default()) // TODO: Get actual scores
+                .filter_map(|(_, solution)| solution.score)
                 .reduce(Score::saturating_add)
                 .unwrap_or_default();
 
@@ -653,9 +643,7 @@ impl Arbitrator {
 }
 
 /// Compute baseline scores (best single-pair solutions).
-fn compute_baseline_scores(
-    scores_by_solution: &HashMap<u64, HashMap<DirectedTokenPair, Score>>,
-) -> HashMap<DirectedTokenPair, Score> {
+fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDirection {
     let mut baseline_scores = HashMap::default();
 
     for scores in scores_by_solution.values() {
@@ -733,4 +721,30 @@ struct PriceLimits {
     sell: U256,
     /// Minimum buy amount.
     buy: U256,
+}
+
+/// Key to uniquely identify every solution.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct SolutionKey {
+    solver: Address,
+    solution_id: u64,
+}
+
+/// Scores of all trades in a solution aggregated by the directional
+/// token pair.
+type ScoreByDirection = HashMap<DirectedTokenPair, Score>;
+
+/// Mapping from solution to `DirectionalScores` for all solutions.
+type ScoresBySolution = HashMap<SolutionKey, ScoreByDirection>;
+
+type MathResult<T> = std::result::Result<T, MathError>;
+
+#[derive(Debug, thiserror::Error)]
+enum MathError {
+    #[error("overflow")]
+    Overflow,
+    #[error("division by zero")]
+    DivisionByZero,
+    #[error("negative")]
+    Negative,
 }
