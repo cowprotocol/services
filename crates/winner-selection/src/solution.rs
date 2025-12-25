@@ -4,8 +4,8 @@
 //! making them small enough to efficiently send to/from the Pod Service.
 
 use {
-    crate::primitives::{OrderUid, Price, Side, TokenAddress, TokenAmount},
-    alloy::primitives::Address,
+    crate::primitives::{OrderUid, Side},
+    alloy::primitives::{Address, U256},
     std::collections::HashMap,
 };
 
@@ -16,7 +16,7 @@ use {
 /// minimal format before sending to the Pod Service.
 ///
 /// Estimated size: ~1.7KB for a solution with 5 orders and 10 unique tokens.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Solution {
     /// Solution ID from solver (unique per solver).
     pub id: u64,
@@ -34,14 +34,13 @@ pub struct Solution {
     /// Maps token address to its price in the native token (ETH/XDAI).
     /// These are the prices at which all orders trading these tokens are
     /// settled.
-    pub prices: HashMap<TokenAddress, Price>,
+    pub prices: HashMap<Address, U256>,
 
     /// Total score for this solution.
     ///
     /// This is computed during winner selection and is not part of the
     /// minimal data sent to the Pod Service.
-    #[serde(skip)]
-    pub score: Option<crate::primitives::Score>,
+    pub score: Option<U256>,
 }
 
 /// Minimal order data needed for winner selection.
@@ -51,36 +50,36 @@ pub struct Solution {
 /// (what actually happened in this solution).
 ///
 /// Estimated size: ~225 bytes per order.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Order {
     /// Unique order identifier (56 bytes).
     pub uid: OrderUid,
 
     /// Sell token address.
-    pub sell_token: TokenAddress,
+    pub sell_token: Address,
 
     /// Buy token address.
-    pub buy_token: TokenAddress,
+    pub buy_token: Address,
 
     /// Limit amount of sell token (from original order parameters).
     ///
     /// This is the maximum amount the user is willing to sell.
-    pub sell_amount: TokenAmount,
+    pub sell_amount: U256,
 
     /// Limit amount of buy token (from original order parameters).
     ///
     /// This is the minimum amount the user wants to receive.
-    pub buy_amount: TokenAmount,
+    pub buy_amount: U256,
 
     /// Amount of sell token that left the user's wallet (including fees).
     ///
     /// This is the actual executed amount in this solution.
-    pub executed_sell: TokenAmount,
+    pub executed_sell: U256,
 
     /// Amount of buy token the user received (after fees).
     ///
     /// This is the actual amount the user got in this solution.
-    pub executed_buy: TokenAmount,
+    pub executed_buy: U256,
 
     /// Order side (Buy or Sell).
     ///

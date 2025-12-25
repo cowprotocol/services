@@ -56,10 +56,10 @@ impl RunLoop {
         weth: WrappedNativeToken,
     ) -> Self {
         Self {
-            winner_selection: winner_selection::Arbitrator {
-                max_winners: max_winners_per_auction.get(),
+            winner_selection: winner_selection::Arbitrator::new(
+                max_winners_per_auction.get(),
                 weth,
-            },
+            ),
             orderbook,
             drivers,
             trusted_tokens,

@@ -15,16 +15,6 @@ pub mod util;
 pub use {
     arbitrator::{Arbitrator, Ranking},
     auction::AuctionContext,
-    primitives::{
-        DirectedTokenPair,
-        Ether,
-        OrderUid,
-        Price,
-        Score,
-        Side,
-        TokenAddress,
-        TokenAmount,
-        WrappedNativeToken,
-    },
+    primitives::{Address, DirectedTokenPair, OrderUid, Side, U256},
     solution::{Order, Solution},
 };

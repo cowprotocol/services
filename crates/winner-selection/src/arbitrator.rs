@@ -7,22 +7,13 @@
 use {
     crate::{
         auction::AuctionContext,
-        primitives::{
-            DirectedTokenPair,
-            FeePolicy,
-            Quote,
-            Score,
-            Side,
-            TokenAmount,
-            WrappedNativeToken,
-        },
+        primitives::{DirectedTokenPair, FeePolicy, Quote, Side, as_erc20, price_in_eth},
         solution::{Order, Solution},
         util::U256Ext,
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     itertools::{Either, Itertools},
-    num::Saturating,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet},
@@ -34,7 +25,7 @@ pub struct Arbitrator {
     /// Maximum number of winning solutions to select.
     pub max_winners: usize,
     /// Wrapped native token address (WETH on mainnet, WXDAI on Gnosis).
-    pub weth: WrappedNativeToken,
+    pub weth: Address,
 }
 
 impl Arbitrator {
@@ -133,7 +124,7 @@ impl Arbitrator {
                 Ok(score) => {
                     let total_score = score
                         .values()
-                        .fold(Score::default(), |acc, s| acc.saturating_add(*s));
+                        .fold(U256::ZERO, |acc, s| acc.saturating_add(*s));
                     scores.insert(
                         SolutionKey {
                             solver: solution.solver,
@@ -170,8 +161,8 @@ impl Arbitrator {
         &self,
         solution: &Solution,
         context: &AuctionContext,
-    ) -> Result<HashMap<DirectedTokenPair, Score>> {
-        let mut scores: HashMap<DirectedTokenPair, Score> = HashMap::default();
+    ) -> Result<HashMap<DirectedTokenPair, U256>> {
+        let mut scores: HashMap<DirectedTokenPair, U256> = HashMap::default();
 
         for order in &solution.orders {
             if !context.contributes_to_score(&order.uid) {
@@ -185,10 +176,8 @@ impl Arbitrator {
                 buy: order.buy_token,
             };
 
-            scores
-                .entry(token_pair)
-                .or_default()
-                .saturating_add_assign(score);
+            let entry = scores.entry(token_pair).or_default();
+            *entry = entry.saturating_add(score);
         }
 
         Ok(scores)
@@ -205,7 +194,7 @@ impl Arbitrator {
         order: &Order,
         solution: &Solution,
         context: &AuctionContext,
-    ) -> Result<Score> {
+    ) -> Result<U256> {
         let native_price_buy = context
             .native_prices
             .get(&order.buy_token)
@@ -235,7 +224,7 @@ impl Arbitrator {
 
         let score_eth = match order.side {
             // `surplus` of sell orders is already in buy tokens so we simply convert it to ETH
-            Side::Sell => native_price_buy.in_eth(TokenAmount(surplus_in_surplus_token)),
+            Side::Sell => price_in_eth(*native_price_buy, surplus_in_surplus_token),
             Side::Buy => {
                 // `surplus` of buy orders is in sell tokens. We start with following formula:
                 // buy_amount / sell_amount == buy_price / sell_price
@@ -249,18 +238,18 @@ impl Arbitrator {
                 use alloy::primitives::{U512, ruint::UintTryFrom};
 
                 let surplus_in_buy_tokens = surplus_in_surplus_token
-                    .widening_mul(order.buy_amount.0)
-                    .checked_div(U512::from(order.sell_amount.0))
+                    .widening_mul(order.buy_amount)
+                    .checked_div(U512::from(order.sell_amount))
                     .context("division by zero converting surplus to buy tokens")?;
                 let surplus_in_buy_tokens: U256 = U256::uint_try_from(surplus_in_buy_tokens)
                     .map_err(|_| anyhow::anyhow!("overflow converting surplus to buy tokens"))?;
 
                 // Afterwards we convert the buy token surplus to the native token.
-                native_price_buy.in_eth(TokenAmount(surplus_in_buy_tokens))
+                price_in_eth(*native_price_buy, surplus_in_buy_tokens)
             }
         };
 
-        Ok(Score(score_eth))
+        Ok(score_eth)
     }
 
     /// Calculate total protocol fees for an order.
@@ -336,8 +325,8 @@ impl Arbitrator {
             order,
             prices,
             PriceLimits {
-                sell: order.sell_amount.0,
-                buy: order.buy_amount.0,
+                sell: order.sell_amount,
+                buy: order.buy_amount,
             },
         )
     }
@@ -350,8 +339,8 @@ impl Arbitrator {
         limits: PriceLimits,
     ) -> MathResult<U256> {
         let executed = match order.side {
-            Side::Buy => order.executed_buy.0,
-            Side::Sell => order.executed_sell.0,
+            Side::Buy => order.executed_buy,
+            Side::Sell => order.executed_sell,
         };
 
         match order.side {
@@ -431,16 +420,16 @@ impl Arbitrator {
 
                 // Scale to order's sell amount
                 let scaled_buy_amount = quote_buy_amount
-                    .checked_mul(order.sell_amount.0)
+                    .checked_mul(order.sell_amount)
                     .ok_or(MathError::Overflow)?
                     .checked_div(quote.sell_amount)
                     .ok_or(MathError::DivisionByZero)?;
 
                 // Use max to handle out-of-market orders
-                let buy_amount = order.buy_amount.0.max(scaled_buy_amount);
+                let buy_amount = order.buy_amount.max(scaled_buy_amount);
 
                 Ok(PriceLimits {
-                    sell: order.sell_amount.0,
+                    sell: order.sell_amount,
                     buy: buy_amount,
                 })
             }
@@ -453,17 +442,17 @@ impl Arbitrator {
 
                 // Scale to order's buy amount
                 let scaled_sell_amount = quote_sell_amount
-                    .checked_mul(order.buy_amount.0)
+                    .checked_mul(order.buy_amount)
                     .ok_or(MathError::Overflow)?
                     .checked_div(quote.buy_amount)
                     .ok_or(MathError::DivisionByZero)?;
 
                 // Use min to handle out-of-market orders
-                let sell_amount = order.sell_amount.0.min(scaled_sell_amount);
+                let sell_amount = order.sell_amount.min(scaled_sell_amount);
 
                 Ok(PriceLimits {
                     sell: sell_amount,
-                    buy: order.buy_amount.0,
+                    buy: order.buy_amount,
                 })
             }
         }
@@ -513,8 +502,8 @@ impl Arbitrator {
     /// Custom prices are derived from what was actually executed.
     fn calculate_custom_prices_from_executed(&self, order: &Order) -> ClearingPrices {
         ClearingPrices {
-            sell: order.executed_buy.0,
-            buy: order.executed_sell.0,
+            sell: order.executed_buy,
+            buy: order.executed_sell,
         }
     }
 
@@ -549,10 +538,9 @@ impl Arbitrator {
     /// Calculate effective sell amount (what left user's wallet).
     fn sell_amount(&self, order: &Order, prices: &ClearingPrices) -> MathResult<U256> {
         match order.side {
-            Side::Sell => Ok(order.executed_sell.0),
+            Side::Sell => Ok(order.executed_sell),
             Side::Buy => order
                 .executed_buy
-                .0
                 .checked_mul(prices.buy)
                 .ok_or(MathError::Overflow)?
                 .checked_div(prices.sell)
@@ -565,12 +553,11 @@ impl Arbitrator {
         match order.side {
             Side::Sell => order
                 .executed_sell
-                .0
                 .checked_mul(prices.sell)
                 .ok_or(MathError::Overflow)?
                 .checked_ceil_div(&prices.buy)
                 .ok_or(MathError::DivisionByZero),
-            Side::Buy => Ok(order.executed_buy.0),
+            Side::Buy => Ok(order.executed_buy),
         }
     }
 
@@ -588,8 +575,8 @@ impl Arbitrator {
                 .orders
                 .iter()
                 .map(|order| DirectedTokenPair {
-                    sell: order.sell_token.as_erc20(self.weth),
-                    buy: order.buy_token.as_erc20(self.weth),
+                    sell: as_erc20(order.sell_token, self.weth),
+                    buy: as_erc20(order.buy_token, self.weth),
                 })
                 .collect();
 
@@ -603,7 +590,7 @@ impl Arbitrator {
     }
 
     /// Compute reference scores for winning solvers.
-    pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<Address, Score> {
+    pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<Address, U256> {
         let mut reference_scores = HashMap::default();
 
         for ranked_solution in &ranking.ranked {
@@ -632,7 +619,7 @@ impl Arbitrator {
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
                 .filter_map(|(_, solution)| solution.score)
-                .reduce(Score::saturating_add)
+                .reduce(|acc, score| acc.saturating_add(score))
                 .unwrap_or_default();
 
             reference_scores.insert(solver, score);
@@ -732,7 +719,7 @@ struct SolutionKey {
 
 /// Scores of all trades in a solution aggregated by the directional
 /// token pair.
-type ScoreByDirection = HashMap<DirectedTokenPair, Score>;
+type ScoreByDirection = HashMap<DirectedTokenPair, U256>;
 
 /// Mapping from solution to `DirectionalScores` for all solutions.
 type ScoresBySolution = HashMap<SolutionKey, ScoreByDirection>;

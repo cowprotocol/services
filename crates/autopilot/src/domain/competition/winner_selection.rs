@@ -36,10 +36,7 @@ use {
     winner_selection as ws,
 };
 
-pub struct Arbitrator {
-    pub max_winners: usize,
-    pub weth: WrappedNativeToken,
-}
+pub struct Arbitrator(ws::Arbitrator);
 
 /// Implements auction arbitration in 3 phases:
 /// 1. filter unfair solutions
@@ -49,6 +46,14 @@ pub struct Arbitrator {
 /// The functions assume the `Arbitrator` is the only one
 /// changing the ordering or the `participants`.
 impl Arbitrator {
+    pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
+        let token: eth::TokenAddress = wrapped_native_token.into();
+        Self(ws::Arbitrator {
+            max_winners,
+            weth: token.0,
+        })
+    }
+
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(
         &self,
@@ -66,7 +71,7 @@ impl Arbitrator {
             solutions.push(solution);
         }
 
-        let ws_ranking = self.ws_arbitrator().arbitrate(solutions, &context);
+        let ws_ranking = self.0.arbitrate(solutions, &context);
 
         let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
         for ws_solution in ws_ranking.filtered_out {
@@ -77,7 +82,7 @@ impl Arbitrator {
             let score = ws_solution
                 .score
                 .expect("winner selection should compute scores");
-            participant.set_score(ws_score_to_domain(score));
+            participant.set_score(Score(eth::Ether(score)));
             filtered_out.push(participant.rank(Ranked::FilteredOut));
         }
 
@@ -91,7 +96,7 @@ impl Arbitrator {
                 .solution
                 .score
                 .expect("winner selection should compute scores");
-            participant.set_score(ws_score_to_domain(score));
+            participant.set_score(Score(eth::Ether(score)));
             let rank = if ranked_solution.is_winner {
                 Ranked::Winner
             } else {
@@ -110,18 +115,11 @@ impl Arbitrator {
     /// rewards for the winning solvers.
     pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
         let ws_ranking = to_ws_ranking(ranking);
-        self.ws_arbitrator()
+        self.0
             .compute_reference_scores(&ws_ranking)
             .into_iter()
-            .map(|(solver, score)| (solver, ws_score_to_domain(score)))
+            .map(|(solver, score)| (solver, Score(eth::Ether(score))))
             .collect()
-    }
-
-    fn ws_arbitrator(&self) -> ws::Arbitrator {
-        ws::Arbitrator {
-            max_winners: self.max_winners,
-            weth: ws_weth(self.weth),
-        }
     }
 }
 
@@ -149,7 +147,7 @@ fn to_ws_context(auction: &domain::Auction) -> ws::AuctionContext {
         native_prices: auction
             .prices
             .iter()
-            .map(|(token, price)| (to_ws_token(*token), to_ws_price(*price)))
+            .map(|(token, price)| (token.0, price.get().0))
             .collect(),
     }
 }
@@ -166,50 +164,26 @@ fn to_ws_solution(solution: &Solution, score: Option<Score>) -> ws::Solution {
         prices: solution
             .prices()
             .iter()
-            .map(|(token, price)| (to_ws_token(*token), to_ws_price(*price)))
+            .map(|(token, price)| (token.0, price.get().0))
             .collect(),
-        score: score.map(domain_score_to_ws),
+        score: score.map(|score| score.get().0),
     }
 }
 
 fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
     ws::Order {
         uid: ws::OrderUid(uid.0),
-        sell_token: to_ws_token(order.sell.token),
-        buy_token: to_ws_token(order.buy.token),
-        sell_amount: to_ws_amount(order.sell.amount),
-        buy_amount: to_ws_amount(order.buy.amount),
-        executed_sell: to_ws_amount(order.executed_sell),
-        executed_buy: to_ws_amount(order.executed_buy),
-        side: to_ws_side(order.side),
+        sell_token: order.sell.token.0,
+        buy_token: order.buy.token.0,
+        sell_amount: order.sell.amount.0,
+        buy_amount: order.buy.amount.0,
+        executed_sell: order.executed_sell.0,
+        executed_buy: order.executed_buy.0,
+        side: match order.side {
+            order::Side::Buy => ws::Side::Buy,
+            order::Side::Sell => ws::Side::Sell,
+        },
     }
-}
-
-fn to_ws_side(side: order::Side) -> ws::Side {
-    match side {
-        order::Side::Buy => ws::Side::Buy,
-        order::Side::Sell => ws::Side::Sell,
-    }
-}
-
-fn to_ws_token(token: eth::TokenAddress) -> ws::TokenAddress {
-    ws::TokenAddress(token.0)
-}
-
-fn to_ws_amount(amount: eth::TokenAmount) -> ws::TokenAmount {
-    ws::TokenAmount(amount.0)
-}
-
-fn to_ws_price(price: domain::auction::Price) -> ws::Price {
-    ws::Price(ws::Ether(price.get().0))
-}
-
-fn ws_score_to_domain(score: ws::Score) -> Score {
-    Score(eth::Ether(score.0.0))
-}
-
-fn domain_score_to_ws(score: Score) -> ws::Score {
-    ws::Score(ws::Ether(score.get().0))
 }
 
 fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
@@ -261,11 +235,6 @@ fn to_ws_fee_policy(policy: fee::Policy) -> ws::primitives::FeePolicy {
             factor: factor.get(),
         },
     }
-}
-
-fn ws_weth(weth: WrappedNativeToken) -> ws::WrappedNativeToken {
-    let token: eth::TokenAddress = weth.into();
-    ws::WrappedNativeToken::from(token.0)
 }
 
 #[derive(Clone, Copy, Hash, Eq, PartialEq)]
@@ -1146,10 +1115,10 @@ mod tests {
     }
 
     fn create_test_arbitrator() -> super::Arbitrator {
-        super::Arbitrator {
-            max_winners: 10,
-            weth: address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").into(),
-        }
+        super::Arbitrator::new(
+            10,
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").into(),
+        )
     }
 
     fn address(id: u64) -> Address {

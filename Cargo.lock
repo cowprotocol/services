@@ -8119,12 +8119,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "derive_more 1.0.0",
- "hex",
  "itertools 0.14.0",
- "num",
- "serde",
- "serde_json",
  "thiserror 1.0.61",
  "tracing",
 ]

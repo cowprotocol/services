@@ -4,13 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alloy = { workspace = true, features = ["serde"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-num = { workspace = true }
+alloy = { workspace = true }
 itertools = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-derive_more = { workspace = true }
 tracing = { workspace = true }
-hex = "0.4"

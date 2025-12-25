@@ -129,7 +129,7 @@ impl RunLoop {
             probes,
             maintenance,
             competition_updates_sender,
-            winner_selection: winner_selection::Arbitrator { max_winners, weth },
+            winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify,
         }
     }

@@ -5,8 +5,8 @@
 //! and is the same for all solutions.
 
 use {
-    crate::primitives::{FeePolicy, OrderUid, Price, TokenAddress},
-    alloy::primitives::Address,
+    crate::primitives::{FeePolicy, OrderUid},
+    alloy::primitives::{Address, U256},
     std::collections::{HashMap, HashSet},
 };
 
@@ -33,7 +33,7 @@ pub struct AuctionContext {
     /// These prices are used to convert token amounts to native token
     /// (ETH/XDAI) for score calculation. Maps token address to its price in
     /// native token.
-    pub native_prices: HashMap<TokenAddress, Price>,
+    pub native_prices: HashMap<Address, U256>,
 }
 
 impl AuctionContext {
