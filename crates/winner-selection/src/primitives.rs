@@ -51,37 +51,6 @@ impl OrderUid {
     }
 }
 
-// impl serde::Serialize for OrderUid {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: serde::Serializer,
-//     {
-//         // Serialize as hex string with 0x prefix
-//         let hex_string = format!("0x{}", hex::encode(self.0));
-//         serializer.serialize_str(&hex_string)
-//     }
-// }
-//
-// impl<'de> serde::Deserialize<'de> for OrderUid {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: serde::Deserializer<'de>,
-//     {
-//         let s = String::deserialize(deserializer)?;
-//         let s = s.strip_prefix("0x").unwrap_or(&s);
-//         let decoded = hex::decode(s).map_err(serde::de::Error::custom)?;
-//         if decoded.len() != 56 {
-//             return Err(serde::de::Error::custom(format!(
-//                 "expected 56 bytes, got {}",
-//                 decoded.len()
-//             )));
-//         }
-//         let mut bytes = [0u8; 56];
-//         bytes.copy_from_slice(&decoded);
-//         Ok(OrderUid(bytes))
-//     }
-// }
-
 /// Order side (buy or sell).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Side {

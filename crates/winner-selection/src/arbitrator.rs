@@ -79,10 +79,11 @@ impl Arbitrator {
                 })
                 .expect("every remaining solution has an entry");
 
-            // Only keep solutions where each order execution is at least as good as
+            // only keep solutions where each order execution is at least as good as
             // the baseline solution.
-            // We only filter out unfair solutions with more than one token pair,
+            // we only filter out unfair solutions with more than one token pair,
             // to avoid reference scores set to 0.
+            // see https://github.com/fhenneke/comb_auctions/issues/2
             if aggregated_scores.len() == 1
                 || aggregated_scores.iter().all(|(pair, score)| {
                     baseline_scores
@@ -99,7 +100,8 @@ impl Arbitrator {
         PartitionedSolutions { kept, discarded }
     }
 
-    /// Picks winners and marks all solutions.
+    /// Picks winners and sorts all solutions where winners come before
+    /// non-winners and higher scores come before lower scores.
     fn mark_winners(&self, solutions: Vec<Solution<Scored>>) -> Vec<Solution<Ranked>> {
         let winner_indices = self.pick_winners(solutions.iter());
 
@@ -117,7 +119,7 @@ impl Arbitrator {
             .collect()
     }
 
-    /// Computes the `DirectedTokenPair` scores for all solutions and discards
+    /// Computes the `DirectionalScores` for all solutions and discards
     /// solutions as invalid whenever that computation is not possible.
     /// Solutions get discarded because fairness guarantees heavily
     /// depend on these scores being accurate.
@@ -569,11 +571,19 @@ impl Arbitrator {
         }
     }
 
-    /// Pick winners based on directional token pairs.
+    /// Returns indices of winning solutions.
+    /// Assumes that `solutions` is sorted by score descendingly.
+    /// This logic was moved into a helper function to avoid a ton of `.clone()`
+    /// operations in `compute_reference_scores()`.
     fn pick_winners<'a, T: 'a>(
         &self,
         solutions: impl Iterator<Item = &'a Solution<T>>,
     ) -> HashSet<usize> {
+        // Winners are selected one by one, starting from the best solution,
+        // until `max_winners` are selected. A solution can only
+        // win if none of the (sell_token, buy_token) pairs of the executed
+        // orders have been covered by any previously selected winning solution.
+        // In other words this enforces a uniform **directional** clearing price.
         let mut already_swapped_token_pairs = HashSet::new();
         let mut winners = HashSet::default();
 
@@ -641,7 +651,9 @@ impl Arbitrator {
     }
 }
 
-/// Compute baseline scores (best single-pair solutions).
+/// Let's call a solution that only trades 1 directed token pair a baseline
+/// solution. Returns the best baseline solution (highest score) for
+/// each token pair if one exists.
 fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDirection {
     let mut baseline_scores = HashMap::default();
 
@@ -719,10 +731,12 @@ struct SolutionKey {
 }
 
 /// Scores of all trades in a solution aggregated by the directional
-/// token pair.
+/// token pair. E.g. all trades (WETH -> USDC) are aggregated into
+/// one value and all trades (USDC -> WETH) into another.
 type ScoreByDirection = HashMap<DirectedTokenPair, U256>;
 
-/// Mapping from solution to `DirectionalScores` for all solutions.
+/// Mapping from solution to `DirectionalScores` for all solutions
+/// of the auction.
 type ScoresBySolution = HashMap<SolutionKey, ScoreByDirection>;
 
 type MathResult<T> = std::result::Result<T, MathError>;

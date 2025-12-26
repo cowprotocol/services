@@ -34,7 +34,7 @@ use {
     },
     ::winner_selection::state::{RankedItem, ScoredItem, UnscoredItem},
     std::collections::HashMap,
-    winner_selection as ws,
+    winner_selection::{self as ws, state::WithState},
 };
 
 pub struct Arbitrator(ws::Arbitrator);
@@ -95,15 +95,10 @@ impl Arbitrator {
                 .remove(&key)
                 .expect("every ranked solution has a matching participant");
             let score = ranked_solution.score();
-            let rank_type = if ranked_solution.is_winner() {
-                RankType::Winner
-            } else {
-                RankType::NonWinner
-            };
             ranked.push(
                 participant
                     .with_score(Score(eth::Ether(score)))
-                    .rank(rank_type),
+                    .rank(ranked_solution.state().rank_type),
             );
         }
 
