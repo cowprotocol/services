@@ -82,9 +82,6 @@ pub trait RankedItem<Score: Copy>: WithState<State = Ranked<Score>> {
     fn score(&self) -> Score;
     fn is_winner(&self) -> bool;
     fn is_filtered_out(&self) -> bool;
-    fn filtered_out(&self) -> bool {
-        self.is_filtered_out()
-    }
 }
 
 impl<T, Score> RankedItem<Score> for T

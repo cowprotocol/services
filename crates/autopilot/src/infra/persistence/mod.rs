@@ -227,7 +227,7 @@ impl Persistence {
                         id: u256_to_big_decimal(&participant.solution().id().into()),
                         solver: ByteArray(participant.solution().solver().0.0),
                         is_winner: participant.is_winner(),
-                        filtered_out: participant.filtered_out(),
+                        filtered_out: participant.is_filtered_out(),
                         score: number::conversions::alloy::u256_to_big_decimal(
                             &participant.score().get().0,
                         ),
