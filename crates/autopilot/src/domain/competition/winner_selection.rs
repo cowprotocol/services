@@ -32,7 +32,7 @@ use {
             Prices,
             order::{self, TargetAmount},
         },
-        competition::{Participant, Ranked, Score, Solution, Unranked},
+        competition::{Participant, RankType, Ranked, Score, Scored, Solution, Unscored},
         eth::{self, WrappedNativeToken},
         fee,
         settlement::{
@@ -57,14 +57,14 @@ impl Arbitrator {
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(
         &self,
-        participants: Vec<Participant<Unranked>>,
+        participants: Vec<Participant<Unscored>>,
         auction: &domain::Auction,
     ) -> Ranking {
         let partitioned = self.partition_unfair_solutions(participants, auction);
         let filtered_out = partitioned
             .discarded
             .into_iter()
-            .map(|participant| participant.rank(Ranked::FilteredOut))
+            .map(|participant| participant.rank(RankType::FilteredOut))
             .collect();
 
         let mut ranked = self.mark_winners(partitioned.kept);
@@ -73,7 +73,7 @@ impl Arbitrator {
                 // winners before non-winners
                 std::cmp::Reverse(participant.is_winner()),
                 // high score before low score
-                std::cmp::Reverse(participant.solution().score()),
+                std::cmp::Reverse(participant.score()),
             )
         });
         Ranking {
@@ -85,16 +85,17 @@ impl Arbitrator {
     /// Removes unfair solutions from the set of all solutions.
     fn partition_unfair_solutions(
         &self,
-        mut participants: Vec<Participant<Unranked>>,
+        participants: Vec<Participant<Unscored>>,
         auction: &domain::Auction,
     ) -> PartitionedSolutions {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
-        let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
+        let (mut participants, scores_by_solution) =
+            compute_scores_by_solution(participants, auction);
         participants.sort_by_key(|participant| {
             std::cmp::Reverse(
                 // we use the computed score to not trust the score provided by solvers
-                participant.solution().score().get().0,
+                participant.score().get().0,
             )
         });
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
@@ -130,15 +131,15 @@ impl Arbitrator {
 
     /// Picks winners and sorts all solutions where winners come before
     /// non-winners and higher scores come before lower scores.
-    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
+    fn mark_winners(&self, participants: Vec<Participant<Scored>>) -> Vec<Participant<Ranked>> {
         let winner_indexes = self.pick_winners(participants.iter().map(|p| p.solution()));
         participants
             .into_iter()
             .enumerate()
             .map(|(index, participant)| {
                 let rank = match winner_indexes.contains(&index) {
-                    true => Ranked::Winner,
-                    false => Ranked::NonWinner,
+                    true => RankType::Winner,
+                    false => RankType::NonWinner,
                 };
                 participant.rank(rank)
             })
@@ -165,17 +166,19 @@ impl Arbitrator {
                 continue;
             }
 
-            let solutions_without_solver = ranking
+            let participants_without_solver: Vec<_> = ranking
                 .ranked
                 .iter()
                 .filter(|p| p.driver().submission_address != solver)
-                .map(|p| p.solution());
-            let winner_indices = self.pick_winners(solutions_without_solver.clone());
+                .collect();
+            let solutions = participants_without_solver.iter().map(|p| p.solution());
+            let winner_indices = self.pick_winners(solutions);
 
-            let score = solutions_without_solver
+            let score = participants_without_solver
+                .iter()
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
-                .filter_map(|(_, solution)| solution.score)
+                .map(|(_, p)| p.score())
                 .reduce(Score::saturating_add)
                 .unwrap_or_default();
             reference_scores.insert(solver, score);
@@ -244,39 +247,40 @@ fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDire
 /// Solutions get discarded because fairness guarantees heavily
 /// depend on these scores being accurate.
 fn compute_scores_by_solution(
-    participants: &mut Vec<Participant<Unranked>>,
+    participants: Vec<Participant<Unscored>>,
     auction: &domain::Auction,
-) -> ScoresBySolution {
+) -> (Vec<Participant<Scored>>, ScoresBySolution) {
     let auction = Auction::from(auction);
-    let mut scores = HashMap::default();
+    let mut scores_by_solution = HashMap::default();
+    let mut scored_participants = Vec::new();
 
-    participants.retain_mut(|p| match score_by_token_pair(p.solution(), &auction) {
-        Ok(score) => {
-            let total_score = score
-                .values()
-                .fold(Score::default(), |acc, score| acc.saturating_add(*score));
-            scores.insert(
-                SolutionKey {
-                    driver: p.driver().submission_address,
-                    solution_id: p.solution().id,
-                },
-                score,
-            );
-            p.set_score(total_score);
-            true
+    for participant in participants {
+        match score_by_token_pair(participant.solution(), &auction) {
+            Ok(score) => {
+                let total_score = score
+                    .values()
+                    .fold(Score::default(), |acc, score| acc.saturating_add(*score));
+                scores_by_solution.insert(
+                    SolutionKey {
+                        driver: participant.driver().submission_address,
+                        solution_id: participant.solution().id,
+                    },
+                    score,
+                );
+                scored_participants.push(participant.with_score(total_score));
+            }
+            Err(err) => {
+                tracing::warn!(
+                    driver = participant.driver().name,
+                    ?err,
+                    solution = ?participant.solution(),
+                    "discarding solution where scores could not be computed"
+                );
+            }
         }
-        Err(err) => {
-            tracing::warn!(
-                driver = p.driver().name,
-                ?err,
-                solution = ?p.solution(),
-                "discarding solution where scores could not be computed"
-            );
-            false
-        }
-    });
+    }
 
-    scores
+    (scored_participants, scores_by_solution)
 }
 
 /// Returns the total scores for each directed token pair of the solution.
@@ -450,8 +454,8 @@ impl Ranking {
 }
 
 struct PartitionedSolutions {
-    kept: Vec<Participant<Unranked>>,
-    discarded: Vec<Participant<Unranked>>,
+    kept: Vec<Participant<Scored>>,
+    discarded: Vec<Participant<Scored>>,
 }
 
 #[cfg(test)]
@@ -466,7 +470,7 @@ mod tests {
                     Price,
                     order::{self, AppDataHash},
                 },
-                competition::{Participant, Solution, TradedOrder, Unranked},
+                competition::{Participant, Solution, TradedOrder, Unscored},
                 eth::{self, TokenAddress},
             },
             infra::Driver,
@@ -1214,7 +1218,7 @@ mod tests {
                 // winners before non-winners
                 std::cmp::Reverse(a.is_winner()),
                 // high score before low score
-                std::cmp::Reverse(a.solution().score())
+                std::cmp::Reverse(a.score())
             )));
             assert_eq!(winners.len(), self.expected_winners.len());
             for (actual, expected) in winners.iter().zip(&self.expected_winners) {
@@ -1374,7 +1378,7 @@ mod tests {
         solver_address: Address,
         trades: Vec<(OrderUid, TradedOrder)>,
         prices: Option<HashMap<TokenAddress, Price>>,
-    ) -> Participant<Unranked> {
+    ) -> Participant<Unscored> {
         // The prices of the tokens do not affect the result but they keys must exist
         // for every token of every trade
         let prices = prices.unwrap_or({
