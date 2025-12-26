@@ -17,7 +17,7 @@ use {
 ///
 /// Estimated size: ~1.7KB for a solution with 5 orders and 10 unique tokens.
 #[derive(Debug, Clone)]
-pub struct Solution {
+pub struct Solution<State = Ranked> {
     /// Solution ID from solver (unique per solver).
     pub id: u64,
 
@@ -36,11 +36,122 @@ pub struct Solution {
     /// settled.
     pub prices: HashMap<Address, U256>,
 
-    /// Total score for this solution.
-    ///
-    /// This is computed during winner selection and is not part of the
-    /// minimal data sent to the Pod Service.
-    pub score: Option<U256>,
+    /// State marker (score and ranking information).
+    state: State,
+}
+
+/// Solution that hasn't been scored yet.
+#[derive(Debug, Clone)]
+pub struct Unscored;
+
+/// Solution with a computed score.
+#[derive(Debug, Clone)]
+pub struct Scored {
+    pub score: U256,
+}
+
+/// Solution with ranking information.
+#[derive(Debug, Clone)]
+pub struct Ranked {
+    pub rank_type: RankType,
+    pub score: U256,
+}
+
+/// The type of ranking assigned to a solution.
+#[derive(Debug, Clone, Copy)]
+pub enum RankType {
+    Winner,
+    NonWinner,
+    FilteredOut,
+}
+
+impl<T> Solution<T> {
+    /// Get the solution ID.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Get the solver address.
+    pub fn solver(&self) -> Address {
+        self.solver
+    }
+
+    /// Get the orders.
+    pub fn orders(&self) -> &[Order] {
+        &self.orders
+    }
+
+    /// Get the clearing prices.
+    pub fn prices(&self) -> &HashMap<Address, U256> {
+        &self.prices
+    }
+}
+
+impl Solution<Unscored> {
+    /// Create a new unscored solution.
+    pub fn new(
+        id: u64,
+        solver: Address,
+        orders: Vec<Order>,
+        prices: HashMap<Address, U256>,
+    ) -> Self {
+        Self {
+            id,
+            solver,
+            orders,
+            prices,
+            state: Unscored,
+        }
+    }
+
+    /// Add a score to this solution.
+    pub fn with_score(self, score: U256) -> Solution<Scored> {
+        Solution {
+            id: self.id,
+            solver: self.solver,
+            orders: self.orders,
+            prices: self.prices,
+            state: Scored { score },
+        }
+    }
+}
+
+impl Solution<Scored> {
+    /// Get the score.
+    pub fn score(&self) -> U256 {
+        self.state.score
+    }
+
+    /// Rank this solution.
+    pub fn rank(self, rank_type: RankType) -> Solution<Ranked> {
+        Solution {
+            id: self.id,
+            solver: self.solver,
+            orders: self.orders,
+            prices: self.prices,
+            state: Ranked {
+                rank_type,
+                score: self.state.score,
+            },
+        }
+    }
+}
+
+impl Solution<Ranked> {
+    /// Get the score.
+    pub fn score(&self) -> U256 {
+        self.state.score
+    }
+
+    /// Check if this solution is a winner.
+    pub fn is_winner(&self) -> bool {
+        matches!(self.state.rank_type, RankType::Winner)
+    }
+
+    /// Check if this solution was filtered out.
+    pub fn is_filtered_out(&self) -> bool {
+        matches!(self.state.rank_type, RankType::FilteredOut)
+    }
 }
 
 /// Minimal order data needed for winner selection.

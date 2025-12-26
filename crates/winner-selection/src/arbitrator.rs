@@ -8,7 +8,7 @@ use {
     crate::{
         auction::AuctionContext,
         primitives::{DirectedTokenPair, FeePolicy, Quote, Side, as_erc20, price_in_eth},
-        solution::{Order, Solution},
+        solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
         util::U256Ext,
     },
     alloy::primitives::{Address, U256},
@@ -32,17 +32,20 @@ impl Arbitrator {
     /// Runs the auction mechanism on solutions.
     ///
     /// Takes solutions and auction context, returns a ranking with winners.
-    pub fn arbitrate(&self, solutions: Vec<Solution>, context: &AuctionContext) -> Ranking {
+    pub fn arbitrate(
+        &self,
+        solutions: Vec<Solution<Unscored>>,
+        context: &AuctionContext,
+    ) -> Ranking {
         let partitioned = self.partition_unfair_solutions(solutions, context);
-        let filtered_out = partitioned.discarded;
+        let filtered_out = partitioned
+            .discarded
+            .into_iter()
+            .map(|s| s.rank(RankType::FilteredOut))
+            .collect();
         let mut ranked = self.mark_winners(partitioned.kept);
 
-        ranked.sort_by_key(|ranked_solution| {
-            (
-                Reverse(ranked_solution.is_winner),
-                Reverse(ranked_solution.solution.score.unwrap_or_default()),
-            )
-        });
+        ranked.sort_by_key(|solution| (Reverse(solution.is_winner()), Reverse(solution.score())));
 
         Ranking {
             filtered_out,
@@ -53,15 +56,16 @@ impl Arbitrator {
     /// Removes unfair solutions from the set of all solutions.
     fn partition_unfair_solutions(
         &self,
-        mut solutions: Vec<Solution>,
+        solutions: Vec<Solution<Unscored>>,
         context: &AuctionContext,
     ) -> PartitionedSolutions {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
-        let scores_by_solution = self.compute_scores_by_solution(&mut solutions, context);
+        let (mut solutions, scores_by_solution) =
+            self.compute_scores_by_solution(solutions, context);
 
         // Sort by score descending
-        solutions.sort_by_key(|solution| Reverse(solution.score.unwrap_or_default()));
+        solutions.sort_by_key(|solution| Reverse(solution.score()));
 
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
 
@@ -69,8 +73,8 @@ impl Arbitrator {
         let (kept, discarded): (Vec<_>, Vec<_>) = solutions.into_iter().partition_map(|solution| {
             let aggregated_scores = scores_by_solution
                 .get(&SolutionKey {
-                    solver: solution.solver,
-                    solution_id: solution.id,
+                    solver: solution.solver(),
+                    solution_id: solution.id(),
                 })
                 .expect("every remaining solution has an entry");
 
@@ -95,15 +99,19 @@ impl Arbitrator {
     }
 
     /// Picks winners and marks all solutions.
-    fn mark_winners(&self, solutions: Vec<Solution>) -> Vec<RankedSolution> {
+    fn mark_winners(&self, solutions: Vec<Solution<Scored>>) -> Vec<Solution<Ranked>> {
         let winner_indices = self.pick_winners(solutions.iter());
 
         solutions
             .into_iter()
             .enumerate()
-            .map(|(index, solution)| RankedSolution {
-                is_winner: winner_indices.contains(&index),
-                solution,
+            .map(|(index, solution)| {
+                let rank_type = if winner_indices.contains(&index) {
+                    RankType::Winner
+                } else {
+                    RankType::NonWinner
+                };
+                solution.rank(rank_type)
             })
             .collect()
     }
@@ -114,39 +122,38 @@ impl Arbitrator {
     /// depend on these scores being accurate.
     fn compute_scores_by_solution(
         &self,
-        solutions: &mut Vec<Solution>,
+        solutions: Vec<Solution<Unscored>>,
         context: &AuctionContext,
-    ) -> ScoresBySolution {
-        let mut scores = HashMap::default();
+    ) -> (Vec<Solution<Scored>>, ScoresBySolution) {
+        let mut scores_by_solution = HashMap::default();
+        let mut scored_solutions = Vec::new();
 
-        solutions.retain_mut(
-            |solution| match self.score_by_token_pair(solution, context) {
+        for solution in solutions {
+            match self.score_by_token_pair(&solution, context) {
                 Ok(score) => {
                     let total_score = score
                         .values()
                         .fold(U256::ZERO, |acc, s| acc.saturating_add(*s));
-                    scores.insert(
+                    scores_by_solution.insert(
                         SolutionKey {
-                            solver: solution.solver,
-                            solution_id: solution.id,
+                            solver: solution.solver(),
+                            solution_id: solution.id(),
                         },
                         score,
                     );
-                    solution.score = Some(total_score);
-                    true
+                    scored_solutions.push(solution.with_score(total_score));
                 }
                 Err(err) => {
                     tracing::warn!(
-                        solution_id = solution.id,
+                        solution_id = solution.id(),
                         ?err,
                         "discarding solution where scores could not be computed"
                     );
-                    false
                 }
-            },
-        );
+            }
+        }
 
-        scores
+        (scored_solutions, scores_by_solution)
     }
 
     /// Returns the total scores for each directed token pair of the solution.
@@ -157,14 +164,14 @@ impl Arbitrator {
     /// it will return a map like:
     ///     (A, B) => 15
     ///     (B, C) => 5
-    fn score_by_token_pair(
+    fn score_by_token_pair<T>(
         &self,
-        solution: &Solution,
+        solution: &Solution<T>,
         context: &AuctionContext,
     ) -> Result<HashMap<DirectedTokenPair, U256>> {
         let mut scores: HashMap<DirectedTokenPair, U256> = HashMap::default();
 
-        for order in &solution.orders {
+        for order in solution.orders() {
             if !context.contributes_to_score(&order.uid) {
                 continue;
             }
@@ -189,10 +196,10 @@ impl Arbitrator {
     /// Follows CIP-38 as the base of the score computation.
     ///
     /// Denominated in NATIVE token.
-    fn compute_order_score(
+    fn compute_order_score<T>(
         &self,
         order: &Order,
-        solution: &Solution,
+        solution: &Solution<T>,
         context: &AuctionContext,
     ) -> Result<U256> {
         let native_price_buy = context
@@ -201,11 +208,11 @@ impl Arbitrator {
             .context("missing native price for buy token")?;
 
         let _uniform_sell_price = solution
-            .prices
+            .prices()
             .get(&order.sell_token)
             .context("missing uniform clearing price for sell token")?;
         let _uniform_buy_price = solution
-            .prices
+            .prices()
             .get(&order.buy_token)
             .context("missing uniform clearing price for buy token")?;
 
@@ -562,7 +569,10 @@ impl Arbitrator {
     }
 
     /// Pick winners based on directional token pairs.
-    fn pick_winners<'a>(&self, solutions: impl Iterator<Item = &'a Solution>) -> HashSet<usize> {
+    fn pick_winners<'a, T: 'a>(
+        &self,
+        solutions: impl Iterator<Item = &'a Solution<T>>,
+    ) -> HashSet<usize> {
         let mut already_swapped_token_pairs = HashSet::new();
         let mut winners = HashSet::default();
 
@@ -572,7 +582,7 @@ impl Arbitrator {
             }
 
             let swapped_token_pairs: HashSet<DirectedTokenPair> = solution
-                .orders
+                .orders()
                 .iter()
                 .map(|order| DirectedTokenPair {
                     sell: as_erc20(order.sell_token, self.weth),
@@ -594,7 +604,7 @@ impl Arbitrator {
         let mut reference_scores = HashMap::default();
 
         for ranked_solution in &ranking.ranked {
-            let solver = ranked_solution.solution.solver;
+            let solver = ranked_solution.solver();
 
             if reference_scores.len() >= self.max_winners {
                 return reference_scores;
@@ -602,23 +612,24 @@ impl Arbitrator {
             if reference_scores.contains_key(&solver) {
                 continue;
             }
-            if !ranked_solution.is_winner {
+            if !ranked_solution.is_winner() {
                 continue;
             }
 
             // Compute score without this solver
-            let solutions_without_solver = ranking
+            let solutions_without_solver: Vec<_> = ranking
                 .ranked
                 .iter()
-                .filter(|s| s.solution.solver != solver)
-                .map(|s| &s.solution);
+                .filter(|s| s.solver() != solver)
+                .collect();
 
-            let winner_indices = self.pick_winners(solutions_without_solver.clone());
+            let winner_indices = self.pick_winners(solutions_without_solver.iter().copied());
 
             let score = solutions_without_solver
+                .iter()
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
-                .filter_map(|(_, solution)| solution.score)
+                .map(|(_, solution)| solution.score())
                 .reduce(|acc, score| acc.saturating_add(score))
                 .unwrap_or_default();
 
@@ -649,43 +660,32 @@ fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDire
 
 /// Result of partitioning solutions into fair and unfair.
 struct PartitionedSolutions {
-    /// Solutions that passed fairness checks.
-    kept: Vec<Solution>,
-    /// Solutions that were filtered out as unfair.
-    discarded: Vec<Solution>,
-}
-
-/// A solution with its ranking status.
-#[derive(Debug, Clone)]
-pub struct RankedSolution {
-    pub solution: Solution,
-    pub is_winner: bool,
+    /// Solutions that passed fairness checks (with scores).
+    kept: Vec<Solution<Scored>>,
+    /// Solutions that were filtered out as unfair (with scores).
+    discarded: Vec<Solution<Scored>>,
 }
 
 /// Final ranking of all solutions.
 #[derive(Debug)]
 pub struct Ranking {
-    /// Solutions that were filtered out as unfair.
-    pub filtered_out: Vec<Solution>,
-    /// Solutions that passed fairness checks, ordered by score.
-    pub ranked: Vec<RankedSolution>,
+    /// Solutions that were filtered out as unfair (with scores and FilteredOut
+    /// rank).
+    pub filtered_out: Vec<Solution<Ranked>>,
+    /// Solutions that passed fairness checks, ordered by score (with
+    /// Winner/NonWinner ranks).
+    pub ranked: Vec<Solution<Ranked>>,
 }
 
 impl Ranking {
     /// All winning solutions.
-    pub fn winners(&self) -> impl Iterator<Item = &Solution> {
-        self.ranked
-            .iter()
-            .filter(|r| r.is_winner)
-            .map(|r| &r.solution)
+    pub fn winners(&self) -> impl Iterator<Item = &Solution<Ranked>> {
+        self.ranked.iter().filter(|s| s.is_winner())
     }
 
     /// All non-winning solutions that weren't filtered out.
-    pub fn non_winners(&self) -> impl Iterator<Item = &Solution> {
-        self.ranked
-            .iter()
-            .filter(|r| !r.is_winner)
-            .map(|r| &r.solution)
+    pub fn non_winners(&self) -> impl Iterator<Item = &Solution<Ranked>> {
+        self.ranked.iter().filter(|s| !s.is_winner())
     }
 }
 

@@ -66,7 +66,7 @@ impl Arbitrator {
 
         for participant in participants {
             let key = SolutionKey::from(participant.solution());
-            let solution = to_ws_solution(participant.solution(), None);
+            let solution = to_ws_solution(participant.solution());
             participant_by_key.insert(key, participant);
             solutions.push(solution);
         }
@@ -79,9 +79,7 @@ impl Arbitrator {
             let participant = participant_by_key
                 .remove(&key)
                 .expect("every ranked solution has a matching participant");
-            let score = ws_solution
-                .score
-                .expect("winner selection should compute scores");
+            let score = ws_solution.score();
             filtered_out.push(
                 participant
                     .with_score(Score(eth::Ether(score)))
@@ -91,15 +89,12 @@ impl Arbitrator {
 
         let mut ranked = Vec::with_capacity(ws_ranking.ranked.len());
         for ranked_solution in ws_ranking.ranked {
-            let key = SolutionKey::from(&ranked_solution.solution);
+            let key = SolutionKey::from(&ranked_solution);
             let participant = participant_by_key
                 .remove(&key)
                 .expect("every ranked solution has a matching participant");
-            let score = ranked_solution
-                .solution
-                .score
-                .expect("winner selection should compute scores");
-            let rank_type = if ranked_solution.is_winner {
+            let score = ranked_solution.score();
+            let rank_type = if ranked_solution.is_winner() {
                 RankType::Winner
             } else {
                 RankType::NonWinner
@@ -158,22 +153,21 @@ fn to_ws_context(auction: &domain::Auction) -> ws::AuctionContext {
     }
 }
 
-fn to_ws_solution(solution: &Solution, score: Option<Score>) -> ws::Solution {
-    ws::Solution {
-        id: solution.id(),
-        solver: solution.solver(),
-        orders: solution
+fn to_ws_solution(solution: &Solution) -> ws::Solution<ws::Unscored> {
+    ws::Solution::new(
+        solution.id(),
+        solution.solver(),
+        solution
             .orders()
             .iter()
             .map(|(uid, order)| to_ws_order(*uid, order))
             .collect(),
-        prices: solution
+        solution
             .prices()
             .iter()
             .map(|(token, price)| (token.0, price.get().0))
             .collect(),
-        score: score.map(|score| score.get().0),
-    }
+    )
 }
 
 fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
@@ -196,16 +190,26 @@ fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
     let ranked = ranking
         .ranked
         .iter()
-        .map(|participant| ws::arbitrator::RankedSolution {
-            solution: to_ws_solution(participant.solution(), Some(participant.score())),
-            is_winner: participant.is_winner(),
+        .map(|participant| {
+            let rank_type = if participant.is_winner() {
+                ws::RankType::Winner
+            } else {
+                ws::RankType::NonWinner
+            };
+            to_ws_solution(participant.solution())
+                .with_score(participant.score().get().0)
+                .rank(rank_type)
         })
         .collect();
 
     let filtered_out = ranking
         .filtered_out
         .iter()
-        .map(|participant| to_ws_solution(participant.solution(), Some(participant.score())))
+        .map(|participant| {
+            to_ws_solution(participant.solution())
+                .with_score(participant.score().get().0)
+                .rank(ws::RankType::FilteredOut)
+        })
         .collect();
 
     ws::Ranking {
@@ -258,11 +262,11 @@ impl From<&Solution> for SolutionKey {
     }
 }
 
-impl From<&ws::Solution> for SolutionKey {
-    fn from(solution: &ws::Solution) -> Self {
+impl<T> From<&ws::Solution<T>> for SolutionKey {
+    fn from(solution: &ws::Solution<T>) -> Self {
         Self {
-            solver: solution.solver,
-            solution_id: solution.id,
+            solver: solution.solver(),
+            solution_id: solution.id(),
         }
     }
 }

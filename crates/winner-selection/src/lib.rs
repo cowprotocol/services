@@ -16,5 +16,5 @@ pub use {
     arbitrator::{Arbitrator, Ranking},
     auction::AuctionContext,
     primitives::{Address, DirectedTokenPair, OrderUid, Side, U256},
-    solution::{Order, Solution},
+    solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
 };
