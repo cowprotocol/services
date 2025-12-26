@@ -27,6 +27,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,

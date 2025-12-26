@@ -9,6 +9,7 @@ use {
         auction::AuctionContext,
         primitives::{DirectedTokenPair, FeePolicy, Quote, Side, as_erc20, price_in_eth},
         solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
+        state::{RankedItem, ScoredItem, UnscoredItem},
         util::U256Ext,
     },
     alloy::primitives::{Address, U256},

@@ -32,6 +32,7 @@ use {
         eth::{self, WrappedNativeToken},
         fee,
     },
+    ::winner_selection::state::{RankedItem, ScoredItem, UnscoredItem},
     std::collections::HashMap,
     winner_selection as ws,
 };
@@ -335,6 +336,7 @@ mod tests {
             collections::HashMap,
             hash::{DefaultHasher, Hash, Hasher},
         },
+        winner_selection::state::RankedItem,
     };
 
     const DEFAULT_TOKEN_PRICE: u128 = 1_000;

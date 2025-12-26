@@ -22,6 +22,7 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     anyhow::Context,
     ethrpc::block_stream::CurrentBlockWatcher,
     itertools::Itertools,

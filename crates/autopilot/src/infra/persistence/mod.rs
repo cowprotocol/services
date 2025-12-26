@@ -5,6 +5,7 @@ use {
         domain::{self, eth, settlement::transaction::EncodedTrade},
         infra::persistence::dto::{AuctionId, RawAuctionData},
     },
+    ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::Context,
     bigdecimal::ToPrimitive,

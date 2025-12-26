@@ -3,11 +3,17 @@
 //! These structs contain only the data needed for winner selection,
 //! making them small enough to efficiently send to/from the Pod Service.
 
+pub use state::{RankType, Unscored};
 use {
-    crate::primitives::{OrderUid, Side},
+    crate::{
+        primitives::{OrderUid, Side},
+        state,
+    },
     alloy::primitives::{Address, U256},
     std::collections::HashMap,
 };
+pub type Scored = state::Scored<U256>;
+pub type Ranked = state::Ranked<U256>;
 
 /// Minimal solution data needed for winner selection.
 ///
@@ -40,31 +46,6 @@ pub struct Solution<State = Ranked> {
     state: State,
 }
 
-/// Solution that hasn't been scored yet.
-#[derive(Debug, Clone)]
-pub struct Unscored;
-
-/// Solution with a computed score.
-#[derive(Debug, Clone)]
-pub struct Scored {
-    pub score: U256,
-}
-
-/// Solution with ranking information.
-#[derive(Debug, Clone)]
-pub struct Ranked {
-    pub rank_type: RankType,
-    pub score: U256,
-}
-
-/// The type of ranking assigned to a solution.
-#[derive(Debug, Clone, Copy)]
-pub enum RankType {
-    Winner,
-    NonWinner,
-    FilteredOut,
-}
-
 impl<T> Solution<T> {
     /// Get the solution ID.
     pub fn id(&self) -> u64 {
@@ -87,6 +68,25 @@ impl<T> Solution<T> {
     }
 }
 
+impl<State> state::WithState for Solution<State> {
+    type State = State;
+    type WithState<NewState> = Solution<NewState>;
+
+    fn with_state<NewState>(self, state: NewState) -> Self::WithState<NewState> {
+        Solution {
+            id: self.id,
+            solver: self.solver,
+            orders: self.orders,
+            prices: self.prices,
+            state,
+        }
+    }
+
+    fn state(&self) -> &Self::State {
+        &self.state
+    }
+}
+
 impl Solution<Unscored> {
     /// Create a new unscored solution.
     pub fn new(
@@ -102,55 +102,6 @@ impl Solution<Unscored> {
             prices,
             state: Unscored,
         }
-    }
-
-    /// Add a score to this solution.
-    pub fn with_score(self, score: U256) -> Solution<Scored> {
-        Solution {
-            id: self.id,
-            solver: self.solver,
-            orders: self.orders,
-            prices: self.prices,
-            state: Scored { score },
-        }
-    }
-}
-
-impl Solution<Scored> {
-    /// Get the score.
-    pub fn score(&self) -> U256 {
-        self.state.score
-    }
-
-    /// Rank this solution.
-    pub fn rank(self, rank_type: RankType) -> Solution<Ranked> {
-        Solution {
-            id: self.id,
-            solver: self.solver,
-            orders: self.orders,
-            prices: self.prices,
-            state: Ranked {
-                rank_type,
-                score: self.state.score,
-            },
-        }
-    }
-}
-
-impl Solution<Ranked> {
-    /// Get the score.
-    pub fn score(&self) -> U256 {
-        self.state.score
-    }
-
-    /// Check if this solution is a winner.
-    pub fn is_winner(&self) -> bool {
-        matches!(self.state.rank_type, RankType::Winner)
-    }
-
-    /// Check if this solution was filtered out.
-    pub fn is_filtered_out(&self) -> bool {
-        matches!(self.state.rank_type, RankType::FilteredOut)
     }
 }
 
