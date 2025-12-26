@@ -263,7 +263,7 @@ fn compute_scores_by_solution(
                 scores_by_solution.insert(
                     SolutionKey {
                         driver: participant.driver().submission_address,
-                        solution_id: participant.solution().id,
+                        solution_id: participant.solution().id(),
                     },
                     score,
                 );
