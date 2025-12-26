@@ -1263,6 +1263,7 @@ dependencies = [
  "url",
  "vergen",
  "web3",
+ "winner-selection",
 ]
 
 [[package]]
@@ -8111,6 +8112,17 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+
+[[package]]
+name = "winner-selection"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "itertools 0.14.0",
+ "thiserror 1.0.61",
+ "tracing",
+]
 
 [[package]]
 name = "winnow"
