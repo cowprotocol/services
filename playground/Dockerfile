@@ -1,6 +1,6 @@
 FROM debian:bookworm AS chef
 WORKDIR /src/
-RUN apt-get update && apt-get install -y curl git clang mold libssl-dev pkg-config git && apt-get clean
+RUN apt-get update && apt-get install -y curl git clang mold libssl-dev pkg-config git make && apt-get clean
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="$PATH:/root/.cargo/bin"
 RUN rustup component add clippy rustfmt

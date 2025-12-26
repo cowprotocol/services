@@ -42,7 +42,7 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 > The EthFlow is not configured by default, the next section explains how to set it up.
 > You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see how the Protocol interacts.
 > If you make any changes to the files in your repo directory, services will automatically be recompiled and restarted.
-> The CoW Explorer is avialable at http://localhost:8001 to see more information about transaction status
+> The CoW Explorer is available at http://localhost:8001 to see more information about transaction status
 
 ### Resetting the playground
 
@@ -115,6 +115,9 @@ await window.ethereum.request({
 | Postgres      | postgres           | 5432          | 5432               | N/A                    | Local/Fork |
 | Adminer       | adminer            | 8082          | 8080               | N/A                    | Local/Fork |
 | Grafana       | grafana            | 3000          | 3000               | N/A                    | Local/Fork |
+| Otterscan     | otterscan          | 8003          | 80                 | N/A                    | Local/Fork |
+| Sourcify      | sourcify           | 5555          | 5555               | N/A                    | Local/Fork |
+| Sourcify DB   | sourcify-db        | N/A           | 5432               | N/A                    | Local/Fork |
 
 **NOTE**: Currently only **FORK** mode is supported.
 
@@ -137,16 +140,61 @@ In this mode, the stack will spin up:
 - Postgres (with migrations)
 - Adminer
 - RPC (forked from `reth` or `erigon` node)
-- Otterscan (*not yet implemented*)
+- Otterscan
+- Sourcify (contract verification)
 - Orderbook
 - Autopilot
 - Driver
 - Baseline
 - Cow Swap
-- Cow Explorer (*not yet implemented*)
+- Cow Explorer
 
 ### Local
 
 **NOT YET IMPLEMENTED**
 
 - As per fork, but with a local node (not forked from Erigon)
+
+## Contract Verification with Sourcify
+
+The playground includes a local [Sourcify](https://sourcify.dev/) instance for contract verification. Sourcify is a decentralized contract verification service that matches deployed bytecode with source code. Verified contracts display their source code in Otterscan.
+
+**How it works:**
+
+- **Cloud mode** (`SOURCIFY_MODE=cloud`): Otterscan fetches verified source code from the public Sourcify repository. This shows source code for well-known contracts (CoW Protocol, USDC, etc.) that have been publicly verified.
+- **Local mode** (`SOURCIFY_MODE=local`): Otterscan fetches from your local Sourcify instance. Use this when testing contracts you deploy and verify locally.
+
+### Sourcify Sources Configuration
+
+Configure which Sourcify source Otterscan uses in your `.env` file:
+
+```bash
+# Use public Sourcify (default) - shows publicly verified contracts
+SOURCIFY_MODE=cloud
+
+# Use local Sourcify - shows contracts verified on your local instance
+SOURCIFY_MODE=local
+```
+
+After changing this value, recreate the Otterscan container:
+
+```bash
+docker compose -f docker-compose.fork.yml up -d otterscan
+```
+
+or
+
+```bash
+docker compose -f docker-compose.non-interactive.yml up -d otterscan
+```
+
+> **Note**: A simple `docker compose restart` won't work because it doesn't re-read `.env` - you need to recreate the container.
+
+### Verifying Contracts
+
+You can verify contracts on the local Sourcify instance using:
+
+1. **Sourcify API**: POST to `http://localhost:5555/verify` with your contract address, chain ID, and source files
+2. **Foundry**: Use `forge verify-contract` with `--verifier sourcify --verifier-url http://localhost:5555`
+
+After verification, view the contract source in Otterscan at `http://localhost:8003/address/<contract_address>`.
