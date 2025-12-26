@@ -10,7 +10,7 @@ use {
                 Solution,
                 SolutionError,
                 SolverParticipationGuard,
-                Unranked,
+                Unscored,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -495,7 +495,7 @@ impl RunLoop {
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
                 solver_address: participant.solution().solver(),
-                score: Some(Score::Solver(participant.solution().score().get().0)),
+                score: Some(Score::Solver(participant.score().get().0)),
                 ranking: index + 1,
                 orders: participant
                     .solution()
@@ -610,7 +610,7 @@ impl RunLoop {
     async fn fetch_solutions(
         &self,
         auction: &domain::Auction,
-    ) -> Vec<competition::Participant<Unranked>> {
+    ) -> Vec<competition::Participant<Unscored>> {
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
@@ -662,7 +662,7 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: solve::Request,
-    ) -> Vec<competition::Participant<Unranked>> {
+    ) -> Vec<competition::Participant<Unscored>> {
         let start = Instant::now();
         let result = self.try_solve(Arc::clone(&driver), request).await;
         let solutions = match result {
@@ -1135,7 +1135,7 @@ pub mod observe {
     use {
         crate::domain::{
             self,
-            competition::{Unranked, winner_selection::Ranking},
+            competition::{Unscored, winner_selection::Ranking},
         },
         std::collections::HashSet,
     };
@@ -1168,7 +1168,7 @@ pub mod observe {
         );
     }
 
-    pub fn solutions(solutions: &[domain::competition::Participant<Unranked>]) {
+    pub fn solutions(solutions: &[domain::competition::Participant<Unscored>]) {
         if solutions.is_empty() {
             tracing::info!("no solutions for auction");
         }
