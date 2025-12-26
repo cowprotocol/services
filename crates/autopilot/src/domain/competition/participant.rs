@@ -1,12 +1,8 @@
-use {
-    super::{Score, Solution},
-    crate::infra,
-    std::sync::Arc,
-};
+use {super::Score, crate::infra, std::sync::Arc};
 
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
-    solution: Solution,
+    solution: super::Solution,
     driver: Arc<infra::Driver>,
     state: State,
 }
@@ -33,7 +29,7 @@ pub enum RankType {
 }
 
 impl<T> Participant<T> {
-    pub fn solution(&self) -> &Solution {
+    pub fn solution(&self) -> &super::Solution {
         &self.solution
     }
 
@@ -43,7 +39,7 @@ impl<T> Participant<T> {
 }
 
 impl Participant<Unscored> {
-    pub fn new(solution: Solution, driver: Arc<infra::Driver>) -> Self {
+    pub fn new(solution: super::Solution, driver: Arc<infra::Driver>) -> Self {
         Self {
             solution,
             driver,

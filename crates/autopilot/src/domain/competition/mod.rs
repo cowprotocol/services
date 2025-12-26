@@ -41,7 +41,9 @@ impl Solution {
             prices,
         }
     }
+}
 
+impl Solution {
     pub fn id(&self) -> SolutionId {
         self.id
     }
