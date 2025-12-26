@@ -28,7 +28,7 @@ use {
     crate::domain::{
         self,
         auction::order,
-        competition::{Participant, Ranked, Score, Solution, TradedOrder, Unranked},
+        competition::{Participant, RankType, Ranked, Score, Solution, TradedOrder, Unscored},
         eth::{self, WrappedNativeToken},
         fee,
     },
@@ -57,7 +57,7 @@ impl Arbitrator {
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(
         &self,
-        participants: Vec<Participant<Unranked>>,
+        participants: Vec<Participant<Unscored>>,
         auction: &domain::Auction,
     ) -> Ranking {
         let context = to_ws_context(auction);
@@ -76,33 +76,39 @@ impl Arbitrator {
         let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
         for ws_solution in ws_ranking.filtered_out {
             let key = SolutionKey::from(&ws_solution);
-            let mut participant = participant_by_key
+            let participant = participant_by_key
                 .remove(&key)
                 .expect("every ranked solution has a matching participant");
             let score = ws_solution
                 .score
                 .expect("winner selection should compute scores");
-            participant.set_score(Score(eth::Ether(score)));
-            filtered_out.push(participant.rank(Ranked::FilteredOut));
+            filtered_out.push(
+                participant
+                    .with_score(Score(eth::Ether(score)))
+                    .rank(RankType::FilteredOut),
+            );
         }
 
         let mut ranked = Vec::with_capacity(ws_ranking.ranked.len());
         for ranked_solution in ws_ranking.ranked {
             let key = SolutionKey::from(&ranked_solution.solution);
-            let mut participant = participant_by_key
+            let participant = participant_by_key
                 .remove(&key)
                 .expect("every ranked solution has a matching participant");
             let score = ranked_solution
                 .solution
                 .score
                 .expect("winner selection should compute scores");
-            participant.set_score(Score(eth::Ether(score)));
-            let rank = if ranked_solution.is_winner {
-                Ranked::Winner
+            let rank_type = if ranked_solution.is_winner {
+                RankType::Winner
             } else {
-                Ranked::NonWinner
+                RankType::NonWinner
             };
-            ranked.push(participant.rank(rank));
+            ranked.push(
+                participant
+                    .with_score(Score(eth::Ether(score)))
+                    .rank(rank_type),
+            );
         }
 
         Ranking {
@@ -191,7 +197,7 @@ fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
         .ranked
         .iter()
         .map(|participant| ws::arbitrator::RankedSolution {
-            solution: to_ws_solution(participant.solution(), participant.solution().score),
+            solution: to_ws_solution(participant.solution(), Some(participant.score())),
             is_winner: participant.is_winner(),
         })
         .collect();
@@ -199,7 +205,7 @@ fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
     let filtered_out = ranking
         .filtered_out
         .iter()
-        .map(|participant| to_ws_solution(participant.solution(), participant.solution().score))
+        .map(|participant| to_ws_solution(participant.solution(), Some(participant.score())))
         .collect();
 
     ws::Ranking {
@@ -310,7 +316,7 @@ mod tests {
                     Price,
                     order::{self, AppDataHash},
                 },
-                competition::{Participant, Solution, TradedOrder, Unranked},
+                competition::{Participant, Solution, TradedOrder, Unscored},
                 eth::{self, TokenAddress},
             },
             infra::Driver,
@@ -1058,7 +1064,7 @@ mod tests {
                 // winners before non-winners
                 std::cmp::Reverse(a.is_winner()),
                 // high score before low score
-                std::cmp::Reverse(a.solution().score())
+                std::cmp::Reverse(a.score())
             )));
             assert_eq!(winners.len(), self.expected_winners.len());
             for (actual, expected) in winners.iter().zip(&self.expected_winners) {
@@ -1218,7 +1224,7 @@ mod tests {
         solver_address: Address,
         trades: Vec<(OrderUid, TradedOrder)>,
         prices: Option<HashMap<TokenAddress, Price>>,
-    ) -> Participant<Unranked> {
+    ) -> Participant<Unscored> {
         // The prices of the tokens do not affect the result but they keys must exist
         // for every token of every trade
         let prices = prices.unwrap_or({
