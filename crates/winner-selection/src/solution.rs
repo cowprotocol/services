@@ -23,7 +23,7 @@ pub type Ranked = state::Ranked<U256>;
 ///
 /// Estimated size: ~1.7KB for a solution with 5 orders and 10 unique tokens.
 #[derive(Debug, Clone)]
-pub struct Solution<State = Ranked> {
+pub struct Solution<State> {
     /// Solution ID from solver (unique per solver).
     pub id: u64,
 
