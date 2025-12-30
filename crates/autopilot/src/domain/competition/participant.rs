@@ -5,7 +5,7 @@ pub type Ranked = state::Ranked<Score>;
 
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
-    solution: super::Solution,
+    solution: Solution,
     driver: Arc<infra::Driver>,
     state: State,
 }
