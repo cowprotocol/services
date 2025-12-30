@@ -64,7 +64,7 @@ impl Arbitrator {
         let filtered_out = partitioned
             .discarded
             .into_iter()
-            .map(|participant| participant.rank(RankType::FilteredOut))
+            .map(|participant| participant.with_rank(RankType::FilteredOut))
             .collect();
 
         let mut ranked = self.mark_winners(partitioned.kept);
@@ -141,7 +141,7 @@ impl Arbitrator {
                     true => RankType::Winner,
                     false => RankType::NonWinner,
                 };
-                participant.rank(rank)
+                participant.with_rank(rank)
             })
             .collect()
     }

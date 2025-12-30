@@ -1,8 +1,12 @@
-use {super::Score, crate::infra, std::sync::Arc};
+use {
+    super::Score,
+    crate::{domain::competition::Solution, infra},
+    std::sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
-    solution: super::Solution,
+    solution: Solution,
     driver: Arc<infra::Driver>,
     state: State,
 }
@@ -61,7 +65,7 @@ impl Participant<Scored> {
         self.state.score
     }
 
-    pub fn rank(self, rank_type: RankType) -> Participant<Ranked> {
+    pub fn with_rank(self, rank_type: RankType) -> Participant<Ranked> {
         Participant {
             solution: self.solution,
             driver: self.driver,
