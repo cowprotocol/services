@@ -516,7 +516,7 @@ impl LimitOrderCounting for Postgres {
         }
         let count_old = count(old);
         let count_new = count(new);
-        let diff = elapsed_new - elapsed_old;
+        let diff = elapsed_new.as_secs_f64() - elapsed_old.as_secs_f64();
 
         if count_old == count_new {
             tracing::info!(
