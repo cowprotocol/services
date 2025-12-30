@@ -1,5 +1,5 @@
 //! Winner Selection:
-//! Implements a winner selction algorithm which picks the **set** of solutions
+//! Implements a winner selection algorithm which picks the **set** of solutions
 //! which maximize surplus while enforcing uniform **directional** clearing
 //! prices. That means all orders selling the same token must get executed at
 //! the same price for that token. But orders buying that same token may all be
@@ -84,7 +84,7 @@ impl Arbitrator {
             filtered_out.push(
                 participant
                     .with_score(Score(eth::Ether(score)))
-                    .rank(RankType::FilteredOut),
+                    .with_rank(RankType::FilteredOut),
             );
         }
 
@@ -98,7 +98,7 @@ impl Arbitrator {
             ranked.push(
                 participant
                     .with_score(Score(eth::Ether(score)))
-                    .rank(ranked_solution.state().rank_type),
+                    .with_rank(ranked_solution.state().rank_type),
             );
         }
 
@@ -194,7 +194,7 @@ fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
             };
             to_ws_solution(participant.solution())
                 .with_score(participant.score().get().0)
-                .rank(rank_type)
+                .with_rank(rank_type)
         })
         .collect();
 
@@ -204,7 +204,7 @@ fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
         .map(|participant| {
             to_ws_solution(participant.solution())
                 .with_score(participant.score().get().0)
-                .rank(ws::RankType::FilteredOut)
+                .with_rank(ws::RankType::FilteredOut)
         })
         .collect();
 

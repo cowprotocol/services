@@ -58,7 +58,7 @@ where
 
 pub trait ScoredItem<Score: Copy>: WithState<State = Scored<Score>> {
     fn score(&self) -> Score;
-    fn rank(self, rank_type: RankType) -> Self::WithState<Ranked<Score>>
+    fn with_rank(self, rank_type: RankType) -> Self::WithState<Ranked<Score>>
     where
         Self: Sized;
 }
@@ -72,7 +72,7 @@ where
         self.state().score
     }
 
-    fn rank(self, rank_type: RankType) -> Self::WithState<Ranked<Score>> {
+    fn with_rank(self, rank_type: RankType) -> Self::WithState<Ranked<Score>> {
         let score = self.state().score;
         self.with_state(Ranked { rank_type, score })
     }

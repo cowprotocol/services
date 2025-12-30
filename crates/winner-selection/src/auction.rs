@@ -31,8 +31,7 @@ pub struct AuctionContext {
     /// Native token prices for all tokens in the auction.
     ///
     /// These prices are used to convert token amounts to native token
-    /// (ETH/XDAI) for score calculation. Maps token address to its price in
-    /// native token.
+    /// for score calculation. Maps token address to its price in native token.
     pub native_prices: HashMap<Address, U256>,
 }
 

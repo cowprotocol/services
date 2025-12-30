@@ -37,7 +37,7 @@ pub struct Solution<State = Ranked> {
 
     /// Uniform clearing prices for all tokens in the solution.
     ///
-    /// Maps token address to its price in the native token (ETH/XDAI).
+    /// Maps token address to its price in the native token.
     /// These are the prices at which all orders trading these tokens are
     /// settled.
     pub prices: HashMap<Address, U256>,

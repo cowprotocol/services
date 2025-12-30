@@ -2,10 +2,10 @@
 
 pub use alloy::primitives::{Address, U256};
 
-/// Native token constant (ETH on mainnet, XDAI on Gnosis)
+/// Native token constant.
 pub const NATIVE_TOKEN: Address = Address::repeat_byte(0xee);
 
-/// If the token is ETH/XDAI, return WETH/WXDAI, converting it to ERC20.
+/// If the token is native, return the ERC20 wrapped version.
 pub fn as_erc20(token: Address, wrapped: Address) -> Address {
     if token == NATIVE_TOKEN {
         wrapped
