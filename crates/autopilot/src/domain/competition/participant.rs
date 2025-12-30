@@ -11,7 +11,7 @@ pub struct Participant<State = Ranked> {
 }
 
 impl<T> Participant<T> {
-    pub fn solution(&self) -> &super::Solution {
+    pub fn solution(&self) -> &Solution {
         &self.solution
     }
 
@@ -38,7 +38,7 @@ impl<State> state::WithState for Participant<State> {
 }
 
 impl Participant<Unscored> {
-    pub fn new(solution: super::Solution, driver: Arc<infra::Driver>) -> Self {
+    pub fn new(solution: Solution, driver: Arc<infra::Driver>) -> Self {
         Self {
             solution,
             driver,
