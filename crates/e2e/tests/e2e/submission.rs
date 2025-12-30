@@ -7,8 +7,8 @@ use {
             types::{Transaction, TransactionReceipt},
         },
     },
-    e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::CallBuilderExt,
+    e2e::setup::*,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     futures::StreamExt,
     model::{
         order::{OrderCreation, OrderKind},
@@ -71,8 +71,8 @@ async fn test_cancel_on_expiry(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
+    web3.alloy
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 
@@ -113,11 +113,11 @@ async fn test_cancel_on_expiry(web3: Web3) {
 
     // Restart mining, but with blocks that are too small to fit the settlement
     web3.alloy
-        .raw_request::<(u64,), bool>("evm_setBlockGasLimit".into(), (100_000,))
+        .evm_set_block_gas_limit(100_000)
         .await
         .expect("Must be able to set block gas limit");
     web3.alloy
-        .raw_request::<(u64,), ()>("evm_setIntervalMining".into(), (1,))
+        .evm_set_interval_mining(1)
         .await
         .expect("Must be able to set mining interval");
 
@@ -167,8 +167,8 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         .await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
+    web3.alloy
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 
@@ -213,8 +213,8 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     .unwrap();
 
     // Continue mining to confirm the settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(true)
+    web3.alloy
+        .evm_set_automine(true)
         .await
         .expect("Must be able to enable automine");
 
@@ -278,8 +278,8 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         .await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
+    web3.alloy
+        .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
 
@@ -347,8 +347,8 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     .unwrap();
 
     // Continue mining to confirm the settlement
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(true)
+    web3.alloy
+        .evm_set_automine(true)
         .await
         .expect("Must be able to enable automine");
 

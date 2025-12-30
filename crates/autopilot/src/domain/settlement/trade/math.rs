@@ -321,8 +321,8 @@ impl Trade {
             } => {
                 let surplus = self.surplus_over_limit_price()?;
                 std::cmp::min(
-                    self.surplus_fee(surplus, (*factor).into())?,
-                    self.volume_fee((*max_volume_factor).into())?,
+                    self.surplus_fee(surplus, (*factor).get())?,
+                    self.volume_fee((*max_volume_factor).get())?,
                 )
             }
             fee::Policy::PriceImprovement {
@@ -332,11 +332,11 @@ impl Trade {
             } => {
                 let price_improvement = self.price_improvement(quote)?;
                 std::cmp::min(
-                    self.surplus_fee(price_improvement, (*factor).into())?,
-                    self.volume_fee((*max_volume_factor).into())?,
+                    self.surplus_fee(price_improvement, (*factor).get())?,
+                    self.volume_fee((*max_volume_factor).get())?,
                 )
             }
-            fee::Policy::Volume { factor } => self.volume_fee((*factor).into())?,
+            fee::Policy::Volume { factor } => self.volume_fee((*factor).get())?,
         };
         Ok(fee)
     }

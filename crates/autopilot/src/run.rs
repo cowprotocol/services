@@ -518,7 +518,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies_config),
+        domain::ProtocolFees::new(
+            &args.fee_policies_config,
+            args.shared.volume_fee_bucket_overrides.clone(),
+            args.shared.enable_sell_equals_buy_volume_fee,
+        ),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         *eth.contracts().settlement().address(),
@@ -529,6 +533,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
+
+    let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
+    let api_task = tokio::spawn(infra::api::serve(
+        args.api_address,
+        native_price_estimator.clone(),
+        args.price_estimation.quote_timeout,
+        api_shutdown_receiver,
+    ));
+
     observe::metrics::serve_metrics(
         liveness.clone(),
         args.metrics_address,
@@ -695,6 +708,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         competition_updates_sender,
     );
     run.run_forever(shutdown_controller).await;
+
+    api_shutdown_sender.send(()).ok();
+    api_task.await.ok();
 }
 
 async fn shadow_mode(args: Arguments) -> ! {

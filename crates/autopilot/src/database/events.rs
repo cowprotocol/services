@@ -113,13 +113,6 @@ pub async fn replace_events(
     Ok(())
 }
 
-pub fn meta_to_event_index(meta: &ethcontract::EventMetadata) -> EventIndex {
-    EventIndex {
-        block_number: i64::try_from(meta.block_number).unwrap_or(i64::MAX),
-        log_index: i64::try_from(meta.log_index).unwrap_or(i64::MAX),
-    }
-}
-
 pub fn log_to_event_index(log: &Log) -> Option<EventIndex> {
     Some(EventIndex {
         block_number: log.block_number.and_then(|n| i64::try_from(n).ok())?,

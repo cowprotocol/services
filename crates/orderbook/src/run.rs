@@ -453,6 +453,8 @@ pub async fn run(args: Arguments) {
             optimal_quoter,
             app_data.clone(),
             args.volume_fee_config,
+            args.shared.volume_fee_bucket_overrides.clone(),
+            args.shared.enable_sell_equals_buy_volume_fee,
         )
         .with_fast_quoter(fast_quoter),
     );

@@ -125,7 +125,7 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(tx)
+                .estimate_gas(tx.clone())
                 .await
                 .map_err(with(tx.clone(), block))?,
             Inner::Enso(enso) => enso

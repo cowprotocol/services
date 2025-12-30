@@ -24,7 +24,7 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::{CallBuilderExt, ProviderExt, conversions::IntoLegacy},
+        alloy::{CallBuilderExt, EvmProviderExt, ProviderExt},
     },
     futures::Future,
     solvers_dto::solution::Flashloan,
@@ -196,15 +196,15 @@ impl QuotedOrder {
         blockchain: &Blockchain,
         signer: PrivateKeySigner,
     ) -> tests::boundary::Order {
-        let owner = signer.address().into_legacy();
+        let owner = signer.address();
         tests::boundary::Order {
-            sell_token: blockchain.get_token(self.order.sell_token).into_legacy(),
-            buy_token: blockchain.get_token(self.order.buy_token).into_legacy(),
-            sell_amount: self.sell_amount().into_legacy(),
-            buy_amount: self.buy_amount().into_legacy(),
+            sell_token: blockchain.get_token(self.order.sell_token),
+            buy_token: blockchain.get_token(self.order.buy_token),
+            sell_amount: self.sell_amount(),
+            buy_amount: self.buy_amount(),
             valid_to: self.order.valid_to,
-            receiver: self.order.receiver.map(IntoLegacy::into_legacy),
-            user_fee: self.order.fee_amount.into_legacy(),
+            receiver: self.order.receiver,
+            user_fee: self.order.fee_amount,
             side: self.order.side,
             secret_key: signer,
             domain_separator: blockchain.domain_separator,
@@ -859,11 +859,7 @@ impl Blockchain {
     }
 
     pub async fn set_auto_mining(&self, enabled: bool) {
-        self.web3
-            .alloy
-            .raw_request::<_, ()>("evm_setAutomine".into(), (enabled,))
-            .await
-            .unwrap();
+        self.web3.alloy.evm_set_automine(enabled).await.unwrap();
     }
 }
 
