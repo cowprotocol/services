@@ -458,9 +458,11 @@ impl LimitOrderCounting for Postgres {
         let owner = &ByteArray(owner.0.0);
 
         let orders_new = database::orders::user_orders_with_quote_new(&mut ex, min_valid_to, owner);
-        let orders = database::orders::user_orders_with_quote(&mut ex,min_valid_to, owner);
-        
-        let count = |orders| {
+
+        let mut ex = self.pool.acquire().await?;
+        let orders = database::orders::user_orders_with_quote(&mut ex, min_valid_to, owner);
+
+        let count = |orders: Vec<orders::OrderWithQuote>| {
             orders
                 .into_iter()
                 .filter(|order_with_quote| {
@@ -486,22 +488,23 @@ impl LimitOrderCounting for Postgres {
                         },
                     )
                 })
-        .count()
-        .try_into()
-        .unwrap()
+                .count()
+                .try_into()
+                .unwrap()
         };
 
         let (elapsed_old, elapsed_new);
         let (old, new);
         use std::time::Instant;
 
-        if rand::random::<bool>() == true {
+        if rand::random::<bool>() {
             let start = Instant::now();
             old = orders.await?;
             elapsed_old = start.elapsed();
 
             let start = Instant::now();
             new = orders_new.await?;
+            elapsed_new = start.elapsed();
         } else {
             let start = Instant::now();
             new = orders_new.await?;
@@ -511,17 +514,30 @@ impl LimitOrderCounting for Postgres {
             old = orders.await?;
             elapsed_old = start.elapsed();
         }
-        let count = count(old);
+        let count_old = count(old);
         let count_new = count(new);
         let diff = elapsed_new - elapsed_old;
 
-        if count == count_new {
-            tracing::info!(?elapsed_old, ?elapsed_new, ?diff, ?count, "LimitOrderCounting old matches new")
+        if count_old == count_new {
+            tracing::info!(
+                ?elapsed_old,
+                ?elapsed_new,
+                ?diff,
+                ?count_new,
+                "LimitOrderCounting old matches new"
+            )
         } else {
-            tracing::warn!(?elapsed_old, ?elapsed_new, ?diff, ?count, ?count_new, "LimitOrderCounting old DOES NOT MATCH new");
+            tracing::warn!(
+                ?elapsed_old,
+                ?elapsed_new,
+                ?diff,
+                ?count_old,
+                ?count_new,
+                "LimitOrderCounting old DOES NOT MATCH new"
+            );
         }
 
-        Ok(count)
+        Ok(count_old)
     }
 }
 
