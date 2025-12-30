@@ -25,20 +25,27 @@ struct TestEnv<'a> {
 
 impl<'a> TestEnv<'a> {
     /// Sets up driver, autopilot (with shutdown control), and orderbook API.
+    ///
+    /// NOTE: This setup explicitly specifies configuration values required for
+    /// its assertions, even when they match the current defaults in the
+    /// Services infrastructure. This intentional redundancy decouples the
+    /// test's correctness from the default configuration. If defaults
+    /// change in the future, this test will (hopefully) continue to validate
+    /// the same behavior without silent breakage.
     async fn setup(onchain: &'a OnchainComponents, solver: TestAccount) -> Self {
+        // Start the driver service
+        let test_solver = colocation::start_baseline_solver(
+            "test_solver".into(),
+            solver.clone(),
+            *onchain.contracts().weth.address(),
+            vec![],
+            1,
+            true,
+        )
+        .await;
         colocation::start_driver(
             onchain.contracts(),
-            vec![
-                colocation::start_baseline_solver(
-                    "test_solver".into(),
-                    solver.clone(),
-                    *onchain.contracts().weth.address(),
-                    vec![],
-                    1,
-                    true,
-                )
-                .await,
-            ],
+            vec![test_solver],
             colocation::LiquidityProvider::UniswapV2,
             false,
         );
@@ -46,27 +53,37 @@ impl<'a> TestEnv<'a> {
         let services = Services::new(onchain).await;
 
         let (shutdown_signal, shutdown_controller) = ShutdownController::new_manual_shutdown();
+
+        // Repeating the standard configuration matching `start_protocol()` in
+        // services.rs for a minimal working setup.
+        //
+        // TODO: Maybe we should make this configurable from the outside?
         let autopilot_handle = services
             .start_autopilot_with_shutdown_controller(
                 None,
                 vec![
+                    // Register the test solver
                     format!(
                         "--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
                         const_hex::encode(solver.address())
                     ),
-                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                        .to_string(),
+                    // Configure driver-based price estimation (points to the same solver endpoint for quotes)
+                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+                    // Configure where to get gas price estimates
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
                 ],
                 shutdown_controller,
             )
             .await;
 
+        // Start the orderbook API service
         services
             .start_api(vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+                "--native-price-cache-max-age=2s".to_string(),
+                "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             ])
             .await;
 
@@ -101,12 +118,11 @@ async fn wait_for_price(services: &Services<'_>, token: &Address) -> f64 {
     wait_for_condition(TIMEOUT, || {
         let price = price.clone();
         async move {
-            match services.get_native_price(token).await {
-                Ok(p) => {
-                    *price.lock().await = p.price;
-                    true
-                }
-                _ => false,
+            if let Ok(p) = services.get_native_price(token).await {
+                *price.lock().await = p.price;
+                true
+            } else {
+                false
             }
         }
     })
@@ -125,24 +141,24 @@ async fn local_node_native_price_forwarding() {
 /// correctly.
 ///
 /// Architecture being tested:
-///   User -> Orderbook (/api/v1/token/{token}/native_price)
-///        -> Forwarder (configured in orderbook via
-/// `--native-price-estimators`)        -> Autopilot (/native_price/:token at
-/// port 12088)        -> Driver-based estimation
-///        -> Returns price
 ///
-/// The forwarding chain is configured in `crates/e2e/src/setup/services.rs`:
-/// - Orderbook uses `Forwarder|http://localhost:12088` (see
-///   `api_autopilot_arguments`)
-/// - Autopilot uses `Driver|test_quoter|http://localhost:11088/test_solver`
-///   (see `autopilot_arguments`)
+/// User Request
+/// -> Orderbook (port 8080, /api/v1/token/{token}/native_price)
+/// -> Forwarder (configured in orderbook via `--native-price-estimators`)
+/// -> Autopilot (port 12088, /native_price/:token)
+/// -> Driver (port 11088, /test_solver)
+/// -> Returns price
+///
+/// Two-hop forwarding chain:
+/// - Hop 1: Orderbook → Autopilot (by `Forwarder|http://localhost:12088`)
+/// - Hop 2: Autopilot → Driver (by ``Driver|test_quoter|http://localhost:11088/test_solver``)
 async fn native_price_forwarding(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [solver] = onchain.make_solvers(10u64.eth()).await;
 
-    // Deploy token WITH UniV2 pool - this creates liquidity so price can be
-    // estimated
+    // Deploy token WITH UniV2 pool.
+    // This creates liquidity so price can ben estimated.
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(500u64.eth(), 1_000u64.eth())
         .await;
@@ -166,22 +182,40 @@ async fn native_price_forwarding(web3: Web3) {
     );
     tracing::info!(weth_price, "Got native price for WETH");
 
-    // Test 3: Stop autopilot and verify price estimation fails (proves forwarding
-    // dependency)
+    // Test 3: Stop autopilot and verify price estimation fails.
+    // By stopping autopilot and showing that native price requests fail, we prove
+    // the following:
+    // - Orderbook depends on autopilot for native prices
+    // - The Forwarder configuration is actually being used
+    // - There's no fallback mechanism that would mask configuration issues:
+    //   - If someone accidentally added a fallback estimator, this test would catch
+    //     it (because the request would succeed)
+
     tracing::info!("Stopping autopilot to verify forwarding dependency.");
     let services = env.shutdown_autopilot(&onchain).await;
 
-    // Wait for native price cache to expire (configured as 2s in services.rs)
+    // Wait for native price cache to expire (explicitly configured as 2s in this
+    // test setup)
     tracing::info!("Waiting for native price cache to expire.");
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     tracing::info!("Verifying native price fails without autopilot.");
     let result = services.get_native_price(token.address()).await;
+    let (status, body) =
+        result.expect_err("Expected price request to fail after autopilot shutdown");
+
+    // EstimatorInternal errors (connection refused) are mapped to 404 "NoLiquidity"
+    // in the orderbook API (see crates/orderbook/src/api.rs:381-383)
     assert!(
-        result.is_err(),
-        "Expected price request to fail after autopilot shutdown, proving the forwarding \
-         dependency. Got: {:?}",
-        result
+        status == reqwest::StatusCode::NOT_FOUND,
+        "Expected 404 status after autopilot shutdown, got {}",
+        status
     );
+    assert!(
+        body.contains("NoLiquidity"),
+        "Expected NoLiquidity error after autopilot shutdown, got: {}",
+        body
+    );
+
     tracing::info!("Confirmed: orderbook forwards native price requests to autopilot");
 }
