@@ -495,9 +495,10 @@ impl LimitOrderCounting for Postgres {
 
         let (elapsed_old, elapsed_new);
         let (old, new);
+        let old_first = rand::random::<bool>();
         use std::time::Instant;
 
-        if rand::random::<bool>() {
+        if old_first {
             let start = Instant::now();
             old = orders.await?;
             elapsed_old = start.elapsed();
@@ -524,6 +525,7 @@ impl LimitOrderCounting for Postgres {
                 ?elapsed_new,
                 ?diff,
                 ?count_new,
+                ?old_first,
                 "LimitOrderCounting old matches new"
             )
         } else {
@@ -533,6 +535,7 @@ impl LimitOrderCounting for Postgres {
                 ?diff,
                 ?count_old,
                 ?count_new,
+                ?old_first,
                 "LimitOrderCounting old DOES NOT MATCH new"
             );
         }
