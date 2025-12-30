@@ -1,5 +1,11 @@
 pub use state::{RankType, Unscored};
-use {super::Score, crate::infra, ::winner_selection::state, std::sync::Arc};
+use {
+    super::Score,
+    crate::{domain::competition::Solution, infra},
+    ::winner_selection::state,
+    std::sync::Arc,
+};
+
 pub type Scored = state::Scored<Score>;
 pub type Ranked = state::Ranked<Score>;
 
