@@ -1024,7 +1024,7 @@ WITH live_orders AS (
                                                                      AND op.placement_error IS NOT NULL)
       AND  o.owner = $2
       AND  o.class = 'limit'
-),
+)
 SELECT
     o_quotes.sell_amount  AS quote_sell_amount,
     lo.sell_amount        AS order_sell_amount,
