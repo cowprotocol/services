@@ -101,8 +101,7 @@ pub struct SolvableOrdersCache {
     native_price_timeout: Duration,
     settlement_contract: Address,
     disable_order_balance_filter: bool,
-    disable_1271_order_sig_filter: bool,
-    disable_1271_order_balance_filter: bool,
+    disable_flashloan_hint_filter_bypass: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -129,8 +128,7 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
-        disable_1271_order_sig_filter: bool,
-        disable_1271_order_balance_filter: bool,
+        disable_flashloan_hint_filter_bypass: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -149,8 +147,7 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
-            disable_1271_order_sig_filter,
-            disable_1271_order_balance_filter,
+            disable_flashloan_hint_filter_bypass,
         })
     }
 
@@ -203,7 +200,7 @@ impl SolvableOrdersCache {
                 orders,
                 &balances,
                 self.settlement_contract,
-                self.disable_1271_order_balance_filter,
+                self.disable_flashloan_hint_filter_bypass,
             );
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
@@ -402,7 +399,7 @@ impl SolvableOrdersCache {
         let filter_invalid_signatures = find_invalid_signature_orders(
             &orders,
             self.signature_validator.as_ref(),
-            self.disable_1271_order_sig_filter,
+            self.disable_flashloan_hint_filter_bypass,
         );
 
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
@@ -489,17 +486,12 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
-    disable_1271_order_sig_filter: bool,
+    disable_flashloan_hint_filter_bypass: bool,
 ) -> Vec<OrderUid> {
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
     for order in orders {
-        if let Signature::Eip1271(_) = &order.signature
-            && disable_1271_order_sig_filter
-        {
-            continue;
-        }
         if matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
@@ -509,6 +501,10 @@ async fn find_invalid_signature_orders(
         }
 
         if let Signature::Eip1271(signature) = &order.signature {
+            if !disable_flashloan_hint_filter_bypass && has_flashloan_hint(order) {
+                continue;
+            }
+
             signature_check_futures.push(async {
                 let (hash, signer, _) = order.metadata.uid.parts();
                 match signature_validator
@@ -545,12 +541,15 @@ fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
     settlement_contract: Address,
-    disable_1271_order_balance_filter: bool,
+    disable_flashloan_hint_filter_bypass: bool,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        if disable_1271_order_balance_filter && matches!(order.signature, Signature::Eip1271(_)) {
+        if matches!(order.signature, Signature::Eip1271(_))
+            && !disable_flashloan_hint_filter_bypass
+            && has_flashloan_hint(order)
+        {
             return true;
         }
 
@@ -579,6 +578,24 @@ fn orders_with_balance(
         balance >= needed_balance
     });
     orders
+}
+
+fn has_flashloan_hint(order: &Order) -> bool {
+    let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
+        return false;
+    };
+
+    match app_data::parse(full_app_data.as_bytes()) {
+        Ok(app_data) => app_data.flashloan.is_some(),
+        Err(err) => {
+            tracing::debug!(
+                order_uid = %order.metadata.uid,
+                ?err,
+                "failed to parse app data while checking for flashloan hint"
+            );
+            false
+        }
+    }
 }
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
@@ -1275,6 +1292,7 @@ mod tests {
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5),
+                    full_app_data: Some(sample_flashloan_app_data()),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
@@ -1316,10 +1334,12 @@ mod tests {
                 interactions: vec![],
                 balance_override: None,
             }))
-            .returning(|_| Ok(()));
+            // never even called, because this order has a flashloan hint
+            .times(0);
 
         let invalid_signature_orders =
             find_invalid_signature_orders(&orders, &signature_validator, false).await;
+        // no flashloan hint -> order is considered invalid
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(
@@ -1328,11 +1348,55 @@ mod tests {
                 4
             )]
         );
-        let invalid_signature_orders_with_1271_filter_disabled =
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: Address::repeat_byte(22),
+                hash: [2; 32],
+                signature: vec![2, 2],
+                interactions: vec![InteractionData {
+                    target: Address::from_slice(&[0xe3; 20]),
+                    value: alloy::primitives::U256::ZERO,
+                    call_data: vec![5, 6],
+                }],
+                balance_override: None,
+            }))
+            .returning(|_| Ok(()));
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: Address::repeat_byte(44),
+                hash: [4; 32],
+                signature: vec![4, 4, 4, 4],
+                interactions: vec![],
+                balance_override: None,
+            }))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: Address::repeat_byte(55),
+                hash: [5; 32],
+                signature: vec![5, 5, 5, 5, 5],
+                interactions: vec![],
+                balance_override: None,
+            }))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+
+        let mut invalid_signature_orders =
             find_invalid_signature_orders(&orders, &signature_validator, true).await;
-        // if we switch off the 1271 filter no orders should be returned as containing
-        // invalid signatures
-        assert_eq!(invalid_signature_orders_with_1271_filter_disabled, vec![]);
+        invalid_signature_orders.sort();
+        // flashloah bypass disabled means even the order with a flashloan hint with
+        // invalid siganture shows up as invalid
+        assert_eq!(
+            invalid_signature_orders,
+            vec![
+                OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
+                OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5)
+            ]
+        );
     }
 
     #[test]
@@ -1504,9 +1568,9 @@ mod tests {
     }
 
     #[test]
-    fn eip1271_orders_can_skip_balance_filtering() {
+    fn eip1271_orders_with_flashloan_hint_skip_balance_filtering() {
         let settlement_contract = Address::repeat_byte(1);
-        let eip1271_order = Order {
+        let flashloan_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
                 sell_amount: alloy::primitives::U256::from(10),
@@ -1515,6 +1579,11 @@ mod tests {
                 ..Default::default()
             },
             signature: Signature::Eip1271(vec![1, 2, 3]),
+            metadata: OrderMetadata {
+                uid: OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6),
+                full_app_data: Some(sample_flashloan_app_data()),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let regular_order = Order {
@@ -1525,20 +1594,39 @@ mod tests {
                 partially_fillable: false,
                 ..Default::default()
             },
+            metadata: OrderMetadata {
+                uid: OrderUid::from_parts(B256::repeat_byte(7), Address::repeat_byte(77), 7),
+                ..Default::default()
+            },
+            signature: Signature::Eip1271(vec![4, 5, 6]),
             ..Default::default()
         };
 
-        let orders = vec![regular_order.clone(), eip1271_order.clone()];
+        let orders = vec![regular_order.clone(), flashloan_order.clone()];
         let balances: Balances = Default::default();
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, true);
-        // 1271 filter is disabled, only the regular order is filtered out
+        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, false);
         assert_eq!(filtered.len(), 1);
-        assert!(matches!(filtered[0].signature, Signature::Eip1271(_)));
+        assert_eq!(filtered[0].metadata.uid, flashloan_order.metadata.uid);
 
-        let filtered_without_override =
-            orders_with_balance(orders, &balances, settlement_contract, false);
-        assert!(filtered_without_override.is_empty());
+        let filtered_ignoring_hints =
+            orders_with_balance(orders, &balances, settlement_contract, true);
+        assert!(filtered_ignoring_hints.is_empty());
+    }
+
+    fn sample_flashloan_app_data() -> String {
+        r#"{
+            "metadata": {
+                "flashloan": {
+                    "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                    "protocolAdapter": "0x2222222222222222222222222222222222222222",
+                    "receiver": "0x3333333333333333333333333333333333333333",
+                    "token": "0x0100000000000000000000000000000000000000",
+                    "amount": "10"
+                }
+            }
+        }"#
+        .to_string()
     }
 
     #[test]
