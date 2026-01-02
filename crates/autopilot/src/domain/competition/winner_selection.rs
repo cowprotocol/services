@@ -166,16 +166,14 @@ impl Arbitrator {
                 continue;
             }
 
-            let participants_without_solver: Vec<_> = ranking
+            let participants_without_solver = ranking
                 .ranked
                 .iter()
-                .filter(|p| p.driver().submission_address != solver)
-                .collect();
-            let solutions = participants_without_solver.iter().map(|p| p.solution());
+                .filter(|p| p.driver().submission_address != solver);
+            let solutions = participants_without_solver.clone().map(|p| p.solution());
             let winner_indices = self.pick_winners(solutions);
 
             let score = participants_without_solver
-                .iter()
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
                 .map(|(_, p)| p.score())
