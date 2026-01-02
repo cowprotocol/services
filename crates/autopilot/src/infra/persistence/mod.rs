@@ -34,7 +34,7 @@ use {
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     },
     tokio::sync::mpsc,
     tracing::Instrument,
@@ -559,26 +559,37 @@ impl Persistence {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
+        tracing::debug!(time = ?start.elapsed(), "set transaction isolation level");
 
         // Find order uids for orders that were updated after the given block.
         let updated_order_uids = {
+            let start = Instant::now();
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["updated_order_uids"])
                 .start_timer();
 
-            database::orders::updated_order_uids_after(&mut tx, after_block).await?
+            let res = database::orders::updated_order_uids_after(&mut tx, after_block).await?;
+
+            tracing::debug!(
+                len = res.len(),
+                time = ?start.elapsed(),
+                "fetched updated order_uids"
+            );
+
+            res
         };
 
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
         let next_orders: HashMap<domain::OrderUid, model::order::Order> = {
+            let start = Instant::now();
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["open_orders_after"])
                 .start_timer();
 
-            database::orders::open_orders_by_time_or_uids(
+            let res = database::orders::open_orders_by_time_or_uids(
                 &mut tx,
                 &updated_order_uids,
                 after_timestamp,
@@ -589,7 +600,15 @@ impl Persistence {
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
-            .await?
+            .await?;
+
+            tracing::debug!(
+                orders_input = updated_order_uids.len(),
+                time = ?start.elapsed(),
+                "fetched new/updated orders"
+            );
+
+            res
         };
 
         let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
@@ -597,45 +616,55 @@ impl Persistence {
             .to_u64()
             .context("latest_settlement_block is not u64")?;
 
-        // Blindly insert all new orders into the cache.
-        for (uid, order) in next_orders {
-            current_orders.insert(uid, order);
+        {
+            let start = Instant::now();
+            // Blindly insert all new orders into the cache.
+            let len = next_orders.len();
+            for (uid, order) in next_orders {
+                current_orders.insert(uid, order);
+            }
+            tracing::debug!(time = ?start.elapsed(), len, "inserted orders");
         }
 
         // Filter out all the invalid orders.
-        current_orders.retain(|_uid, order| {
-            let expired = order.data.valid_to < min_valid_to
-                || order
+        {
+            let start = Instant::now();
+            current_orders.retain(|_uid, order| {
+                let expired = order.data.valid_to < min_valid_to
+                    || order
+                        .metadata
+                        .ethflow_data
+                        .as_ref()
+                        .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
+
+                let invalidated = order.metadata.invalidated;
+                let onchain_error = order
                     .metadata
-                    .ethflow_data
+                    .onchain_order_data
                     .as_ref()
-                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
-
-            let invalidated = order.metadata.invalidated;
-            let onchain_error = order
-                .metadata
-                .onchain_order_data
-                .as_ref()
-                .is_some_and(|data| data.placement_error.is_some());
-            let fulfilled = {
-                match order.data.kind {
-                    model::order::OrderKind::Sell => {
-                        order.metadata.executed_sell_amount
-                            >= u256_to_big_uint(&order.data.sell_amount)
+                    .is_some_and(|data| data.placement_error.is_some());
+                let fulfilled = {
+                    match order.data.kind {
+                        model::order::OrderKind::Sell => {
+                            order.metadata.executed_sell_amount
+                                >= u256_to_big_uint(&order.data.sell_amount)
+                        }
+                        model::order::OrderKind::Buy => {
+                            order.metadata.executed_buy_amount
+                                >= u256_to_big_uint(&order.data.buy_amount)
+                        }
                     }
-                    model::order::OrderKind::Buy => {
-                        order.metadata.executed_buy_amount
-                            >= u256_to_big_uint(&order.data.buy_amount)
-                    }
-                }
-            };
+                };
 
-            !expired && !invalidated && !onchain_error && !fulfilled
-        });
+                !expired && !invalidated && !onchain_error && !fulfilled
+            });
+            tracing::debug!(time = ?start.elapsed(), "remove invalid orders");
+        }
 
         current_quotes.retain(|uid, _| current_orders.contains_key(uid));
 
         {
+            let start = Instant::now();
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["read_quotes"])
@@ -655,7 +684,11 @@ impl Persistence {
                 })
                 .collect::<Vec<_>>();
 
-            for quote in database::orders::read_quotes(&mut tx, &order_uids).await? {
+            let fetched_quotes = database::orders::read_quotes(&mut tx, &order_uids).await?;
+            tracing::debug!(time = ?start.elapsed(), "fetched quotes");
+
+            let start = Instant::now();
+            for quote in fetched_quotes {
                 let order_uid = domain::OrderUid(quote.order_uid.0);
                 match dto::quote::into_domain(quote) {
                     Ok(quote) => {
@@ -664,6 +697,7 @@ impl Persistence {
                     Err(err) => tracing::warn!(?order_uid, ?err, "failed to convert quote from db"),
                 }
             }
+            tracing::debug!(time = ?start.elapsed(), "inserted quotes");
         };
 
         Ok(boundary::SolvableOrders {

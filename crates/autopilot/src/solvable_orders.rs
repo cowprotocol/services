@@ -155,9 +155,12 @@ impl SolvableOrdersCache {
     }
 
     pub async fn current_auction(&self) -> Option<domain::RawAuctionData> {
-        self.cache
+        let start = Instant::now();
+        let lock = self.cache
             .lock()
-            .await
+            .await;
+        tracing::debug!(time = ?start.elapsed(), "acquired cache lock for current auction");
+        lock
             .as_ref()
             .map(|inner| inner.auction.clone())
     }
@@ -175,25 +178,35 @@ impl SolvableOrdersCache {
             .on_auction_overhead_start("autopilot", "update_solvabe_orders");
 
         let db_solvable_orders = self.get_solvable_orders().await?;
-        tracing::trace!("fetched solvable orders from db");
+        tracing::debug!(time = ?start.elapsed(), "fetched solvable orders from db");
 
-        let orders = db_solvable_orders
-            .orders
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+        let orders = {
+            let start = Instant::now();
+            let res = db_solvable_orders
+                .orders
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            tracing::debug!(time = ?start.elapsed(), "cloned open orders");
+            res
+        };
 
         let mut counter = OrderFilterCounter::new(self.metrics, &orders);
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
         let (balances, orders, cow_amms) = {
-            let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
-            tokio::join!(
-                self.fetch_balances(queries),
-                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
-                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
-            )
+            {
+                let start = Instant::now();
+                let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
+                let res = tokio::join!(
+                    self.fetch_balances(queries),
+                    self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
+                    self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+                );
+                tracing::debug!(time = ?start.elapsed(), "awaited all sub tasks");
+                res
+            }
         };
 
         let orders = if self.disable_order_balance_filter {
@@ -221,18 +234,23 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
 
         // create auction
-        let (orders, mut prices) = self
-            .timed_future(
-                "get_orders_with_native_prices",
-                get_orders_with_native_prices(
-                    orders,
-                    &self.native_price_estimator,
-                    self.metrics,
-                    cow_amm_tokens,
-                    self.native_price_timeout,
-                ),
-            )
-            .await;
+        let (orders, mut prices) = {
+            let start = Instant::now();
+            let res = self
+                .timed_future(
+                    "get_orders_with_native_prices",
+                    get_orders_with_native_prices(
+                        orders,
+                        &self.native_price_estimator,
+                        self.metrics,
+                        cow_amm_tokens,
+                        self.native_price_timeout,
+                    ),
+                )
+                .await;
+            tracing::debug!(time = ?start.elapsed(), "orders with native prices");
+            res
+        };
         tracing::trace!("fetched native prices for solvable orders");
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
@@ -314,10 +332,15 @@ impl SolvableOrdersCache {
             surplus_capturing_jit_order_owners,
         };
 
-        *self.cache.lock().await = Some(Inner {
-            auction,
-            solvable_orders: db_solvable_orders,
-        });
+        {
+            let start = Instant::now();
+            let lock = self.cache.lock().await;
+            tracing::debug!(time = ?start.elapsed(), "acquired cache lock 2");
+            *lock = Some(Inner {
+                auction,
+                solvable_orders: db_solvable_orders,
+            });
+        }
 
         tracing::debug!(%block, "updated current auction cache");
         self.metrics
@@ -364,7 +387,9 @@ impl SolvableOrdersCache {
                 .context("min_order_validity_period is not u32")?;
 
         // only build future while holding the lock but execute outside of lock
+        let start = Instant::now();
         let lock = self.cache.lock().await;
+        tracing::debug!(time = ?start.elapsed(), "acquired lock for solvable orders cache");
         let fetch_orders = match &*lock {
             // Only use incremental query after cache already got initialized
             // because it's not optimized for very long durations.
