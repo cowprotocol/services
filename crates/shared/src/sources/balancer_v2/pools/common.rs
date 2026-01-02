@@ -9,11 +9,10 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result, anyhow, ensure},
     contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
-    ethcontract::{BlockId, H256, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethcontract::{BlockId, H256},
     futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
@@ -89,7 +88,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     ) -> Result<PoolInfo> {
         let pool = self.base_pool_at(pool_address);
 
-        let pool_id = pool.getPoolId().call().await?.into_legacy();
+        let pool_id = pool.getPoolId().call().await?;
         let tokens = self
             .vault
             .getPoolTokens(pool_id.0.into())
@@ -99,7 +98,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
-            id: pool_id,
+            id: H256(pool_id.0),
             address: pool_address,
             tokens,
             scaling_factors,
@@ -112,7 +111,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let block = block.into_alloy();
+        let block = ethrpc::alloy::conversions::IntoAlloy::into_alloy(block);
         let pool_address = pool.address;
         let pool_id = pool.id;
         let vault = self.vault.clone();
@@ -150,7 +149,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         async move {
             let (paused, swap_fee, pool_tokens) =
                 futures::try_join!(fetch_paused, fetch_swap_fee, pool_tokens)?;
-            let swap_fee = Bfp::from_wei(swap_fee.into_legacy());
+            let swap_fee = Bfp::from_wei(swap_fee);
 
             let balances = pool_tokens.balances;
             let tokens = pool_tokens.tokens.into_iter().collect::<Vec<_>>();
@@ -160,7 +159,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
                     (
                         address,
                         TokenState {
-                            balance: balance.into_legacy(),
+                            balance,
                             scaling_factor,
                         },
                     )
@@ -371,7 +370,6 @@ mod tests {
         },
         anyhow::bail,
         contracts::alloy::BalancerV2Vault,
-        ethcontract::U256,
         maplit::{btreemap, hashmap},
         mockall::predicate,
         std::future,
@@ -401,7 +399,7 @@ mod tests {
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: tokens.to_vec(),
                     balances: vec![],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -431,7 +429,7 @@ mod tests {
         assert_eq!(
             pool_info,
             PoolInfo {
-                id: pool_id.into_legacy(),
+                id: H256(pool_id.0),
                 address: *pool.address(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
@@ -463,14 +461,14 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &bfp!("0.003").as_uint256().into_alloy(),
+                &bfp!("0.003").as_uint256(),
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -478,11 +476,8 @@ mod tests {
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: tokens.to_vec(),
-                    balances: balances
-                        .iter()
-                        .map(|b| b.as_uint256().into_alloy())
-                        .collect(),
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    balances: balances.iter().map(|b| b.as_uint256()).collect(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -554,15 +549,15 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &U256::zero().into_alloy(),
+                &U256::ZERO,
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -570,8 +565,8 @@ mod tests {
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: vec![Address::repeat_byte(1), Address::repeat_byte(4)],
-                    balances: vec![U256::zero().into_alloy(), U256::zero().into_alloy()],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    balances: vec![U256::ZERO, U256::ZERO],
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -619,14 +614,14 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &swap_fee.as_uint256().into_alloy(),
+                &swap_fee.as_uint256(),
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -679,9 +674,9 @@ mod tests {
                     balances: pool_state
                         .tokens
                         .values()
-                        .map(|token| token.common.balance.into_alloy())
+                        .map(|token| token.common.balance)
                         .collect(),
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -734,15 +729,15 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: true,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &U256::zero().into_alloy(),
+                &U256::ZERO,
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -751,7 +746,7 @@ mod tests {
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: vec![],
                     balances: vec![],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -813,15 +808,15 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &U256::zero().into_alloy(),
+                &U256::ZERO,
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -830,7 +825,7 @@ mod tests {
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: vec![],
                     balances: vec![],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);

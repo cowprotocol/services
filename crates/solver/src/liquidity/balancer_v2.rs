@@ -285,21 +285,21 @@ mod tests {
                 reserves: btreemap! {
                     Address::repeat_byte(0x70) => WeightedTokenState {
                         common: TokenState {
-                            balance: 100.into(),
+                            balance: U256::from(100),
                             scaling_factor: Bfp::exp10(16),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     Address::repeat_byte(0x71) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000.into(),
+                            balance: U256::from(1_000_000),
                             scaling_factor: Bfp::exp10(12),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     Address::repeat_byte(0xb0) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
@@ -317,14 +317,14 @@ mod tests {
                 reserves: btreemap! {
                     Address::repeat_byte(0x73) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     Address::repeat_byte(0xb0) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
@@ -341,14 +341,15 @@ mod tests {
                 swap_fee: "0.002".parse().unwrap(),
                 paused: true,
             },
-            amplification_parameter: AmplificationParameter::try_new(1.into(), 1.into()).unwrap(),
+            amplification_parameter: AmplificationParameter::try_new(U256::from(1), U256::from(1))
+                .unwrap(),
             reserves: btreemap! {
                 Address::repeat_byte(0x73) => TokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                        balance: U256::from(1_000_000_000_000_000_000u128),
                         scaling_factor: Bfp::exp10(0),
                     },
                 Address::repeat_byte(0xb0) => TokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                        balance: U256::from(1_000_000_000_000_000_000u128),
                         scaling_factor: Bfp::exp10(0),
                     }
             },

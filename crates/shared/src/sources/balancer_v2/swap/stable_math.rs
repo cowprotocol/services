@@ -5,15 +5,15 @@
 use {
     super::error::Error,
     crate::sources::balancer_v2::swap::{fixed_point::Bfp, math::BalU256},
-    ethcontract::U256,
+    alloy::primitives::U256,
     std::sync::LazyLock,
 };
 
-pub static AMP_PRECISION: LazyLock<U256> = LazyLock::new(|| U256::from(1000));
+pub static AMP_PRECISION: LazyLock<U256> = LazyLock::new(|| U256::from(1000u64));
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L57-L119
 fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Result<U256, Error> {
-    let mut sum = U256::zero();
+    let mut sum = U256::ZERO;
     let num_tokens_usize = balances.len();
     for balance_i in balances.iter() {
         sum = sum.badd(balance_i.as_uint256())?;
@@ -48,7 +48,7 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
             .bsub(*AMP_PRECISION)?
             .bmul(invariant)?
             .bdiv_down(*AMP_PRECISION)?
-            .badd(num_tokens.badd(1.into())?.bmul(d_p)?)?;
+            .badd(num_tokens.badd(U256::from(1u64))?.bmul(d_p)?)?;
         invariant = numerator.bdiv_down(denominator)?;
         match convergence_criteria(invariant, prev_invariant) {
             None => continue,
@@ -89,7 +89,7 @@ pub fn calc_out_given_in(
 
     balances[token_index_out]
         .sub(final_balance_out)?
-        .sub(Bfp::from_wei(1.into()))
+        .sub(Bfp::from_wei(U256::from(1u64)))
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L152-L190
@@ -124,7 +124,7 @@ pub fn calc_in_given_out(
 
     final_balance_in
         .sub(balances[token_index_in])?
-        .add(Bfp::from_wei(1.into()))
+        .add(Bfp::from_wei(U256::from(1u64)))
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L465-L516
@@ -177,10 +177,12 @@ fn get_token_balance_given_invariant_and_all_other_balances(
         //     Math.mul(tokenBalance, tokenBalance).add(c),
         //     Math.mul(tokenBalance, 2).add(b).sub(invariant)
         // );
-        token_balance = token_balance
-            .bmul(token_balance)?
-            .badd(c)?
-            .bdiv_up(token_balance.bmul(2.into())?.badd(b)?.bsub(invariant)?)?;
+        token_balance = token_balance.bmul(token_balance)?.badd(c)?.bdiv_up(
+            token_balance
+                .bmul(U256::from(2u64))?
+                .badd(b)?
+                .bsub(invariant)?,
+        )?;
         match convergence_criteria(token_balance, prev_token_balance) {
             None => continue,
             Some(token_balance) => return Ok(Bfp::from_wei(token_balance)),
@@ -190,7 +192,7 @@ fn get_token_balance_given_invariant_and_all_other_balances(
 }
 
 fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {
-    let one = U256::one();
+    let one = U256::from(1u64);
     if curr_value > prev_value {
         if curr_value
             .bsub(prev_value)
@@ -222,9 +224,18 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::swap::fixed_point::Bfp,
-        ethcontract::U256,
+        alloy::primitives::U256,
         std::str::FromStr,
     };
+
+    fn u256_from_f64_lossy(val: f64) -> U256 {
+        U256::from(val as u64)
+    }
+
+    fn u256_to_f64_lossy(val: U256) -> f64 {
+        let v: u128 = val.try_into().unwrap_or(u128::MAX);
+        v as f64
+    }
 
     // interpreted from
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts#L53
@@ -341,7 +352,7 @@ mod tests {
     #[test]
     fn invariant_two_tokens_ok() {
         let amp = 100.;
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let balances = vec![Bfp::from(10), Bfp::from(12)];
         let max_relative_error = 0.001;
         let expected = calculate_analytic_invariant_two_tokens(
@@ -351,7 +362,7 @@ mod tests {
         );
         let result = calculate_invariant(amplification_parameter, &balances).unwrap();
         assert!(
-            (result.to_f64_lossy() / 1e18 - expected)
+            (u256_to_f64_lossy(result) / 1e18 - expected)
                 .abs()
                 .le(&max_relative_error)
         );
@@ -364,13 +375,13 @@ mod tests {
             .iter()
             .map(|x| Bfp::from_str(x).unwrap())
             .collect();
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let result = calculate_invariant(amplification_parameter, balances.as_slice()).unwrap();
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
         assert!(
-            (result.to_f64_lossy() / 1e18 - expected)
+            (u256_to_f64_lossy(result) / 1e18 - expected)
                 .abs()
                 .le(&max_relative_error)
         );
@@ -379,14 +390,14 @@ mod tests {
     #[test]
     fn invariant_three_tokens_ok() {
         let amp = 100.;
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let balances = vec![Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
         let result = calculate_invariant(amplification_parameter, &balances).unwrap();
         assert!(
-            (result.to_f64_lossy() / 1e18 - expected)
+            (u256_to_f64_lossy(result) / 1e18 - expected)
                 .abs()
                 .le(&max_relative_error)
         );
@@ -395,7 +406,7 @@ mod tests {
     #[test]
     fn in_given_out_two_tokens() {
         let amp = 100.;
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
@@ -427,7 +438,7 @@ mod tests {
     #[test]
     fn in_given_out_three_tokens() {
         let amp = 100.;
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
@@ -459,7 +470,7 @@ mod tests {
     #[test]
     fn out_given_in_two_tokens() {
         let amp = 100.;
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
@@ -491,7 +502,7 @@ mod tests {
     #[test]
     fn out_given_in_three_tokens() {
         let amp = 100.;
-        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        let amplification_parameter = u256_from_f64_lossy(amp * u256_to_f64_lossy(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
