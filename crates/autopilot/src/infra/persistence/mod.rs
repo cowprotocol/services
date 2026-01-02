@@ -228,7 +228,7 @@ impl Persistence {
                         is_winner: participant.is_winner(),
                         filtered_out: participant.filtered_out(),
                         score: number::conversions::alloy::u256_to_big_decimal(
-                            &participant.solution().score().get().0,
+                            &participant.score().get().0,
                         ),
                         orders: participant
                             .solution()
