@@ -250,7 +250,7 @@ fn compute_scores_by_solution(
 ) -> (Vec<Participant<Scored>>, ScoresBySolution) {
     let auction = Auction::from(auction);
     let mut scores_by_solution = HashMap::default();
-    let mut scored_participants = Vec::new();
+    let mut scored_participants = Vec::with_capacity(participants.len());
 
     for participant in participants {
         match score_by_token_pair(participant.solution(), &auction) {
