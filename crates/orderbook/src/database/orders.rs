@@ -454,39 +454,93 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::user_orders_with_quote(
-            &mut ex,
-            now_in_epoch_seconds().into(),
-            &ByteArray(owner.0.0),
-        )
-        .await?
-        .into_iter()
-        .filter(|order_with_quote| {
-            is_order_outside_market_price(
-                &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
-                    fee: alloy::primitives::U256::from(0),
-                },
-                &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
-                    fee: FeeParameters {
-                        gas_amount: order_with_quote.quote_gas_amount,
-                        gas_price: order_with_quote.quote_gas_price,
-                        sell_token_price: order_with_quote.quote_sell_token_price,
-                    }
-                    .fee(),
-                },
-                match order_with_quote.order_kind {
-                    DbOrderKind::Buy => model::order::OrderKind::Buy,
-                    DbOrderKind::Sell => model::order::OrderKind::Sell,
-                },
+        let min_valid_to = now_in_epoch_seconds().into();
+        let owner = &ByteArray(owner.0.0);
+
+        let orders_new = database::orders::user_orders_with_quote_new(&mut ex, min_valid_to, owner);
+
+        let mut ex = self.pool.acquire().await?;
+        let orders = database::orders::user_orders_with_quote(&mut ex, min_valid_to, owner);
+
+        let count = |orders: Vec<orders::OrderWithQuote>| {
+            orders
+                .into_iter()
+                .filter(|order_with_quote| {
+                    is_order_outside_market_price(
+                        &Amounts {
+                            sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
+                            buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
+                            fee: alloy::primitives::U256::from(0),
+                        },
+                        &Amounts {
+                            sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
+                            buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
+                            fee: FeeParameters {
+                                gas_amount: order_with_quote.quote_gas_amount,
+                                gas_price: order_with_quote.quote_gas_price,
+                                sell_token_price: order_with_quote.quote_sell_token_price,
+                            }
+                            .fee(),
+                        },
+                        match order_with_quote.order_kind {
+                            DbOrderKind::Buy => model::order::OrderKind::Buy,
+                            DbOrderKind::Sell => model::order::OrderKind::Sell,
+                        },
+                    )
+                })
+                .count()
+                .try_into()
+                .unwrap()
+        };
+
+        let (elapsed_old, elapsed_new);
+        let (old, new);
+        let old_first = rand::random::<bool>();
+        use std::time::Instant;
+
+        if old_first {
+            let start = Instant::now();
+            old = orders.await?;
+            elapsed_old = start.elapsed();
+
+            let start = Instant::now();
+            new = orders_new.await?;
+            elapsed_new = start.elapsed();
+        } else {
+            let start = Instant::now();
+            new = orders_new.await?;
+            elapsed_new = start.elapsed();
+
+            let start = Instant::now();
+            old = orders.await?;
+            elapsed_old = start.elapsed();
+        }
+        let count_old = count(old);
+        let count_new = count(new);
+        let diff = elapsed_new.as_secs_f64() - elapsed_old.as_secs_f64();
+
+        if count_old == count_new {
+            tracing::info!(
+                ?elapsed_old,
+                ?elapsed_new,
+                ?diff,
+                ?count_new,
+                ?old_first,
+                "LimitOrderCounting old matches new"
             )
-        })
-        .count()
-        .try_into()
-        .unwrap())
+        } else {
+            tracing::warn!(
+                ?elapsed_old,
+                ?elapsed_new,
+                ?diff,
+                ?count_old,
+                ?count_new,
+                ?old_first,
+                "LimitOrderCounting old DOES NOT MATCH new"
+            );
+        }
+
+        Ok(count_old)
     }
 }
 
