@@ -254,16 +254,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_balance_filter: bool,
 
-    // Configures whether the autopilot filters out EIP-1271 orders even if their signatures are
-    // invalid. This is useful as a workaround to let flashloan orders go through as they rely
-    // on preHooks behing executed to make the signatures valid.
+    /// Configures whether flashloan hints for EIP-1271 orders enable bypassing
+    /// the signature/balance filters.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_sig_filter: bool,
-
-    /// Configures whether the autopilot skips balance checks for EIP-1271
-    /// orders.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_balance_filter: bool,
+    pub disable_flashloan_hint_filter_bypass: bool,
 
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
@@ -407,8 +401,7 @@ impl std::fmt::Display for Arguments {
             max_solutions_per_solver,
             db_based_solver_participation_guard,
             disable_order_balance_filter,
-            disable_1271_order_balance_filter,
-            disable_1271_order_sig_filter,
+            disable_flashloan_hint_filter_bypass,
             enable_leader_lock,
             max_maintenance_timeout,
         } = self;
@@ -487,11 +480,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "disable_1271_order_balance_filter: {disable_1271_order_balance_filter}"
-        )?;
-        writeln!(
-            f,
-            "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
+            "disable_flashloan_hint_filter_bypass: {disable_flashloan_hint_filter_bypass}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
