@@ -348,7 +348,6 @@ impl RunLoop {
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
-                &self.winner_selection,
             )
             .await
         {
@@ -461,10 +460,9 @@ impl RunLoop {
         competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
-        winner_selection: &winner_selection::Arbitrator,
     ) -> Result<()> {
         let start = Instant::now();
-        let reference_scores = winner_selection.compute_reference_scores(ranking);
+        let reference_scores = ranking.reference_scores().clone();
 
         let participants = ranking
             .all()

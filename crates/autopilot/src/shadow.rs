@@ -132,7 +132,7 @@ impl RunLoop {
 
         let solutions = self.competition(auction).await;
         let ranking = self.winner_selection.arbitrate(solutions, auction);
-        let scores = self.winner_selection.compute_reference_scores(&ranking);
+        let scores = ranking.reference_scores();
 
         let total_score = ranking
             .winners()

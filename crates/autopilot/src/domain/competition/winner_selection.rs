@@ -74,6 +74,14 @@ impl Arbitrator {
 
         let ws_ranking = self.0.arbitrate(solutions, &context);
 
+        // Compute reference scores while we still have ws_ranking
+        let reference_scores: HashMap<eth::Address, Score> = self
+            .0
+            .compute_reference_scores(&ws_ranking)
+            .into_iter()
+            .map(|(solver, score)| (solver, Score(eth::Ether(score))))
+            .collect();
+
         let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
         for ws_solution in ws_ranking.filtered_out {
             let key = SolutionKey::from(&ws_solution);
@@ -105,18 +113,8 @@ impl Arbitrator {
         Ranking {
             filtered_out,
             ranked,
+            reference_scores,
         }
-    }
-
-    /// Computes the reference scores which are used to compute
-    /// rewards for the winning solvers.
-    pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
-        let ws_ranking = to_ws_ranking(ranking);
-        self.0
-            .compute_reference_scores(&ws_ranking)
-            .into_iter()
-            .map(|(solver, score)| (solver, Score(eth::Ether(score))))
-            .collect()
     }
 }
 
@@ -182,38 +180,6 @@ fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
     }
 }
 
-fn to_ws_ranking(ranking: &Ranking) -> ws::Ranking {
-    let ranked = ranking
-        .ranked
-        .iter()
-        .map(|participant| {
-            let rank_type = if participant.is_winner() {
-                ws::RankType::Winner
-            } else {
-                ws::RankType::NonWinner
-            };
-            to_ws_solution(participant.solution())
-                .with_score(participant.score().get().0)
-                .with_rank(rank_type)
-        })
-        .collect();
-
-    let filtered_out = ranking
-        .filtered_out
-        .iter()
-        .map(|participant| {
-            to_ws_solution(participant.solution())
-                .with_score(participant.score().get().0)
-                .with_rank(ws::RankType::FilteredOut)
-        })
-        .collect();
-
-    ws::Ranking {
-        filtered_out,
-        ranked,
-    }
-}
-
 fn to_ws_fee_policy(policy: fee::Policy) -> ws::primitives::FeePolicy {
     match policy {
         fee::Policy::Surplus {
@@ -275,6 +241,8 @@ pub struct Ranking {
     /// check. Winners come before non-winners and higher total
     /// scores come before lower scores.
     ranked: Vec<Participant<Ranked>>,
+    /// Reference scores for each winning solver, used to compute rewards.
+    reference_scores: HashMap<eth::Address, Score>,
 }
 
 impl Ranking {
@@ -296,6 +264,11 @@ impl Ranking {
     /// All solutions that were not filtered out but also did not win.
     pub fn non_winners(&self) -> impl Iterator<Item = &Participant<Ranked>> {
         self.ranked.iter().filter(|p| !p.is_winner())
+    }
+
+    /// Reference scores for each winning solver, used to compute rewards.
+    pub fn reference_scores(&self) -> &HashMap<eth::Address, Score> {
+        &self.reference_scores
     }
 
     /// All solutions that passed the filtering step.
@@ -1074,7 +1047,7 @@ mod tests {
             }
 
             // compute reference score
-            let reference_scores = arbitrator.compute_reference_scores(&ranking);
+            let reference_scores = ranking.reference_scores();
             assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
             for (solver_id, expected_score) in &self.expected_reference_scores {
                 let solver_address = solver_map.get(solver_id).unwrap();
