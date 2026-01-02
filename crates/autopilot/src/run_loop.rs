@@ -27,6 +27,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
@@ -129,7 +130,7 @@ impl RunLoop {
             probes,
             maintenance,
             competition_updates_sender,
-            winner_selection: winner_selection::Arbitrator { max_winners, weth },
+            winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify,
         }
     }
@@ -347,7 +348,6 @@ impl RunLoop {
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
-                &self.winner_selection,
             )
             .await
         {
@@ -460,10 +460,9 @@ impl RunLoop {
         competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
-        winner_selection: &winner_selection::Arbitrator,
     ) -> Result<()> {
         let start = Instant::now();
-        let reference_scores = winner_selection.compute_reference_scores(ranking);
+        let reference_scores = ranking.reference_scores().clone();
 
         let participants = ranking
             .all()
@@ -514,7 +513,7 @@ impl RunLoop {
                     .map(|(token, price)| (token.0, price.get().0))
                     .collect(),
                 is_winner: participant.is_winner(),
-                filtered_out: participant.filtered_out(),
+                filtered_out: participant.is_filtered_out(),
             })
             .collect();
         // reverse as solver competition table is sorted from worst to best,
