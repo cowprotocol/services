@@ -1,0 +1,10 @@
+-- drop index over (creation_timestamp, cancellation timestamp)
+-- since it can only be used optimally for queries on the creation_timestamp.
+IF EXISTS DROP INDEX order_creation_cancellation;
+
+-- create a separate index for cancellation_timestamp to improve queries
+-- filtering based on the cancellation_timestamp
+CREATE INDEX order_cancellation_timestamp ON orders USING BTREE(cancellation_timestamp);
+
+-- no extra index with only the creation_timestamp needs to be created
+-- since that already exists.
