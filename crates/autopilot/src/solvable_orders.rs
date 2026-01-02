@@ -1392,8 +1392,8 @@ mod tests {
         let mut invalid_signature_orders =
             find_invalid_signature_orders(&orders, &signature_validator, true).await;
         invalid_signature_orders.sort();
-        // flashloah bypass disabled means even the order with a flashloan hint with
-        // invalid siganture shows up as invalid
+        // flashloan bypass disabled means even the order with a flashloan hint with
+        // invalid signature shows up as invalid
         assert_eq!(
             invalid_signature_orders,
             vec![
