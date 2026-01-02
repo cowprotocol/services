@@ -18,7 +18,6 @@ use {
         sol_types::SolCall,
     },
     contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
-    itertools::Itertools,
     num::Zero,
 };
 
@@ -47,25 +46,14 @@ pub fn tx(
     internalization: settlement::Internalization,
     solver_native_token: ManageNativeToken,
 ) -> Result<eth::Tx, Error> {
-    let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
-    let mut clearing_prices =
-        Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
+    let mut tokens = Vec::with_capacity(solution.trades().len() * 2);
+    let mut clearing_prices = Vec::with_capacity(solution.trades().len() * 2);
     let mut trades: Vec<Trade> = Vec::with_capacity(solution.trades().len());
     let mut pre_interactions = solution.pre_interactions.clone();
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
     let mut post_interactions = solution.post_interactions.clone();
     let mut native_unwrap = eth::TokenAmount(eth::U256::ZERO);
-
-    // Encode uniform clearing price vector
-    for (token, amount) in solution
-        .clearing_prices()
-        .into_iter()
-        .sorted_by_cached_key(|(token, _amount)| *token)
-    {
-        tokens.push(token.into());
-        clearing_prices.push(amount);
-    }
 
     // Encode trades with custom clearing prices
     for trade in solution.trades() {
