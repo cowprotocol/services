@@ -15,6 +15,7 @@ use {
 /// This contains auction-level data that's needed to run the winner selection
 /// algorithm but isn't part of individual solutions. Both autopilot and driver
 /// build this from their respective auction representations.
+#[derive(Default)]
 pub struct AuctionContext {
     /// Fee policies for each order in the auction.
     ///
@@ -46,16 +47,5 @@ impl AuctionContext {
             || self
                 .surplus_capturing_jit_order_owners
                 .contains(&uid.owner())
-    }
-}
-
-/// Default implementation for empty contexts.
-impl Default for AuctionContext {
-    fn default() -> Self {
-        Self {
-            fee_policies: HashMap::new(),
-            surplus_capturing_jit_order_owners: HashSet::new(),
-            native_prices: HashMap::new(),
-        }
     }
 }
