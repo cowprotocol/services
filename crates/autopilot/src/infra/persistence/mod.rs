@@ -556,6 +556,7 @@ impl Persistence {
         // Set the transaction isolation level to REPEATABLE READ
         // so all the SELECT queries below are executed in the same database snapshot
         // taken at the moment before the first query is executed.
+        let start = Instant::now();
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;

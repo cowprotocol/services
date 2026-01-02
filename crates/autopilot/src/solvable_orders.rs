@@ -334,7 +334,7 @@ impl SolvableOrdersCache {
 
         {
             let start = Instant::now();
-            let lock = self.cache.lock().await;
+            let mut lock = self.cache.lock().await;
             tracing::debug!(time = ?start.elapsed(), "acquired cache lock 2");
             *lock = Some(Inner {
                 auction,
