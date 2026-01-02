@@ -51,6 +51,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethflow_indexing_start: Option<u64>,
 
+    /// Enable the transfer listener that cancels orders when tokens are
+    /// transferred away.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub transfer_listener_enabled: bool,
+
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
     #[clap(long, env)]
@@ -373,6 +378,7 @@ impl std::fmt::Display for Arguments {
             tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
+            transfer_listener_enabled,
             metrics_address,
             api_address,
             skip_event_sync,
@@ -421,6 +427,7 @@ impl std::fmt::Display for Arguments {
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
+        writeln!(f, "transfer_listener_enabled: {transfer_listener_enabled}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
         writeln!(f, "api_address: {api_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
