@@ -230,8 +230,8 @@ impl From<&Solution> for SolutionKey {
     }
 }
 
-impl<T> From<&ws::Solution<T>> for SolutionKey {
-    fn from(solution: &ws::Solution<T>) -> Self {
+impl<S> From<&ws::Solution<S>> for SolutionKey {
+    fn from(solution: &ws::Solution<S>) -> Self {
         Self {
             solver: solution.solver(),
             solution_id: solution.id(),
