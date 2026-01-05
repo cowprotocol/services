@@ -9,6 +9,16 @@ use {
 pub type Scored = state::Scored<Score>;
 pub type Ranked = state::Ranked<Score>;
 
+/// A solver's solution paired with the driver, progressing through the winner
+/// selection process.
+///
+/// It uses the type-state pattern to enforce correct state
+/// transitions at compile time. The state parameter tracks progression through
+/// three phases:
+///
+/// 1. **Unscored**: Initial state when the solution is received from the driver
+/// 2. **Scored**: After computing surplus and fees for the solution
+/// 3. **Ranked**: After winner selection determines if this is a winner
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
     solution: Solution,
@@ -26,11 +36,11 @@ impl<T> Participant<T> {
     }
 }
 
-impl<State> state::WithState for Participant<State> {
+impl<State> state::HasState for Participant<State> {
+    type Next<NewState> = Participant<NewState>;
     type State = State;
-    type WithState<NewState> = Participant<NewState>;
 
-    fn with_state<NewState>(self, state: NewState) -> Self::WithState<NewState> {
+    fn with_state<NewState>(self, state: NewState) -> Self::Next<NewState> {
         Participant {
             solution: self.solution,
             driver: self.driver,

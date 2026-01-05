@@ -63,11 +63,11 @@ impl<T> Solution<T> {
     }
 }
 
-impl<State> state::WithState for Solution<State> {
+impl<State> state::HasState for Solution<State> {
+    type Next<NewState> = Solution<NewState>;
     type State = State;
-    type WithState<NewState> = Solution<NewState>;
 
-    fn with_state<NewState>(self, state: NewState) -> Self::WithState<NewState> {
+    fn with_state<NewState>(self, state: NewState) -> Self::Next<NewState> {
         Solution {
             id: self.id,
             solver: self.solver,

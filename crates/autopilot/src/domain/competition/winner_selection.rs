@@ -32,12 +32,12 @@ use {
         eth::{self, WrappedNativeToken},
         fee,
     },
-    ::winner_selection::state::{RankedItem, ScoredItem, UnscoredItem},
+    ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
     std::collections::HashMap,
-    winner_selection::{self as ws, state::WithState},
+    winner_selection::{self as winsel},
 };
 
-pub struct Arbitrator(ws::Arbitrator);
+pub struct Arbitrator(winsel::Arbitrator);
 
 /// Implements auction arbitration in 3 phases:
 /// 1. filter unfair solutions
@@ -49,7 +49,7 @@ pub struct Arbitrator(ws::Arbitrator);
 impl Arbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
         let token: eth::TokenAddress = wrapped_native_token.into();
-        Self(ws::Arbitrator {
+        Self(winsel::Arbitrator {
             max_winners,
             weth: token.0,
         })
@@ -118,19 +118,19 @@ impl Arbitrator {
     }
 }
 
-impl From<&domain::Auction> for ws::AuctionContext {
+impl From<&domain::Auction> for winsel::AuctionContext {
     fn from(auction: &domain::Auction) -> Self {
         Self {
             fee_policies: auction
                 .orders
                 .iter()
                 .map(|order| {
-                    let uid = ws::OrderUid(order.uid.0);
+                    let uid = winsel::OrderUid(order.uid.0);
                     let policies = order
                         .protocol_fees
                         .iter()
                         .copied()
-                        .map(ws::primitives::FeePolicy::from)
+                        .map(winsel::primitives::FeePolicy::from)
                         .collect();
                     (uid, policies)
                 })
@@ -149,7 +149,7 @@ impl From<&domain::Auction> for ws::AuctionContext {
     }
 }
 
-impl From<&Solution> for ws::Solution<ws::Unscored> {
+impl From<&Solution> for winsel::Solution<winsel::Unscored> {
     fn from(solution: &Solution) -> Self {
         Self::new(
             solution.id(),
@@ -157,7 +157,7 @@ impl From<&Solution> for ws::Solution<ws::Unscored> {
             solution
                 .orders()
                 .iter()
-                .map(|(uid, order)| to_ws_order(*uid, order))
+                .map(|(uid, order)| to_winsel_order(*uid, order))
                 .collect(),
             solution
                 .prices()
@@ -168,9 +168,9 @@ impl From<&Solution> for ws::Solution<ws::Unscored> {
     }
 }
 
-fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
-    ws::Order {
-        uid: ws::OrderUid(uid.0),
+fn to_winsel_order(uid: domain::OrderUid, order: &TradedOrder) -> winsel::Order {
+    winsel::Order {
+        uid: winsel::OrderUid(uid.0),
         sell_token: order.sell.token.0,
         buy_token: order.buy.token.0,
         sell_amount: order.sell.amount.0,
@@ -178,13 +178,13 @@ fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
         executed_sell: order.executed_sell.0,
         executed_buy: order.executed_buy.0,
         side: match order.side {
-            order::Side::Buy => ws::Side::Buy,
-            order::Side::Sell => ws::Side::Sell,
+            order::Side::Buy => winsel::Side::Buy,
+            order::Side::Sell => winsel::Side::Sell,
         },
     }
 }
 
-impl From<fee::Policy> for ws::primitives::FeePolicy {
+impl From<fee::Policy> for winsel::primitives::FeePolicy {
     fn from(policy: fee::Policy) -> Self {
         match policy {
             fee::Policy::Surplus {
@@ -201,7 +201,7 @@ impl From<fee::Policy> for ws::primitives::FeePolicy {
             } => Self::PriceImprovement {
                 factor: factor.get(),
                 max_volume_factor: max_volume_factor.get(),
-                quote: ws::primitives::Quote {
+                quote: winsel::primitives::Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
@@ -230,8 +230,8 @@ impl From<&Solution> for SolutionKey {
     }
 }
 
-impl<S> From<&ws::Solution<S>> for SolutionKey {
-    fn from(solution: &ws::Solution<S>) -> Self {
+impl<S> From<&winsel::Solution<S>> for SolutionKey {
+    fn from(solution: &winsel::Solution<S>) -> Self {
         Self {
             solver: solution.solver(),
             solution_id: solution.id(),
