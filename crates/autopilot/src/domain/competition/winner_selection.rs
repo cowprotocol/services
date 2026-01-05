@@ -61,13 +61,13 @@ impl Arbitrator {
         participants: Vec<Participant<Unscored>>,
         auction: &domain::Auction,
     ) -> Ranking {
-        let context = to_ws_context(auction);
+        let context = auction.into();
         let mut participant_by_key = HashMap::with_capacity(participants.len());
         let mut solutions = Vec::with_capacity(participants.len());
 
         for participant in participants {
             let key = SolutionKey::from(participant.solution());
-            let solution = to_ws_solution(participant.solution());
+            let solution = participant.solution().into();
             participant_by_key.insert(key, participant);
             solutions.push(solution);
         }
@@ -118,50 +118,54 @@ impl Arbitrator {
     }
 }
 
-fn to_ws_context(auction: &domain::Auction) -> ws::AuctionContext {
-    ws::AuctionContext {
-        fee_policies: auction
-            .orders
-            .iter()
-            .map(|order| {
-                let uid = ws::OrderUid(order.uid.0);
-                let policies = order
-                    .protocol_fees
-                    .iter()
-                    .copied()
-                    .map(to_ws_fee_policy)
-                    .collect();
-                (uid, policies)
-            })
-            .collect(),
-        surplus_capturing_jit_order_owners: auction
-            .surplus_capturing_jit_order_owners
-            .iter()
-            .copied()
-            .collect(),
-        native_prices: auction
-            .prices
-            .iter()
-            .map(|(token, price)| (token.0, price.get().0))
-            .collect(),
+impl From<&domain::Auction> for ws::AuctionContext {
+    fn from(auction: &domain::Auction) -> Self {
+        Self {
+            fee_policies: auction
+                .orders
+                .iter()
+                .map(|order| {
+                    let uid = ws::OrderUid(order.uid.0);
+                    let policies = order
+                        .protocol_fees
+                        .iter()
+                        .copied()
+                        .map(ws::primitives::FeePolicy::from)
+                        .collect();
+                    (uid, policies)
+                })
+                .collect(),
+            surplus_capturing_jit_order_owners: auction
+                .surplus_capturing_jit_order_owners
+                .iter()
+                .copied()
+                .collect(),
+            native_prices: auction
+                .prices
+                .iter()
+                .map(|(token, price)| (token.0, price.get().0))
+                .collect(),
+        }
     }
 }
 
-fn to_ws_solution(solution: &Solution) -> ws::Solution<ws::Unscored> {
-    ws::Solution::new(
-        solution.id(),
-        solution.solver(),
-        solution
-            .orders()
-            .iter()
-            .map(|(uid, order)| to_ws_order(*uid, order))
-            .collect(),
-        solution
-            .prices()
-            .iter()
-            .map(|(token, price)| (token.0, price.get().0))
-            .collect(),
-    )
+impl From<&Solution> for ws::Solution<ws::Unscored> {
+    fn from(solution: &Solution) -> Self {
+        Self::new(
+            solution.id(),
+            solution.solver(),
+            solution
+                .orders()
+                .iter()
+                .map(|(uid, order)| to_ws_order(*uid, order))
+                .collect(),
+            solution
+                .prices()
+                .iter()
+                .map(|(token, price)| (token.0, price.get().0))
+                .collect(),
+        )
+    }
 }
 
 fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
@@ -180,32 +184,34 @@ fn to_ws_order(uid: domain::OrderUid, order: &TradedOrder) -> ws::Order {
     }
 }
 
-fn to_ws_fee_policy(policy: fee::Policy) -> ws::primitives::FeePolicy {
-    match policy {
-        fee::Policy::Surplus {
-            factor,
-            max_volume_factor,
-        } => ws::primitives::FeePolicy::Surplus {
-            factor: factor.get(),
-            max_volume_factor: max_volume_factor.get(),
-        },
-        fee::Policy::PriceImprovement {
-            factor,
-            max_volume_factor,
-            quote,
-        } => ws::primitives::FeePolicy::PriceImprovement {
-            factor: factor.get(),
-            max_volume_factor: max_volume_factor.get(),
-            quote: ws::primitives::Quote {
-                sell_amount: quote.sell_amount,
-                buy_amount: quote.buy_amount,
-                fee: quote.fee,
-                solver: quote.solver,
+impl From<fee::Policy> for ws::primitives::FeePolicy {
+    fn from(policy: fee::Policy) -> Self {
+        match policy {
+            fee::Policy::Surplus {
+                factor,
+                max_volume_factor,
+            } => Self::Surplus {
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
             },
-        },
-        fee::Policy::Volume { factor } => ws::primitives::FeePolicy::Volume {
-            factor: factor.get(),
-        },
+            fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => Self::PriceImprovement {
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
+                quote: ws::primitives::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: quote.solver,
+                },
+            },
+            fee::Policy::Volume { factor } => Self::Volume {
+                factor: factor.get(),
+            },
+        }
     }
 }
 
