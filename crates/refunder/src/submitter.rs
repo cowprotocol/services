@@ -1,14 +1,12 @@
-// This submitter has the following logic:
-// It tries to submit a tx - as EIP1559 - with a small tx tip,
-// but a quite high max_fee_per_gas such that it's likely being mined quickly
-//
-// Then it waits for 5 blocks. If the tx is not mined, it will return an error
-// and it needs to be called again. If the last submission was not successful,
-// this submitter stores the last gas_price in order to submit the new tx with
-// a higher gas price, in order to avoid: ErrReplaceUnderpriced erros
-// In the re-newed attempt for submission the same nonce is used as before.
+//! EIP-1559 transaction submitter for EthFlow refunds.
+//!
+//! Submits transactions with a small priority tip but high `max_fee_per_gas`
+//! for fast inclusion. If a transaction is not mined within 5 blocks, the
+//! caller should retry. When retrying with the same nonce, gas parameters are
+//! automatically bumped by 12.5% to avoid "replacement underpriced" errors.
 
 use {
+    crate::traits::ChainWrite,
     alloy::{primitives::Address, providers::Provider},
     anyhow::{Context, Result},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
@@ -18,21 +16,18 @@ use {
     std::time::Duration,
 };
 
-// The gas price buffer determines the gas price buffer used to
-// send out EIP1559 txs.
-// Example: If the prevailing gas is 10Gwei and the buffer factor is 1.20
-// then the gas_price used will be 12.
+/// Buffer factor applied to gas price estimates (1.3x = 30% buffer).
 const GAS_PRICE_BUFFER_FACTOR: f64 = 1.3;
 
-// In order to resubmit a new tx with the same nonce, the gas tip and
-// max_fee_per_gas needs to be increased by at least 10 percent.
+/// Minimum bump required for transaction replacement (1.125x = 12.5% increase).
 const GAS_PRICE_BUMP: f64 = 1.125;
 
-/// Type safe cast to avoid unexpected issues due to type changes.
+/// Truncates `f64` to `u128`. Safe here because gas values are always integral.
 const fn f64_to_u128(n: f64) -> u128 {
     n as u128
 }
 
+/// Manages EIP-1559 transaction submission with automatic gas price escalation.
 pub struct Submitter {
     pub web3: Web3,
     pub signer_address: Address,
@@ -44,9 +39,11 @@ pub struct Submitter {
 }
 
 impl Submitter {
+    /// Fetches the on-chain transaction count for the signer address.
+    ///
+    /// Returns the on-chain transaction count, used as the nonce for the next
+    /// submission. Does not include pending mempool transactions.
     async fn get_submission_nonce(&self) -> Result<u64> {
-        // this command returns the tx count ever mined at the latest block
-        // Mempool tx are not considered.
         self.web3
             .alloy
             .get_transaction_count(self.signer_address)
@@ -59,9 +56,18 @@ impl Submitter {
             })
     }
 
-    pub async fn submit(
+    /// Submits a batch refund transaction to the EthFlow contract.
+    ///
+    /// Calls `invalidateOrdersIgnoringNotAllowed()` with the given orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if nonce retrieval or gas estimation fails.
+    /// Transaction submission or on-chain execution failures are logged
+    /// but do not return an error (allows the loop to continue).
+    async fn submit(
         &mut self,
-        uids: Vec<OrderUid>,
+        uids: &[OrderUid],
         encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
         ethflow_contract: Address,
     ) -> Result<()> {
@@ -85,7 +91,7 @@ impl Submitter {
             CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
         let tx_result = ethflow_contract
             .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
-            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
+            // Gas values are integral; truncation should be safe even though they're floats
             .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
             .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
             .from(self.signer_address)
@@ -107,6 +113,24 @@ impl Submitter {
     }
 }
 
+#[async_trait::async_trait]
+impl ChainWrite for Submitter {
+    async fn submit_refund(
+        &mut self,
+        uids: &[OrderUid],
+        encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
+        ethflow_contract: Address,
+    ) -> Result<()> {
+        self.submit(uids, encoded_ethflow_orders, ethflow_contract)
+            .await
+    }
+}
+
+/// Calculates EIP-1559 gas parameters for transaction submission.
+///
+/// Applies the buffer factor to the estimated gas price, caps the priority fee,
+/// bumps parameters by 12.5% when replacing a pending transaction (same nonce),
+/// and caps the result at `max_gas_price`.
 fn calculate_submission_gas_price(
     gas_price_of_last_submission: Option<GasPrice1559>,
     web3_gas_estimation: GasPrice1559,
@@ -115,16 +139,15 @@ fn calculate_submission_gas_price(
     max_gas_price: u64,
     start_priority_fee_tip: u64,
 ) -> Result<GasPrice1559> {
-    // The gas price of the refund tx is the current prevailing gas price
-    // of the web3 gas estimation plus a buffer.
+    // Start with the current gas estimate plus a buffer for faster inclusion.
     let mut new_gas_price = web3_gas_estimation.bump(GAS_PRICE_BUFFER_FACTOR);
-    // limit the prio_fee to max_fee_per_gas as otherwise tx is invalid
+    // Cap priority fee at max_fee_per_gas; required for valid EIP-1559
+    // transactions.
     new_gas_price.max_priority_fee_per_gas =
         (start_priority_fee_tip as f64).min(new_gas_price.max_fee_per_gas);
 
-    // If tx from the previous submission was not mined,
-    // we incease the tip and max_gas_fee for miners
-    // in order to avoid "tx underpriced errors"
+    // If the previous submission was not mined (same nonce), bump gas parameters
+    // by 12.5% to avoid "replacement transaction underpriced" errors.
     if Some(newest_nonce) == nonce_of_last_submission
         && let Some(gas_price_of_last_submission) = gas_price_of_last_submission
     {
@@ -211,7 +234,7 @@ mod tests {
             base_fee_per_gas: 2_000_000_000f64,
         };
         assert_eq!(result, expected_result);
-        // Thrid case: MAX_GAS_PRICE is not exceeded
+        // Third case: MAX_GAS_PRICE is not exceeded
         let max_fee_per_gas = TEST_MAX_GAS_PRICE as f64 + 1000f64;
         let web3_gas_estimation = GasPrice1559 {
             base_fee_per_gas: 2_000_000_000f64,
@@ -235,5 +258,69 @@ mod tests {
             max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as f64,
         };
         assert_eq!(result, expected_result);
+    }
+
+    /// Test that when a nonce conflict occurs (on-chain nonce advances
+    /// unexpectedly, e.g., due to a manual transaction), the gas price bump
+    /// is NOT applied.
+    ///
+    /// This verifies that the submitter correctly detects when the nonce has
+    /// changed and doesn't apply the 12.5% replacement bump in that case.
+    #[test]
+    fn test_nonce_conflict_doesnt_apply_gas_bump() {
+        const TEST_MAX_GAS_PRICE: u64 = 800_000_000_000;
+        const TEST_START_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
+
+        // Previous submission attempted with nonce 5
+        let nonce_of_last_submission = Some(5);
+        let gas_price_of_last_submission = GasPrice1559 {
+            max_fee_per_gas: 100_000_000_000f64,
+            max_priority_fee_per_gas: 10_000_000_000f64,
+            base_fee_per_gas: 50_000_000_000f64,
+        };
+
+        // Current network gas estimate
+        let web3_gas_estimation = GasPrice1559 {
+            base_fee_per_gas: 40_000_000_000f64,
+            max_fee_per_gas: 80_000_000_000f64,
+            max_priority_fee_per_gas: 8_000_000_000f64,
+        };
+
+        // BUT: on-chain nonce has advanced to 7 (someone else submitted a tx)
+        let newest_nonce = 7;
+
+        let result = calculate_submission_gas_price(
+            Some(gas_price_of_last_submission),
+            web3_gas_estimation,
+            newest_nonce,
+            nonce_of_last_submission,
+            TEST_MAX_GAS_PRICE,
+            TEST_START_PRIORITY_FEE_TIP,
+        )
+        .unwrap();
+
+        // Expected: NO bump applied because nonce changed (7 != 5)
+        // Result should be based on web3_gas_estimation * GAS_PRICE_BUFFER_FACTOR
+        let expected = GasPrice1559 {
+            base_fee_per_gas: 40_000_000_000f64,
+            max_fee_per_gas: 80_000_000_000f64 * GAS_PRICE_BUFFER_FACTOR,
+            max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as f64,
+        };
+
+        assert_eq!(
+            result.max_fee_per_gas, expected.max_fee_per_gas,
+            "Max fee per gas should be buffered estimate, not bumped"
+        );
+        assert_eq!(
+            result.max_priority_fee_per_gas, expected.max_priority_fee_per_gas,
+            "Priority fee should be capped at start tip, not bumped"
+        );
+
+        // Verify that the result is NOT the bumped version
+        let bumped_gas_price = gas_price_of_last_submission.bump(GAS_PRICE_BUMP);
+        assert_ne!(
+            result.max_fee_per_gas, bumped_gas_price.max_fee_per_gas,
+            "Gas price should NOT be bumped when nonce changed"
+        );
     }
 }
