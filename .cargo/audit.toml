@@ -60,4 +60,9 @@ ignore = [
     # model crate - data race in Shared (RUSTSEC-2020-0140)
     # Internal crate issue (tracked in #3338)
     "RUSTSEC-2020-0140",
+
+    # rust_decimal - depends on rkyv v0.7, which has a critical vulnerability.
+    # The fix requires upgrading to rkyv v0.8, which has breaking changes.
+    # More details: <https://github.com/paupino/rust-decimal/issues/766>
+    "RUSTSEC-2026-0001",
 ]
