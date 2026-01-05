@@ -8120,6 +8120,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "itertools 0.14.0",
+ "number",
  "thiserror 1.0.61",
  "tracing",
 ]

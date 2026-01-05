@@ -10,7 +10,6 @@ pub mod auction;
 pub mod primitives;
 pub mod solution;
 pub mod state;
-pub mod util;
 
 // Re-export key types for convenience
 pub use {
