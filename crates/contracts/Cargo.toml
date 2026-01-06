@@ -23,7 +23,6 @@ bin = [
 [dependencies]
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["sol-types", "json", "contract", "json-abi"] }
-ethcontract = { workspace = true }
 paste = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
