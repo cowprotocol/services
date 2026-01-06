@@ -171,7 +171,7 @@ fn current_unix_timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::util::Bytes};
+    use super::*;
 
     /// Tests that an order only gets marked temporarily as unsupported.
     /// After the freeze period it will be allowed again.
@@ -188,7 +188,7 @@ mod tests {
             solver::Name("mysolver".to_string()),
         );
 
-        let order = Uid(Bytes([1; 56]));
+        let order = Uid::from_parts(Default::default(), Default::default(), u32::MAX);
         let order_quality = || detector.get_quality(&order, Instant::now());
 
         // order is reported as unknown while we don't have enough measurements
