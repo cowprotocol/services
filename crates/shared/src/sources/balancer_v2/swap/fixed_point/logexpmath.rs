@@ -4,7 +4,7 @@
 
 use {
     super::super::error::Error,
-    ethcontract::{I256, U256},
+    alloy::primitives::{I256, U256},
     std::{convert::TryFrom, sync::LazyLock},
 };
 
@@ -17,16 +17,22 @@ static ONE_20: LazyLock<I256> = LazyLock::new(|| I256::exp10(20));
 static ONE_36: LazyLock<I256> = LazyLock::new(|| I256::exp10(36));
 static UFIXED256X18_ONE: LazyLock<Ufixed256x18> =
     LazyLock::new(|| U256::try_from(*ONE_18).unwrap());
-static MAX_NATURAL_EXPONENT: LazyLock<I256> =
-    LazyLock::new(|| ONE_18.checked_mul(I256::from(130_i128)).unwrap());
-static MIN_NATURAL_EXPONENT: LazyLock<I256> =
-    LazyLock::new(|| ONE_18.checked_mul(I256::from(-41_i128)).unwrap());
+static MAX_NATURAL_EXPONENT: LazyLock<I256> = LazyLock::new(|| {
+    ONE_18
+        .checked_mul(I256::try_from(130).expect("130 is a valid I256"))
+        .unwrap()
+});
+static MIN_NATURAL_EXPONENT: LazyLock<I256> = LazyLock::new(|| {
+    ONE_18
+        .checked_mul(I256::try_from(-41).expect("-41 is a valid I256"))
+        .unwrap()
+});
 static LN_36_LOWER_BOUND: LazyLock<I256> =
     LazyLock::new(|| ONE_18.checked_sub(I256::exp10(17)).unwrap());
 static LN_36_UPPER_BOUND: LazyLock<I256> =
     LazyLock::new(|| ONE_18.checked_add(I256::exp10(17)).unwrap());
 static MILD_EXPONENT_BOUND: LazyLock<Ufixed256x18> = LazyLock::new(|| {
-    (U256::one() << 254_u32)
+    (U256::ONE << 254_u32)
         .checked_div(U256::try_from(*ONE_20).unwrap())
         .unwrap()
 });
@@ -45,7 +51,8 @@ fn constant_x_20(i: u32) -> I256 {
         11 => 6_250_000_000_000_000_000_i128,
         _ => panic!("Constant not provided"),
     }
-    .into()
+    .try_into()
+    .expect("i128 fits within I256")
 }
 fn constant_x_18(i: u32) -> I256 {
     match i {
@@ -53,7 +60,8 @@ fn constant_x_18(i: u32) -> I256 {
         1 => 64_000_000_000_000_000_000_i128,
         _ => panic!("Constant not provided"),
     }
-    .into()
+    .try_into()
+    .expect("i128 fits within I256")
 }
 fn constant_a_20(i: u32) -> I256 {
     match i {
@@ -69,24 +77,26 @@ fn constant_a_20(i: u32) -> I256 {
         11 => 106_449_445_891_785_942_956_i128,
         _ => panic!("Constant not provided"),
     }
-    .into()
+    .try_into()
+    .expect("i128 fits within I256")
 }
 fn constant_a_18(i: u32) -> I256 {
     match i {
         0 => {
             I256::from_dec_str("38877084059945950922200000000000000000000000000000000000").unwrap()
         }
-        1 => 6_235_149_080_811_616_882_910_000_000_i128.into(),
+        1 => I256::try_from(6_235_149_080_811_616_882_910_000_000_i128)
+            .expect("i128 fits within I256"),
         _ => panic!("Constant not provided"),
     }
 }
 
 pub fn pow(x: Ufixed256x18, y: Ufixed256x18) -> Result<Ufixed256x18, Error> {
-    if y == U256::zero() {
+    if y == U256::ZERO {
         return Ok(*UFIXED256X18_ONE);
     }
-    if x == U256::zero() {
-        return Ok(U256::zero());
+    if x == U256::ZERO {
+        return Ok(U256::ZERO);
     }
 
     let x_int256 = match I256::try_from(x) {
@@ -120,7 +130,7 @@ fn exp(mut x: I256) -> Result<I256, Error> {
         return Err(Error::InvalidExponent);
     }
 
-    if x < I256::zero() {
+    if x < I256::ZERO {
         return Ok((*ONE_18 * *ONE_18) / exp(-x)?);
     }
 
@@ -132,10 +142,10 @@ fn exp(mut x: I256) -> Result<I256, Error> {
         x -= constant_x_18(1);
         first_an = constant_a_18(1);
     } else {
-        first_an = 1.into();
+        first_an = I256::ONE;
     }
 
-    x *= 100.into();
+    x *= I256::try_from(100).expect("100 is a valid I256");
 
     let mut product = *ONE_20;
     for i in 2..=9 {
@@ -150,11 +160,13 @@ fn exp(mut x: I256) -> Result<I256, Error> {
     series_sum += term;
 
     for i in 2..=12 {
-        term = ((term * x) / *ONE_20) / i.into();
+        term = ((term * x) / *ONE_20)
+            / I256::try_from(i).expect("all numbers within (2..=12) are valid I256");
         series_sum += term;
     }
 
-    Ok((((product * series_sum) / *ONE_20) * first_an) / 100.into())
+    Ok((((product * series_sum) / *ONE_20) * first_an)
+        / I256::try_from(100).expect("100 is a valid I256"))
 }
 
 fn _ln(mut a: I256) -> I256 {
@@ -162,7 +174,7 @@ fn _ln(mut a: I256) -> I256 {
         return -_ln((*ONE_18 * *ONE_18) / a);
     }
 
-    let mut sum = I256::zero();
+    let mut sum = I256::ZERO;
     for i in 0..=1 {
         if a >= constant_a_18(i) * *ONE_18 {
             a /= constant_a_18(i);
@@ -170,8 +182,8 @@ fn _ln(mut a: I256) -> I256 {
         }
     }
 
-    sum *= 100.into();
-    a *= 100.into();
+    sum *= I256::try_from(100).expect("100 is a valid I256");
+    a *= I256::try_from(100).expect("100 is a valid I256");
 
     for i in 2..=11 {
         if a >= constant_a_20(i) {
@@ -188,12 +200,12 @@ fn _ln(mut a: I256) -> I256 {
 
     for i in (3..=11).step_by(2) {
         num = (num * z_squared) / *ONE_20;
-        series_sum += num / i.into();
+        series_sum += num / I256::try_from(i).expect("all numbers within (3..=11) are valid I256");
     }
 
-    series_sum *= 2.into();
+    series_sum *= I256::try_from(2).expect("2 is a valid I256");
 
-    (sum + series_sum) / 100.into()
+    (sum + series_sum) / I256::try_from(100).expect("100 is a valid I256")
 }
 
 fn _ln_36(mut x: I256) -> I256 {
@@ -207,10 +219,10 @@ fn _ln_36(mut x: I256) -> I256 {
 
     for i in (3..=15).step_by(2) {
         num = (num * z_squared) / *ONE_36;
-        series_sum += num / i.into();
+        series_sum += num / I256::try_from(i).expect("all numbers within (3..=15) are valid I256");
     }
 
-    series_sum * 2.into()
+    series_sum * I256::try_from(2).expect("2 is a valid I256")
 }
 
 #[cfg(test)]
@@ -465,8 +477,8 @@ mod tests {
         for (i, &o) in input.iter().zip(output.iter()) {
             assert_eq!(
                 pow(
-                    U256::from_dec_str(i[0]).unwrap(),
-                    U256::from_dec_str(i[1]).unwrap()
+                    U256::from_str_radix(i[0], 10).unwrap(),
+                    U256::from_str_radix(i[1], 10).unwrap()
                 )
                 .unwrap_err(),
                 o.into()
@@ -513,11 +525,11 @@ mod tests {
         for (i, &o) in input.iter().zip(output.iter()) {
             assert_eq!(
                 pow(
-                    U256::from_dec_str(i[0]).unwrap(),
-                    U256::from_dec_str(i[1]).unwrap()
+                    U256::from_str_radix(i[0], 10).unwrap(),
+                    U256::from_str_radix(i[1], 10).unwrap()
                 )
                 .unwrap(),
-                U256::from_dec_str(o).unwrap()
+                U256::from_str_radix(o, 10).unwrap()
             );
         }
     }
@@ -548,20 +560,11 @@ mod tests {
 
     #[test]
     fn pow_alternate_routes() {
+        assert_eq!(pow(U256::ZERO, U256::ZERO), Ok(*UFIXED256X18_ONE));
+        assert_eq!(pow(U256::ZERO, U256::ONE), Ok(U256::ZERO));
         assert_eq!(
-            pow(
-                U256::from_dec_str("0").unwrap(),
-                U256::from_dec_str("0").unwrap()
-            ),
+            pow(U256::from(10).pow(U256::from(18)), U256::ONE),
             Ok(*UFIXED256X18_ONE)
         );
-        assert_eq!(
-            pow(
-                U256::from_dec_str("0").unwrap(),
-                U256::from_dec_str("1").unwrap()
-            ),
-            Ok(U256::zero())
-        );
-        assert_eq!(pow(U256::exp10(18), U256::one()), Ok(*UFIXED256X18_ONE));
     }
 }

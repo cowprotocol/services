@@ -18,7 +18,6 @@ use {
     },
     alloy::primitives::{Address, B256},
     anyhow::Result,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::TokenPair,
     shared::{
         ethrpc::Web3,
@@ -83,7 +82,7 @@ impl BalancerV2Liquidity {
                 fee: pool.common.swap_fee,
                 version: pool.version,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.id.into_alloy(),
+                    pool_id: pool.common.id,
                     inner: inner.clone(),
                 }),
             })
@@ -97,7 +96,7 @@ impl BalancerV2Liquidity {
                 fee: pool.common.swap_fee,
                 amplification_parameter: pool.amplification_parameter,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.id.into_alloy(),
+                    pool_id: pool.common.id,
                     inner: inner.clone(),
                 }),
             })

@@ -4,11 +4,7 @@
 use {
     crate::{
         gas_price_estimation::GasEstimatorType,
-        sources::{
-            BaselineSource,
-            balancer_v2::BalancerFactoryKind,
-            uniswap_v2::UniV2BaselineSourceParameters,
-        },
+        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         tenderly_api,
     },
     alloy::primitives::Address,
@@ -218,12 +214,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_internal_buffers: bool,
 
-    /// The Balancer V2 factories to consider for indexing liquidity. Allows
-    /// specific pool kinds to be disabled via configuration. Will use all
-    /// supported Balancer V2 factory kinds if not specified.
-    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
-    pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
-
     /// Value of the authorization header for the solver competition post api.
     #[clap(long, env)]
     pub solver_competition_auth: Option<String>,
@@ -396,7 +386,6 @@ impl Display for Arguments {
             pool_cache_maximum_retries,
             pool_cache_delay_between_retries,
             use_internal_buffers,
-            balancer_factories,
             solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
@@ -439,7 +428,6 @@ impl Display for Arguments {
             "pool_cache_delay_between_retries: {pool_cache_delay_between_retries:?}"
         )?;
         writeln!(f, "use_internal_buffers: {use_internal_buffers}")?;
-        writeln!(f, "balancer_factories: {balancer_factories:?}")?;
         display_secret_option(
             f,
             "solver_competition_auth",
