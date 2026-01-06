@@ -87,7 +87,7 @@ paste = "1.0"
 pin-project-lite = "0.2.14"
 rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
-rust_decimal = "1.35.0"
+rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
 scopeguard = "1.2.0"
 shared = { path = "crates/shared" }
