@@ -758,7 +758,7 @@ impl OrderUid {
         (
             B256::from_slice(&self.0[0..32]),
             Address::from_slice(&self.0[32..52]),
-            u32::from_le_bytes(self.0[52..].try_into().unwrap()),
+            u32::from_be_bytes(self.0[52..].try_into().unwrap()),
         )
     }
 }
