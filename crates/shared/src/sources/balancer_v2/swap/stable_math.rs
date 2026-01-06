@@ -229,12 +229,11 @@ mod tests {
     };
 
     fn u256_from_f64_lossy(val: f64) -> U256 {
-        U256::from(val as u64)
+        U256::from_str_radix(&val.round().to_string(), 10).unwrap_or(U256::MAX)
     }
 
     fn u256_to_f64_lossy(val: U256) -> f64 {
-        let v: u128 = val.try_into().unwrap_or(u128::MAX);
-        v as f64
+        val.to_string().parse().unwrap_or(f64::INFINITY)
     }
 
     // interpreted from

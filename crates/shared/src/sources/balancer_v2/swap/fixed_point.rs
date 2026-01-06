@@ -89,7 +89,7 @@ impl FromStr for Bfp {
 impl Debug for Bfp {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         let remainder = self.0 % *ONE_18;
-        let low: u128 = remainder.try_into().unwrap_or(0);
+        let low: u128 = remainder.try_into().unwrap();
         write!(formatter, "{}.{:0>18}", self.0 / *ONE_18, low)
     }
 }
@@ -97,9 +97,14 @@ impl Debug for Bfp {
 impl Bfp {
     #[cfg(test)]
     pub fn to_f64_lossy(self) -> f64 {
-        // Convert U256 to f64 by taking the high bits
-        let val: u128 = self.as_uint256().try_into().unwrap_or(u128::MAX);
-        (val as f64) / 1e18
+        // NOTE: This conversion is lossy and may not be accurate for large values.
+        // It is only intended for use in tests.
+        let val: f64 = self
+            .as_uint256()
+            .to_string()
+            .parse()
+            .unwrap_or(f64::INFINITY);
+        val / 1e18
     }
 
     pub fn as_uint256(self) -> U256 {
