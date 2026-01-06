@@ -351,17 +351,15 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{
-            domain::{
-                self,
-                auction,
-                eth,
-                settlement::{OrderMatchKey, trade_to_key},
-            },
-            util::conv::U256Ext,
+        crate::domain::{
+            self,
+            auction,
+            eth,
+            settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
         hex_literal::hex,
+        number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
         winner_selection::{self as ws, state::RankedItem},
     };
