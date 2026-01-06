@@ -19,12 +19,12 @@ use {
         sol_types::SolEvent,
     },
     anyhow::Result,
-    contracts::{
-        alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
-        errors::EthcontractErrorType,
+    contracts::alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
+    ethcontract::{BlockId, H256},
+    ethrpc::{
+        alloy::errors::ContractErrorExt,
+        block_stream::{BlockNumberHash, BlockRetrieving},
     },
-    ethcontract::{BlockId, H256, errors::MethodError},
-    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
     futures::future,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
@@ -148,18 +148,13 @@ fn collect_pool_results(pools: Vec<Result<PoolStatus>>) -> Result<Vec<Pool>> {
         .into_iter()
         .filter_map(|pool| match pool {
             Ok(pool) => Some(Ok(pool.active()?)),
-            Err(err) if is_contract_error(&err) => None,
-            Err(err) => Some(Err(err)),
+            // Error issued by the contract alloy contract calls
+            Err(err) => match err.downcast_ref::<alloy::contract::Error>() {
+                Some(err) if err.is_contract_error() => None,
+                _ => Some(Err(err)),
+            },
         })
         .collect()
-}
-
-fn is_contract_error(err: &anyhow::Error) -> bool {
-    matches!(
-        err.downcast_ref::<MethodError>()
-            .map(EthcontractErrorType::classify),
-        Some(EthcontractErrorType::Contract),
-    )
 }
 
 #[cfg(test)]
@@ -170,7 +165,7 @@ mod tests {
             pools::{PoolKind, weighted},
             swap::fixed_point::Bfp,
         },
-        contracts::errors::{testing_contract_error, testing_node_error},
+        ethrpc::alloy::errors::{testing_alloy_contract_error, testing_alloy_node_error},
     };
 
     #[tokio::test]
@@ -185,14 +180,14 @@ mod tests {
                 }),
             })),
             Ok(PoolStatus::Paused),
-            Err(testing_contract_error().into()),
+            Err(testing_alloy_contract_error().into()),
         ];
         assert_eq!(collect_pool_results(results).unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn collecting_results_forwards_node_error() {
-        let node_err = Err(testing_node_error().into());
+        let node_err = Err(testing_alloy_node_error().into());
         assert!(collect_pool_results(vec![node_err]).is_err());
     }
 }
