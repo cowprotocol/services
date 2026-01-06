@@ -2,6 +2,7 @@
 //! generation with `ethcontract`. This is done instead of fetching contracts
 //! at build time to reduce the risk of failure.
 
+use std::path::{Path, PathBuf};
 use {
     anyhow::Result,
     contracts::paths,
@@ -356,4 +357,9 @@ impl VendorContext<'_> {
 
         Ok(self)
     }
+}
+
+/// Path to the directory containing the vendored contract artifacts.
+pub fn contract_artifacts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts")
 }
