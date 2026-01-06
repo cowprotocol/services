@@ -233,7 +233,10 @@ impl Competition {
             .into_iter()
             .map(|solution| async move {
                 let id = solution.id().clone();
-                let token_pairs = solution.token_pairs();
+                let orders: Vec<_> = solution
+                    .user_trades()
+                    .map(|trade| trade.order().uid)
+                    .collect();
                 observe::encoding(&id);
                 let settlement = solution
                     .encode(
@@ -243,19 +246,19 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, token_pairs, settlement)
+                (id, orders, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, token_pairs, result)| async move {
+            .filter_map(|(id, orders, result)| async move {
                 match result {
                     Ok(solution) => {
-                        self.bad_tokens.encoding_succeeded(&token_pairs);
+                        self.bad_tokens.encoding_succeeded(&orders);
                         Some(solution)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
-                        self.bad_tokens.encoding_failed(&token_pairs);
+                        self.bad_tokens.encoding_failed(&orders);
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None

@@ -1,5 +1,8 @@
 use {
-    crate::domain::{competition::Auction, eth},
+    crate::domain::{
+        competition::{Auction, order::Uid},
+        eth,
+    },
     futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };
@@ -71,6 +74,12 @@ impl Detector {
 
         let mut supported_orders: Vec<_> = supported_orders
             .into_iter()
+            .filter(|order| {
+                self.metrics
+                    .as_ref()
+                    .map(|metrics| metrics.get_quality(&order.uid, now))
+                    != Some(Quality::Unsupported)
+            })
             .filter_map(|order| {
                 let sell = self.get_token_quality(order.sell.token, now);
                 let buy = self.get_token_quality(order.buy.token, now);
@@ -123,16 +132,16 @@ impl Detector {
     }
 
     /// Updates the tokens quality metric for successful operation.
-    pub fn encoding_succeeded(&self, token_pairs: &[(eth::TokenAddress, eth::TokenAddress)]) {
+    pub fn encoding_succeeded(&self, orders: &[Uid]) {
         if let Some(metrics) = &self.metrics {
-            metrics.update_tokens(token_pairs, false);
+            metrics.update_orders(orders, false);
         }
     }
 
     /// Updates the tokens quality metric for failures.
-    pub fn encoding_failed(&self, token_pairs: &[(eth::TokenAddress, eth::TokenAddress)]) {
+    pub fn encoding_failed(&self, orders: &[Uid]) {
         if let Some(metrics) = &self.metrics {
-            metrics.update_tokens(token_pairs, true);
+            metrics.update_orders(orders, true);
         }
     }
 
@@ -142,21 +151,10 @@ impl Detector {
             Some(quality) => return *quality,
         }
 
-        if let Some(Quality::Unsupported) = self
-            .simulation_detector
+        self.simulation_detector
             .as_ref()
             .map(|d| d.get_quality(&token, now))
-        {
-            return Quality::Unsupported;
-        }
-
-        if let Some(Quality::Unsupported) =
-            self.metrics.as_ref().map(|m| m.get_quality(&token, now))
-        {
-            return Quality::Unsupported;
-        }
-
-        Quality::Unknown
+            .unwrap_or(Quality::Unknown)
     }
 }
 

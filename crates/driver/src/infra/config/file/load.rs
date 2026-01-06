@@ -139,7 +139,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .metrics_strategy_log_only,
                     metrics_strategy_token_freeze_time: solver_config
                         .bad_token_detection
-                        .metrics_strategy_token_freeze_time,
+                        .metrics_strategy_freeze_time,
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,

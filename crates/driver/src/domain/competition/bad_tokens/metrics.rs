@@ -1,7 +1,7 @@
 use {
     super::Quality,
     crate::{
-        domain::eth,
+        domain::competition::order::Uid,
         infra::{observe::metrics, solver},
     },
     dashmap::DashMap,
@@ -12,7 +12,7 @@ use {
 };
 
 #[derive(Default, Debug)]
-struct TokenStatistics {
+struct OrderStatistics {
     attempts: u32,
     fails: u32,
     flagged_unsupported_at: Option<Instant>,
@@ -27,9 +27,9 @@ struct TokenStatistics {
 pub struct Detector {
     failure_ratio: f64,
     required_measurements: u32,
-    counter: Arc<DashMap<eth::TokenAddress, TokenStatistics>>,
+    counter: Arc<DashMap<Uid, OrderStatistics>>,
     log_only: bool,
-    token_freeze_time: Duration,
+    order_freeze_time: Duration,
     solver: solver::Name,
 }
 
@@ -38,7 +38,7 @@ impl Detector {
         failure_ratio: f64,
         required_measurements: u32,
         log_only: bool,
-        token_freeze_time: Duration,
+        order_freeze_time: Duration,
         solver: solver::Name,
     ) -> Self {
         Self {
@@ -46,19 +46,19 @@ impl Detector {
             required_measurements,
             counter: Default::default(),
             log_only,
-            token_freeze_time,
+            order_freeze_time,
             solver,
         }
     }
 
-    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality {
-        let Some(stats) = self.counter.get(token) else {
+    pub fn get_quality(&self, order: &Uid, now: Instant) -> Quality {
+        let Some(stats) = self.counter.get(order) else {
             return Quality::Unknown;
         };
 
         if stats
             .flagged_unsupported_at
-            .is_some_and(|t| now.duration_since(t) > self.token_freeze_time)
+            .is_some_and(|t| now.duration_since(t) > self.order_freeze_time)
         {
             // Sometimes tokens only cause issues temporarily. If the token's freeze
             // period expired we pretend we don't have enough information to give it
@@ -72,7 +72,7 @@ impl Detector {
         }
     }
 
-    fn quality_based_on_stats(&self, stats: &TokenStatistics) -> Quality {
+    fn quality_based_on_stats(&self, stats: &OrderStatistics) -> Quality {
         if stats.attempts < self.required_measurements {
             return Quality::Unknown;
         }
@@ -83,65 +83,58 @@ impl Detector {
         }
     }
 
-    /// Updates the tokens that participated in settlements by
+    /// Updates the orders that participated in settlements by
     /// incrementing their attempt count.
     /// `failure` indicates whether the settlement was successful or not.
-    pub fn update_tokens(
-        &self,
-        token_pairs: &[(eth::TokenAddress, eth::TokenAddress)],
-        failure: bool,
-    ) {
+    pub fn update_orders(&self, orders: &[Uid], failure: bool) {
         let now = Instant::now();
-        let mut new_unsupported_tokens = vec![];
-        token_pairs
-            .iter()
-            .flat_map(|(token_a, token_b)| [token_a, token_b])
-            .for_each(|token| {
-                let mut stats = self
-                    .counter
-                    .entry(*token)
-                    .and_modify(|counter| {
-                        counter.attempts += 1;
-                        counter.fails += u32::from(failure);
-                    })
-                    .or_insert_with(|| TokenStatistics {
-                        attempts: 1,
-                        fails: u32::from(failure),
-                        flagged_unsupported_at: None,
-                    });
+        let mut new_unsupported_orders = vec![];
+        orders.iter().for_each(|order| {
+            let mut stats = self
+                .counter
+                .entry(*order)
+                .and_modify(|counter| {
+                    counter.attempts += 1;
+                    counter.fails += u32::from(failure);
+                })
+                .or_insert_with(|| OrderStatistics {
+                    attempts: 1,
+                    fails: u32::from(failure),
+                    flagged_unsupported_at: None,
+                });
 
-                // token needs to be frozen as unsupported for a while
-                if self.quality_based_on_stats(&stats) == Quality::Unsupported
-                    && stats
-                        .flagged_unsupported_at
-                        .is_none_or(|t| now.duration_since(t) > self.token_freeze_time)
-                {
-                    new_unsupported_tokens.push(token);
-                    stats.flagged_unsupported_at = Some(now);
-                }
-            });
+            // order needs to be frozen as unsupported for a while
+            if self.quality_based_on_stats(&stats) == Quality::Unsupported
+                && stats
+                    .flagged_unsupported_at
+                    .is_none_or(|t| now.duration_since(t) > self.order_freeze_time)
+            {
+                new_unsupported_orders.push(order);
+                stats.flagged_unsupported_at = Some(now);
+            }
+        });
 
-        if !new_unsupported_tokens.is_empty() {
+        if !new_unsupported_orders.is_empty() {
             tracing::debug!(
-                tokens = ?new_unsupported_tokens,
-                "mark tokens as unsupported"
+                orders = ?new_unsupported_orders,
+                "mark order as unsupported"
             );
             metrics::get()
-                .bad_tokens_detected
-                .with_label_values(&[&self.solver.0, "metrics"])
-                .inc_by(new_unsupported_tokens.len() as u64);
+                .bad_orders_detected
+                .with_label_values(&[&self.solver.0])
+                .inc_by(new_unsupported_orders.len() as u64);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::Address};
+    use {super::*, crate::util::Bytes};
 
-    /// Tests that a token only gets marked temporarily as unsupported.
+    /// Tests that an order only gets marked temporarily as unsupported.
     /// After the freeze period it will be allowed again.
     #[tokio::test]
-    async fn unfreeze_bad_tokens() {
+    async fn unfreeze_bad_orders() {
         const FREEZE_DURATION: Duration = Duration::from_millis(50);
         let detector = Detector::new(
             0.5,
@@ -151,25 +144,24 @@ mod tests {
             solver::Name("mysolver".to_string()),
         );
 
-        let token_a = eth::TokenAddress(eth::ContractAddress(Address::repeat_byte(1)));
-        let token_b = eth::TokenAddress(eth::ContractAddress(Address::repeat_byte(2)));
-        let token_quality = || detector.get_quality(&token_a, Instant::now());
+        let order = Uid(Bytes([1; 56]));
+        let order_quality = || detector.get_quality(&order, Instant::now());
 
-        // token is reported as unknown while we don't have enough measurements
-        assert_eq!(token_quality(), Quality::Unknown);
-        detector.update_tokens(&[(token_a, token_b)], true);
-        assert_eq!(token_quality(), Quality::Unknown);
-        detector.update_tokens(&[(token_a, token_b)], true);
+        // order is reported as unknown while we don't have enough measurements
+        assert_eq!(order_quality(), Quality::Unknown);
+        detector.update_orders(&[order], true);
+        assert_eq!(order_quality(), Quality::Unknown);
+        detector.update_orders(&[order], true);
 
-        // after we got enough measurements the token gets marked as bad
-        assert_eq!(token_quality(), Quality::Unsupported);
+        // after we got enough measurements the order gets marked as bad
+        assert_eq!(order_quality(), Quality::Unsupported);
 
         // after the freeze period is over the token gets reported as unknown again
         tokio::time::sleep(FREEZE_DURATION).await;
-        assert_eq!(token_quality(), Quality::Unknown);
+        assert_eq!(order_quality(), Quality::Unknown);
 
         // after an unfreeze another bad measurement is enough to freeze it again
-        detector.update_tokens(&[(token_a, token_b)], true);
-        assert_eq!(token_quality(), Quality::Unsupported);
+        detector.update_orders(&[order], true);
+        assert_eq!(order_quality(), Quality::Unsupported);
     }
 }
