@@ -4,5 +4,4 @@
 #[rustfmt::skip]
 pub mod alloy;
 
-pub mod errors;
 pub mod vault;

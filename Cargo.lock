@@ -2156,7 +2156,6 @@ dependencies = [
  "alloy-sol-macro-expander",
  "alloy-sol-macro-input",
  "anyhow",
- "ethcontract",
  "paste",
  "prettyplease",
  "proc-macro2",
