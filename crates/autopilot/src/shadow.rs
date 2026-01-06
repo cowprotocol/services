@@ -11,7 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{Participant, Score, Unscored, winner_selection},
+            competition::{Bid, Score, Unscored, winner_selection},
             eth::WrappedNativeToken,
         },
         infra::{
@@ -136,14 +136,14 @@ impl RunLoop {
 
         let total_score = ranking
             .winners()
-            .map(|p| p.score())
+            .map(|b| b.score())
             .reduce(Score::saturating_add)
             .unwrap_or_default();
 
-        for participant in ranking.ranked() {
-            let is_winner = participant.is_winner();
-            let reference_score = scores.get(&participant.driver().submission_address);
-            let driver = participant.driver();
+        for bid in ranking.ranked() {
+            let is_winner = bid.is_winner();
+            let reference_score = scores.get(&bid.driver().submission_address);
+            let driver = bid.driver();
             let reward = reference_score
                 .map(|reference| {
                     total_score.checked_sub(reference).unwrap_or_else(|| {
@@ -178,7 +178,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unscored>> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Bid<Unscored>> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
 
         futures::future::join_all(
@@ -199,7 +199,7 @@ impl RunLoop {
         driver: Arc<infra::Driver>,
         request: solve::Request,
         auction_id: i64,
-    ) -> Vec<Participant<Unscored>> {
+    ) -> Vec<Bid<Unscored>> {
         let solutions = match self.fetch_solutions(&driver, request).await {
             Ok(response) => {
                 Metrics::get()
@@ -250,7 +250,7 @@ impl RunLoop {
 
         solutions
             .into_iter()
-            .map(|s| Participant::new(s, Arc::clone(&driver)))
+            .map(|s| Bid::new(s, Arc::clone(&driver)))
             .collect()
     }
 

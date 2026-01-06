@@ -1,21 +1,17 @@
 //! Shared scoring and ranking state markers.
 //!
 //! This module provides the type-state pattern infrastructure for tracking
-//! solutions and participants through the winner selection process:
+//! solutions through the winner selection process:
 //!
 //! ```text
 //! Unscored → Scored → Ranked
 //! ```
 
-/// Solution/participant that hasn't been scored yet.
-///
 /// This is the initial state when a solution enters the winner selection
 /// process.
 #[derive(Debug, Clone, Copy)]
 pub struct Unscored;
 
-/// Solution/participant with a computed score.
-///
 /// This is the intermediate state after computing surplus and fees but before
 /// ranking.
 #[derive(Debug, Clone, Copy)]
@@ -23,8 +19,6 @@ pub struct Scored<Score> {
     pub score: Score,
 }
 
-/// Solution/participant with ranking information.
-///
 /// This is the final state with complete information about whether the
 /// solution is a winner or was filtered out.
 #[derive(Debug, Clone, Copy)]
@@ -33,7 +27,7 @@ pub struct Ranked<Score> {
     pub score: Score,
 }
 
-/// The type of ranking assigned to a solution/participant.
+/// The type of ranking assigned to a state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RankType {
     Winner,
@@ -72,7 +66,7 @@ pub trait HasState {
 /// Trait for items in the Unscored state.
 ///
 /// Items with this trait haven't been scored yet. This represents the initial
-/// state when a solution or participant enters the winner selection process.
+/// state when a solution enters the winner selection process.
 ///
 /// # State Transition
 ///
@@ -129,7 +123,7 @@ where
 ///
 /// Items with this trait have been scored and ranked in the winner selection
 /// process. This is the final state with complete information about whether
-/// the solution/participant is a winner or was filtered out.
+/// the solution is a winner or was filtered out.
 ///
 /// # Methods
 ///
