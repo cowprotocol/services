@@ -281,23 +281,23 @@ impl TraceCallDetectorRaw {
         let bad = TokenQuality::Bad {
             reason: message.to_string(),
         };
-        let balance_before_in = match U256::try_from_be_slice(&traces[0].output) {
+        let balance_before_in = match u256_from_be_bytes_strict(&traces[0].output) {
             Some(balance) => balance,
             None => return Ok(bad),
         };
-        let balance_after_in = match U256::try_from_be_slice(&traces[2].output) {
+        let balance_after_in = match u256_from_be_bytes_strict(&traces[2].output) {
             Some(balance) => balance,
             None => return Ok(bad),
         };
-        let balance_after_out = match U256::try_from_be_slice(&traces[5].output) {
+        let balance_after_out = match u256_from_be_bytes_strict(&traces[5].output) {
             Some(balance) => balance,
             None => return Ok(bad),
         };
-        let balance_recipient_before = match U256::try_from_be_slice(&traces[3].output) {
+        let balance_recipient_before = match u256_from_be_bytes_strict(&traces[3].output) {
             Some(balance) => balance,
             None => return Ok(bad),
         };
-        let balance_recipient_after = match U256::try_from_be_slice(&traces[6].output) {
+        let balance_recipient_after = match u256_from_be_bytes_strict(&traces[6].output) {
             Some(balance) => balance,
             None => return Ok(bad),
         };
@@ -374,6 +374,15 @@ fn ensure_transaction_ok_and_get_gas(trace: &TraceResults) -> Result<Result<U256
         _ => bail!("no error but also no call result"),
     };
     Ok(Ok(U256::from(call_result.gas_used)))
+}
+
+/// Decodes a `U256` from a big-endian encoded slice.
+/// The slice's length MUST be 32 bytes.
+fn u256_from_be_bytes_strict(b: &[u8]) -> Option<U256> {
+    if b.len() != 32 {
+        return None;
+    }
+    U256::try_from_be_slice(b)
 }
 
 #[cfg(test)]
