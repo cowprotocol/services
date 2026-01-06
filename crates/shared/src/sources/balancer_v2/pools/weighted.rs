@@ -78,7 +78,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory::Instance {
             .call()
             .await?
             .into_iter()
-            .map(|weight| Bfp::from_wei(weight))
+            .map(Bfp::from_wei)
             .collect();
 
         Ok(PoolInfo {
