@@ -294,7 +294,6 @@ async fn run_refunder_threshold_test(
     );
 }
 
-#[ignore]
 #[rstest]
 // Tests that orders with slippage below, at, or above the min_price_deviation
 // threshold are refunded according to the SQL >= check.
@@ -330,6 +329,7 @@ async fn run_refunder_threshold_test(
     ValidityDuration { order: 100, enforced: 100 },
     false
 )]
+#[ignore]
 #[tokio::test]
 async fn local_node_refunder_thresholds(
     #[case] slippage: SlippageBps,
