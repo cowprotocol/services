@@ -1452,7 +1452,6 @@ mod tests {
     fn debug_order_data() {
         dbg!(Order::default());
     }
-
     #[test]
     fn order_cancellations_struct_hash() {
         // Generated with Ethers.js as a reference EIP-712 hashing impl.
@@ -1481,5 +1480,14 @@ mod tests {
         assert_eq!(order_hash, parts.0);
         assert_eq!(user, parts.1);
         assert_eq!(valid_to, parts.2);
+
+        let uid = OrderUid::from_str("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e89984d17af2f18f8c54873c0de68a56cc5a23e0f695ba915").unwrap();
+        let (order_hash, user, valid_to) = uid.parts();
+        assert_eq!(
+            order_hash,
+            b256!("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e")
+        );
+        assert_eq!(user, address!("0x89984d17af2f18f8c54873c0de68a56cc5a23e0f"));
+        assert_eq!(valid_to, 1767614741);
     }
 }
