@@ -1,9 +1,24 @@
+pub use state::{RankType, Unscored};
 use {
-    super::{Score, Solution},
-    crate::infra,
+    super::Score,
+    crate::{domain::competition::Solution, infra},
+    ::winner_selection::state,
     std::sync::Arc,
 };
 
+pub type Scored = state::Scored<Score>;
+pub type Ranked = state::Ranked<Score>;
+
+/// A solver's solution paired with the driver, progressing through the winner
+/// selection process.
+///
+/// It uses the type-state pattern to enforce correct state
+/// transitions at compile time. The state parameter tracks progression through
+/// three phases:
+///
+/// 1. **Unscored**: Initial state when the solution is received from the driver
+/// 2. **Scored**: After computing surplus and fees for the solution
+/// 3. **Ranked**: After winner selection determines if this is a winner
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
     solution: Solution,
@@ -11,21 +26,9 @@ pub struct Participant<State = Ranked> {
     state: State,
 }
 
-#[derive(Clone)]
-pub struct Unranked;
-pub enum Ranked {
-    Winner,
-    NonWinner,
-    FilteredOut,
-}
-
 impl<T> Participant<T> {
     pub fn solution(&self) -> &Solution {
         &self.solution
-    }
-
-    pub fn set_score(&mut self, score: Score) {
-        self.solution.score = Some(score);
     }
 
     pub fn driver(&self) -> &Arc<infra::Driver> {
@@ -33,30 +36,29 @@ impl<T> Participant<T> {
     }
 }
 
-impl Participant<Unranked> {
+impl<State> state::HasState for Participant<State> {
+    type Next<NewState> = Participant<NewState>;
+    type State = State;
+
+    fn with_state<NewState>(self, state: NewState) -> Self::Next<NewState> {
+        Participant {
+            solution: self.solution,
+            driver: self.driver,
+            state,
+        }
+    }
+
+    fn state(&self) -> &Self::State {
+        &self.state
+    }
+}
+
+impl Participant<Unscored> {
     pub fn new(solution: Solution, driver: Arc<infra::Driver>) -> Self {
         Self {
             solution,
             driver,
-            state: Unranked,
+            state: Unscored,
         }
-    }
-
-    pub fn rank(self, rank: Ranked) -> Participant<Ranked> {
-        Participant::<Ranked> {
-            state: rank,
-            solution: self.solution,
-            driver: self.driver,
-        }
-    }
-}
-
-impl Participant<Ranked> {
-    pub fn is_winner(&self) -> bool {
-        matches!(self.state, Ranked::Winner)
-    }
-
-    pub fn filtered_out(&self) -> bool {
-        matches!(self.state, Ranked::FilteredOut)
     }
 }

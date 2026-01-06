@@ -11,7 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{Participant, Score, Unranked, winner_selection},
+            competition::{Participant, Score, Unscored, winner_selection},
             eth::WrappedNativeToken,
         },
         infra::{
@@ -22,6 +22,7 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     anyhow::Context,
     ethrpc::block_stream::CurrentBlockWatcher,
     itertools::Itertools,
@@ -56,10 +57,10 @@ impl RunLoop {
         weth: WrappedNativeToken,
     ) -> Self {
         Self {
-            winner_selection: winner_selection::Arbitrator {
-                max_winners: max_winners_per_auction.get(),
+            winner_selection: winner_selection::Arbitrator::new(
+                max_winners_per_auction.get(),
                 weth,
-            },
+            ),
             orderbook,
             drivers,
             trusted_tokens,
@@ -131,11 +132,11 @@ impl RunLoop {
 
         let solutions = self.competition(auction).await;
         let ranking = self.winner_selection.arbitrate(solutions, auction);
-        let scores = self.winner_selection.compute_reference_scores(&ranking);
+        let scores = ranking.reference_scores();
 
         let total_score = ranking
             .winners()
-            .map(|p| p.solution().score())
+            .map(|p| p.score())
             .reduce(Score::saturating_add)
             .unwrap_or_default();
 
@@ -177,7 +178,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unscored>> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
 
         futures::future::join_all(
@@ -198,7 +199,7 @@ impl RunLoop {
         driver: Arc<infra::Driver>,
         request: solve::Request,
         auction_id: i64,
-    ) -> Vec<Participant<Unranked>> {
+    ) -> Vec<Participant<Unscored>> {
         let solutions = match self.fetch_solutions(&driver, request).await {
             Ok(response) => {
                 Metrics::get()

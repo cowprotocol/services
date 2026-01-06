@@ -10,7 +10,7 @@ use {
                 Solution,
                 SolutionError,
                 SolverParticipationGuard,
-                Unranked,
+                Unscored,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -27,6 +27,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
@@ -129,7 +130,7 @@ impl RunLoop {
             probes,
             maintenance,
             competition_updates_sender,
-            winner_selection: winner_selection::Arbitrator { max_winners, weth },
+            winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify,
         }
     }
@@ -347,7 +348,6 @@ impl RunLoop {
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
-                &self.winner_selection,
             )
             .await
         {
@@ -460,10 +460,9 @@ impl RunLoop {
         competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
-        winner_selection: &winner_selection::Arbitrator,
     ) -> Result<()> {
         let start = Instant::now();
-        let reference_scores = winner_selection.compute_reference_scores(ranking);
+        let reference_scores = ranking.reference_scores().clone();
 
         let participants = ranking
             .all()
@@ -495,7 +494,7 @@ impl RunLoop {
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
                 solver_address: participant.solution().solver(),
-                score: Some(Score::Solver(participant.solution().score().get().0)),
+                score: Some(Score::Solver(participant.score().get().0)),
                 ranking: index + 1,
                 orders: participant
                     .solution()
@@ -514,7 +513,7 @@ impl RunLoop {
                     .map(|(token, price)| (token.0, price.get().0))
                     .collect(),
                 is_winner: participant.is_winner(),
-                filtered_out: participant.filtered_out(),
+                filtered_out: participant.is_filtered_out(),
             })
             .collect();
         // reverse as solver competition table is sorted from worst to best,
@@ -610,7 +609,7 @@ impl RunLoop {
     async fn fetch_solutions(
         &self,
         auction: &domain::Auction,
-    ) -> Vec<competition::Participant<Unranked>> {
+    ) -> Vec<competition::Participant<Unscored>> {
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
@@ -662,7 +661,7 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: solve::Request,
-    ) -> Vec<competition::Participant<Unranked>> {
+    ) -> Vec<competition::Participant<Unscored>> {
         let start = Instant::now();
         let result = self.try_solve(Arc::clone(&driver), request).await;
         let solutions = match result {
@@ -1135,7 +1134,7 @@ pub mod observe {
     use {
         crate::domain::{
             self,
-            competition::{Unranked, winner_selection::Ranking},
+            competition::{Unscored, winner_selection::Ranking},
         },
         std::collections::HashSet,
     };
@@ -1168,7 +1167,7 @@ pub mod observe {
         );
     }
 
-    pub fn solutions(solutions: &[domain::competition::Participant<Unranked>]) {
+    pub fn solutions(solutions: &[domain::competition::Participant<Unscored>]) {
         if solutions.is_empty() {
             tracing::info!("no solutions for auction");
         }

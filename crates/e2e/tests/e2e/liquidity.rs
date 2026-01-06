@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, address},
+        primitives::{Address, B256, address},
         providers::{
             Provider,
             ext::{AnvilApi, ImpersonateConfig},
@@ -21,11 +21,7 @@ use {
             wait_for_condition,
         },
     },
-    ethcontract::H256,
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, conversions::IntoLegacy},
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -403,7 +399,7 @@ async fn fill_or_kill_zeroex_limit_order(
     zeroex: &IZeroex::Instance,
     zeroex_order: &shared::zeroex_api::OrderRecord,
     from: Address,
-) -> anyhow::Result<H256> {
+) -> anyhow::Result<B256> {
     let order = zeroex_order.order();
     let tx_hash = zeroex
         .fillOrKillLimitOrder(
@@ -435,5 +431,5 @@ async fn fill_or_kill_zeroex_limit_order(
         .watch()
         .await?;
 
-    Ok(tx_hash.into_legacy())
+    Ok(tx_hash)
 }
