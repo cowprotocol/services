@@ -1470,4 +1470,16 @@ mod tests {
             assert_eq!(cancellations.hash_struct(), struct_hash);
         }
     }
+
+    #[test]
+    fn order_uid_parts() {
+        let order_hash = B256::random();
+        let user = Address::random();
+        let valid_to = 12341234;
+        let uid = OrderUid::from_parts(order_hash, user, valid_to);
+        let parts = uid.parts();
+        assert_eq!(order_hash, parts.0);
+        assert_eq!(user, parts.1);
+        assert_eq!(valid_to, parts.2);
+    }
 }
