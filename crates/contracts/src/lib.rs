@@ -4,6 +4,4 @@
 #[rustfmt::skip]
 pub mod alloy;
 
-#[cfg(feature = "bin")]
-pub mod paths;
 pub mod vault;
