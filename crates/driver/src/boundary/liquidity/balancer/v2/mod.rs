@@ -178,7 +178,7 @@ async fn init_liquidity(
             boundary::liquidity::http_client(),
             web3.clone(),
             &contracts,
-            config.pool_deny_list.iter().copied().collect(),
+            config.pool_deny_list.to_vec(),
         )
         .await
         .context("failed to create balancer pool fetcher")?,
