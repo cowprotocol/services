@@ -2,10 +2,8 @@
 //! generation with `ethcontract`. This is done instead of fetching contracts
 //! at build time to reduce the risk of failure.
 
-use std::path::{Path, PathBuf};
 use {
     anyhow::Result,
-    contracts::paths,
     reqwest::Url,
     serde_json::{Map, Value, json},
     std::{
@@ -226,7 +224,7 @@ struct Vendor {
 
 impl Vendor {
     fn try_new() -> Result<Self> {
-        let artifacts = paths::contract_artifacts_dir();
+        let artifacts = contract_artifacts_dir();
         tracing::info!("vendoring contract artifacts to '{}'", artifacts.display());
         fs::create_dir_all(&artifacts)?;
         Ok(Self { artifacts })
