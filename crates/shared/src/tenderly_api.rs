@@ -12,8 +12,6 @@ use {
     anyhow::{Result, ensure},
     bytes_hex::BytesHex,
     clap::Parser,
-    contracts::errors::EthcontractErrorType,
-    ethcontract::errors::ExecutionError,
     ethrpc::alloy::conversions::IntoLegacy,
     prometheus::IntGaugeVec,
     reqwest::{
@@ -354,19 +352,6 @@ impl Clone for SimulationError {
         match self {
             Self::Revert(message) => Self::Revert(message.clone()),
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
-        }
-    }
-}
-
-impl From<web3::Error> for SimulationError {
-    fn from(err: web3::Error) -> Self {
-        let err = ExecutionError::from(err);
-        match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Node => Self::Other(err.into()),
-            EthcontractErrorType::Contract => match err {
-                ExecutionError::Revert(message) => Self::Revert(message),
-                _ => Self::Revert(None),
-            },
         }
     }
 }
