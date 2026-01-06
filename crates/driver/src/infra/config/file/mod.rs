@@ -304,9 +304,9 @@ struct SolverConfig {
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
 
-    /// Configuration for bad token detection.
+    /// Configuration for bad order detection.
     #[serde(default, flatten)]
-    bad_token_detection: BadOrderDetectionConfig,
+    bad_order_detection: BadOrderDetectionConfig,
 
     /// The maximum number of `/settle` requests that can be queued up
     /// before the driver starts dropping new `/solve` requests.
@@ -877,6 +877,23 @@ pub struct BadOrderDetectionConfig {
         with = "humantime_serde"
     )]
     pub metrics_strategy_freeze_time: Duration,
+
+    /// How frequently we try to collect garbage on the metrics cache.
+    #[serde(
+        default = "default_metrics_bad_order_detector_gc_interval",
+        rename = "metrics-bad-order-detection-gc-interval",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_gc_interval: Duration,
+
+    /// How long we must not have seen an order in a solution before
+    /// the associated metrics get evicted from the cache.
+    #[serde(
+        default = "default_metrics_bad_order_detector_gc_max_age",
+        rename = "metrics-bad-order-detection-gc-max-age",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_gc_max_age: Duration,
 }
 
 impl Default for BadOrderDetectionConfig {
@@ -953,6 +970,14 @@ fn default_metrics_bad_order_detector_log_only() -> bool {
 
 fn default_metrics_bad_order_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+fn default_metrics_bad_order_detector_gc_interval() -> Duration {
+    Duration::from_mins(1)
+}
+
+fn default_metrics_bad_order_detector_gc_max_age() -> Duration {
+    Duration::from_hours(1)
 }
 
 /// According to statistics, the average size of the app-data is ~800 bytes.

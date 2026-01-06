@@ -208,8 +208,24 @@ impl From<&solvers_dto::solution::OrderUid> for Uid {
 }
 
 impl Uid {
+    pub fn from_parts(order_hash: eth::B256, owner: eth::Address, valid_to: u32) -> Self {
+        let mut bytes = [0; UID_LEN];
+        bytes[0..32].copy_from_slice(order_hash.as_slice());
+        bytes[32..52].copy_from_slice(owner.as_slice());
+        bytes[52..56].copy_from_slice(&valid_to.to_be_bytes());
+        Self(Bytes(bytes))
+    }
+
+    /// Address that authorized the order. Sell tokens will be taken
+    /// from that address.
     pub fn owner(&self) -> eth::Address {
         self.parts().1
+    }
+
+    /// Returns a UNIX timestamp after which the settlement
+    /// contract will not allow the order to be settled anymore.
+    pub fn valid_to(&self) -> u32 {
+        self.parts().2
     }
 
     /// Splits an order UID into its parts.
@@ -217,7 +233,7 @@ impl Uid {
         (
             eth::B256::from_slice(&self.0.0[0..32]),
             eth::Address::from_slice(&self.0.0[32..52]),
-            u32::from_le_bytes(self.0.0[52..].try_into().unwrap()),
+            u32::from_be_bytes(self.0.0[52..].try_into().unwrap()),
         )
     }
 }

@@ -94,19 +94,21 @@ impl Api {
             let router = routes::settle(router);
             let router = routes::notify(router);
 
-            let bad_token_config = solver.bad_token_detection();
+            let bad_order_config = solver.bad_order_detection();
             let mut bad_tokens =
-                bad_orders::Detector::new(bad_token_config.tokens_supported.clone());
-            if bad_token_config.enable_simulation_strategy {
+                bad_orders::Detector::new(bad_order_config.tokens_supported.clone());
+            if bad_order_config.enable_simulation_strategy {
                 bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
             }
 
-            if bad_token_config.enable_metrics_strategy {
+            if bad_order_config.enable_metrics_strategy {
                 bad_tokens.with_metrics_detector(bad_orders::metrics::Detector::new(
-                    bad_token_config.metrics_strategy_failure_ratio,
-                    bad_token_config.metrics_strategy_required_measurements,
-                    bad_token_config.metrics_strategy_log_only,
-                    bad_token_config.metrics_strategy_token_freeze_time,
+                    bad_order_config.metrics_strategy_failure_ratio,
+                    bad_order_config.metrics_strategy_required_measurements,
+                    bad_order_config.metrics_strategy_log_only,
+                    bad_order_config.metrics_strategy_order_freeze_time,
+                    bad_order_config.metrics_strategy_cache_gc_interval,
+                    bad_order_config.metrics_strategy_cache_max_age,
                     name.clone(),
                 ));
             }

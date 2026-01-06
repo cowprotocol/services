@@ -6,23 +6,27 @@ use {
     },
     dashmap::DashMap,
     std::{
-        sync::Arc,
-        time::{Duration, Instant},
+        sync::{Arc, Weak},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     },
 };
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct OrderStatistics {
     attempts: u32,
     fails: u32,
     flagged_unsupported_at: Option<Instant>,
+    /// When an order was last seen in a solution. This
+    /// timestamp is used to determine whether the order's
+    /// metrics can be evicted from the cache to avoid bloat.
+    last_seen_at: Instant,
 }
 
-/// Monitors tokens to determine whether they are considered "unsupported" based
-/// on the ratio of failing to total settlement encoding attempts. A token must
+/// Monitors orders to determine whether they are considered "unsupported" based
+/// on the ratio of failing to total settlement encoding attempts. An order must
 /// have participated in at least `REQUIRED_MEASUREMENTS` attempts to be
 /// evaluated. If, at that point, the ratio of failures is greater than or equal
-/// to `FAILURE_RATIO`, the token is considered unsupported.
+/// to `FAILURE_RATIO`, the order is considered unsupported.
 #[derive(Clone)]
 pub struct Detector {
     failure_ratio: f64,
@@ -39,12 +43,18 @@ impl Detector {
         required_measurements: u32,
         log_only: bool,
         order_freeze_time: Duration,
+        gc_interval: Duration,
+        gc_max_age: Duration,
         solver: solver::Name,
     ) -> Self {
+        let counter = Arc::new(DashMap::default());
+
+        Self::spawn_gc_task(Arc::downgrade(&counter), gc_interval, gc_max_age);
+
         Self {
             failure_ratio,
             required_measurements,
-            counter: Default::default(),
+            counter: counter.clone(),
             log_only,
             order_freeze_time,
             solver,
@@ -96,11 +106,13 @@ impl Detector {
                 .and_modify(|counter| {
                     counter.attempts += 1;
                     counter.fails += u32::from(failure);
+                    counter.last_seen_at = now;
                 })
                 .or_insert_with(|| OrderStatistics {
                     attempts: 1,
                     fails: u32::from(failure),
                     flagged_unsupported_at: None,
+                    last_seen_at: now,
                 });
 
             // order needs to be frozen as unsupported for a while
@@ -125,6 +137,36 @@ impl Detector {
                 .inc_by(new_unsupported_orders.len() as u64);
         }
     }
+
+    /// Spawns a background tasks that periodically evicts items from the cache
+    /// that are no longer relevant to avoid bloat.
+    fn spawn_gc_task(
+        cache: Weak<DashMap<Uid, OrderStatistics>>,
+        interval: Duration,
+        max_age: Duration,
+    ) {
+        tokio::task::spawn(async move {
+            let mut interval = tokio::time::interval(interval);
+            while let Some(cache) = cache.upgrade() {
+                let now = Instant::now();
+                let now_as_unix = current_unix_timestamp();
+
+                cache.retain(|uid, stats| {
+                    u64::from(uid.valid_to()) > now_as_unix
+                        && now.duration_since(stats.last_seen_at) < max_age
+                });
+                interval.tick().await;
+            }
+            tracing::debug!("terminating gc task because cache was dropped");
+        });
+    }
+}
+
+fn current_unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 #[cfg(test)]
@@ -141,6 +183,8 @@ mod tests {
             2,
             false,
             FREEZE_DURATION,
+            Duration::from_hours(1),
+            Duration::from_hours(1),
             solver::Name("mysolver".to_string()),
         );
 
@@ -163,5 +207,70 @@ mod tests {
         // after an unfreeze another bad measurement is enough to freeze it again
         detector.update_orders(&[order], true);
         assert_eq!(order_quality(), Quality::Unsupported);
+    }
+
+    /// Tests that the GC task correctly evicts orders that are expired
+    /// or have not been seen for the configured amount of time.
+    #[tokio::test]
+    async fn evict_outdated_entries() {
+        const FREEZE_DURATION: Duration = Duration::from_millis(50);
+        const GC_INTERVAL: Duration = Duration::from_millis(10);
+        const GC_CYCLES_UNTIL_EVICTION: u32 = 5;
+        let gc_max_age = GC_INTERVAL * GC_CYCLES_UNTIL_EVICTION;
+
+        // this spawns a gc task that evicts entries from the cache
+        let detector = Detector::new(
+            0.5,
+            2,
+            false,
+            FREEZE_DURATION,
+            GC_INTERVAL,
+            gc_max_age,
+            solver::Name("mysolver".to_string()),
+        );
+
+        let long_valid_to = (current_unix_timestamp() + 1000) as u32;
+        let short_valid_to = 0; // already expired -> evict on first GC run
+
+        let long_order = Uid::from_parts(Default::default(), Default::default(), long_valid_to);
+        let short_order = Uid::from_parts(Default::default(), Default::default(), short_valid_to);
+
+        assert_eq!(detector.counter.len(), 0);
+        detector.update_orders(&[long_order, short_order], true);
+        assert_eq!(detector.counter.len(), 2);
+        assert!(detector.counter.get(&long_order).is_some());
+        assert!(detector.counter.get(&short_order).is_some());
+
+        // The gc task and this test operate on an interval. In order to avoid
+        // issues due to variance we wait half a GC interval to make sure
+        // our assertions always happen in the middle between 2 GC runs.
+        tokio::time::sleep(GC_INTERVAL / 2).await;
+        let mut interval = tokio::time::interval(GC_INTERVAL);
+
+        // after 1 GC cycle the expired order was evicted
+        assert_eq!(detector.counter.len(), 1);
+        assert!(detector.counter.get(&long_order).is_some());
+
+        for _ in 0..(GC_CYCLES_UNTIL_EVICTION - 1) {
+            interval.tick().await;
+        }
+
+        // order was still not evicted because the max age has not been reached yet
+        assert_eq!(detector.counter.len(), 1);
+        assert!(detector.counter.get(&long_order).is_some());
+
+        // add another measurement to extend lifetime in cache
+        detector.update_orders(&[long_order], true);
+
+        // metrics are still in the cache after almost max_age * 2
+        for _ in 0..=(GC_CYCLES_UNTIL_EVICTION - 1) {
+            interval.tick().await;
+        }
+        assert_eq!(detector.counter.len(), 1);
+        assert!(detector.counter.get(&long_order).is_some());
+
+        // after one more GC cycle the order finally gets evicted
+        interval.tick().await;
+        assert_eq!(detector.counter.len(), 0);
     }
 }

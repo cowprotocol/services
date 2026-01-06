@@ -107,9 +107,9 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 solver_native_token: solver_config.manage_native_token.to_domain(),
                 quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
-                bad_token_detection: BadOrderDetection {
+                bad_order_detection: BadOrderDetection {
                     tokens_supported: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .token_supported
                         .iter()
                         .map(|(token, supported)| {
@@ -123,23 +123,29 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         })
                         .collect(),
                     enable_simulation_strategy: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .enable_metrics_strategy,
                     metrics_strategy_failure_ratio: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_failure_ratio,
                     metrics_strategy_required_measurements: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_required_measurements,
                     metrics_strategy_log_only: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_log_only,
-                    metrics_strategy_token_freeze_time: solver_config
-                        .bad_token_detection
+                    metrics_strategy_order_freeze_time: solver_config
+                        .bad_order_detection
                         .metrics_strategy_freeze_time,
+                    metrics_strategy_cache_gc_interval: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_gc_interval,
+                    metrics_strategy_cache_max_age: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_gc_max_age,
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
