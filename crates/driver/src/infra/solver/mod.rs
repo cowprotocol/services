@@ -4,7 +4,7 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
-                bad_tokens,
+                bad_orders,
                 order,
                 solution::{self, Solution},
             },
@@ -179,7 +179,7 @@ pub struct Config {
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
-    pub bad_token_detection: BadTokenDetection,
+    pub bad_token_detection: BadOrderDetection,
     /// Max size of the pending settlements queue.
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
@@ -215,7 +215,7 @@ impl Solver {
         })
     }
 
-    pub fn bad_token_detection(&self) -> &BadTokenDetection {
+    pub fn bad_token_detection(&self) -> &BadOrderDetection {
         &self.config.bad_token_detection
     }
 
@@ -475,9 +475,9 @@ impl Error {
 }
 
 #[derive(Debug, Clone)]
-pub struct BadTokenDetection {
+pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
-    pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
+    pub tokens_supported: HashMap<eth::TokenAddress, bad_orders::Quality>,
     pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,

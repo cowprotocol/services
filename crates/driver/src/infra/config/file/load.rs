@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::bad_tokens, eth},
+        domain::{competition::bad_orders, eth},
         infra::{
             self,
             blockchain,
@@ -9,7 +9,7 @@ use {
             mempool,
             notify,
             simulator,
-            solver::{self, Account, BadTokenDetection, SolutionMerging},
+            solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
     },
     alloy::signers::{aws::AwsSigner, local::PrivateKeySigner},
@@ -107,7 +107,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 solver_native_token: solver_config.manage_native_token.to_domain(),
                 quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
-                bad_token_detection: BadTokenDetection {
+                bad_token_detection: BadOrderDetection {
                     tokens_supported: solver_config
                         .bad_token_detection
                         .token_supported
@@ -116,8 +116,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             (
                                 eth::TokenAddress(eth::ContractAddress(*token)),
                                 match supported {
-                                    true => bad_tokens::Quality::Supported,
-                                    false => bad_tokens::Quality::Unsupported,
+                                    true => bad_orders::Quality::Supported,
+                                    false => bad_orders::Quality::Unsupported,
                                 },
                             )
                         })

@@ -37,7 +37,7 @@ use {
 };
 
 pub mod auction;
-pub mod bad_tokens;
+pub mod bad_orders;
 pub mod order;
 mod pre_processing;
 pub mod solution;
@@ -65,7 +65,7 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    pub bad_tokens: Arc<bad_tokens::Detector>,
+    pub bad_tokens: Arc<bad_orders::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
@@ -80,7 +80,7 @@ impl Competition {
         liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
-        bad_tokens: Arc<bad_tokens::Detector>,
+        bad_tokens: Arc<bad_orders::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {

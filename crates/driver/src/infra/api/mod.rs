@@ -3,7 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
+            competition::{bad_orders, order::app_data::AppDataRetriever, sorting},
         },
         infra::{
             self,
@@ -37,7 +37,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
-    pub bad_token_detector: bad_tokens::simulation::Detector,
+    pub bad_token_detector: bad_orders::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -96,13 +96,13 @@ impl Api {
 
             let bad_token_config = solver.bad_token_detection();
             let mut bad_tokens =
-                bad_tokens::Detector::new(bad_token_config.tokens_supported.clone());
+                bad_orders::Detector::new(bad_token_config.tokens_supported.clone());
             if bad_token_config.enable_simulation_strategy {
                 bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
             }
 
             if bad_token_config.enable_metrics_strategy {
-                bad_tokens.with_metrics_detector(bad_tokens::metrics::Detector::new(
+                bad_tokens.with_metrics_detector(bad_orders::metrics::Detector::new(
                     bad_token_config.metrics_strategy_failure_ratio,
                     bad_token_config.metrics_strategy_required_measurements,
                     bad_token_config.metrics_strategy_log_only,

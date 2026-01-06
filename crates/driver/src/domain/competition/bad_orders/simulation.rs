@@ -2,7 +2,7 @@ use {
     crate::{
         domain::competition::{
             Order,
-            bad_tokens::{Quality, cache::Cache},
+            bad_orders::{Quality, cache::Cache},
             order,
         },
         infra::{self, observe::metrics},

@@ -1,3 +1,20 @@
+//! This module implements logic to detect orders that
+//! a solver is not able to support. The module supports
+//! flagging individual tokens that are not supported outright.
+//! A bad token could for example be one that forbids trading
+//! with AMMs, only allows 1 transfer per transaction/block, or
+//! was simply built with a buggy compiler which makes it incompatible
+//! with the settlement contract (see <https://github.com/cowprotocol/services/pull/781>).
+//!
+//! Additionally there are some heuristics to detect when an
+//! order itself is somehow broken or causes issues and slipped through
+//! other detection mechanisms. One big error case is orders adjusting
+//! debt postions in lending protocols. While pre-checks might correctly
+//! detect that the EIP 1271 signature is valid the transfer of the token
+//! would fail because the user's debt position is not collateralized enough.
+//! In other words the bad order detection is a last fail safe in case
+//! we were not able to predict issues with orders and pre-emptively
+//! filter them out of the auction.
 use {
     crate::domain::{
         competition::{Auction, order::Uid},
