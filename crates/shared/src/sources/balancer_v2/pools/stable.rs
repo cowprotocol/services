@@ -9,11 +9,11 @@ use {
             swap::fixed_point::Bfp,
         },
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Result, ensure},
     contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
-    ethcontract::{BlockId, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethcontract::BlockId,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,
@@ -112,8 +112,8 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
                 futures::try_join!(fetch_common, fetch_amplification_parameter)?;
             let amplification_parameter = {
                 AmplificationParameter::try_new(
-                    amplification_parameter.value.into_legacy(),
-                    amplification_parameter.precision.into_legacy(),
+                    amplification_parameter.value,
+                    amplification_parameter.precision,
                 )?
             };
 
@@ -159,21 +159,21 @@ mod tests {
     #[test]
     fn amplification_parameter_conversions() {
         assert_eq!(
-            AmplificationParameter::try_new(2.into(), 3.into())
+            AmplificationParameter::try_new(U256::from(2u64), U256::from(3u64))
                 .unwrap()
-                .with_base(1000.into())
+                .with_base(U256::from(1000u64))
                 .unwrap(),
-            666.into()
+            U256::from(666u64)
         );
         assert_eq!(
-            AmplificationParameter::try_new(7.into(), 8.into())
+            AmplificationParameter::try_new(U256::from(7u64), U256::from(8u64))
                 .unwrap()
                 .as_big_rational(),
             BigRational::new(7.into(), 8.into())
         );
 
         assert_eq!(
-            AmplificationParameter::try_new(1.into(), 0.into())
+            AmplificationParameter::try_new(U256::from(1u64), U256::from(0u64))
                 .unwrap_err()
                 .to_string(),
             "Zero precision not allowed"
