@@ -93,23 +93,18 @@ pub trait AlloyEventRetrieving {
     fn provider(&self) -> &DynProvider;
 }
 
-/// A thin wrapper to avoid conflicts with EthcontractEventRetrieving
-/// implementation. Will be dropped once fully migrated to alloy.
-pub struct AlloyEventRetriever<T>(pub T);
-
 /// Common `alloy` crate-related event retrieval patterns are extracted to
 /// this trait to avoid code duplication in implementations.
 #[async_trait::async_trait]
-impl<T> EventRetrieving for AlloyEventRetriever<T>
+impl<T> EventRetrieving for T
 where
     T: AlloyEventRetrieving + Send + Sync,
 {
     type Event = (T::Event, Log);
 
     async fn get_events_by_block_hash(&self, block_hash: B256) -> Result<Vec<Self::Event>> {
-        let filter = self.0.filter().at_block_hash(block_hash);
+        let filter = self.filter().at_block_hash(block_hash);
         let events = self
-            .0
             .provider()
             .get_logs(&filter)
             .await
@@ -134,8 +129,8 @@ where
 
         let start = *block_range.start();
         let end = *block_range.end();
-        let provider = self.0.provider().clone();
-        let base_filter = self.0.filter();
+        let provider = self.provider().clone();
+        let base_filter = self.filter();
 
         let stream = futures::stream::iter(start..=end)
             .chunks(CHUNK_SIZE)
@@ -175,7 +170,7 @@ where
     }
 
     fn address(&self) -> Vec<Address> {
-        self.0.filter().address.iter().copied().collect()
+        self.filter().address.iter().copied().collect()
     }
 }
 
@@ -891,12 +886,8 @@ mod tests {
                 b256!("0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937"),
             ),
         ];
-        let event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
-            AlloyEventRetriever(contract),
-            storage,
-            None,
-        );
+        let event_handler =
+            EventHandler::new(Arc::new(web3.alloy.clone()), contract, storage, None);
         let (replacement_blocks, _) = event_handler.past_events_by_block_hashes(&blocks).await;
         assert_eq!(replacement_blocks, blocks[..2]);
     }
@@ -921,12 +912,8 @@ mod tests {
             .unwrap()
             .unwrap();
         let block = (block.number(), block.hash());
-        let mut event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
-            AlloyEventRetriever(contract),
-            storage,
-            Some(block),
-        );
+        let mut event_handler =
+            EventHandler::new(Arc::new(web3.alloy.clone()), contract, storage, Some(block));
         let _result = event_handler.update_events().await;
         // add logs to event handler and observe
     }
@@ -953,12 +940,8 @@ mod tests {
             .unwrap()
             .unwrap();
         let block = (block.number(), block.hash());
-        let mut event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
-            AlloyEventRetriever(contract),
-            storage,
-            Some(block),
-        );
+        let mut event_handler =
+            EventHandler::new(Arc::new(web3.alloy.clone()), contract, storage, Some(block));
         let _result = event_handler.update_events().await;
         tracing::info!("wait for at least 2 blocks to see if we hit the new code path");
         tokio::time::sleep(tokio::time::Duration::from_millis(26_000)).await;
@@ -1002,7 +985,7 @@ mod tests {
         .unwrap();
         let mut base_event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
-            AlloyEventRetriever(contract.clone()),
+            contract.clone(),
             storage_empty,
             Some(event_start),
         );
@@ -1024,7 +1007,7 @@ mod tests {
         .unwrap();
         let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
             Arc::new(web3.alloy.clone()),
-            AlloyEventRetriever(contract.clone()),
+            contract.clone(),
             storage_empty,
             event_start,
         )
@@ -1062,7 +1045,7 @@ mod tests {
         };
         let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
             Arc::new(web3.alloy.clone()),
-            AlloyEventRetriever(contract),
+            contract,
             storage_nonempty,
             // Same event start as for the two previous event handlers. The test checks that this
             // is disregarded.
