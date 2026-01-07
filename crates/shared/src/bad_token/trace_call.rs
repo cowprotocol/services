@@ -3,9 +3,12 @@ use {
     crate::{ethrpc::Web3, trace_many},
     alloy::{
         primitives::{Address, U256, keccak256},
-        rpc::types::{
-            TransactionRequest,
-            trace::parity::{TraceOutput, TraceResults},
+        rpc::{
+            json_rpc::ErrorPayload,
+            types::{
+                TransactionRequest,
+                trace::parity::{TraceOutput, TraceResults},
+            },
         },
         signers::local::PrivateKeySigner,
         sol_types::SolCall,
@@ -17,6 +20,8 @@ use {
     std::{cmp, sync::Arc},
     tracing::instrument,
 };
+
+const METHOD_NOT_FOUND_CODE: i64 = -32601;
 
 /// Detects whether a token is "bad" (works in unexpected ways that are
 /// problematic for solving) by simulating several transfers of a token. To find
@@ -127,6 +132,14 @@ impl TraceCallDetectorRaw {
             Ok(result) => result,
             Err(RpcError::UnsupportedFeature(err)) => {
                 tracing::warn!(error = ?err, "node does not support trace_callMany");
+                return Ok(TokenQuality::Good);
+            }
+            Err(RpcError::ErrorResp(ErrorPayload {
+                code: METHOD_NOT_FOUND_CODE,
+                message,
+                ..
+            })) => {
+                tracing::warn!(error = %message, "node does not support trace_callMany");
                 return Ok(TokenQuality::Good);
             }
             Err(RpcError::Transport(TransportErrorKind::HttpError(err))) if err.status == 400 => {
