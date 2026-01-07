@@ -1,7 +1,7 @@
 //! Extension trait for U256 arithmetic operations.
 
 use {
-    alloy::primitives::U256 as AlloyU256,
+    alloy::primitives::U256,
     anyhow::Result,
     num::{BigInt, BigRational, BigUint},
 };
@@ -46,17 +46,17 @@ pub trait U256Ext: Sized {
     fn from_big_rational(value: &BigRational) -> Result<Self>;
 }
 
-impl U256Ext for AlloyU256 {
+impl U256Ext for U256 {
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
-        self.checked_add(other.checked_sub(AlloyU256::from(1u64))?)?
+        self.checked_add(other.checked_sub(U256::from(1u64))?)?
             .checked_div(*other)
     }
 
     fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
         const CONVERSION_FACTOR: f64 = 1_000_000_000_000_000_000.;
         let multiplied = self
-            .checked_mul(AlloyU256::from(factor * CONVERSION_FACTOR))?
-            .checked_div(AlloyU256::from(CONVERSION_FACTOR))?;
+            .checked_mul(U256::from(factor * CONVERSION_FACTOR))?
+            .checked_div(U256::from(CONVERSION_FACTOR))?;
         Some(multiplied)
     }
 
@@ -80,7 +80,7 @@ impl U256Ext for AlloyU256 {
     fn from_big_uint(input: &BigUint) -> Result<Self> {
         let bytes = input.to_bytes_be();
         anyhow::ensure!(bytes.len() <= 32, "too large");
-        Ok(AlloyU256::from_be_slice(&bytes))
+        Ok(U256::from_be_slice(&bytes))
     }
 
     fn from_big_rational(value: &BigRational) -> Result<Self> {
