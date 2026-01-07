@@ -13,6 +13,7 @@ use {
     anyhow::{Result, ensure},
     contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     ethcontract::BlockId,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,
@@ -100,7 +101,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
         let fetch_amplification_parameter = async move {
             pool_contract
                 .getAmplificationParameter()
-                .block(ethrpc::alloy::conversions::IntoAlloy::into_alloy(block))
+                .block(block.into_alloy())
                 .call()
                 .await
                 .map_err(anyhow::Error::from)

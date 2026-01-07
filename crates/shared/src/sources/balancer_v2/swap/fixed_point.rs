@@ -88,8 +88,7 @@ impl FromStr for Bfp {
 
 impl Debug for Bfp {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let remainder = self.0 % *ONE_18;
-        let low: u128 = remainder.try_into().unwrap();
+        let low: u128 = u128::try_from(self.0 % *ONE_18).unwrap();
         write!(formatter, "{}.{:0>18}", self.0 / *ONE_18, low)
     }
 }
@@ -97,14 +96,7 @@ impl Debug for Bfp {
 impl Bfp {
     #[cfg(test)]
     pub fn to_f64_lossy(self) -> f64 {
-        // NOTE: This conversion is lossy and may not be accurate for large values.
-        // It is only intended for use in tests.
-        let val: f64 = self
-            .as_uint256()
-            .to_string()
-            .parse()
-            .unwrap_or(f64::INFINITY);
-        val / 1e18
+        f64::from(self.as_uint256()) / 1e18
     }
 
     pub fn as_uint256(self) -> U256 {
@@ -129,7 +121,7 @@ impl Bfp {
             return Self::zero();
         }
 
-        Self(U256::from(10u64).pow(U256::from(exp as u32)))
+        Self(U256::from(10u64).pow(U256::from(exp)))
     }
 
     pub fn from_wei(num: U256) -> Self {
@@ -162,7 +154,7 @@ impl Bfp {
         Ok(if product.is_zero() {
             Bfp::zero()
         } else {
-            Bfp(((product - U256::from(1u64)) / *ONE_18) + U256::from(1u64))
+            Bfp(((product - U256::ONE) / *ONE_18) + U256::ONE)
         })
     }
 
@@ -185,9 +177,7 @@ impl Bfp {
         } else {
             let a_inflated = self.0.checked_mul(*ONE_18).ok_or(Error::DivInternal)?;
 
-            Ok(Self(
-                ((a_inflated - U256::from(1u64)) / other.0) + U256::from(1u64),
-            ))
+            Ok(Self(((a_inflated - U256::ONE) / other.0) + U256::ONE))
         }
     }
 
@@ -201,9 +191,7 @@ impl Bfp {
 
     pub fn pow_up(self, exp: Self) -> Result<Self, Error> {
         let raw = Bfp(logexpmath::pow(self.0, exp.0)?);
-        let max_error = raw
-            .mul_up(*MAX_POW_RELATIVE_ERROR)?
-            .add(Bfp(U256::from(1u64)))?;
+        let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(U256::ONE))?;
 
         raw.add(max_error)
     }
@@ -218,9 +206,7 @@ impl Bfp {
             square.mul_up(square)
         } else {
             let raw = Bfp(logexpmath::pow(self.0, exp.0)?);
-            let max_error = raw
-                .mul_up(*MAX_POW_RELATIVE_ERROR)?
-                .add(Bfp(U256::from(1u64)))?;
+            let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(U256::ONE))?;
 
             raw.add(max_error)
         }
@@ -250,7 +236,7 @@ mod tests {
         );
         assert_eq!(
             "10.000000000000000001".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(test_exp10(19) + U256::from(1u64))
+            Bfp::from_wei(test_exp10(19) + U256::ONE)
         );
         assert!("10.0000000000000000001".parse::<Bfp>().is_err());
         assert!("1.0.1".parse::<Bfp>().is_err());
@@ -274,7 +260,7 @@ mod tests {
         assert_eq!(Bfp::from(50).sub(Bfp::from(8)).unwrap(), Bfp::from(42));
 
         assert_eq!(
-            Bfp::one().sub(Bfp(*ONE_18 + U256::from(1u64))).unwrap_err(),
+            Bfp::one().sub(Bfp(*ONE_18 + U256::ONE)).unwrap_err(),
             Error::SubOverflow
         );
     }
@@ -293,7 +279,7 @@ mod tests {
 
             assert_eq!(
                 Bfp::one()
-                    .$fn_name(Bfp(U256::MAX / test_exp10(18) + U256::from(1u64)))
+                    .$fn_name(Bfp(U256::MAX / test_exp10(18) + U256::ONE))
                     .unwrap_err(),
                 Error::MulOverflow,
             );
@@ -332,7 +318,7 @@ mod tests {
                 Error::ZeroDivision
             );
             assert_eq!(
-                Bfp(U256::MAX / test_exp10(18) + U256::from(1u64))
+                Bfp(U256::MAX / test_exp10(18) + U256::ONE)
                     .$fn_name(Bfp::one())
                     .unwrap_err(),
                 Error::DivInternal,
@@ -360,10 +346,7 @@ mod tests {
             Bfp::from(2).pow_up(Bfp::from(0)).unwrap(),
             Bfp(U256::from(1_000_000_000_000_010_001_u128))
         ); // powDown: 999999999999989999
-        assert_eq!(
-            Bfp::zero().pow_up(Bfp::one()).unwrap(),
-            Bfp(U256::from(1u64))
-        ); // powDown: 0
+        assert_eq!(Bfp::zero().pow_up(Bfp::one()).unwrap(), Bfp(U256::ONE)); // powDown: 0
 
         assert_eq!(
             Bfp(U256::MAX).pow_up(Bfp::one()).unwrap_err(),

@@ -13,6 +13,7 @@ use {
     anyhow::{Context, Result, anyhow, ensure},
     contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
     ethcontract::{BlockId, H256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
@@ -98,7 +99,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
-            id: H256(pool_id.0),
+            id: pool_id.into_legacy(),
             address: pool_address,
             tokens,
             scaling_factors,
@@ -111,7 +112,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let block = ethrpc::alloy::conversions::IntoAlloy::into_alloy(block);
+        let block = block.into_alloy();
         let pool_address = pool.address;
         let pool_id = pool.id;
         let vault = self.vault.clone();
@@ -429,7 +430,7 @@ mod tests {
         assert_eq!(
             pool_info,
             PoolInfo {
-                id: H256(pool_id.0),
+                id: pool_id.into_legacy(),
                 address: *pool.address(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
