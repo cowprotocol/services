@@ -20,13 +20,15 @@ use {
         event_handling::EventStoring,
         sources::balancer_v2::pools::{FactoryIndexing, PoolIndexing, common},
     },
-    alloy::{primitives::Address, rpc::types::Log},
+    alloy::{
+        primitives::{Address, B256},
+        rpc::types::Log,
+    },
     anyhow::{Context, Result},
     contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
         BalancerV2BasePoolFactoryEvents,
         PoolCreated,
     },
-    ethcontract::H256,
     ethrpc::block_stream::RangeInclusive,
     model::TokenPair,
     std::{
@@ -44,9 +46,9 @@ where
     /// Component used to fetch pool information.
     pool_info_fetcher: Arc<dyn common::PoolInfoFetching<Factory>>,
     /// Used for O(1) access to all pool_ids for a given token
-    pools_by_token: HashMap<Address, HashSet<H256>>,
+    pools_by_token: HashMap<Address, HashSet<B256>>,
     /// All indexed pool infos by ID.
-    pools: HashMap<H256, Factory::PoolInfo>,
+    pools: HashMap<B256, Factory::PoolInfo>,
     /// The block the initial pools were fetched on. This block is considered
     /// reorg-safe and events prior to this block do not get replaced.
     initial_fetched_block: u64,
@@ -81,7 +83,7 @@ where
     fn pool_ids_for_token_pair(
         &self,
         token_pair: &TokenPair,
-    ) -> impl Iterator<Item = H256> + '_ + use<'_, Factory> {
+    ) -> impl Iterator<Item = B256> + '_ + use<'_, Factory> {
         let (token0, token1) = token_pair.get();
 
         let pools0 = self.pools_by_token.get(&token0);
@@ -96,7 +98,7 @@ where
 
     /// Given a collection of `TokenPair`, returns all pools containing at least
     /// one of the pairs.
-    pub fn pool_ids_for_token_pairs(&self, token_pairs: &HashSet<TokenPair>) -> HashSet<H256> {
+    pub fn pool_ids_for_token_pairs(&self, token_pairs: &HashSet<TokenPair>) -> HashSet<B256> {
         token_pairs
             .iter()
             .flat_map(|pair| self.pool_ids_for_token_pair(pair))
@@ -104,12 +106,12 @@ where
     }
 
     /// Returns a pool by ID or none if no such pool exists.
-    pub fn pool_by_id(&self, pool_id: H256) -> Option<&Factory::PoolInfo> {
+    pub fn pool_by_id(&self, pool_id: B256) -> Option<&Factory::PoolInfo> {
         self.pools.get(&pool_id)
     }
 
     /// Returns all pool infos by their IDs.
-    pub fn pools_by_id(&self, pool_ids: &HashSet<H256>) -> Vec<Factory::PoolInfo> {
+    pub fn pools_by_id(&self, pool_ids: &HashSet<B256>) -> Vec<Factory::PoolInfo> {
         pool_ids
             .iter()
             .filter_map(|pool_id| self.pool_by_id(*pool_id))
@@ -233,22 +235,23 @@ mod tests {
             pools::{MockFactoryIndexing, common::MockPoolInfoFetching, weighted},
             swap::fixed_point::Bfp,
         },
+        alloy::primitives::U256,
         maplit::{hashmap, hashset},
         mockall::predicate::eq,
     };
 
     pub type PoolInitData = (
-        Vec<H256>,
+        Vec<B256>,
         Vec<Address>,
         Vec<Address>,
         Vec<Bfp>,
         Vec<(PoolCreated, u64)>,
     );
-    // This can be made cleaner by making the start and end be u8's but the H256
+    // This can be made cleaner by making the start and end be u8's but the B256
     // doesn't support for a from(u8) so this needs to be reviewed upon migration
     fn pool_init_data(start: usize, end: usize) -> PoolInitData {
-        let pool_ids: Vec<H256> = (start..=end)
-            .map(|i| H256::from_low_u64_be(i as u64))
+        let pool_ids: Vec<B256> = (start..=end)
+            .map(|i| B256::left_padding_from(&i.to_be_bytes()))
             .collect();
         let pool_addresses: Vec<Address> = (start..=end)
             .map(|i| Address::with_last_byte(i as u8))
@@ -256,7 +259,9 @@ mod tests {
         let tokens: Vec<Address> = (start..=end + 1)
             .map(|i| Address::with_last_byte(i as u8))
             .collect();
-        let weights: Vec<Bfp> = (start..=end + 1).map(|i| Bfp::from_wei(i.into())).collect();
+        let weights: Vec<Bfp> = (start..=end + 1)
+            .map(|i| Bfp::from_wei(U256::from(i)))
+            .collect();
         let creation_events: Vec<(PoolCreated, u64)> = (start..=end)
             .map(|i| {
                 (
@@ -277,20 +282,20 @@ mod tests {
             vec![
                 weighted::PoolInfo {
                     common: common::PoolInfo {
-                        id: H256([1; 32]),
+                        id: B256::repeat_byte(1),
                         address: Address::repeat_byte(1),
                         tokens: vec![Address::repeat_byte(0x11), Address::repeat_byte(0x22)],
                         scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0)],
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
                     ],
                 },
                 weighted::PoolInfo {
                     common: common::PoolInfo {
-                        id: H256([2; 32]),
+                        id: B256::repeat_byte(2),
                         address: Address::repeat_byte(2),
                         tokens: vec![
                             Address::repeat_byte(0x11),
@@ -301,22 +306,22 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(250_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(250_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(250_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(250_000_000_000_000_000_u128)),
                     ],
                 },
                 weighted::PoolInfo {
                     common: common::PoolInfo {
-                        id: H256([3; 32]),
+                        id: B256::repeat_byte(3),
                         address: Address::repeat_byte(3),
                         tokens: vec![Address::repeat_byte(0x11), Address::repeat_byte(0x77)],
                         scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0)],
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
-                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
                     ],
                 },
             ],
@@ -326,10 +331,10 @@ mod tests {
         assert_eq!(
             storage.pools_by_token,
             hashmap! {
-                Address::repeat_byte(0x11) => hashset![H256([1; 32]), H256([2; 32]), H256([3; 32])],
-                Address::repeat_byte(0x22) => hashset![H256([1; 32])],
-                Address::repeat_byte(0x33) => hashset![H256([2; 32])],
-                Address::repeat_byte(0x77) => hashset![H256([2; 32]), H256([3; 32])],
+                Address::repeat_byte(0x11) => hashset![B256::repeat_byte(1), B256::repeat_byte(2), B256::repeat_byte(3)],
+                Address::repeat_byte(0x22) => hashset![B256::repeat_byte(1)],
+                Address::repeat_byte(0x33) => hashset![B256::repeat_byte(2)],
+                Address::repeat_byte(0x77) => hashset![B256::repeat_byte(2), B256::repeat_byte(3)],
             }
         );
     }
@@ -438,13 +443,13 @@ mod tests {
 
         let new_pool = weighted::PoolInfo {
             common: common::PoolInfo {
-                id: H256::from_low_u64_be(43110),
+                id: B256::left_padding_from(&43110u64.to_be_bytes()),
                 address: Address::with_last_byte(42),
                 tokens: vec![Address::left_padding_from(808u64.to_be_bytes().as_slice())],
                 scaling_factors: vec![Bfp::exp10(0)],
                 block_created: 3,
             },
-            weights: vec![Bfp::from_wei(1337.into())],
+            weights: vec![Bfp::from_wei(U256::from(1337))],
         };
         let new_creation = PoolCreated {
             pool: new_pool.common.address,
