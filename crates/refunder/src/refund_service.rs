@@ -2,7 +2,7 @@ use {
     crate::submitter::Submitter,
     alloy::{
         network::TxSigner,
-        primitives::{Address, B256, Signature, address},
+        primitives::{Address, B256, Signature},
         providers::Provider,
         rpc::types::TransactionRequest,
     },
@@ -308,7 +308,7 @@ impl RefundService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy::primitives::address};
 
     /// Creates a minimal RefundService for testing purposes.
     fn new_test_service(web3: Web3) -> RefundService {
