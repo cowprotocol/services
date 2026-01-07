@@ -21,6 +21,7 @@ const START_PRIORITY_FEE_TIP: u64 = 30_000_000_000; // 30 Gwei
 
 /// Advances the blockchain time past the given expiration timestamp.
 async fn advance_time_past_expiration(web3: &Web3, valid_to: u32) {
+    // Add 60 seconds buffer so the order is definitively expired, not just at the boundary.
     let target_timestamp = valid_to as u64 + 60;
     web3.alloy
         .evm_set_next_block_timestamp(target_timestamp)
@@ -240,6 +241,18 @@ async fn run_refunder_threshold_test(
 ) {
     tracing::info!("Running refunder threshold test");
 
+    // Settlement is intentionally impossible in this test due to timestamp mismatch:
+    //
+    // 1. Anvil starts at Jan 1, 2020 (see `--timestamp 1577836800` in nodes/mod.rs)
+    // 2. This test uses blockchain time for `valid_to` via `timestamp_of_current_block_in_seconds()`
+    // 3. The autopilot filters orders using wall-clock time (`SystemTime::now()`)
+    // 4. Since blockchain time (~2020) << wall-clock time (~2026), orders appear
+    //    immediately expired to the autopilot and are never included in auctions
+    //
+    // This is intentional: refunder threshold tests only verify refund eligibility,
+    // not settlement. The refunder itself uses blockchain time, so these "expired"
+    // orders are correctly processed for refund. Tests that need actual settlement
+    // (e.g., `refunder_skips_settled_orders`) use `Utc::now()` for `valid_to` instead.
     let setup = RefunderTestSetup::new(web3.clone()).await;
     let ethflow_contract = setup.ethflow_contract();
 
