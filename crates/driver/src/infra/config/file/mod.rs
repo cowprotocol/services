@@ -873,7 +873,7 @@ pub struct BadOrderDetectionConfig {
     /// unsupported before it allows to solve for that token again.
     #[serde(
         default = "default_metrics_bad_order_detector_freeze_time",
-        rename = "metrics-bad-order-detection-token-freeze-time",
+        rename = "metrics-bad-order-detection-order-freeze-time",
         with = "humantime_serde"
     )]
     pub metrics_strategy_freeze_time: Duration,
