@@ -53,8 +53,8 @@ pub enum RefundStatus {
 impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for RefundStatus {
     fn from(value: CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn) -> Self {
         match value.owner {
-            owner if owner == NO_OWNER => Self::Invalid,
-            owner if owner == INVALIDATED_OWNER => Self::Refunded,
+            NO_OWNER => Self::Invalid,
+            INVALIDATED_OWNER => Self::Refunded,
             owner => Self::NotYetRefunded(owner),
         }
     }
