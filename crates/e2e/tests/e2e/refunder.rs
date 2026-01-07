@@ -10,12 +10,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    refunder::{
-        RefundStatus,
-        infra::{AlloyChain, Postgres},
-        refund_service::RefundService,
-        submitter::Submitter,
-    },
+    refunder::{RefundStatus, refund_service::RefundService},
     rstest::{Context, rstest},
 };
 
@@ -181,15 +176,15 @@ impl RefunderTestSetup {
 
     fn create_refund_service(
         &self,
-        ethflow_addresses: Vec<Address>,
+        ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
         min_validity_duration: i64,
         min_price_deviation_bps: i64,
         signer: ::alloy::signers::local::PrivateKeySigner,
-    ) -> RefundService<Postgres, AlloyChain, Submitter> {
+    ) -> RefundService {
         create_refund_service(
             self.services,
             self.web3.clone(),
-            ethflow_addresses,
+            ethflow_contracts,
             min_validity_duration,
             min_price_deviation_bps,
             signer,
@@ -200,29 +195,20 @@ impl RefunderTestSetup {
 fn create_refund_service(
     services: &Services<'_>,
     web3: Web3,
-    ethflow_addresses: Vec<Address>,
+    ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
     min_validity_duration: i64,
     min_price_deviation_bps: i64,
     signer: ::alloy::signers::local::PrivateKeySigner,
-) -> RefundService<Postgres, AlloyChain, Submitter> {
-    let database = Postgres::new(services.db().clone());
-    let chain = AlloyChain::new(web3.alloy.clone(), ethflow_addresses);
-    web3.wallet.register_signer(signer.clone());
-    let submitter = Submitter {
-        web3: web3.clone(),
-        signer_address: signer.address(),
-        gas_estimator: Box::new(web3.legacy.clone()),
-        gas_parameters_of_last_tx: None,
-        nonce_of_last_submission: None,
-        max_gas_price: MAX_GAS_PRICE,
-        start_priority_fee_tip: START_PRIORITY_FEE_TIP,
-    };
+) -> RefundService {
     RefundService::new(
-        database,
-        chain,
-        submitter,
+        services.db().clone(),
+        web3,
+        ethflow_contracts,
         min_validity_duration,
-        min_price_deviation_bps as f64 / 10000.0,
+        min_price_deviation_bps,
+        Box::new(signer),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     )
 }
 
@@ -264,7 +250,7 @@ async fn run_refunder_threshold_test(
     advance_time_past_expiration(&web3, valid_to).await;
 
     let mut refund_service = setup.create_refund_service(
-        vec![*ethflow_contract.address()],
+        vec![ethflow_contract.clone()],
         validity.enforced,
         slippage.enforced,
         setup.refunder_account.signer.clone(),
@@ -381,7 +367,7 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
     advance_time_past_expiration(&web3, valid_to).await;
 
     let mut refund_service = setup.create_refund_service(
-        vec![*ethflow_contract.address()],
+        vec![ethflow_contract.clone()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
         setup.refunder_account.signer.clone(),
@@ -514,7 +500,7 @@ async fn refunder_skips_settled_orders(web3: Web3) {
     let mut refund_service = create_refund_service(
         &services,
         web3.clone(),
-        vec![*ethflow_contract.address()],
+        vec![ethflow_contract.clone()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
         refunder_account.signer,
@@ -633,7 +619,7 @@ async fn refunder_tx(web3: Web3) {
     let mut refund_service = create_refund_service(
         &services,
         web3,
-        vec![*ethflow_contract.address(), *ethflow_contract_2.address()],
+        vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
         10,
         refunder.signer,

@@ -4,14 +4,11 @@ use {
     alloy::primitives::Address,
     anyhow::Result,
     cached::{Cached, TimedCache},
-    contracts::{
-        alloy::{
-            ERC20,
-            IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
-        },
-        errors::EthcontractErrorType,
+    contracts::alloy::{
+        ERC20,
+        IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
     },
-    ethcontract::{BlockId, U256, errors::MethodError},
+    ethcontract::{BlockId, U256},
     ethrpc::alloy::{
         conversions::{IntoAlloy, IntoLegacy},
         errors::ignore_non_node_error,
@@ -315,18 +312,6 @@ struct FetchedPool {
     reserves: Result<getReservesReturn, alloy::contract::Error>,
     token0_balance: Result<alloy::primitives::U256, alloy::contract::Error>,
     token1_balance: Result<alloy::primitives::U256, alloy::contract::Error>,
-}
-
-// Node errors should be bubbled up but contract errors should lead to the pool
-// being skipped.
-pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option<T>> {
-    match result {
-        Ok(t) => Ok(Some(t)),
-        Err(err) => match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Node => Err(err.into()),
-            EthcontractErrorType::Contract => Ok(None),
-        },
-    }
 }
 
 fn handle_results(fetched_pool: FetchedPool, address: Address) -> Result<Option<Pool>> {
