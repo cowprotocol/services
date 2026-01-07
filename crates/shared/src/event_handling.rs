@@ -1,21 +1,17 @@
 use {
     crate::maintenance::Maintaining,
     alloy::{
+        primitives::{Address, B256},
         providers::{DynProvider, Provider},
         rpc::types::{Filter, Log},
         sol_types::SolEventInterface,
     },
     anyhow::{Context, Result},
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    },
+    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{Stream, StreamExt, future},
-    primitive_types::H256,
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
-    web3::types::Address,
 };
 
 // We expect that there is never a reorg that changes more than the last n
@@ -110,8 +106,8 @@ where
 {
     type Event = (T::Event, Log);
 
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
-        let filter = self.0.filter().at_block_hash(block_hash.into_alloy());
+    async fn get_events_by_block_hash(&self, block_hash: B256) -> Result<Vec<Self::Event>> {
+        let filter = self.0.filter().at_block_hash(block_hash);
         let events = self
             .0
             .provider()
@@ -179,13 +175,7 @@ where
     }
 
     fn address(&self) -> Vec<Address> {
-        self.0
-            .filter()
-            .address
-            .iter()
-            .copied()
-            .map(IntoLegacy::into_legacy)
-            .collect()
+        self.0.filter().address.iter().copied().collect()
     }
 }
 
@@ -193,10 +183,7 @@ where
 pub trait EventRetrieving {
     type Event;
 
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: ethcontract::H256,
-    ) -> Result<Vec<Self::Event>>;
+    async fn get_events_by_block_hash(&self, block_hash: B256) -> Result<Vec<Self::Event>>;
 
     async fn get_events_by_block_range(
         &self,
@@ -715,11 +702,9 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
-        alloy::eips::BlockNumberOrTag,
+        alloy::{eips::BlockNumberOrTag, primitives::b256},
         contracts::alloy::GPv2Settlement,
-        ethcontract::H256,
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
-        std::str::FromStr,
     };
 
     impl AlloyEventRetrieving for GPv2Settlement::Instance {
@@ -786,7 +771,7 @@ mod tests {
     #[test]
     fn detect_reorg_path_test_handled_blocks_empty() {
         let handled_blocks = vec![];
-        let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
+        let latest_blocks = vec![(1, B256::with_last_byte(1))];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks);
         assert!(!is_reorg);
@@ -795,8 +780,8 @@ mod tests {
     #[test]
     fn detect_reorg_path_test_both_same() {
         // if the list are same, we return the common ancestor
-        let handled_blocks = vec![(1, H256::from_low_u64_be(1))];
-        let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
+        let handled_blocks = vec![(1, B256::with_last_byte(1))];
+        let latest_blocks = vec![(1, B256::with_last_byte(1))];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert!(replacement_blocks.is_empty());
         assert!(!is_reorg);
@@ -804,12 +789,12 @@ mod tests {
 
     #[test]
     fn detect_reorg_path_test_common_case() {
-        let handled_blocks = vec![(1, H256::from_low_u64_be(1)), (2, H256::from_low_u64_be(2))];
+        let handled_blocks = vec![(1, B256::with_last_byte(1)), (2, B256::with_last_byte(2))];
         let latest_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(3)),
-            (4, H256::from_low_u64_be(4)),
+            (1, B256::with_last_byte(1)),
+            (2, B256::with_last_byte(2)),
+            (3, B256::with_last_byte(3)),
+            (4, B256::with_last_byte(4)),
         ];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks[2..].to_vec());
@@ -819,14 +804,14 @@ mod tests {
     #[test]
     fn detect_reorg_path_test_reorg_1() {
         let handled_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(3)),
+            (1, B256::with_last_byte(1)),
+            (2, B256::with_last_byte(2)),
+            (3, B256::with_last_byte(3)),
         ];
         let latest_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(4)),
+            (1, B256::with_last_byte(1)),
+            (2, B256::with_last_byte(2)),
+            (3, B256::with_last_byte(4)),
         ];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks[2..].to_vec());
@@ -835,11 +820,11 @@ mod tests {
 
     #[test]
     fn detect_reorg_path_test_reorg_no_common_ancestor() {
-        let handled_blocks = vec![(2, H256::from_low_u64_be(20))];
+        let handled_blocks = vec![(2, B256::with_last_byte(20))];
         let latest_blocks = vec![
-            (1, H256::from_low_u64_be(11)),
-            (2, H256::from_low_u64_be(21)),
-            (3, H256::from_low_u64_be(31)),
+            (1, B256::with_last_byte(11)),
+            (2, B256::with_last_byte(21)),
+            (3, B256::with_last_byte(31)),
         ];
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
         assert_eq!(replacement_blocks, latest_blocks);
@@ -889,31 +874,21 @@ mod tests {
         let blocks = vec![
             (
                 15575559,
-                H256::from_str(
-                    "0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118",
-                )
-                    .unwrap(),
+                b256!("0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118"),
             ),
             (
                 15575560,
-                H256::from_str(
-                    "0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4",
-                )
-                    .unwrap(),
+                b256!("0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4"),
             ),
             (
                 15575561,
-                H256::from_str(
-                    "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75", //WRONG HASH!
-                )
-                    .unwrap(),
+                b256!(
+                    "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75" /* WRONG HASH! */
+                ),
             ),
             (
                 15575562,
-                H256::from_str(
-                    "0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937",
-                )
-                    .unwrap(),
+                b256!("0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937"),
             ),
         ];
         let event_handler = EventHandler::new(
@@ -945,7 +920,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number(), block.hash().into_legacy());
+        let block = (block.number(), block.hash());
         let mut event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),
@@ -977,7 +952,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let block = (block.number(), block.hash().into_legacy());
+        let block = (block.number(), block.hash());
         let mut event_handler = EventHandler::new(
             Arc::new(web3.alloy.clone()),
             AlloyEventRetriever(contract),

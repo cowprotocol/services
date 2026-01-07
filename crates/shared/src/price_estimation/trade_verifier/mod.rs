@@ -186,7 +186,7 @@ impl TradeVerifier {
             // The exact price is not important since we are only interested in the used
             // gas units anyway.
             .gas_price(
-                u128::try_from(block.gas_price.saturating_mul(2.into()))
+                u128::try_from(block.gas_price.saturating_mul(U256::from(2)))
                 .map_err(|err| anyhow!(err))
                 .context("converting gas price to u128")?
             );
