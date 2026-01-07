@@ -1,0 +1,12 @@
+name = "cow-helpers"
+version = "1.0.0"
+
+[deploy.Balances]
+artifact = "Balances"
+create2 = true
+salt = "<%= HashZero %>"
+
+[deploy.Signatures]
+artifact = "Signatures"
+create2 = true
+salt = "<%= HashZero %>"
