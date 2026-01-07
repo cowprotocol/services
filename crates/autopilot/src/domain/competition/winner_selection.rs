@@ -1236,8 +1236,8 @@ mod tests {
         value * 10u128.pow(15)
     }
 
-    fn filter_winners(solutions: &[Bid]) -> Vec<&Bid> {
-        solutions.iter().filter(|s| s.is_winner()).collect()
+    fn filter_winners(bids: &[Bid]) -> Vec<&Bid> {
+        bids.iter().filter(|b| b.is_winner()).collect()
     }
 
     // Used to generate deterministic identifiers (e.g., UIDs, addresses) from

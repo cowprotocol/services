@@ -26,15 +26,15 @@ pub fn to_boundary_pool(address: Address, pool: &liquidity::stable::Pool) -> Opt
             Some((
                 reserve.asset.token.0,
                 TokenState {
-                    balance: reserve.asset.amount.into_legacy(),
+                    balance: reserve.asset.amount,
                     scaling_factor: to_fixed_point(&reserve.scale.get())?,
                 },
             ))
         })
         .collect::<Option<_>>()?;
     let amplification_parameter = AmplificationParameter::try_new(
-        pool.amplification_parameter.numer().into_legacy(),
-        pool.amplification_parameter.denom().into_legacy(),
+        *pool.amplification_parameter.numer(),
+        *pool.amplification_parameter.denom(),
     )
     .ok()?;
 
@@ -57,5 +57,5 @@ fn to_fixed_point(ratio: &eth::Rational) -> Option<Bfp> {
     // this format.
     let base = U256::from(10).pow(U256::from(18));
     let wei = ratio.numer().checked_mul(base)? / ratio.denom();
-    Some(Bfp::from_wei(wei.into_legacy()))
+    Some(Bfp::from_wei(wei))
 }

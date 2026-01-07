@@ -862,7 +862,7 @@ impl Module {
         for contract in self.contracts {
             let name = contract.name.clone();
             contract.write_formatted(bindings_folder.as_ref(), all_derives, &output_folder)?;
-            write_mod_name(&mut mod_file, &name)?;
+            write_mod_name(&mut mod_file, &name).context(name)?;
         }
 
         let file: syn::File = syn::parse_file(&mod_file)?;
