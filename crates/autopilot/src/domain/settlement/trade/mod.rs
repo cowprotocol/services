@@ -40,11 +40,6 @@ impl Trade {
         }
     }
 
-    /// CIP38 score defined as surplus + protocol fee
-    pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
-        math::Trade::from(self).score(&auction.orders, &auction.prices)
-    }
-
     /// Surplus of a trade.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
