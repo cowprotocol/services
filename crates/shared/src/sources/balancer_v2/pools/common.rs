@@ -100,7 +100,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
-            id: pool_id.into_legacy(),
+            id: pool_id,
             address: pool_address,
             tokens,
             scaling_factors,

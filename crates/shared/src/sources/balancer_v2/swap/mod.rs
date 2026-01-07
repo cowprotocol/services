@@ -3,7 +3,11 @@ use {
         baseline_solver::BaselineSolvable,
         conversions::U256Ext,
         sources::balancer_v2::pool_fetching::{
-            AmplificationParameter, StablePool, TokenState, WeightedPool, WeightedPoolVersion,
+            AmplificationParameter,
+            StablePool,
+            TokenState,
+            WeightedPool,
+            WeightedPoolVersion,
             WeightedTokenState,
         },
     },

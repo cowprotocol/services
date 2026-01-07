@@ -242,7 +242,9 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, crate::sources::balancer_v2::swap::fixed_point::Bfp, alloy::primitives::U256,
+        super::*,
+        crate::sources::balancer_v2::swap::fixed_point::Bfp,
+        alloy::primitives::U256,
         maplit::hashmap,
     };
 
