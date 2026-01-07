@@ -14,7 +14,7 @@ use {
     derive_more::Debug,
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
-    number::conversions::alloy::big_rational_to_u256,
+    number::conversions::big_rational_to_u256,
     serde::{Deserialize, Serialize},
     std::{collections::HashMap, ops::Mul},
     thiserror::Error,
