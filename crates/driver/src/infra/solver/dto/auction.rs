@@ -9,10 +9,10 @@ use {
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
-        util::conv::{rational_to_big_decimal, u256::U256Ext},
     },
     app_data::AppDataHash,
     model::order::{BuyTokenDestination, SellTokenSource},
+    number::{conversions::rational_to_big_decimal, u256_ext::U256Ext},
     std::collections::HashMap,
 };
 

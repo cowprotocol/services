@@ -28,7 +28,7 @@ use {
     crate::domain::{
         self,
         auction::order,
-        competition::{Participant, RankType, Ranked, Score, Solution, TradedOrder, Unscored},
+        competition::{Bid, RankType, Ranked, Score, Solution, TradedOrder, Unscored},
         eth::{self, WrappedNativeToken},
         fee,
     },
@@ -45,7 +45,7 @@ pub struct Arbitrator(winsel::Arbitrator);
 /// 3. compute reference scores
 ///
 /// The functions assume the `Arbitrator` is the only one
-/// changing the ordering or the `participants`.
+/// changing the ordering or the `bids`.
 impl Arbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
         let token: eth::TokenAddress = wrapped_native_token.into();
@@ -56,19 +56,15 @@ impl Arbitrator {
     }
 
     /// Runs the entire auction mechanism on the passed in solutions.
-    pub fn arbitrate(
-        &self,
-        participants: Vec<Participant<Unscored>>,
-        auction: &domain::Auction,
-    ) -> Ranking {
+    pub fn arbitrate(&self, bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
         let context = auction.into();
-        let mut participant_by_key = HashMap::with_capacity(participants.len());
-        let mut solutions = Vec::with_capacity(participants.len());
+        let mut bid_by_key = HashMap::with_capacity(bids.len());
+        let mut solutions = Vec::with_capacity(bids.len());
 
-        for participant in participants {
-            let key = SolutionKey::from(participant.solution());
-            let solution = participant.solution().into();
-            participant_by_key.insert(key, participant);
+        for bid in bids {
+            let key = SolutionKey::from(bid.solution());
+            let solution = bid.solution().into();
+            bid_by_key.insert(key, bid);
             solutions.push(solution);
         }
 
@@ -85,13 +81,12 @@ impl Arbitrator {
         let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
         for ws_solution in ws_ranking.filtered_out {
             let key = SolutionKey::from(&ws_solution);
-            let participant = participant_by_key
+            let bid = bid_by_key
                 .remove(&key)
-                .expect("every ranked solution has a matching participant");
+                .expect("every ranked solution has a matching bid");
             let score = ws_solution.score();
             filtered_out.push(
-                participant
-                    .with_score(Score(eth::Ether(score)))
+                bid.with_score(Score(eth::Ether(score)))
                     .with_rank(RankType::FilteredOut),
             );
         }
@@ -99,13 +94,12 @@ impl Arbitrator {
         let mut ranked = Vec::with_capacity(ws_ranking.ranked.len());
         for ranked_solution in ws_ranking.ranked {
             let key = SolutionKey::from(&ranked_solution);
-            let participant = participant_by_key
+            let bid = bid_by_key
                 .remove(&key)
-                .expect("every ranked solution has a matching participant");
+                .expect("every ranked solution has a matching bid");
             let score = ranked_solution.score();
             ranked.push(
-                participant
-                    .with_score(Score(eth::Ether(score)))
+                bid.with_score(Score(eth::Ether(score)))
                     .with_rank(ranked_solution.state().rank_type),
             );
         }
@@ -242,34 +236,34 @@ impl<S> From<&winsel::Solution<S>> for SolutionKey {
 pub struct Ranking {
     /// Solutions that were discarded because they were malformed
     /// in some way or deemed unfair by the selection mechanism.
-    filtered_out: Vec<Participant<Ranked>>,
+    filtered_out: Vec<Bid<Ranked>>,
     /// Final ranking of the solutions that passed the fairness
     /// check. Winners come before non-winners and higher total
     /// scores come before lower scores.
-    ranked: Vec<Participant<Ranked>>,
+    ranked: Vec<Bid<Ranked>>,
     /// Reference scores for each winning solver, used to compute rewards.
     reference_scores: HashMap<eth::Address, Score>,
 }
 
 impl Ranking {
     /// All solutions including the ones that got filtered out.
-    pub fn all(&self) -> impl Iterator<Item = &Participant<Ranked>> {
+    pub fn all(&self) -> impl Iterator<Item = &Bid<Ranked>> {
         self.ranked.iter().chain(&self.filtered_out)
     }
 
     /// Enumerates all solutions. The index is used as solution UID.
-    pub fn enumerated(&self) -> impl Iterator<Item = (usize, &Participant<Ranked>)> {
+    pub fn enumerated(&self) -> impl Iterator<Item = (usize, &Bid<Ranked>)> {
         self.all().enumerate()
     }
 
     /// All solutions that won the right to get executed.
-    pub fn winners(&self) -> impl Iterator<Item = &Participant<Ranked>> {
-        self.ranked.iter().filter(|p| p.is_winner())
+    pub fn winners(&self) -> impl Iterator<Item = &Bid<Ranked>> {
+        self.ranked.iter().filter(|b| b.is_winner())
     }
 
     /// All solutions that were not filtered out but also did not win.
-    pub fn non_winners(&self) -> impl Iterator<Item = &Participant<Ranked>> {
-        self.ranked.iter().filter(|p| !p.is_winner())
+    pub fn non_winners(&self) -> impl Iterator<Item = &Bid<Ranked>> {
+        self.ranked.iter().filter(|b| !b.is_winner())
     }
 
     /// Reference scores for each winning solver, used to compute rewards.
@@ -278,7 +272,7 @@ impl Ranking {
     }
 
     /// All solutions that passed the filtering step.
-    pub fn ranked(&self) -> impl Iterator<Item = &Participant<Ranked>> {
+    pub fn ranked(&self) -> impl Iterator<Item = &Bid<Ranked>> {
         self.ranked.iter()
     }
 }
@@ -295,7 +289,7 @@ mod tests {
                     Price,
                     order::{self, AppDataHash},
                 },
-                competition::{Participant, Solution, TradedOrder, Unscored},
+                competition::{Bid, Solution, TradedOrder, Unscored},
                 eth::{self, TokenAddress},
             },
             infra::Driver,
@@ -998,7 +992,7 @@ mod tests {
             // map (solver id -> solver address) for later reference during the test
             let mut solver_map = HashMap::new();
 
-            // map (solution id -> participant) for later reference during the test
+            // map (solution id -> bid) for later reference during the test
             let mut solution_map = HashMap::new();
             for (solution_id, solution) in &self.solutions {
                 // generate solver address deterministically from the id
@@ -1021,13 +1015,13 @@ mod tests {
                 let solution_uid = hash(solution_id);
                 solution_map.insert(
                     solution_id,
-                    create_solution(solution_uid, solver_address, trades, None).await,
+                    create_bid(solution_uid, solver_address, trades, None).await,
                 );
             }
 
             // filter solutions
-            let participants = solution_map.values().cloned().collect();
-            let ranking = arbitrator.arbitrate(participants, &auction);
+            let bids = solution_map.values().cloned().collect();
+            let ranking = arbitrator.arbitrate(bids, &auction);
             assert_eq!(ranking.ranked.len(), self.expected_fair_solutions.len());
             for solution_id in &self.expected_fair_solutions {
                 let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
@@ -1199,12 +1193,12 @@ mod tests {
         }
     }
 
-    async fn create_solution(
+    async fn create_bid(
         solution_id: u64,
         solver_address: Address,
         trades: Vec<(OrderUid, TradedOrder)>,
         prices: Option<HashMap<TokenAddress, Price>>,
-    ) -> Participant<Unscored> {
+    ) -> Bid<Unscored> {
         // The prices of the tokens do not affect the result but they keys must exist
         // for every token of every trade
         let prices = prices.unwrap_or({
@@ -1230,7 +1224,7 @@ mod tests {
         .await
         .unwrap();
 
-        Participant::new(solution, std::sync::Arc::new(driver))
+        Bid::new(solution, std::sync::Arc::new(driver))
     }
 
     fn amount(value: u128) -> String {
@@ -1242,8 +1236,8 @@ mod tests {
         value * 10u128.pow(15)
     }
 
-    fn filter_winners(solutions: &[Participant]) -> Vec<&Participant> {
-        solutions.iter().filter(|s| s.is_winner()).collect()
+    fn filter_winners(bids: &[Bid]) -> Vec<&Bid> {
+        bids.iter().filter(|b| b.is_winner()).collect()
     }
 
     // Used to generate deterministic identifiers (e.g., UIDs, addresses) from

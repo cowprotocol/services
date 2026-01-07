@@ -207,7 +207,7 @@ impl Persistence {
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
-        solutions: impl Iterator<Item = &domain::competition::Participant>,
+        solutions: impl Iterator<Item = &domain::competition::Bid>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -221,15 +221,15 @@ impl Persistence {
             auction_id,
             &solutions
                 .enumerate()
-                .map(|(uid, participant)| {
+                .map(|(uid, bid)| {
                     let solution = Solution {
                         uid: uid.try_into().context("uid overflow")?,
-                        id: BigDecimal::from(participant.solution().id()),
-                        solver: ByteArray(participant.solution().solver().0.0),
-                        is_winner: participant.is_winner(),
-                        filtered_out: participant.is_filtered_out(),
-                        score: u256_to_big_decimal(&participant.score().get().0),
-                        orders: participant
+                        id: BigDecimal::from(bid.solution().id()),
+                        solver: ByteArray(bid.solution().solver().0.0),
+                        is_winner: bid.is_winner(),
+                        filtered_out: bid.is_filtered_out(),
+                        score: u256_to_big_decimal(&bid.score().get().0),
+                        orders: bid
                             .solution()
                             .orders()
                             .iter()
@@ -244,13 +244,13 @@ impl Persistence {
                                 side: order.side.into(),
                             })
                             .collect(),
-                        price_tokens: participant
+                        price_tokens: bid
                             .solution()
                             .prices()
                             .keys()
                             .map(|token| ByteArray(token.0.0.0))
                             .collect(),
-                        price_values: participant
+                        price_values: bid
                             .solution()
                             .prices()
                             .values()
