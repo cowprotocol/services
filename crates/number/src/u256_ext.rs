@@ -2,7 +2,7 @@
 
 use {
     alloy::primitives::U256 as AlloyU256,
-    num::{BigInt, BigRational, BigUint},
+    num::{BigInt, BigRational, BigUint, Signed},
     primitive_types::U256 as PrimitiveU256,
 };
 
@@ -53,9 +53,10 @@ pub trait U256Ext: Sized {
     /// Create from BigRational.
     fn from_big_rational(value: &BigRational) -> Option<Self> {
         use num::Zero;
-        (*value.denom() != BigInt::zero())
-            .then(|| Self::from_big_int(&(value.numer() / value.denom())))
-            .flatten()
+        if value.denom().is_zero() {
+            return None;
+        }
+        Self::from_big_int(&(value.numer() / value.denom()))
     }
 }
 
@@ -106,9 +107,10 @@ impl U256Ext for PrimitiveU256 {
     }
 
     fn from_big_int(input: &BigInt) -> Option<Self> {
-        (input.sign() != num::bigint::Sign::Minus)
-            .then(|| Self::from_big_uint(input.magnitude()))
-            .flatten()
+        if input.is_negative() {
+            return None;
+        }
+        Self::from_big_uint(input.magnitude())
     }
 
     fn from_big_uint(input: &BigUint) -> Option<Self> {
