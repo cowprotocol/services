@@ -1,7 +1,6 @@
 use url::Url;
 
 mod bytes;
-pub mod conv;
 
 pub use self::bytes::Bytes;
 

@@ -1,19 +1,17 @@
 pub use error::Error;
 use {
     super::ExecutedProtocolFee,
-    crate::{
-        domain::{
-            self,
-            OrderUid,
-            auction::{self, order},
-            eth,
-            fee,
-            settlement::transaction::{ClearingPrices, Prices},
-        },
-        util::conv::U256Ext,
+    crate::domain::{
+        self,
+        OrderUid,
+        auction::{self, order},
+        eth,
+        fee,
+        settlement::transaction::{ClearingPrices, Prices},
     },
     error::Math,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
+    number::u256_ext::U256Ext,
     std::collections::HashMap,
 };
 
