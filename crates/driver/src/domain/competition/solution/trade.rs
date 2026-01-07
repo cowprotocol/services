@@ -1,5 +1,5 @@
-use crate::{
-    domain::{
+use {
+    crate::domain::{
         competition::{
             self,
             order::{self, FeePolicy, SellAmount, Side, TargetAmount, Uid},
@@ -7,7 +7,7 @@ use crate::{
         },
         eth::{self, Asset},
     },
-    util::conv::u256::U256Ext,
+    number::u256_ext::U256Ext,
 };
 
 /// A trade which executes an order as part of this solution.
