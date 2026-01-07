@@ -27,13 +27,17 @@ mod logexpmath;
 /// including error codes, from which the name (Balancer Fixed Point).
 pub struct Bfp(U256);
 
-static ONE_18: LazyLock<U256> = LazyLock::new(|| U256::from(10).pow(U256::from(18)));
+fn exp10(n: u8) -> U256 {
+    U256::from(10u64).pow(U256::from(n))
+}
+
+static ONE_18: LazyLock<U256> = LazyLock::new(|| exp10(18));
 static ONE_18_BIGINT: LazyLock<BigInt> = LazyLock::new(|| u256_to_big_int(&ONE_18));
 static ZERO: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::ZERO));
 static ONE: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18));
-static TWO: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * U256::from(2)));
-static FOUR: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * U256::from(4)));
-static MAX_POW_RELATIVE_ERROR: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::from(10000)));
+static TWO: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * U256::from(2u64)));
+static FOUR: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * U256::from(4u64)));
+static MAX_POW_RELATIVE_ERROR: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::from(10000u64)));
 
 impl From<usize> for Bfp {
     fn from(num: usize) -> Self {
@@ -222,20 +226,21 @@ mod tests {
 
     static EPSILON: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::ONE));
 
+    fn test_exp10(n: u8) -> U256 {
+        U256::from(10u64).pow(U256::from(n))
+    }
+
     #[test]
     fn parsing() {
         assert_eq!("1".parse::<Bfp>().unwrap(), Bfp::one());
-        assert_eq!(
-            "0.1".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(U256::from(10).pow(U256::from(17)))
-        );
+        assert_eq!("0.1".parse::<Bfp>().unwrap(), Bfp::from_wei(test_exp10(17)));
         assert_eq!(
             "1.01".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(U256::from(10).pow(U256::from(18)) + U256::from(10).pow(U256::from(16)))
+            Bfp::from_wei(test_exp10(18) + test_exp10(16))
         );
         assert_eq!(
             "10.000000000000000001".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(U256::from(10).pow(U256::from(19)) + U256::ONE)
+            Bfp::from_wei(test_exp10(19) + U256::ONE)
         );
         assert!("10.0000000000000000001".parse::<Bfp>().is_err());
         assert!("1.0.1".parse::<Bfp>().is_err());
@@ -246,7 +251,7 @@ mod tests {
 
     #[test]
     fn add() {
-        assert_eq!(Bfp::from(40).add(2.into()).unwrap(), 42.into());
+        assert_eq!(Bfp::from(40).add(Bfp::from(2)).unwrap(), Bfp::from(42));
 
         assert_eq!(
             Bfp(U256::MAX).add(*EPSILON).unwrap_err(),
@@ -256,7 +261,7 @@ mod tests {
 
     #[test]
     fn sub() {
-        assert_eq!(Bfp::from(50).sub(8.into()).unwrap(), 42.into());
+        assert_eq!(Bfp::from(50).sub(Bfp::from(8)).unwrap(), Bfp::from(42));
 
         assert_eq!(
             Bfp::one().sub(Bfp(*ONE_18 + U256::ONE)).unwrap_err(),
@@ -266,7 +271,7 @@ mod tests {
 
     macro_rules! test_mul {
         ($fn_name:ident) => {
-            assert_eq!(Bfp::from(6).$fn_name(7.into()).unwrap(), 42.into());
+            assert_eq!(Bfp::from(6).$fn_name(Bfp::from(7)).unwrap(), Bfp::from(42));
             assert_eq!(Bfp::zero().$fn_name(Bfp::one()).unwrap(), Bfp::zero());
             assert_eq!(Bfp::one().$fn_name(Bfp::zero()).unwrap(), Bfp::zero());
             assert_eq!(
@@ -294,14 +299,8 @@ mod tests {
 
         // values used in proof:
         // shared/src/sources/balancer/swap/weighted_math.rs#L28-L33
-        let max_in_ratio = Bfp::from_wei(
-            U256::from(10)
-                .pow(U256::from(17))
-                .checked_mul(U256::from(3))
-                .unwrap(),
-        );
-        let balance_in =
-            Bfp::from_wei(U256::MAX / (U256::from(10).pow(U256::from(17)) * U256::from(3)));
+        let max_in_ratio = Bfp::from_wei(test_exp10(17).checked_mul(U256::from(3u64)).unwrap());
+        let balance_in = Bfp::from_wei(U256::MAX / (test_exp10(17) * U256::from(3u64)));
         assert!(balance_in.mul_down(max_in_ratio).is_ok());
         assert!(
             (balance_in.add(Bfp::one()))
@@ -313,8 +312,8 @@ mod tests {
 
     macro_rules! test_div {
         ($fn_name:ident) => {
-            assert_eq!(Bfp::from(42).div_down(7.into()).unwrap(), 6.into());
-            assert_eq!(Bfp::zero().div_down(Bfp::one()).unwrap(), 0.into());
+            assert_eq!(Bfp::from(42).div_down(Bfp::from(7)).unwrap(), Bfp::from(6));
+            assert_eq!(Bfp::zero().div_down(Bfp::one()).unwrap(), Bfp::from(0));
 
             assert_eq!(
                 Bfp::one().$fn_name(Bfp::zero()).unwrap_err(),
@@ -334,25 +333,22 @@ mod tests {
         test_div!(div_down);
         test_div!(div_up);
 
-        assert_eq!(EPSILON.div_down(2.into()).unwrap(), Bfp::zero());
-        assert_eq!(EPSILON.div_up(2.into()).unwrap(), *EPSILON);
-        assert_eq!(Bfp::zero().div_up(1.into()).unwrap(), Bfp::zero());
+        assert_eq!(EPSILON.div_down(Bfp::from(2)).unwrap(), Bfp::zero());
+        assert_eq!(EPSILON.div_up(Bfp::from(2)).unwrap(), *EPSILON);
+        assert_eq!(Bfp::zero().div_up(Bfp::from(1)).unwrap(), Bfp::zero());
     }
 
     #[test]
     fn pow_up() {
         assert_eq!(
-            Bfp::from(2).pow_up(3.into()).unwrap(),
+            Bfp::from(2).pow_up(Bfp::from(3)).unwrap(),
             Bfp(U256::from(8_000_000_000_000_079_990_u128))
         ); // powDown: 7999999999999919988
         assert_eq!(
-            Bfp::from(2).pow_up(0.into()).unwrap(),
+            Bfp::from(2).pow_up(Bfp::from(0)).unwrap(),
             Bfp(U256::from(1_000_000_000_000_010_001_u128))
         ); // powDown: 999999999999989999
-        assert_eq!(
-            Bfp::zero().pow_up(Bfp::one()).unwrap(),
-            Bfp(U256::from(1_u128))
-        ); // powDown: 0
+        assert_eq!(Bfp::zero().pow_up(Bfp::one()).unwrap(), Bfp(U256::ONE)); // powDown: 0
 
         assert_eq!(
             Bfp(U256::MAX).pow_up(Bfp::one()).unwrap_err(),
@@ -465,7 +461,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "the number is too large for the type"
+            "the value is too large to fit the target type"
         );
         assert_eq!(
             Bfp::from_str(

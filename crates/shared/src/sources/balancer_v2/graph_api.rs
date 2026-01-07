@@ -242,9 +242,7 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use {
-        super::*,
-        crate::sources::balancer_v2::swap::fixed_point::Bfp,
-        alloy::primitives::U256,
+        super::*, crate::sources::balancer_v2::swap::fixed_point::Bfp, alloy::primitives::U256,
         maplit::hashmap,
     };
 
@@ -343,14 +341,14 @@ mod tests {
                                 address: Address::repeat_byte(0x33),
                                 decimals: 3,
                                 weight: Some(Bfp::from_wei(U256::from(
-                                    500_000_000_000_000_000u128
+                                    500_000_000_000_000_000_u128
                                 ))),
                             },
                             Token {
                                 address: Address::repeat_byte(0x44),
                                 decimals: 4,
                                 weight: Some(Bfp::from_wei(U256::from(
-                                    500_000_000_000_000_000u128
+                                    500_000_000_000_000_000_u128
                                 ))),
                             },
                         ],
@@ -385,14 +383,14 @@ mod tests {
                                 address: Address::repeat_byte(0x33),
                                 decimals: 3,
                                 weight: Some(Bfp::from_wei(U256::from(
-                                    500_000_000_000_000_000u128
+                                    500_000_000_000_000_000_u128
                                 ))),
                             },
                             Token {
                                 address: Address::repeat_byte(0x44),
                                 decimals: 4,
                                 weight: Some(Bfp::from_wei(U256::from(
-                                    500_000_000_000_000_000u128
+                                    500_000_000_000_000_000_u128
                                 ))),
                             },
                         ],

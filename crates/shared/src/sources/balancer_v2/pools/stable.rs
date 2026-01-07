@@ -174,7 +174,7 @@ mod tests {
         );
 
         assert_eq!(
-            AmplificationParameter::try_new(U256::from(1), U256::from(0))
+            AmplificationParameter::try_new(U256::ONE, U256::ZERO)
                 .unwrap_err()
                 .to_string(),
             "Zero precision not allowed"

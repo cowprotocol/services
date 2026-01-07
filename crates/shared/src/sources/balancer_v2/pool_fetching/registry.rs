@@ -163,7 +163,7 @@ mod tests {
             pools::{PoolKind, weighted},
             swap::fixed_point::Bfp,
         },
-        contracts::errors::{testing_contract_error, testing_node_error},
+        ethrpc::alloy::errors::{testing_alloy_contract_error, testing_alloy_node_error},
     };
 
     #[tokio::test]
@@ -178,14 +178,14 @@ mod tests {
                 }),
             })),
             Ok(PoolStatus::Paused),
-            Err(testing_contract_error().into()),
+            Err(testing_alloy_contract_error().into()),
         ];
         assert_eq!(collect_pool_results(results).unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn collecting_results_forwards_node_error() {
-        let node_err = Err(testing_node_error().into());
+        let node_err = Err(testing_alloy_node_error().into());
         assert!(collect_pool_results(vec![node_err]).is_err());
     }
 }

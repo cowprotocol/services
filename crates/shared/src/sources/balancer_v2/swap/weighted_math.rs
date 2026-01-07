@@ -8,23 +8,15 @@ use {
     std::sync::LazyLock,
 };
 
+fn exp10(n: u8) -> U256 {
+    U256::from(10u64).pow(U256::from(n))
+}
+
 // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L36-L37
-static MAX_IN_RATIO: LazyLock<Bfp> = LazyLock::new(|| {
-    Bfp::from_wei(
-        U256::from(10)
-            .pow(U256::from(17))
-            .checked_mul(U256::from(3))
-            .unwrap(),
-    )
-});
-static MAX_OUT_RATIO: LazyLock<Bfp> = LazyLock::new(|| {
-    Bfp::from_wei(
-        U256::from(10)
-            .pow(U256::from(17))
-            .checked_mul(U256::from(3))
-            .unwrap(),
-    )
-});
+static MAX_IN_RATIO: LazyLock<Bfp> =
+    LazyLock::new(|| Bfp::from_wei(exp10(17).checked_mul(U256::from(3u64)).unwrap()));
+static MAX_OUT_RATIO: LazyLock<Bfp> =
+    LazyLock::new(|| Bfp::from_wei(exp10(17).checked_mul(U256::from(3u64)).unwrap()));
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L69-L100
 /// It is not possible for the following addition balance_in.add(amount_in) to
@@ -189,12 +181,11 @@ mod tests {
 
     #[test]
     fn calc_out_given_in_err() {
-        let zero = Bfp::from_wei(U256::from(0));
-        let one = Bfp::from_wei(U256::from(1));
+        let zero = Bfp::from_wei(U256::ZERO);
+        let one = Bfp::from_wei(U256::ONE);
         let two = Bfp::from_wei(U256::from(2));
         let max_u256 = Bfp::from_wei(U256::MAX);
-        let max_balance_in =
-            Bfp::from_wei(U256::MAX / (U256::from(10).pow(U256::from(17)) * U256::from(3)));
+        let max_balance_in = Bfp::from_wei(U256::MAX / (exp10(17) * U256::from(3)));
         let mid_u256 = Bfp::from_wei(U256::from(u128::MAX));
         assert_eq!(
             calc_out_given_in(max_u256, zero, zero, zero, two)
@@ -247,12 +238,11 @@ mod tests {
 
     #[test]
     fn calc_in_given_out_err() {
-        let zero = Bfp::from_wei(U256::from(0));
-        let one = Bfp::from_wei(U256::from(1));
+        let zero = Bfp::from_wei(U256::ZERO);
+        let one = Bfp::from_wei(U256::ONE);
         let two = Bfp::from_wei(U256::from(2));
         let max_u256 = Bfp::from_wei(U256::MAX);
-        let max_balance =
-            Bfp::from_wei(U256::MAX / (U256::from(10).pow(U256::from(17)) * U256::from(3)));
+        let max_balance = Bfp::from_wei(U256::MAX / (exp10(17) * U256::from(3)));
         let mid_u256 = Bfp::from_wei(U256::from(u128::MAX));
         assert_eq!(
             calc_in_given_out(one, zero, max_u256, zero, two)
@@ -336,7 +326,7 @@ mod tests {
             calc_with_default_pool!(calc_out_given_in, U256::from(largest_amount_in + 1))
                 .unwrap_err(),
             // > await calc_with_default_pool("_calcOutGivenIn", "6000000000000000000001")
-            "304".into()
+            Error::MaxInRatio
         );
         let largest_amount_out = deposit_out * 3 / 10;
         assert_eq!(
@@ -348,7 +338,7 @@ mod tests {
             calc_with_default_pool!(calc_in_given_out, U256::from(largest_amount_out + 1))
                 .unwrap_err(),
             // > await calc_with_default_pool("_calcInGivenOut", "3000000000000000000001")
-            "305".into()
+            Error::MaxOutRatio
         );
     }
 }

@@ -9,9 +9,7 @@ use {
     alloy::{eips::BlockId, primitives::Address},
     anyhow::{Result, anyhow},
     contracts::alloy::{
-        BalancerV2WeightedPool,
-        BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV3,
+        BalancerV2WeightedPool, BalancerV2WeightedPoolFactory, BalancerV2WeightedPoolFactoryV3,
     },
     futures::{FutureExt as _, future::BoxFuture},
     std::collections::BTreeMap,
@@ -189,8 +187,8 @@ mod tests {
                     block_created: 42,
                 },
                 weights: vec![
-                    Bfp::from_wei(U256::from(1_337_000_000_000_000_000u128)),
-                    Bfp::from_wei(U256::from(4_200_000_000_000_000_000u128)),
+                    Bfp::from_wei(U256::from(1_337_000_000_000_000_000_u128)),
+                    Bfp::from_wei(U256::from(4_200_000_000_000_000_000_u128)),
                 ],
             },
         );

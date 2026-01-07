@@ -26,8 +26,7 @@ use {
     },
     anyhow::{Context, Result},
     contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
-        BalancerV2BasePoolFactoryEvents,
-        PoolCreated,
+        BalancerV2BasePoolFactoryEvents, PoolCreated,
     },
     ethrpc::block_stream::RangeInclusive,
     model::TokenPair,
@@ -289,8 +288,8 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(U256::from(500_000_000_000_000_000u128)),
-                        Bfp::from_wei(U256::from(500_000_000_000_000_000u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
                     ],
                 },
                 weighted::PoolInfo {
@@ -306,9 +305,9 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(U256::from(500_000_000_000_000_000u128)),
-                        Bfp::from_wei(U256::from(250_000_000_000_000_000u128)),
-                        Bfp::from_wei(U256::from(250_000_000_000_000_000u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(250_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(250_000_000_000_000_000_u128)),
                     ],
                 },
                 weighted::PoolInfo {
@@ -320,8 +319,8 @@ mod tests {
                         block_created: 0,
                     },
                     weights: vec![
-                        Bfp::from_wei(U256::from(500_000_000_000_000_000u128)),
-                        Bfp::from_wei(U256::from(500_000_000_000_000_000u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
+                        Bfp::from_wei(U256::from(500_000_000_000_000_000_u128)),
                     ],
                 },
             ],

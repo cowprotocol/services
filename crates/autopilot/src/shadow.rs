@@ -22,6 +22,7 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     anyhow::Context,
     ethrpc::block_stream::CurrentBlockWatcher,
     itertools::Itertools,
@@ -56,10 +57,10 @@ impl RunLoop {
         weth: WrappedNativeToken,
     ) -> Self {
         Self {
-            winner_selection: winner_selection::Arbitrator {
-                max_winners: max_winners_per_auction.get(),
+            winner_selection: winner_selection::Arbitrator::new(
+                max_winners_per_auction.get(),
                 weth,
-            },
+            ),
             orderbook,
             drivers,
             trusted_tokens,
@@ -131,7 +132,7 @@ impl RunLoop {
 
         let solutions = self.competition(auction).await;
         let ranking = self.winner_selection.arbitrate(solutions, auction);
-        let scores = self.winner_selection.compute_reference_scores(&ranking);
+        let scores = ranking.reference_scores();
 
         let total_score = ranking
             .winners()

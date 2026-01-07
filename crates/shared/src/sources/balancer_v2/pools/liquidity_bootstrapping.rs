@@ -9,8 +9,7 @@ use {
     alloy::eips::BlockId,
     anyhow::Result,
     contracts::alloy::{
-        BalancerV2LiquidityBootstrappingPool,
-        BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2LiquidityBootstrappingPool, BalancerV2LiquidityBootstrappingPoolFactory,
     },
     futures::{FutureExt as _, future::BoxFuture},
 };

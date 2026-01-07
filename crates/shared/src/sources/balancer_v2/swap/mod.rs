@@ -3,11 +3,7 @@ use {
         baseline_solver::BaselineSolvable,
         conversions::U256Ext,
         sources::balancer_v2::pool_fetching::{
-            AmplificationParameter,
-            StablePool,
-            TokenState,
-            WeightedPool,
-            WeightedPoolVersion,
+            AmplificationParameter, StablePool, TokenState, WeightedPool, WeightedPoolVersion,
             WeightedTokenState,
         },
     },
@@ -543,13 +539,13 @@ mod tests {
             b.get_amount_out(
                 crv,
                 (
-                    alloy::primitives::U256::from(227_937_106_828_652_254_870_i128),
+                    alloy::primitives::U256::from(227_937_106_828_652_254_870_u128),
                     sdvecrv_dao
                 )
             )
             .await
             .unwrap(),
-            alloy::primitives::U256::from(488_192_591_864_344_551_330_i128)
+            alloy::primitives::U256::from(488_192_591_864_344_551_330_u128)
         );
     }
 
@@ -571,10 +567,10 @@ mod tests {
         );
 
         assert_eq!(
-            b.get_amount_in(weth, (alloy::primitives::U256::from(5_000_000_i128), tusd))
+            b.get_amount_in(weth, (alloy::primitives::U256::from(5_000_000_u128), tusd))
                 .await
                 .unwrap(),
-            alloy::primitives::U256::from(1_225_715_511_430_411_i128)
+            alloy::primitives::U256::from(1_225_715_511_430_411_u128)
         );
     }
 
@@ -633,7 +629,7 @@ mod tests {
             U256::from(59_448_574_675_062_u128),
             U256::from(55_199_308_926_456_u128),
         ];
-        let swap_fee_percentage = U256::from(300_000_000_000_000u128);
+        let swap_fee_percentage = U256::from(300_000_000_000_000_u128);
         let pool = create_stable_pool_with(
             tokens,
             balances,
@@ -643,8 +639,8 @@ mod tests {
         );
         // Etherscan for amount verification:
         // https://etherscan.io/tx/0x75be93fff064ad46b423b9e20cee09b0ae7f741087f43e4187d4f4cf59f54229
-        let amount_in = alloy::primitives::U256::from(1_886_982_823_746_269_817_650_i128);
-        let amount_out = 1_887_770_905_i128;
+        let amount_in = alloy::primitives::U256::from(1_886_982_823_746_269_817_650_u128);
+        let amount_out = U256::from(1_887_770_905_u128);
         let res_out = pool.get_amount_out(usdc, (amount_in, dai)).await;
         assert_eq!(res_out.unwrap(), amount_out);
     }
@@ -666,7 +662,7 @@ mod tests {
             U256::from(48_176_005_970_419_u128),
             U256::from(44_564_350_355_030_u128),
         ];
-        let swap_fee_percentage = U256::from(300_000_000_000_000u128);
+        let swap_fee_percentage = U256::from(300_000_000_000_000_u128);
         let pool = create_stable_pool_with(
             tokens,
             balances,
@@ -676,7 +672,7 @@ mod tests {
         );
         // Etherscan for amount verification:
         // https://etherscan.io/tx/0x38487122158eef6b63570b5d3754ddc223c63af5c049d7b80acacb9e8ca89a63
-        let amount_in = 900_816_325_i128;
+        let amount_in = U256::from(900_816_325_u128);
         let amount_out = alloy::primitives::U256::from(900_000_000_000_000_000_000_u128);
         let res_out = pool.get_amount_in(usdc, (amount_out, dai)).await;
         assert_eq!(res_out.unwrap(), amount_in);

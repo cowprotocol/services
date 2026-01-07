@@ -9,7 +9,7 @@ use {
     std::sync::LazyLock,
 };
 
-pub static AMP_PRECISION: LazyLock<U256> = LazyLock::new(|| U256::from(1000));
+pub static AMP_PRECISION: LazyLock<U256> = LazyLock::new(|| U256::from(1000u64));
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L57-L119
 fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Result<U256, Error> {
