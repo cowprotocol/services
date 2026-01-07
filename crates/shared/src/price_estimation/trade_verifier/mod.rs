@@ -368,10 +368,7 @@ impl TradeVerifier {
                 overrides.insert(token, solver_balance_override);
 
                 if verification.from.is_zero() {
-                    let mut rng = rand::thread_rng();
-                    let mut bytes = [0u8; 20];
-                    rand::RngCore::fill_bytes(&mut rng, &mut bytes);
-                    verification.from = Address::from(bytes);
+                    verification.from = Address::random();
                     tracing::debug!(
                         trader = ?verification.from,
                         "use random trader address with fake balances"
