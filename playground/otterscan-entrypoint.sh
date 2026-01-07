@@ -11,7 +11,7 @@ echo "SOURCIFY_MODE: ${SOURCIFY_MODE}"
 case "${SOURCIFY_MODE:-cloud}" in
   local)
     echo "Using LOCAL Sourcify as primary source"
-    cat > "$CONFIG_FILE" << 'EOF'
+    cat > "$CONFIG_FILE" << EOF
 {
   "erigonURL": "${ERIGON_URL}",
   "sourcify": {
@@ -27,7 +27,7 @@ EOF
     ;;
   cloud|*)
     echo "Using CLOUD Sourcify as primary source"
-    cat > "$CONFIG_FILE" << 'EOF'
+    cat > "$CONFIG_FILE" << EOF
 {
   "erigonURL": "${ERIGON_URL}",
   "sourcify": {

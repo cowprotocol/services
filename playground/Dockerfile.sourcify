@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 # Install dependencies
 RUN apt-get update && apt-get install -y git curl postgresql-client && \
@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y git curl postgresql-client && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Clone Sourcify with submodules
-RUN git clone --depth 1 --recurse-submodules https://github.com/ethereum/sourcify.git /sourcify
+RUN git clone --depth 1 --branch master --recurse-submodules https://github.com/argotorg/sourcify.git /sourcify
 
 WORKDIR /sourcify
 
