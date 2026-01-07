@@ -88,8 +88,12 @@ impl FromStr for Bfp {
 
 impl Debug for Bfp {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let low: u128 = u128::try_from(self.0 % *ONE_18).unwrap();
-        write!(formatter, "{}.{:0>18}", self.0 / *ONE_18, low)
+        write!(
+            formatter,
+            "{}.{:0>18}",
+            self.0 / *ONE_18,
+            u128::try_from(self.0 % *ONE_18).unwrap()
+        )
     }
 }
 
@@ -121,7 +125,7 @@ impl Bfp {
             return Self::zero();
         }
 
-        Self(U256::from(10u64).pow(U256::from(exp)))
+        Self(U256::from(10).pow(U256::from(exp)))
     }
 
     pub fn from_wei(num: U256) -> Self {
@@ -220,11 +224,11 @@ mod tests {
         num::{BigInt, One, Zero},
     };
 
+    static EPSILON: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::ONE));
+
     fn test_exp10(n: u8) -> U256 {
         U256::from(10u64).pow(U256::from(n))
     }
-
-    static EPSILON: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::from(1u64)));
 
     #[test]
     fn parsing() {
@@ -271,15 +275,13 @@ mod tests {
             assert_eq!(Bfp::zero().$fn_name(Bfp::one()).unwrap(), Bfp::zero());
             assert_eq!(Bfp::one().$fn_name(Bfp::zero()).unwrap(), Bfp::zero());
             assert_eq!(
-                Bfp::one()
-                    .$fn_name(Bfp(U256::MAX / test_exp10(18)))
-                    .unwrap(),
-                Bfp(U256::MAX / test_exp10(18))
+                Bfp::one().$fn_name(Bfp(U256::MAX / *ONE_18)).unwrap(),
+                Bfp(U256::MAX / *ONE_18)
             );
 
             assert_eq!(
                 Bfp::one()
-                    .$fn_name(Bfp(U256::MAX / test_exp10(18) + U256::ONE))
+                    .$fn_name(Bfp(U256::MAX / *ONE_18 + U256::ONE))
                     .unwrap_err(),
                 Error::MulOverflow,
             );
@@ -291,7 +293,7 @@ mod tests {
         test_mul!(mul_down);
         test_mul!(mul_up);
 
-        let one_half = Bfp(U256::from(5u64) * U256::from(10u64).pow(U256::from(17u64)));
+        let one_half = Bfp(U256::from(5 * 10_u128.pow(17)));
         assert_eq!(EPSILON.mul_down(one_half).unwrap(), Bfp::zero());
         assert_eq!(EPSILON.mul_up(one_half).unwrap(), *EPSILON);
 
@@ -318,7 +320,7 @@ mod tests {
                 Error::ZeroDivision
             );
             assert_eq!(
-                Bfp(U256::MAX / test_exp10(18) + U256::ONE)
+                Bfp(U256::MAX / *ONE_18 + U256::ONE)
                     .$fn_name(Bfp::one())
                     .unwrap_err(),
                 Error::DivInternal,

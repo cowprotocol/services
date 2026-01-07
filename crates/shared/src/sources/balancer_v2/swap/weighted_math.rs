@@ -181,11 +181,11 @@ mod tests {
 
     #[test]
     fn calc_out_given_in_err() {
-        let zero = Bfp::from_wei(U256::from(0u64));
-        let one = Bfp::from_wei(U256::from(1u64));
-        let two = Bfp::from_wei(U256::from(2u64));
+        let zero = Bfp::from_wei(U256::ZERO);
+        let one = Bfp::from_wei(U256::ONE);
+        let two = Bfp::from_wei(U256::from(2));
         let max_u256 = Bfp::from_wei(U256::MAX);
-        let max_balance_in = Bfp::from_wei(U256::MAX / (exp10(17) * U256::from(3u64)));
+        let max_balance_in = Bfp::from_wei(U256::MAX / (exp10(17) * U256::from(3)));
         let mid_u256 = Bfp::from_wei(U256::from(u128::MAX));
         assert_eq!(
             calc_out_given_in(max_u256, zero, zero, zero, two)
@@ -238,11 +238,11 @@ mod tests {
 
     #[test]
     fn calc_in_given_out_err() {
-        let zero = Bfp::from_wei(U256::from(0u64));
-        let one = Bfp::from_wei(U256::from(1u64));
-        let two = Bfp::from_wei(U256::from(2u64));
+        let zero = Bfp::from_wei(U256::ZERO);
+        let one = Bfp::from_wei(U256::ONE);
+        let two = Bfp::from_wei(U256::from(2));
         let max_u256 = Bfp::from_wei(U256::MAX);
-        let max_balance = Bfp::from_wei(U256::MAX / (exp10(17) * U256::from(3u64)));
+        let max_balance = Bfp::from_wei(U256::MAX / (exp10(17) * U256::from(3)));
         let mid_u256 = Bfp::from_wei(U256::from(u128::MAX));
         assert_eq!(
             calc_in_given_out(one, zero, max_u256, zero, two)

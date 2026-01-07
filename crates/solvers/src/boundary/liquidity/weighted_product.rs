@@ -2,7 +2,6 @@ pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
 use {
     crate::domain::{eth, liquidity},
     alloy::primitives::{Address, B256, U256},
-    ethrpc::alloy::conversions::IntoLegacy,
     shared::sources::balancer_v2::{
         pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
         swap::fixed_point::Bfp,
@@ -41,7 +40,7 @@ pub fn to_boundary_pool(
 
     Some(Pool {
         common: CommonPoolState {
-            id: id.into_legacy(),
+            id,
             address,
             swap_fee,
             paused: false,
