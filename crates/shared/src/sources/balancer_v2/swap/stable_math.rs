@@ -228,10 +228,6 @@ mod tests {
         std::str::FromStr,
     };
 
-    fn u256_from_f64_lossy(val: f64) -> U256 {
-        U256::from_str_radix(&val.round().to_string(), 10).unwrap_or(U256::MAX)
-    }
-
     // interpreted from
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts#L53
     fn calculate_analytic_invariant_two_tokens(
@@ -347,7 +343,7 @@ mod tests {
     #[test]
     fn invariant_two_tokens_ok() {
         let amp = 100.;
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let balances = vec![Bfp::from(10), Bfp::from(12)];
         let max_relative_error = 0.001;
         let expected = calculate_analytic_invariant_two_tokens(
@@ -370,7 +366,7 @@ mod tests {
             .iter()
             .map(|x| Bfp::from_str(x).unwrap())
             .collect();
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let result = calculate_invariant(amplification_parameter, balances.as_slice()).unwrap();
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let expected = calculate_invariant_approx(float_balances, amp);
@@ -385,7 +381,7 @@ mod tests {
     #[test]
     fn invariant_three_tokens_ok() {
         let amp = 100.;
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let balances = vec![Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let expected = calculate_invariant_approx(float_balances, amp);
@@ -401,7 +397,7 @@ mod tests {
     #[test]
     fn in_given_out_two_tokens() {
         let amp = 100.;
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
@@ -433,7 +429,7 @@ mod tests {
     #[test]
     fn in_given_out_three_tokens() {
         let amp = 100.;
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
@@ -465,7 +461,7 @@ mod tests {
     #[test]
     fn out_given_in_two_tokens() {
         let amp = 100.;
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
@@ -497,7 +493,7 @@ mod tests {
     #[test]
     fn out_given_in_three_tokens() {
         let amp = 100.;
-        let amplification_parameter = u256_from_f64_lossy(amp * f64::from(*AMP_PRECISION));
+        let amplification_parameter = U256::from(amp * f64::from(*AMP_PRECISION));
         let mut balances = [Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let token_index_in = 0;
