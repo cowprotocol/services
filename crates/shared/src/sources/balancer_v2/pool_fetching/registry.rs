@@ -14,13 +14,13 @@ use {
     },
     BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::BalancerV2BasePoolFactoryEvents,
     alloy::{
+        primitives::B256,
         providers::DynProvider,
         rpc::types::{Filter, FilterSet, Log},
         sol_types::SolEvent,
     },
     anyhow::Result,
     contracts::alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
-    ethcontract::{BlockId, H256},
     ethrpc::{
         alloy::errors::ContractErrorExt,
         block_stream::{BlockNumberHash, BlockRetrieving},
@@ -98,7 +98,7 @@ impl<Factory> InternalPoolFetching for Registry<Factory>
 where
     Factory: FactoryIndexing,
 {
-    async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<H256> {
+    async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<B256> {
         self.updater
             .lock()
             .await
@@ -106,13 +106,11 @@ where
             .pool_ids_for_token_pairs(&token_pairs)
     }
 
-    async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
-        let block = BlockId::Number(block.into());
-
+    async fn pools_by_id(&self, pool_ids: HashSet<B256>, block: Block) -> Result<Vec<Pool>> {
         let pool_infos = self.updater.lock().await.store().pools_by_id(&pool_ids);
         let pool_futures = pool_infos
             .into_iter()
-            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, block))
+            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, block.into()))
             .collect::<Vec<_>>();
 
         let pools = future::join_all(pool_futures).await;

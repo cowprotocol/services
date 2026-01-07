@@ -11,9 +11,8 @@
 use {
     super::swap::fixed_point::Bfp,
     crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256},
     anyhow::Result,
-    ethcontract::H256,
     reqwest::{Client, Url},
     serde::Deserialize,
     serde_json::json,
@@ -50,7 +49,7 @@ impl BalancerSubgraphClient {
         let block_number = self.get_safe_block().await?;
 
         let mut pools = Vec::new();
-        let mut last_id = H256::default();
+        let mut last_id = B256::default();
 
         // We do paging by last ID instead of using `skip`. This is the
         // suggested approach to paging best performance:
@@ -148,7 +147,7 @@ impl RegisteredPools {
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub pool_type: PoolType,
-    pub id: H256,
+    pub id: B256,
     pub address: Address,
     pub factory: Address,
     pub swap_enabled: bool,
@@ -245,7 +244,7 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::swap::fixed_point::Bfp,
-        ethcontract::H256,
+        alloy::primitives::U256,
         maplit::hashmap,
     };
 
@@ -335,7 +334,7 @@ mod tests {
                 pools: vec![
                     PoolData {
                         pool_type: PoolType::Weighted,
-                        id: H256([0x11; 32]),
+                        id: B256::repeat_byte(0x11),
                         address: Address::repeat_byte(0x22),
                         factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
@@ -343,18 +342,22 @@ mod tests {
                             Token {
                                 address: Address::repeat_byte(0x33),
                                 decimals: 3,
-                                weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                                weight: Some(Bfp::from_wei(U256::from(
+                                    500_000_000_000_000_000_u128
+                                ))),
                             },
                             Token {
                                 address: Address::repeat_byte(0x44),
                                 decimals: 4,
-                                weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                                weight: Some(Bfp::from_wei(U256::from(
+                                    500_000_000_000_000_000_u128
+                                ))),
                             },
                         ],
                     },
                     PoolData {
                         pool_type: PoolType::Stable,
-                        id: H256([0x11; 32]),
+                        id: B256::repeat_byte(0x11),
                         address: Address::repeat_byte(0x22),
                         factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
@@ -373,7 +376,7 @@ mod tests {
                     },
                     PoolData {
                         pool_type: PoolType::LiquidityBootstrapping,
-                        id: H256([0x11; 32]),
+                        id: B256::repeat_byte(0x11),
                         address: Address::repeat_byte(0x22),
                         factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
@@ -381,18 +384,22 @@ mod tests {
                             Token {
                                 address: Address::repeat_byte(0x33),
                                 decimals: 3,
-                                weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                                weight: Some(Bfp::from_wei(U256::from(
+                                    500_000_000_000_000_000_u128
+                                ))),
                             },
                             Token {
                                 address: Address::repeat_byte(0x44),
                                 decimals: 4,
-                                weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                                weight: Some(Bfp::from_wei(U256::from(
+                                    500_000_000_000_000_000_u128
+                                ))),
                             },
                         ],
                     },
                     PoolData {
                         pool_type: PoolType::ComposableStable,
-                        id: H256([0x11; 32]),
+                        id: B256::repeat_byte(0x11),
                         address: Address::repeat_byte(0x22),
                         factory: Address::repeat_byte(0x55),
                         swap_enabled: true,
@@ -438,7 +445,7 @@ mod tests {
     #[test]
     fn groups_pools_by_factory() {
         let pool = |factory: Address, id: u8| PoolData {
-            id: H256([id; 32]),
+            id: B256::repeat_byte(id),
             factory,
             pool_type: PoolType::Weighted,
             address: Default::default(),
