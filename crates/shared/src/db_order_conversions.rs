@@ -36,7 +36,7 @@ use {
         signature::{Signature, SigningScheme},
     },
     num::FromPrimitive,
-    number::conversions::{alloy::big_decimal_to_u256, big_decimal_to_big_uint},
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {

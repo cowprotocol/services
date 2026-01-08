@@ -29,10 +29,7 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number::conversions::{
-        alloy::{big_decimal_to_u256, u256_to_big_decimal},
-        big_decimal_to_big_uint,
-    },
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -418,7 +415,7 @@ impl Postgres {
                 )
                 .await
                 .map_err(anyhow::Error::from)?
-                .and_then(|price| number::conversions::alloy::big_decimal_to_u256(&price)))
+                .and_then(|price| big_decimal_to_u256(&price)))
             })
         )?;
 

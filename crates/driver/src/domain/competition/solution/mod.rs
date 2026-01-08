@@ -20,6 +20,7 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
+    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
@@ -339,10 +340,8 @@ impl Solution {
         // Scale prices
         let mut prices = self.prices.clone();
         for (token, price) in other.prices.iter() {
-            let scaled = number::conversions::alloy::big_rational_to_u256(
-                &(number::conversions::alloy::u256_to_big_rational(price) * &factor),
-            )
-            .map_err(error::Merge::Math)?;
+            let scaled = big_rational_to_u256(&(u256_to_big_rational(price) * &factor))
+                .map_err(error::Merge::Math)?;
             match prices.entry(*token) {
                 Entry::Occupied(entry) => {
                     // This shouldn't fail unless there are rounding errors given that the scaling
@@ -544,8 +543,8 @@ fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
             let first_price = first[token];
             let second_price = second[token];
             BigRational::new(
-                number::conversions::alloy::u256_to_big_int(&first_price),
-                number::conversions::alloy::u256_to_big_int(&second_price),
+                u256_to_big_int(&first_price),
+                u256_to_big_int(&second_price),
             )
         })
         .collect();

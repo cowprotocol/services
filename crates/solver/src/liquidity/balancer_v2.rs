@@ -18,7 +18,6 @@ use {
     },
     alloy::primitives::{Address, B256},
     anyhow::Result,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::TokenPair,
     shared::{
         ethrpc::Web3,
@@ -83,7 +82,7 @@ impl BalancerV2Liquidity {
                 fee: pool.common.swap_fee,
                 version: pool.version,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.id.into_alloy(),
+                    pool_id: pool.common.id,
                     inner: inner.clone(),
                 }),
             })
@@ -97,7 +96,7 @@ impl BalancerV2Liquidity {
                 fee: pool.common.swap_fee,
                 amplification_parameter: pool.amplification_parameter,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.id.into_alloy(),
+                    pool_id: pool.common.id,
                     inner: inner.clone(),
                 }),
             })
@@ -229,7 +228,6 @@ mod tests {
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
         alloy::primitives::U256,
         contracts::alloy::BalancerV2Vault,
-        ethrpc::alloy::conversions::IntoLegacy,
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
@@ -277,7 +275,7 @@ mod tests {
         let weighted_pools = vec![
             WeightedPool {
                 common: CommonPoolState {
-                    id: B256::repeat_byte(0x90).into_legacy(),
+                    id: B256::repeat_byte(0x90),
                     address: Address::repeat_byte(0x90),
                     swap_fee: "0.002".parse().unwrap(),
                     paused: true,
@@ -285,21 +283,21 @@ mod tests {
                 reserves: btreemap! {
                     Address::repeat_byte(0x70) => WeightedTokenState {
                         common: TokenState {
-                            balance: 100.into(),
+                            balance: U256::from(100),
                             scaling_factor: Bfp::exp10(16),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     Address::repeat_byte(0x71) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000.into(),
+                            balance: U256::from(1_000_000),
                             scaling_factor: Bfp::exp10(12),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     Address::repeat_byte(0xb0) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
@@ -309,7 +307,7 @@ mod tests {
             },
             WeightedPool {
                 common: CommonPoolState {
-                    id: B256::repeat_byte(0x91).into_legacy(),
+                    id: B256::repeat_byte(0x91),
                     address: Address::repeat_byte(0x91),
                     swap_fee: "0.001".parse().unwrap(),
                     paused: true,
@@ -317,14 +315,14 @@ mod tests {
                 reserves: btreemap! {
                     Address::repeat_byte(0x73) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     Address::repeat_byte(0xb0) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
@@ -336,19 +334,19 @@ mod tests {
 
         let stable_pools = vec![StablePool {
             common: CommonPoolState {
-                id: B256::repeat_byte(0x92).into_legacy(),
+                id: B256::repeat_byte(0x92),
                 address: Address::repeat_byte(0x92),
                 swap_fee: "0.002".parse().unwrap(),
                 paused: true,
             },
-            amplification_parameter: AmplificationParameter::try_new(1.into(), 1.into()).unwrap(),
+            amplification_parameter: AmplificationParameter::try_new(U256::ONE, U256::ONE).unwrap(),
             reserves: btreemap! {
                 Address::repeat_byte(0x73) => TokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                        balance: U256::from(1_000_000_000_000_000_000u128),
                         scaling_factor: Bfp::exp10(0),
                     },
                 Address::repeat_byte(0xb0) => TokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                        balance: U256::from(1_000_000_000_000_000_000u128),
                         scaling_factor: Bfp::exp10(0),
                     }
             },

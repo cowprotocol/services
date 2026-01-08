@@ -41,8 +41,10 @@ use {
     num::BigRational,
     number::{
         conversions::{
-            alloy::{i512_to_u256, u256_to_big_rational},
             big_decimal_to_big_rational,
+            i512_to_big_rational,
+            i512_to_u256,
+            u256_to_big_rational,
         },
         nonzero::NonZeroU256,
         units::EthUnit,
@@ -256,9 +258,7 @@ impl TradeVerifier {
                 summary
                     .tokens_lost
                     .entry(query.sell_token)
-                    .and_modify(|balance| {
-                        *balance -= number::conversions::alloy::i512_to_big_rational(&sell_amount)
-                    });
+                    .and_modify(|balance| *balance -= i512_to_big_rational(&sell_amount));
             }
             // It looks like the contract gained a lot of buy tokens (negative loss) but
             // only because it was the receiver and got the payout. Adjust the tokens lost
@@ -267,9 +267,7 @@ impl TradeVerifier {
                 summary
                     .tokens_lost
                     .entry(query.buy_token)
-                    .and_modify(|balance| {
-                        *balance += number::conversions::alloy::i512_to_big_rational(&buy_amount)
-                    });
+                    .and_modify(|balance| *balance += i512_to_big_rational(&buy_amount));
             }
 
             // The swap simulation computes the out_amount like this:
@@ -884,8 +882,8 @@ fn ensure_quote_accuracy(
         OrderKind::Sell => (I512::from(query.in_amount.get()), summary.out_amount),
     };
     let (sell_amount, buy_amount) = (
-        number::conversions::alloy::i512_to_big_rational(&sell_amount),
-        number::conversions::alloy::i512_to_big_rational(&buy_amount),
+        i512_to_big_rational(&sell_amount),
+        i512_to_big_rational(&buy_amount),
     );
     let sell_token_lost_limit = inaccuracy_limit * &sell_amount;
     let buy_token_lost_limit = inaccuracy_limit * &buy_amount;

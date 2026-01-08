@@ -695,8 +695,8 @@ mod tests {
             address!("d5281bb2d1ee94866b03a0fccdd4e900c8cb5091"),
             address!("da1e53e088023fe4d1dc5a418581748f52cbd1b8"),
             address!("dd339f370bbb18b8f389bd0443329d82ecf4b593"),
-            address!("decade1c6bf2cd9fb89afad73e4a519c867adcf5"), /* Should be denied because can't
-                                                                  ess                                                * approve more than balance */
+            // Should be denied because can't approve more than balance
+            address!("decade1c6bf2cd9fb89afad73e4a519c867adcf5"),
             address!("dfdd3459d4f87234751696840092ee20c970fb07"),
             address!("e0bdaafd0aab238c55d68ad54e616305d4a21772"),
             address!("e2d66561b39eadbd488868af8493fb55d4b9d084"),

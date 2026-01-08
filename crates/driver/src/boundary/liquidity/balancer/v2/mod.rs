@@ -16,10 +16,7 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethrpc::{
-        alloy::conversions::IntoLegacy,
-        block_stream::{BlockRetrieving, CurrentBlockWatcher},
-    },
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
@@ -181,12 +178,7 @@ async fn init_liquidity(
             boundary::liquidity::http_client(),
             web3.clone(),
             &contracts,
-            config
-                .pool_deny_list
-                .iter()
-                .copied()
-                .map(IntoLegacy::into_legacy)
-                .collect(),
+            config.pool_deny_list.to_vec(),
         )
         .await
         .context("failed to create balancer pool fetcher")?,

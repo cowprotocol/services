@@ -19,6 +19,7 @@ use {
     chrono::{DateTime, Utc},
     database::{orders::OrderKind, solver_competition_v2::Solution},
     futures::TryFutureExt,
+    number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
 
@@ -245,12 +246,8 @@ fn order_to_key(order: &database::solver_competition_v2::Order) -> OrderMatchKey
             OrderKind::Buy => eth::Address::new(order.buy_token.0).into(),
         },
         executed: match order.side {
-            OrderKind::Sell => {
-                number::conversions::alloy::big_decimal_to_u256(&order.executed_sell)
-                    .unwrap_or_default()
-            }
-            OrderKind::Buy => number::conversions::alloy::big_decimal_to_u256(&order.executed_buy)
-                .unwrap_or_default(),
+            OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
+            OrderKind::Buy => big_decimal_to_u256(&order.executed_buy).unwrap_or_default(),
         },
     }
 }
@@ -351,17 +348,15 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{
-            domain::{
-                self,
-                auction,
-                eth,
-                settlement::{OrderMatchKey, trade_to_key},
-            },
-            util::conv::U256Ext,
+        crate::domain::{
+            self,
+            auction,
+            eth,
+            settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
         hex_literal::hex,
+        number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
         winner_selection::{self as ws, state::RankedItem},
     };

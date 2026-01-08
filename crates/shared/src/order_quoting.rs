@@ -26,7 +26,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
     },
     num::FromPrimitive,
-    number::conversions::alloy::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     std::sync::Arc,
     thiserror::Error,
     tracing::instrument,

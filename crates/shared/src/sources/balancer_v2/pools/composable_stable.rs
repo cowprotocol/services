@@ -6,10 +6,9 @@ use {
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
+    alloy::eips::BlockId,
     anyhow::Result,
     contracts::alloy::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
-    ethcontract::BlockId,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
 };
 
@@ -53,7 +52,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
         );
 
         let fetch_common = common_pool_state.map(Result::Ok);
-        let scaling_factors_block = block.into_alloy();
+        let scaling_factors_block = block;
         let amp_param_block = scaling_factors_block;
         let pool_contract_clone = pool_contract.clone();
         let fetch_scaling_factors = async move {
@@ -81,8 +80,8 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
             )?;
             let amplification_parameter = {
                 AmplificationParameter::try_new(
-                    amplification_parameter.value.into_legacy(),
-                    amplification_parameter.precision.into_legacy(),
+                    amplification_parameter.value,
+                    amplification_parameter.precision,
                 )?
             };
 
@@ -95,7 +94,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
                         (
                             address,
                             common::TokenState {
-                                scaling_factor: Bfp::from_wei(scaling_factor.into_legacy()),
+                                scaling_factor: Bfp::from_wei(scaling_factor),
                                 ..token
                             },
                         )
@@ -114,15 +113,14 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
-        alloy::primitives::Address,
-        ethcontract::H256,
+        alloy::primitives::{Address, B256},
     };
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {
         let pool = PoolData {
             pool_type: PoolType::Stable,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0xfa),
             swap_enabled: true,

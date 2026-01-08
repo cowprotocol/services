@@ -5,8 +5,8 @@
 
 use {
     super::error::Error,
+    alloy::primitives::U256,
     anyhow::{Context, Result, bail, ensure},
-    ethcontract::U256,
     num::{BigInt, BigRational},
     number::conversions::{big_int_to_u256, u256_to_big_int},
     std::{
@@ -27,13 +27,17 @@ mod logexpmath;
 /// including error codes, from which the name (Balancer Fixed Point).
 pub struct Bfp(U256);
 
-static ONE_18: LazyLock<U256> = LazyLock::new(|| U256::exp10(18));
+fn exp10(n: u8) -> U256 {
+    U256::from(10u64).pow(U256::from(n))
+}
+
+static ONE_18: LazyLock<U256> = LazyLock::new(|| exp10(18));
 static ONE_18_BIGINT: LazyLock<BigInt> = LazyLock::new(|| u256_to_big_int(&ONE_18));
-static ZERO: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::zero()));
+static ZERO: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::ZERO));
 static ONE: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18));
-static TWO: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * 2));
-static FOUR: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * 4));
-static MAX_POW_RELATIVE_ERROR: LazyLock<Bfp> = LazyLock::new(|| Bfp(10000_usize.into()));
+static TWO: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * U256::from(2u64)));
+static FOUR: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * U256::from(4u64)));
+static MAX_POW_RELATIVE_ERROR: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::from(10000u64)));
 
 impl From<usize> for Bfp {
     fn from(num: usize) -> Self {
@@ -72,9 +76,9 @@ impl FromStr for Bfp {
         if units.is_empty() || decimals.is_empty() || decimals.len() > 18 {
             bail!("Invalid decimal representation");
         }
-        Ok(Bfp(U256::from_dec_str(&format!("{decimals:0<18}"))?
+        Ok(Bfp(U256::from_str_radix(&format!("{decimals:0<18}"), 10)?
             .checked_add(
-                U256::from_dec_str(units)?
+                U256::from_str_radix(units, 10)?
                     .checked_mul(*ONE_18)
                     .context("Too large number")?,
             )
@@ -88,7 +92,7 @@ impl Debug for Bfp {
             formatter,
             "{}.{:0>18}",
             self.0 / *ONE_18,
-            (self.0 % *ONE_18).as_u128()
+            u128::try_from(self.0 % *ONE_18).unwrap()
         )
     }
 }
@@ -96,7 +100,7 @@ impl Debug for Bfp {
 impl Bfp {
     #[cfg(test)]
     pub fn to_f64_lossy(self) -> f64 {
-        self.as_uint256().to_f64_lossy() / 1e18
+        f64::from(self.as_uint256()) / 1e18
     }
 
     pub fn as_uint256(self) -> U256 {
@@ -121,7 +125,7 @@ impl Bfp {
             return Self::zero();
         }
 
-        Self(U256::exp10(exp as _))
+        Self(U256::from(10).pow(U256::from(exp)))
     }
 
     pub fn from_wei(num: U256) -> Self {
@@ -154,7 +158,7 @@ impl Bfp {
         Ok(if product.is_zero() {
             Bfp::zero()
         } else {
-            Bfp(((product - 1) / *ONE_18) + 1)
+            Bfp(((product - U256::ONE) / *ONE_18) + U256::ONE)
         })
     }
 
@@ -177,7 +181,7 @@ impl Bfp {
         } else {
             let a_inflated = self.0.checked_mul(*ONE_18).ok_or(Error::DivInternal)?;
 
-            Ok(Self(((a_inflated - 1) / other.0) + 1))
+            Ok(Self(((a_inflated - U256::ONE) / other.0) + U256::ONE))
         }
     }
 
@@ -191,7 +195,7 @@ impl Bfp {
 
     pub fn pow_up(self, exp: Self) -> Result<Self, Error> {
         let raw = Bfp(logexpmath::pow(self.0, exp.0)?);
-        let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(1.into()))?;
+        let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(U256::ONE))?;
 
         raw.add(max_error)
     }
@@ -206,7 +210,7 @@ impl Bfp {
             square.mul_up(square)
         } else {
             let raw = Bfp(logexpmath::pow(self.0, exp.0)?);
-            let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(1.into()))?;
+            let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(U256::ONE))?;
 
             raw.add(max_error)
         }
@@ -220,22 +224,23 @@ mod tests {
         num::{BigInt, One, Zero},
     };
 
-    static EPSILON: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::one()));
+    static EPSILON: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::ONE));
+
+    fn test_exp10(n: u8) -> U256 {
+        U256::from(10u64).pow(U256::from(n))
+    }
 
     #[test]
     fn parsing() {
         assert_eq!("1".parse::<Bfp>().unwrap(), Bfp::one());
-        assert_eq!(
-            "0.1".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(U256::exp10(17))
-        );
+        assert_eq!("0.1".parse::<Bfp>().unwrap(), Bfp::from_wei(test_exp10(17)));
         assert_eq!(
             "1.01".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(U256::exp10(18) + U256::exp10(16))
+            Bfp::from_wei(test_exp10(18) + test_exp10(16))
         );
         assert_eq!(
             "10.000000000000000001".parse::<Bfp>().unwrap(),
-            Bfp::from_wei(U256::exp10(19) + U256::one())
+            Bfp::from_wei(test_exp10(19) + U256::ONE)
         );
         assert!("10.0000000000000000001".parse::<Bfp>().is_err());
         assert!("1.0.1".parse::<Bfp>().is_err());
@@ -246,7 +251,7 @@ mod tests {
 
     #[test]
     fn add() {
-        assert_eq!(Bfp::from(40).add(2.into()).unwrap(), 42.into());
+        assert_eq!(Bfp::from(40).add(Bfp::from(2)).unwrap(), Bfp::from(42));
 
         assert_eq!(
             Bfp(U256::MAX).add(*EPSILON).unwrap_err(),
@@ -256,29 +261,27 @@ mod tests {
 
     #[test]
     fn sub() {
-        assert_eq!(Bfp::from(50).sub(8.into()).unwrap(), 42.into());
+        assert_eq!(Bfp::from(50).sub(Bfp::from(8)).unwrap(), Bfp::from(42));
 
         assert_eq!(
-            Bfp::one().sub(Bfp(*ONE_18 + 1)).unwrap_err(),
+            Bfp::one().sub(Bfp(*ONE_18 + U256::ONE)).unwrap_err(),
             Error::SubOverflow
         );
     }
 
     macro_rules! test_mul {
         ($fn_name:ident) => {
-            assert_eq!(Bfp::from(6).$fn_name(7.into()).unwrap(), 42.into());
+            assert_eq!(Bfp::from(6).$fn_name(Bfp::from(7)).unwrap(), Bfp::from(42));
             assert_eq!(Bfp::zero().$fn_name(Bfp::one()).unwrap(), Bfp::zero());
             assert_eq!(Bfp::one().$fn_name(Bfp::zero()).unwrap(), Bfp::zero());
             assert_eq!(
-                Bfp::one()
-                    .$fn_name(Bfp(U256::MAX / U256::exp10(18)))
-                    .unwrap(),
-                Bfp(U256::MAX / U256::exp10(18))
+                Bfp::one().$fn_name(Bfp(U256::MAX / *ONE_18)).unwrap(),
+                Bfp(U256::MAX / *ONE_18)
             );
 
             assert_eq!(
                 Bfp::one()
-                    .$fn_name(Bfp(U256::MAX / U256::exp10(18) + 1))
+                    .$fn_name(Bfp(U256::MAX / *ONE_18 + U256::ONE))
                     .unwrap_err(),
                 Error::MulOverflow,
             );
@@ -290,14 +293,14 @@ mod tests {
         test_mul!(mul_down);
         test_mul!(mul_up);
 
-        let one_half = Bfp((5 * 10_u128.pow(17)).into());
+        let one_half = Bfp(U256::from(5 * 10_u128.pow(17)));
         assert_eq!(EPSILON.mul_down(one_half).unwrap(), Bfp::zero());
         assert_eq!(EPSILON.mul_up(one_half).unwrap(), *EPSILON);
 
         // values used in proof:
         // shared/src/sources/balancer/swap/weighted_math.rs#L28-L33
-        let max_in_ratio = Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap());
-        let balance_in = Bfp::from_wei(U256::MAX / (U256::exp10(17) * U256::from(3)));
+        let max_in_ratio = Bfp::from_wei(test_exp10(17).checked_mul(U256::from(3u64)).unwrap());
+        let balance_in = Bfp::from_wei(U256::MAX / (test_exp10(17) * U256::from(3u64)));
         assert!(balance_in.mul_down(max_in_ratio).is_ok());
         assert!(
             (balance_in.add(Bfp::one()))
@@ -309,15 +312,15 @@ mod tests {
 
     macro_rules! test_div {
         ($fn_name:ident) => {
-            assert_eq!(Bfp::from(42).div_down(7.into()).unwrap(), 6.into());
-            assert_eq!(Bfp::zero().div_down(Bfp::one()).unwrap(), 0.into());
+            assert_eq!(Bfp::from(42).div_down(Bfp::from(7)).unwrap(), Bfp::from(6));
+            assert_eq!(Bfp::zero().div_down(Bfp::one()).unwrap(), Bfp::from(0));
 
             assert_eq!(
                 Bfp::one().$fn_name(Bfp::zero()).unwrap_err(),
                 Error::ZeroDivision
             );
             assert_eq!(
-                Bfp(U256::MAX / U256::exp10(18) + 1)
+                Bfp(U256::MAX / *ONE_18 + U256::ONE)
                     .$fn_name(Bfp::one())
                     .unwrap_err(),
                 Error::DivInternal,
@@ -330,25 +333,22 @@ mod tests {
         test_div!(div_down);
         test_div!(div_up);
 
-        assert_eq!(EPSILON.div_down(2.into()).unwrap(), Bfp::zero());
-        assert_eq!(EPSILON.div_up(2.into()).unwrap(), *EPSILON);
-        assert_eq!(Bfp::zero().div_up(1.into()).unwrap(), Bfp::zero());
+        assert_eq!(EPSILON.div_down(Bfp::from(2)).unwrap(), Bfp::zero());
+        assert_eq!(EPSILON.div_up(Bfp::from(2)).unwrap(), *EPSILON);
+        assert_eq!(Bfp::zero().div_up(Bfp::from(1)).unwrap(), Bfp::zero());
     }
 
     #[test]
     fn pow_up() {
         assert_eq!(
-            Bfp::from(2).pow_up(3.into()).unwrap(),
+            Bfp::from(2).pow_up(Bfp::from(3)).unwrap(),
             Bfp(U256::from(8_000_000_000_000_079_990_u128))
         ); // powDown: 7999999999999919988
         assert_eq!(
-            Bfp::from(2).pow_up(0.into()).unwrap(),
+            Bfp::from(2).pow_up(Bfp::from(0)).unwrap(),
             Bfp(U256::from(1_000_000_000_000_010_001_u128))
         ); // powDown: 999999999999989999
-        assert_eq!(
-            Bfp::zero().pow_up(Bfp::one()).unwrap(),
-            Bfp(U256::from(1_u128))
-        ); // powDown: 0
+        assert_eq!(Bfp::zero().pow_up(Bfp::one()).unwrap(), Bfp(U256::ONE)); // powDown: 0
 
         assert_eq!(
             Bfp(U256::MAX).pow_up(Bfp::one()).unwrap_err(),
@@ -356,8 +356,9 @@ mod tests {
         );
         // note: the values were chosen to get a large value from `pow`
         assert_eq!(
-            Bfp(U256::from_dec_str(
-                "287200000000000000000000000000000000000000000000000000000000000000000000000"
+            Bfp(U256::from_str_radix(
+                "287200000000000000000000000000000000000000000000000000000000000000000000000",
+                10
             )
             .unwrap())
             .pow_up(Bfp::one())
@@ -460,7 +461,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "the number is too large for the type"
+            "the value is too large to fit the target type"
         );
         assert_eq!(
             Bfp::from_str(
