@@ -5,10 +5,7 @@ use {
         assert_approximately_eq,
         setup::{fee::*, *},
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         fee_policy::FeePolicy,
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
@@ -352,8 +349,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .saturating_sub(market_quote_before.quote.buy_amount);
     // see `market_price_improvement_policy.factor`, which is 0.3
     assert!(
-        market_executed_fee_in_buy_token.into_alloy()
-            >= (market_quote_diff * U256::from(3) / U256::from(10))
+        market_executed_fee_in_buy_token >= (market_quote_diff * U256::from(3) / U256::from(10))
     );
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
@@ -361,7 +357,7 @@ async fn combined_protocol_fees(web3: Web3) {
         fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
-        partner_fee_executed_fee_in_buy_token.into_alloy()
+        partner_fee_executed_fee_in_buy_token
             >= (partner_fee_quote.quote.buy_amount * U256::from(2) / U256::from(100))
     );
     let limit_quote_diff = partner_fee_quote_after
@@ -370,7 +366,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .saturating_sub(partner_fee_order.data.buy_amount);
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(
-        partner_fee_executed_fee_in_buy_token.into_alloy()
+        partner_fee_executed_fee_in_buy_token
             >= (limit_quote_diff * U256::from(3) / U256::from(10))
     );
 
@@ -382,10 +378,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .buy_amount
         .saturating_sub(limit_surplus_order.data.buy_amount);
     // see `limit_surplus_policy.factor`, which is 0.3
-    assert!(
-        limit_executed_fee_in_buy_token.into_alloy()
-            >= (limit_quote_diff * U256::from(3) / U256::from(10))
-    );
+    assert!(limit_executed_fee_in_buy_token >= (limit_quote_diff * U256::from(3) / U256::from(10)));
 
     let [
         market_order_token_balance,
@@ -402,24 +395,17 @@ async fn combined_protocol_fees(web3: Web3) {
                 .balanceOf(*onchain.contracts().gp_settlement.address())
                 .call()
                 .await
-                .map(IntoLegacy::into_legacy)
         }),
     )
     .await
     .unwrap()
     .try_into()
     .expect("Expected exactly four elements");
+    assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
+    assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
     assert_approximately_eq!(
-        market_executed_fee_in_buy_token.into_alloy(),
-        market_order_token_balance.into_alloy()
-    );
-    assert_approximately_eq!(
-        limit_executed_fee_in_buy_token.into_alloy(),
-        limit_order_token_balance.into_alloy()
-    );
-    assert_approximately_eq!(
-        partner_fee_executed_fee_in_buy_token.into_alloy(),
-        partner_fee_order_token_balance.into_alloy()
+        partner_fee_executed_fee_in_buy_token,
+        partner_fee_order_token_balance
     );
 }
 
@@ -650,8 +636,8 @@ async fn get_quote(
     services.submit_quote(&quote_request).await
 }
 
-fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> ethcontract::U256 {
-    (order.metadata.executed_fee * quote.buy_amount / quote.sell_amount).into_legacy()
+fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
+    order.metadata.executed_fee * quote.buy_amount / quote.sell_amount
 }
 
 fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
