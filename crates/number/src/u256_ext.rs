@@ -17,23 +17,20 @@ pub trait U256Ext: Sized {
             .expect("ceiling division arithmetic error")
     }
 
-    /// Multiply U256 by f64 factor using arbitrary precision arithmetic.
+    /// Multiply U256 by f64 factor using a conversion factor approach.
     ///
-    /// This method uses `BigRational` to perform the multiplication with full
-    /// precision, avoiding overflow and precision loss issues. Returns `None`
-    /// if:
-    /// - The factor is negative
-    /// - The factor cannot be converted to a rational number (NaN, infinity)
-    /// - The result overflows U256
-    fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
-        if factor.is_sign_negative() {
-            return None;
-        }
-        let self_rational = self.to_big_rational();
-        let factor_rational = BigRational::from_float(factor)?;
-        let result_rational = self_rational * factor_rational;
-        Self::from_big_rational(&result_rational)
-    }
+    /// This method converts the factor to a scaled integer by multiplying it by
+    /// 10^18, then performs integer arithmetic: `(self * scaled_factor) /
+    /// 10^18`.
+    ///
+    /// This approach preserves precision for factors that, when multiplied by
+    /// 10^18, result in values that can be accurately represented in f64
+    /// (up to ~9e15).
+    ///
+    /// Returns `None` if:
+    /// - The factor is negative, NaN, or infinity
+    /// - The intermediate multiplication would overflow U256
+    fn checked_mul_f64(&self, factor: f64) -> Option<Self>;
 
     /// Convert to BigInt.
     fn to_big_int(&self) -> BigInt;
@@ -65,6 +62,38 @@ impl U256Ext for AlloyU256 {
         (!other.is_zero()).then(|| self.div_ceil(*other))
     }
 
+    fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
+        if !factor.is_finite() || factor.is_sign_negative() {
+            return None;
+        }
+
+        // Special case: multiplication by 1.0 is identity
+        // This avoids intermediate overflow when multiplying large values
+        if factor == 1.0 {
+            return Some(*self);
+        }
+
+        // Scale factor to preserve precision: factor * 10^18
+        const SCALE_F64: f64 = 1_000_000_000_000_000_000.0;
+        const SCALE_U128: u128 = 1_000_000_000_000_000_000;
+        let scaled_factor = factor * SCALE_F64;
+
+        // Convert scaled factor to U256
+        let scaled_factor_u256 = if scaled_factor <= u128::MAX as f64 {
+            // For values that fit in u128, convert directly
+            AlloyU256::from(scaled_factor as u128)
+        } else {
+            // For larger values, use BigUint's f64 conversion
+            use num::FromPrimitive;
+            let scaled_factor_big = num::BigUint::from_f64(scaled_factor)?;
+            AlloyU256::try_from(&scaled_factor_big).ok()?
+        };
+
+        // Perform: (self * scaled_factor_u256) / SCALE
+        let result = self.checked_mul(scaled_factor_u256)?;
+        result.checked_div(AlloyU256::from(SCALE_U128))
+    }
+
     fn to_big_int(&self) -> BigInt {
         self.into()
     }
@@ -90,6 +119,42 @@ impl U256Ext for PrimitiveU256 {
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
         self.checked_add(other.checked_sub(1.into())?)?
             .checked_div(*other)
+    }
+
+    fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
+        if !factor.is_finite() || factor.is_sign_negative() {
+            return None;
+        }
+
+        // Special case: multiplication by 1.0 is identity
+        // This avoids intermediate overflow when multiplying large values
+        if factor == 1.0 {
+            return Some(*self);
+        }
+
+        // Scale factor to preserve precision: factor * 10^18
+        const SCALE_F64: f64 = 1_000_000_000_000_000_000.0;
+        const SCALE_U128: u128 = 1_000_000_000_000_000_000;
+        let scaled_factor = factor * SCALE_F64;
+
+        // Convert scaled factor to U256
+        let scaled_factor_u256 = if scaled_factor <= u128::MAX as f64 {
+            // For values that fit in u128, convert directly
+            PrimitiveU256::from(scaled_factor as u128)
+        } else {
+            // For larger values, use BigUint's f64 conversion
+            use num::FromPrimitive;
+            let scaled_factor_big = num::BigUint::from_f64(scaled_factor)?;
+            let bytes = scaled_factor_big.to_bytes_be();
+            if bytes.len() > 32 {
+                return None;
+            }
+            PrimitiveU256::from_big_endian(&bytes)
+        };
+
+        // Perform: (self * scaled_factor_u256) / SCALE
+        let result = self.checked_mul(scaled_factor_u256)?;
+        result.checked_div(PrimitiveU256::from(SCALE_U128))
     }
 
     fn to_big_int(&self) -> BigInt {
@@ -233,13 +298,16 @@ mod tests {
 
     #[test]
     fn test_alloy_checked_mul_f64() {
-        // Multiply by integer
+        // Realistic enough values
+        let value = AlloyU256::from(25_000_000_000_000_000_000u128); // 25 ether
+        let result = value.checked_mul_f64(0.2).unwrap();
         assert_eq!(
-            AlloyU256::from(100u64).checked_mul_f64(2.0),
-            Some(AlloyU256::from(200u64))
+            result,
+            AlloyU256::from(5_000_000_000_000_000_000u128),
+            "25 ether * 0.2 must be exact"
         );
 
-        // Multiply by fractional factor
+        // Basic functionality
         assert_eq!(
             AlloyU256::from(100u64).checked_mul_f64(0.5),
             Some(AlloyU256::from(50u64))
@@ -301,10 +369,13 @@ mod tests {
 
     #[test]
     fn test_primitive_checked_mul_f64() {
-        // Multiply by integer
+        // Realistic enough values
+        let value = PrimitiveU256::from(25_000_000_000_000_000_000u128); // 25 ether
+        let result = value.checked_mul_f64(0.2).unwrap();
         assert_eq!(
-            PrimitiveU256::from(100u64).checked_mul_f64(2.0),
-            Some(PrimitiveU256::from(200u64))
+            result,
+            PrimitiveU256::from(5_000_000_000_000_000_000u128),
+            "25 ether * 0.2 must be exact"
         );
 
         // Multiply by fractional factor
