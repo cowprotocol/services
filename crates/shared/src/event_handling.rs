@@ -655,28 +655,6 @@ impl EventIndex {
     }
 }
 
-#[macro_export]
-macro_rules! impl_event_retrieving {
-    ($vis:vis $name:ident for $($contract_module:tt)*) => {
-        $vis struct $name($($contract_module)*::Contract);
-
-        impl $name {
-            #[allow(dead_code)]
-            pub fn new(instance: $($contract_module)*::Contract) -> Self {
-                Self(instance)
-            }
-        }
-
-        impl $crate::event_handling::EthcontractEventRetrieving for $name {
-            type Event = $($contract_module)*::Event;
-
-            fn get_events(&self) -> ::ethcontract::dyns::DynAllEventsBuilder<Self::Event> {
-                self.0.all_events()
-            }
-        }
-    };
-}
-
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "event_handler")]
 struct Metrics {
