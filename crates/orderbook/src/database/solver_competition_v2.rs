@@ -8,7 +8,7 @@ use {
         order::OrderUid,
         solver_competition_v2::{Auction, Order, Response as ApiResponse, Solution},
     },
-    number::conversions::alloy::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     std::collections::{BTreeMap, HashMap},
 };
 

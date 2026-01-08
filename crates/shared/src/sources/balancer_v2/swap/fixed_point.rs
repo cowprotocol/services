@@ -8,7 +8,7 @@ use {
     alloy::primitives::U256,
     anyhow::{Context, Result, bail, ensure},
     num::{BigInt, BigRational},
-    number::conversions::alloy::{big_int_to_u256, u256_to_big_int},
+    number::conversions::{big_int_to_u256, u256_to_big_int},
     std::{
         convert::TryFrom,
         fmt::{self, Debug, Formatter},
