@@ -150,7 +150,7 @@ impl CowToken {
             buffer[128..160].copy_from_slice(nonce.to_be_bytes::<32>().as_slice());
             buffer[160..192].copy_from_slice(deadline.to_be_bytes::<32>().as_slice());
 
-            keccak256(&buffer)
+            keccak256(buffer)
         };
 
         let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);

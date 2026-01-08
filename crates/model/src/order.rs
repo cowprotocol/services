@@ -255,7 +255,7 @@ impl OrderData {
         hash_data[351] = self.partially_fillable as u8;
         hash_data[352..384].copy_from_slice(&self.sell_token_balance.as_bytes());
         hash_data[384..416].copy_from_slice(&self.buy_token_balance.as_bytes());
-        *keccak256(&hash_data)
+        *keccak256(hash_data)
     }
 
     pub fn token_pair(&self) -> Option<TokenPair> {
@@ -514,7 +514,7 @@ impl OrderCancellations {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut encoded_uids = Vec::with_capacity(32 * self.order_uids.len());
         for order_uid in &self.order_uids {
-            encoded_uids.extend_from_slice(keccak256(&order_uid.0).as_slice());
+            encoded_uids.extend_from_slice(keccak256(order_uid.0).as_slice());
         }
 
         let array_hash = keccak256(&encoded_uids);
@@ -598,8 +598,8 @@ impl OrderCancellation {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        hash_data[32..64].copy_from_slice(keccak256(&self.order_uid.0).as_slice());
-        *keccak256(&hash_data)
+        hash_data[32..64].copy_from_slice(keccak256(self.order_uid.0).as_slice());
+        *keccak256(hash_data)
     }
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {

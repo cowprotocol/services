@@ -180,7 +180,7 @@ impl Safe {
             // We can leave the rest of the buffer 0-ed out (as we have 0
             // values for those fields).
 
-            *keccak256(&buffer)
+            *keccak256(buffer)
         });
 
         self.contract.execTransaction(
@@ -211,7 +211,7 @@ impl Safe {
             ));
             buffer[32..64].copy_from_slice(keccak256(message).as_slice());
 
-            *keccak256(&buffer)
+            *keccak256(buffer)
         })
     }
 
@@ -244,7 +244,7 @@ impl Safe {
         self.chain_id.copy_be_bytes_to(&mut buffer[32..64]);
         buffer[76..96].copy_from_slice(self.contract.address().as_slice());
 
-        DomainSeparator(*keccak256(&buffer))
+        DomainSeparator(*keccak256(buffer))
     }
 
     /// Creates an ECDSA signature with the [`Safe`]'s `owner` and encodes to
