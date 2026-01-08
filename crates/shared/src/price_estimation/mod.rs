@@ -292,7 +292,10 @@ where
             "invalid pair values delimiter character, expected: 'value1|value2', got: '{input}'"
         )
     })?;
-    Ok((input[..pos].parse()?, input[pos + 1..].parse()?))
+    Ok((
+        input[..pos].trim().parse()?,
+        input[pos + 1..].trim().parse()?,
+    ))
 }
 
 #[derive(clap::Parser)]
