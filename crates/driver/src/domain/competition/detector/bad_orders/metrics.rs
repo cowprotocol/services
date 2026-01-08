@@ -4,9 +4,10 @@ use {
         infra::{observe::metrics, solver},
     },
     dashmap::DashMap,
+    model::time::now_in_epoch_seconds,
     std::{
         sync::{Arc, Weak},
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant},
     },
 };
 
@@ -148,24 +149,16 @@ impl Detector {
             let mut interval = tokio::time::interval(interval);
             while let Some(cache) = cache.upgrade() {
                 let now = Instant::now();
-                let now_as_unix = current_unix_timestamp();
+                let now_as_unix = now_in_epoch_seconds();
 
                 cache.retain(|uid, stats| {
-                    u64::from(uid.valid_to()) > now_as_unix
-                        && now.duration_since(stats.last_seen_at) < max_age
+                    uid.valid_to() > now_as_unix && now.duration_since(stats.last_seen_at) < max_age
                 });
                 interval.tick().await;
             }
             tracing::debug!("terminating gc task because cache was dropped");
         });
     }
-}
-
-fn current_unix_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 #[cfg(test)]
@@ -228,7 +221,7 @@ mod tests {
             solver::Name("mysolver".to_string()),
         );
 
-        let long_valid_to = (current_unix_timestamp() + 1000) as u32;
+        let long_valid_to = (now_in_epoch_seconds() + 1000) as u32;
         let short_valid_to = 0; // already expired -> evict on first GC run
 
         let long_order = Uid::from_parts(Default::default(), Default::default(), long_valid_to);
