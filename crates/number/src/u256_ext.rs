@@ -1,9 +1,9 @@
 //! Extension trait for U256 arithmetic operations.
 
 use {
-    alloy::primitives::U256 as AlloyU256,
-    num::{BigInt, BigRational, BigUint, Signed},
-    primitive_types::U256 as PrimitiveU256,
+    alloy::primitives::U256,
+    anyhow::Result,
+    num::{BigInt, BigRational, BigUint},
 };
 
 /// Extension trait for U256 to add utility methods.
@@ -57,7 +57,7 @@ pub trait U256Ext: Sized {
     }
 }
 
-impl U256Ext for AlloyU256 {
+impl U256Ext for U256 {
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
         (!other.is_zero()).then(|| self.div_ceil(*other))
     }
