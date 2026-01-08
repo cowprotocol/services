@@ -9,11 +9,12 @@ use {
             swap::fixed_point::Bfp,
         },
     },
-    alloy::primitives::{Address, U256},
+    alloy::{
+        eips::BlockId,
+        primitives::{Address, U256},
+    },
     anyhow::{Result, ensure},
     contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
-    ethcontract::BlockId,
-    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,
@@ -101,7 +102,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
         let fetch_amplification_parameter = async move {
             pool_contract
                 .getAmplificationParameter()
-                .block(block.into_alloy())
+                .block(block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
@@ -129,13 +130,13 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::sources::balancer_v2::graph_api::Token, ethcontract::H256};
+    use {super::*, crate::sources::balancer_v2::graph_api::Token, alloy::primitives::B256};
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
@@ -159,21 +160,21 @@ mod tests {
     #[test]
     fn amplification_parameter_conversions() {
         assert_eq!(
-            AmplificationParameter::try_new(U256::from(2u64), U256::from(3u64))
+            AmplificationParameter::try_new(U256::from(2), U256::from(3))
                 .unwrap()
-                .with_base(U256::from(1000u64))
+                .with_base(U256::from(1000))
                 .unwrap(),
-            U256::from(666u64)
+            U256::from(666)
         );
         assert_eq!(
-            AmplificationParameter::try_new(U256::from(7u64), U256::from(8u64))
+            AmplificationParameter::try_new(U256::from(7), U256::from(8))
                 .unwrap()
                 .as_big_rational(),
             BigRational::new(7.into(), 8.into())
         );
 
         assert_eq!(
-            AmplificationParameter::try_new(U256::from(1u64), U256::from(0u64))
+            AmplificationParameter::try_new(U256::ONE, U256::ZERO)
                 .unwrap_err()
                 .to_string(),
             "Zero precision not allowed"

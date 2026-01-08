@@ -9,14 +9,14 @@ use {
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
         sources::balancer_v2::pools::Pool,
     },
+    alloy::primitives::B256,
     anyhow::Result,
-    ethcontract::H256,
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{collections::HashSet, sync::Arc},
 };
 
 /// Internal type alias used for inner recent block cache.
-type PoolCache<Inner> = RecentBlockCache<H256, Pool, CacheFetcher<Inner>>;
+type PoolCache<Inner> = RecentBlockCache<B256, Pool, CacheFetcher<Inner>>;
 
 /// A cached pool fetcher that wraps an inner `InternalPoolFetching`
 /// implementation.
@@ -52,18 +52,18 @@ where
     async fn pool_ids_for_token_pairs(
         &self,
         token_pairs: HashSet<model::TokenPair>,
-    ) -> HashSet<H256> {
+    ) -> HashSet<B256> {
         self.inner.pool_ids_for_token_pairs(token_pairs).await
     }
 
-    async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
+    async fn pools_by_id(&self, pool_ids: HashSet<B256>, block: Block) -> Result<Vec<Pool>> {
         self.cache.fetch(pool_ids, block).await
     }
 }
 
-impl CacheKey<Pool> for H256 {
+impl CacheKey<Pool> for B256 {
     fn first_ord() -> Self {
-        H256::zero()
+        B256::ZERO
     }
 
     fn for_value(pool: &Pool) -> Self {
@@ -79,11 +79,11 @@ impl CacheKey<Pool> for H256 {
 struct CacheFetcher<Inner>(Arc<Inner>);
 
 #[async_trait::async_trait]
-impl<Inner> CacheFetching<H256, Pool> for CacheFetcher<Inner>
+impl<Inner> CacheFetching<B256, Pool> for CacheFetcher<Inner>
 where
     Inner: InternalPoolFetching,
 {
-    async fn fetch_values(&self, pool_ids: HashSet<H256>, at_block: Block) -> Result<Vec<Pool>> {
+    async fn fetch_values(&self, pool_ids: HashSet<B256>, at_block: Block) -> Result<Vec<Pool>> {
         self.0.pools_by_id(pool_ids, at_block).await
     }
 }

@@ -347,8 +347,8 @@ fn converge_in_amount(
     // trading price and multiply the amount to bump by 10 for each iteration.
     let mut bump = (exact_out_amount - out_amount)
         .checked_mul(in_amount)?
-        .ceil_div(&out_amount.max(U256::from(1u64)))
-        .max(U256::from(1u64));
+        .ceil_div(&out_amount.max(U256::ONE))
+        .max(U256::ONE);
 
     for _ in 0..6 {
         let bumped_in_amount = in_amount.checked_add(bump)?;
@@ -357,7 +357,7 @@ fn converge_in_amount(
             return Some(bumped_in_amount);
         }
 
-        bump *= U256::from(10u64);
+        bump *= U256::from(10);
     }
 
     None
@@ -526,8 +526,8 @@ mod tests {
     async fn weighted_get_amount_out() {
         // Values obtained from this transaction:
         // https://dashboard.tenderly.co/tx/main/0xa9f571c9bfd4289bd4bd270465d73e1b7e010622ed089d54d81ec63a0365ec22/debugger
-        let crv = ::alloy::primitives::Address::repeat_byte(21);
-        let sdvecrv_dao = ::alloy::primitives::Address::repeat_byte(42);
+        let crv = Address::repeat_byte(21);
+        let sdvecrv_dao = Address::repeat_byte(42);
         let b = create_weighted_pool_with(
             vec![crv, sdvecrv_dao],
             vec![
@@ -557,8 +557,8 @@ mod tests {
     async fn weighted_get_amount_in() {
         // Values obtained from this transaction:
         // https://dashboard.tenderly.co/tx/main/0xafc3dd6a636a85d9c1976dfa5aee33f78e6ee902f285c9d4cf80a0014aa2a052/debugger
-        let weth = ::alloy::primitives::Address::repeat_byte(21);
-        let tusd = ::alloy::primitives::Address::repeat_byte(42);
+        let weth = Address::repeat_byte(21);
+        let tusd = Address::repeat_byte(42);
         let b = create_weighted_pool_with(
             vec![weth, tusd],
             vec![
@@ -581,13 +581,13 @@ mod tests {
     #[test]
     fn construct_balances_and_token_indices() {
         let tokens: Vec<_> = (1..=3).map(Address::with_last_byte).collect();
-        let balances = (1..=3).map(|n| U256::from(n)).collect();
+        let balances = (1..=3).map(U256::from).collect();
         let pool = create_stable_pool_with(
             tokens.clone(),
             balances,
-            AmplificationParameter::try_new(U256::from(1u64), U256::from(1u64)).unwrap(),
+            AmplificationParameter::try_new(U256::ONE, U256::ONE).unwrap(),
             vec![Bfp::exp10(18), Bfp::exp10(18), Bfp::exp10(18)],
-            U256::from(1u64),
+            U256::ONE,
         );
 
         for token_i in tokens.iter() {
@@ -627,7 +627,7 @@ mod tests {
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
-            AmplificationParameter::try_new(U256::from(570000u64), U256::from(1000u64)).unwrap();
+            AmplificationParameter::try_new(U256::from(570000), U256::from(1000)).unwrap();
         let balances = vec![
             U256::from(40_927_687_702_846_622_465_144_342_u128),
             U256::from(59_448_574_675_062_u128),
@@ -660,7 +660,7 @@ mod tests {
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
-            AmplificationParameter::try_new(U256::from(570000u64), U256::from(1000u64)).unwrap();
+            AmplificationParameter::try_new(U256::from(570000), U256::from(1000)).unwrap();
         let balances = vec![
             U256::from(34_869_494_603_218_073_631_628_580_u128),
             U256::from(48_176_005_970_419_u128),

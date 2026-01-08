@@ -4,7 +4,6 @@ use {
         domain::competition::{Order, detector::Quality, order},
         infra::{self, observe::metrics},
     },
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::FutureExt,
     model::interaction::InteractionData,
     shared::{
@@ -80,7 +79,7 @@ impl Detector {
                 async move {
                     let result = inner
                         .detector
-                        .test_transfer(trader, sell_token.0.0, sell_amount.into_legacy(), &pre_interactions)
+                        .test_transfer(trader, sell_token.0.0, sell_amount, &pre_interactions)
                         .await;
                     match result {
                         Err(err) => {

@@ -48,7 +48,7 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
             .bsub(*AMP_PRECISION)?
             .bmul(invariant)?
             .bdiv_down(*AMP_PRECISION)?
-            .badd(num_tokens.badd(U256::from(1u64))?.bmul(d_p)?)?;
+            .badd(num_tokens.badd(U256::ONE)?.bmul(d_p)?)?;
         invariant = numerator.bdiv_down(denominator)?;
         match convergence_criteria(invariant, prev_invariant) {
             None => continue,
@@ -89,7 +89,7 @@ pub fn calc_out_given_in(
 
     balances[token_index_out]
         .sub(final_balance_out)?
-        .sub(Bfp::from_wei(U256::from(1u64)))
+        .sub(Bfp::from_wei(U256::ONE))
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L152-L190
@@ -124,7 +124,7 @@ pub fn calc_in_given_out(
 
     final_balance_in
         .sub(balances[token_index_in])?
-        .add(Bfp::from_wei(U256::from(1u64)))
+        .add(Bfp::from_wei(U256::ONE))
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L465-L516
@@ -179,7 +179,7 @@ fn get_token_balance_given_invariant_and_all_other_balances(
         // );
         token_balance = token_balance.bmul(token_balance)?.badd(c)?.bdiv_up(
             token_balance
-                .bmul(U256::from(2u64))?
+                .bmul(U256::from(2))?
                 .badd(b)?
                 .bsub(invariant)?,
         )?;
@@ -192,7 +192,7 @@ fn get_token_balance_given_invariant_and_all_other_balances(
 }
 
 fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {
-    let one = U256::from(1u64);
+    let one = U256::ONE;
     if curr_value > prev_value {
         if curr_value
             .bsub(prev_value)
@@ -221,12 +221,7 @@ fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {
 /// Cross-reference to the TS code: https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::sources::balancer_v2::swap::fixed_point::Bfp,
-        alloy::primitives::U256,
-        std::str::FromStr,
-    };
+    use {super::*, crate::sources::balancer_v2::swap::fixed_point::Bfp, std::str::FromStr};
 
     // interpreted from
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts#L53

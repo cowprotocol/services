@@ -149,10 +149,10 @@ fn exp(mut x: I256) -> Result<I256, Error> {
         x -= constant_x_18(1);
         first_an = constant_a_18(1);
     } else {
-        first_an = I256::try_from(1i64).expect("1 fits in I256");
+        first_an = I256::ONE;
     }
 
-    x *= I256::try_from(100i64).expect("100 fits in I256");
+    x *= I256::try_from(100).expect("100 fits in I256");
 
     let mut product = *ONE_20;
     for i in 2..=9 {
@@ -172,7 +172,7 @@ fn exp(mut x: I256) -> Result<I256, Error> {
     }
 
     Ok((((product * series_sum) / *ONE_20) * first_an)
-        / I256::try_from(100i64).expect("100 fits in I256"))
+        / I256::try_from(100).expect("100 fits in I256"))
 }
 
 fn _ln(mut a: I256) -> I256 {
@@ -188,8 +188,8 @@ fn _ln(mut a: I256) -> I256 {
         }
     }
 
-    sum *= I256::try_from(100i64).expect("100 fits in I256");
-    a *= I256::try_from(100i64).expect("100 fits in I256");
+    sum *= I256::try_from(100).expect("100 fits in I256");
+    a *= I256::try_from(100).expect("100 fits in I256");
 
     for i in 2..=11 {
         if a >= constant_a_20(i) {
@@ -209,9 +209,9 @@ fn _ln(mut a: I256) -> I256 {
         series_sum += num / I256::try_from(i).expect("loop index fits in I256");
     }
 
-    series_sum *= I256::try_from(2i64).expect("2 fits in I256");
+    series_sum *= I256::try_from(2).expect("2 fits in I256");
 
-    (sum + series_sum) / I256::try_from(100i64).expect("100 fits in I256")
+    (sum + series_sum) / I256::try_from(100).expect("100 fits in I256")
 }
 
 fn _ln_36(mut x: I256) -> I256 {
@@ -228,7 +228,7 @@ fn _ln_36(mut x: I256) -> I256 {
         series_sum += num / I256::try_from(i).expect("loop index fits in I256");
     }
 
-    series_sum * I256::try_from(2i64).expect("2 fits in I256")
+    series_sum * I256::try_from(2).expect("2 fits in I256")
 }
 
 #[cfg(test)]
@@ -566,22 +566,12 @@ mod tests {
 
     #[test]
     fn pow_alternate_routes() {
+        assert_eq!(pow(U256::ZERO, U256::ZERO), Ok(*UFIXED256X18_ONE));
+        assert_eq!(pow(U256::ZERO, U256::ONE), Ok(U256::ZERO));
+        assert_eq!(pow(U256::ZERO, U256::ZERO), Ok(*UFIXED256X18_ONE));
+        assert_eq!(pow(U256::ZERO, U256::ONE), Ok(U256::ZERO));
         assert_eq!(
-            pow(
-                U256::from_str_radix("0", 10).unwrap(),
-                U256::from_str_radix("0", 10).unwrap()
-            ),
-            Ok(*UFIXED256X18_ONE)
-        );
-        assert_eq!(
-            pow(
-                U256::from_str_radix("0", 10).unwrap(),
-                U256::from_str_radix("1", 10).unwrap()
-            ),
-            Ok(U256::ZERO)
-        );
-        assert_eq!(
-            pow(U256::from(10u64).pow(U256::from(18u64)), U256::from(1u64)),
+            pow(U256::from(10u64).pow(U256::from(18u64)), U256::ONE),
             Ok(*UFIXED256X18_ONE)
         );
     }

@@ -9,11 +9,12 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    alloy::primitives::{Address, U256},
+    alloy::{
+        eips::BlockId,
+        primitives::{Address, B256, U256},
+    },
     anyhow::{Context, Result, anyhow, ensure},
     contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
-    ethcontract::{BlockId, H256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
@@ -99,7 +100,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
-            id: pool_id.into_legacy(),
+            id: pool_id,
             address: pool_address,
             tokens,
             scaling_factors,
@@ -112,7 +113,6 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let block = block.into_alloy();
         let pool_address = pool.address;
         let pool_id = pool.id;
         let vault = self.vault.clone();
@@ -227,7 +227,7 @@ where
 /// Common pool data shared across all Balancer pools.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
-    pub id: H256,
+    pub id: B256,
     pub address: Address,
     pub tokens: Vec<Address>,
     pub scaling_factors: Vec<Bfp>,
@@ -374,7 +374,6 @@ mod tests {
         maplit::{btreemap, hashmap},
         mockall::predicate,
         std::future,
-        web3::types::BlockNumber,
     };
 
     #[tokio::test]
@@ -430,7 +429,7 @@ mod tests {
         assert_eq!(
             pool_info,
             PoolInfo {
-                id: pool_id.into_legacy(),
+                id: pool_id,
                 address: *pool.address(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
@@ -441,7 +440,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_common_pool_state() {
-        let pool_id = H256([0x90; 32]);
+        let pool_id = B256::repeat_byte(0x90);
         let tokens = [
             Address::repeat_byte(1),
             Address::repeat_byte(2),
@@ -499,10 +498,8 @@ mod tests {
         };
 
         let pool_state = {
-            let pool_state = pool_info_fetcher.fetch_common_pool_state(
-                &pool_info,
-                BlockId::Number(BlockNumber::Number(1.into())),
-            );
+            let pool_state =
+                pool_info_fetcher.fetch_common_pool_state(&pool_info, BlockId::Number(1.into()));
 
             pool_state.await.unwrap()
         };
@@ -588,10 +585,8 @@ mod tests {
         };
 
         let pool_state = {
-            let pool_state = pool_info_fetcher.fetch_common_pool_state(
-                &pool_info,
-                BlockId::Number(BlockNumber::Number(1.into())),
-            );
+            let pool_state =
+                pool_info_fetcher.fetch_common_pool_state(&pool_info, BlockId::Number(1.into()));
 
             pool_state.await
         };
@@ -628,7 +623,7 @@ mod tests {
 
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
-                id: H256([0x90; 32]),
+                id: B256::repeat_byte(0x90),
                 address: *pool.address(),
                 tokens: vec![
                     Address::repeat_byte(1),
@@ -683,7 +678,7 @@ mod tests {
         asserter.push_success(&get_pool_tokens_response);
 
         let mut factory = MockFactoryIndexing::new();
-        let block_id = BlockId::Number(BlockNumber::Number(1.into()));
+        let block_id = BlockId::Number(1.into());
         factory
             .expect_fetch_pool_state()
             .with(
@@ -787,7 +782,7 @@ mod tests {
 
         let pool_status = {
             pool_info_fetcher
-                .fetch_pool(&pool_info, BlockId::Number(BlockNumber::Number(1.into())))
+                .fetch_pool(&pool_info, BlockId::Number(1.into()))
                 .await
                 .unwrap()
         };
@@ -859,7 +854,7 @@ mod tests {
 
         let pool_status = {
             pool_info_fetcher
-                .fetch_pool(&pool_info, BlockId::Number(BlockNumber::Number(1.into())))
+                .fetch_pool(&pool_info, BlockId::Number(1.into()))
                 .await
                 .unwrap()
         };
@@ -915,7 +910,7 @@ mod tests {
     fn convert_graph_pool_to_common_pool_info() {
         let pool = PoolData {
             pool_type: PoolType::Stable,
-            id: H256([4; 32]),
+            id: B256::repeat_byte(4),
             address: Address::repeat_byte(3),
             factory: Address::repeat_byte(0xfb),
             swap_enabled: true,
@@ -936,7 +931,7 @@ mod tests {
         assert_eq!(
             PoolInfo::from_graph_data(&pool, 42).unwrap(),
             PoolInfo {
-                id: H256([4; 32]),
+                id: B256::repeat_byte(4),
                 address: Address::repeat_byte(3),
                 tokens: vec![Address::repeat_byte(0x33), Address::repeat_byte(0x44)],
                 scaling_factors: vec![Bfp::exp10(15), Bfp::exp10(0)],
@@ -949,7 +944,7 @@ mod tests {
     fn pool_conversion_insufficient_tokens() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0),
             swap_enabled: true,
@@ -966,7 +961,7 @@ mod tests {
     fn pool_conversion_invalid_decimals() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0),
             swap_enabled: true,
