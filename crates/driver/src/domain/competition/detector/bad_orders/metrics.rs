@@ -221,7 +221,7 @@ mod tests {
             solver::Name("mysolver".to_string()),
         );
 
-        let long_valid_to = (now_in_epoch_seconds() + 1000) as u32;
+        let long_valid_to = now_in_epoch_seconds() + 1000;
         let short_valid_to = 0; // already expired -> evict on first GC run
 
         let long_order = Uid::from_parts(Default::default(), Default::default(), long_valid_to);
