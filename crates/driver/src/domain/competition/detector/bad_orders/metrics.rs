@@ -1,7 +1,6 @@
 use {
-    super::Quality,
     crate::{
-        domain::competition::order::Uid,
+        domain::competition::{detector::Quality, order::Uid},
         infra::{observe::metrics, solver},
     },
     dashmap::DashMap,

@@ -1,5 +1,5 @@
 use {
-    crate::domain::{competition::bad_orders::Quality, eth},
+    crate::domain::{competition::detector::Quality, eth},
     dashmap::DashMap,
     std::{
         sync::Arc,

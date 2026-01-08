@@ -24,9 +24,8 @@ use {
     std::{collections::HashMap, fmt, time::Instant},
 };
 
-pub mod cache;
-pub mod metrics;
-pub mod simulation;
+pub mod bad_orders;
+pub mod bad_tokens;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Quality {
@@ -53,8 +52,8 @@ pub struct Detector {
     /// tokens that get detected incorrectly by the automatic detectors get
     /// listed here and therefore have a higher precedence.
     hardcoded: HashMap<eth::TokenAddress, Quality>,
-    simulation_detector: Option<simulation::Detector>,
-    metrics: Option<metrics::Detector>,
+    simulation_detector: Option<bad_tokens::simulation::Detector>,
+    metrics: Option<bad_orders::metrics::Detector>,
 }
 
 impl Detector {
@@ -69,13 +68,16 @@ impl Detector {
 
     /// Enables detection of unsupported tokens via simulation based detection
     /// methods.
-    pub fn with_simulation_detector(&mut self, detector: simulation::Detector) -> &mut Self {
+    pub fn with_simulation_detector(
+        &mut self,
+        detector: bad_tokens::simulation::Detector,
+    ) -> &mut Self {
         self.simulation_detector = Some(detector);
         self
     }
 
     /// Enables detection of unsupported tokens based on heuristics.
-    pub fn with_metrics_detector(&mut self, detector: metrics::Detector) -> &mut Self {
+    pub fn with_metrics_detector(&mut self, detector: bad_orders::metrics::Detector) -> &mut Self {
         self.metrics = Some(detector);
         self
     }

@@ -1,10 +1,7 @@
 use {
+    super::cache::Cache,
     crate::{
-        domain::competition::{
-            Order,
-            bad_orders::{Quality, cache::Cache},
-            order,
-        },
+        domain::competition::{Order, detector::Quality, order},
         infra::{self, observe::metrics},
     },
     ethrpc::alloy::conversions::IntoLegacy,

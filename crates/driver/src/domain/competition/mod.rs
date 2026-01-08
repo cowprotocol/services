@@ -37,7 +37,7 @@ use {
 };
 
 pub mod auction;
-pub mod bad_orders;
+pub mod detector;
 pub mod order;
 mod pre_processing;
 pub mod solution;
@@ -65,7 +65,8 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    pub bad_tokens: Arc<bad_orders::Detector>,
+    /// bad token and orders detector
+    pub detector: Arc<detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
@@ -80,7 +81,7 @@ impl Competition {
         liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
-        bad_tokens: Arc<bad_orders::Detector>,
+        detector: Arc<detector::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
@@ -95,7 +96,7 @@ impl Competition {
             mempools,
             settlements: Default::default(),
             settle_queue: settle_sender,
-            bad_tokens,
+            detector,
             fetcher,
             order_sorting_strategies,
         });
@@ -252,13 +253,13 @@ impl Competition {
             .filter_map(|(id, orders, result)| async move {
                 match result {
                     Ok(solution) => {
-                        self.bad_tokens.encoding_succeeded(&orders);
+                        self.detector.encoding_succeeded(&orders);
                         Some(solution)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
-                        self.bad_tokens.encoding_failed(&orders);
+                        self.detector.encoding_failed(&orders);
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None
@@ -744,7 +745,7 @@ impl Competition {
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
         }
-        self.bad_tokens
+        self.detector
             .filter_unsupported_orders_in_auction(auction)
             .await
     }
