@@ -2,7 +2,6 @@ use {
     crate::ethflow::ExtendedEthFlowOrder,
     ::alloy::{primitives::Address, providers::ext::AnvilApi},
     chrono::Utc,
-    contracts::alloy::{CoWSwapEthFlow, ERC20Mintable},
     e2e::setup::*,
     ethrpc::{Web3, alloy::EvmProviderExt, block_stream::timestamp_of_current_block_in_seconds},
     model::{
@@ -15,13 +14,16 @@ use {
 };
 
 // Common constants for refunder tests
-const SELL_AMOUNT: u128 = 3_000_000_000_000_000;
+const SELL_AMOUNT: u128 = 3_000_000_000_000_000; // 0.003 ETH
 const MAX_GAS_PRICE: u64 = 2_000_000_000_000; // 2000 Gwei
 const START_PRIORITY_FEE_TIP: u64 = 30_000_000_000; // 30 Gwei
+const SLIPPAGE_BPS: u16 = 300; // 3%
+const RECEIVER: Address = Address::repeat_byte(42);
 
 /// Advances the blockchain time past the given expiration timestamp.
 async fn advance_time_past_expiration(web3: &Web3, valid_to: u32) {
-    // Add 60 seconds buffer so the order is definitively expired, not just at the boundary.
+    // Add 60 seconds buffer so the order is definitively expired, not just at the
+    // boundary.
     let target_timestamp = valid_to as u64 + 60;
     web3.alloy
         .evm_set_next_block_timestamp(target_timestamp)
@@ -48,6 +50,25 @@ async fn wait_for_order_indexed(
     .expect("Timed out waiting for order to be indexed");
 }
 
+/// Waits for an order to be settled and indexed in the database.
+async fn wait_for_order_settlement(
+    services: &Services<'_>,
+    onchain: &OnchainComponents,
+    order_id: &OrderUid,
+) {
+    tracing::info!("Waiting for order to be settled.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(order_id)
+            .await
+            .map(|o| o.metadata.status == model::order::OrderStatus::Fulfilled)
+            .unwrap_or(false)
+    })
+    .await
+    .expect("Timed out waiting for order to be settled");
+}
+
 /// Creates a standard quote request for ethflow orders.
 fn default_quote_request(
     from: Address,
@@ -59,7 +80,7 @@ fn default_quote_request(
         from,
         sell_token: *weth.address(),
         buy_token,
-        receiver: Some(Address::repeat_byte(42)),
+        receiver: Some(RECEIVER),
         validity: Validity::For(3600),
         signing_scheme: QuoteSigningScheme::Eip1271 {
             onchain_order: true,
@@ -72,145 +93,131 @@ fn default_quote_request(
     }
 }
 
-/// Common test infrastructure for refunder tests.
-///
-/// This setup is optimized for testing **refund eligibility**, not settlement.
-/// Orders created through this setup typically use high slippage (9999 bps),
-/// which makes them eligible for refund (the refunder's SQL query filters by
-/// minimum price deviation).
-///
-/// This setup uses blockchain time for `valid_to` timestamps, which works
-/// correctly for refund-eligibility tests (the refunder also uses blockchain
-/// time). However, tests requiring actual **settlement** must use real-world
-/// timestamps (`Utc::now()`) because autopilot validates against wall-clock
-/// time. See `refunder_skips_settled_orders` for an example.
-///
-/// Note: Both `onchain` and `services` are leaked (via `Box::leak`) to avoid
-/// lifetime issues. This should be safe enough in test code.
-/// Alternatives to leaking inlcude:
-/// - Transmuting, but requires unsafe and introduces some drop complexity
-/// - Borrow services & onchain structs
-/// - Use Rc/Arc
-struct RefunderTestSetup {
-    web3: Web3,
-    services: &'static Services<'static>,
-    onchain: &'static OnchainComponents,
-    user: TestAccount,
-    refunder_account: TestAccount,
+/// Builder for creating and indexing ethflow orders in tests.
+struct EthflowOrderBuilder<'a> {
+    // Core dependencies
+    services: &'a Services<'a>,
+    onchain: &'a OnchainComponents,
+    user: &'a TestAccount,
     buy_token: Address,
+
+    // Builder state (SQL filter control)
+    sell_amount: NonZeroU256,
+    slippage_bps: u16,
+    valid_to: u32,
+    should_invalidate: bool,
+    ethflow_index: usize,
 }
 
-impl RefunderTestSetup {
-    async fn new(web3: Web3) -> Self {
-        let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-        let [solver] = onchain.make_solvers(10u64.eth()).await;
-        let [user, refunder_account] = onchain.make_accounts(10u64.eth()).await;
-        let [token] = onchain
-            .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
-            .await;
-        let buy_token = *token.address();
-
-        // Leak onchain first to get a 'static reference
-        let onchain: &'static OnchainComponents = Box::leak(Box::new(onchain));
-
-        let services = Services::new(onchain).await;
-        services.start_protocol(solver).await;
-
-        // Then leak services to obtain a 'static lifetime.
-        let services: &'static Services<'static> = Box::leak(Box::new(services));
-
+impl<'a> EthflowOrderBuilder<'a> {
+    /// Create a new builder with sensible defaults
+    fn new(
+        services: &'a Services<'a>,
+        onchain: &'a OnchainComponents,
+        user: &'a TestAccount,
+        buy_token: Address,
+    ) -> Self {
         Self {
-            web3,
             services,
             onchain,
             user,
-            refunder_account,
             buy_token,
+            sell_amount: NonZeroU256::try_from(SELL_AMOUNT).unwrap(),
+            slippage_bps: SLIPPAGE_BPS,
+            valid_to: 60,
+            should_invalidate: false,
+            ethflow_index: 0,
         }
     }
 
-    fn ethflow_contract(&self) -> &CoWSwapEthFlow::Instance {
-        self.onchain.contracts().ethflows.first().unwrap()
+    /// Set the sell amount for the order.
+    fn with_sell_amount(mut self, amount: NonZeroU256) -> Self {
+        self.sell_amount = amount;
+        self
     }
 
-    fn buy_token(&self) -> Address {
-        self.buy_token
+    /// Set slippage in basis points (e.g., 500 = 5%).
+    fn with_slippage_bps(mut self, bps: u16) -> Self {
+        self.slippage_bps = bps;
+        self
     }
 
-    async fn create_and_index_ethflow_order(
-        &self,
-        slippage_bps: u16,
-        validity_duration: u32,
-    ) -> (ExtendedEthFlowOrder, OrderUid, u32) {
-        let sell_amount = NonZeroU256::try_from(SELL_AMOUNT).unwrap();
-        let ethflow_contract = self.ethflow_contract();
+    /// Set order expiration timestamp (absolute, seconds since epoch).
+    fn with_valid_to(mut self, valid_to: u32) -> Self {
+        self.valid_to = valid_to;
+        self
+    }
 
+    /// Mark order as invalidated on-chain after creation.
+    fn invalidated(mut self) -> Self {
+        self.should_invalidate = true;
+        self
+    }
+
+    /// Select which ethflow contract to use.
+    fn with_ethflow_index(mut self, index: usize) -> Self {
+        self.ethflow_index = index;
+        self
+    }
+
+    /// Creates the order, mines it on-chain, waits for indexing, and optionally
+    /// invalidates.
+    ///
+    /// Returns: (ExtendedEthFlowOrder, OrderUid, valid_to timestamp)
+    async fn create_and_index(self) -> (ExtendedEthFlowOrder, OrderUid, u32) {
+        let ethflow_contract = self
+            .onchain
+            .contracts()
+            .ethflows
+            .get(self.ethflow_index)
+            .expect("could not locate ethflow contract at given position");
+
+        // Get quote
         let quote = default_quote_request(
             *ethflow_contract.address(),
             &self.onchain.contracts().weth,
-            self.buy_token(),
-            sell_amount,
+            self.buy_token,
+            self.sell_amount,
         );
         let quote_response = self.services.submit_quote(&quote).await.unwrap();
 
-        let valid_to = timestamp_of_current_block_in_seconds(&self.web3.alloy)
-            .await
-            .unwrap()
-            + validity_duration;
+        let valid_to = self.valid_to;
 
+        // Create ethflow order with slippage
         let ethflow_order = ExtendedEthFlowOrder::from_quote(&quote_response, valid_to)
-            .include_slippage_bps(slippage_bps);
+            .include_slippage_bps(self.slippage_bps);
 
+        // Mine order creation
         ethflow_order
             .mine_order_creation(self.user.address(), ethflow_contract)
             .await;
 
+        // Get order UID
         let order_id = ethflow_order
             .uid(self.onchain.contracts(), ethflow_contract)
             .await;
 
+        // Wait for indexing
         wait_for_order_indexed(self.services, self.onchain, &order_id).await;
+
+        // Optionally invalidate
+        if self.should_invalidate {
+            ethflow_order
+                .mine_order_invalidation(self.user.address(), ethflow_contract)
+                .await;
+
+            // Wait for invalidation to be indexed
+            wait_for_condition(TIMEOUT, || async {
+                self.onchain.mint_block().await;
+                let order = self.services.get_order(&order_id).await.unwrap();
+                order.metadata.status == model::order::OrderStatus::Cancelled
+            })
+            .await
+            .unwrap();
+        }
 
         (ethflow_order, order_id, valid_to)
     }
-
-    fn create_refund_service(
-        &self,
-        ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
-        min_validity_duration: i64,
-        min_price_deviation_bps: i64,
-        signer: ::alloy::signers::local::PrivateKeySigner,
-    ) -> RefundService {
-        create_refund_service(
-            self.services,
-            self.web3.clone(),
-            ethflow_contracts,
-            min_validity_duration,
-            min_price_deviation_bps,
-            signer,
-        )
-    }
-}
-
-fn create_refund_service(
-    services: &Services<'_>,
-    web3: Web3,
-    ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
-    min_validity_duration: i64,
-    min_price_deviation_bps: i64,
-    signer: ::alloy::signers::local::PrivateKeySigner,
-) -> RefundService {
-    RefundService::new(
-        services.db().clone(),
-        web3,
-        ethflow_contracts,
-        min_validity_duration,
-        min_price_deviation_bps,
-        Box::new(signer),
-        MAX_GAS_PRICE,
-        START_PRIORITY_FEE_TIP,
-    )
 }
 
 /// Pair of order's validity duration and refunder's enforced minimum.
@@ -231,6 +238,20 @@ struct SlippageBps {
     enforced: i64,
 }
 
+/// Runs a refunder threshold test.
+///
+/// # Settlement Isolation
+///
+/// Threshold tests verify the refunder's SQL eligibility filters (slippage and
+/// validity duration), not settlement behavior. Orders in these tests use
+/// blockchain time for `valid_to`, which combined with Anvil's genesis
+/// timestamp of Jan 1, 2020 causes the autopilot to reject them as expired (it
+/// validates against wall-clock time). This isolation is intentional: the
+/// refunder uses blockchain time internally, so it correctly processes these
+/// "expired" orders.
+///
+/// For tests requiring actual settlement, use `Utc::now()` for `valid_to`.
+/// See `refunder_skips_settled_orders` for an example.
 #[tracing::instrument]
 async fn run_refunder_threshold_test(
     web3: Web3,
@@ -241,38 +262,54 @@ async fn run_refunder_threshold_test(
 ) {
     tracing::info!("Running refunder threshold test");
 
-    // Settlement is intentionally impossible in this test due to timestamp mismatch:
-    //
-    // 1. Anvil starts at Jan 1, 2020 (see `--timestamp 1577836800` in nodes/mod.rs)
-    // 2. This test uses blockchain time for `valid_to` via `timestamp_of_current_block_in_seconds()`
-    // 3. The autopilot filters orders using wall-clock time (`SystemTime::now()`)
-    // 4. Since blockchain time (~2020) << wall-clock time (~2026), orders appear
-    //    immediately expired to the autopilot and are never included in auctions
-    //
-    // This is intentional: refunder threshold tests only verify refund eligibility,
-    // not settlement. The refunder itself uses blockchain time, so these "expired"
-    // orders are correctly processed for refund. Tests that need actual settlement
-    // (e.g., `refunder_skips_settled_orders`) use `Utc::now()` for `valid_to` instead.
-    let setup = RefunderTestSetup::new(web3.clone()).await;
-    let ethflow_contract = setup.ethflow_contract();
-
-    let (ethflow_order, _order_id, valid_to) = setup
-        .create_and_index_ethflow_order(slippage.order, validity.order)
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [user, refunder_account] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
+    let buy_token = *token.address();
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+
+    // Compute absolute valid_to timestamp from blockchain time + duration
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+        .await
+        .unwrap()
+        + validity.order;
+
+    // Testing slippage/validity boundaries: order slippage >= enforced threshold
+    let (ethflow_order, _order_id, valid_to) = EthflowOrderBuilder::new(
+        &services,
+        &onchain,
+        &user,
+        buy_token,
+    )
+    .with_slippage_bps(slippage.order) // Explicit: testing this SQL filter
+    .with_valid_to(valid_to)
+    .create_and_index()
+    .await;
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = setup.create_refund_service(
+    let mut refund_service = RefundService::new(
+        services.db().clone(),
+        web3.clone(),
         vec![ethflow_contract.clone()],
         validity.enforced,
         slippage.enforced,
-        setup.refunder_account.signer.clone(),
+        Box::new(refunder_account.signer.clone()),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // Verify order is not yet invalidated
     assert_ne!(
         ethflow_order
-            .status(setup.onchain.contracts(), ethflow_contract)
+            .status(onchain.contracts(), ethflow_contract)
             .await,
         RefundStatus::Refunded
     );
@@ -284,7 +321,7 @@ async fn run_refunder_threshold_test(
 
     // Check the expected outcome
     let status = ethflow_order
-        .status(setup.onchain.contracts(), ethflow_contract)
+        .status(onchain.contracts(), ethflow_contract)
         .await;
 
     assert!(
@@ -344,7 +381,10 @@ async fn local_node_refunder_thresholds(
 }
 
 /// Test that orders already invalidated on-chain by the user are NOT refunded
-/// by the refunder service (SQL filters: o_inv.uid is null).
+/// by the refunder service (SQL filter: `o_inv.uid is null`).
+///
+/// Uses wall-clock time for `valid_to` so orders could potentially settle.
+/// The on-chain invalidation is the sole reason the refunder skips this order.
 #[ignore]
 #[tokio::test]
 async fn local_node_refunder_skips_invalidated_orders() {
@@ -354,42 +394,58 @@ async fn local_node_refunder_skips_invalidated_orders() {
 async fn refunder_skips_invalidated_orders(web3: Web3) {
     tracing::info!("Testing that already-invalidated orders are skipped by the refunder");
 
-    let setup = RefunderTestSetup::new(web3.clone()).await;
-    let ethflow_contract = setup.ethflow_contract();
-
-    // Use high slippage (9999 bps) so the order would normally be eligible for
-    // refund
-    let (ethflow_order, order_id, valid_to) = setup.create_and_index_ethflow_order(9999, 600).await;
-
-    // User invalidates the order on-chain BEFORE the refunder runs
-    tracing::info!("User invalidating order on-chain.");
-    ethflow_order
-        .mine_order_invalidation(setup.user.address(), ethflow_contract)
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [user, refunder_account] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
+    let buy_token = *token.address();
 
-    // Wait for the invalidation to be indexed by the autopilot
-    tracing::info!("Waiting for invalidation to be indexed.");
-    wait_for_condition(TIMEOUT, || async {
-        setup.onchain.mint_block().await;
-        let order = setup.services.get_order(&order_id).await.unwrap();
-        order.metadata.status == model::order::OrderStatus::Cancelled
-    })
-    .await
-    .unwrap();
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+
+    // Use wall-clock time so orders could potentially settle. The +600s (10 min)
+    // validity window allows time for indexing/invalidation before we advance
+    // blockchain time past expiration. The invalidation (not expiration) is the
+    // sole reason the refunder skips this order.
+    let valid_to = Utc::now().timestamp() as u32 + 600;
+
+    // Create an invalidated order. Even though it would pass slippage/validity
+    // checks, the SQL filter `o_inv.uid is null` (ethflow_orders.rs:137)
+    // excludes it from the refundable set. The refunder uses permissive
+    // thresholds (min_validity_duration=0, min_price_deviation_bps=0 at lines
+    // 577-582), so slippage and validity are irrelevant.
+    let (ethflow_order, order_id, valid_to) = EthflowOrderBuilder::new(
+        &services,
+        &onchain,
+        &user,
+        buy_token,
+    )
+    .with_valid_to(valid_to)
+    .invalidated() // KEY: This is what the test verifies
+    .create_and_index()
+    .await;
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = setup.create_refund_service(
+    let mut refund_service = RefundService::new(
+        services.db().clone(),
+        web3.clone(),
         vec![ethflow_contract.clone()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
-        setup.refunder_account.signer.clone(),
+        Box::new(refunder_account.signer.clone()),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // The order should already be invalidated on-chain before the refunder runs
     assert_eq!(
         ethflow_order
-            .status(setup.onchain.contracts(), ethflow_contract)
+            .status(onchain.contracts(), ethflow_contract)
             .await,
         RefundStatus::Refunded,
         "Order should already be invalidated by user"
@@ -404,13 +460,13 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
     // The order should still be invalidated (status unchanged)
     assert_eq!(
         ethflow_order
-            .status(setup.onchain.contracts(), ethflow_contract)
+            .status(onchain.contracts(), ethflow_contract)
             .await,
         RefundStatus::Refunded
     );
 
     // Verify no refund TX was recorded (the refunder didn't process this order)
-    let order = setup.services.get_order(&order_id).await.unwrap();
+    let order = services.get_order(&order_id).await.unwrap();
     assert!(
         order
             .metadata
@@ -425,9 +481,8 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
 /// Test that orders already settled (with trades) are NOT refunded
 /// by the refunder service (SQL filters: t.order_uid is null).
 ///
-/// This test doesn't use RefunderTestSetup because it needs actual settlement,
-/// which requires real-world timestamps (autopilot validates against wall-clock
-/// time).
+/// This test needs actual settlement, which requires real-world timestamps
+/// (autopilot validates against wall-clock time).
 #[ignore]
 #[tokio::test]
 async fn local_node_refunder_skips_settled_orders() {
@@ -452,50 +507,23 @@ async fn refunder_skips_settled_orders(web3: Web3) {
     services.start_protocol(solver).await;
 
     let buy_token = *token.address();
-    let receiver = Address::repeat_byte(42);
-    let sell_amount = NonZeroU256::try_from(1u64.eth()).unwrap();
-
-    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
-    let quote = default_quote_request(
-        *ethflow_contract.address(),
-        &onchain.contracts().weth,
-        buy_token,
-        sell_amount,
-    );
-    let quote_response = services.submit_quote(&quote).await.unwrap();
 
     // Anvil starts with a hardcoded timestamp of Jan 1, 2020 (see nodes/mod.rs).
     // The autopilot validates orders against real-world time, so valid_to must
     // exceed the current wall clock (which also exceeds anvil's simulated time).
     let valid_to = Utc::now().timestamp() as u32 + 3600;
 
-    let ethflow_order =
-        ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(300);
+    let (ethflow_order, order_id, valid_to) =
+        EthflowOrderBuilder::new(&services, &onchain, &user, buy_token)
+            .with_sell_amount(NonZeroU256::try_from(1u64.eth()).unwrap())
+            .with_slippage_bps(300)
+            .with_valid_to(valid_to)
+            .create_and_index()
+            .await;
 
-    ethflow_order
-        .mine_order_creation(user.address(), ethflow_contract)
-        .await;
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
 
-    let order_id = ethflow_order
-        .uid(onchain.contracts(), ethflow_contract)
-        .await;
-
-    wait_for_order_indexed(&services, &onchain, &order_id).await;
-
-    // Wait for the order to be settled (receiver gets buy tokens)
-    tracing::info!("Waiting for order to be settled.");
-    let buy_token_contract = ERC20Mintable::Instance::new(buy_token, web3.alloy.clone());
-    wait_for_condition(TIMEOUT, || async {
-        onchain.mint_block().await;
-        let balance = buy_token_contract
-            .balanceOf(receiver)
-            .call()
-            .await
-            .expect("Unable to get token balance");
-        balance >= ethflow_order.0.buyAmount
-    })
-    .await
-    .unwrap();
+    wait_for_order_settlement(&services, &onchain, &order_id).await;
 
     tracing::info!("Order was settled. Now advancing time past expiration.");
     advance_time_past_expiration(&web3, valid_to).await;
@@ -510,13 +538,15 @@ async fn refunder_skips_settled_orders(web3: Web3) {
         "Settled order should not be invalidated on-chain"
     );
 
-    let mut refund_service = create_refund_service(
-        &services,
+    let mut refund_service = RefundService::new(
+        services.db().clone(),
         web3.clone(),
         vec![ethflow_contract.clone()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
-        refunder_account.signer,
+        Box::new(refunder_account.signer),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // Run the refunder - it should NOT try to refund this already-settled order
@@ -547,13 +577,19 @@ async fn refunder_skips_settled_orders(web3: Web3) {
     );
 }
 
+/// Tests that the refunder can process orders from multiple ethflow contracts.
+///
+/// Orders won't settle because they use blockchain time for `valid_to`, making
+/// them appear expired to the autopilot. This isolation allows the test to
+/// focus on verifying multi-contract refund processing without settlement
+/// complexity.
 #[ignore]
 #[tokio::test]
-async fn local_node_refunder_tx() {
-    run_test(refunder_tx).await;
+async fn local_node_refunder_multiple_ethflow_contracts() {
+    run_test(refunder_multiple_ethflow_contracts).await;
 }
 
-async fn refunder_tx(web3: Web3) {
+async fn refunder_multiple_ethflow_contracts(web3: Web3) {
     // This test creates orders on TWO different ethflow contracts
     // to verify the refunder can handle multiple contracts.
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
@@ -568,19 +604,6 @@ async fn refunder_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     let buy_token = *token.address();
-    let sell_amount = NonZeroU256::try_from(SELL_AMOUNT).unwrap();
-
-    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
-    let ethflow_contract_2 = onchain.contracts().ethflows.get(1).unwrap();
-
-    // Create first order on primary ethflow contract
-    let quote = default_quote_request(
-        *ethflow_contract.address(),
-        &onchain.contracts().weth,
-        buy_token,
-        sell_amount,
-    );
-    let quote_response = services.submit_quote(&quote).await.unwrap();
 
     let validity_duration = 600u32;
     let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
@@ -588,54 +611,38 @@ async fn refunder_tx(web3: Web3) {
         .unwrap()
         + validity_duration;
 
-    // High slippage (9999 bps) for the order to be picked up by the refunder
-    let ethflow_order =
-        ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
+    // Create first order on primary ethflow contract (index 0)
+    let (ethflow_order, order_id, valid_to) =
+        EthflowOrderBuilder::new(&services, &onchain, &user, buy_token)
+            .with_slippage_bps(500)
+            .with_valid_to(valid_to)
+            .with_ethflow_index(0)
+            .create_and_index()
+            .await;
 
-    // Create second order on secondary ethflow contract
-    let quote_2 = default_quote_request(
-        *ethflow_contract_2.address(),
-        &onchain.contracts().weth,
-        buy_token,
-        sell_amount,
-    );
-    let quote_response_2 = services.submit_quote(&quote_2).await.unwrap();
-    let ethflow_order_2 =
-        ExtendedEthFlowOrder::from_quote(&quote_response_2, valid_to).include_slippage_bps(9999);
+    // Create second order on secondary ethflow contract (index 1)
+    let (ethflow_order_2, order_id_2, _) =
+        EthflowOrderBuilder::new(&services, &onchain, &user, buy_token)
+            .with_slippage_bps(500)
+            .with_valid_to(valid_to)
+            .with_ethflow_index(1)
+            .create_and_index()
+            .await;
 
-    // Mine both orders
-    ethflow_order
-        .mine_order_creation(user.address(), ethflow_contract)
-        .await;
-    ethflow_order_2
-        .mine_order_creation(user.address(), ethflow_contract_2)
-        .await;
-
-    let order_id = ethflow_order
-        .uid(onchain.contracts(), ethflow_contract)
-        .await;
-    let order_id_2 = ethflow_order_2
-        .uid(onchain.contracts(), ethflow_contract_2)
-        .await;
-
-    // Wait for both orders to be indexed
-    tracing::info!("Waiting for orders to be indexed.");
-    wait_for_condition(TIMEOUT, || async {
-        onchain.mint_block().await;
-        services.get_order(&order_id).await.is_ok() && services.get_order(&order_id_2).await.is_ok()
-    })
-    .await
-    .unwrap();
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    let ethflow_contract_2 = onchain.contracts().ethflows.get(1).unwrap();
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = create_refund_service(
-        &services,
+    let mut refund_service = RefundService::new(
+        services.db().clone(),
         web3,
         vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
         10,
-        refunder.signer,
+        Box::new(refunder.signer),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // Verify orders are not yet refunded
