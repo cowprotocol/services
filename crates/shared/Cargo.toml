@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types", "signer-local", "rand"] }
+alloy = { workspace = true, features = ["sol-types", "signer-local", "rand", "provider-trace-api"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
