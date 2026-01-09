@@ -1,9 +1,8 @@
 //! Extension trait for U256 arithmetic operations.
 
-use num::One;
 use {
     alloy::primitives::U256,
-    num::{BigInt, BigRational, BigUint},
+    num::{BigInt, BigRational, BigUint, One},
 };
 
 /// Extension trait for U256 to add utility methods.
