@@ -3,12 +3,6 @@
 //! Applies a configurable basis points reduction to solver-reported economics
 //! (executed amounts and clearing prices) to make competition bids more
 //! conservative, without modifying interaction calldata.
-//!
-//! Two methods are provided:
-//! - `calculate_executed_amount`: For auctions, reduces executed amounts based
-//!   on available slack (capped by order limits)
-//! - `apply_to_clearing_prices`: For quotes, directly adjusts clearing prices
-//!   since quote orders don't have meaningful limits
 
 use {
     super::trade::ClearingPrices,
