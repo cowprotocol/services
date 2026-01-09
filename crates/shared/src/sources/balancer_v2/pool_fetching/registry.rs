@@ -4,7 +4,7 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{AlloyEventRetriever, AlloyEventRetrieving, EventHandler},
+        event_handling::{AlloyEventRetrieving, EventHandler},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::{
@@ -51,7 +51,7 @@ impl AlloyEventRetrieving for BasePoolFactoryContract {
 /// Type alias for the internal event updater type.
 type PoolUpdater<Factory> = Mutex<
     EventHandler<
-        AlloyEventRetriever<BasePoolFactoryContract>,
+        BasePoolFactoryContract,
         PoolStorage<Factory>,
         (BalancerV2BasePoolFactoryEvents, Log),
     >,
@@ -85,7 +85,7 @@ where
     ) -> Self {
         let updater = Mutex::new(EventHandler::new(
             block_retreiver,
-            AlloyEventRetriever(BasePoolFactoryContract(base_pool_factory(factory_instance))),
+            BasePoolFactoryContract(base_pool_factory(factory_instance)),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,
         ));

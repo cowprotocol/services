@@ -12,7 +12,7 @@ use {
     anyhow::anyhow,
     chain::Chain,
     ethcontract::errors::ExecutionError,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         price_estimation::trade_verifier::balance_overrides::{
@@ -242,12 +242,7 @@ impl Ethereum {
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
-        self.inner
-            .current_block
-            .borrow()
-            .gas_limit
-            .into_alloy()
-            .into()
+        self.inner.current_block.borrow().gas_limit.into()
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
