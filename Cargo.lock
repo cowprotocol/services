@@ -2659,7 +2659,6 @@ dependencies = [
  "cow-amm",
  "database",
  "driver",
- "ethcontract",
  "ethrpc",
  "futures",
  "hex-literal",
