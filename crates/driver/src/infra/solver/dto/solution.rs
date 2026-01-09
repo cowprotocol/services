@@ -29,9 +29,18 @@ impl Solutions {
         solver: Solver,
         flashloan_hints: &HashMap<competition::order::Uid, eth::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
+        let haircut_bps = solver.quote_haircut_bps();
+
         self.0.solutions
             .into_iter()
             .map(|solution| {
+                // Pre-convert prices for haircut calculation
+                let prices: HashMap<eth::TokenAddress, eth::U256> = solution
+                    .prices
+                    .iter()
+                    .map(|(address, price)| ((*address).into(), *price))
+                    .collect();
+
                 competition::Solution::new(
                     competition::solution::Id::new(solution.id),
                     solution
@@ -49,9 +58,27 @@ impl Solutions {
                                     ))?
                                     .clone();
 
+                                // Calculate haircutted executed amount if configured
+                                let executed_amount = if haircut_bps > 0 {
+                                    let clearing_prices = competition::solution::trade::ClearingPrices {
+                                        sell: prices[&order.sell.token.as_erc20(weth)],
+                                        buy: prices[&order.buy.token.as_erc20(weth)],
+                                    };
+
+                                    competition::solution::haircut::calculate_executed_amount(
+                                        &order,
+                                        fulfillment.executed_amount.into(),
+                                        haircut_bps,
+                                        &clearing_prices,
+                                    )
+                                    .unwrap_or_else(|| fulfillment.executed_amount.into())
+                                } else {
+                                    fulfillment.executed_amount.into()
+                                };
+
                                 competition::solution::trade::Fulfillment::new(
                                     order,
-                                    fulfillment.executed_amount.into(),
+                                    executed_amount,
                                     match fulfillment.fee {
                                         Some(fee) => competition::solution::trade::Fee::Dynamic(
                                             competition::order::SellAmount(fee),

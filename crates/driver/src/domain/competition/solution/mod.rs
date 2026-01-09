@@ -30,6 +30,7 @@ use {
 
 pub mod encoding;
 pub mod fee;
+pub mod haircut;
 pub mod interaction;
 pub mod scoring;
 pub mod settlement;

@@ -312,6 +312,12 @@ struct SolverConfig {
     /// before the driver starts dropping new `/solve` requests.
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
+
+    /// Quote haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make competition bids more conservative. Does not modify
+    /// interaction calldata. Default: 0 (no haircut).
+    #[serde(default)]
+    quote_haircut_bps: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

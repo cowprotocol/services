@@ -147,6 +147,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Latest => liquidity::AtBlock::Latest,
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
+                quote_haircut_bps: solver_config.quote_haircut_bps,
             }
         }))
         .await,
