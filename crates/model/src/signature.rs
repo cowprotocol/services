@@ -324,7 +324,7 @@ impl EcdsaSignature {
     ) -> Result<Recovered> {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         let signature = alloy::primitives::Signature::from_raw(&self.to_bytes())?;
-        let signer = signature.recover_address_from_prehash(&message)?.0.into();
+        let signer = signature.recover_address_from_prehash(&message)?;
 
         Ok(Recovered { message, signer })
     }
