@@ -29,7 +29,7 @@ impl Solutions {
         solver: Solver,
         flashloan_hints: &HashMap<competition::order::Uid, eth::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
-        let haircut_bps = solver.quote_haircut_bps();
+        let haircut_bps = solver.haircut_bps();
 
         self.0.solutions
             .into_iter()
@@ -59,8 +59,11 @@ impl Solutions {
                                     .clone();
 
                                 let mut executed_amount = fulfillment.executed_amount.into();
-                                // Calculate haircutted executed amount if configured
-                                if haircut_bps > 0 {
+                                // Calculate haircutted executed amount if configured.
+                                // Only apply slack-based haircut for real auctions (with ID).
+                                // For quotes (no ID), haircut is applied via price adjustment
+                                // in quote.rs since quote orders don't have meaningful limits.
+                                if haircut_bps > 0 && auction.id().is_some() {
                                     let clearing_prices = competition::solution::trade::ClearingPrices {
                                         sell: prices[&order.sell.token.as_erc20(weth)],
                                         buy: prices[&order.buy.token.as_erc20(weth)],

@@ -313,11 +313,13 @@ struct SolverConfig {
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 
-    /// Quote haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make competition bids more conservative. Does not modify
+    /// Haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make bids more conservative. For quotes, it directly
+    /// adjusts clearing prices. For auctions, it reduces executed amounts
+    /// based on available slack (capped by order limits). Does not modify
     /// interaction calldata. Default: 0 (no haircut).
     #[serde(default)]
-    quote_haircut_bps: u32,
+    haircut_bps: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

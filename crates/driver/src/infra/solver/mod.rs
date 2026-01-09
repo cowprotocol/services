@@ -190,7 +190,7 @@ pub struct Config {
     /// Quote haircut in basis points (0-10000). Applied to solver-reported
     /// economics to make competition bids more conservative. Does not modify
     /// interaction calldata. Default: 0 (no haircut).
-    pub quote_haircut_bps: u32,
+    pub haircut_bps: u32,
 }
 
 impl Solver {
@@ -282,8 +282,8 @@ impl Solver {
     }
 
     /// Quote haircut in basis points (0-10000) for conservative bidding.
-    pub fn quote_haircut_bps(&self) -> u32 {
-        self.config.quote_haircut_bps
+    pub fn haircut_bps(&self) -> u32 {
+        self.config.haircut_bps
     }
 
     /// Make a POST request instructing the solver to solve an auction.
