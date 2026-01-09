@@ -1,5 +1,6 @@
 //! Extension trait for U256 arithmetic operations.
 
+use num::One;
 use {
     alloy::primitives::U256,
     num::{BigInt, BigRational, BigUint},
@@ -59,7 +60,7 @@ impl U256Ext for U256 {
 
         // Special case: multiplication by 1.0 is identity
         // This avoids intermediate overflow when multiplying large values
-        if factor == 1.0 {
+        if factor.is_one() {
             return Some(*self);
         }
 
@@ -71,7 +72,7 @@ impl U256Ext for U256 {
         // Convert scaled factor to U256
         let scaled_factor_u256 = if scaled_factor <= u128::MAX as f64 {
             // For values that fit in u128, convert directly
-            U256::from(scaled_factor as u128)
+            U256::from(scaled_factor)
         } else {
             // For larger values, use BigUint's f64 conversion
             use num::FromPrimitive;
