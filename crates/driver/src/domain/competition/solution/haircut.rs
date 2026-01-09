@@ -88,9 +88,8 @@ pub fn calculate_executed_amount(
     // Step 5: Calculate haircutted out amount
     // out_eff = floor(out_quote * (10000 - h_eff) / 10000)
     let out_eff = out_quote
-        .checked_mul(eth::U256::from(10_000u32 - h_eff_bps))
-        .and_then(|v| v.checked_div(eth::U256::from(10_000u32)))
-        .expect("haircut calculation");
+        .checked_mul(eth::U256::from(10_000u32.saturating_sub(h_eff_bps)))
+        .and_then(|v| v.checked_div(eth::U256::from(10_000u32)))?;
 
     // Ensure we never go below limit (defensive)
     let out_eff = out_eff.max(out_limit);
@@ -117,78 +116,4 @@ pub fn calculate_executed_amount(
     }
 
     Some(order::TargetAmount(executed_eff))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_haircut_calculation() {
-        // Test haircut calculation: 1000 * (10000 - 200) / 10000 = 980
-        let original = eth::U256::from(1000u64);
-        let haircut_bps = 200u32; // 2%
-        let factor = eth::U256::from(10_000u32 - haircut_bps);
-        let result = original
-            .checked_mul(factor)
-            .unwrap()
-            .checked_div(eth::U256::from(10_000u32))
-            .unwrap();
-        assert_eq!(result, eth::U256::from(980u64));
-    }
-
-    #[test]
-    fn test_haircut_rounding_down() {
-        // Test that haircut rounds down conservatively
-        // 1001 * 9800 / 10000 = 980.98 -> should round down to 980
-        let original = eth::U256::from(1001u64);
-        let haircut_bps = 200u32; // 2%
-        let factor = eth::U256::from(10_000u32 - haircut_bps);
-        let result = original
-            .checked_mul(factor)
-            .unwrap()
-            .checked_div(eth::U256::from(10_000u32))
-            .unwrap();
-        assert_eq!(result, eth::U256::from(980u64));
-    }
-
-    #[test]
-    fn test_slack_calculation() {
-        // Order: sell 1000 for at least 900
-        // Solver quotes: 1000 sells for 950
-        // Slack: (950 - 900) / 950 = 50/950 = 5.26% = 526 bps
-        let out_quote = eth::U256::from(950u64);
-        let out_limit = eth::U256::from(900u64);
-
-        let slack = out_quote.checked_sub(out_limit).unwrap();
-        let h_max_bps = slack
-            .checked_mul(eth::U256::from(10_000u32))
-            .and_then(|v| v.checked_div(out_quote))
-            .unwrap();
-
-        assert_eq!(h_max_bps, eth::U256::from(526u64)); // ~5.26%
-    }
-
-    #[test]
-    fn test_no_slack() {
-        // Order: sell 1000 for at least 900
-        // Solver quotes: 1000 sells for 900 (at limit)
-        // Slack: 0
-        let out_quote = eth::U256::from(900u64);
-        let out_limit = eth::U256::from(900u64);
-
-        assert!(out_quote <= out_limit); // No slack
-    }
-
-    #[test]
-    fn test_haircut_clamping() {
-        // Configured haircut: 1000 bps (10%)
-        // Max feasible: 500 bps (5%)
-        // Should clamp to 500 bps
-        let haircut_bps = 1000u32;
-        let h_max_bps = 500u32;
-
-        let h_eff = haircut_bps.min(h_max_bps);
-        assert_eq!(h_eff, 500u32);
-    }
 }

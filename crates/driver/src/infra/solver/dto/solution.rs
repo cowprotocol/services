@@ -58,23 +58,23 @@ impl Solutions {
                                     ))?
                                     .clone();
 
+                                let mut executed_amount = fulfillment.executed_amount.into();
                                 // Calculate haircutted executed amount if configured
-                                let executed_amount = if haircut_bps > 0 {
+                                if haircut_bps > 0 {
                                     let clearing_prices = competition::solution::trade::ClearingPrices {
                                         sell: prices[&order.sell.token.as_erc20(weth)],
                                         buy: prices[&order.buy.token.as_erc20(weth)],
                                     };
 
-                                    competition::solution::haircut::calculate_executed_amount(
+                                    if let Some(haircut_amount) = competition::solution::haircut::calculate_executed_amount(
                                         &order,
                                         fulfillment.executed_amount.into(),
                                         haircut_bps,
                                         &clearing_prices,
-                                    )
-                                    .unwrap_or_else(|| fulfillment.executed_amount.into())
-                                } else {
-                                    fulfillment.executed_amount.into()
-                                };
+                                    ) {
+                                        executed_amount = haircut_amount;
+                                    }
+                                }
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,
