@@ -208,6 +208,7 @@ impl TokenOwnerFindingStrategy {
             | Chain::Polygon
             | Chain::Linea
             | Chain::Plasma
+            | Chain::Ink
             | Chain::Lens => &[Self::Liquidity],
             Chain::Hardhat => panic!("unsupported chain for token owner finding"),
         }
