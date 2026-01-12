@@ -93,6 +93,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub native_price_estimators: NativePriceEstimators,
 
+    /// Native price estimators for the API endpoint.
+    /// If not provided, uses `native_price_estimators`.
+    #[clap(long, env)]
+    pub api_native_price_estimators: Option<NativePriceEstimators>,
+
     /// How many successful price estimates for each order will cause a native
     /// price estimation to return its result early. It's possible to pass
     /// values greater than the total number of enabled estimators but that
@@ -379,6 +384,7 @@ impl std::fmt::Display for Arguments {
             allowed_tokens,
             unsupported_tokens,
             native_price_estimators,
+            api_native_price_estimators,
             min_order_validity_period,
             banned_users,
             banned_users_max_cache_size,
@@ -428,6 +434,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
+        display_option(
+            f,
+            "api_native_price_estimators",
+            api_native_price_estimators,
+        )?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"

@@ -913,6 +913,7 @@ mod tests {
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
+                native_price_cache::NativePriceCache,
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
@@ -955,12 +956,9 @@ mod tests {
             .withf(move |token, _| *token == token3)
             .returning(|_, _| async { Ok(0.25) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new(
+        let native_price_estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(native_price_estimator),
-            Duration::from_secs(10),
-            Duration::MAX,
-            None,
-            Default::default(),
+            NativePriceCache::new(Duration::from_secs(10)),
             3,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1046,10 +1044,10 @@ mod tests {
             .withf(move |token, _| *token == token5)
             .returning(|_, _| async { Ok(5.) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new(
+        let native_price_estimator = CachingNativePriceEstimator::new_with_maintenance(
             Box::new(native_price_estimator),
-            Duration::from_secs(10),
-            Duration::MAX,
+            NativePriceCache::new(Duration::from_secs(10)),
+            Duration::from_millis(1), // Short interval to trigger background fetch quickly
             None,
             Default::default(),
             1,
@@ -1143,12 +1141,9 @@ mod tests {
             .withf(move |token, _| *token == token_approx2)
             .returning(|_, _| async { Ok(50.) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new(
+        let native_price_estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(native_price_estimator),
-            Duration::from_secs(10),
-            Duration::MAX,
-            None,
-            Default::default(),
+            NativePriceCache::new(Duration::from_secs(10)),
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
