@@ -355,7 +355,11 @@ impl Error {
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
             Error::ContractRpc(_) => true,
-            Error::Rpc(err) => err.is_error_resp(),
+            Error::Rpc(err) => {
+                let is_revert = err.is_error_resp();
+                tracing::trace!(is_revert, ?err, "classified error");
+                is_revert
+            }
         }
     }
 }
