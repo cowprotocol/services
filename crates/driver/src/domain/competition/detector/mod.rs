@@ -97,7 +97,7 @@ impl Detector {
                 self.metrics
                     .as_ref()
                     .map(|metrics| metrics.get_quality(&order.uid, now))
-                    != Some(Quality::Unsupported)
+                    .is_none_or(|q| q != Quality::Unsupported)
             })
             .filter_map(|order| {
                 let sell = self.get_token_quality(order.sell.token, now);
