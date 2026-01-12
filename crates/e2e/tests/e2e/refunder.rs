@@ -303,7 +303,7 @@ async fn run_refunder_threshold_test(
         START_PRIORITY_FEE_TIP,
     );
 
-    // Verify order is not yet invalidated
+    // Verify order is still eligible for refund (not yet reimbursed)
     assert_ne!(
         ethflow_order
             .status(onchain.contracts(), ethflow_contract)
