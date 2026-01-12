@@ -366,8 +366,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: WETH9::Instance,
+        initial_prices: HashMap<Address, BigDecimal>,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         let cache = NativePriceCache::new(self.args.native_price_cache_max_age);
+        cache.initialize(initial_prices);
         self.create_caching_native_estimator(native, results_required, &weth, cache, true)
             .await
     }

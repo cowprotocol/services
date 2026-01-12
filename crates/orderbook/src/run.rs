@@ -319,16 +319,16 @@ pub async fn run(args: Arguments) {
     .await
     .expect("failed to initialize price estimator factory");
 
+    let initial_prices = postgres_write.fetch_latest_prices().await.unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.fast_price_estimation_results_required,
             native_token.clone(),
+            initial_prices,
         )
         .await
         .unwrap();
-    let prices = postgres_write.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
         .price_estimator(

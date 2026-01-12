@@ -39,7 +39,7 @@ impl Metrics {
     }
 }
 
-/// Shared cache storage for native price estimates.
+/// A cache storage for native price estimates.
 ///
 /// Can be shared between multiple `CachingNativePriceEstimator` instances,
 /// allowing them to read/write from the same cache while using different
@@ -386,12 +386,6 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    /// Initialize the cache with prices from the database.
-    /// Delegates to the underlying `NativePriceCache::initialize`.
-    pub fn initialize_cache(&self, prices: HashMap<Address, BigDecimal>) {
-        self.0.cache.initialize(prices);
-    }
-
     /// Returns a reference to the underlying shared cache.
     /// This can be used to share the cache with other estimator instances.
     pub fn cache(&self) -> &NativePriceCache {
@@ -586,14 +580,15 @@ mod tests {
 
         let prices =
             HashMap::from_iter((0..10).map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())));
+        let cache = NativePriceCache::new(Duration::from_secs(MAX_AGE_SECS));
+        cache.initialize(prices);
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_secs(MAX_AGE_SECS)),
+            cache,
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
-        estimator.initialize_cache(prices);
 
         {
             // Check that `updated_at` timestamps are initialized with
