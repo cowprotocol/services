@@ -162,8 +162,6 @@ impl<'a> EthflowOrderBuilder<'a> {
 
     /// Creates the order, mines it on-chain, waits for indexing, and optionally
     /// invalidates.
-    ///
-    /// Returns: (ExtendedEthFlowOrder, OrderUid, valid_to timestamp)
     async fn create_and_index(self) -> (ExtendedEthFlowOrder, OrderUid, u32) {
         let ethflow_contract = self
             .onchain
