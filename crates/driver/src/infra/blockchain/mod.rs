@@ -227,8 +227,7 @@ impl Ethereum {
             .estimate_gas(tx)
             .pending()
             .await
-            .map_err(anyhow::Error::from)
-            .map_err(Error::GasPrice)?
+            .map_err(Error::Rpc)?
             .into();
 
         Ok(estimated_gas)
