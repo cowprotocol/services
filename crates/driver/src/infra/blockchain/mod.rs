@@ -227,8 +227,7 @@ impl Ethereum {
             .estimate_gas(tx)
             .pending()
             .await
-            .map_err(anyhow::Error::from)
-            .map_err(Error::GasPrice)?
+            .map_err(Error::Rpc)?
             .into();
 
         Ok(estimated_gas)
@@ -356,7 +355,11 @@ impl Error {
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
             Error::ContractRpc(_) => true,
-            Error::Rpc(_) => false,
+            Error::Rpc(err) => {
+                let is_revert = err.is_error_resp();
+                tracing::trace!(is_revert, ?err, "classified error");
+                is_revert
+            }
         }
     }
 }
