@@ -542,16 +542,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(
-                    ethrpc::Web3 {
-                        legacy: web3::Web3::new(ethcontract::transport::DynTransport::new(
-                            mock::MockTransport::new(),
-                        )),
-                        alloy: mock_web3.alloy,
-                        wallet: mock_web3.wallet,
-                    },
-                    60,
-                ),
+                Detector::new(mock_web3.erased(), 60),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };
@@ -599,16 +590,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(
-                    ethrpc::Web3 {
-                        legacy: web3::Web3::new(ethcontract::transport::DynTransport::new(
-                            mock::MockTransport::new(),
-                        )),
-                        alloy: mock_web3.alloy,
-                        wallet: mock_web3.wallet,
-                    },
-                    60,
-                ),
+                Detector::new(mock_web3.erased(), 60),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };
