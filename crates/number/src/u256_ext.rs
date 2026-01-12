@@ -26,6 +26,9 @@ pub trait U256Ext: Sized {
     /// 10^18, result in values that can be accurately represented in f64
     /// (up to ~9e15).
     ///
+    /// We avoid BigRational here because it preserves binary-f64 semantics
+    /// and diverges from decimal-intent inputs (e.g., config values).
+    ///
     /// Returns `None` if:
     /// - The factor is negative, NaN, or infinity
     /// - The intermediate multiplication would overflow U256
