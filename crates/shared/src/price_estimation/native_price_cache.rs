@@ -55,11 +55,37 @@ struct CacheStorage {
 }
 
 impl NativePriceCache {
-    /// Creates a new cache with the given max age for entries.
-    pub fn new(max_age: Duration) -> Self {
+    /// Creates a new cache with the given max age for entries and initial
+    /// prices. Entries are initialized with random ages to avoid expiration
+    /// spikes.
+    pub fn new(max_age: Duration, initial_prices: HashMap<Address, BigDecimal>) -> Self {
+        let mut rng = rand::thread_rng();
+        let now = std::time::Instant::now();
+
+        let cache = initial_prices
+            .into_iter()
+            .filter_map(|(token, price)| {
+                // Generate random `updated_at` timestamp
+                // to avoid spikes of expired prices.
+                let percent_expired = rng.gen_range(50..=90);
+                let age = max_age.as_secs() * percent_expired / 100;
+                let updated_at = now - Duration::from_secs(age);
+
+                Some((
+                    token,
+                    CachedResult::new(
+                        Ok(from_normalized_price(price)?),
+                        updated_at,
+                        now,
+                        Default::default(),
+                    ),
+                ))
+            })
+            .collect::<HashMap<_, _>>();
+
         Self {
             inner: Arc::new(CacheStorage {
-                cache: Default::default(),
+                cache: Mutex::new(cache),
                 max_age,
             }),
         }
@@ -78,36 +104,6 @@ impl NativePriceCache {
     /// Returns true if the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Initialize the cache with prices from the database.
-    /// Entries are initialized with random ages to avoid expiration spikes.
-    pub fn initialize(&self, prices: HashMap<Address, BigDecimal>) {
-        let mut rng = rand::thread_rng();
-        let now = std::time::Instant::now();
-
-        let cache = prices
-            .into_iter()
-            .filter_map(|(token, price)| {
-                // Generate random `updated_at` timestamp
-                // to avoid spikes of expired prices.
-                let percent_expired = rng.gen_range(50..=90);
-                let age = self.inner.max_age.as_secs() * percent_expired / 100;
-                let updated_at = now - Duration::from_secs(age);
-
-                Some((
-                    token,
-                    CachedResult::new(
-                        Ok(from_normalized_price(price)?),
-                        updated_at,
-                        now,
-                        Default::default(),
-                    ),
-                ))
-            })
-            .collect::<HashMap<_, _>>();
-
-        *self.inner.cache.lock().unwrap() = cache;
     }
 
     /// Get a cached price, optionally creating a placeholder entry for missing
@@ -580,8 +576,7 @@ mod tests {
 
         let prices =
             HashMap::from_iter((0..10).map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())));
-        let cache = NativePriceCache::new(Duration::from_secs(MAX_AGE_SECS));
-        cache.initialize(prices);
+        let cache = NativePriceCache::new(Duration::from_secs(MAX_AGE_SECS), prices);
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
             cache,
@@ -618,7 +613,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
@@ -653,7 +648,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             // set token approximations for tokens 1 and 2
             HashMap::from([
@@ -705,7 +700,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
@@ -773,7 +768,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(100)),
+            NativePriceCache::new(Duration::from_millis(100), Default::default()),
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
@@ -842,7 +837,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
@@ -897,7 +892,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_with_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             Duration::from_millis(50),
             Some(1),
             Default::default(),
@@ -945,7 +940,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_with_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             Duration::from_millis(50),
             None,
             Default::default(),
@@ -998,7 +993,7 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new_with_maintenance(
             Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30)),
+            NativePriceCache::new(Duration::from_millis(30), Default::default()),
             Duration::from_millis(50),
             None,
             Default::default(),
@@ -1038,7 +1033,7 @@ mod tests {
         let now = Instant::now();
 
         // Create a cache and populate it directly
-        let cache = NativePriceCache::new(Duration::from_secs(10));
+        let cache = NativePriceCache::new(Duration::from_secs(10), Default::default());
         cache.insert(t0, CachedResult::new(Ok(0.), now, now, Default::default()));
         cache.insert(t1, CachedResult::new(Ok(0.), now, now, Default::default()));
 

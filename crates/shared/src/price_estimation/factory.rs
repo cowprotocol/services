@@ -368,8 +368,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         weth: WETH9::Instance,
         initial_prices: HashMap<Address, BigDecimal>,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
-        let cache = NativePriceCache::new(self.args.native_price_cache_max_age);
-        cache.initialize(initial_prices);
+        let cache = NativePriceCache::new(self.args.native_price_cache_max_age, initial_prices);
         self.create_caching_native_estimator(native, results_required, &weth, cache, true)
             .await
     }
@@ -399,8 +398,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        let cache = NativePriceCache::new(self.args.native_price_cache_max_age);
-        cache.initialize(initial_prices);
+        let cache = NativePriceCache::new(self.args.native_price_cache_max_age, initial_prices);
 
         let main = self
             .create_caching_native_estimator(native, results_required, &weth, cache.clone(), true)

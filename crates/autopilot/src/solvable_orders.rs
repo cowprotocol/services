@@ -958,7 +958,7 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(native_price_estimator),
-            NativePriceCache::new(Duration::from_secs(10)),
+            NativePriceCache::new(Duration::from_secs(10), Default::default()),
             3,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1046,7 +1046,7 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new_with_maintenance(
             Box::new(native_price_estimator),
-            NativePriceCache::new(Duration::from_secs(10)),
+            NativePriceCache::new(Duration::from_secs(10), Default::default()),
             Duration::from_millis(1), // Short interval to trigger background fetch quickly
             None,
             Default::default(),
@@ -1143,7 +1143,7 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new_without_maintenance(
             Box::new(native_price_estimator),
-            NativePriceCache::new(Duration::from_secs(10)),
+            NativePriceCache::new(Duration::from_secs(10), Default::default()),
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
