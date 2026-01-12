@@ -26,7 +26,6 @@ derive_more = { workspace = true }
 derivative = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }

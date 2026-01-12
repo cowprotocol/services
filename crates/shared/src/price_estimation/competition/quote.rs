@@ -164,7 +164,7 @@ mod tests {
             },
         },
         alloy::primitives::U256,
-        gas_estimation::GasPrice1559,
+        crate::gas_price_estimation::price::GasPrice1559,
         model::order::OrderKind,
     };
 

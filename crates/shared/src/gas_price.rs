@@ -5,8 +5,8 @@
 //! anomalies.
 
 use {
+    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
     anyhow::Result,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
     std::time::Duration,
     tracing::instrument,
 };

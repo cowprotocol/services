@@ -6,11 +6,12 @@
 //! for the implementation details.
 
 use {
+    crate::gas_price_estimation::{GasPriceEstimating, u128_to_f64},
     alloy::providers::Provider,
     anyhow::{Context, Result},
     ethrpc::AlloyProvider,
     futures::TryFutureExt,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    crate::gas_price_estimation::price::GasPrice1559,
     std::time::Duration,
     tracing::instrument,
 };
@@ -50,11 +51,4 @@ impl GasPriceEstimating for AlloyGasPriceEstimator {
                 .context("could not convert max_priority_fee_per_gas to f64")?,
         })
     }
-}
-
-fn u128_to_f64(val: u128) -> Result<f64> {
-    if val > 2u128.pow(f64::MANTISSA_DIGITS) {
-        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
-    }
-    Ok(val as f64)
 }

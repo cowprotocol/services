@@ -1,6 +1,7 @@
 use {
+    crate::gas_price_estimation::GasPriceEstimating,
     anyhow::Result,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    crate::gas_price_estimation::price::GasPrice1559,
 };
 
 #[derive(Default)]
