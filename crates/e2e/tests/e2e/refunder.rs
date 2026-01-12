@@ -1,3 +1,9 @@
+//! # Regarding Order Settlement
+//!
+//! For tests requiring actual settlement, use `Utc::now()` for `valid_to` when
+//! creating a new test order. See `refunder_skips_settled_orders` for an
+//! example.
+
 use {
     crate::ethflow::ExtendedEthFlowOrder,
     ::alloy::{primitives::Address, providers::ext::AnvilApi},
@@ -247,9 +253,6 @@ struct SlippageBps {
 /// validates against wall-clock time). This isolation is intentional: the
 /// refunder uses blockchain time internally, so it correctly processes these
 /// "expired" orders.
-///
-/// For tests requiring actual settlement, use `Utc::now()` for `valid_to`.
-/// See `refunder_skips_settled_orders` for an example.
 #[tracing::instrument]
 async fn run_refunder_threshold_test(
     web3: Web3,
