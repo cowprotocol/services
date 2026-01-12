@@ -28,6 +28,7 @@ pub fn new(
     flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
     wrappers: &WrapperCalls,
     deadline: chrono::DateTime<chrono::Utc>,
+    haircut_bps: u32,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::Address, _> = auction
         .tokens()
@@ -109,6 +110,30 @@ pub fn new(
                             }
                         }
                     })
+                }
+                // Apply haircut by adjusting order limits (similar to volume fees).
+                // This forces solvers to find solutions with enough surplus to cover
+                // the haircut reduction applied during competition scoring.
+                if haircut_bps > 0 {
+                    let factor = haircut_bps as f64 / 10_000.0;
+                    match order.side {
+                        Side::Buy => {
+                            // For buy orders: reduce maximum sell amount
+                            available.sell.amount = available
+                                .sell
+                                .amount
+                                .apply_factor(1.0 / (1.0 + factor))
+                                .unwrap_or_default();
+                        }
+                        Side::Sell => {
+                            // For sell orders: increase minimum buy amount requirement
+                            available.buy.amount = available
+                                .buy
+                                .amount
+                                .apply_factor(1.0 / (1.0 - factor))
+                                .unwrap_or_default();
+                        }
+                    }
                 }
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),

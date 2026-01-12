@@ -29,18 +29,9 @@ impl Solutions {
         solver: Solver,
         flashloan_hints: &HashMap<competition::order::Uid, eth::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
-        let haircut_bps = solver.haircut_bps();
-
         self.0.solutions
             .into_iter()
             .map(|solution| {
-                // Pre-convert prices for haircut calculation
-                let prices: HashMap<eth::TokenAddress, eth::U256> = solution
-                    .prices
-                    .iter()
-                    .map(|(address, price)| ((*address).into(), *price))
-                    .collect();
-
                 competition::Solution::new(
                     competition::solution::Id::new(solution.id),
                     solution
@@ -58,30 +49,9 @@ impl Solutions {
                                     ))?
                                     .clone();
 
-                                let mut executed_amount = fulfillment.executed_amount.into();
-                                // Calculate haircutted executed amount if configured.
-                                // Only apply slack-based haircut for real auctions (with ID).
-                                // For quotes (no ID), haircut is applied via price adjustment
-                                // in quote.rs since quote orders don't have meaningful limits.
-                                if haircut_bps > 0 && auction.id().is_some() {
-                                    let clearing_prices = competition::solution::trade::ClearingPrices {
-                                        sell: prices[&order.sell.token.as_erc20(weth)],
-                                        buy: prices[&order.buy.token.as_erc20(weth)],
-                                    };
-
-                                    if let Some(haircut_amount) = competition::solution::haircut::calculate_executed_amount(
-                                        &order,
-                                        fulfillment.executed_amount.into(),
-                                        haircut_bps,
-                                        &clearing_prices,
-                                    ) {
-                                        executed_amount = haircut_amount;
-                                    }
-                                }
-
                                 competition::solution::trade::Fulfillment::new(
                                     order,
-                                    executed_amount,
+                                    fulfillment.executed_amount.into(),
                                     match fulfillment.fee {
                                         Some(fee) => competition::solution::trade::Fee::Dynamic(
                                             competition::order::SellAmount(fee),

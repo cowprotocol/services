@@ -427,13 +427,6 @@ impl Solver {
         self.merge_solutions = true;
         self
     }
-
-    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
-        Self {
-            haircut_bps,
-            ..self
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1499,11 +1492,6 @@ pub struct QuoteOk<'a> {
 }
 
 impl QuoteOk<'_> {
-    /// Get the JSON response body.
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {
