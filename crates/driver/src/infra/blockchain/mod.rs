@@ -355,7 +355,7 @@ impl Error {
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
             Error::ContractRpc(_) => true,
-            Error::Rpc(_) => false,
+            Error::Rpc(err) => err.is_error_resp()
         }
     }
 }
