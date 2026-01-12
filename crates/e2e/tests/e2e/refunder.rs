@@ -283,16 +283,12 @@ async fn run_refunder_threshold_test(
         + validity.order;
 
     // Testing slippage/validity boundaries: order slippage >= enforced threshold
-    let (ethflow_order, _order_id, valid_to) = EthflowOrderBuilder::new(
-        &services,
-        &onchain,
-        &user,
-        buy_token,
-    )
-    .with_slippage_bps(slippage.order) // Explicit: testing this SQL filter
-    .with_valid_to(valid_to)
-    .create_and_index()
-    .await;
+    let (ethflow_order, _order_id, valid_to) =
+        EthflowOrderBuilder::new(&services, &onchain, &user, buy_token)
+            .with_slippage_bps(slippage.order)
+            .with_valid_to(valid_to)
+            .create_and_index()
+            .await;
 
     advance_time_past_expiration(&web3, valid_to).await;
 
