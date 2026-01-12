@@ -1,7 +1,6 @@
 use {
     crate::interaction::EncodedInteraction,
-    alloy::primitives::{Address, U256},
-    ethcontract::Bytes,
+    alloy::primitives::{Address, B256, Bytes, U256},
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, SigningScheme},
@@ -9,17 +8,17 @@ use {
 };
 
 pub type EncodedTrade = (
-    U256,            // sellTokenIndex
-    U256,            // buyTokenIndex
-    Address,         // receiver
-    U256,            // sellAmount
-    U256,            // buyAmount
-    u32,             // validTo
-    Bytes<[u8; 32]>, // appData
-    U256,            // feeAmount
-    U256,            // flags
-    U256,            // executedAmount
-    Bytes<Vec<u8>>,  // signature
+    U256,    // sellTokenIndex
+    U256,    // buyTokenIndex
+    Address, // receiver
+    U256,    // sellAmount
+    U256,    // buyAmount
+    u32,     // validTo
+    B256,    // appData
+    U256,    // feeAmount
+    U256,    // flags
+    U256,    // executedAmount
+    Bytes,   // signature
 );
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
@@ -38,11 +37,11 @@ pub fn encode_trade(
         order.sell_amount,
         order.buy_amount,
         order.valid_to,
-        Bytes(order.app_data.0),
+        B256::new(order.app_data.0),
         order.fee_amount,
         order_flags(order, signature),
         executed_amount,
-        Bytes(signature.encode_for_settlement(owner).to_vec()),
+        Bytes::from(signature.encode_for_settlement(owner)),
     )
 }
 

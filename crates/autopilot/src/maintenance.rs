@@ -19,7 +19,7 @@ use {
         IntCounterVec,
         core::{AtomicU64, GenericGauge},
     },
-    shared::{event_handling::AlloyEventRetriever, maintenance::Maintaining},
+    shared::maintenance::Maintaining,
     std::{
         future::Future,
         sync::Arc,
@@ -32,7 +32,7 @@ use {
 /// to ensure a consistent view of the system.
 pub struct Maintenance {
     /// Indexes and persists all events emited by the settlement contract.
-    settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
+    settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
     /// Used for periodic cleanup tasks to not have the DB overflow with old
     /// data.
     db_cleanup: Postgres,
@@ -49,7 +49,7 @@ pub struct Maintenance {
 
 impl Maintenance {
     pub fn new(
-        settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
+        settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
         db_cleanup: Postgres,
         timeout: Duration,
     ) -> Self {
@@ -161,10 +161,8 @@ impl Maintenance {
     }
 }
 
-type EthflowIndexer = EventUpdater<
-    OnchainOrderParser<EthFlowData, EthFlowDataForDb>,
-    AlloyEventRetriever<CoWSwapOnchainOrdersContract>,
->;
+type EthflowIndexer =
+    EventUpdater<OnchainOrderParser<EthFlowData, EthFlowDataForDb>, CoWSwapOnchainOrdersContract>;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "autopilot_maintenance")]

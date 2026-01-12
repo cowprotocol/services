@@ -2659,7 +2659,6 @@ dependencies = [
  "cow-amm",
  "database",
  "driver",
- "ethcontract",
  "ethrpc",
  "futures",
  "hex-literal",
@@ -2682,7 +2681,6 @@ dependencies = [
  "tracing",
  "url",
  "warp",
- "web3",
 ]
 
 [[package]]
@@ -4214,7 +4212,6 @@ dependencies = [
  "serde_with",
  "strum",
  "testlib",
- "web3",
 ]
 
 [[package]]
@@ -6190,7 +6187,6 @@ dependencies = [
  "testlib",
  "tokio",
  "tracing",
- "web3",
 ]
 
 [[package]]
@@ -6250,7 +6246,6 @@ dependencies = [
  "number",
  "serde",
  "serde_with",
- "web3",
 ]
 
 [[package]]

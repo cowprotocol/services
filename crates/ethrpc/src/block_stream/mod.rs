@@ -1,17 +1,14 @@
 use {
-    crate::{
-        AlloyProvider,
-        alloy::{ProviderLabelingExt, conversions::IntoLegacy},
-    },
+    crate::{AlloyProvider, alloy::ProviderLabelingExt},
     alloy::{
         eips::{BlockId, BlockNumberOrTag},
+        primitives::{B256, U256},
         providers::{Provider, ProviderBuilder},
         rpc::types::Block,
         transports::ws::WsConnect,
     },
     anyhow::{Context as _, Result, anyhow, ensure},
     futures::{StreamExt, TryStreamExt, stream::FuturesUnordered},
-    primitive_types::{H256, U256},
     std::{
         fmt::Debug,
         num::NonZeroU64,
@@ -23,7 +20,7 @@ use {
     url::Url,
 };
 
-pub type BlockNumberHash = (u64, H256);
+pub type BlockNumberHash = (u64, B256);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeInclusive<T: Ord> {
@@ -54,8 +51,8 @@ impl<T: Ord> RangeInclusive<T> {
 #[derive(Clone, Copy, Debug, Eq)]
 pub struct BlockInfo {
     pub number: u64,
-    pub hash: H256,
-    pub parent_hash: H256,
+    pub hash: B256,
+    pub parent_hash: B256,
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
@@ -94,14 +91,14 @@ impl TryFrom<Block> for BlockInfo {
     fn try_from(value: Block) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             number: value.header.number,
-            hash: value.header.hash.into_legacy(),
-            parent_hash: value.header.parent_hash.into_legacy(),
+            hash: value.header.hash,
+            parent_hash: value.header.parent_hash,
             timestamp: value.header.timestamp,
-            gas_limit: primitive_types::U256::from(value.header.gas_limit),
+            gas_limit: U256::from(value.header.gas_limit),
             gas_price: value
                 .header
                 .base_fee_per_gas
-                .map(primitive_types::U256::from)
+                .map(U256::from)
                 .context("no gas price")?,
             observed_at: Instant::now(),
         })
@@ -114,13 +111,13 @@ impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
     fn try_from(value: alloy::rpc::types::Header) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             number: value.number,
-            hash: value.hash.into_legacy(),
-            parent_hash: value.parent_hash.into_legacy(),
+            hash: value.hash,
+            parent_hash: value.parent_hash,
             timestamp: value.timestamp,
-            gas_limit: primitive_types::U256::from(value.gas_limit),
+            gas_limit: U256::from(value.gas_limit),
             gas_price: value
                 .base_fee_per_gas
-                .map(primitive_types::U256::from)
+                .map(U256::from)
                 .context("no gas price")?,
             observed_at: Instant::now(),
         })
@@ -373,7 +370,7 @@ impl BlockRetrieving for AlloyProvider {
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
         let block = get_block_at_id(self, BlockId::number(number)).await?;
-        Ok((block.header.number, block.header.hash.into_legacy()))
+        Ok((block.header.number, block.header.hash))
     }
 
     /// Gets all blocks requested in the range. For successful results it's
@@ -407,8 +404,8 @@ impl BlockRetrieving for AlloyProvider {
         let mut result = Vec::with_capacity(blocks.len());
 
         for block in blocks {
-            let current_hash: H256 = block.header.hash.into_legacy();
-            if prev_hash.is_some_and(|prev| prev != block.header.parent_hash.into_legacy()) {
+            let current_hash: B256 = block.header.hash;
+            if prev_hash.is_some_and(|prev| prev != block.header.parent_hash) {
                 tracing::debug!(
                     start,
                     end,
@@ -467,7 +464,7 @@ pub async fn block_number_to_block_number_hash(
         .get_block_by_number(block_number)
         .await?
         .with_context(|| format!("failed to find block {}", block_number))?;
-    Ok((block.header.number, block.header.hash.into_legacy()))
+    Ok((block.header.number, block.header.hash))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
