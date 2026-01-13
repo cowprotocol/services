@@ -1162,3 +1162,211 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .unwrap();
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
 }
+
+#[tokio::test]
+#[ignore]
+async fn local_node_limit_order_with_haircut() {
+    run_test(limit_order_with_haircut_test).await;
+}
+
+/// Test that verifies haircut configuration works correctly for limit orders.
+///
+/// Haircut adjusts the order limits sent to solvers (making them stricter),
+/// but does not affect the user's actual execution. The user should still
+/// receive at least their minimum buy amount.
+async fn limit_order_with_haircut_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let solver_address = solver.address();
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Fund trader account
+    token_a.mint(trader.address(), 100u64.eth()).await;
+
+    // Create and fund Uniswap pool for token_a <-> token_b
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
+            1000u64.eth(),
+            1000u64.eth(),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address(),
+            U256::MAX,
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Approve GPv2 for trading
+    token_a
+        .approve(onchain.contracts().allowance, 100u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Start driver with haircut configured (500 bps = 5%)
+    let haircut_bps = 500u32;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                haircut_bps,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    const_hex::encode(solver_address)
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // Get a quote to know expected output without haircut
+    let sell_amount = 10u64.eth();
+    let quote = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: *token_a.address(),
+            buy_token: *token_b.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(sell_amount).unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // The quote tells us what we'd get without haircut
+    let quoted_buy_amount = quote.quote.buy_amount;
+    tracing::info!(
+        "Quote: sell {} token_a for {} token_b",
+        sell_amount,
+        quoted_buy_amount
+    );
+
+    // Place a limit order with buy_amount set to the quoted amount
+    // (this ensures the order is fillable with the current market)
+    let order = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount,
+        buy_token: *token_b.address(),
+        // Set buy_amount slightly below quote to ensure order fills
+        buy_amount: quoted_buy_amount * U256::from(95) / U256::from(100),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    let sell_balance_before = token_a.balanceOf(trader.address()).call().await.unwrap();
+    let buy_balance_before = token_b.balanceOf(trader.address()).call().await.unwrap();
+
+    let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
+
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Wait for trade
+    tracing::info!("Waiting for trade with haircut={} bps.", haircut_bps);
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        let buy_balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
+        buy_balance_after > buy_balance_before
+    })
+    .await
+    .unwrap();
+
+    let sell_balance_after = token_a.balanceOf(trader.address()).call().await.unwrap();
+    let buy_balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
+
+    // Verify user sold exactly the sell_amount
+    let actual_sell = sell_balance_before.checked_sub(sell_balance_after).unwrap();
+    assert_eq!(
+        actual_sell, sell_amount,
+        "User should sell exactly the requested amount"
+    );
+
+    // Verify user received at least the haircutted buy_amount.
+    // The solver sees a stricter limit: buy_amount / (1 - haircut_factor)
+    // So the user should receive at least this haircutted amount.
+    let actual_buy = buy_balance_after.checked_sub(buy_balance_before).unwrap();
+    let haircutted_buy_amount =
+        order.buy_amount * U256::from(10_000) / U256::from(10_000 - haircut_bps);
+    assert!(
+        actual_buy >= haircutted_buy_amount,
+        "User should receive at least the haircutted buy amount: got {}, expected >= {}",
+        actual_buy,
+        haircutted_buy_amount
+    );
+}

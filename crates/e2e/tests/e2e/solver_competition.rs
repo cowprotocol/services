@@ -349,6 +349,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 endpoint: good_solver.url.clone(),
                 base_tokens: base_tokens.clone(),
                 merge_solutions: true,
+                haircut_bps: 0,
             },
             SolverEngine {
                 name: "bad_solver".into(),
@@ -356,6 +357,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 endpoint: bad_solver.url.clone(),
                 base_tokens,
                 merge_solutions: true,
+                haircut_bps: 0,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

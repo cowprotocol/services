@@ -336,6 +336,7 @@ impl<'a> Services<'a> {
             endpoint: external_solver_endpoint,
             base_tokens: vec![],
             merge_solutions: true,
+            haircut_bps: 0,
         }];
 
         let (autopilot_args, api_args) = if run_baseline {
