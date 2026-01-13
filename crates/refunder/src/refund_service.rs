@@ -2,7 +2,7 @@ use {
     crate::submitter::Submitter,
     alloy::{
         network::TxSigner,
-        primitives::{Address, B256, Signature, address},
+        primitives::{Address, B256, Signature},
         providers::Provider,
         rpc::types::TransactionRequest,
     },
@@ -22,7 +22,7 @@ use {
 };
 
 pub const NO_OWNER: Address = Address::ZERO;
-pub const INVALIDATED_OWNER: Address = address!("0xffffffffffffffffffffffffffffffffffffffff");
+pub const INVALIDATED_OWNER: Address = Address::repeat_byte(0xff);
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 type CoWSwapEthFlowAddress = Address;
@@ -38,11 +38,27 @@ pub struct RefundService {
     pub start_priority_fee_tip: u64,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-enum RefundStatus {
+/// Status of an EthFlow order refund eligibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefundStatus {
+    /// Order has already been refunded or cancelled.
     Refunded,
-    NotYetRefunded,
+    /// Order is still active and eligible for refund, with the given owner
+    /// address.
+    NotYetRefunded(Address),
+    /// Order is invalid (never created, already freed, or owner cannot receive
+    /// ETH).
     Invalid,
+}
+
+impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for RefundStatus {
+    fn from(value: CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn) -> Self {
+        match value.owner {
+            NO_OWNER => Self::Invalid,
+            INVALIDATED_OWNER => Self::Refunded,
+            owner => Self::NotYetRefunded(owner),
+        }
+    }
 }
 
 impl RefundService {
@@ -80,7 +96,7 @@ impl RefundService {
         }
     }
 
-    pub async fn try_to_refund_all_eligble_orders(&mut self) -> Result<()> {
+    pub async fn try_to_refund_all_eligible_orders(&mut self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
         let to_be_refunded_uids = self
@@ -184,7 +200,7 @@ impl RefundService {
                     );
                     RefundStatus::Invalid
                 } else {
-                    RefundStatus::NotYetRefunded
+                    RefundStatus::NotYetRefunded(order_owner)
                 };
 
                 Some((eth_order_placement.uid, refund_status, ethflow_contract))
@@ -199,7 +215,7 @@ impl RefundService {
             match refund_status {
                 RefundStatus::Refunded => (),
                 RefundStatus::Invalid => invalid_uids.push(uid),
-                RefundStatus::NotYetRefunded => {
+                RefundStatus::NotYetRefunded(_) => {
                     to_be_refunded_uids
                         .entry(*ethflow_contract.address())
                         .or_default()

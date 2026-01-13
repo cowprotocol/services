@@ -47,6 +47,7 @@ warp = { workspace = true }
 
 [dev-dependencies]
 refunder = { workspace = true }
+rstest = { workspace = true }
 
 [lints]
 workspace = true
