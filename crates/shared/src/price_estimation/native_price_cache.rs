@@ -39,6 +39,23 @@ impl Metrics {
     }
 }
 
+/// Configuration for the background maintenance task that keeps the cache warm.
+pub struct MaintenanceConfig {
+    /// The estimator used to fetch prices during background updates.
+    pub estimator: Arc<dyn NativePriceEstimating>,
+    /// How often to run the maintenance task.
+    pub update_interval: Duration,
+    /// Maximum number of prices to update per maintenance cycle.
+    /// None means unlimited.
+    pub update_size: Option<usize>,
+    /// How early before expiration to refresh prices.
+    pub prefetch_time: Duration,
+    /// Number of concurrent price fetch requests.
+    pub concurrent_requests: usize,
+    /// Timeout for individual price fetch requests.
+    pub quote_timeout: Duration,
+}
+
 /// A cache storage for native price estimates.
 ///
 /// Can be shared between multiple `CachingNativePriceEstimator` instances,
@@ -52,6 +69,8 @@ pub struct NativePriceCache {
 struct CacheStorage {
     cache: Mutex<HashMap<Address, CachedResult>>,
     max_age: Duration,
+    /// Tokens that should be prioritized during maintenance updates.
+    high_priority: Mutex<IndexSet<Address>>,
 }
 
 impl NativePriceCache {
@@ -87,6 +106,7 @@ impl NativePriceCache {
             inner: Arc::new(CacheStorage {
                 cache: Mutex::new(cache),
                 max_age,
+                high_priority: Default::default(),
             }),
         }
     }
@@ -187,6 +207,155 @@ impl NativePriceCache {
         });
         outdated.into_iter().map(|(token, _)| token).collect()
     }
+
+    /// Tokens with highest priority first, using the cache's internal high
+    /// priority list.
+    fn sorted_tokens_to_update_with_internal_priority(
+        &self,
+        max_age: Duration,
+        now: Instant,
+    ) -> Vec<Address> {
+        let high_priority = self.inner.high_priority.lock().unwrap().clone();
+        self.sorted_tokens_to_update(max_age, now, &high_priority)
+    }
+
+    /// Updates the set of high-priority tokens for maintenance updates.
+    /// High-priority tokens are refreshed before other tokens in the cache.
+    pub fn replace_high_priority(&self, tokens: IndexSet<Address>) {
+        tracing::trace!(?tokens, "update high priority tokens in cache");
+        *self.inner.high_priority.lock().unwrap() = tokens;
+    }
+
+    /// Creates a new cache with background maintenance task.
+    ///
+    /// The maintenance task periodically refreshes cached prices before they
+    /// expire, using the provided estimator to fetch new prices.
+    pub fn new_with_maintenance(
+        max_age: Duration,
+        initial_prices: HashMap<Address, BigDecimal>,
+        config: MaintenanceConfig,
+    ) -> Self {
+        let cache = Self::new(max_age, initial_prices);
+        cache.spawn_maintenance_task(config);
+        cache
+    }
+
+    /// Spawns a background maintenance task for this cache.
+    fn spawn_maintenance_task(&self, config: MaintenanceConfig) {
+        let update_task = CacheUpdateTask {
+            cache: Arc::downgrade(&self.inner),
+            estimator: config.estimator,
+            update_interval: config.update_interval,
+            update_size: config.update_size,
+            prefetch_time: config.prefetch_time,
+            concurrent_requests: config.concurrent_requests,
+            quote_timeout: config.quote_timeout,
+        }
+        .run()
+        .instrument(tracing::info_span!("native_price_cache_maintenance"));
+        tokio::spawn(update_task);
+    }
+
+    /// Estimates prices for the given tokens and updates the cache.
+    /// Used by the background maintenance task.
+    fn estimate_prices_and_update_cache<'a>(
+        &'a self,
+        tokens: &'a [Address],
+        estimator: &'a dyn NativePriceEstimating,
+        concurrent_requests: usize,
+        request_timeout: Duration,
+    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
+        let estimates = tokens.iter().map(move |token| async move {
+            let current_accumulative_errors_count = {
+                // check if the price is cached by now
+                let now = Instant::now();
+
+                match self.get_cached_price(*token, now, false) {
+                    Some(cached) if cached.is_ready() => {
+                        return (*token, cached.result);
+                    }
+                    Some(cached) => cached.accumulative_errors_count,
+                    None => Default::default(),
+                }
+            };
+
+            let result = estimator
+                .estimate_native_price(*token, request_timeout)
+                .await;
+
+            // update price in cache
+            if should_cache(&result) {
+                let now = Instant::now();
+                self.insert(
+                    *token,
+                    CachedResult::new(result.clone(), now, now, current_accumulative_errors_count),
+                );
+            };
+
+            (*token, result)
+        });
+        futures::stream::iter(estimates)
+            .buffered(concurrent_requests)
+            .boxed()
+    }
+}
+
+/// Background task that keeps the cache warm by periodically refreshing prices.
+struct CacheUpdateTask {
+    cache: Weak<CacheStorage>,
+    estimator: Arc<dyn NativePriceEstimating>,
+    update_interval: Duration,
+    update_size: Option<usize>,
+    prefetch_time: Duration,
+    concurrent_requests: usize,
+    quote_timeout: Duration,
+}
+
+impl CacheUpdateTask {
+    /// Single run of the background updating process.
+    async fn single_update(&self, cache: &NativePriceCache) {
+        let metrics = Metrics::get();
+        metrics
+            .native_price_cache_size
+            .set(i64::try_from(cache.len()).unwrap_or(i64::MAX));
+
+        let max_age = cache.max_age().saturating_sub(self.prefetch_time);
+        let mut outdated_entries =
+            cache.sorted_tokens_to_update_with_internal_priority(max_age, Instant::now());
+
+        tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated prices to fetch");
+
+        metrics
+            .native_price_cache_outdated_entries
+            .set(i64::try_from(outdated_entries.len()).unwrap_or(i64::MAX));
+
+        outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
+
+        if outdated_entries.is_empty() {
+            return;
+        }
+
+        let mut stream = cache.estimate_prices_and_update_cache(
+            &outdated_entries,
+            self.estimator.as_ref(),
+            self.concurrent_requests,
+            self.quote_timeout,
+        );
+        while stream.next().await.is_some() {}
+        metrics
+            .native_price_cache_background_updates
+            .inc_by(outdated_entries.len() as u64);
+    }
+
+    /// Runs background updates until the cache is no longer alive.
+    async fn run(self) {
+        while let Some(inner) = self.cache.upgrade() {
+            let cache = NativePriceCache { inner };
+            let now = Instant::now();
+            self.single_update(&cache).await;
+            tokio::time::sleep(self.update_interval.saturating_sub(now.elapsed())).await;
+        }
+    }
 }
 
 /// Wrapper around `Box<dyn PriceEstimating>` which caches successful price
@@ -200,7 +369,6 @@ pub struct CachingNativePriceEstimator(Arc<Inner>);
 
 struct Inner {
     cache: NativePriceCache,
-    high_priority: Mutex<IndexSet<Address>>,
     estimator: Box<dyn NativePriceEstimating>,
     concurrent_requests: usize,
     // TODO remove when implementing a less hacky solution
@@ -213,14 +381,6 @@ struct Inner {
     /// It's very important that the 2 tokens have the same number of decimals.
     /// After startup this is a read only value.
     approximation_tokens: HashMap<Address, Address>,
-    quote_timeout: Duration,
-}
-
-struct UpdateTask {
-    inner: Weak<Inner>,
-    update_interval: Duration,
-    update_size: Option<usize>,
-    prefetch_time: Duration,
 }
 
 type CacheEntry = Result<f64, PriceEstimationError>;
@@ -314,13 +474,6 @@ impl Inner {
             .buffered(self.concurrent_requests)
             .boxed()
     }
-
-    /// Tokens with highest priority first.
-    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<Address> {
-        let high_priority = self.high_priority.lock().unwrap().clone();
-        self.cache
-            .sorted_tokens_to_update(max_age, now, &high_priority)
-    }
 }
 
 fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
@@ -340,47 +493,6 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
     }
 }
 
-impl UpdateTask {
-    /// Single run of the background updating process.
-    async fn single_update(&self, inner: &Inner) {
-        let metrics = Metrics::get();
-        metrics
-            .native_price_cache_size
-            .set(i64::try_from(inner.cache.len()).unwrap_or(i64::MAX));
-
-        let max_age = inner.cache.max_age().saturating_sub(self.prefetch_time);
-        let mut outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
-
-        tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated prices to fetch");
-
-        metrics
-            .native_price_cache_outdated_entries
-            .set(i64::try_from(outdated_entries.len()).unwrap_or(i64::MAX));
-
-        outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
-
-        if outdated_entries.is_empty() {
-            return;
-        }
-
-        let mut stream =
-            inner.estimate_prices_and_update_cache(&outdated_entries, inner.quote_timeout);
-        while stream.next().await.is_some() {}
-        metrics
-            .native_price_cache_background_updates
-            .inc_by(outdated_entries.len() as u64);
-    }
-
-    /// Runs background updates until inner is no longer alive.
-    async fn run(self) {
-        while let Some(inner) = self.inner.upgrade() {
-            let now = Instant::now();
-            self.single_update(&inner).await;
-            tokio::time::sleep(self.update_interval.saturating_sub(now.elapsed())).await;
-        }
-    }
-}
-
 impl CachingNativePriceEstimator {
     /// Returns a reference to the underlying shared cache.
     /// This can be used to share the cache with other estimator instances.
@@ -388,63 +500,22 @@ impl CachingNativePriceEstimator {
         &self.0.cache
     }
 
-    /// Creates a new CachingNativePriceEstimator with a background maintenance
-    /// task.
+    /// Creates a new CachingNativePriceEstimator.
     ///
-    /// The maintenance task periodically refreshes cached prices before they
-    /// expire. Use this for the primary estimator in a shared-cache setup.
-    #[expect(clippy::too_many_arguments)]
-    pub fn new_with_maintenance(
-        estimator: Box<dyn NativePriceEstimating>,
-        cache: NativePriceCache,
-        update_interval: Duration,
-        update_size: Option<usize>,
-        prefetch_time: Duration,
-        concurrent_requests: usize,
-        approximation_tokens: HashMap<Address, Address>,
-        quote_timeout: Duration,
-    ) -> Self {
-        let inner = Arc::new(Inner {
-            estimator,
-            cache,
-            high_priority: Default::default(),
-            concurrent_requests,
-            approximation_tokens,
-            quote_timeout,
-        });
-
-        let update_task = UpdateTask {
-            inner: Arc::downgrade(&inner),
-            update_interval,
-            update_size,
-            prefetch_time,
-        }
-        .run()
-        .instrument(tracing::info_span!("caching_native_price_estimator"));
-        tokio::spawn(update_task);
-
-        Self(inner)
-    }
-
-    /// Creates a new CachingNativePriceEstimator without a background
-    /// maintenance task.
-    ///
-    /// Use this for secondary estimators that share a cache with a primary
-    /// estimator to avoid duplicate maintenance work.
-    pub fn new_without_maintenance(
+    /// The estimator will use the provided cache for lookups and will fetch
+    /// prices on-demand for cache misses. Background maintenance (keeping the
+    /// cache warm) is handled by the cache itself, not by this estimator.
+    pub fn new(
         estimator: Box<dyn NativePriceEstimating>,
         cache: NativePriceCache,
         concurrent_requests: usize,
         approximation_tokens: HashMap<Address, Address>,
-        quote_timeout: Duration,
     ) -> Self {
         Self(Arc::new(Inner {
             estimator,
             cache,
-            high_priority: Default::default(),
             concurrent_requests,
             approximation_tokens,
-            quote_timeout,
         }))
     }
 
@@ -474,9 +545,10 @@ impl CachingNativePriceEstimator {
         results
     }
 
+    /// Updates the set of high-priority tokens for maintenance updates.
+    /// Forwards to the underlying cache.
     pub fn replace_high_priority(&self, tokens: IndexSet<Address>) {
-        tracing::trace!(?tokens, "update high priority tokens");
-        *self.0.high_priority.lock().unwrap() = tokens;
+        self.0.cache.replace_high_priority(tokens);
     }
 
     pub async fn estimate_native_prices_with_timeout<'a>(
@@ -577,13 +649,8 @@ mod tests {
         let prices =
             HashMap::from_iter((0..10).map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())));
         let cache = NativePriceCache::new(Duration::from_secs(MAX_AGE_SECS), prices);
-        let estimator = CachingNativePriceEstimator::new_without_maintenance(
-            Box::new(inner),
-            cache,
-            1,
-            Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), cache, 1, Default::default());
 
         {
             // Check that `updated_at` timestamps are initialized with
@@ -611,12 +678,11 @@ mod tests {
             .times(1)
             .returning(|_, _| async { Ok(1.0) }.boxed());
 
-        let estimator = CachingNativePriceEstimator::new_without_maintenance(
+        let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         for _ in 0..10 {
@@ -646,7 +712,7 @@ mod tests {
             .withf(move |t, _| *t == token(200))
             .returning(|_, _| async { Ok(200.0) }.boxed());
 
-        let estimator = CachingNativePriceEstimator::new_without_maintenance(
+        let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
@@ -655,7 +721,6 @@ mod tests {
                 (Address::with_last_byte(1), Address::with_last_byte(100)),
                 (Address::with_last_byte(2), Address::with_last_byte(200)),
             ]),
-            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         // no approximation token used for token 0
@@ -698,12 +763,11 @@ mod tests {
             .times(1)
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
-        let estimator = CachingNativePriceEstimator::new_without_maintenance(
+        let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         for _ in 0..10 {
@@ -766,12 +830,11 @@ mod tests {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new_without_maintenance(
+        let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             NativePriceCache::new(Duration::from_millis(100), Default::default()),
             1,
             Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         // First 3 calls: The cache is not used. Counter gets increased.
@@ -835,12 +898,11 @@ mod tests {
             .times(10)
             .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
 
-        let estimator = CachingNativePriceEstimator::new_without_maintenance(
+        let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             NativePriceCache::new(Duration::from_millis(30), Default::default()),
             1,
             Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         for _ in 0..10 {
@@ -856,33 +918,17 @@ mod tests {
 
     #[tokio::test]
     async fn maintenance_can_limit_update_size_to_n() {
-        let mut inner = MockNativePriceEstimating::new();
-        // first request from user
-        inner
+        // On-demand estimator for initial cache population
+        let mut on_demand = MockNativePriceEstimating::new();
+        on_demand
             .expect_estimate_native_price()
-            .times(1)
+            .times(2)
             .returning(|passed_token, _| {
-                assert_eq!(passed_token, token(0));
-                async { Ok(1.0) }.boxed()
+                let price = if passed_token == token(0) { 1.0 } else { 2.0 };
+                async move { Ok(price) }.boxed()
             });
-        // second request from user
-        inner
-            .expect_estimate_native_price()
-            .times(1)
-            .returning(|passed_token, _| {
-                assert_eq!(passed_token, token(1));
-                async { Ok(2.0) }.boxed()
-            });
-        // maintenance task updates n=1 outdated prices
-        inner
-            .expect_estimate_native_price()
-            .times(1)
-            .returning(|passed_token, _| {
-                assert_eq!(passed_token, token(1));
-                async { Ok(4.0) }.boxed()
-            });
-        // user requested something which has been skipped by the maintenance task
-        inner
+        // After maintenance skips token(0), user request triggers on-demand fetch
+        on_demand
             .expect_estimate_native_price()
             .times(1)
             .returning(|passed_token, _| {
@@ -890,16 +936,31 @@ mod tests {
                 async { Ok(3.0) }.boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new_with_maintenance(
-            Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30), Default::default()),
-            Duration::from_millis(50),
-            Some(1),
+        // Maintenance estimator updates n=1 outdated prices (most recently requested)
+        let mut maintenance = MockNativePriceEstimating::new();
+        maintenance
+            .expect_estimate_native_price()
+            .times(1)
+            .returning(|passed_token, _| {
+                assert_eq!(passed_token, token(1));
+                async { Ok(4.0) }.boxed()
+            });
+
+        let cache = NativePriceCache::new_with_maintenance(
+            Duration::from_millis(30),
             Default::default(),
-            1,
-            Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
+            MaintenanceConfig {
+                estimator: Arc::new(maintenance),
+                update_interval: Duration::from_millis(50),
+                update_size: Some(1),
+                prefetch_time: Default::default(),
+                concurrent_requests: 1,
+                quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            },
         );
+
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(on_demand), cache, 1, Default::default());
 
         // fill cache with 2 different queries
         let result = estimator
@@ -914,11 +975,13 @@ mod tests {
         // wait for maintenance cycle
         tokio::time::sleep(Duration::from_millis(60)).await;
 
+        // token(0) was not updated by maintenance (n=1 limit), triggers on-demand
         let result = estimator
             .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 3);
 
+        // token(1) was updated by maintenance
         let result = estimator
             .estimate_native_price(token(1), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
@@ -927,27 +990,35 @@ mod tests {
 
     #[tokio::test]
     async fn maintenance_can_update_all_old_queries() {
-        let mut inner = MockNativePriceEstimating::new();
-        inner
+        // On-demand estimator for initial cache population
+        let mut on_demand = MockNativePriceEstimating::new();
+        on_demand
             .expect_estimate_native_price()
             .times(10)
             .returning(move |_, _| async { Ok(1.0) }.boxed());
-        // background task updates all outdated prices
-        inner
+
+        // Maintenance estimator updates all outdated prices
+        let mut maintenance = MockNativePriceEstimating::new();
+        maintenance
             .expect_estimate_native_price()
             .times(10)
             .returning(move |_, _| async { Ok(2.0) }.boxed());
 
-        let estimator = CachingNativePriceEstimator::new_with_maintenance(
-            Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30), Default::default()),
-            Duration::from_millis(50),
-            None,
+        let cache = NativePriceCache::new_with_maintenance(
+            Duration::from_millis(30),
             Default::default(),
-            1,
-            Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
+            MaintenanceConfig {
+                estimator: Arc::new(maintenance),
+                update_interval: Duration::from_millis(50),
+                update_size: None,
+                prefetch_time: Default::default(),
+                concurrent_requests: 1,
+                quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            },
         );
+
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(on_demand), cache, 1, Default::default());
 
         let tokens: Vec<_> = (0..10).map(Address::with_last_byte).collect();
         for token in &tokens {
@@ -974,13 +1045,18 @@ mod tests {
     async fn maintenance_can_update_concurrently() {
         const WAIT_TIME_MS: u64 = 100;
         const BATCH_SIZE: usize = 100;
-        let mut inner = MockNativePriceEstimating::new();
-        inner
+
+        // On-demand estimator for initial cache population
+        let mut on_demand = MockNativePriceEstimating::new();
+        on_demand
             .expect_estimate_native_price()
             .times(BATCH_SIZE)
             .returning(|_, _| async { Ok(1.0) }.boxed());
-        // background task updates all outdated prices
-        inner
+
+        // Maintenance estimator updates all outdated prices (with delay to test
+        // concurrency)
+        let mut maintenance = MockNativePriceEstimating::new();
+        maintenance
             .expect_estimate_native_price()
             .times(BATCH_SIZE)
             .returning(move |_, _| {
@@ -991,16 +1067,21 @@ mod tests {
                 .boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new_with_maintenance(
-            Box::new(inner),
-            NativePriceCache::new(Duration::from_millis(30), Default::default()),
-            Duration::from_millis(50),
-            None,
+        let cache = NativePriceCache::new_with_maintenance(
+            Duration::from_millis(30),
             Default::default(),
-            BATCH_SIZE,
-            Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
+            MaintenanceConfig {
+                estimator: Arc::new(maintenance),
+                update_interval: Duration::from_millis(50),
+                update_size: None,
+                prefetch_time: Default::default(),
+                concurrent_requests: BATCH_SIZE,
+                quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            },
         );
+
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(on_demand), cache, 1, Default::default());
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(token).collect();
         for token in &tokens {
@@ -1037,24 +1118,17 @@ mod tests {
         cache.insert(t0, CachedResult::new(Ok(0.), now, now, Default::default()));
         cache.insert(t1, CachedResult::new(Ok(0.), now, now, Default::default()));
 
-        let inner = Inner {
-            cache,
-            high_priority: Default::default(),
-            estimator: Box::new(MockNativePriceEstimating::new()),
-            concurrent_requests: 1,
-            approximation_tokens: Default::default(),
-            quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-        };
-
         let now = now + Duration::from_secs(1);
 
-        *inner.high_priority.lock().unwrap() = std::iter::once(t0).collect();
-        let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
+        cache.replace_high_priority(std::iter::once(t0).collect());
+        let tokens =
+            cache.sorted_tokens_to_update_with_internal_priority(Duration::from_secs(0), now);
         assert_eq!(tokens[0], t0);
         assert_eq!(tokens[1], t1);
 
-        *inner.high_priority.lock().unwrap() = std::iter::once(t1).collect();
-        let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
+        cache.replace_high_priority(std::iter::once(t1).collect());
+        let tokens =
+            cache.sorted_tokens_to_update_with_internal_priority(Duration::from_secs(0), now);
         assert_eq!(tokens[0], t1);
         assert_eq!(tokens[1], t0);
     }
