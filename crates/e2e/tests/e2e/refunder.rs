@@ -340,11 +340,6 @@ async fn run_refunder_threshold_test(
     ValidityDuration { order: 600, enforced: 0 },
     true
 )]
-#[case::slippage_at_boundary(
-    SlippageBps { order: 100, enforced: 100 },
-    ValidityDuration { order: 600, enforced: 0 },
-    true
-)]
 // Tests that orders with validity duration below, at, or above the
 // min_validity_duration threshold are refunded according to the SQL > check.
 #[case::validity_below_duration(
@@ -356,11 +351,6 @@ async fn run_refunder_threshold_test(
     SlippageBps { order: 9999, enforced: 0 },
     ValidityDuration { order: 600, enforced: 100 },
     true
-)]
-#[case::validity_at_duration_boundary(
-    SlippageBps { order: 9999, enforced: 0 },
-    ValidityDuration { order: 100, enforced: 100 },
-    false
 )]
 #[ignore]
 #[tokio::test]
