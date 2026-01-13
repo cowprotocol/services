@@ -309,7 +309,11 @@ impl RefundService {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::gas_price_estimation::eth_node::NodeGasPriceEstimator};
+    use {
+        super::*,
+        alloy::primitives::address,
+        shared::gas_price_estimation::eth_node::NodeGasPriceEstimator,
+    };
 
     /// Creates a minimal RefundService for testing purposes.
     fn new_test_service(web3: Web3) -> RefundService {
