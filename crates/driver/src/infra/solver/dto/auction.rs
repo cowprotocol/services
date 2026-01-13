@@ -119,19 +119,33 @@ pub fn new(
                     match order.side {
                         Side::Buy => {
                             // For buy orders: reduce maximum sell amount
-                            available.sell.amount = available
-                                .sell
-                                .amount
-                                .apply_factor(1.0 / (1.0 + factor))
-                                .unwrap_or_default();
+                            if let Some(adjusted) =
+                                available.sell.amount.apply_factor(1.0 / (1.0 + factor))
+                            {
+                                available.sell.amount = adjusted;
+                            } else {
+                                tracing::warn!(
+                                    "applying margin bps {} led to sell amount underflow for \
+                                     order {:?}",
+                                    margin_bps,
+                                    order.uid
+                                );
+                            }
                         }
                         Side::Sell => {
                             // For sell orders: increase minimum buy amount requirement
-                            available.buy.amount = available
-                                .buy
-                                .amount
-                                .apply_factor(1.0 / (1.0 - factor))
-                                .unwrap_or_default();
+                            if let Some(adjusted) =
+                                available.buy.amount.apply_factor(1.0 / (1.0 - factor))
+                            {
+                                available.buy.amount = adjusted;
+                            } else {
+                                tracing::warn!(
+                                    "applying margin bps {} led to buy amount overflow for order \
+                                     {:?}",
+                                    margin_bps,
+                                    order.uid
+                                );
+                            }
                         }
                     }
                 }
