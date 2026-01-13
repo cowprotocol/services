@@ -15,7 +15,7 @@ use {
     },
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
-    number::conversions::alloy::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     sqlx::PgPool,
     std::collections::HashMap,
 };

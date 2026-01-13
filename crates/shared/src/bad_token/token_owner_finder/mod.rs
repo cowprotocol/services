@@ -29,15 +29,11 @@ use {
         http_client::HttpClientFactory,
         sources::uniswap_v2::pair_provider::PairProvider,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     chain::Chain,
     contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
-    ethcontract::U256,
-    ethrpc::alloy::{
-        conversions::{IntoAlloy, IntoLegacy},
-        errors::ContractErrorExt,
-    },
+    ethrpc::alloy::errors::ContractErrorExt,
     futures::{Stream, StreamExt as _},
     rate_limit::Strategy,
     reqwest::Url,
@@ -212,6 +208,7 @@ impl TokenOwnerFindingStrategy {
             | Chain::Polygon
             | Chain::Linea
             | Chain::Plasma
+            | Chain::Ink
             | Chain::Lens => &[Self::Liquidity],
             Chain::Hardhat => panic!("unsupported chain for token owner finding"),
         }
@@ -458,9 +455,9 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
             if let Some((addr, balance)) = balances
                 .into_iter()
-                .find(|(_, balance)| *balance >= min_balance.into_alloy())
+                .find(|(_, balance)| *balance >= min_balance)
             {
-                return Ok(Some((addr, balance.into_legacy())));
+                return Ok(Some((addr, balance)));
             }
         }
 

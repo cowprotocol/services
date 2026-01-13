@@ -26,7 +26,7 @@ use {
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 #[tokio::test]
@@ -200,7 +200,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     let verified_quote = Estimate {
         out_amount: U256::from(16380122291179526144u128),
         gas: 225000,
-        solver: ethcontract::H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99").unwrap(),
+        solver: address!("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99"),
         verified: true,
         execution: QuoteExecution {
             interactions: vec![InteractionData {

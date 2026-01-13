@@ -33,7 +33,6 @@ shared = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
-web3 = { workspace = true }
 
 [dev-dependencies]
 derivative = { workspace = true }
