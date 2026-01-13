@@ -606,7 +606,7 @@ pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class,
+o.class, o.confirmed_valid_to,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -763,6 +763,7 @@ pub fn solvable_orders(
         lo.sell_token_balance,
         lo.buy_token_balance,
         lo.class,
+        lo.confirmed_valid_to,
 
         COALESCE(ta.sum_buy, 0) AS sum_buy,
         COALESCE(ta.sum_sell, 0) AS sum_sell,
@@ -866,6 +867,7 @@ SELECT
     so.sell_token_balance,
     so.buy_token_balance,
     so.class,
+    so.confirmed_valid_to,
 
     COALESCE(ta.sum_buy, 0) AS sum_buy,
     COALESCE(ta.sum_sell, 0) AS sum_sell,
