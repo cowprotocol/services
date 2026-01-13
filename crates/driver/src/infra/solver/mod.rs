@@ -187,10 +187,11 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
-    /// Quote haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make competition bids more conservative. Does not modify
-    /// interaction calldata. Default: 0 (no haircut).
-    pub haircut_bps: u32,
+    /// Margin in basis points (0-10000). Applied to order limits sent to
+    /// solvers to make bids more conservative. For sell orders, increases
+    /// the minimum buy amount. For buy orders, decreases the maximum sell
+    /// amount. Default: 0 (no margin).
+    pub margin_bps: u32,
 }
 
 impl Solver {
@@ -281,9 +282,9 @@ impl Solver {
         self.config.fetch_liquidity_at_block.clone()
     }
 
-    /// Quote haircut in basis points (0-10000) for conservative bidding.
-    pub fn haircut_bps(&self) -> u32 {
-        self.config.haircut_bps
+    /// Margin in basis points (0-10000) for conservative bidding.
+    pub fn margin_bps(&self) -> u32 {
+        self.config.margin_bps
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -310,7 +311,7 @@ impl Solver {
             &flashloan_hints,
             &wrappers,
             auction.deadline(self.timeouts()).solvers(),
-            self.config.haircut_bps,
+            self.config.margin_bps,
         );
 
         let body = {

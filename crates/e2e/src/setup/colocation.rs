@@ -14,7 +14,7 @@ pub struct SolverEngine {
     pub account: TestAccount,
     pub base_tokens: Vec<Address>,
     pub merge_solutions: bool,
-    pub haircut_bps: u32,
+    pub margin_bps: u32,
 }
 
 pub async fn start_baseline_solver(
@@ -25,7 +25,7 @@ pub async fn start_baseline_solver(
     max_hops: usize,
     merge_solutions: bool,
 ) -> SolverEngine {
-    start_baseline_solver_with_haircut(
+    start_baseline_solver_with_margin(
         name,
         account,
         weth,
@@ -37,14 +37,14 @@ pub async fn start_baseline_solver(
     .await
 }
 
-pub async fn start_baseline_solver_with_haircut(
+pub async fn start_baseline_solver_with_margin(
     name: String,
     account: TestAccount,
     weth: Address,
     base_tokens: Vec<Address>,
     max_hops: usize,
     merge_solutions: bool,
-    haircut_bps: u32,
+    margin_bps: u32,
 ) -> SolverEngine {
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
     let config_file = config_tmp_file(format!(
@@ -65,7 +65,7 @@ uni-v3-node-url = "http://localhost:8545"
         account,
         base_tokens,
         merge_solutions,
-        haircut_bps,
+        margin_bps,
     }
 }
 
@@ -163,7 +163,7 @@ pub fn start_driver_with_config_override(
                  endpoint,
                  base_tokens: _,
                  merge_solutions,
-                 haircut_bps,
+                 margin_bps,
              }| {
                 let account = account.signer.to_bytes();
                 format!(
@@ -179,7 +179,7 @@ enable-simulation-bad-token-detection = true
 enable-metrics-bad-token-detection = true
 http-time-buffer = "100ms"
 solving-share-of-deadline = 1.0
-haircut-bps = {haircut_bps}
+margin-bps = {margin_bps}
 "#
                 )
             },

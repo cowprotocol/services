@@ -360,8 +360,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
-    /// Haircut in basis points (0-10000) for conservative bidding.
-    haircut_bps: u32,
+    /// Margin in basis points (0-10000) for conservative bidding.
+    margin_bps: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -388,7 +388,7 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
-        haircut_bps: 0,
+        margin_bps: 0,
     }
 }
 
@@ -428,8 +428,8 @@ impl Solver {
         self
     }
 
-    pub fn haircut_bps(mut self, haircut_bps: u32) -> Self {
-        self.haircut_bps = haircut_bps;
+    pub fn margin_bps(mut self, margin_bps: u32) -> Self {
+        self.margin_bps = margin_bps;
         self
     }
 }
@@ -971,7 +971,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
-                haircut_bps: solver.haircut_bps,
+                margin_bps: solver.margin_bps,
             })
             .await;
 

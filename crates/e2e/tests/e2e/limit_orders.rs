@@ -1165,16 +1165,16 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_limit_order_with_haircut() {
-    run_test(limit_order_with_haircut_test).await;
+async fn local_node_limit_order_with_margin() {
+    run_test(limit_order_with_margin_test).await;
 }
 
-/// Test that verifies haircut configuration works correctly for limit orders.
+/// Test that verifies margin configuration works correctly for limit orders.
 ///
-/// Haircut adjusts the order limits sent to solvers (making them stricter),
+/// Margin adjusts the order limits sent to solvers (making them stricter),
 /// but does not affect the user's actual execution. The user should still
 /// receive at least their minimum buy amount.
-async fn limit_order_with_haircut_test(web3: Web3) {
+async fn limit_order_with_margin_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -1245,19 +1245,19 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Start driver with haircut configured (500 bps = 5%)
-    let haircut_bps = 500u32;
+    // Start driver with margin configured (500 bps = 5%)
+    let margin_bps = 500u32;
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_margin(
                 "test_solver".into(),
                 solver.clone(),
                 *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
-                haircut_bps,
+                margin_bps,
             )
             .await,
         ],
@@ -1285,7 +1285,7 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         ])
         .await;
 
-    // Get a quote to know expected output without haircut
+    // Get a quote to know expected output without margin
     let sell_amount = 10u64.eth();
     let quote = services
         .submit_quote(&OrderQuoteRequest {
@@ -1302,7 +1302,7 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         .await
         .unwrap();
 
-    // The quote tells us what we'd get without haircut
+    // The quote tells us what we'd get without margin
     let quoted_buy_amount = quote.quote.buy_amount;
     tracing::info!(
         "Quote: sell {} token_a for {} token_b",
@@ -1338,7 +1338,7 @@ async fn limit_order_with_haircut_test(web3: Web3) {
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Wait for trade
-    tracing::info!("Waiting for trade with haircut={} bps.", haircut_bps);
+    tracing::info!("Waiting for trade with margin={} bps.", margin_bps);
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
         let buy_balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
@@ -1357,16 +1357,16 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         "User should sell exactly the requested amount"
     );
 
-    // Verify user received at least the haircutted buy_amount.
-    // The solver sees a stricter limit: buy_amount / (1 - haircut_factor)
-    // So the user should receive at least this haircutted amount.
+    // Verify user received at least the margin-adjusted buy_amount.
+    // The solver sees a stricter limit: buy_amount / (1 - margin_factor)
+    // So the user should receive at least this margin-adjusted amount.
     let actual_buy = buy_balance_after.checked_sub(buy_balance_before).unwrap();
-    let haircutted_buy_amount =
-        order.buy_amount * U256::from(10_000) / U256::from(10_000 - haircut_bps);
+    let margin_adjusted_buy_amount =
+        order.buy_amount * U256::from(10_000) / U256::from(10_000 - margin_bps);
     assert!(
-        actual_buy >= haircutted_buy_amount,
-        "User should receive at least the haircutted buy amount: got {}, expected >= {}",
+        actual_buy >= margin_adjusted_buy_amount,
+        "User should receive at least the margin-adjusted buy amount: got {}, expected >= {}",
         actual_buy,
-        haircutted_buy_amount
+        margin_adjusted_buy_amount
     );
 }

@@ -313,13 +313,13 @@ struct SolverConfig {
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 
-    /// Haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make bids more conservative. For quotes, it directly
-    /// adjusts clearing prices. For auctions, it reduces executed amounts
-    /// based on available slack (capped by order limits). Does not modify
-    /// interaction calldata. Default: 0 (no haircut).
-    #[serde(default)]
-    haircut_bps: u32,
+    /// Margin in basis points (0-10000). Applied to order limits sent to
+    /// solvers to make bids more conservative. For sell orders, increases
+    /// the minimum buy amount requirement. For buy orders, decreases the
+    /// maximum sell amount allowed. This forces solvers to find solutions
+    /// with enough surplus to cover the margin. Default: 0 (no margin).
+    #[serde(default, alias = "haircut-bps")]
+    margin_bps: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

@@ -288,7 +288,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                margin_bps: 0,
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -296,7 +296,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                margin_bps: 0,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

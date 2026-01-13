@@ -45,8 +45,8 @@ pub struct Config<'a> {
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
-    /// Haircut in basis points (0-10000) for conservative bidding.
-    pub haircut_bps: u32,
+    /// Margin in basis points (0-10000) for conservative bidding.
+    pub margin_bps: u32,
 }
 
 impl Solver {
@@ -91,9 +91,9 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Apply haircut: reduce sell amount for buy orders
-                    if config.haircut_bps > 0 {
-                        let factor = config.haircut_bps as f64 / 10_000.0;
+                    // Apply margin: reduce sell amount for buy orders
+                    if config.margin_bps > 0 {
+                        let factor = config.margin_bps as f64 / 10_000.0;
                         current_sell_amount = eth::TokenAmount(current_sell_amount)
                             .apply_factor(1.0 / (1.0 + factor))
                             .unwrap()
@@ -125,9 +125,9 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Apply haircut: increase buy amount for sell orders
-                    if config.haircut_bps > 0 {
-                        let factor = config.haircut_bps as f64 / 10_000.0;
+                    // Apply margin: increase buy amount for sell orders
+                    if config.margin_bps > 0 {
+                        let factor = config.margin_bps as f64 / 10_000.0;
                         current_buy_amount = eth::TokenAmount(current_buy_amount)
                             .apply_factor(1.0 / (1.0 - factor))
                             .unwrap()
