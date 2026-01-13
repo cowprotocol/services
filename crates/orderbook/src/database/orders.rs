@@ -75,6 +75,7 @@ pub trait OrderStoring: Send + Sync {
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
+    async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<Option<Order>>>;
 }
 
 #[derive(Debug)]
@@ -311,6 +312,32 @@ impl OrderStoring for Postgres {
             }
         }
         .transpose()
+    }
+
+    async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<Option<Order>>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["many_orders"])
+            .start_timer();
+        let mut ex = self.pool.acquire().await?;
+        let mut results = Vec::new();
+
+        for uid in uids {
+            results.push(match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+                Some(order_with_quote) => {
+                    let (order, quote) = order_with_quote.into_order_and_quote();
+                    Some(full_order_with_quote_into_model_order(order, quote.as_ref()))
+                },
+                None => {
+                    // try to find the order in the JIT orders table
+                    database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
+                        .await?
+                        .map(full_order_into_model_order)
+                }
+            }.transpose());
+        }
+
+        results.into_iter().collect()
     }
 
     async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
