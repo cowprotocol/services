@@ -12,7 +12,7 @@ use {
     },
     app_data::AppDataHash,
     model::order::{BuyTokenDestination, SellTokenSource},
-    number::{conversions::rational_to_big_decimal, u256_ext::U256Ext},
+    number::conversions::rational_to_big_decimal,
     std::collections::HashMap,
 };
 
@@ -240,8 +240,8 @@ pub fn new(
                             })
                             .collect(),
                         amplification_parameter: rational_to_big_decimal(&num::BigRational::new(
-                            pool.amplification_parameter.factor().to_big_int(),
-                            pool.amplification_parameter.precision().to_big_int(),
+                            pool.amplification_parameter.factor().into(),
+                            pool.amplification_parameter.precision().into(),
                         )),
                         fee: fee_to_decimal(pool.fee),
                     })
@@ -383,15 +383,15 @@ fn buy_token_destination_from_domain(
 }
 
 fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {
-    bigdecimal::BigDecimal::new(fee.as_raw().to_big_int(), 18)
+    bigdecimal::BigDecimal::new(fee.as_raw().into(), 18)
 }
 
 fn weight_to_decimal(weight: liquidity::balancer::v2::weighted::Weight) -> bigdecimal::BigDecimal {
-    bigdecimal::BigDecimal::new(weight.as_raw().to_big_int(), 18)
+    bigdecimal::BigDecimal::new(weight.as_raw().into(), 18)
 }
 
 fn scaling_factor_to_decimal(
     scale: liquidity::balancer::v2::ScalingFactor,
 ) -> bigdecimal::BigDecimal {
-    bigdecimal::BigDecimal::new(scale.as_raw().to_big_int(), 18)
+    bigdecimal::BigDecimal::new(scale.as_raw().into(), 18)
 }

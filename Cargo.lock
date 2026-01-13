@@ -4429,6 +4429,7 @@ dependencies = [
  "anyhow",
  "bigdecimal",
  "num",
+ "ruint",
  "serde",
  "serde_with",
 ]

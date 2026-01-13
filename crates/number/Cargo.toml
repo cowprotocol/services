@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["serde"] }
+ruint = { workspace = true, features = ["num-bigint"] }
 bigdecimal = { workspace = true }
 num = { workspace = true }
 serde_with = { workspace = true }
