@@ -427,6 +427,11 @@ impl Solver {
         self.merge_solutions = true;
         self
     }
+
+    pub fn haircut_bps(mut self, haircut_bps: u32) -> Self {
+        self.haircut_bps = haircut_bps;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -966,6 +971,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
+                haircut_bps: solver.haircut_bps,
             })
             .await;
 
