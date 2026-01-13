@@ -48,7 +48,7 @@ impl FromStr for GasEstimatorType {
             "web3" => Ok(GasEstimatorType::Web3),
             "alloy" => Ok(GasEstimatorType::Alloy),
             _ => Url::parse(s).map(GasEstimatorType::Driver).map_err(|e| {
-                format!("expected 'web3', 'native', or a valid driver URL; got {s:?}: {e}")
+                format!("expected 'web3', 'alloy', or a valid driver URL; got {s:?}: {e}")
             }),
         }
     }
