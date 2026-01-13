@@ -41,9 +41,8 @@ impl Quote {
             .collect();
 
         // Apply haircut to clearing prices for quotes.
-        // For quotes, we directly adjust prices by the configured haircut percentage
-        // since quote orders don't carry limit price information needed for slack
-        // calculation.
+        // Adjusts prices by the configured haircut percentage to report lower
+        // surplus, making the bid more conservative.
         let haircut_bps = solution.solver().haircut_bps();
         if haircut_bps > 0 {
             for trade in solution.trades() {
