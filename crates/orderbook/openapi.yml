@@ -849,9 +849,24 @@ components:
           description: Unix timestamp (`uint32`) until which the order is valid.
           type: integer
         appData:
-          $ref: "#/components/schemas/AppDataHash"
+          description: >
+            The app data associated with the order. In quote responses, this can be
+            either the full app data JSON string or the app data hash, depending on
+            what was provided in the quote request.
+          oneOf:
+            - $ref: "#/components/schemas/AppData"
+            - $ref: "#/components/schemas/AppDataHash"
+        appDataHash:
+          description: >
+            The hash of the app data. Only present when the full app data is also
+            provided in the `appData` field.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
         feeAmount:
-          description: sellAmount in atoms to cover network fees. Needs to be zero (and incorporated into the limit price) when placing the order
+          description: >
+            The fee amount in sell token atoms. For quote responses, this represents
+            the estimated network fee. When creating an order, this should be set to
+            zero as fees are now computed dynamically by solvers.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         kind:
@@ -862,14 +877,23 @@ components:
           description: Is the order fill-or-kill or partially fillable?
           type: boolean
         sellTokenBalance:
+          description: >
+            Where the sell token should be drawn from. Defaults to `erc20` for
+            standard ERC-20 token transfers.
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          description: >
+            Where the buy token should be transferred to. Defaults to `erc20` for
+            standard ERC-20 token transfers.
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
           default: erc20
         signingScheme:
+          description: >
+            The signing scheme to use for the order. Defaults to `eip712` for
+            standard typed data signing.
           allOf:
             - $ref: "#/components/schemas/SigningScheme"
           default: eip712
@@ -1791,9 +1815,16 @@ components:
       type: object
       properties:
         quote:
-          $ref: "#/components/schemas/OrderParameters"
+          description: >
+            The quoted order parameters. These values can be used directly to
+            create and sign an order.
+          allOf:
+            - $ref: "#/components/schemas/OrderParameters"
         from:
-          $ref: "#/components/schemas/Address"
+          description: >
+            The address of the trader for whom the quote was requested.
+          allOf:
+            - $ref: "#/components/schemas/Address"
         expiration:
           description: |
             Expiration date of the offered fee. Order service might not accept
