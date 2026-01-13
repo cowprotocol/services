@@ -34,11 +34,40 @@ impl Solutions {
         self.0.solutions
             .into_iter()
             .map(|solution| {
-                // Pre-convert prices for haircut calculation
-                let prices: HashMap<eth::TokenAddress, eth::U256> = solution
+                // Convert prices to domain types (mutable for haircut adjustment)
+                let mut prices: HashMap<eth::Address, eth::U256> = solution
                     .prices
                     .iter()
-                    .map(|(address, price)| ((*address).into(), *price))
+                    .map(|(address, price)| (*address, *price))
+                    .collect();
+
+                // Apply haircut to clearing prices for each fulfillment order.
+                // This reduces the reported output amounts without changing executed amounts.
+                if haircut_bps > 0 && auction.id().is_some() {
+                    for trade in &solution.trades {
+                        if let solvers_dto::solution::Trade::Fulfillment(fulfillment) = trade &&
+                            let Some(order) = auction
+                                .orders()
+                                .iter()
+                                .find(|order| order.uid == fulfillment.order.0)
+                            {
+                                let sell_token: eth::Address = order.sell.token.as_erc20(weth).into();
+                                let buy_token: eth::Address = order.buy.token.as_erc20(weth).into();
+                                competition::solution::haircut::apply_to_clearing_prices(
+                                    &mut prices,
+                                    order.side,
+                                    sell_token,
+                                    buy_token,
+                                    haircut_bps,
+                                );
+                            }
+                    }
+                }
+
+                // Convert to TokenAddress for Solution::new
+                let prices: HashMap<eth::TokenAddress, eth::U256> = prices
+                    .into_iter()
+                    .map(|(address, price)| (address.into(), price))
                     .collect();
 
                 competition::Solution::new(
@@ -58,30 +87,9 @@ impl Solutions {
                                     ))?
                                     .clone();
 
-                                let mut executed_amount = fulfillment.executed_amount.into();
-                                // Calculate haircutted executed amount if configured.
-                                // Only apply slack-based haircut for real auctions (with ID).
-                                // For quotes (no ID), haircut is applied via price adjustment
-                                // in quote.rs since quote orders don't have meaningful limits.
-                                if haircut_bps > 0 && auction.id().is_some() {
-                                    let clearing_prices = competition::solution::trade::ClearingPrices {
-                                        sell: prices[&order.sell.token.as_erc20(weth)],
-                                        buy: prices[&order.buy.token.as_erc20(weth)],
-                                    };
-
-                                    if let Some(haircut_amount) = competition::solution::haircut::calculate_executed_amount(
-                                        &order,
-                                        fulfillment.executed_amount.into(),
-                                        haircut_bps,
-                                        &clearing_prices,
-                                    ) {
-                                        executed_amount = haircut_amount;
-                                    }
-                                }
-
                                 competition::solution::trade::Fulfillment::new(
                                     order,
-                                    executed_amount,
+                                    fulfillment.executed_amount.into(),
                                     match fulfillment.fee {
                                         Some(fee) => competition::solution::trade::Fee::Dynamic(
                                             competition::order::SellAmount(fee),
@@ -89,68 +97,65 @@ impl Solutions {
                                         None => competition::solution::trade::Fee::Static,
                                     },
                                 )
-                                .map(competition::solution::Trade::Fulfillment)
-                                .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
+                                    .map(competition::solution::Trade::Fulfillment)
+                                    .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
                             }
                             solvers_dto::solution::Trade::Jit(jit) => {
                                 let jit_order: JitOrder = jit.order.clone().into();
                                 Ok(competition::solution::Trade::Jit(
-                                competition::solution::trade::Jit::new(
-                                    competition::order::Jit {
-                                        uid: jit_order.uid(
-                                            solver.eth.contracts().settlement_domain_separator(),
-                                        )?,
-                                        sell: eth::Asset {
-                                            amount: jit_order.0.sell_amount.into(),
-                                            token: jit_order.0.sell_token.into(),
+                                    competition::solution::trade::Jit::new(
+                                        competition::order::Jit {
+                                            uid: jit_order.uid(
+                                                solver.eth.contracts().settlement_domain_separator(),
+                                            )?,
+                                            sell: eth::Asset {
+                                                amount: jit_order.0.sell_amount.into(),
+                                                token: jit_order.0.sell_token.into(),
+                                            },
+                                            buy: eth::Asset {
+                                                amount: jit_order.0.buy_amount.into(),
+                                                token: jit_order.0.buy_token.into(),
+                                            },
+                                            receiver: jit_order.0.receiver,
+                                            partially_fillable: jit_order.0.partially_fillable,
+                                            valid_to: jit_order.0.valid_to.into(),
+                                            app_data: jit_order.0.app_data.into(),
+                                            side: match jit_order.0.kind {
+                                                solvers_dto::solution::Kind::Sell => competition::order::Side::Sell,
+                                                solvers_dto::solution::Kind::Buy => competition::order::Side::Buy,
+                                            },
+                                            sell_token_balance: match jit_order.0.sell_token_balance {
+                                                solvers_dto::solution::SellTokenBalance::Erc20 => {
+                                                    competition::order::SellTokenBalance::Erc20
+                                                }
+                                                solvers_dto::solution::SellTokenBalance::Internal => {
+                                                    competition::order::SellTokenBalance::Internal
+                                                }
+                                                solvers_dto::solution::SellTokenBalance::External => {
+                                                    competition::order::SellTokenBalance::External
+                                                }
+                                            },
+                                            buy_token_balance: match jit_order.0.buy_token_balance {
+                                                solvers_dto::solution::BuyTokenBalance::Erc20 => {
+                                                    competition::order::BuyTokenBalance::Erc20
+                                                }
+                                                solvers_dto::solution::BuyTokenBalance::Internal => {
+                                                    competition::order::BuyTokenBalance::Internal
+                                                }
+                                            },
+                                            signature: jit_order.signature(
+                                                solver.eth.contracts().settlement_domain_separator(),
+                                            )?,
                                         },
-                                        buy: eth::Asset {
-                                            amount: jit_order.0.buy_amount.into(),
-                                            token: jit_order.0.buy_token.into(),
-                                        },
-                                        receiver: jit_order.0.receiver,
-                                        partially_fillable: jit_order.0.partially_fillable,
-                                        valid_to: jit_order.0.valid_to.into(),
-                                        app_data: jit_order.0.app_data.into(),
-                                        side: match jit_order.0.kind {
-                                            solvers_dto::solution::Kind::Sell => competition::order::Side::Sell,
-                                            solvers_dto::solution::Kind::Buy => competition::order::Side::Buy,
-                                        },
-                                        sell_token_balance: match jit_order.0.sell_token_balance {
-                                            solvers_dto::solution::SellTokenBalance::Erc20 => {
-                                                competition::order::SellTokenBalance::Erc20
-                                            }
-                                            solvers_dto::solution::SellTokenBalance::Internal => {
-                                                competition::order::SellTokenBalance::Internal
-                                            }
-                                            solvers_dto::solution::SellTokenBalance::External => {
-                                                competition::order::SellTokenBalance::External
-                                            }
-                                        },
-                                        buy_token_balance: match jit_order.0.buy_token_balance {
-                                            solvers_dto::solution::BuyTokenBalance::Erc20 => {
-                                                competition::order::BuyTokenBalance::Erc20
-                                            }
-                                            solvers_dto::solution::BuyTokenBalance::Internal => {
-                                                competition::order::BuyTokenBalance::Internal
-                                            }
-                                        },
-                                        signature: jit_order.signature(
-                                            solver.eth.contracts().settlement_domain_separator(),
-                                        )?,
-                                    },
-                                    jit.executed_amount.into(),
-                                    jit.fee.unwrap_or_default().into(),
-                                )
-                                .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
-                            ))},
+                                        jit.executed_amount.into(),
+                                        jit.fee.unwrap_or_default().into(),
+                                    )
+                                        .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
+                                ))
+                            }
                         })
                         .try_collect()?,
-                    solution
-                        .prices
-                        .into_iter()
-                        .map(|(address, price)| (address.into(), price))
-                        .collect(),
+                    prices,
                     solution
                         .pre_interactions
                         .into_iter()
@@ -179,7 +184,7 @@ impl Solutions {
                                                     spender: allowance.spender,
                                                     amount: allowance.amount,
                                                 }
-                                                .into()
+                                                    .into()
                                             })
                                             .collect(),
                                         inputs: interaction
@@ -244,36 +249,36 @@ impl Solutions {
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
                         // convert the flashloan info provided by the solver
-                        .map(|f| f.iter().map(|(order, loan)|(order.into(), loan.into())).collect())
+                        .map(|f| f.iter().map(|(order, loan)| (order.into(), loan.into())).collect())
                         // or copy over the relevant flashloan hints from the solve request
                         .unwrap_or_else(|| solution.trades.iter()
                             .filter_map(|t| {
-                            let solvers_dto::solution::Trade::Fulfillment(trade) = &t else {
-                                // we don't have any flashloan data on JIT orders
-                                return None;
-                            };
-                            let uid = competition::order::Uid::from(&trade.order);
-                            Some((
-                                uid,
-                                flashloan_hints.get(&uid).cloned()?,
-                            ))
-                        }).collect()),
+                                let solvers_dto::solution::Trade::Fulfillment(trade) = &t else {
+                                    // we don't have any flashloan data on JIT orders
+                                    return None;
+                                };
+                                let uid = competition::order::Uid::from(&trade.order);
+                                Some((
+                                    uid,
+                                    flashloan_hints.get(&uid).cloned()?,
+                                ))
+                            }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {
                         address: w.address,
                         data: w.data,
-                    }).collect()
+                    }).collect(),
                 )
-                .map_err(|err| match err {
-                    competition::solution::error::Solution::InvalidClearingPrices => {
-                        super::Error("invalid clearing prices".to_owned())
-                    }
-                    competition::solution::error::Solution::ProtocolFee(err) => {
-                        super::Error(format!("could not incorporate protocol fee: {err}"))
-                    }
-                    competition::solution::error::Solution::InvalidJitTrade(err) => {
-                        super::Error(format!("invalid jit trade: {err}"))
-                    }
-                })
+                    .map_err(|err| match err {
+                        competition::solution::error::Solution::InvalidClearingPrices => {
+                            super::Error("invalid clearing prices".to_owned())
+                        }
+                        competition::solution::error::Solution::ProtocolFee(err) => {
+                            super::Error(format!("could not incorporate protocol fee: {err}"))
+                        }
+                        competition::solution::error::Solution::InvalidJitTrade(err) => {
+                            super::Error(format!("invalid jit trade: {err}"))
+                        }
+                    })
             })
             .collect()
     }

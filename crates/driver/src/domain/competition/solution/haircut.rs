@@ -161,10 +161,11 @@ pub fn apply_to_clearing_prices(
             }
         }
         order::Side::Buy => {
-            // For buy orders: decrease buy price to reduce the amount of buy tokens
-            // received. new_buy_price = buy_price * (10000 - haircut_bps) / 10000
+            // For buy orders: increase buy price to increase the sell tokens paid,
+            // making the bid more conservative (less surplus reported).
+            // new_buy_price = buy_price * (10000 + haircut_bps) / 10000
             if let Some(adjusted_buy_price) = buy_price
-                .checked_mul(eth::U256::from(10000u32.saturating_sub(haircut_bps)))
+                .checked_mul(eth::U256::from(10000u32.saturating_add(haircut_bps)))
                 .and_then(|v| v.checked_div(eth::U256::from(10000u32)))
             {
                 tracing::debug!(
