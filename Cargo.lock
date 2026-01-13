@@ -6416,7 +6416,6 @@ dependencies = [
  "database",
  "derivative",
  "derive_more 1.0.0",
- "ethcontract",
  "ethrpc",
  "futures",
  "gas-estimation",

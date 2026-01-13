@@ -2,10 +2,10 @@
 
 use {
     crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
+    alloy::eips::BlockId,
     anyhow::Result,
     contracts::alloy::ISwaprPair,
-    ethcontract::BlockId,
-    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
+    ethrpc::alloy::errors::ignore_non_node_error,
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -27,7 +27,7 @@ impl PoolReading for SwaprPoolReader {
 
         async move {
             let pair_contract = ISwaprPair::Instance::new(pair_address, self.0.web3.alloy.clone());
-            let fetch_fee = pair_contract.swapFee().block(block.into_alloy());
+            let fetch_fee = pair_contract.swapFee().block(block);
 
             let (pool, fee) = futures::join!(fetch_pool, fetch_fee.call().into_future());
             handle_results(pool, fee)
