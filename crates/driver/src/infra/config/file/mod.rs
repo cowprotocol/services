@@ -318,6 +318,11 @@ struct SolverConfig {
     /// the minimum buy amount requirement. For buy orders, decreases the
     /// maximum sell amount allowed. This forces solvers to find solutions
     /// with enough surplus to cover the margin. Default: 0 (no margin).
+    ///
+    /// Note: This value should typically match the slippage tolerance
+    /// configured on external pricing APIs used by the solver. Setting a
+    /// higher margin than the expected negative slippage would unnecessarily
+    /// penalize orders.
     #[serde(default)]
     margin_bps: u32,
 }
