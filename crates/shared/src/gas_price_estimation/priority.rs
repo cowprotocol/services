@@ -4,7 +4,6 @@ use {
     std::{
         future::Future,
         sync::atomic::{AtomicUsize, Ordering},
-        time::Duration,
     },
 };
 
@@ -63,15 +62,6 @@ impl PriorityGasPriceEstimating {
 
 #[async_trait::async_trait]
 impl GasPriceEstimating for PriorityGasPriceEstimating {
-    async fn estimate_with_limits(
-        &self,
-        gas_limit: f64,
-        time_limit: Duration,
-    ) -> Result<GasPrice1559> {
-        self.prioritize(|estimator| estimator.estimate_with_limits(gas_limit, time_limit))
-            .await
-    }
-
     async fn estimate(&self) -> Result<GasPrice1559> {
         self.prioritize(|estimator| estimator.estimate()).await
     }

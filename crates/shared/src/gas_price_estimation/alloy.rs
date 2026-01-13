@@ -6,13 +6,11 @@
 //! for the implementation details.
 
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, u128_to_f64},
+    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559, u128_to_f64},
     alloy::providers::Provider,
     anyhow::{Context, Result},
     ethrpc::AlloyProvider,
     futures::TryFutureExt,
-    crate::gas_price_estimation::price::GasPrice1559,
-    std::time::Duration,
     tracing::instrument,
 };
 
@@ -27,11 +25,7 @@ impl AlloyGasPriceEstimator {
 #[async_trait::async_trait]
 impl GasPriceEstimating for AlloyGasPriceEstimator {
     #[instrument(skip(self))]
-    async fn estimate_with_limits(
-        &self,
-        _gas_limit: f64,
-        _time_limit: Duration,
-    ) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559> {
         let fees = self
             .0
             .estimate_eip1559_fees()

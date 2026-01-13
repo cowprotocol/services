@@ -30,17 +30,7 @@ pub const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(30);
 #[async_trait::async_trait]
 pub trait GasPriceEstimating: Send + Sync {
     /// Estimate the gas price for a transaction to be mined "quickly".
-    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559> {
-        self.estimate_with_limits(DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT)
-            .await
-    }
-    /// Estimate the gas price for a transaction that uses <gas> to be mined
-    /// within <time_limit>.
-    async fn estimate_with_limits(
-        &self,
-        gas_limit: f64,
-        time_limit: std::time::Duration,
-    ) -> Result<crate::gas_price_estimation::price::GasPrice1559>;
+    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559>;
 }
 
 #[derive(Clone, Debug)]
