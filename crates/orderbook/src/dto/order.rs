@@ -41,6 +41,7 @@ pub struct Order {
     #[serde(flatten)]
     pub signature: Signature,
     pub quote: Quote,
+    pub confirmed_valid_to: u32,
 }
 
 #[serde_as]

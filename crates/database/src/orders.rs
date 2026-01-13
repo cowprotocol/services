@@ -88,6 +88,7 @@ pub struct Order {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
+    pub confirmed_valid_to: i64,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
@@ -145,9 +146,10 @@ INSERT INTO orders (
     sell_token_balance,
     buy_token_balance,
     cancellation_timestamp,
-    class
+    class,
+    confirmed_valid_to
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     "#;
 
 #[instrument(skip_all)]
@@ -189,6 +191,7 @@ async fn insert_order_execute_sqlx(
         .bind(order.buy_token_balance)
         .bind(order.cancellation_timestamp)
         .bind(order.class)
+        .bind(order.confirmed_valid_to)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -487,6 +490,7 @@ pub struct FullOrder {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
+    pub confirmed_valid_to: i64,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,

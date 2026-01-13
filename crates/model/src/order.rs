@@ -224,6 +224,7 @@ pub struct OrderData {
     pub sell_token_balance: SellTokenSource,
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
+    pub confirmed_valid_to: u32,
 }
 
 impl OrderData {
@@ -357,6 +358,8 @@ impl OrderCreation {
             sell_amount: self.sell_amount,
             buy_amount: self.buy_amount,
             valid_to: self.valid_to,
+            // OrderCreation does not have a confirmed_valid_to field
+            confirmed_valid_to: self.valid_to,
             app_data: self.app_data.hash(),
             fee_amount: self.fee_amount,
             kind: self.kind,
@@ -1134,6 +1137,7 @@ mod tests {
                 sell_amount: alloy::primitives::U256::ONE,
                 buy_amount: alloy::primitives::U256::ZERO,
                 valid_to: u32::MAX,
+                confirmed_valid_to: u32::MAX,
                 app_data: AppDataHash(hex!(
                     "6000000000000000000000000000000000000000000000000000000000000007"
                 )),
@@ -1300,6 +1304,7 @@ mod tests {
                 sell_amount: alloy::primitives::U256::from(0x0246ddf97976680000_u128),
                 buy_amount: alloy::primitives::U256::from(0xb98bc829a6f90000_u128),
                 valid_to: 0xffffffff,
+                confirmed_valid_to: 0xffffffff,
                 app_data: AppDataHash(hex!(
                     "0000000000000000000000000000000000000000000000000000000000000000"
                 )),
@@ -1334,6 +1339,7 @@ mod tests {
             sell_amount: alloy::primitives::U256::from(0x0246ddf97976680000_u128),
             buy_amount: alloy::primitives::U256::from(0xb98bc829a6f90000_u128),
             valid_to: 0xffffffff,
+            confirmed_valid_to: 0xffffffff,
             app_data: AppDataHash(hex!(
                 "0000000000000000000000000000000000000000000000000000000000000000"
             )),

@@ -659,6 +659,7 @@ fn encode_fake_trade(
         buy_amount,
         receiver: Some(verification.receiver),
         valid_to: u32::MAX,
+        confirmed_valid_to: u32::MAX,
         app_data: Default::default(),
         fee_amount: U256::ZERO,
         kind: query.kind,
@@ -702,6 +703,7 @@ fn encode_jit_orders(
                 sell_amount: jit_order.sell_amount,
                 buy_amount: jit_order.buy_amount,
                 valid_to: jit_order.valid_to,
+                confirmed_valid_to: jit_order.valid_to,
                 app_data: jit_order.app_data,
                 fee_amount: U256::ZERO,
                 kind: match &jit_order.side {
