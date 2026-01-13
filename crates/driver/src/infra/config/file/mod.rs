@@ -318,7 +318,7 @@ struct SolverConfig {
     /// the minimum buy amount requirement. For buy orders, decreases the
     /// maximum sell amount allowed. This forces solvers to find solutions
     /// with enough surplus to cover the margin. Default: 0 (no margin).
-    #[serde(default, alias = "haircut-bps")]
+    #[serde(default)]
     margin_bps: u32,
 }
 
