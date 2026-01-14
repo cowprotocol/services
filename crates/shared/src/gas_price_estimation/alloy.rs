@@ -6,9 +6,9 @@
 //! for the implementation details.
 
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559, u128_to_f64},
-    alloy::providers::Provider,
-    anyhow::{Context, Result},
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::{eips::eip1559::Eip1559Estimation, providers::Provider},
+    anyhow::Result,
     ethrpc::AlloyProvider,
     futures::TryFutureExt,
     tracing::instrument,
@@ -25,24 +25,16 @@ impl AlloyGasPriceEstimator {
 #[async_trait::async_trait]
 impl GasPriceEstimating for AlloyGasPriceEstimator {
     #[instrument(skip(self))]
-    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559> {
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
         let fees = self
             .0
             .estimate_eip1559_fees()
             .map_err(|err| anyhow::anyhow!("could not estimate EIP 1559 fees: {err:?}"))
             .await?;
 
-        let max_fee_per_gas = u128_to_f64(fees.max_fee_per_gas)
-            .context("could not convert max_fee_per_gas to f64")?;
-
-        Ok(GasPrice1559 {
-            // We reuse `max_fee_per_gas` since the base fee only actually
-            // exists in a mined block. For price estimates used to configure
-            // the gas price of a transaction the base fee doesn't matter.
-            base_fee_per_gas: max_fee_per_gas,
-            max_fee_per_gas,
-            max_priority_fee_per_gas: u128_to_f64(fees.max_priority_fee_per_gas)
-                .context("could not convert max_priority_fee_per_gas to f64")?,
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: fees.max_fee_per_gas,
+            max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
         })
     }
 }

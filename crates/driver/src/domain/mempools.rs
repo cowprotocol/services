@@ -4,11 +4,11 @@ use {
         domain::{
             BlockNo,
             competition::solution::Settlement,
-            eth::{TxId, TxStatus},
+            eth::{GasPrice, TxId, TxStatus},
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
-    alloy::consensus::Transaction,
+    alloy::{consensus::Transaction, primitives::U256},
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -146,11 +146,16 @@ impl Mempools {
             .await;
         let final_gas_price = match &replacement_gas_price {
             Ok(Some(replacement_gas_price))
-                if replacement_gas_price.max() > current_gas_price.max() =>
+                if replacement_gas_price.max()
+                    > U256::from(current_gas_price.max_fee_per_gas).into() =>
             {
                 *replacement_gas_price
             }
-            _ => current_gas_price,
+            _ => GasPrice::new(
+                U256::from(current_gas_price.max_fee_per_gas).into(),
+                U256::from(current_gas_price.max_priority_fee_per_gas).into(),
+                self.ethereum.current_block().borrow().base_fee,
+            ),
         };
 
         tracing::debug!(
@@ -336,7 +341,7 @@ impl Mempools {
                 )
             })?)
             .into(),
-            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+            None,
         );
         // in order to replace a tx we need to increase the price
         Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))

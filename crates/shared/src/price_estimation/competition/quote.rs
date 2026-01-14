@@ -8,6 +8,7 @@ use {
         Query,
         QuoteVerificationMode,
     },
+    alloy::eips::eip1559::calc_effective_gas_price,
     anyhow::Context,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
@@ -110,7 +111,13 @@ impl PriceRanking {
                 let native = native.clone();
                 let gas = gas
                     .estimate()
-                    .map_ok(|gas| gas.effective_gas_price())
+                    .map_ok(|gas| {
+                        calc_effective_gas_price(
+                            gas.max_fee_per_gas,
+                            gas.max_priority_fee_per_gas,
+                            None,
+                        )
+                    })
                     .map_err(PriceEstimationError::ProtocolInternal);
                 let (native_price, gas_price) = futures::try_join!(
                     native.estimate_native_price(token.into_alloy(), timeout),
@@ -119,7 +126,7 @@ impl PriceRanking {
 
                 Ok(RankingContext {
                     native_price,
-                    gas_price,
+                    gas_price: gas_price as f64,
                 })
             }
         }
@@ -156,14 +163,14 @@ mod tests {
     use {
         super::*,
         crate::{
-            gas_price_estimation::{FakeGasPriceEstimator, price::GasPrice1559},
+            gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
                 MockPriceEstimating,
                 QuoteVerificationMode,
                 native::MockNativePriceEstimating,
             },
         },
-        alloy::primitives::U256,
+        alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         model::order::OrderKind,
     };
 
@@ -190,10 +197,9 @@ mod tests {
         native
             .expect_estimate_native_price()
             .returning(move |_, _| async { Ok(0.5) }.boxed());
-        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 2.0,
-            max_fee_per_gas: 2.0,
-            max_priority_fee_per_gas: 2.0,
+        let gas = Arc::new(FakeGasPriceEstimator::new(Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 2,
         }));
         PriceRanking::BestBangForBuck {
             native: Arc::new(native),

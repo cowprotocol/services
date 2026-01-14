@@ -449,7 +449,11 @@ impl Solver {
         let gas = Arc::new(
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),
-                &Default::default(),
+                // NOTE: Using Web3 estimator for tests to avoid timing-dependent gas price
+                // variations. The Alloy estimator analyzes the last 10 blocks, which changes
+                // as blocks are mined during tests, causing mismatches between auction
+                // creation time and solver request validation time.
+                &infra::config::file::GasEstimatorType::Web3,
                 &[infra::mempool::Config {
                     min_priority_fee: Default::default(),
                     gas_price_cap: eth::U256::MAX,
@@ -495,14 +499,13 @@ impl Solver {
             axum::routing::post(
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
-                    let effective_gas_price = eth
-                        .gas_price()
-                        .await
-                        .unwrap()
-                        .effective()
-                        .0
-                        .0
-                        .to_string();
+                    // Extract effectiveGasPrice from request instead of recalculating.
+                    // Gas prices from the network can change between auction creation
+                    // and solver request validation, causing mismatches in tests.
+                    let effective_gas_price = req
+                        .get("effectiveGasPrice")
+                        .expect("effectiveGasPrice missing")
+                        .clone();
                     let expected = json!({
                         "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,

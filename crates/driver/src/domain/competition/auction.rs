@@ -2,12 +2,13 @@ use {
     crate::{
         domain::{
             competition::{self},
-            eth,
+            eth::{self, GasPrice},
             liquidity,
             time,
         },
         infra::{Ethereum, blockchain, solver::Timeouts},
     },
+    alloy::primitives::U256,
     std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
@@ -56,11 +57,18 @@ impl Auction {
             true
         });
 
+        let gas_est = eth.gas_price().await?;
+        let gas_price = GasPrice::new(
+            U256::from(gas_est.max_fee_per_gas).into(),
+            U256::from(gas_est.max_priority_fee_per_gas).into(),
+            None,
+        );
+
         Ok(Self {
             id,
             orders,
             tokens,
-            gas_price: eth.gas_price().await?,
+            gas_price,
             deadline,
             surplus_capturing_jit_order_owners,
         })

@@ -8,8 +8,8 @@ use {
         domain::eth,
         infra::{config::file::GasEstimatorType, mempool},
     },
+    alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
     ethrpc::Web3,
-
     shared::gas_price_estimation::{
         GasPriceEstimating,
         alloy::AlloyGasPriceEstimator,
@@ -76,20 +76,21 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
-    pub async fn estimate(&self) -> Result<eth::GasPrice, Error> {
+    pub async fn estimate(&self) -> Result<Eip1559Estimation, Error> {
         let estimate = self.gas.estimate().await.map_err(Error::GasPrice)?;
 
         let max_priority_fee_per_gas = {
             // the driver supports tweaking the tx gas price tip in case the gas
             // price estimator is systematically too low => compute configured tip bump
             let (max_additional_tip, tip_percentage_increase) = self.additional_tip;
-            let additional_tip = f64::from(max_additional_tip)
-                .min(estimate.max_priority_fee_per_gas * tip_percentage_increase);
+            let additional_tip = (max_additional_tip).min(U256::from(
+                (estimate.max_priority_fee_per_gas as f64) * tip_percentage_increase,
+            ));
 
             // make sure we tip at least some configurable minimum amount
             std::cmp::max(
                 self.min_priority_fee,
-                eth::U256::from(estimate.max_priority_fee_per_gas + additional_tip),
+                eth::U256::from(estimate.max_priority_fee_per_gas) + additional_tip,
             )
         };
 
@@ -105,10 +106,11 @@ impl GasPriceEstimator {
             )));
         }
 
-        Ok(eth::GasPrice::new(
-            suggested_max_fee_per_gas.into(),
-            max_priority_fee_per_gas.into(),
-            eth::U256::from(estimate.base_fee_per_gas).into(),
-        ))
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: u128::try_from(suggested_max_fee_per_gas)
+                .map_err(|err| Error::GasPrice(err.into()))?,
+            max_priority_fee_per_gas: u128::try_from(max_priority_fee_per_gas)
+                .map_err(|err| Error::GasPrice(err.into()))?,
+        })
     }
 }

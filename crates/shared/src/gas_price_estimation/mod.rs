@@ -15,7 +15,10 @@ use {
         },
         http_client::HttpClientFactory,
     },
-    ::alloy::providers::Provider,
+    ::alloy::{
+        eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
+        providers::Provider,
+    },
     anyhow::Result,
     std::{str::FromStr, time::Duration},
     tracing::instrument,
@@ -30,7 +33,7 @@ pub const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(30);
 #[async_trait::async_trait]
 pub trait GasPriceEstimating: Send + Sync {
     /// Estimate the gas price for a transaction to be mined "quickly".
-    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559>;
+    async fn estimate(&self) -> Result<Eip1559Estimation>;
 }
 
 #[derive(Clone, Debug)]
@@ -87,9 +90,16 @@ pub async fn create_priority_estimator(
     Ok(PriorityGasPriceEstimating::new(estimators))
 }
 
-fn u128_to_f64(val: u128) -> Result<f64> {
-    if val > 2u128.pow(f64::MANTISSA_DIGITS) {
-        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
+pub trait Eip1559EstimationExt {
+    fn effective(self, base_fee: Option<u64>) -> u128;
+}
+
+impl Eip1559EstimationExt for Eip1559Estimation {
+    fn effective(self, base_fee: Option<u64>) -> u128 {
+        calc_effective_gas_price(
+            self.max_fee_per_gas,
+            self.max_priority_fee_per_gas,
+            base_fee,
+        )
     }
-    Ok(val as f64)
 }

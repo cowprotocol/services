@@ -1,11 +1,9 @@
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
-    alloy::primitives::U256,
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::eips::eip1559::Eip1559Estimation,
     anyhow::{Context, Result},
-    number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::Deserialize,
-    serde_with::serde_as,
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -25,21 +23,16 @@ pub struct DriverGasEstimator {
 
 #[derive(Debug, Clone)]
 struct CachedGasPrice {
-    price: GasPrice1559,
+    price: Eip1559Estimation,
     timestamp: Instant,
 }
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Gas price components in EIP-1559 format.
 struct GasPriceResponse {
-    #[serde_as(as = "HexOrDecimalU256")]
-    max_fee_per_gas: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    max_priority_fee_per_gas: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    base_fee_per_gas: U256,
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
 }
 
 const CACHE_DURATION: Duration = Duration::from_secs(5);
@@ -54,7 +47,7 @@ impl DriverGasEstimator {
     }
 
     #[instrument(skip(self))]
-    async fn fetch_gas_price(&self) -> Result<GasPrice1559> {
+    async fn fetch_gas_price(&self) -> Result<Eip1559Estimation> {
         let response = self
             .client
             .get(self.url.clone())
@@ -67,10 +60,9 @@ impl DriverGasEstimator {
             .await
             .context("failed to parse driver response")?;
 
-        Ok(GasPrice1559 {
-            base_fee_per_gas: f64::from(response.base_fee_per_gas),
-            max_fee_per_gas: f64::from(response.max_fee_per_gas),
-            max_priority_fee_per_gas: f64::from(response.max_priority_fee_per_gas),
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: response.max_fee_per_gas,
+            max_priority_fee_per_gas: response.max_priority_fee_per_gas,
         })
     }
 }
@@ -78,7 +70,7 @@ impl DriverGasEstimator {
 #[async_trait::async_trait]
 impl GasPriceEstimating for DriverGasEstimator {
     #[instrument(skip(self))]
-    async fn estimate(&self) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
         // Lock cache for entire duration of this method to prevent concurrent network
         // requests
         let mut cache = self.cache.lock().await;

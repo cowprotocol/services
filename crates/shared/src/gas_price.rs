@@ -5,7 +5,8 @@
 //! anomalies.
 
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
     anyhow::Result,
     tracing::instrument,
 };
@@ -34,11 +35,15 @@ where
     T: GasPriceEstimating,
 {
     #[instrument(skip_all)]
-    async fn estimate(&self) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
         let estimate = self.inner.estimate().await?;
-        self.metrics
-            .gas_price
-            .set(estimate.effective_gas_price() / 1e9);
+        self.metrics.gas_price.set(
+            (calc_effective_gas_price(
+                estimate.max_fee_per_gas,
+                estimate.max_priority_fee_per_gas,
+                None,
+            ) / 10u128.pow(9)) as f64,
+        );
         Ok(estimate)
     }
 }
