@@ -569,7 +569,9 @@ fn check_solve_request(request: Value, expected: Value) {
     const DIFF_PCT: f64 = 0.15; // 15%
     // Assumes the u128 fits inside the i128, in case it doesn't, just upgrade it to
     // U256
-    let diff = (request.effective_gas_price as i128 - expected.effective_gas_price as i128).abs();
+    let diff = (request.effective_gas_price.cast_signed()
+        - expected.effective_gas_price.cast_signed())
+    .abs();
     let pct = diff as f64 / max(request.effective_gas_price, expected.effective_gas_price) as f64;
 
     assert!(
