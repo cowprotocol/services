@@ -31,6 +31,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+rand = { workspace = true }
 rstest = { workspace = true }
 
 [lints]
