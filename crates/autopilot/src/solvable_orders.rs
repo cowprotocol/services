@@ -1056,8 +1056,8 @@ mod tests {
                     EstimatorSource::Primary,
                     maintenance_estimator.clone(),
                 )]),
-                update_interval: Duration::from_millis(1), /* Short interval to trigger
-                                                            * background fetch quickly */
+                // Short interval to trigger background fetch quickly
+                update_interval: Duration::from_millis(1),
                 update_size: None,
                 prefetch_time: Default::default(),
                 concurrent_requests: 1,

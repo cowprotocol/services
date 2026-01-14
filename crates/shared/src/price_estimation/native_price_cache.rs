@@ -209,6 +209,9 @@ impl NativePriceCache {
 
     /// Get a cached price that is ready to use (not in error accumulation
     /// state).
+    ///
+    /// Returns None if the price is not cached, is expired, or is not ready to
+    /// use.
     fn get_ready_to_use_cached_price(
         &self,
         token: Address,
@@ -254,26 +257,18 @@ impl NativePriceCache {
             .collect()
     }
 
-    /// Updates the set of high-priority tokens for maintenance updates.
+    /// Replaces the set of high-priority tokens with the provided set.
     /// High-priority tokens are refreshed before other tokens in the cache.
     pub fn replace_high_priority(&self, tokens: IndexSet<Address>) {
-        tracing::trace!(?tokens, "update high priority tokens in cache");
+        tracing::trace!(?tokens, "updated high priority tokens in cache");
         *self.inner.high_priority.lock().unwrap() = tokens;
     }
 
     /// Spawns a background maintenance task for this cache.
     fn spawn_maintenance_task(&self, config: MaintenanceConfig) {
-        let update_task = CacheUpdateTask {
-            cache: Arc::downgrade(&self.inner),
-            estimators: config.estimators,
-            update_interval: config.update_interval,
-            update_size: config.update_size,
-            prefetch_time: config.prefetch_time,
-            concurrent_requests: config.concurrent_requests,
-            quote_timeout: config.quote_timeout,
-        }
-        .run()
-        .instrument(tracing::info_span!("native_price_cache_maintenance"));
+        let update_task = CacheMaintenanceTask::new(Arc::downgrade(&self.inner), config)
+            .run()
+            .instrument(tracing::info_span!("native_price_cache_maintenance"));
         tokio::spawn(update_task);
     }
 
@@ -333,7 +328,7 @@ impl NativePriceCache {
 }
 
 /// Background task that keeps the cache warm by periodically refreshing prices.
-struct CacheUpdateTask {
+struct CacheMaintenanceTask {
     cache: Weak<CacheStorage>,
     /// Map of estimators by source type. Maintenance dispatches to the
     /// appropriate estimator based on which source fetched each entry.
@@ -345,7 +340,19 @@ struct CacheUpdateTask {
     quote_timeout: Duration,
 }
 
-impl CacheUpdateTask {
+impl CacheMaintenanceTask {
+    fn new(cache: Weak<CacheStorage>, config: MaintenanceConfig) -> Self {
+        CacheMaintenanceTask {
+            cache,
+            estimators: config.estimators,
+            update_interval: config.update_interval,
+            update_size: config.update_size,
+            prefetch_time: config.prefetch_time,
+            concurrent_requests: config.concurrent_requests,
+            quote_timeout: config.quote_timeout,
+        }
+    }
+
     /// Single run of the background updating process.
     async fn single_update(&self, cache: &NativePriceCache) {
         let metrics = Metrics::get();
