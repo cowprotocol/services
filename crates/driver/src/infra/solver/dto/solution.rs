@@ -60,19 +60,17 @@ impl Solutions {
                             // Apply haircut to clearing prices for this fulfillment order.
                             // This reduces the reported output amounts without changing
                             // executed amounts.
-                            if haircut_bps > 0 {
-                                let sell_token: eth::Address =
-                                    order.sell.token.as_erc20(weth).into();
-                                let buy_token: eth::Address =
-                                    order.buy.token.as_erc20(weth).into();
-                                competition::solution::haircut::apply_to_clearing_prices(
-                                    &mut prices,
-                                    order.side,
-                                    sell_token,
-                                    buy_token,
-                                    haircut_bps,
-                                );
-                            }
+                            let sell_token: eth::Address =
+                                order.sell.token.as_erc20(weth).into();
+                            let buy_token: eth::Address =
+                                order.buy.token.as_erc20(weth).into();
+                            competition::solution::haircut::apply_to_clearing_prices(
+                                &mut prices,
+                                order.side,
+                                sell_token,
+                                buy_token,
+                                haircut_bps,
+                            );
 
                             competition::solution::trade::Fulfillment::new(
                                 order,

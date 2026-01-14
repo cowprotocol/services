@@ -23,6 +23,10 @@ pub fn apply_to_clearing_prices(
     buy_token: eth::Address,
     haircut_bps: u32,
 ) {
+    if haircut_bps == 0 {
+        return;
+    }
+
     let sell_price = match prices.get(&sell_token).copied() {
         Some(p) if !p.is_zero() => p,
         _ => return,
