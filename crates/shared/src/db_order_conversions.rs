@@ -140,8 +140,6 @@ pub fn order_quote_into_model(
         _ => quote.metadata.clone(),
     };
 
-    // Compute fee from quote's fee parameters: ceil((gas_amount * gas_price) /
-    // sell_token_price)
     let fee_amount = crate::fee::FeeParameters {
         gas_amount: quote.gas_amount,
         gas_price: quote.gas_price,
