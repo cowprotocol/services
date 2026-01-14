@@ -17,6 +17,18 @@ const MAX_BASE_POINT: u32 = 10000;
 /// - For sell orders: decrease sell price (reducing buy amount received)
 /// - For buy orders: increase buy price (increasing sell amount paid)
 ///
+/// # Example
+///
+/// With a 100 bps (1%) haircut and clearing prices `{ETH: 1000, USDC: 1}`:
+///
+/// - **Sell order** (selling ETH for USDC): ETH price reduced to 990. Reported
+///   buy amount = `sell_amount * 990 / 1` instead of `sell_amount * 1000 / 1`,
+///   so surplus appears 1% lower.
+///
+/// - **Buy order** (buying ETH with USDC): USDC price increased to 1.01.
+///   Reported sell amount = `buy_amount * 1000 / 1.01` instead of `buy_amount *
+///   1000 / 1`, so surplus appears ~1% lower.
+///
 /// This is applied to both quotes and auction orders.
 pub fn apply_to_clearing_prices(
     prices: &mut HashMap<eth::Address, eth::U256>,
