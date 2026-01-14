@@ -559,8 +559,10 @@ fn check_solve_request(request: Value, expected: Value) {
         rest: Value,
     }
 
-    let request: SolveRequest = serde_json::from_value(request).unwrap();
-    let expected: SolveRequest = serde_json::from_value(expected).unwrap();
+    let request: SolveRequest = serde_json::from_value(request)
+        .expect("failed to deserialize /solve request body");
+    let expected: SolveRequest = serde_json::from_value(expected)
+        .expect("failed to deserialize expected /solve request body");
     assert_eq!(
         request.rest, expected.rest,
         "/solve request body does not match expectation"
