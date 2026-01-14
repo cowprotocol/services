@@ -8,6 +8,8 @@ use {
     std::collections::HashMap,
 };
 
+const MAX_BASE_POINT: u32 = 10000;
+
 /// Apply haircut directly to clearing prices.
 ///
 /// Adjusts prices by the configured haircut percentage to reduce the reported
@@ -27,47 +29,46 @@ pub fn apply_to_clearing_prices(
         return;
     }
 
-    let sell_price = match prices.get(&sell_token).copied() {
-        Some(p) if !p.is_zero() => p,
-        _ => return,
-    };
-    let buy_price = match prices.get(&buy_token).copied() {
-        Some(p) if !p.is_zero() => p,
-        _ => return,
-    };
-
     match side {
         order::Side::Sell => {
             // For sell orders: decrease sell price to reduce the amount of buy tokens
             // received. new_sell_price = sell_price * (10000 - haircut_bps) / 10000
-            if let Some(adjusted_sell_price) = sell_price
-                .checked_mul(eth::U256::from(10000u32.saturating_sub(haircut_bps)))
-                .and_then(|v| v.checked_div(eth::U256::from(10000u32)))
+            let Some(price) = prices.get_mut(&sell_token).filter(|p| !p.is_zero()) else {
+                return;
+            };
+            let original_price = *price;
+            if let Some(adjusted) = original_price
+                .checked_mul(eth::U256::from(MAX_BASE_POINT.saturating_sub(haircut_bps)))
+                .and_then(|v| v.checked_div(eth::U256::from(MAX_BASE_POINT)))
             {
                 tracing::debug!(
                     haircut_bps,
-                    %sell_price,
-                    %adjusted_sell_price,
+                    sell_price = %original_price,
+                    adjusted_sell_price = %adjusted,
                     "Applying haircut to sell order: adjusting sell price"
                 );
-                prices.insert(sell_token, adjusted_sell_price);
+                *price = adjusted;
             }
         }
         order::Side::Buy => {
             // For buy orders: increase buy price to increase the sell tokens paid,
             // making the bid more conservative (less surplus reported).
             // new_buy_price = buy_price * (10000 + haircut_bps) / 10000
-            if let Some(adjusted_buy_price) = buy_price
-                .checked_mul(eth::U256::from(10000u32.saturating_add(haircut_bps)))
-                .and_then(|v| v.checked_div(eth::U256::from(10000u32)))
+            let Some(price) = prices.get_mut(&buy_token).filter(|p| !p.is_zero()) else {
+                return;
+            };
+            let original_price = *price;
+            if let Some(adjusted) = original_price
+                .checked_mul(eth::U256::from(MAX_BASE_POINT.saturating_add(haircut_bps)))
+                .and_then(|v| v.checked_div(eth::U256::from(MAX_BASE_POINT)))
             {
                 tracing::debug!(
                     haircut_bps,
-                    %buy_price,
-                    %adjusted_buy_price,
+                    buy_price = %original_price,
+                    adjusted_buy_price = %adjusted,
                     "Applying haircut to buy order: adjusting buy price"
                 );
-                prices.insert(buy_token, adjusted_buy_price);
+                *price = adjusted;
             }
         }
     }
