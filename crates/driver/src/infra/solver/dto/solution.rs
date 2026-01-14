@@ -43,7 +43,7 @@ impl Solutions {
 
                 // Apply haircut to clearing prices for each fulfillment order.
                 // This reduces the reported output amounts without changing executed amounts.
-                if haircut_bps > 0 && auction.id().is_some() {
+                if haircut_bps > 0 {
                     for trade in &solution.trades {
                         if let solvers_dto::solution::Trade::Fulfillment(fulfillment) = trade &&
                             let Some(order) = auction

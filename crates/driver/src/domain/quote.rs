@@ -34,30 +34,11 @@ pub struct Quote {
 
 impl Quote {
     fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
-        let mut clearing_prices: HashMap<eth::Address, eth::U256> = solution
+        let clearing_prices: HashMap<eth::Address, eth::U256> = solution
             .clearing_prices()
             .into_iter()
             .map(|(token, amount)| (token.into(), amount))
             .collect();
-
-        // Apply haircut to clearing prices for quotes.
-        // Adjusts prices by the configured haircut percentage to report lower
-        // surplus, making the bid more conservative.
-        let haircut_bps = solution.solver().haircut_bps();
-        if haircut_bps > 0 {
-            for trade in solution.trades() {
-                if let solution::Trade::Fulfillment(fulfillment) = trade {
-                    let order = fulfillment.order();
-                    solution::haircut::apply_to_clearing_prices(
-                        &mut clearing_prices,
-                        order.side,
-                        order.sell.token.into(),
-                        order.buy.token.into(),
-                        haircut_bps,
-                    );
-                }
-            }
-        }
 
         Ok(Self {
             clearing_prices,
