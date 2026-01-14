@@ -41,7 +41,6 @@ pub struct Order {
     #[serde(flatten)]
     pub signature: boundary::Signature,
     pub quote: Option<Quote>,
-    pub confirmed_valid_to: u32,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -58,7 +57,6 @@ pub fn from_domain(order: domain::Order) -> Order {
             .collect(),
         created: order.created,
         valid_to: order.valid_to,
-        confirmed_valid_to: order.confirmed_valid_to,
         kind: order.side.into(),
         receiver: order.receiver,
         owner: order.owner,
@@ -97,7 +95,6 @@ pub fn to_domain(order: Order) -> domain::Order {
             .collect(),
         created: order.created,
         valid_to: order.valid_to,
-        confirmed_valid_to: order.confirmed_valid_to,
         side: order.kind.into(),
         receiver: order.receiver,
         owner: order.owner,

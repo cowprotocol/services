@@ -173,7 +173,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         cancellation_timestamp: None,
-        confirmed_valid_to: order.data.confirmed_valid_to as i64,
+        confirmed_valid_to: order.data.valid_to as i64,
     };
 
     database::orders::insert_order(ex, &db_order)
@@ -588,10 +588,6 @@ fn full_order_with_quote_into_model_order(
         sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
-        confirmed_valid_to: order
-            .confirmed_valid_to
-            .try_into()
-            .context("confirmed_valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
         fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),

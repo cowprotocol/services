@@ -668,7 +668,6 @@ fn extract_order_data_from_onchain_order_placement_event(
         sell_amount: order_placement.order.sellAmount,
         buy_amount: order_placement.order.buyAmount,
         valid_to: order_placement.order.validTo,
-        confirmed_valid_to: order_placement.order.validTo,
         app_data: AppDataHash(order_placement.order.appData.0),
         fee_amount: order_placement.order.feeAmount,
         kind: OrderKind::from_contract_bytes(order_placement.order.kind.0)?,
@@ -862,7 +861,6 @@ mod test {
             sell_amount: sellAmount,
             buy_amount: buyAmount,
             valid_to: validTo,
-            confirmed_valid_to: validTo,
             app_data: AppDataHash(appData.0),
             fee_amount: feeAmount,
             kind: OrderKind::Sell,
@@ -913,7 +911,6 @@ mod test {
             sell_amount: sellAmount,
             buy_amount: buyAmount,
             valid_to: validTo,
-            confirmed_valid_to: validTo,
             app_data: AppDataHash(appData.0),
             fee_amount: feeAmount,
             kind: OrderKind::Sell,
@@ -935,7 +932,6 @@ mod test {
         let sell_amount = U256::from(10);
         let buy_amount = U256::from(11);
         let valid_to = 1u32;
-        let confirmed_valid_to = valid_to;
         let app_data = [11u8; 32];
         let fee_amount = U256::from(12);
         let owner = Address::from([5; 20]);
@@ -947,7 +943,6 @@ mod test {
             sell_amount,
             buy_amount,
             valid_to,
-            confirmed_valid_to,
             app_data: AppDataHash(app_data),
             fee_amount,
             kind: OrderKind::Sell,
@@ -1002,7 +997,6 @@ mod test {
             sell_amount,
             buy_amount,
             valid_to,
-            confirmed_valid_to,
             app_data: AppDataHash(app_data),
             fee_amount,
             kind: OrderKind::Sell,
@@ -1026,7 +1020,7 @@ mod test {
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
-            confirmed_valid_to: expected_order_data.confirmed_valid_to as i64,
+            confirmed_valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
@@ -1052,7 +1046,6 @@ mod test {
         let sell_amount = U256::from(10);
         let buy_amount = U256::from(11);
         let valid_to = 1u32;
-        let confirmed_valid_to = valid_to;
         let app_data = [11u8; 32];
         let fee_amount = U256::ZERO;
         let owner = Address::from([5; 20]);
@@ -1063,7 +1056,6 @@ mod test {
             sell_amount,
             buy_amount,
             valid_to,
-            confirmed_valid_to,
             app_data: AppDataHash(app_data),
             fee_amount,
             kind: OrderKind::Sell,
@@ -1120,7 +1112,6 @@ mod test {
             sell_amount,
             buy_amount,
             valid_to,
-            confirmed_valid_to,
             app_data: AppDataHash(app_data),
             fee_amount: alloy::primitives::U256::ZERO,
             kind: OrderKind::Sell,
@@ -1144,7 +1135,7 @@ mod test {
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
-            confirmed_valid_to: expected_order_data.confirmed_valid_to as i64,
+            confirmed_valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&fee_amount),
             kind: order_kind_into(expected_order_data.kind),
@@ -1171,7 +1162,6 @@ mod test {
         let sell_amount = U256::from(10);
         let buy_amount = U256::from(11);
         let valid_to = 1u32;
-        let confirmed_valid_to = valid_to;
         let app_data = [5u8; 32];
         let fee_amount = U256::from(12);
         let owner = Address::from([6; 20]);
@@ -1292,7 +1282,6 @@ mod test {
             sell_amount,
             buy_amount,
             valid_to,
-            confirmed_valid_to,
             app_data: AppDataHash(app_data),
             fee_amount,
             kind: OrderKind::Sell,

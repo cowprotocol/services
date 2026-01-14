@@ -115,7 +115,6 @@ impl Amm {
             sell_amount: order_return._order.sellAmount,
             buy_amount: order_return._order.buyAmount,
             valid_to: order_return._order.validTo,
-            confirmed_valid_to: order_return._order.validTo,
             app_data: AppDataHash(order_return._order.appData.0),
             fee_amount: order_return._order.feeAmount,
             kind: convert_kind(&order_return._order.kind.0)?,

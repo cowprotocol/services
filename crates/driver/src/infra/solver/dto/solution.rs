@@ -261,7 +261,6 @@ impl JitOrder {
             sell_amount: self.0.sell_amount,
             buy_amount: self.0.buy_amount,
             valid_to: self.0.valid_to,
-            confirmed_valid_to: self.0.valid_to,
             app_data: AppDataHash(self.0.app_data),
             fee_amount: alloy::primitives::U256::ZERO,
             kind: match self.0.kind {

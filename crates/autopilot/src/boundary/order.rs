@@ -24,7 +24,6 @@ pub fn to_domain(
         protocol_fees,
         created: u32::try_from(order.metadata.creation_date.timestamp()).unwrap_or(u32::MIN),
         valid_to: order.data.valid_to,
-        confirmed_valid_to: order.data.confirmed_valid_to,
         side: order.data.kind.into(),
         receiver: order.data.receiver,
         owner: order.metadata.owner,

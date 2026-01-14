@@ -26,7 +26,6 @@ pub struct Order {
     pub app_data: AppDataHash,
     pub signature: Signature,
     pub quote: Option<domain::Quote>,
-    pub confirmed_valid_to: u32,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo

@@ -1138,7 +1138,6 @@ mod tests {
             )),
             created: Default::default(),
             valid_to: Default::default(),
-            confirmed_valid_to: Default::default(),
             signature: order::Signature::PreSign,
             quote: None,
         }

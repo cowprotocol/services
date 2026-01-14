@@ -261,7 +261,7 @@ Column                    | Type                         | Nullable | Details
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
- confirmed_valid_to       | timestamptz                  | not null | order validity as returned by the settlement contract.
+ confirmed_valid_to       | timestamptz                  | not null | timestamp at which order is no longer executable. TODO: Ethflow details
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)

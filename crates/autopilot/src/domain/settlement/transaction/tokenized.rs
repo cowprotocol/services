@@ -28,7 +28,6 @@ pub fn order_uid(
         sell_amount: trade.sellAmount,
         buy_amount: trade.buyAmount,
         valid_to: trade.validTo,
-        confirmed_valid_to: trade.validTo,
         app_data: AppDataHash(trade.appData.0),
         fee_amount: trade.feeAmount,
         kind: match flags.side() {
