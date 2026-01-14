@@ -392,7 +392,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let initial_prices = db_write.fetch_latest_prices().await.unwrap();
     let native_price_estimators = price_estimator_factory
-        .native_price_estimators_with_shared_cache(
+        .native_price_estimators(
             args.native_price_estimators.as_slice(),
             args.api_native_price_estimators
                 .as_ref()
@@ -405,8 +405,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
-    let native_price_estimator = native_price_estimators.main;
-    let api_native_price_estimator = native_price_estimators.api;
+    let native_price_estimator = native_price_estimators.primary;
+    let api_native_price_estimator = native_price_estimators.secondary;
 
     let price_estimator = price_estimator_factory
         .price_estimator(

@@ -913,10 +913,11 @@ mod tests {
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
-                native_price_cache::NativePriceCache,
+                native_price_cache::{EstimatorSource, NativePriceCache},
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
+        std::sync::Arc,
     };
 
     #[tokio::test]
@@ -956,12 +957,12 @@ mod tests {
             .withf(move |token, _| *token == token3)
             .returning(|_, _| async { Ok(0.25) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new_without_maintenance(
-            Box::new(native_price_estimator),
-            NativePriceCache::new(Duration::from_secs(10), Default::default()),
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            Arc::new(native_price_estimator),
+            NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default()),
             3,
             Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
+            EstimatorSource::default(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1044,15 +1045,31 @@ mod tests {
             .withf(move |token, _| *token == token5)
             .returning(|_, _| async { Ok(5.) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new_with_maintenance(
-            Box::new(native_price_estimator),
-            NativePriceCache::new(Duration::from_secs(10), Default::default()),
-            Duration::from_millis(1), // Short interval to trigger background fetch quickly
-            None,
+        let maintenance_estimator: Arc<
+            dyn shared::price_estimation::native::NativePriceEstimating,
+        > = Arc::new(native_price_estimator);
+        let cache = NativePriceCache::new_with_maintenance(
+            Duration::from_secs(10),
             Default::default(),
+            shared::price_estimation::native_price_cache::MaintenanceConfig {
+                estimators: std::collections::HashMap::from([(
+                    EstimatorSource::Primary,
+                    maintenance_estimator.clone(),
+                )]),
+                update_interval: Duration::from_millis(1), /* Short interval to trigger
+                                                            * background fetch quickly */
+                update_size: None,
+                prefetch_time: Default::default(),
+                concurrent_requests: 1,
+                quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            },
+        );
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            maintenance_estimator,
+            cache,
             1,
             Default::default(),
-            HEALTHY_PRICE_ESTIMATION_TIME,
+            EstimatorSource::default(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1141,13 +1158,13 @@ mod tests {
             .withf(move |token, _| *token == token_approx2)
             .returning(|_, _| async { Ok(50.) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new_without_maintenance(
-            Box::new(native_price_estimator),
-            NativePriceCache::new(Duration::from_secs(10), Default::default()),
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            Arc::new(native_price_estimator),
+            NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default()),
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
-            HEALTHY_PRICE_ESTIMATION_TIME,
+            EstimatorSource::default(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 

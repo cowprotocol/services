@@ -7,7 +7,12 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
-        native_price_cache::{CachingNativePriceEstimator, MaintenanceConfig, NativePriceCache},
+        native_price_cache::{
+            CachingNativePriceEstimator,
+            EstimatorSource,
+            MaintenanceConfig,
+            NativePriceCache,
+        },
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -361,57 +366,24 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    pub async fn native_price_estimator(
-        &mut self,
-        native: &[Vec<NativePriceEstimatorSource>],
-        results_required: NonZeroUsize,
-        weth: WETH9::Instance,
-        initial_prices: HashMap<Address, BigDecimal>,
-    ) -> Result<Arc<CachingNativePriceEstimator>> {
-        // Create a non-caching estimator for the cache's maintenance task
-        let maintenance_estimator = self
-            .create_non_caching_native_estimator(native, results_required, &weth)
-            .await?;
-
-        // Create cache with background maintenance
-        let cache = NativePriceCache::new_with_maintenance(
-            self.args.native_price_cache_max_age,
-            initial_prices,
-            MaintenanceConfig {
-                estimator: maintenance_estimator,
-                update_interval: self.args.native_price_cache_refresh,
-                update_size: Some(self.args.native_price_cache_max_update_size),
-                prefetch_time: self.args.native_price_prefetch_time,
-                concurrent_requests: self.args.native_price_cache_concurrent_requests,
-                quote_timeout: self.args.quote_timeout,
-            },
-        );
-
-        // Create the caching estimator for on-demand price fetching
-        self.create_caching_native_estimator(native, results_required, &weth, cache)
-            .await
-    }
-
-    /// Creates a main native price estimator and an optional API-specific
-    /// estimator that share the same cache.
+    /// Creates native price estimators with a shared cache and background
+    /// maintenance task.
     ///
-    /// The cache runs a background maintenance task using a combined estimator
-    /// that includes all sources from both `native` and `api_native`
-    /// (deduplicated). This ensures all tokens can be refreshed regardless
-    /// of which estimator originally requested them.
+    /// Each cached entry tracks which estimator (Primary or Secondary)
+    /// originally fetched it. The cache's background maintenance task uses
+    /// this information to dispatch updates to the appropriate estimator,
+    /// ensuring each token is refreshed using the same source that
+    /// originally fetched it.
     ///
-    /// The main estimator uses `native` sources for on-demand fetching.
-    /// The API estimator (if `api_native` is provided) uses its own set of
-    /// sources for on-demand fetching, but shares the cache.
-    ///
-    /// If `api_native` is None, the API will use the same estimator as main.
+    /// The secondary estimators are optional - if not provided, only the
+    /// primary estimator is used.
     ///
     /// The `initial_prices` are used to seed the cache before the estimators
     /// start.
-    pub async fn native_price_estimators_with_shared_cache(
+    pub async fn native_price_estimators(
         &mut self,
-        native: &[Vec<NativePriceEstimatorSource>],
-        api_native: Option<&[Vec<NativePriceEstimatorSource>]>,
+        primary_estimators: &[Vec<NativePriceEstimatorSource>],
+        secondary_estimators: Option<&[Vec<NativePriceEstimatorSource>]>,
         results_required: NonZeroUsize,
         weth: WETH9::Instance,
         initial_prices: HashMap<Address, BigDecimal>,
@@ -421,20 +393,34 @@ impl<'a> PriceEstimatorFactory<'a> {
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        // Merge native and api_native sources (deduplicated) for the maintenance task
-        let combined_sources = Self::merge_sources(native, api_native);
+        // Create non-caching estimators for main and api
+        let primary_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
+            self.create_competition_native_estimator(primary_estimators, results_required, &weth)
+                .await?,
+        );
 
-        // Create a non-caching estimator for the cache's maintenance task
-        let maintenance_estimator = self
-            .create_non_caching_native_estimator(&combined_sources, results_required, &weth)
-            .await?;
+        let secondary_estimator: Arc<dyn NativePriceEstimating> = match secondary_estimators {
+            Some(sources) => Arc::new(
+                self.create_competition_native_estimator(sources, results_required, &weth)
+                    .await?,
+            ),
+            None => primary_estimator.clone(),
+        };
 
-        // Create cache with background maintenance using the combined estimator
+        // Build estimators map for maintenance - each source type has its own
+        // estimator so maintenance can dispatch to the correct one
+        let mut estimators = HashMap::new();
+        estimators.insert(EstimatorSource::Primary, primary_estimator.clone());
+        if secondary_estimators.is_some() {
+            estimators.insert(EstimatorSource::Secondary, secondary_estimator.clone());
+        }
+
+        // Create cache with background maintenance
         let cache = NativePriceCache::new_with_maintenance(
             self.args.native_price_cache_max_age,
             initial_prices,
             MaintenanceConfig {
-                estimator: maintenance_estimator,
+                estimators,
                 update_interval: self.args.native_price_cache_refresh,
                 update_size: Some(self.args.native_price_cache_max_update_size),
                 prefetch_time: self.args.native_price_prefetch_time,
@@ -443,80 +429,28 @@ impl<'a> PriceEstimatorFactory<'a> {
             },
         );
 
-        // Create main estimator for on-demand fetching
-        let main = self
-            .create_caching_native_estimator(native, results_required, &weth, cache.clone())
-            .await?;
-
-        // Create API estimator (or reuse main)
-        let api = match api_native {
-            Some(sources) => {
-                self.create_caching_native_estimator(sources, results_required, &weth, cache)
-                    .await?
-            }
-            None => main.clone(),
+        // Wrap estimators with caching layer for on-demand price fetching
+        let primary =
+            self.wrap_with_cache(primary_estimator, cache.clone(), EstimatorSource::Primary);
+        let secondary = if secondary_estimators.is_some() {
+            self.wrap_with_cache(secondary_estimator, cache, EstimatorSource::Secondary)
+        } else {
+            primary.clone()
         };
 
-        Ok(NativePriceEstimators { main, api })
+        Ok(NativePriceEstimators { primary, secondary })
     }
 
-    /// Merges native and api_native sources, deduplicating by source type.
-    fn merge_sources(
-        native: &[Vec<NativePriceEstimatorSource>],
-        api_native: Option<&[Vec<NativePriceEstimatorSource>]>,
-    ) -> Vec<Vec<NativePriceEstimatorSource>> {
-        let Some(api_sources) = api_native else {
-            return native.to_vec();
-        };
-
-        // Collect all unique sources from api_native that aren't in native
-        let native_flat: std::collections::HashSet<_> = native.iter().flatten().cloned().collect();
-
-        let mut result = native.to_vec();
-
-        // Add api_native sources that aren't already in native
-        for stage in api_sources {
-            let new_sources: Vec<_> = stage
-                .iter()
-                .filter(|s| !native_flat.contains(*s))
-                .cloned()
-                .collect();
-
-            if !new_sources.is_empty() {
-                // Add new sources as a separate stage
-                result.push(new_sources);
-            }
-        }
-
-        result
-    }
-
-    /// Helper to create a CachingNativePriceEstimator with a specific cache.
+    /// Wraps a native price estimator with caching functionality.
     ///
-    /// The estimator will use the provided cache for lookups and fetch prices
-    /// on-demand for cache misses. Background maintenance is handled by the
-    /// cache itself, not by this estimator.
-    async fn create_caching_native_estimator(
-        &mut self,
-        sources: &[Vec<NativePriceEstimatorSource>],
-        results_required: NonZeroUsize,
-        weth: &WETH9::Instance,
+    /// The `source` parameter identifies this estimator type so cached entries
+    /// are tagged appropriately for maintenance dispatch.
+    fn wrap_with_cache(
+        &self,
+        estimator: Arc<dyn NativePriceEstimating>,
         cache: NativePriceCache,
-    ) -> Result<Arc<CachingNativePriceEstimator>> {
-        let mut estimators = Vec::with_capacity(sources.len());
-        for stage in sources.iter() {
-            let mut stages = Vec::with_capacity(stage.len());
-            for source in stage {
-                stages.push(self.create_native_estimator(source, weth).await?);
-            }
-            estimators.push(stages);
-        }
-
-        let competition_estimator =
-            CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
-                .with_verification(self.args.quote_verification)
-                .with_early_return(results_required);
-
+        source: EstimatorSource,
+    ) -> Arc<CachingNativePriceEstimator> {
         let approximation_tokens = self
             .args
             .native_price_approximation_tokens
@@ -524,26 +458,22 @@ impl<'a> PriceEstimatorFactory<'a> {
             .copied()
             .collect();
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(competition_estimator),
+        Arc::new(CachingNativePriceEstimator::new(
+            estimator,
             cache,
             self.args.native_price_cache_concurrent_requests,
             approximation_tokens,
-        );
-
-        Ok(Arc::new(estimator))
+            source,
+        ))
     }
 
-    /// Helper to create a non-caching native price estimator.
-    ///
-    /// This is used for the cache's background maintenance task, which needs
-    /// to fetch prices directly without going through the cache.
-    async fn create_non_caching_native_estimator(
+    /// Helper to create a CompetitionEstimator for native price estimation.
+    async fn create_competition_native_estimator(
         &mut self,
         sources: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: &WETH9::Instance,
-    ) -> Result<Arc<dyn NativePriceEstimating>> {
+    ) -> Result<CompetitionEstimator<Arc<dyn NativePriceEstimating>>> {
         let mut estimators = Vec::with_capacity(sources.len());
         for stage in sources.iter() {
             let mut stages = Vec::with_capacity(stage.len());
@@ -553,25 +483,29 @@ impl<'a> PriceEstimatorFactory<'a> {
             estimators.push(stages);
         }
 
-        let competition_estimator =
+        Ok(
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
                 .with_verification(self.args.quote_verification)
-                .with_early_return(results_required);
-
-        Ok(Arc::new(competition_estimator))
+                .with_early_return(results_required),
+        )
     }
 }
 
 /// Result of creating native price estimators with shared cache.
 ///
-/// The shared cache runs its own background maintenance task using a combined
-/// estimator that includes all sources from both `main` and `api` estimators.
+/// The shared cache tracks which estimator type originally fetched each entry.
+/// The background maintenance task uses this information to dispatch updates
+/// to the appropriate estimator.
 pub struct NativePriceEstimators {
-    /// Main estimator using the primary set of sources for on-demand fetching.
-    pub main: Arc<CachingNativePriceEstimator>,
-    /// API estimator that shares the cache with main but uses a different
-    /// set of sources for on-demand fetching.
-    pub api: Arc<CachingNativePriceEstimator>,
+    /// Primary estimator using the main set of sources for on-demand fetching.
+    /// Cached entries fetched via this estimator are tagged with
+    /// `EstimatorSource::Primary`.
+    pub primary: Arc<CachingNativePriceEstimator>,
+    /// Secondary estimator that shares the cache with primary but uses a
+    /// different set of sources for on-demand fetching. Cached entries
+    /// fetched via this estimator are tagged with
+    /// `EstimatorSource::Secondary`.
+    pub secondary: Arc<CachingNativePriceEstimator>,
 }
 
 /// Trait for modelling the initialization of a Price estimator and its verified
