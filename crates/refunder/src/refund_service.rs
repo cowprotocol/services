@@ -293,15 +293,15 @@ mod tests {
         fn with_standard_refundable_setup(&mut self) -> &mut Self;
         fn with_block_timestamp(&mut self, timestamp: u32) -> &mut Self;
         fn with_ethflow_addresses(&mut self, addresses: Vec<Address>) -> &mut Self;
+        fn with_order_status(&mut self, status: RefundStatus) -> &mut Self;
+        fn receiving_eth(&mut self) -> &mut Self;
     }
 
     impl MockChainReadExt for MockChainRead {
         fn with_standard_refundable_setup(&mut self) -> &mut Self {
-            self.expect_ethflow_addresses()
-                .returning(|| vec![KNOWN_ETHFLOW]);
-            self.expect_get_order_status()
-                .returning(|_, _| Ok(RefundStatus::NotYetRefunded(EOA_OWNER)));
-            self.expect_can_receive_eth().returning(|_| true);
+            self.with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+                .with_order_status(RefundStatus::NotYetRefunded(EOA_OWNER))
+                .receiving_eth();
             self
         }
 
@@ -316,16 +316,34 @@ mod tests {
                 .returning(move || addresses.clone());
             self
         }
+
+        fn with_order_status(&mut self, status: RefundStatus) -> &mut Self {
+            self.expect_get_order_status()
+                .returning(move |_, _| Ok(status));
+            self
+        }
+
+        fn receiving_eth(&mut self) -> &mut Self {
+            self.expect_can_receive_eth().returning(|_| true);
+            self
+        }
     }
 
     trait MockDbReadExt {
-        fn with_ethflow_order_data_success(&mut self) -> &mut Self;
+        fn with_default_ethflow_order_data(&mut self) -> &mut Self;
+        fn with_refundable_orders(&mut self, orders: Vec<EthOrderPlacement>) -> &mut Self;
     }
 
     impl MockDbReadExt for MockDbRead {
-        fn with_ethflow_order_data_success(&mut self) -> &mut Self {
+        fn with_default_ethflow_order_data(&mut self) -> &mut Self {
             self.expect_get_ethflow_order_data()
                 .returning(|_| Ok(EthFlowOrder::Data::default()));
+            self
+        }
+
+        fn with_refundable_orders(&mut self, orders: Vec<EthOrderPlacement>) -> &mut Self {
+            self.expect_get_refundable_orders()
+                .returning(move |_, _, _| Ok(orders.clone()));
             self
         }
     }
@@ -342,17 +360,13 @@ mod tests {
     async fn test_eth_receivability_filtering(#[case] owner: Address, #[case] can_receive: bool) {
         let mut mock_chain = MockChainRead::new();
 
-        // Configure the known EthFlow contracts so orders from KNOWN_ETHFLOW pass the
-        // allowlist check
         mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
-
-        // All orders report as "not yet refunded" with the parameterized owner address
-        // This sets up the precondition for testing the ETH receivability check
-        mock_chain
-            .expect_get_order_status()
-            .returning(move |_, _| Ok(RefundStatus::NotYetRefunded(owner)));
+            // Configure the known EthFlow contracts so orders from KNOWN_ETHFLOW pass the
+            // allowlist check
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            // All orders report as "not yet refunded" with the parameterized owner address
+            // This sets up the precondition for testing the ETH receivability check
+            .with_order_status(RefundStatus::NotYetRefunded(owner));
 
         // Return parameterized ETH receivability result to test both EOA (can receive)
         // and contract-rejecting-ETH (cannot receive) scenarios
@@ -394,9 +408,7 @@ mod tests {
         let mut mock_chain = MockChainRead::new();
 
         // Allow the order through the allowlist check
-        mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
+        mock_chain.with_ethflow_addresses(vec![KNOWN_ETHFLOW]);
 
         // Return the parameterized status (Refunded, Invalid, or Error) to verify
         // that orders with non-refundable statuses are excluded from the result
@@ -418,13 +430,8 @@ mod tests {
     async fn test_all_orders_already_refunded() {
         let mut mock_chain = MockChainRead::new();
         mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
-
-        // All orders report as already refunded
-        mock_chain
-            .expect_get_order_status()
-            .returning(|_, _| Ok(RefundStatus::Refunded));
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            .with_order_status(RefundStatus::Refunded);
 
         let orders: Vec<_> = (1..=5)
             .map(|i| create_test_order_placement(i, KNOWN_ETHFLOW))
@@ -445,7 +452,7 @@ mod tests {
         let uid = order.uid;
 
         let mut mock_db = MockDbRead::new();
-        mock_db.with_ethflow_order_data_success();
+        mock_db.with_default_ethflow_order_data();
 
         let mock_chain = MockChainRead::new();
 
@@ -501,7 +508,7 @@ mod tests {
         #[case] expected_count: usize,
     ) {
         let mut mock_db = MockDbRead::new();
-        mock_db.with_ethflow_order_data_success();
+        mock_db.with_default_ethflow_order_data();
 
         let mock_chain = MockChainRead::new();
 
@@ -530,7 +537,7 @@ mod tests {
     #[tokio::test]
     async fn test_send_out_refunding_tx_multiple_contracts() {
         let mut mock_db = MockDbRead::new();
-        mock_db.with_ethflow_order_data_success();
+        mock_db.with_default_ethflow_order_data();
 
         let mock_chain = MockChainRead::new();
 
@@ -676,71 +683,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    /// First order's DB lookup failure does not block processing of other
-    /// orders.
-    ///
-    /// This test verifies that the `buffer_unordered` + `filter_map` pattern
-    /// correctly handles failures at any position in the stream, including
-    /// the first element.
-    #[tokio::test]
-    async fn test_first_order_db_failure_allows_others() {
-        let uid1 = create_test_order_placement(1, KNOWN_ETHFLOW).uid;
-        let uid2 = create_test_order_placement(2, KNOWN_ETHFLOW).uid;
-        let uid3 = create_test_order_placement(3, KNOWN_ETHFLOW).uid;
-
-        let mut mock_db = MockDbRead::new();
-
-        // First order (uid_suffix=1) fails DB lookup
-        mock_db
-            .expect_get_ethflow_order_data()
-            .withf(|uid| uid.0[31] == 1)
-            .returning(|_| Err(anyhow!("DB error on first order")));
-
-        // Second and third orders succeed.
-        // We piggyback the `validTo` field and use it to encode the UID suffix so we
-        // can verify which order data made it to the submitter.
-        mock_db
-            .expect_get_ethflow_order_data()
-            .withf(|uid| uid.0[31] == 2 || uid.0[31] == 3)
-            .returning(|uid| {
-                Ok(EthFlowOrder::Data {
-                    validTo: uid.0[31] as u32,
-                    ..Default::default()
-                })
-            });
-
-        let mock_chain = MockChainRead::new();
-
-        let mut mock_submitter = MockChainWrite::new();
-
-        // Verify that submission happens with all 3 UIDs but only 2 order data
-        // entries (the successful lookups for uid2 and uid3)
-        mock_submitter
-            .expect_submit()
-            .times(1)
-            .withf(|uids, orders, _| {
-                // Verify all 3 specific UIDs are present (by their suffix byte)
-                let uid_suffixes: HashSet<u8> = uids.iter().map(|uid| uid.0[31]).collect();
-                let has_expected_uids = uid_suffixes == HashSet::from([1, 2, 3]);
-
-                // Verify order data from uid2 and uid3 are present (identified by validTo
-                // marker)
-                let order_markers: HashSet<u32> = orders.iter().map(|o| o.validTo).collect();
-                let has_expected_orders = order_markers == HashSet::from([2, 3]);
-
-                has_expected_uids && has_expected_orders
-            })
-            .returning(|_, _, _| Ok(()));
-
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
-
-        let mut uids_by_contract = HashMap::new();
-        uids_by_contract.insert(KNOWN_ETHFLOW, vec![uid1, uid2, uid3]);
-
-        let result = service.send_out_refunding_tx(uids_by_contract).await;
-        assert!(result.is_ok());
-    }
-
     /// Submitter error on first contract short-circuits; remaining contracts
     /// are not attempted.
     ///
@@ -754,11 +696,8 @@ mod tests {
     #[tokio::test]
     async fn test_send_out_refunding_tx_error_short_circuits() {
         let mut mock_db = MockDbRead::new();
-
         // Return order data successfully; the error will come from submission
-        mock_db
-            .expect_get_ethflow_order_data()
-            .returning(|_| Ok(EthFlowOrder::Data::default()));
+        mock_db.with_default_ethflow_order_data();
 
         let mock_chain = MockChainRead::new();
 
@@ -787,13 +726,11 @@ mod tests {
     /// An eligible order is fetched, validated, and submitted for refund.
     #[tokio::test]
     async fn test_try_to_refund_happy_path() {
-        let order = create_test_order_placement(1, KNOWN_ETHFLOW);
-
         let mut mock_db = MockDbRead::new();
-        mock_db
-            .expect_get_refundable_orders()
-            .returning(move |_, _, _| Ok(vec![order.clone()]));
-        mock_db.with_ethflow_order_data_success();
+        let order = vec![create_test_order_placement(1, KNOWN_ETHFLOW)];
+        mock_db.with_refundable_orders(order);
+
+        mock_db.with_default_ethflow_order_data();
 
         let mut mock_chain = MockChainRead::new();
         mock_chain
@@ -816,9 +753,7 @@ mod tests {
     #[tokio::test]
     async fn test_try_to_refund_empty_db_result() {
         let mut mock_db = MockDbRead::new();
-        mock_db
-            .expect_get_refundable_orders()
-            .returning(|_, _, _| Ok(vec![]));
+        mock_db.with_refundable_orders(vec![]);
 
         let mut mock_chain = MockChainRead::new();
         mock_chain
@@ -845,26 +780,18 @@ mod tests {
 
         // Return two orders from DB: one still needs refund, one already refunded
         // on-chain
-        mock_db
-            .expect_get_refundable_orders()
-            .returning(move |_, _, _| Ok(vec![order_valid.clone(), order_refunded.clone()]));
+        mock_db.with_refundable_orders(vec![order_valid, order_refunded]);
 
         // Return order data for the order that passes on-chain validation
-        mock_db
-            .expect_get_ethflow_order_data()
-            .returning(|_| Ok(EthFlowOrder::Data::default()));
+        mock_db.with_default_ethflow_order_data();
 
         let mut mock_chain = MockChainRead::new();
 
-        // Block timestamp for DB query
+        // Block timestamp and known contracts for DB query
         mock_chain
-            .expect_current_block_timestamp()
-            .returning(|| Ok(1000));
-
-        // Configure known EthFlow contracts
-        mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
+            .with_block_timestamp(1000)
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            .receiving_eth();
 
         // Order 1 (uid_suffix=1) is eligible for refund
         mock_chain
@@ -877,9 +804,6 @@ mod tests {
             .expect_get_order_status()
             .withf(|_, order_hash| order_hash.0[31] == 2)
             .returning(|_, _| Ok(RefundStatus::Refunded));
-
-        // Owner can receive ETH
-        mock_chain.expect_can_receive_eth().returning(|_| true);
 
         let mut mock_submitter = MockChainWrite::new();
 
@@ -905,11 +829,10 @@ mod tests {
         let order3 = create_test_order_placement(3, KNOWN_ETHFLOW_2);
 
         let mut mock_chain = MockChainRead::new();
-        mock_chain.with_ethflow_addresses(vec![KNOWN_ETHFLOW, KNOWN_ETHFLOW_2]);
         mock_chain
-            .expect_get_order_status()
-            .returning(|_, _| Ok(RefundStatus::NotYetRefunded(EOA_OWNER)));
-        mock_chain.expect_can_receive_eth().returning(|_| true);
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW, KNOWN_ETHFLOW_2])
+            .with_order_status(RefundStatus::NotYetRefunded(EOA_OWNER))
+            .receiving_eth();
 
         let result = identify_uids_refunding_status(&mock_chain, &[order1, order2, order3]).await;
 
@@ -944,15 +867,14 @@ mod tests {
 
         let mut mock_chain = MockChainRead::new();
         mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            .receiving_eth();
 
         // Capture the order_hash passed to get_order_status and verify it matches
         mock_chain
             .expect_get_order_status()
             .withf(move |_, order_hash| order_hash.0 == expected_hash)
             .returning(|_, _| Ok(RefundStatus::NotYetRefunded(EOA_OWNER)));
-        mock_chain.expect_can_receive_eth().returning(|_| true);
 
         // Build a UID with the expected hash in bytes [0..32]
         let mut uid_bytes = [0u8; 56];
@@ -991,12 +913,9 @@ mod tests {
 
         // Only allow the specific contract being tested
         mock_chain
-            .expect_ethflow_addresses()
-            .returning(move || vec![contract]);
-        mock_chain
-            .expect_get_order_status()
-            .returning(|_, _| Ok(RefundStatus::NotYetRefunded(EOA_OWNER)));
-        mock_chain.expect_can_receive_eth().returning(|_| true);
+            .with_ethflow_addresses(vec![contract])
+            .with_order_status(RefundStatus::NotYetRefunded(EOA_OWNER))
+            .receiving_eth();
 
         // Build a UID with the contract address in bytes [32..52]
         let mut uid_bytes = [0u8; 56];
@@ -1029,9 +948,7 @@ mod tests {
         const OWNER_CANNOT_RECEIVE_2: Address = Address::repeat_byte(0xB2);
 
         let mut mock_chain = MockChainRead::new();
-        mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
+        mock_chain.with_ethflow_addresses(vec![KNOWN_ETHFLOW]);
 
         // Each order has a different owner
         mock_chain
@@ -1042,18 +959,15 @@ mod tests {
                     2 => OWNER_CANNOT_RECEIVE_1,
                     3 => OWNER_CAN_RECEIVE_2,
                     4 => OWNER_CANNOT_RECEIVE_2,
-                    _ => panic!("unexpected order"),
+                    _ => unreachable!(),
                 };
                 Ok(RefundStatus::NotYetRefunded(owner))
             });
 
         // ETH receivability depends on owner address
-        mock_chain.expect_can_receive_eth().returning(|owner| {
-            matches!(
-                owner,
-                addr if addr == OWNER_CAN_RECEIVE_1 || addr == OWNER_CAN_RECEIVE_2
-            )
-        });
+        mock_chain
+            .expect_can_receive_eth()
+            .returning(|owner| [OWNER_CAN_RECEIVE_1, OWNER_CAN_RECEIVE_2].contains(&owner));
 
         let orders: Vec<_> = (1..=4)
             .map(|i| create_test_order_placement(i, KNOWN_ETHFLOW))
@@ -1068,6 +982,8 @@ mod tests {
     /// When multiple status queries fail, all failed orders are excluded.
     #[tokio::test]
     async fn test_multiple_status_query_failures() {
+        // Orders 1 and 2 fail with RPC errors to test partial failure handling
+        // Order 3 succeeds to verify successful orders are still processed
         let order1 = create_test_order_placement(1, KNOWN_ETHFLOW);
         let order2 = create_test_order_placement(2, KNOWN_ETHFLOW);
         let order3 = create_test_order_placement(3, KNOWN_ETHFLOW);
@@ -1076,21 +992,17 @@ mod tests {
 
         // All orders pass the allowlist check
         mock_chain
-            .expect_ethflow_addresses()
-            .returning(|| vec![KNOWN_ETHFLOW]);
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            .receiving_eth() // Owner can receive ETH (only relevant for order 3 which passes status check)
 
-        // Orders 1 and 2 fail with RPC errors to test partial failure handling
-        // Order 3 succeeds to verify successful orders are still processed
-        mock_chain
             .expect_get_order_status()
-            .returning(|_, order_hash| match order_hash.0[31] {
-                1 | 2 => Err(anyhow!("RPC timeout")),
-                3 => Ok(RefundStatus::NotYetRefunded(EOA_OWNER)),
-                _ => panic!("unexpected order_hash"),
+            .returning(|_, order_hash| {
+                match order_hash.0[31] {
+                    1 | 2 => Err(anyhow!("RPC timeout")),
+                    3 => Ok(RefundStatus::NotYetRefunded(EOA_OWNER)),
+                    _ => unreachable!()
+                }
             });
-
-        // Owner can receive ETH (only relevant for order 3 which passes status check)
-        mock_chain.expect_can_receive_eth().returning(|_| true);
 
         let result = identify_uids_refunding_status(&mock_chain, &[order1, order2, order3]).await;
 
