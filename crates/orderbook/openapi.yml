@@ -863,12 +863,35 @@ components:
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
         feeAmount:
-          description: >
+          description: |
             The fee amount in sell token atoms. For quote responses, this represents
-            the estimated network fee. When creating an order, this should be set to
-            zero as fees are now computed dynamically by solvers.
+            the estimated network fee, calculated as:
+            `feeAmount = ceil((gasAmount * gasPrice) / sellTokenPrice)`.
+
+            When creating an order, this should be set to zero as fees are now
+            computed dynamically by solvers.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        gasAmount:
+          description: |
+            The estimated gas units required to execute the quoted trade.
+          type: number
+          format: double
+          example: 150000
+        gasPrice:
+          description: |
+            The estimated gas price at the time of quoting, measured in Wei per gas unit.
+          type: number
+          format: double
+          example: 15000000000
+        sellTokenPrice:
+          description: |
+            The price of the sell token in terms of the native token (ETH, xDAI, etc.)
+            at the time of quoting. Represents how much native token (in Wei) one atomic
+            unit of the sell token is worth.
+          type: number
+          format: double
+          example: 0.0004
         kind:
           description: The kind is either a buy or sell order.
           allOf:
@@ -905,6 +928,9 @@ components:
         - validTo
         - appData
         - feeAmount
+        - gasAmount
+        - gasPrice
+        - sellTokenPrice
         - kind
         - partiallyFillable
     OrderCreation:

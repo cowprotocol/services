@@ -300,7 +300,7 @@ pub enum SellAmount {
 
 /// The quoted order by the service.
 #[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
     pub sell_token: Address,
@@ -315,6 +315,12 @@ pub struct OrderQuote {
     pub app_data: OrderCreationAppData,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
+    /// The estimated gas units required to execute the quoted trade.
+    pub gas_amount: f64,
+    /// The estimated gas price at the time of quoting (in Wei).
+    pub gas_price: f64,
+    /// The price of the sell token in native token (ETH/xDAI).
+    pub sell_token_price: f64,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenSource,
@@ -325,7 +331,7 @@ pub struct OrderQuote {
 pub type QuoteId = i64;
 
 #[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,
