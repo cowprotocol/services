@@ -168,6 +168,7 @@ impl Quote {
             .context("sell token price is not a valid BigDecimal")?,
             sell_amount: self.sell_amount,
             buy_amount: self.buy_amount,
+            fee_amount: self.fee_amount,
             solver: self.data.solver,
             verified: self.data.verified,
             metadata: serde_json::to_value(&self.data.metadata)?,

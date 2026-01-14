@@ -2013,13 +2013,6 @@ components:
             The price of the sell token in terms of the native token (ETH, xDAI, etc.)
             at the time of quoting. Represents how much native token (in Wei) one atomic
             unit of the sell token is worth.
-
-            The network fee in sell token atoms can be calculated as:
-            `feeInSellToken = (gasAmount * gasPrice) / sellTokenPrice`.
-
-            This is useful for UIs that need to calculate gas costs in the sell token,
-            especially when the exact fee amount isn't known upfront (e.g., when
-            additional hook gas costs need to be factored in after quoting).
           type: string
           example: "0.0004"
         sellAmount:
@@ -2028,6 +2021,16 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           description: The quoted buy amount in atoms of the buy token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        feeAmount:
+          description: |
+            The fee amount in atoms of the sell token, calculated from the gas parameters
+            at the time of quoting.
+
+            Computed as: `ceil((gasAmount * gasPrice) / sellTokenPrice)`.
+
+            This represents the network fee that was estimated when the quote was created.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         solver:
@@ -2052,6 +2055,7 @@ components:
         - sellTokenPrice
         - sellAmount
         - buyAmount
+        - feeAmount
         - solver
         - verified
     Quote:
