@@ -29,6 +29,10 @@ tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }
 url = { workspace = true }
 
+[dev-dependencies]
+mockall = { workspace = true }
+rstest = { workspace = true }
+
 [lints]
 workspace = true
 

@@ -1,14 +1,12 @@
-// This submitter has the following logic:
-// It tries to submit a tx - as EIP1559 - with a small tx tip,
-// but a quite high max_fee_per_gas such that it's likely being mined quickly
-//
-// Then it waits for 5 blocks. If the tx is not mined, it will return an error
-// and it needs to be called again. If the last submission was not successful,
-// this submitter stores the last gas_price in order to submit the new tx with
-// a higher gas price, in order to avoid: ErrReplaceUnderpriced erros
-// In the re-newed attempt for submission the same nonce is used as before.
+//! Refund transaction submitter.
+//!
+//! Submits EIP-1559 transactions with a small tip but high `max_fee_per_gas`
+//! to get mined quickly. Waits 5 blocks for confirmation; on timeout, the next
+//! call bumps gas price (using the same nonce) to avoid
+//! `ErrReplaceUnderpriced`.
 
 use {
+    crate::traits::ChainWrite,
     alloy::{primitives::Address, providers::Provider},
     anyhow::{Context, Result},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
@@ -43,6 +41,18 @@ pub struct Submitter {
     pub start_priority_fee_tip: u64,
 }
 
+impl ChainWrite for Submitter {
+    async fn submit(
+        &mut self,
+        uids: &[OrderUid],
+        encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
+        ethflow_contract: Address,
+    ) -> Result<()> {
+        self.submit_impl(uids, encoded_ethflow_orders, ethflow_contract)
+            .await
+    }
+}
+
 impl Submitter {
     async fn get_submission_nonce(&self) -> Result<u64> {
         // this command returns the tx count ever mined at the latest block
@@ -59,9 +69,9 @@ impl Submitter {
             })
     }
 
-    pub async fn submit(
+    async fn submit_impl(
         &mut self,
-        uids: Vec<OrderUid>,
+        uids: &[OrderUid],
         encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
         ethflow_contract: Address,
     ) -> Result<()> {

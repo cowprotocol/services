@@ -1,14 +1,28 @@
+//! Automated refunder for expired EthFlow orders.
+//!
+//! Monitors EthFlow orders and returns ETH to users whose orders expired
+//! without filling. Runs every 30 seconds: queries database, validates on-chain
+//! status, submits batch refunds.
+//!
+//! Shares PostgreSQL with orderbook (read-only). Refunds tracked via on-chain
+//! events.
+
 pub mod arguments;
+pub mod infra;
 pub mod refund_service;
 pub mod submitter;
+pub mod traits;
 
 // Re-export commonly used types for external consumers (e.g., e2e tests)
-pub use refund_service::RefundStatus;
+pub use traits::RefundStatus;
 use {
-    crate::arguments::Arguments,
+    crate::{
+        arguments::Arguments,
+        infra::{AlloyChain, Postgres},
+        submitter::Submitter,
+    },
     alloy::{providers::Provider, signers::local::PrivateKeySigner},
     clap::Parser,
-    contracts::alloy::CoWSwapEthFlow,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
@@ -40,8 +54,29 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(args: arguments::Arguments) {
-    let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
+    // Observability setup
+    let liveness = Arc::new(Liveness {
+        last_successful_loop: RwLock::new(Instant::now()),
+    });
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        ([0, 0, 0, 0], args.metrics_port).into(),
+        Default::default(),
+        Default::default(),
+    );
+
+    // Database initialization
+    let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
+    let database = Postgres::new(pg_pool);
+
+    // Blockchain/RPC setup
+    let web3 = shared::ethrpc::web3(
+        &args.ethrpc,
+        &HttpClientFactory::new(&args.http_client),
+        &args.node_url,
+        "base",
+    );
+
     if let Some(expected_chain_id) = args.chain_id {
         let chain_id = web3
             .alloy
@@ -54,41 +89,45 @@ pub async fn run(args: arguments::Arguments) {
         );
     }
 
-    let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
+    let chain = AlloyChain::new(web3.alloy.clone(), args.ethflow_contracts.clone());
 
-    let liveness = Arc::new(Liveness {
-        // Program will be healthy at the start even if no loop was ran yet.
-        last_successful_loop: RwLock::new(Instant::now()),
-    });
-    observe::metrics::serve_metrics(
-        liveness.clone(),
-        ([0, 0, 0, 0], args.metrics_port).into(),
-        Default::default(),
-        Default::default(),
-    );
-
-    let ethflow_contracts = args
-        .ethflow_contracts
-        .iter()
-        .map(|contract| CoWSwapEthFlow::Instance::new(*contract, web3.alloy.clone()))
-        .collect();
+    // Signer/wallet configuration
     let refunder_account = Box::new(
         args.refunder_pk
             .parse::<PrivateKeySigner>()
             .expect("couldn't parse refunder private key"),
     );
-    let mut refunder = RefundService::new(
-        pg_pool,
+    let signer_address = refunder_account.address();
+    let gas_estimator = Box::new(web3.legacy.clone());
+    web3.wallet.register_signer(refunder_account);
+
+    // Transaction submitter
+    let submitter = Submitter {
         web3,
-        ethflow_contracts,
-        i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
-        args.min_price_deviation_bps,
-        refunder_account,
-        args.max_gas_price,
-        args.start_priority_fee_tip,
+        signer_address,
+        gas_estimator,
+        gas_parameters_of_last_tx: None,
+        nonce_of_last_submission: None,
+        max_gas_price: args.max_gas_price,
+        start_priority_fee_tip: args.start_priority_fee_tip,
+    };
+
+    // Service construction
+    let min_validity_duration =
+        i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX);
+    let min_price_deviation = args.min_price_deviation_bps as f64 / 10000f64;
+
+    let mut refunder = RefundService::new(
+        database,
+        chain,
+        submitter,
+        min_validity_duration,
+        min_price_deviation,
     );
+
+    // Main loop
     loop {
-        tracing::info!("Staring a new refunding loop");
+        tracing::info!("Starting a new refunding loop");
         match refunder.try_to_refund_all_eligible_orders().await {
             Ok(_) => {
                 track_refunding_loop_result("success");
@@ -118,7 +157,7 @@ impl LivenessChecking for Liveness {
 #[derive(prometheus_metric_storage::MetricStorage, Debug)]
 #[metric(subsystem = "main")]
 struct Metrics {
-    /// Tracks the result of every refunding loops.
+    /// Refunding loop outcomes.
     #[metric(labels("result"))]
     refunding_loops: prometheus::IntCounterVec,
 }
