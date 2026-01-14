@@ -17,9 +17,11 @@ use {
     const_hex::ToHexExt,
     contracts::alloy::ERC20,
     itertools::Itertools,
-    serde_json::json,
+    serde_json::{Value, json},
+    serde_with::{DisplayFromStr, serde_as},
     solvers_dto::auction::FlashloanHint,
     std::{
+        cmp::max,
         collections::{HashMap, HashSet},
         net::SocketAddr,
         sync::{Arc, Mutex},
@@ -452,11 +454,11 @@ impl Solver {
                 &Default::default(),
                 &[infra::mempool::Config {
                     min_priority_fee: Default::default(),
-                    gas_price_cap: eth::U256::MAX,
+                    gas_price_cap: eth::U256::from(1000000000000_u128),
                     target_confirm_time: Default::default(),
                     retry_interval: Default::default(),
                     name: "default_rpc".to_string(),
-                    max_additional_tip: eth::U256::ZERO,
+                    max_additional_tip: eth::U256::from(3000000000_u128),
                     additional_tip_percentage: 0.,
                     revert_protection: infra::mempool::RevertProtection::Disabled,
                     nonce_block_number: None,
@@ -512,7 +514,7 @@ impl Solver {
                         "deadline": config.deadline.solvers(),
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
-                    assert_eq!(req, expected, "unexpected /solve request");
+                    check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();
                     assert!(
                         !state.called || state.allow_multiple_solve_requests,
@@ -532,6 +534,51 @@ impl Solver {
         tokio::spawn(async move { server.await.unwrap() });
         Self { addr }
     }
+}
+
+/// Checks the provider /solve request against the expected values while keeping
+/// some slack for the effective gas price, as it might vary between blockchain
+/// requests.
+///
+/// Context: when the gas-estimation crate was removed, the Alloy and Web3
+/// estimators started failing the driver tests: the request's effective gas
+/// value did not match the expected. This did not happen with the previous
+/// native estimator because it used a cache, and due to how short the test was
+/// the cache always replied with the same value making the test pass. The new
+/// estimators do not have a cache, as such the value might change; this check
+/// takes that into account and validates the effective gas price within an
+/// interval (15% at the time of writing).
+fn check_solve_request(request: Value, expected: Value) {
+    #[serde_as]
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SolveRequest {
+        #[serde_as(as = "DisplayFromStr")]
+        effective_gas_price: u128,
+        #[serde(flatten)]
+        rest: Value,
+    }
+
+    let request: SolveRequest = serde_json::from_value(request).unwrap();
+    let expected: SolveRequest = serde_json::from_value(expected).unwrap();
+    assert_eq!(
+        request.rest, expected.rest,
+        "/solve request body does not match expectation"
+    );
+
+    const DIFF_PCT: f64 = 0.15; // 15%
+    // Assumes the u128 fits inside the i128, in case it doesn't, just upgrade it to
+    // U256
+    let diff = (request.effective_gas_price as i128 - expected.effective_gas_price as i128).abs();
+    let pct = diff as f64 / max(request.effective_gas_price, expected.effective_gas_price) as f64;
+
+    assert!(
+        pct < DIFF_PCT,
+        "/solve request does not match expectactions, request: {}, expected: {} pct: {pct}, max \
+         pct: {DIFF_PCT}",
+        request.effective_gas_price,
+        expected.effective_gas_price
+    );
 }
 
 #[derive(Debug, Clone)]
