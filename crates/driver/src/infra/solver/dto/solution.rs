@@ -64,12 +64,6 @@ impl Solutions {
                     }
                 }
 
-                // Convert to TokenAddress for Solution::new
-                let prices: HashMap<eth::TokenAddress, eth::U256> = prices
-                    .into_iter()
-                    .map(|(address, price)| (address.into(), price))
-                    .collect();
-
                 competition::Solution::new(
                     competition::solution::Id::new(solution.id),
                     solution
@@ -97,8 +91,8 @@ impl Solutions {
                                         None => competition::solution::trade::Fee::Static,
                                     },
                                 )
-                                    .map(competition::solution::Trade::Fulfillment)
-                                    .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
+                                .map(competition::solution::Trade::Fulfillment)
+                                .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
                             }
                             solvers_dto::solution::Trade::Jit(jit) => {
                                 let jit_order: JitOrder = jit.order.clone().into();
@@ -155,7 +149,10 @@ impl Solutions {
                             }
                         })
                         .try_collect()?,
-                    prices,
+                    prices
+                        .into_iter()
+                        .map(|(address, price)| (address.into(), price))
+                        .collect(),
                     solution
                         .pre_interactions
                         .into_iter()
@@ -184,7 +181,7 @@ impl Solutions {
                                                     spender: allowance.spender,
                                                     amount: allowance.amount,
                                                 }
-                                                    .into()
+                                                .into()
                                             })
                                             .collect(),
                                         inputs: interaction
@@ -268,17 +265,17 @@ impl Solutions {
                         data: w.data,
                     }).collect(),
                 )
-                    .map_err(|err| match err {
-                        competition::solution::error::Solution::InvalidClearingPrices => {
-                            super::Error("invalid clearing prices".to_owned())
-                        }
-                        competition::solution::error::Solution::ProtocolFee(err) => {
-                            super::Error(format!("could not incorporate protocol fee: {err}"))
-                        }
-                        competition::solution::error::Solution::InvalidJitTrade(err) => {
-                            super::Error(format!("invalid jit trade: {err}"))
-                        }
-                    })
+                .map_err(|err| match err {
+                    competition::solution::error::Solution::InvalidClearingPrices => {
+                        super::Error("invalid clearing prices".to_owned())
+                    }
+                    competition::solution::error::Solution::ProtocolFee(err) => {
+                        super::Error(format!("could not incorporate protocol fee: {err}"))
+                    }
+                    competition::solution::error::Solution::InvalidJitTrade(err) => {
+                        super::Error(format!("invalid jit trade: {err}"))
+                    }
+                })
             })
             .collect()
     }

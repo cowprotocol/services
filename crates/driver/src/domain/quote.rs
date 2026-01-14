@@ -34,14 +34,12 @@ pub struct Quote {
 
 impl Quote {
     fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
-        let clearing_prices: HashMap<eth::Address, eth::U256> = solution
-            .clearing_prices()
-            .into_iter()
-            .map(|(token, amount)| (token.into(), amount))
-            .collect();
-
         Ok(Self {
-            clearing_prices,
+            clearing_prices: solution
+                .clearing_prices()
+                .into_iter()
+                .map(|(token, amount)| (token.into(), amount))
+                .collect(),
             pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
