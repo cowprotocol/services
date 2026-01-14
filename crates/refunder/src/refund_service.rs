@@ -1009,4 +1009,36 @@ mod tests {
         // Only order 3 should be included (orders 1 and 2 failed status check)
         assert_orders_by_contract(&result, KNOWN_ETHFLOW, &[3]);
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_problematic_sepolia_address() {
+        use crate::infra::AlloyChain;
+
+        let (provider, _wallet) =
+            ethrpc::alloy::provider("https://ethereum-sepolia-rpc.publicnode.com");
+        let chain = AlloyChain::new(provider, vec![]);
+
+        // EOF contract that cannot receive ETH (0xef01... bytecode prefix)
+        let problematic: Address = "0x66C9152339ce05EE0C8A8eff9EeF8230AbFe8350"
+            .parse()
+            .unwrap();
+
+        // Normal EOA for comparison
+        let working: Address = "0x5b485e4431853F82d89dba68220A422CC17cE024"
+            .parse()
+            .unwrap();
+
+        // Test that can_receive_eth correctly identifies the problematic address
+        assert!(
+            !chain.can_receive_eth(problematic).await,
+            "EOF contract should be identified as unable to receive ETH"
+        );
+
+        // Test that can_receive_eth correctly identifies a working address
+        assert!(
+            chain.can_receive_eth(working).await,
+            "Normal EOA should be identified as able to receive ETH"
+        );
+    }
 }
