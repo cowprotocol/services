@@ -2,7 +2,7 @@
 //! solver-reported economics.
 
 use crate::{
-    domain::competition::order,
+    domain::{competition::order, eth},
     tests::{
         self,
         cases::EtherExt,
@@ -31,7 +31,7 @@ async fn order_haircut_reduces_score() {
                 .side(side)
                 .kind(kind)
                 .buy_amount(2u64.ether().into_wei()) // Low limit creates slack
-                .solver_fee(Some("1e-16".ether().into_wei())),
+                .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().haircut_bps(0)])
@@ -50,7 +50,7 @@ async fn order_haircut_reduces_score() {
                 .side(side)
                 .kind(kind)
                 .buy_amount(2u64.ether().into_wei()) // Same low limit
-                .solver_fee(Some("1e-16".ether().into_wei())),
+                .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().haircut_bps(500)])
@@ -92,7 +92,7 @@ async fn buy_order_haircut() {
                 .side(side)
                 .kind(kind)
                 .sell_amount(100u64.ether().into_wei()) // Generous sell limit
-                .solver_fee(Some("1e-16".ether().into_wei())),
+                .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().haircut_bps(0)])
@@ -110,7 +110,7 @@ async fn buy_order_haircut() {
                 .side(side)
                 .kind(kind)
                 .sell_amount(100u64.ether().into_wei())
-                .solver_fee(Some("1e-16".ether().into_wei())),
+                .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().haircut_bps(500)])
