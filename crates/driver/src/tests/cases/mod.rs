@@ -119,40 +119,36 @@ impl EtherExt for f64 {
     }
 }
 
-// because of rounding errors, it's good enough to check that the expected value
-// is within a very narrow range of the executed value
-#[cfg(test)]
-pub fn is_approximately_equal(executed_value: eth::U256, expected_value: eth::U256) -> bool {
-    let lower =
-        expected_value * eth::U256::from(99999999999u128) / eth::U256::from(100000000000u128); // in percents = 99.999999999%
-    let upper =
-        expected_value * eth::U256::from(100000000001u128) / eth::U256::from(100000000000u128); // in percents = 100.000000001%
-    executed_value >= lower && executed_value <= upper
-}
-
 #[cfg(test)]
 pub trait ApproxEq {
     // Implementation defined
-    fn is_approx_eq(&self, other: &Self, delta: Option<u32>) -> bool;
+    fn is_approx_eq(self, other: Self, delta: Option<f64>) -> bool;
 }
 
 #[cfg(test)]
-impl ApproxEq for u128 {
-    fn is_approx_eq(&self, other: &Self, delta: Option<u32>) -> bool {
-        let (lower, upper) = match delta {
-            Some(percent) => {
-                // percent% tolerance (e.g., Some(1) means 1% delta)
-                let lower = other * (100 - percent as u128) / 100;
-                let upper = other * (100 + percent as u128) / 100;
-                (lower, upper)
-            }
-            None => {
-                // Default: very tight tolerance (approximately 0.000000001%)
-                let lower = other * 99999999999u128 / 100000000000u128; // in percents = 99.999999999%
-                let upper = other * 100000000001u128 / 100000000000u128; // in percents = 100.000000001%
-                (lower, upper)
-            }
-        };
-        self >= &lower && self <= &upper
+impl<T> ApproxEq for T
+where
+    T: Into<num::BigInt>,
+{
+    fn is_approx_eq(self, other: Self, delta: Option<f64>) -> bool {
+        use {num::BigInt, std::cmp};
+
+        let self_: BigInt = (self).into();
+        let self_ = BigRational::from_integer(self_);
+
+        let other: BigInt = (other).into();
+        let other = BigRational::from_integer(other);
+
+        // because of rounding errors, it's good enough to check that the expected value
+        // is within a very narrow range of the executed value
+        let expected_delta = BigRational::from_f64(delta.unwrap_or(0.000000001))
+            .expect("delta should be representable using BigRational");
+
+        let diff = (self_.clone() - other.clone()).abs();
+        let calculated_delta = diff / cmp::max(self_, other);
+
+        tracing::error!("{expected_delta} < {calculated_delta}");
+
+        calculated_delta <= expected_delta
     }
 }
