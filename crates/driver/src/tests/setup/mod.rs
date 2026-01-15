@@ -1358,8 +1358,8 @@ impl SolveOk<'_> {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(expected_sell, None));
-            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(expected_buy, None));
+            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(&expected_sell, None));
+            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(&expected_buy, None));
         }
         self
     }

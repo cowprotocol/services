@@ -119,35 +119,55 @@ impl EtherExt for f64 {
     }
 }
 
+/// Trait for approximate equality comparisons, useful for tests with rounding
+/// errors.
 #[cfg(test)]
 pub trait ApproxEq {
-    // Implementation defined
-    fn is_approx_eq(self, other: Self, delta: Option<f64>) -> bool;
+    /// Checks if two values are approximately equal within a relative error
+    /// threshold.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// assert!(100.is_approx_eq(101, Some(0.02))); // 1% diff, within 2% threshold
+    /// assert!(!100.is_approx_eq(150, Some(0.02))); // 50% diff, exceeds threshold
+    /// assert!(100.is_approx_eq(100, None)); // Default 1e-9 threshold
+    /// ```
+    fn is_approx_eq(&self, other: &Self, delta: Option<f64>) -> bool;
 }
 
 #[cfg(test)]
 impl<T> ApproxEq for T
 where
+    Self: Copy,
     T: Into<num::BigInt>,
 {
-    fn is_approx_eq(self, other: Self, delta: Option<f64>) -> bool {
+    fn is_approx_eq(&self, other: &Self, delta: Option<f64>) -> bool {
         use {num::BigInt, std::cmp};
 
-        let self_: BigInt = (self).into();
+        let self_: BigInt = (*self).into();
         let self_ = BigRational::from_integer(self_);
 
-        let other: BigInt = (other).into();
+        let other: BigInt = (*other).into();
         let other = BigRational::from_integer(other);
 
-        // because of rounding errors, it's good enough to check that the expected value
-        // is within a very narrow range of the executed value
+        // Early equality check prevents division by zero when both values are 0
+        if self_ == other {
+            return true;
+        }
+
+        // Default to 1e-9 (0.0000001%) relative error threshold
         let expected_delta = BigRational::from_f64(delta.unwrap_or(0.000000001))
             .expect("delta should be representable using BigRational");
 
+        // We can't use num::Unsigned due to ruint::U256 not implementing it
+        // (due to limitations on const generics)
+        // Calculate relative error: |a - b| / max(|a|, |b|)
+        // Ensures correct behavior with negative numbers
         let diff = (self_.clone() - other.clone()).abs();
-        let calculated_delta = diff / cmp::max(self_, other);
+        let calculated_delta = diff / cmp::max(self_.abs(), other.abs());
 
-        tracing::error!("{expected_delta} < {calculated_delta}");
+        tracing::debug!("{expected_delta} < {calculated_delta}");
 
         calculated_delta <= expected_delta
     }
