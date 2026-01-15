@@ -3,7 +3,7 @@ use crate::{
     infra::config::file::FeeHandler,
     tests::{
         self,
-        cases::{EtherExt, is_approximately_equal},
+        cases::EtherExt,
         setup::{
             ExpectedOrderAmounts,
             Test,
@@ -45,6 +45,8 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
+    use crate::tests::cases::ApproxEq;
+
     let test_name = format!(
         "Protocol Fee: {:?} {:?}",
         test_case.order.side, test_case.fee_policy
@@ -94,10 +96,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(is_approximately_equal(
-        result.score(),
-        test_case.expected_score
-    ));
+    assert!(result.score().is_approx_eq(test_case.expected_score, None),);
     result.orders(&[order]);
 }
 
