@@ -273,7 +273,7 @@ fn create_refund_service(
         chain,
         submitter,
         min_validity_duration,
-        min_price_deviation_bps as f64 / 10000.0,
+        min_price_deviation_bps,
     )
 }
 

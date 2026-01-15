@@ -115,14 +115,13 @@ pub async fn run(args: arguments::Arguments) {
     // Service construction
     let min_validity_duration =
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX);
-    let min_price_deviation = args.min_price_deviation_bps as f64 / 10000f64;
 
     let mut refunder = RefundService::new(
         database,
         chain,
         submitter,
         min_validity_duration,
-        min_price_deviation,
+        args.min_price_deviation_bps,
     );
 
     // Main loop

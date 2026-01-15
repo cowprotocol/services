@@ -112,7 +112,7 @@ where
     pub chain: CR,
     pub submitter: CW,
     pub min_validity_duration: i64,
-    pub min_price_deviation: f64,
+    pub min_price_deviation_bps: i64,
 }
 
 impl<D, CR, CW> RefundService<D, CR, CW>
@@ -126,14 +126,14 @@ where
         chain: CR,
         submitter: CW,
         min_validity_duration: i64,
-        min_price_deviation: f64,
+        min_price_deviation_bps: i64,
     ) -> Self {
         RefundService {
             database,
             chain,
             submitter,
             min_validity_duration,
-            min_price_deviation,
+            min_price_deviation_bps,
         }
     }
 
@@ -158,7 +158,7 @@ where
             .get_refundable_orders(
                 block_time,
                 self.min_validity_duration,
-                self.min_price_deviation,
+                self.min_price_deviation_bps as f64 / 10_000.0,
             )
             .await
     }
@@ -461,7 +461,7 @@ mod tests {
             })
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let mut uids_by_contract = HashMap::new();
         uids_by_contract.insert(KNOWN_ETHFLOW, vec![uid]);
@@ -482,7 +482,7 @@ mod tests {
         // verifying that empty input correctly skips submission
         let mock_submitter = MockChainWrite::new();
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let result = service.send_out_refunding_tx(HashMap::new()).await;
         assert!(result.is_ok());
@@ -517,7 +517,7 @@ mod tests {
             })
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let mut uids_by_contract = HashMap::new();
         let uids = (0..input_count as u8)
@@ -546,7 +546,7 @@ mod tests {
             .times(2)
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let uid1 = create_test_order_placement(1, KNOWN_ETHFLOW).uid;
         let uid2 = create_test_order_placement(2, KNOWN_ETHFLOW_2).uid;
@@ -611,7 +611,7 @@ mod tests {
             })
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let mut uids_by_contract = HashMap::new();
         uids_by_contract.insert(KNOWN_ETHFLOW, vec![uid1, uid2]);
@@ -670,7 +670,7 @@ mod tests {
             })
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let mut uids_by_contract = HashMap::new();
         uids_by_contract.insert(KNOWN_ETHFLOW, vec![uid1, uid2]);
@@ -707,7 +707,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Err(anyhow!("Submission failed")));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let uid1 = create_test_order_placement(1, KNOWN_ETHFLOW).uid;
         let uid2 = create_test_order_placement(2, KNOWN_ETHFLOW_2).uid;
@@ -739,7 +739,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let result = service.try_to_refund_all_eligible_orders().await;
         assert!(result.is_ok());
@@ -759,7 +759,7 @@ mod tests {
         // Submitter has no expectations: test fails if submit is called
         let mock_submitter = MockChainWrite::new();
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let result = service.try_to_refund_all_eligible_orders().await;
         assert!(result.is_ok());
@@ -811,7 +811,7 @@ mod tests {
             .withf(|uids, _, _| uids.len() == 1)
             .returning(|_, _, _| Ok(()));
 
-        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 0.01);
+        let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
         let result = service.try_to_refund_all_eligible_orders().await;
         assert!(result.is_ok());
