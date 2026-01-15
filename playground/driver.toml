@@ -29,5 +29,5 @@ base-tokens = [
 preset = "uniswap-v2"
 
 [pod]
-endpoint = "ws://cow.pod.network:8545"
+endpoint = "http://cow.pod.network:8545"
 auction-contract-address = "0xeDD0670497E00ded712a398563Ea938A29dD28c7"
