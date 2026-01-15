@@ -1,11 +1,7 @@
 // Vendored implementation of GasPrice1559 to start removing the dependency on
 // the gas_estimation crate
-use {
-    alloy::eips::eip1559::calc_effective_gas_price,
-    anyhow::{Result, anyhow},
-    num::Zero,
-    serde::Serialize,
-};
+use serde::Serialize;
+use {alloy::eips::eip1559::calc_effective_gas_price, num::Zero};
 
 /// EIP1559 gas price
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd, Serialize)]
@@ -19,10 +15,6 @@ pub struct GasPrice1559 {
 }
 
 impl GasPrice1559 {
-    // Estimate the effective gas price based on the current network conditions
-    // (base_fee_per_gas) Beware that gas price for mined transaction could be
-    // different from estimated value in case of 1559 tx
-    // (because base_fee_per_gas can change between estimation and mining the tx).
     pub fn effective_gas_price(&self) -> f64 {
         calc_effective_gas_price(
             self.max_fee_per_gas as u128,
@@ -33,28 +25,6 @@ impl GasPrice1559 {
                 Some(self.base_fee_per_gas as u64)
             },
         ) as f64
-
-        // std::cmp::min_by(
-        //     self.max_fee_per_gas,
-        //     self.max_priority_fee_per_gas + self.base_fee_per_gas,
-        //     |a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        // )
-    }
-
-    // Validate against rules defined in https://eips.ethereum.org/EIPS/eip-1559
-    // max_fee_per_gas >= max_priority_fee_per_gas
-    // max_fee_per_gas >= base_fee_per_gas
-    pub fn is_valid(&self) -> bool {
-        self.max_fee_per_gas >= self.max_priority_fee_per_gas
-            && self.max_fee_per_gas >= self.base_fee_per_gas
-    }
-
-    // Validate and build Result based on the validation result
-    pub fn validate(self) -> Result<Self> {
-        match self.is_valid() {
-            true => Ok(self),
-            false => Err(anyhow!("invalid gas price values: {:?}", self)),
-        }
     }
 
     // Bump gas price by factor.

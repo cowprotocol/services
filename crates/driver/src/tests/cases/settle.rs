@@ -205,6 +205,7 @@ async fn discards_excess_settle_and_solve_requests() {
     test.solve().await.err().kind("TooManyPendingSettlements");
 
     // Enable auto mining to process all the settlement requests.
+    // *Note that processing the settlement requests will change the gas estimates!*
     test.set_auto_mining(true).await;
 
     // The first settlement must be successful.
