@@ -875,22 +875,19 @@ components:
         gasAmount:
           description: |
             The estimated gas units required to execute the quoted trade.
-          type: number
-          format: double
-          example: 150000
+          type: string
+          example: "150000"
         gasPrice:
           description: |
             The estimated gas price at the time of quoting, measured in Wei per gas unit.
-          type: number
-          format: double
-          example: 15000000000
+          type: string
+          example: "15000000000"
         sellTokenPrice:
           description: |
-            Represents how much one atomic unit of the sell token is worth 
+            Represents how much one atomic unit of the sell token is worth
             in the network's native token (in Wei or the equivalent atom).
-          type: number
-          format: double
-          example: 0.0004
+          type: string
+          example: "0.0004"
         kind:
           description: The kind is either a buy or sell order.
           allOf:
