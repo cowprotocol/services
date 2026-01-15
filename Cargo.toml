@@ -147,6 +147,7 @@ tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
 vergen = "8"
 winner-selection = { path = "crates/winner-selection" }
+pod-sdk = "0.4.0"
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

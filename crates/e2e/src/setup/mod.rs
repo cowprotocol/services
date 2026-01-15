@@ -1,6 +1,8 @@
 pub mod colocation;
 mod deploy;
 pub mod onchain_components;
+mod config;
+pub mod fee;
 pub mod proxy;
 mod services;
 mod solver;
