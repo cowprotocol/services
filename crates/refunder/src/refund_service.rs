@@ -285,9 +285,7 @@ mod tests {
         }
     }
 
-    // -------------------------------------------------------------------------
     // Extension traits to reduce mock setup boilerplate
-    // -------------------------------------------------------------------------
 
     trait MockChainReadExt {
         fn with_standard_refundable_setup(&mut self) -> &mut Self;
@@ -348,9 +346,7 @@ mod tests {
         }
     }
 
-    // -------------------------------------------------------------------------
     // Tests
-    // -------------------------------------------------------------------------
 
     /// Orders with owners that cannot receive ETH are filtered out.
     #[rstest]
@@ -852,10 +848,6 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    // -------------------------------------------------------------------------
-    // UID Byte Extraction Tests
-    // -------------------------------------------------------------------------
-
     /// Verifies that the order hash is correctly extracted from UID bytes
     /// [0..32].
     ///
@@ -1010,8 +1002,15 @@ mod tests {
         assert_orders_by_contract(&result, KNOWN_ETHFLOW, &[3]);
     }
 
+    /// Verifies that `can_receive_eth()` correctly identifies addresses that
+    /// cannot receive ETH transfers. Some smart contracts reject ETH transfers
+    /// (e.g., EOF contracts or contracts without receive/fallback functions),
+    /// which causes batch refunds to fail with EthTransferFailed errors.
+    ///
+    /// This test uses a real Sepolia EOF contract address that rejects ETH and
+    /// compares it against a normal EOA to ensure the filtering logic works.
     #[tokio::test]
-    #[ignore]
+    #[ignore] // Run with: cargo test --package refunder --lib test_problematic_sepolia_address -- --ignored
     async fn test_problematic_sepolia_address() {
         use crate::infra::AlloyChain;
 

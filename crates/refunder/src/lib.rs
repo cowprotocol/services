@@ -157,7 +157,7 @@ impl LivenessChecking for Liveness {
 #[derive(prometheus_metric_storage::MetricStorage, Debug)]
 #[metric(subsystem = "main")]
 struct Metrics {
-    /// Refunding loop outcomes.
+    /// Tracks the result of every refunding loops.
     #[metric(labels("result"))]
     refunding_loops: prometheus::IntCounterVec,
 }

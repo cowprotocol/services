@@ -57,8 +57,7 @@ pub trait ChainRead: Send + Sync {
     /// Returns the current block's timestamp.
     async fn current_block_timestamp(&self) -> Result<u32>;
 
-    /// Returns `true` if `address` can receive ETH (simulates a 1 wei
-    /// transfer).
+    /// Returns `true` if `address` can receive ETH
     async fn can_receive_eth(&self, address: Address) -> bool;
 
     /// Returns the configured EthFlow contract addresses.
