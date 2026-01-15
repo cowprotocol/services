@@ -451,18 +451,9 @@ impl Solver {
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),
                 &Default::default(),
-                &[infra::mempool::Config {
-                    min_priority_fee: Default::default(),
-                    gas_price_cap: eth::U256::from(1000000000000_u128),
-                    target_confirm_time: Default::default(),
-                    retry_interval: Default::default(),
-                    name: "default_rpc".to_string(),
-                    max_additional_tip: eth::U256::from(3000000000_u128),
-                    additional_tip_percentage: 0.,
-                    revert_protection: infra::mempool::RevertProtection::Disabled,
-                    nonce_block_number: None,
-                    url: config.blockchain.web3_url.parse().unwrap(),
-                }],
+                &[infra::mempool::Config::test_config(
+                    config.blockchain.web3_url.parse().unwrap(),
+                )],
             )
             .await
             .unwrap(),
