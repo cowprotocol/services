@@ -1086,13 +1086,13 @@ components:
         class:
           description: >
             The class of the order (market, limit, or liquidity). Determines
-            how fees are handled and how the order is prioritized in settlement.
+            how fees are handled.
           allOf:
             - $ref: "#/components/schemas/OrderClass"
         owner:
           description: >
             The address that signed the order and owns it. For regular orders,
-            this is the trader. For ethflow orders, this is the EthFlow contract
+            this is the trader. For EIP 1271 orders, it's the respective contract
             (see `onchainUser` for the actual trader).
           allOf:
             - $ref: "#/components/schemas/Address"
@@ -1197,6 +1197,22 @@ components:
             Full `appData`, which the contract-level `appData` is a hash of. See
             `OrderCreation` for more information.
           type: string
+          nullable: true
+        settlementContract:
+          description: >
+            The address of the CoW Protocol settlement contract that this order
+            is valid for. Orders are only valid on the settlement contract they
+            were signed for.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        quote:
+          description: >
+            If the order was created with a quote, this field contains the original
+            quote data for reference. Includes gas estimation and pricing information
+            captured at the time of quoting, which can be used to analyze order
+            execution and calculate fees.
+          allOf:
+            - $ref: "#/components/schemas/StoredOrderQuote"
           nullable: true
         settlementContract:
           description: >
