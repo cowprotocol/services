@@ -6,7 +6,7 @@
 
 mod policy;
 
-use {
+pub use {
     crate::{
         boundary::{self},
         config::fee_policy::{

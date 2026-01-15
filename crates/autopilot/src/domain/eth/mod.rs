@@ -58,6 +58,12 @@ impl From<Address> for WrappedNativeToken {
     }
 }
 
+impl From<WrappedNativeToken> for Address {
+    fn from(value: WrappedNativeToken) -> Self {
+        value.0.into()
+    }
+}
+
 /// An ERC20 token amount.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20

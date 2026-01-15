@@ -23,6 +23,7 @@ use {
 };
 
 /// Auction arbitrator responsible for selecting winning solutions.
+#[derive(Clone)]
 pub struct Arbitrator {
     /// Maximum number of winning solutions to select.
     pub max_winners: usize,
