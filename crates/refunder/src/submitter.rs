@@ -44,7 +44,7 @@ pub struct Submitter {
 }
 
 impl ChainWrite for Submitter {
-    async fn submit(
+    async fn submit_batch(
         &mut self,
         uids: &[OrderUid],
         encoded_ethflow_orders: Vec<EthFlowOrder::Data>,

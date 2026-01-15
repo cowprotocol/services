@@ -193,7 +193,7 @@ where
                 .collect()
                 .await;
             self.submitter
-                .submit(&uids, encoded_ethflow_orders, contract)
+                .submit_batch(&uids, encoded_ethflow_orders, contract)
                 .await?;
         }
 
@@ -458,7 +458,7 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .withf(|uids, orders, contract| {
                 uids.len() == 1 && orders.len() == 1 && *contract == KNOWN_ETHFLOW
@@ -514,7 +514,7 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .withf(move |uids, orders, _| {
                 uids.len() == expected_count && orders.len() == expected_count
@@ -546,7 +546,7 @@ mod tests {
         // Expect exactly 2 submissions because orders are grouped by contract,
         // and each contract gets its own refund transaction
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(2)
             .returning(|_, _, _| Ok(()));
 
@@ -604,7 +604,7 @@ mod tests {
         // - uids contains both uid1 (suffix=1) and uid2 (suffix=2)
         // - orders contains only 1 entry (from uid2's successful lookup)
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .withf(|uids, orders, _| {
                 let has_both_uids = uids.len() == 2
@@ -666,7 +666,7 @@ mod tests {
         // This documents current (possibly unintended) behavior where UIDs and orders
         // mismatch
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .withf(|uids, orders, contract| {
                 // UIDs are preserved, but orders is empty because all DB lookups failed
@@ -707,7 +707,7 @@ mod tests {
         // Due to HashMap's non-deterministic iteration order, we cannot predict
         // which contract will be attempted first, but we know only one will be tried
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .returning(|_, _, _| Err(anyhow!("Submission failed")));
 
@@ -739,7 +739,7 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .returning(|_, _, _| Ok(()));
 
@@ -810,7 +810,7 @@ mod tests {
         // Only 1 order should be submitted (order 2 is filtered out as already
         // refunded)
         mock_submitter
-            .expect_submit()
+            .expect_submit_batch()
             .times(1)
             .withf(|uids, _, _| uids.len() == 1)
             .returning(|_, _, _| Ok(()));
