@@ -5244,9 +5244,9 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "pod-examples-solidity"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9044614f9884e39efd4cb6857db8f4b2a7bf326fc266259bd05679da41310a8f"
+checksum = "ec6bf9dd02ec5502f0a937acfbd6d6cd69cf20b02287c45ab5e90ccce79c701f"
 dependencies = [
  "alloy",
  "serde",
@@ -5254,9 +5254,9 @@ dependencies = [
 
 [[package]]
 name = "pod-sdk"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab26b7860a13633497c86d1029becdb4b11a4f2f89d5e02279bf6d973f2589d5"
+checksum = "c994bd9a27d72cdb0e52bd7ae6db6e1eeea3a1739cdc3e6012d94791fac913f9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -5272,21 +5272,22 @@ dependencies = [
  "alloy-transport",
  "anyhow",
  "async-trait",
- "futures",
  "hex",
  "pod-examples-solidity",
  "pod-types",
  "serde",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "pod-types"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "899bf6d620584c09887742582328b8b180d02bab2e39af2c0616d8f48a80e422"
+checksum = "8f19b462663b0ff2db6c59187e0c3d50a52f7679b909fa25261b86ae75591f9b"
 dependencies = [
  "alloy-consensus",
+ "alloy-network",
  "alloy-primitives",
  "alloy-rpc-types",
  "alloy-signer",
@@ -5297,6 +5298,7 @@ dependencies = [
  "bytes",
  "hex",
  "itertools 0.14.0",
+ "secp256k1 0.31.1",
  "serde",
  "serde_with",
  "thiserror 2.0.17",
@@ -6351,6 +6353,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "secp256k1"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c3c81b43dc2d8877c216a3fccf76677ee1ebccd429566d3e67447290d0c42b2"
+dependencies = [
+ "bitcoin_hashes",
+ "rand 0.9.2",
+ "secp256k1-sys 0.11.0",
+ "serde",
+]
+
+[[package]]
 name = "secp256k1-sys"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6364,6 +6378,15 @@ name = "secp256k1-sys"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcb913707158fadaf0d8702c2db0e857de66eb003ccfdda5924b5f5ac98efb38"
 dependencies = [
  "cc",
 ]

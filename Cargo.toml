@@ -112,7 +112,7 @@ proc-macro2 = "1.0.103"
 alloy-sol-macro-input = "1.4.1"
 alloy-sol-macro-expander = "1.4.1"
 jsonrpc-core = "18.0.0"
-pod-sdk = "0.4.0"
+pod-sdk = "0.5.1"
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
