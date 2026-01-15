@@ -51,6 +51,7 @@ impl ProxyState {
         if let Some(current) = backends.pop_front() {
             backends.push_back(current);
         }
+        tracing::info!(?backends, "rotated backends");
     }
 
     /// Returns the total number of backends configured.
