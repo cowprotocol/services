@@ -7,6 +7,7 @@ use {
                 order,
                 risk_detector,
                 solution::{self, Solution},
+                solver_winner_selection::{self, SolverArbitrator},
             },
             eth,
             liquidity,
@@ -17,19 +18,26 @@ use {
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
+            pod,
         },
         util,
     },
     alloy::{
         consensus::SignableTransaction,
-        network::TxSigner,
-        primitives::Address,
+        network::{EthereumWallet, TxSigner},
+        primitives::{Address, address},
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
     anyhow::Result,
+    autopilot::domain::eth::WrappedNativeToken,
+    derivative::Derivative,
     derive_more::{From, Into},
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
+    pod_sdk::{
+        Provider,
+        provider::{PodProvider, PodProviderBuilder},
+    },
     reqwest::header::HeaderName,
     std::{
         collections::HashMap,
@@ -98,12 +106,17 @@ pub struct ManageNativeToken {
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
-#[derive(Debug, Clone)]
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
+    #[derivative(Debug = "ignore")]
+    pod_provider: Option<PodProvider>,
+    #[derivative(Debug = "ignore")]
+    arbitrator: solver_winner_selection::SolverArbitrator,
 }
 
 #[derive(Debug, Clone)]
@@ -118,7 +131,7 @@ impl TxSigner<Signature> for Account {
     fn address(&self) -> Address {
         match self {
             Account::PrivateKey(local_signer) => local_signer.address(),
-            Account::Kms(aws_signer) => aws_signer.address(),
+            Account::Kms(aws_signer) => TxSigner::<Signature>::address(aws_signer),
             Account::Address(address) => *address,
         }
     }
@@ -191,6 +204,8 @@ pub struct Config {
     /// economics to make competition bids more conservative. Does not modify
     /// interaction calldata. Default: 0 (no haircut).
     pub haircut_bps: u32,
+    /// Pod configuration
+    pub pod: Option<pod::config::Config>,
 }
 
 impl Solver {
@@ -209,6 +224,12 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
+        let pod_provider = Self::build_pod_provider(&config).await;
+
+        let arbitrator = SolverArbitrator::new(
+            10,
+            WrappedNativeToken::from(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+        ); // WETH
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
@@ -217,6 +238,8 @@ impl Solver {
             config,
             eth,
             persistence,
+            pod_provider,
+            arbitrator,
         })
     }
 
@@ -285,6 +308,71 @@ impl Solver {
     /// Quote haircut in basis points (0-10000) for conservative bidding.
     pub fn haircut_bps(&self) -> u32 {
         self.config.haircut_bps
+    }
+
+    pub fn pod(&self) -> Option<(&PodProvider, Address)> {
+        let pod = self.pod_provider.as_ref()?;
+        let auction_contract = self.config.pod.as_ref()?.auction_contract_address;
+        Some((pod, auction_contract))
+    }
+
+    pub fn arbitrator(&self) -> &SolverArbitrator {
+        &self.arbitrator
+    }
+
+    async fn build_pod_provider(config: &Config) -> Option<PodProvider> {
+        let pod_config = match config.pod.as_ref() {
+            Some(cfg) => cfg,
+            None => return None,
+        };
+
+        let signer = match Self::make_signer(config.account.clone()).await {
+            Ok(signer) => signer,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "[pod] failed to create signer for pod provider"
+                );
+                return None;
+            }
+        };
+
+        let signer_address = signer.address();
+        let wallet = EthereumWallet::from(signer);
+
+        let provider = match PodProviderBuilder::with_recommended_settings()
+            .wallet(wallet)
+            .on_url(pod_config.endpoint.clone())
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "[pod] failed to initialize pod provider"
+                );
+                return None;
+            }
+        };
+
+        match provider.get_balance(signer_address).await {
+            Ok(balance) => {
+                tracing::info!(
+                    signer_address = %signer_address,
+                    signer_balance = %balance,
+                    "[pod] pod provider built with wallet",
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    signer_address = %signer_address,
+                    "[pod] pod provider built but failed to fetch balance",
+                );
+            }
+        }
+
+        Some(provider)
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -459,6 +547,65 @@ impl Solver {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /*
+    async fn make_signer_old(
+        eth_account: ethcontract::Account,
+    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error> {
+        match eth_account {
+            Account::Offline(pk, chain_id) => {
+                tracing::info!("[pod] make_signer Offline variant");
+                let bytes = pk.as_ref();
+                let key = k256::ecdsa::SigningKey::from_slice(bytes).map_err(|e| {
+                    infra::pod::error::Error::FailedToConnect(format!(
+                        "[pod] invalid signing key: {e}"
+                    ))
+                })?;
+
+                let signer = LocalSigner::from(key).with_chain_id(chain_id);
+                Ok(Box::new(signer))
+            }
+
+            Account::Kms(kms_account, _) => {
+                tracing::info!("[pod] make_signer Kms variant");
+                let signer = AwsSigner::new(
+                    kms_account.client().clone(),
+                    kms_account.key_id().to_string(),
+                    None,
+                )
+                    .await
+                    .map_err(|e| {
+                        infra::pod::error::Error::FailedToConnect(format!(
+                            "[pod] failed to create AwsSigner: {e}"
+                        ))
+                    })?;
+
+                Ok(Box::new(signer))
+            }
+
+            other => Err(infra::pod::error::Error::FailedToConnect(format!(
+                "[pod] unsupported ethcontract::account variant: {other:?}"
+            ))),
+        }
+    }*/
+
+    async fn make_signer(
+        account: infra::solver::Account,
+    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error> {
+        match account {
+            Account::PrivateKey(private_key_signer) => {
+                tracing::info!("[pod] make_signer PrivateKey variant");
+                Ok(Box::new(private_key_signer))
+            }
+            Account::Kms(aws_signer) => {
+                tracing::info!("[pod] make_signer Kms variant");
+                Ok(Box::new(aws_signer))
+            }
+            Account::Address(addr) => Err(infra::pod::error::Error::FailedToConnect(format!(
+                "[pod] unsupported Address variant: {addr:?}"
+            ))),
+        }
     }
 }
 

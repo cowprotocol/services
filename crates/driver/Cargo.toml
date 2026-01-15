@@ -68,6 +68,11 @@ observe = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
+primitive-types = { workspace = true }
+pod-sdk = { workspace = true }
+derivative = { workspace = true }
+autopilot = { workspace = true }
+winner-selection = { workspace = true }
 
 [dev-dependencies]
 app-data = { workspace = true, features = ["test_helpers"] }
