@@ -792,7 +792,6 @@ mod tests {
         super::*,
         crate::{
             account_balances::MockBalanceFetching,
-            fee,
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
                 HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1321,12 +1320,10 @@ mod tests {
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
-        match quoter.calculate_quote(parameters).await.unwrap_err() {
-            CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } => {
-                assert_eq!(fee_amount, U256::from(200))
-            }
-            _ => panic!("expected CalculateQuoteError::SellAmountDoesNotCoverFee"),
-        }
+        assert!(matches!(
+            quoter.calculate_quote(parameters).await.unwrap_err(),
+            CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } if fee_amount == U256::from(200),
+        ));
     }
 
     #[tokio::test]

@@ -19,6 +19,7 @@ use {
     itertools::Itertools,
     serde_json::{Value, json},
     serde_with::{DisplayFromStr, serde_as},
+    shared::gas_price_estimation::Eip1559EstimationExt,
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},
@@ -487,13 +488,8 @@ impl Solver {
             axum::routing::post(
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
-                    // Extract effectiveGasPrice from request instead of recalculating.
-                    // Gas prices from the network can change between auction creation
-                    // and solver request validation, causing mismatches in tests.
-                    let effective_gas_price = req
-                        .get("effectiveGasPrice")
-                        .expect("effectiveGasPrice missing")
-                        .clone();
+                    let base_fee = eth.current_block().borrow().base_fee;
+                    let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
                     let expected = json!({
                         "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
@@ -556,7 +552,6 @@ fn check_solve_request(request: Value, expected: Value) {
         request.rest, expected.rest,
         "/solve request body does not match expectation"
     );
-
     assert!(
         request
             .effective_gas_price

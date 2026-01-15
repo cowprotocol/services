@@ -301,7 +301,7 @@ impl Ethereum {
         // default value we estimate the current gas price upfront. But because it's
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
-        Some(self.inner.gas.estimate().await.ok()?.effective(None))
+        Some(self.inner.gas.estimate().await.ok()?.effective(base_fee))
     }
 
     pub fn web3(&self) -> &Web3 {

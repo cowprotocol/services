@@ -138,6 +138,7 @@ pub trait ApproxEq {
 
 #[cfg(test)]
 impl ApproxEq for u128 {
+    #[tracing::instrument]
     fn is_approx_eq(&self, other: &Self, delta: Option<u32>) -> bool {
         let (lower, upper) = match delta {
             Some(percent) => {
@@ -153,6 +154,7 @@ impl ApproxEq for u128 {
                 (lower, upper)
             }
         };
+        tracing::debug!("lower: {lower}, self: {self}, upper: {upper}");
         self >= &lower && self <= &upper
     }
 }
