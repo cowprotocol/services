@@ -15,12 +15,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    refunder::{
-        RefundStatus,
-        infra::{AlloyChain, Postgres},
-        refund_service::RefundService,
-        submitter::Submitter,
-    },
+    refunder::{RefundStatus, refund_service::RefundService},
     rstest::{Context, rstest},
 };
 
@@ -247,36 +242,6 @@ struct SlippageBps {
     enforced: i64,
 }
 
-/// Creates a `RefundService` configured for e2e tests.
-fn create_refund_service(
-    services: &Services<'_>,
-    web3: Web3,
-    ethflow_addresses: Vec<Address>,
-    min_validity_duration: i64,
-    min_price_deviation_bps: i64,
-    signer: ::alloy::signers::local::PrivateKeySigner,
-) -> RefundService<Postgres, AlloyChain, Submitter> {
-    let database = Postgres::new(services.db().clone());
-    let chain = AlloyChain::new(web3.alloy.clone(), ethflow_addresses);
-    web3.wallet.register_signer(signer.clone());
-    let submitter = Submitter {
-        web3: web3.clone(),
-        signer_address: signer.address(),
-        gas_estimator: Box::new(web3.legacy.clone()),
-        gas_parameters_of_last_tx: None,
-        nonce_of_last_submission: None,
-        max_gas_price: MAX_GAS_PRICE,
-        start_priority_fee_tip: START_PRIORITY_FEE_TIP,
-    };
-    RefundService::new(
-        database,
-        chain,
-        submitter,
-        min_validity_duration,
-        min_price_deviation_bps,
-    )
-}
-
 /// Runs a refunder threshold test.
 ///
 /// # Settlement Isolation
@@ -327,13 +292,15 @@ async fn run_refunder_threshold_test(
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = create_refund_service(
-        &services,
+    let mut refund_service = RefundService::from_components(
+        services.db().clone(),
         web3.clone(),
         vec![*ethflow_contract.address()],
         validity.enforced,
         slippage.enforced,
         refunder_account.signer.clone(),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // Verify order is still eligible for refund (not yet reimbursed)
@@ -451,13 +418,15 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = create_refund_service(
-        &services,
+    let mut refund_service = RefundService::from_components(
+        services.db().clone(),
         web3.clone(),
         vec![*ethflow_contract.address()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
         refunder_account.signer.clone(),
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // The order should already be invalidated on-chain before the refunder runs
@@ -556,13 +525,15 @@ async fn refunder_skips_settled_orders(web3: Web3) {
         "Settled order should not be invalidated on-chain"
     );
 
-    let mut refund_service = create_refund_service(
-        &services,
+    let mut refund_service = RefundService::from_components(
+        services.db().clone(),
         web3.clone(),
         vec![*ethflow_contract.address()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
         refunder_account.signer,
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // Run the refunder - it should NOT try to refund this already-settled order
@@ -650,13 +621,15 @@ async fn refunder_multiple_ethflow_contracts(web3: Web3) {
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = create_refund_service(
-        &services,
+    let mut refund_service = RefundService::from_components(
+        services.db().clone(),
         web3,
         vec![*ethflow_contract.address(), *ethflow_contract_2.address()],
         validity_duration as i64 / 2,
         10,
         refunder.signer,
+        MAX_GAS_PRICE,
+        START_PRIORITY_FEE_TIP,
     );
 
     // Verify orders are not yet refunded

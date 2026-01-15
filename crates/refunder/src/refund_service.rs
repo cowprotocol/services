@@ -1,7 +1,11 @@
 //! Refund eligibility checks and batch submission.
 
 use {
-    crate::traits::{ChainRead, ChainWrite, DbRead, RefundStatus},
+    crate::{
+        infra::{AlloyChain, Postgres},
+        submitter::Submitter,
+        traits::{ChainRead, ChainWrite, DbRead, RefundStatus},
+    },
     alloy::primitives::{Address, B256},
     anyhow::Result,
     database::{OrderUid, ethflow_orders::EthOrderPlacement},
@@ -198,6 +202,51 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl RefundService<Postgres, AlloyChain, Submitter> {
+    /// Creates a `RefundService` from its (concrete) components.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_components(
+        db: sqlx::PgPool,
+        web3: ethrpc::Web3,
+        ethflow_addresses: Vec<Address>,
+        min_validity_duration: i64,
+        min_price_deviation_bps: i64,
+        signer: alloy::signers::local::PrivateKeySigner,
+        max_gas_price: u64,
+        start_priority_fee_tip: u64,
+    ) -> Self {
+        // Database layer
+        let database = Postgres::new(db);
+
+        // Chain reader
+        let chain = AlloyChain::new(web3.alloy.clone(), ethflow_addresses);
+
+        // Signer/wallet configuration
+        let signer_address = signer.address();
+        web3.wallet.register_signer(signer);
+
+        // Transaction submitter
+        let gas_estimator = Box::new(web3.legacy.clone());
+        let submitter = Submitter {
+            web3,
+            signer_address,
+            gas_estimator,
+            gas_parameters_of_last_tx: None,
+            nonce_of_last_submission: None,
+            max_gas_price,
+            start_priority_fee_tip,
+        };
+
+        Self::new(
+            database,
+            chain,
+            submitter,
+            min_validity_duration,
+            min_price_deviation_bps,
+        )
     }
 }
 

@@ -16,11 +16,7 @@ pub mod traits;
 // Re-export commonly used types for external consumers (e.g., e2e tests)
 pub use traits::RefundStatus;
 use {
-    crate::{
-        arguments::Arguments,
-        infra::{AlloyChain, Postgres},
-        submitter::Submitter,
-    },
+    crate::arguments::Arguments,
     alloy::{providers::Provider, signers::local::PrivateKeySigner},
     clap::Parser,
     observe::metrics::LivenessChecking,
@@ -67,7 +63,6 @@ pub async fn run(args: arguments::Arguments) {
 
     // Database initialization
     let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
-    let database = Postgres::new(pg_pool);
 
     // Blockchain/RPC setup
     let web3 = shared::ethrpc::web3(
@@ -89,39 +84,25 @@ pub async fn run(args: arguments::Arguments) {
         );
     }
 
-    let chain = AlloyChain::new(web3.alloy.clone(), args.ethflow_contracts.clone());
-
-    // Signer/wallet configuration
-    let refunder_account = Box::new(
-        args.refunder_pk
-            .parse::<PrivateKeySigner>()
-            .expect("couldn't parse refunder private key"),
-    );
-    let signer_address = refunder_account.address();
-    let gas_estimator = Box::new(web3.legacy.clone());
-    web3.wallet.register_signer(refunder_account);
-
-    // Transaction submitter
-    let submitter = Submitter {
-        web3,
-        signer_address,
-        gas_estimator,
-        gas_parameters_of_last_tx: None,
-        nonce_of_last_submission: None,
-        max_gas_price: args.max_gas_price,
-        start_priority_fee_tip: args.start_priority_fee_tip,
-    };
+    // Signer configuration
+    let signer = args
+        .refunder_pk
+        .parse::<PrivateKeySigner>()
+        .expect("couldn't parse refunder private key");
 
     // Service construction
     let min_validity_duration =
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX);
 
-    let mut refunder = RefundService::new(
-        database,
-        chain,
-        submitter,
+    let mut refunder = RefundService::from_components(
+        pg_pool,
+        web3,
+        args.ethflow_contracts,
         min_validity_duration,
         args.min_price_deviation_bps,
+        signer,
+        args.max_gas_price,
+        args.start_priority_fee_tip,
     );
 
     // Main loop
