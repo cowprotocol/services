@@ -82,3 +82,61 @@ pub trait ChainWrite: Send + Sync {
         ethflow_contract: Address,
     ) -> Result<()>;
 }
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+
+    /// Extension trait for `MockChainRead` to reduce mock setup boilerplate.
+    pub trait MockChainReadExt {
+        fn with_block_timestamp(&mut self, timestamp: u32) -> &mut Self;
+        fn with_ethflow_addresses(&mut self, addresses: Vec<Address>) -> &mut Self;
+        fn with_order_status(&mut self, status: RefundStatus) -> &mut Self;
+        fn receiving_eth(&mut self) -> &mut Self;
+    }
+
+    impl MockChainReadExt for MockChainRead {
+        fn with_block_timestamp(&mut self, timestamp: u32) -> &mut Self {
+            self.expect_current_block_timestamp()
+                .returning(move || Ok(timestamp));
+            self
+        }
+
+        fn with_ethflow_addresses(&mut self, addresses: Vec<Address>) -> &mut Self {
+            self.expect_ethflow_addresses()
+                .returning(move || addresses.clone());
+            self
+        }
+
+        fn with_order_status(&mut self, status: RefundStatus) -> &mut Self {
+            self.expect_get_order_status()
+                .returning(move |_, _| Ok(status));
+            self
+        }
+
+        fn receiving_eth(&mut self) -> &mut Self {
+            self.expect_can_receive_eth().returning(|_| true);
+            self
+        }
+    }
+
+    /// Extension trait for `MockDbRead` to reduce mock setup boilerplate.
+    pub trait MockDbReadExt {
+        fn with_default_ethflow_order_data(&mut self) -> &mut Self;
+        fn with_refundable_orders(&mut self, orders: Vec<EthOrderPlacement>) -> &mut Self;
+    }
+
+    impl MockDbReadExt for MockDbRead {
+        fn with_default_ethflow_order_data(&mut self) -> &mut Self {
+            self.expect_get_ethflow_order_data()
+                .returning(|_| Ok(EthFlowOrder::Data::default()));
+            self
+        }
+
+        fn with_refundable_orders(&mut self, orders: Vec<EthOrderPlacement>) -> &mut Self {
+            self.expect_get_refundable_orders()
+                .returning(move |_, _, _| Ok(orders.clone()));
+            self
+        }
+    }
+}

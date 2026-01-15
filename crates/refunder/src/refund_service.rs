@@ -17,7 +17,8 @@ const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 type CoWSwapEthFlowAddress = Address;
 
-/// Extracts the EthFlow contract address from an order if it's in the allowlist.
+/// Extracts the EthFlow contract address from an order if it's in the
+/// allowlist.
 ///
 /// Returns `None` (with a warning log) if the contract is not enabled for
 /// refunds.
@@ -276,7 +277,12 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
 mod tests {
     use {
         super::*,
-        crate::traits::{MockChainRead, MockChainWrite, MockDbRead},
+        crate::traits::{
+            MockChainRead,
+            MockChainWrite,
+            MockDbRead,
+            test::{MockChainReadExt, MockDbReadExt},
+        },
         alloy::primitives::Address,
         anyhow::anyhow,
         contracts::alloy::CoWSwapEthFlow::EthFlowOrder,
@@ -356,67 +362,6 @@ mod tests {
         }
     }
 
-    // Extension traits to reduce mock setup boilerplate
-
-    trait MockChainReadExt {
-        fn with_standard_refundable_setup(&mut self) -> &mut Self;
-        fn with_block_timestamp(&mut self, timestamp: u32) -> &mut Self;
-        fn with_ethflow_addresses(&mut self, addresses: Vec<Address>) -> &mut Self;
-        fn with_order_status(&mut self, status: RefundStatus) -> &mut Self;
-        fn receiving_eth(&mut self) -> &mut Self;
-    }
-
-    impl MockChainReadExt for MockChainRead {
-        fn with_standard_refundable_setup(&mut self) -> &mut Self {
-            self.with_ethflow_addresses(vec![KNOWN_ETHFLOW])
-                .with_order_status(RefundStatus::NotYetRefunded(EOA_OWNER))
-                .receiving_eth();
-            self
-        }
-
-        fn with_block_timestamp(&mut self, timestamp: u32) -> &mut Self {
-            self.expect_current_block_timestamp()
-                .returning(move || Ok(timestamp));
-            self
-        }
-
-        fn with_ethflow_addresses(&mut self, addresses: Vec<Address>) -> &mut Self {
-            self.expect_ethflow_addresses()
-                .returning(move || addresses.clone());
-            self
-        }
-
-        fn with_order_status(&mut self, status: RefundStatus) -> &mut Self {
-            self.expect_get_order_status()
-                .returning(move |_, _| Ok(status));
-            self
-        }
-
-        fn receiving_eth(&mut self) -> &mut Self {
-            self.expect_can_receive_eth().returning(|_| true);
-            self
-        }
-    }
-
-    trait MockDbReadExt {
-        fn with_default_ethflow_order_data(&mut self) -> &mut Self;
-        fn with_refundable_orders(&mut self, orders: Vec<EthOrderPlacement>) -> &mut Self;
-    }
-
-    impl MockDbReadExt for MockDbRead {
-        fn with_default_ethflow_order_data(&mut self) -> &mut Self {
-            self.expect_get_ethflow_order_data()
-                .returning(|_| Ok(EthFlowOrder::Data::default()));
-            self
-        }
-
-        fn with_refundable_orders(&mut self, orders: Vec<EthOrderPlacement>) -> &mut Self {
-            self.expect_get_refundable_orders()
-                .returning(move |_, _, _| Ok(orders.clone()));
-            self
-        }
-    }
-
     // Tests
 
     /// Orders with owners that cannot receive ETH are filtered out.
@@ -456,7 +401,10 @@ mod tests {
     #[tokio::test]
     async fn test_ethflow_contract_filtering(#[case] contract: Address) {
         let mut mock_chain = MockChainRead::new();
-        mock_chain.with_standard_refundable_setup();
+        mock_chain
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            .with_order_status(RefundStatus::NotYetRefunded(EOA_OWNER))
+            .receiving_eth();
 
         let order = create_test_order_placement(1, contract);
         let result = identify_uids_refunding_status(&mock_chain, &[order]).await;
@@ -802,7 +750,9 @@ mod tests {
         let mut mock_chain = MockChainRead::new();
         mock_chain
             .with_block_timestamp(1000)
-            .with_standard_refundable_setup();
+            .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
+            .with_order_status(RefundStatus::NotYetRefunded(EOA_OWNER))
+            .receiving_eth();
 
         let mut mock_submitter = MockChainWrite::new();
         mock_submitter
