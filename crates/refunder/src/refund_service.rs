@@ -17,6 +17,67 @@ const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 type CoWSwapEthFlowAddress = Address;
 
+/// Extracts the EthFlow contract address from an order if it's in the allowlist.
+///
+/// Returns `None` (with a warning log) if the contract is not enabled for
+/// refunds.
+fn extract_known_ethflow_address(
+    eth_order_placement: &EthOrderPlacement,
+    known_ethflow_addresses: &[Address],
+) -> Option<Address> {
+    let ethflow_contract_address = Address::from_slice(&eth_order_placement.uid.0[32..52]);
+    if known_ethflow_addresses.contains(&ethflow_contract_address) {
+        Some(ethflow_contract_address)
+    } else {
+        tracing::warn!(
+            uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
+            ethflow = ?ethflow_contract_address,
+            "refunding orders from specific contract is not enabled",
+        );
+        None
+    }
+}
+
+/// Queries on-chain refund status for a single order.
+///
+/// Returns `None` if the status query fails. Marks orders as `Invalid` if
+/// the owner cannot receive ETH.
+async fn query_order_refund_status<C: ChainRead>(
+    chain: &C,
+    eth_order_placement: &EthOrderPlacement,
+    ethflow_contract_address: Address,
+) -> Option<(OrderUid, RefundStatus, Address)> {
+    use RefundStatus::*;
+    let order_hash: [u8; 32] = eth_order_placement.uid.0[0..32]
+        .try_into()
+        .expect("order_uid slice with incorrect length");
+
+    let status = match chain
+        .get_order_status(ethflow_contract_address, B256::from(order_hash))
+        .await
+    {
+        Err(err) => {
+            tracing::error!(
+                uid =? B256::from(order_hash),
+                ?err,
+                "Error while getting the current onchain status of the order"
+            );
+            return None;
+        }
+        Ok(NotYetRefunded(owner)) if !chain.can_receive_eth(owner).await => {
+            tracing::warn!(
+                uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
+                ?owner,
+                "Order owner cannot receive ETH - marking as invalid"
+            );
+            Invalid
+        }
+        Ok(other) => other,
+    };
+
+    Some((eth_order_placement.uid, status, ethflow_contract_address))
+}
+
 /// Filters `refundable_order_uids` by on-chain status, returning only orders
 /// that need refund, grouped by EthFlow contract.
 ///
@@ -31,52 +92,13 @@ async fn identify_uids_refunding_status<C: ChainRead>(
     let futures = refundable_order_uids
         .iter()
         .filter_map(|eth_order_placement| {
-            let ethflow_contract_address = Address::from_slice(&eth_order_placement.uid.0[32..52]);
-            let is_known = known_ethflow_addresses.contains(&ethflow_contract_address);
-            if !is_known {
-                tracing::warn!(
-                    uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
-                    ethflow = ?ethflow_contract_address,
-                    "refunding orders from specific contract is not enabled",
-                );
-                return None;
-            }
-            Some((eth_order_placement, ethflow_contract_address))
+            let address =
+                extract_known_ethflow_address(eth_order_placement, &known_ethflow_addresses)?;
+            Some((eth_order_placement, address))
         })
-        .map(
-            |(eth_order_placement, ethflow_contract_address)| async move {
-                let order_hash: [u8; 32] = eth_order_placement.uid.0[0..32]
-                    .try_into()
-                    .expect("order_uid slice with incorrect length");
-                let status = chain
-                    .get_order_status(ethflow_contract_address, B256::from(order_hash))
-                    .await;
-                let status = match status {
-                    Ok(status) => status,
-                    Err(err) => {
-                        tracing::error!(
-                            uid =? B256::from(order_hash),
-                            ?err,
-                            "Error while getting the current onchain status of the order"
-                        );
-                        return None;
-                    }
-                };
-                let status = match status {
-                    RefundStatus::NotYetRefunded(owner) if !chain.can_receive_eth(owner).await => {
-                        tracing::warn!(
-                            uid = const_hex::encode_prefixed(eth_order_placement.uid.0),
-                            ?owner,
-                            "Order owner cannot receive ETH - marking as invalid"
-                        );
-                        RefundStatus::Invalid
-                    }
-                    other => other,
-                };
-
-                Some((eth_order_placement.uid, status, ethflow_contract_address))
-            },
-        );
+        .map(|(eth_order_placement, ethflow_contract_address)| {
+            query_order_refund_status(chain, eth_order_placement, ethflow_contract_address)
+        });
 
     let uid_with_latest_refundablility = futures::future::join_all(futures).await;
     let mut to_be_refunded_uids = HashMap::<_, Vec<_>>::new();
