@@ -5,6 +5,8 @@ use {
         liquidity,
         mempool,
         notify,
+        pod,
+        simulator,
         solver,
     },
     eth_domain_types as eth,
@@ -30,4 +32,5 @@ pub struct Config {
     pub app_data_fetching: AppDataFetching,
     pub tx_gas_limit: eth::U256,
     pub http: configs::http_client::HttpClient,
+    pub pod: Option<pod::config::Config>,
 }

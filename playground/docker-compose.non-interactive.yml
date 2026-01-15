@@ -141,6 +141,31 @@ services:
       chain:
         condition: service_healthy
 
+  driver2:
+    build:
+      context: ../
+      target: driver
+      dockerfile: ./Dockerfile
+    restart: always
+    command: [ "--config", "/driver2.toml" ]
+    environment:
+      - ETHRPC=http://chain:8545
+      - ADDR=0.0.0.0:80
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6678
+    volumes:
+      - ./driver2.toml:/driver2.toml
+    ports:
+      - 9003:80
+      - 6678:6669
+    depends_on:
+      chain:
+        condition: service_healthy
+
   # baseline (solver engine)
   baseline:
     build:
@@ -162,6 +187,28 @@ services:
     ports:
       - 9001:80 # API & metrics
       - 6672:6669 # tokio console
+
+  # baseline2 (second solver engine)
+  baseline2:
+    build:
+      context: ../
+      target: solvers
+      dockerfile: ./Dockerfile
+    restart: always
+    command: [ "baseline", "--config", "/baseline2.toml" ]
+    environment:
+      - ADDR=0.0.0.0:80
+      - LOG=solvers=trace,shared=trace
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6679
+    volumes:
+      - ./baseline2.toml:/baseline2.toml
+    ports:
+      - 9002:80
+      - 6679:6679
 
   frontend:
     build:
