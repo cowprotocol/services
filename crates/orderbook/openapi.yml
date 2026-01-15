@@ -1214,22 +1214,6 @@ components:
           allOf:
             - $ref: "#/components/schemas/StoredOrderQuote"
           nullable: true
-        settlementContract:
-          description: >
-            The address of the CoW Protocol settlement contract that this order
-            is valid for. Orders are only valid on the settlement contract they
-            were signed for.
-          allOf:
-            - $ref: "#/components/schemas/Address"
-        quote:
-          description: >
-            If the order was created with a quote, this field contains the original
-            quote data for reference. Includes gas estimation and pricing information
-            captured at the time of quoting, which can be used to analyze order
-            execution and calculate fees.
-          allOf:
-            - $ref: "#/components/schemas/StoredOrderQuote"
-          nullable: true
       required:
         - creationDate
         - class
