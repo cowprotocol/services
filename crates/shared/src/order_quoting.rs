@@ -1360,7 +1360,7 @@ mod tests {
                 Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::ZERO, // Zero buy amount
                     gas: 200,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })
