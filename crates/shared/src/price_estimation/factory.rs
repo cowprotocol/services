@@ -181,6 +181,16 @@ impl<'a> PriceEstimatorFactory<'a> {
         weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
+            NativePriceEstimatorSource::Forwarder(url) => {
+                let name = format!("Forwarder|{}", url);
+                Ok((
+                    name.clone(),
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        native::Forwarder::new(self.components.http_factory.create(), url.clone()),
+                        name,
+                    )),
+                ))
+            }
             NativePriceEstimatorSource::Driver(driver) => {
                 let native_token_price_estimation_amount =
                     self.native_token_price_estimation_amount()?;

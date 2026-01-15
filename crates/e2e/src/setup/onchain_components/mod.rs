@@ -2,7 +2,7 @@ use {
     crate::setup::{DeployedContracts, deploy::Contracts},
     ::alloy::{
         network::{Ethereum, NetworkWallet, TransactionBuilder},
-        primitives::{Address, U256},
+        primitives::{Address, U256, keccak256},
         providers::{
             Provider,
             ext::{AnvilApi, ImpersonateConfig},
@@ -25,7 +25,6 @@ use {
     number::units::EthUnit,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
-    web3::signing::{self},
 };
 
 pub mod alloy;
@@ -151,7 +150,7 @@ impl CowToken {
             buffer[128..160].copy_from_slice(nonce.to_be_bytes::<32>().as_slice());
             buffer[160..192].copy_from_slice(deadline.to_be_bytes::<32>().as_slice());
 
-            signing::keccak256(&buffer)
+            keccak256(buffer)
         };
 
         let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);

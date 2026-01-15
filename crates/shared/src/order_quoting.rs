@@ -17,7 +17,6 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
-    ethrpc::alloy::conversions::IntoAlloy,
     futures::TryFutureExt,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -26,7 +25,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
     },
     num::FromPrimitive,
-    number::conversions::alloy::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     std::sync::Arc,
     thiserror::Error,
     tracing::instrument,
@@ -516,7 +515,7 @@ impl OrderQuoter {
             kind: trade_query.kind,
             expiration,
             quote_kind,
-            solver: trade_estimate.solver.into_alloy(),
+            solver: trade_estimate.solver,
             verified: trade_estimate.verified,
             metadata: QuoteMetadataV1 {
                 interactions: trade_estimate.execution.interactions,
@@ -803,7 +802,6 @@ mod tests {
         Address,
         U256 as AlloyU256,
         chrono::Utc,
-        ethcontract::H160,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
@@ -890,7 +888,7 @@ mod tests {
                     Ok(price_estimation::Estimate {
                         out_amount: AlloyU256::from(42),
                         gas: 3,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         execution: Default::default(),
                     })
@@ -1031,7 +1029,7 @@ mod tests {
                     Ok(price_estimation::Estimate {
                         out_amount: AlloyU256::from(42),
                         gas: 3,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         execution: Default::default(),
                     })
@@ -1167,7 +1165,7 @@ mod tests {
                     Ok(price_estimation::Estimate {
                         out_amount: AlloyU256::from(100),
                         gas: 3,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         execution: Default::default(),
                     })
@@ -1288,7 +1286,7 @@ mod tests {
                 Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(100),
                     gas: 200,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })
@@ -1424,7 +1422,7 @@ mod tests {
                 Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(100),
                     gas: 200,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })

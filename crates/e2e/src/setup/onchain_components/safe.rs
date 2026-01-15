@@ -1,7 +1,7 @@
 use {
     super::{OnchainComponents, TestAccount},
     alloy::{
-        primitives::{Address, Bytes, U256},
+        primitives::{Address, Bytes, U256, keccak256},
         providers::Provider,
         rpc::types::TransactionRequest,
     },
@@ -19,7 +19,6 @@ use {
         signature::{Signature, hashed_eip712_message},
     },
     std::marker::PhantomData,
-    web3::signing::{self},
 };
 
 pub struct Infrastructure {
@@ -173,7 +172,7 @@ impl Safe {
                 "bb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8"
             ));
             buffer[44..64].copy_from_slice(to.as_slice());
-            buffer[96..128].copy_from_slice(&signing::keccak256(&data));
+            buffer[96..128].copy_from_slice(keccak256(&data).as_slice());
             nonce.copy_be_bytes_to(&mut buffer[320..352]);
 
             // Since the [`sign_transaction`] transaction method only accepts
@@ -181,7 +180,7 @@ impl Safe {
             // We can leave the rest of the buffer 0-ed out (as we have 0
             // values for those fields).
 
-            signing::keccak256(&buffer)
+            *keccak256(buffer)
         });
 
         self.contract.execTransaction(
@@ -210,9 +209,9 @@ impl Safe {
                 // <https://etherscan.io/address/0xf48f2b2d2a534e402487b3ee7c18c33aec0fe5e4#code#F1#L14>
                 "60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca"
             ));
-            buffer[32..64].copy_from_slice(&signing::keccak256(message));
+            buffer[32..64].copy_from_slice(keccak256(message).as_slice());
 
-            signing::keccak256(&buffer)
+            *keccak256(buffer)
         })
     }
 
@@ -245,7 +244,7 @@ impl Safe {
         self.chain_id.copy_be_bytes_to(&mut buffer[32..64]);
         buffer[76..96].copy_from_slice(self.contract.address().as_slice());
 
-        DomainSeparator(signing::keccak256(&buffer))
+        DomainSeparator(*keccak256(buffer))
     }
 
     /// Creates an ECDSA signature with the [`Safe`]'s `owner` and encodes to

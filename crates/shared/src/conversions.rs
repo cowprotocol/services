@@ -1,7 +1,8 @@
+// Re-export U256Ext from number crate
+pub use number::u256_ext::U256Ext;
 use {
     anyhow::{Result, ensure},
-    num::{BigInt, BigRational, rational::Ratio},
-    primitive_types::U256,
+    num::rational::Ratio,
 };
 
 // Convenience:
@@ -17,53 +18,5 @@ impl<T: num::Integer + Clone> RatioExt<T> for Ratio<T> {
             "Cannot create Ratio with 0 denominator"
         );
         Ok(Ratio::new(numerator, denominator))
-    }
-}
-
-pub trait U256Ext: Sized {
-    fn to_big_int(&self) -> BigInt;
-    fn to_big_rational(&self) -> BigRational;
-
-    fn checked_ceil_div(&self, other: &Self) -> Option<Self>;
-    fn ceil_div(&self, other: &Self) -> Self;
-}
-
-impl U256Ext for U256 {
-    fn to_big_int(&self) -> BigInt {
-        number::conversions::u256_to_big_int(self)
-    }
-
-    fn to_big_rational(&self) -> BigRational {
-        number::conversions::u256_to_big_rational(self)
-    }
-
-    fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
-        self.checked_add(other.checked_sub(1.into())?)?
-            .checked_div(*other)
-    }
-
-    fn ceil_div(&self, other: &Self) -> Self {
-        self.checked_ceil_div(other)
-            .expect("ceiling division arithmetic error")
-    }
-}
-
-impl U256Ext for alloy::primitives::U256 {
-    fn to_big_int(&self) -> BigInt {
-        number::conversions::alloy::u256_to_big_int(self)
-    }
-
-    fn to_big_rational(&self) -> BigRational {
-        number::conversions::alloy::u256_to_big_rational(self)
-    }
-
-    fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
-        self.checked_add(other.checked_sub(alloy::primitives::U256::ONE)?)?
-            .checked_div(*other)
-    }
-
-    fn ceil_div(&self, other: &Self) -> Self {
-        self.checked_ceil_div(other)
-            .expect("ceiling division arithmetic error")
     }
 }

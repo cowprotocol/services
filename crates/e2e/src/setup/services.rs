@@ -129,7 +129,7 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
-            "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             format!("--node-ws-url={NODE_WS_HOST}"),
@@ -142,6 +142,14 @@ impl<'a> Services<'a> {
             ),
         ]
         .into_iter()
+    }
+
+    fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
+        self.api_autopilot_arguments().chain([
+            "--quote-timeout=10s".to_string(),
+            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
+                .to_string(),
+        ])
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
@@ -199,11 +207,12 @@ impl<'a> Services<'a> {
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contracts={ethflow_contracts}"),
             "--skip-event-sync=true".to_string(),
+            "--api-address=0.0.0.0:12088".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(self.api_autopilot_arguments())
+        .chain(self.autopilot_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -347,11 +356,10 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", const_hex::encode(solver.address())),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+                "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
@@ -362,14 +370,12 @@ impl<'a> Services<'a> {
                 ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
+                "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
             (autopilot_args, api_args)

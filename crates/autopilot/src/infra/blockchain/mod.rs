@@ -5,7 +5,7 @@ use {
         providers::{Provider, ext::DebugApi},
         rpc::types::{
             TransactionReceipt,
-            trace::geth::{CallConfig, GethDebugTracingOptions, GethTrace},
+            trace::geth::{GethDebugBuiltInTracerType, GethDebugTracingOptions, GethTrace},
         },
     },
     anyhow::bail,
@@ -118,7 +118,7 @@ impl Ethereum {
             // batched debug calls.
             self.unbuffered_web3.alloy.debug_trace_transaction(
                 hash.0,
-                GethDebugTracingOptions::call_tracer(CallConfig::default()),
+                GethDebugTracingOptions::new_tracer(GethDebugBuiltInTracerType::CallTracer),
             )
         )?;
 

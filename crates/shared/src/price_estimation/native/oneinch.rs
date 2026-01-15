@@ -6,7 +6,7 @@ use {
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::{FutureExt, StreamExt, future::BoxFuture},
     num::ToPrimitive,
-    number::{conversions::alloy::u256_to_big_rational, serialization::HexOrDecimalU256},
+    number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
     reqwest::{Client, header::AUTHORIZATION},
     serde::Deserialize,
     serde_with::serde_as,

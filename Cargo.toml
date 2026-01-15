@@ -21,7 +21,6 @@ ethcontract = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e
 mimalloc = "0.1.43"
 tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms", "profiling"] }
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
-ethcontract-generate = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e112a88988040cde6110379ee6d1be768a13244", default-features = false }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.3", features = ["web3_", "tokio_"] }
@@ -41,6 +40,8 @@ prometheus-metric-storage = "0.5.0"
 rand = "0.8.5"
 regex = "1.10.4"
 reqwest = "0.11.27"
+rstest = "0.26"
+ruint = { version = "1.17.2", default-features = false }
 secp256k1 = "0.27.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
@@ -87,7 +88,7 @@ paste = "1.0"
 pin-project-lite = "0.2.14"
 rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
-rust_decimal = "1.35.0"
+rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
 scopeguard = "1.2.0"
 shared = { path = "crates/shared" }
@@ -95,6 +96,7 @@ solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
 testlib = { path = "crates/testlib" }
+winner-selection = { path = "crates/winner-selection" }
 time = "0.3.37"
 tiny-keccak = "2.0.2"
 tower = "0.4"

@@ -1,10 +1,10 @@
 //! Test cases.
 
 use {
-    crate::{domain::eth, util::conv::u256::U256Ext},
+    crate::domain::eth,
     bigdecimal::{BigDecimal, FromPrimitive, Signed, num_traits::CheckedMul},
     num::BigRational,
-    number::conversions::big_decimal_to_big_rational,
+    number::{conversions::big_decimal_to_big_rational, u256_ext::U256Ext},
     std::str::FromStr,
 };
 
@@ -59,7 +59,7 @@ impl Ether {
     pub fn into_wei(self) -> eth::U256 {
         BigRational::from_f64(1e18)
             .and_then(|exp| self.0.checked_mul(&exp))
-            .and_then(|wei| eth::U256::from_big_rational(&wei).ok())
+            .and_then(|wei| eth::U256::from_big_rational(&wei))
             .unwrap()
     }
 }

@@ -13,9 +13,10 @@ use {
 };
 
 mod coingecko;
+mod forwarder;
 mod oneinch;
 
-pub use self::{coingecko::CoinGecko, oneinch::OneInch};
+pub use self::{coingecko::CoinGecko, forwarder::Forwarder, oneinch::OneInch};
 
 pub type NativePrice = f64;
 pub type NativePriceEstimateResult = Result<NativePrice, PriceEstimationError>;
@@ -123,7 +124,6 @@ mod tests {
         super::*,
         crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         alloy::primitives::{Address, U256},
-        primitive_types::H160,
         std::str::FromStr,
     };
 
@@ -137,7 +137,7 @@ mod tests {
                 Ok(Estimate {
                     out_amount: U256::from(123_456_789_000_000_000u128),
                     gas: 0,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })
