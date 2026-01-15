@@ -1060,13 +1060,13 @@ components:
         class:
           description: >
             The class of the order (market, limit, or liquidity). Determines
-            how fees are handled and how the order is prioritized in settlement.
+            how fees are handled.
           allOf:
             - $ref: "#/components/schemas/OrderClass"
         owner:
           description: >
             The address that signed the order and owns it. For regular orders,
-            this is the trader. For ethflow orders, this is the EthFlow contract
+            this is the trader. For EIP 1271 orders, it's the respective contract
             (see `onchainUser` for the actual trader).
           allOf:
             - $ref: "#/components/schemas/Address"
