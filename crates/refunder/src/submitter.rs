@@ -101,29 +101,20 @@ impl Submitter {
     }
 }
 
-trait ScaleExt {
-    fn scaled_by_pct(self, pct: u64) -> Self;
-    fn scaled_by_pml(self, pml: u64) -> Self;
-}
-
-impl ScaleExt for u128 {
-    fn scaled_by_pct(self, pct: u64) -> Self {
-        self * (100 + pct as u128) / 100
-    }
-
-    fn scaled_by_pml(self, pml: u64) -> Self {
-        self * (1000 + pml as u128) / 1000
-    }
-}
-
 trait Eip1559EstimationExt {
     fn scaled_by_pml(self, pml: u64) -> Self;
 }
 
 impl Eip1559EstimationExt for Eip1559Estimation {
     fn scaled_by_pml(mut self, pml: u64) -> Self {
-        self.max_fee_per_gas = self.max_fee_per_gas.scaled_by_pml(pml);
-        self.max_priority_fee_per_gas = self.max_priority_fee_per_gas.scaled_by_pml(pml);
+        self.max_fee_per_gas = {
+            let n = self.max_fee_per_gas;
+            n * (1000 + pml as u128) / 1000
+        };
+        self.max_priority_fee_per_gas = {
+            let n = self.max_priority_fee_per_gas;
+            n * (1000 + pml as u128) / 1000
+        };
         self
     }
 }
@@ -203,8 +194,9 @@ mod tests {
             TEST_START_PRIORITY_FEE_TIP,
         )
         .unwrap();
+
         let expected_result = Eip1559Estimation {
-            max_fee_per_gas: max_fee_per_gas.scaled_by_pct(GAS_PRICE_BUFFER_PCT),
+            max_fee_per_gas: max_fee_per_gas * (100 + GAS_PRICE_BUFFER_PCT as u128) / 100,
             max_priority_fee_per_gas: TEST_START_PRIORITY_FEE_TIP as u128,
         };
         assert_eq!(result, expected_result);
@@ -225,9 +217,11 @@ mod tests {
         )
         .unwrap();
         let expected_result = Eip1559Estimation {
-            max_fee_per_gas: max_fee_per_gas_of_last_tx.scaled_by_pml(GAS_PRICE_BUMP_PML),
+            max_fee_per_gas: max_fee_per_gas_of_last_tx * (1000 + GAS_PRICE_BUMP_PML as u128)
+                / 1000,
             max_priority_fee_per_gas: (TEST_START_PRIORITY_FEE_TIP as u128)
-                .scaled_by_pml(GAS_PRICE_BUMP_PML),
+                * (1000 + GAS_PRICE_BUMP_PML as u128)
+                / 1000,
         };
         assert_eq!(result, expected_result);
         // Thrid case: MAX_GAS_PRICE is not exceeded
