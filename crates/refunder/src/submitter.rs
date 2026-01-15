@@ -26,6 +26,8 @@ const GAS_PRICE_BUFFER_FACTOR: f64 = 1.3;
 // max_fee_per_gas needs to be increased by at least 10 percent.
 const GAS_PRICE_BUMP: f64 = 1.125;
 
+const TIMEOUT_5_BLOCKS: Duration = Duration::from_secs(60);
+
 /// Type safe cast to avoid unexpected issues due to type changes.
 const fn f64_to_u128(n: f64) -> u128 {
     n as u128
@@ -48,8 +50,45 @@ impl ChainWrite for Submitter {
         encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
         ethflow_contract: Address,
     ) -> Result<()> {
-        self.submit_impl(uids, encoded_ethflow_orders, ethflow_contract)
-            .await
+        {
+            let gas_price_estimation = self.gas_estimator.estimate().await?;
+            let nonce = self.get_submission_nonce().await?;
+            let gas_price = calculate_submission_gas_price(
+                self.gas_parameters_of_last_tx,
+                gas_price_estimation,
+                nonce,
+                self.nonce_of_last_submission,
+                self.max_gas_price,
+                self.start_priority_fee_tip,
+            )?;
+
+            self.gas_parameters_of_last_tx = Some(gas_price);
+            self.nonce_of_last_submission = Some(nonce);
+
+            let ethflow_contract =
+                CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
+            let tx_result = ethflow_contract
+            .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
+            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
+            .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
+            .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
+            .from(self.signer_address)
+            .nonce(nonce)
+            .send()
+            .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
+
+            match tx_result {
+                Ok(receipt) => {
+                    tracing::debug!(
+                        "Tx to refund the orderuids {:?} yielded following result {:?}",
+                        uids,
+                        receipt
+                    );
+                }
+                Err(err) => tracing::debug!("transaction failed with: {err}"),
+            }
+            Ok(())
+        }
     }
 }
 
@@ -67,53 +106,6 @@ impl Submitter {
                     self.signer_address
                 )
             })
-    }
-
-    async fn submit_impl(
-        &mut self,
-        uids: &[OrderUid],
-        encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
-        ethflow_contract: Address,
-    ) -> Result<()> {
-        const TIMEOUT_5_BLOCKS: Duration = Duration::from_secs(60);
-
-        let gas_price_estimation = self.gas_estimator.estimate().await?;
-        let nonce = self.get_submission_nonce().await?;
-        let gas_price = calculate_submission_gas_price(
-            self.gas_parameters_of_last_tx,
-            gas_price_estimation,
-            nonce,
-            self.nonce_of_last_submission,
-            self.max_gas_price,
-            self.start_priority_fee_tip,
-        )?;
-
-        self.gas_parameters_of_last_tx = Some(gas_price);
-        self.nonce_of_last_submission = Some(nonce);
-
-        let ethflow_contract =
-            CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
-        let tx_result = ethflow_contract
-            .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
-            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
-            .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
-            .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
-            .from(self.signer_address)
-            .nonce(nonce)
-            .send()
-            .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
-
-        match tx_result {
-            Ok(receipt) => {
-                tracing::debug!(
-                    "Tx to refund the orderuids {:?} yielded following result {:?}",
-                    uids,
-                    receipt
-                );
-            }
-            Err(err) => tracing::debug!("transaction failed with: {err}"),
-        }
-        Ok(())
     }
 }
 
