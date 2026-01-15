@@ -2,7 +2,8 @@
 #set -x
 
 # address of the CowEvcOpenPositionWrapper
-WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x74399a40D9FE2478e82058480F426D7e5783167c}
+# updated Jan 15
+WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0xE87A2B78260c00423303D9677f42413254bbAF3c}
 
 # length of the wrapper data in hex with 0x at the beginning
 #WRAPPER_LEN=0x0120
