@@ -561,7 +561,7 @@ fn check_solve_request(request: Value, expected: Value) {
     assert!(
         request
             .effective_gas_price
-            .is_approx_eq(expected.effective_gas_price, Some(15.0)),
+            .is_approx_eq(&expected.effective_gas_price, Some(15.0)),
     );
 }
 

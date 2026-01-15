@@ -133,21 +133,22 @@ pub trait ApproxEq {
     /// assert!(!100.is_approx_eq(150, Some(0.02))); // 50% diff, exceeds threshold
     /// assert!(100.is_approx_eq(100, None)); // Default 1e-9 threshold
     /// ```
-    fn is_approx_eq(self, other: Self, delta: Option<f64>) -> bool;
+    fn is_approx_eq(&self, other: &Self, delta: Option<f64>) -> bool;
 }
 
 #[cfg(test)]
 impl<T> ApproxEq for T
 where
+    Self: Copy,
     T: Into<num::BigInt>,
 {
-    fn is_approx_eq(self, other: Self, delta: Option<f64>) -> bool {
+    fn is_approx_eq(&self, other: &Self, delta: Option<f64>) -> bool {
         use {num::BigInt, std::cmp};
 
-        let self_: BigInt = (self).into();
+        let self_: BigInt = (*self).into();
         let self_ = BigRational::from_integer(self_);
 
-        let other: BigInt = (other).into();
+        let other: BigInt = (*other).into();
         let other = BigRational::from_integer(other);
 
         // Early equality check prevents division by zero when both values are 0

@@ -119,7 +119,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     assert!(
         result
             .score()
-            .is_approx_eq(test_case.solution.expected_score, None),
+            .is_approx_eq(&test_case.solution.expected_score, None),
     );
     result.jit_orders(&[jit_order]);
 }
