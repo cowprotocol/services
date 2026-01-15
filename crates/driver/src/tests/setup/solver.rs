@@ -11,7 +11,7 @@ use {
             time::{self},
         },
         infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
-        tests::setup::blockchain::Trade,
+        tests::{cases::ApproxEq, setup::blockchain::Trade},
     },
     alloy::{primitives::Address, signers::local::PrivateKeySigner},
     const_hex::ToHexExt,
@@ -21,7 +21,6 @@ use {
     serde_with::{DisplayFromStr, serde_as},
     solvers_dto::auction::FlashloanHint,
     std::{
-        cmp::max,
         collections::{HashMap, HashSet},
         net::SocketAddr,
         sync::{Arc, Mutex},
@@ -559,8 +558,8 @@ fn check_solve_request(request: Value, expected: Value) {
         rest: Value,
     }
 
-    let request: SolveRequest = serde_json::from_value(request)
-        .expect("failed to deserialize /solve request body");
+    let request: SolveRequest =
+        serde_json::from_value(request).expect("failed to deserialize /solve request body");
     let expected: SolveRequest = serde_json::from_value(expected)
         .expect("failed to deserialize expected /solve request body");
     assert_eq!(
@@ -568,20 +567,10 @@ fn check_solve_request(request: Value, expected: Value) {
         "/solve request body does not match expectation"
     );
 
-    const DIFF_PCT: f64 = 0.15; // 15%
-    // Assumes the u128 fits inside the i128, in case it doesn't, just upgrade it to
-    // U256
-    let diff = (request.effective_gas_price.cast_signed()
-        - expected.effective_gas_price.cast_signed())
-    .abs();
-    let pct = diff as f64 / max(request.effective_gas_price, expected.effective_gas_price) as f64;
-
     assert!(
-        pct < DIFF_PCT,
-        "/solve request does not match expectactions, request: {}, expected: {} pct: {pct}, max \
-         pct: {DIFF_PCT}",
-        request.effective_gas_price,
-        expected.effective_gas_price
+        request
+            .effective_gas_price
+            .is_approx_eq(&expected.effective_gas_price, Some(15)),
     );
 }
 
