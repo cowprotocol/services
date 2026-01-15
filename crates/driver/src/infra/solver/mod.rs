@@ -549,47 +549,6 @@ impl Solver {
         &self.config
     }
 
-    /*
-    async fn make_signer_old(
-        eth_account: ethcontract::Account,
-    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error> {
-        match eth_account {
-            Account::Offline(pk, chain_id) => {
-                tracing::info!("[pod] make_signer Offline variant");
-                let bytes = pk.as_ref();
-                let key = k256::ecdsa::SigningKey::from_slice(bytes).map_err(|e| {
-                    infra::pod::error::Error::FailedToConnect(format!(
-                        "[pod] invalid signing key: {e}"
-                    ))
-                })?;
-
-                let signer = LocalSigner::from(key).with_chain_id(chain_id);
-                Ok(Box::new(signer))
-            }
-
-            Account::Kms(kms_account, _) => {
-                tracing::info!("[pod] make_signer Kms variant");
-                let signer = AwsSigner::new(
-                    kms_account.client().clone(),
-                    kms_account.key_id().to_string(),
-                    None,
-                )
-                    .await
-                    .map_err(|e| {
-                        infra::pod::error::Error::FailedToConnect(format!(
-                            "[pod] failed to create AwsSigner: {e}"
-                        ))
-                    })?;
-
-                Ok(Box::new(signer))
-            }
-
-            other => Err(infra::pod::error::Error::FailedToConnect(format!(
-                "[pod] unsupported ethcontract::account variant: {other:?}"
-            ))),
-        }
-    }*/
-
     async fn make_signer(
         account: infra::solver::Account,
     ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error> {
