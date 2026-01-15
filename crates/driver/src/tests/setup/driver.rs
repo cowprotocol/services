@@ -221,9 +221,6 @@ async fn create_config_file(
     .unwrap();
     writeln!(file, "flashloans-enabled = true").unwrap();
     writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
-    // Use Web3 gas estimator for tests to match the mock solver's estimator
-    // and avoid mismatches in effective gas price calculations.
-    writeln!(file, "gas-estimator = {{ estimator = \"web3\" }}").unwrap();
     write!(
         file,
         r#"[contracts]

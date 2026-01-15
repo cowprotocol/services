@@ -341,7 +341,7 @@ impl Mempools {
                 )
             })?)
             .into(),
-            None,
+            self.ethereum.current_block().borrow().base_fee,
         );
         // in order to replace a tx we need to increase the price
         Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))

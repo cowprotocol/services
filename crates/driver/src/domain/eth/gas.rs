@@ -50,10 +50,6 @@ impl GasPrice {
             self.base,
         ))
         .into()
-        // let max = self.max.0.0;
-        // let base = self.base.0.0;
-        // let tip = self.tip.0.0;
-        // max.min(base.saturating_add(tip)).into()
     }
 
     pub fn max(&self) -> FeePerGas {
