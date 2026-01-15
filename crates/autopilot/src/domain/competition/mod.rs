@@ -91,7 +91,7 @@ pub struct TradedOrder {
     Eq,
     Ord,
 )]
-pub struct Score(eth::Ether);
+pub struct Score(pub eth::Ether);
 
 impl Score {
     pub fn try_new(score: eth::Ether) -> Result<Self, ZeroScore> {

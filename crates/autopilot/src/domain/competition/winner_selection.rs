@@ -33,6 +33,7 @@ use {
         fee,
     },
     ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
+    alloy::primitives::keccak256,
     std::collections::HashMap,
     winner_selection::{self as winsel},
 };
@@ -57,6 +58,9 @@ impl Arbitrator {
 
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(&self, bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
+        let mut bids = bids;
+        bids.sort_by_cached_key(|b| hash_solution(b.solution()));
+
         let context = auction.into();
         let mut bid_by_key = HashMap::with_capacity(bids.len());
         let mut solutions = Vec::with_capacity(bids.len());
@@ -104,11 +108,28 @@ impl Arbitrator {
             );
         }
 
-        Ranking {
+        let rank = Ranking {
             filtered_out,
             ranked,
             reference_scores,
+        };
+
+        let winners = rank.winners().collect::<Vec<_>>();
+        let non_winners = rank.non_winners().collect::<Vec<_>>();
+        tracing::info!(
+            num_winners = winners.len(),
+            num_non_winners = non_winners.len(),
+            "[pod] CoW arbitration completed"
+        );
+        for winner in winners {
+            tracing::info!(
+                auction_id = ?auction.id,
+                submission_address = %winner.driver().submission_address.to_string(),
+                computed_score = ?winner.score(),
+                "[pod] CoW winner selected"
+            );
         }
+        rank
     }
 }
 
@@ -275,6 +296,65 @@ impl Ranking {
     pub fn ranked(&self) -> impl Iterator<Item = &Bid<Ranked>> {
         self.ranked.iter()
     }
+}
+
+fn u64_be(x: u64) -> [u8; 8] {
+    x.to_be_bytes()
+}
+
+fn u256_be(x: &winner_selection::U256) -> [u8; 32] {
+    x.to_be_bytes()
+}
+
+fn side_to_u8(side: crate::domain::auction::order::Side) -> u8 {
+    match side {
+        crate::domain::auction::order::Side::Buy => 0,
+        crate::domain::auction::order::Side::Sell => 1,
+    }
+}
+
+fn encode_traded_order(buf: &mut Vec<u8>, order: &crate::domain::competition::TradedOrder) {
+    buf.push(side_to_u8(order.side));
+
+    buf.extend_from_slice((order.sell.token).0.0.as_slice());
+    buf.extend_from_slice(&u256_be(&(order.sell.amount).0));
+
+    buf.extend_from_slice((order.buy.token).0.0.as_slice());
+    buf.extend_from_slice(&u256_be(&(order.buy.amount).0));
+
+    buf.extend_from_slice(&u256_be(&(order.executed_sell).0));
+    buf.extend_from_slice(&u256_be(&(order.executed_buy).0));
+}
+
+pub fn hash_solution(sol: &Solution) -> [u8; 32] {
+    let mut buf = Vec::new();
+
+    buf.extend_from_slice(&u64_be(sol.id));
+
+    buf.extend_from_slice(sol.solver.0.as_slice());
+
+    let mut orders: Vec<_> = sol.orders.iter().collect();
+    orders.sort_by(|(uid1, _), (uid2, _)| uid1.0.cmp(&uid2.0));
+
+    buf.extend_from_slice(&u64_be(orders.len() as u64));
+
+    for (uid, order) in orders {
+        buf.extend_from_slice(&uid.0);
+
+        encode_traded_order(&mut buf, order);
+    }
+
+    let mut prices: Vec<_> = sol.prices.iter().collect();
+    prices.sort_by(|(t1, _), (t2, _)| t1.0.cmp(&t2.0));
+
+    buf.extend_from_slice(&u64_be(prices.len() as u64));
+
+    for (token_addr, price) in prices {
+        buf.extend_from_slice(token_addr.0.0.as_slice());
+        buf.extend_from_slice(&u256_be(&price.get().0));
+    }
+
+    keccak256(&buf).into()
 }
 
 #[cfg(test)]

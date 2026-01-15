@@ -113,7 +113,7 @@ impl Api {
 
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
-                solver: solver.clone(),
+                solver: Arc::new(solver.clone()),
                 competition: domain::Competition::new(
                     solver,
                     self.eth.clone(),
@@ -186,7 +186,7 @@ impl State {
         &self.0.eth
     }
 
-    fn solver(&self) -> &Solver {
+    fn solver(&self) -> &Arc<Solver> {
         &self.0.solver
     }
 
@@ -205,7 +205,7 @@ impl State {
 
 struct Inner {
     eth: Ethereum,
-    solver: Solver,
+    solver: Arc<Solver>,
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,

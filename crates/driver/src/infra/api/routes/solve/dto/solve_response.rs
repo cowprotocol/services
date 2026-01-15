@@ -4,7 +4,8 @@ use {
         infra::Solver,
         util::serialize,
     },
-    serde::Serialize,
+    alloy::primitives::keccak256,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
 };
@@ -20,10 +21,10 @@ impl SolveResponse {
 }
 
 #[serde_as]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolveResponse {
-    solutions: Vec<Solution>,
+    pub solutions: Vec<Solution>,
 }
 
 impl Solution {
@@ -60,28 +61,40 @@ impl Solution {
                 .collect(),
         }
     }
+
+    pub fn sort_key(&self) -> [u8; 32] {
+        const ADDR_LEN: usize = 20;
+        const ID_LEN: usize = 8;
+
+        let mut buf = [0u8; ADDR_LEN + ID_LEN];
+
+        buf[..ADDR_LEN].copy_from_slice(self.submission_address.0.as_slice());
+        buf[ADDR_LEN..ADDR_LEN + ID_LEN].copy_from_slice(&self.solution_id.to_be_bytes());
+
+        keccak256(buf).0
+    }
 }
 
-type OrderId = [u8; order::UID_LEN];
+pub(crate) type OrderId = [u8; order::UID_LEN];
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify it
     /// in subsequent requests (reveal, settle).
-    solution_id: u64,
-    submission_address: eth::Address,
+    pub solution_id: u64,
+    pub submission_address: eth::Address,
     #[serde_as(as = "serialize::U256")]
-    score: eth::U256,
+    pub score: eth::U256,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
-    orders: HashMap<OrderId, TradedOrder>,
+    pub orders: HashMap<OrderId, TradedOrder>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    clearing_prices: HashMap<eth::Address, eth::U256>,
+    pub clearing_prices: HashMap<eth::Address, eth::U256>,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TradedOrder {
     pub side: Side,
@@ -102,7 +115,7 @@ pub struct TradedOrder {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
     Buy,
