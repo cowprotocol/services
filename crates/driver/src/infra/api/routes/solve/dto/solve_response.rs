@@ -3,7 +3,6 @@ use {
         domain::{competition, competition::order, eth},
         infra::Solver,
     },
-    alloy::primitives::keccak256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
@@ -59,18 +58,6 @@ impl Solution {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
         }
-    }
-
-    pub fn sort_key(&self) -> [u8; 32] {
-        const ADDR_LEN: usize = 20;
-        const ID_LEN: usize = 8;
-
-        let mut buf = [0u8; ADDR_LEN + ID_LEN];
-
-        buf[..ADDR_LEN].copy_from_slice(self.submission_address.0.as_slice());
-        buf[ADDR_LEN..ADDR_LEN + ID_LEN].copy_from_slice(&self.solution_id.to_be_bytes());
-
-        keccak256(buf).0
     }
 }
 
