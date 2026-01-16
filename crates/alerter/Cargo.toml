@@ -10,7 +10,7 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 humantime = { workspace = true }
-observe = { workspace = true, features = ["axum-tracing"] }
+observe = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true }
 model = { workspace = true }

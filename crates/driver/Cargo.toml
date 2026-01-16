@@ -68,7 +68,7 @@ contracts = { workspace = true }
 ethcontract = { workspace = true }
 gas-estimation = { workspace = true }
 model = { workspace = true }
-observe = { workspace = true, features = ["axum-tracing"] }
+observe = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }

@@ -4482,7 +4482,6 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-serde",
  "tracing-subscriber",
- "warp",
 ]
 
 [[package]]

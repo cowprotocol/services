@@ -31,7 +31,7 @@ use {
         prelude::*,
         util::SubscriberInitExt,
     },
-    warp::{http, http::HeaderMap},
+    axum::http::{self, HeaderMap},
 };
 
 /// Initializes tracing setup that is shared between the binaries.
