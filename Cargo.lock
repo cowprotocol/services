@@ -40,30 +40,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alerter"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "axum",
- "clap",
- "humantime",
- "mimalloc",
- "model",
- "number",
- "observe",
- "prometheus",
- "reqwest 0.11.27",
- "serde",
- "serde_with",
- "shared",
- "tikv-jemallocator",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
