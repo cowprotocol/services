@@ -16,6 +16,6 @@ WHERE uid IN (
 */
 
 --index on `confirmed_valid_to` for quickly discarding expired ethflow orders
-CREATE INDEX orders_owner_live_limit ON orders USING btree (confirmed_valid_to)
+CREATE INDEX orders_owner_live_limit ON orders USING btree (confirmed_valid_to);
 -- further drops the query from 100ms to 80ms (warmed cache)
-CREATE INDEX okay_onchain_orders ON onchain_placed_orders USING btree (uid) WHERE placement_error IS NOT NULL
+CREATE INDEX okay_onchain_orders ON onchain_placed_orders USING btree (uid) WHERE placement_error IS NOT NULL;
