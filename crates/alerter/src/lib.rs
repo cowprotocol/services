@@ -3,6 +3,8 @@
 // and if so checking if it finds a matchable order according to an external
 // price api (0x). If this is the case it alerts.
 
+mod shutdown;
+
 use {
     alloy::primitives::{Address, U256, address},
     anyhow::{Context, Result},
@@ -405,8 +407,9 @@ async fn run(args: Arguments) {
     tokio::task::spawn(async move {
         axum::Server::bind(&addr)
             .serve(app.into_make_service())
+            .with_graceful_shutdown(shutdown::signal_handler())
             .await
-            .unwrap()
+            .expect("failed to bind server")
     });
 
     let client = Client::builder()
