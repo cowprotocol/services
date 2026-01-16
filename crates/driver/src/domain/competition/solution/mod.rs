@@ -394,7 +394,7 @@ impl Solution {
 
     /// Return the trades which fulfill non-liquidity auction orders. These are
     /// the orders placed by end users.
-    pub fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
+    fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
             Trade::Fulfillment(fulfillment) => Some(fulfillment),
             Trade::Jit(_) => None,

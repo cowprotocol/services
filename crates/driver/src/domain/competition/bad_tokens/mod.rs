@@ -1,31 +1,12 @@
-//! This module implements logic to detect risky orders that
-//! a solver is not able to support. The module supports
-//! flagging individual tokens that are not supported outright.
-//! A bad token could for example be one that forbids trading
-//! with AMMs, only allows 1 transfer per transaction/block, or
-//! was simply built with a buggy compiler which makes it incompatible
-//! with the settlement contract (see <https://github.com/cowprotocol/services/pull/781>).
-//!
-//! Additionally there are some heuristics to detect when an
-//! order itself is somehow broken or causes issues and slipped through
-//! other detection mechanisms. One big error case is orders adjusting
-//! debt postions in lending protocols. While pre-checks might correctly
-//! detect that the EIP 1271 signature is valid the transfer of the token
-//! would fail because the user's debt position is not collateralized enough.
-//! In other words the bad order detection is a last fail safe in case
-//! we were not able to predict issues with orders and pre-emptively
-//! filter them out of the auction.
 use {
-    crate::domain::{
-        competition::{Auction, order::Uid},
-        eth,
-    },
+    crate::domain::{competition::Auction, eth},
     futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };
 
-pub mod bad_orders;
-pub mod bad_tokens;
+pub mod cache;
+pub mod metrics;
+pub mod simulation;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Quality {
@@ -52,8 +33,8 @@ pub struct Detector {
     /// tokens that get detected incorrectly by the automatic detectors get
     /// listed here and therefore have a higher precedence.
     hardcoded: HashMap<eth::TokenAddress, Quality>,
-    simulation_detector: Option<bad_tokens::simulation::Detector>,
-    metrics: Option<bad_orders::metrics::Detector>,
+    simulation_detector: Option<simulation::Detector>,
+    metrics: Option<metrics::Detector>,
 }
 
 impl Detector {
@@ -68,16 +49,13 @@ impl Detector {
 
     /// Enables detection of unsupported tokens via simulation based detection
     /// methods.
-    pub fn with_simulation_detector(
-        &mut self,
-        detector: bad_tokens::simulation::Detector,
-    ) -> &mut Self {
+    pub fn with_simulation_detector(&mut self, detector: simulation::Detector) -> &mut Self {
         self.simulation_detector = Some(detector);
         self
     }
 
     /// Enables detection of unsupported tokens based on heuristics.
-    pub fn with_metrics_detector(&mut self, detector: bad_orders::metrics::Detector) -> &mut Self {
+    pub fn with_metrics_detector(&mut self, detector: metrics::Detector) -> &mut Self {
         self.metrics = Some(detector);
         self
     }
@@ -93,12 +71,6 @@ impl Detector {
 
         let mut supported_orders: Vec<_> = supported_orders
             .into_iter()
-            .filter(|order| {
-                self.metrics
-                    .as_ref()
-                    .map(|metrics| metrics.get_quality(&order.uid, now))
-                    .is_none_or(|q| q != Quality::Unsupported)
-            })
             .filter_map(|order| {
                 let sell = self.get_token_quality(order.sell.token, now);
                 let buy = self.get_token_quality(order.buy.token, now);
@@ -151,16 +123,16 @@ impl Detector {
     }
 
     /// Updates the tokens quality metric for successful operation.
-    pub fn encoding_succeeded(&self, orders: &[Uid]) {
+    pub fn encoding_succeeded(&self, token_pairs: &[(eth::TokenAddress, eth::TokenAddress)]) {
         if let Some(metrics) = &self.metrics {
-            metrics.update_orders(orders, false);
+            metrics.update_tokens(token_pairs, false);
         }
     }
 
     /// Updates the tokens quality metric for failures.
-    pub fn encoding_failed(&self, orders: &[Uid]) {
+    pub fn encoding_failed(&self, token_pairs: &[(eth::TokenAddress, eth::TokenAddress)]) {
         if let Some(metrics) = &self.metrics {
-            metrics.update_orders(orders, true);
+            metrics.update_tokens(token_pairs, true);
         }
     }
 
@@ -170,10 +142,21 @@ impl Detector {
             Some(quality) => return *quality,
         }
 
-        self.simulation_detector
+        if let Some(Quality::Unsupported) = self
+            .simulation_detector
             .as_ref()
             .map(|d| d.get_quality(&token, now))
-            .unwrap_or(Quality::Unknown)
+        {
+            return Quality::Unsupported;
+        }
+
+        if let Some(Quality::Unsupported) =
+            self.metrics.as_ref().map(|m| m.get_quality(&token, now))
+        {
+            return Quality::Unsupported;
+        }
+
+        Quality::Unknown
     }
 }
 

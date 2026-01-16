@@ -3,11 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{
-                order::app_data::AppDataRetriever,
-                risk_detector::{self, bad_orders},
-                sorting,
-            },
+            competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
         },
         infra::{
             self,
@@ -41,7 +37,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
-    pub bad_token_detector: risk_detector::bad_tokens::Detector,
+    pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -98,21 +94,19 @@ impl Api {
             let router = routes::settle(router);
             let router = routes::notify(router);
 
-            let bad_order_config = solver.bad_order_detection();
+            let bad_token_config = solver.bad_token_detection();
             let mut bad_tokens =
-                risk_detector::Detector::new(bad_order_config.tokens_supported.clone());
-            if bad_order_config.enable_simulation_strategy {
+                bad_tokens::Detector::new(bad_token_config.tokens_supported.clone());
+            if bad_token_config.enable_simulation_strategy {
                 bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
             }
 
-            if bad_order_config.enable_metrics_strategy {
-                bad_tokens.with_metrics_detector(bad_orders::metrics::Detector::new(
-                    bad_order_config.metrics_strategy_failure_ratio,
-                    bad_order_config.metrics_strategy_required_measurements,
-                    bad_order_config.metrics_strategy_log_only,
-                    bad_order_config.metrics_strategy_order_freeze_time,
-                    bad_order_config.metrics_strategy_cache_gc_interval,
-                    bad_order_config.metrics_strategy_cache_max_age,
+            if bad_token_config.enable_metrics_strategy {
+                bad_tokens.with_metrics_detector(bad_tokens::metrics::Detector::new(
+                    bad_token_config.metrics_strategy_failure_ratio,
+                    bad_token_config.metrics_strategy_required_measurements,
+                    bad_token_config.metrics_strategy_log_only,
+                    bad_token_config.metrics_strategy_token_freeze_time,
                     name.clone(),
                 ));
             }

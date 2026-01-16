@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             Mempools,
-            competition::{order::app_data::AppDataRetriever, risk_detector},
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
         },
         infra::{
             self,
@@ -93,7 +93,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             eth.clone(),
         )
         .unwrap(),
-        bad_token_detector: risk_detector::bad_tokens::Detector::new(
+        bad_token_detector: bad_tokens::simulation::Detector::new(
             config.simulation_bad_token_max_age,
             &eth,
         ),
