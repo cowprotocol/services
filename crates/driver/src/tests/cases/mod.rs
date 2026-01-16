@@ -126,6 +126,11 @@ pub trait ApproxEq {
     /// Checks if two values are approximately equal within a relative error
     /// threshold.
     ///
+    /// # Panics
+    ///
+    /// Panics if `other` is 0 but `self` is not 0, due to division by zero
+    /// in the relative error calculation.
+    ///
     /// # Examples
     ///
     /// ```ignore
