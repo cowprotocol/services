@@ -25,7 +25,7 @@ use {
     axum::{body::Body, http::Request},
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
-    pod_sdk::auctions::client::AuctionClient,
+    pod_sdk::{Address, auctions::client::AuctionClient, provider::PodProvider},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -378,71 +378,24 @@ impl Competition {
         // pod submission - winning auction calculation
         if let Some((pod, pod_auction_contract_address)) = self.solver.pod() {
             if let Some(auction_id) = auction.id {
-                let auction_clone = auction.clone();
-                let score_clone = score.clone();
-                let solver_clone = self.solver.clone();
-                let pod_clone = pod.clone();
-
-                tokio::spawn(async move {
-                    let pod_auction_client =
-                        AuctionClient::new(pod_clone, pod_auction_contract_address);
-
-                    if let Err(e) = Self::pod_solution_submission(
-                        &pod_auction_client,
-                        auction_id,
-                        deadline,
-                        score_clone,
-                        &solver_clone,
-                    )
-                    .await
-                    {
-                        tracing::error!(
-                            error = %e,
-                            auction_id = %auction_id,
-                            deadline = ?deadline,
-                            solver_address = %solver_clone.address().0.to_string(),
-                            "[pod] solution submission failed, aborting"
-                        );
-                        return;
-                    }
-
-                    let participants_result =
-                        Self::pod_fetch_bids(&pod_auction_client, auction_id, deadline).await;
-
-                    if let Ok(participants) = participants_result {
-                        tracing::info!(
-                            num_participants = participants.len(),
-                            auction_id = %auction_id,
-                            deadline = ?deadline,
-                            solver_address = %solver_clone.address().0.to_string(),
-                            "[pod] fetched bids"
-                        );
-                        let arbitrator = solver_clone.arbitrator();
-                        if let Err(e) = Self::local_winner_selection(
-                            &auction_clone,
-                            auction_id,
-                            participants,
-                            arbitrator,
-                        )
-                        .await
-                        {
-                            tracing::error!(
-                                error = %e,
-                                auction_id = %auction_id,
-                                deadline = ?deadline,
-                                solver_address = %solver_clone.address().0.to_string(),
-                                "[pod] winner selection failed, aborting"
-                            );
-                        }
-                    } else if let Err(e) = participants_result {
-                        tracing::error!(
-                            error = %e,
-                            auction_id = ?auction_clone.id(),
-                            deadline = ?deadline,
-                            solver_address = %solver_clone.address().0.to_string(),
-                            "[pod] failed to fetch participants, aborting"
-                        );
-                    }
+                let _ = Self::pod_flow(
+                    pod.clone(),
+                    pod_auction_contract_address,
+                    auction_id,
+                    auction.clone(),
+                    deadline,
+                    score.clone(),
+                    self.solver.clone(),
+                )
+                .await
+                .inspect_err(|e| {
+                    tracing::error!(
+                        error = %e,
+                        auction_id = %auction_id,
+                        deadline = ?deadline,
+                        solver_address = %self.solver.address().0.to_string(),
+                        "[pod] pod flow failed"
+                    );
                 });
             } else {
                 tracing::warn!("[pod] skipping submission to pod. empty auction id");
@@ -488,7 +441,76 @@ impl Competition {
         Ok(score)
     }
 
-    pub async fn pod_solution_submission(
+    async fn pod_flow(
+        pod_provider: PodProvider,
+        pod_auction_contract_address: Address,
+        auction_id: Id,
+        auction: Auction,
+        deadline: chrono::DateTime<chrono::Utc>,
+        score: Option<Solved>,
+        solver: Solver,
+    ) -> Result<(), anyhow::Error> {
+        tokio::spawn(async move {
+            let pod_auction_client = AuctionClient::new(pod_provider, pod_auction_contract_address);
+
+            if let Err(e) = Self::pod_solution_submission(
+                &pod_auction_client,
+                auction_id,
+                deadline,
+                score,
+                &solver,
+            )
+            .await
+            {
+                tracing::error!(
+                    error = %e,
+                    auction_id = %auction_id,
+                    deadline = ?deadline,
+                    solver_address = %solver.address().0.to_string(),
+                    "[pod] solution submission failed, aborting"
+                );
+                return;
+            }
+
+            let participants_result =
+                Self::pod_fetch_bids(&pod_auction_client, auction_id, deadline).await;
+
+            if let Ok(participants) = participants_result {
+                tracing::info!(
+                    num_participants = participants.len(),
+                    auction_id = %auction_id,
+                    deadline = ?deadline,
+                    solver_address = %solver.address().0.to_string(),
+                    "[pod] fetched bids"
+                );
+                let arbitrator = solver.arbitrator();
+                if let Err(e) =
+                    Self::local_winner_selection(&auction, auction_id, participants, arbitrator)
+                        .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        auction_id = %auction_id,
+                        deadline = ?deadline,
+                        solver_address = %solver.address().0.to_string(),
+                        "[pod] winner selection failed, aborting"
+                    );
+                }
+            } else if let Err(e) = participants_result {
+                tracing::error!(
+                    error = %e,
+                    auction_id = ?auction_id,
+                    deadline = ?deadline,
+                    solver_address = %solver.address().0.to_string(),
+                    "[pod] failed to fetch participants, aborting"
+                );
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn pod_solution_submission(
         pod_auction_client: &AuctionClient,
         auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
@@ -556,7 +578,7 @@ impl Competition {
         Ok(())
     }
 
-    pub async fn pod_fetch_bids(
+    async fn pod_fetch_bids(
         pod_auction_client: &AuctionClient,
         auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
@@ -624,7 +646,7 @@ impl Competition {
         Ok(participants)
     }
 
-    pub async fn local_winner_selection(
+    async fn local_winner_selection(
         auction: &Auction,
         auction_id: Id,
         participants: Vec<Bid<Unscored>>,
