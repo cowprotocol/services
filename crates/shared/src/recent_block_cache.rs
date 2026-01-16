@@ -29,7 +29,6 @@ use {
     alloy::eips::BlockId,
     anyhow::{Context, Result},
     cached::{Cached, SizedCache},
-    ethcontract::BlockNumber,
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
@@ -73,16 +72,6 @@ pub enum Block {
     Recent,
     Number(u64),
     Finalized,
-}
-
-impl From<Block> for BlockNumber {
-    fn from(val: Block) -> Self {
-        match val {
-            Block::Recent => BlockNumber::Latest,
-            Block::Number(number) => BlockNumber::Number(number.into()),
-            Block::Finalized => BlockNumber::Finalized,
-        }
-    }
 }
 
 impl From<Block> for BlockId {

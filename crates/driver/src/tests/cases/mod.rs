@@ -59,7 +59,7 @@ impl Ether {
     pub fn into_wei(self) -> eth::U256 {
         BigRational::from_f64(1e18)
             .and_then(|exp| self.0.checked_mul(&exp))
-            .and_then(|wei| eth::U256::from_big_rational(&wei).ok())
+            .and_then(|wei| eth::U256::from_big_rational(&wei))
             .unwrap()
     }
 }
