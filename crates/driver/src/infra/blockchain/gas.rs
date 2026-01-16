@@ -10,7 +10,9 @@ use {
     },
     ethrpc::Web3,
     shared::gas_price_estimation::{
-        GasPriceEstimating, alloy::Eip1559GasPriceEstimator, eth_node::NodeGasPriceEstimator,
+        GasPriceEstimating,
+        alloy::Eip1559GasPriceEstimator,
+        eth_node::NodeGasPriceEstimator,
     },
     std::sync::Arc,
 };

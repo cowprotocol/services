@@ -1,4 +1,5 @@
-//! Node-based gas estimation approach, queries the node for the current gas price.
+//! Node-based gas estimation approach, queries the node for the current gas
+//! price.
 //!
 //! This approach is ported from the [`cowprotocol/gas-estimation`](https://github.com/cowprotocol/gas-estimation/tree/v0.7.3) crate's legacy estimation.
 
@@ -20,7 +21,8 @@ impl NodeGasPriceEstimator {
 
 #[async_trait::async_trait]
 impl GasPriceEstimating for NodeGasPriceEstimator {
-    /// Returns the result of calling the `eth_gasPrice` endpoint as the gas estimation.
+    /// Returns the result of calling the `eth_gasPrice` endpoint as the gas
+    /// estimation.
     async fn estimate(&self) -> Result<GasPrice1559> {
         let legacy = self
             .0

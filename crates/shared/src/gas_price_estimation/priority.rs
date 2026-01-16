@@ -71,7 +71,9 @@ impl GasPriceEstimating for PriorityGasPriceEstimating {
 mod tests {
     use {
         crate::gas_price_estimation::{
-            GasPriceEstimating, MockGasPriceEstimating, price::GasPrice1559,
+            GasPriceEstimating,
+            MockGasPriceEstimating,
+            price::GasPrice1559,
             priority::PriorityGasPriceEstimating,
         },
         anyhow::anyhow,
