@@ -14,16 +14,19 @@ use {
     tracing::instrument,
 };
 
-pub struct AlloyGasPriceEstimator(AlloyProvider);
+/// Estimates an EIP-1559 gas price based on the 20th percentile of fee rewards
+/// for transactions of the last 10 blocks.
+pub struct Eip1559GasPriceEstimator(AlloyProvider);
 
-impl AlloyGasPriceEstimator {
+impl Eip1559GasPriceEstimator {
     pub fn new(provider: AlloyProvider) -> Self {
         Self(provider)
     }
 }
 
 #[async_trait::async_trait]
-impl GasPriceEstimating for AlloyGasPriceEstimator {
+impl GasPriceEstimating for Eip1559GasPriceEstimator {
+    /// Returns alloy's estimation for the EIP-1559 gas price.
     #[instrument(skip(self))]
     async fn estimate(&self) -> Result<Eip1559Estimation> {
         let fees = self

@@ -19,7 +19,6 @@ use {
     itertools::Itertools,
     serde_json::{Value, json},
     serde_with::{DisplayFromStr, serde_as},
-    shared::gas_price_estimation::Eip1559EstimationExt,
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},

@@ -50,9 +50,9 @@ impl PriorityGasPriceEstimating {
                 Err(err) => {
                     let num_errors = estimator.errors_in_a_row.fetch_add(1, Ordering::SeqCst) + 1;
                     if num_errors < LOG_ERROR_AFTER_N_ERRORS {
-                        tracing::warn!("gas estimator {} failed: {:?}", i, err);
+                        tracing::warn!(?err, "gas estimator {} failed", i);
                     } else {
-                        tracing::error!("gas estimator {} failed: {:?}", i, err);
+                        tracing::error!(?err, "gas estimator {} failed", i);
                     }
                 }
             }
@@ -72,9 +72,7 @@ impl GasPriceEstimating for PriorityGasPriceEstimating {
 mod tests {
     use {
         crate::gas_price_estimation::{
-            GasPriceEstimating,
-            MockGasPriceEstimating,
-            priority::PriorityGasPriceEstimating,
+            GasPriceEstimating, MockGasPriceEstimating, priority::PriorityGasPriceEstimating,
         },
         alloy::eips::eip1559::Eip1559Estimation,
         anyhow::anyhow,

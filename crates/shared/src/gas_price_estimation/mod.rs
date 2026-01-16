@@ -9,8 +9,7 @@ use {
     crate::{
         ethrpc::Web3,
         gas_price_estimation::{
-            alloy::AlloyGasPriceEstimator,
-            eth_node::NodeGasPriceEstimator,
+            alloy::Eip1559GasPriceEstimator, eth_node::NodeGasPriceEstimator,
             priority::PriorityGasPriceEstimating,
         },
         http_client::HttpClientFactory,
@@ -76,7 +75,7 @@ pub async fn create_priority_estimator(
                 estimators.push(Box::new(NodeGasPriceEstimator::new(web3.alloy.clone())))
             }
             GasEstimatorType::Alloy => {
-                estimators.push(Box::new(AlloyGasPriceEstimator::new(web3.alloy.clone())))
+                estimators.push(Box::new(Eip1559GasPriceEstimator::new(web3.alloy.clone())))
             }
         }
     }

@@ -792,7 +792,7 @@ mod tests {
         super::*,
         crate::{
             account_balances::MockBalanceFetching,
-            gas_price_estimation::FakeGasPriceEstimator,
+            gas_price_estimation::{FakeGasPriceEstimator, price::GasPrice1559},
             price_estimation::{
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 MockPriceEstimating,
