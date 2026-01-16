@@ -29,7 +29,7 @@ pub struct Order {
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Copy, Clone, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, PartialEq, Hash, Eq, Ord, PartialOrd)]
 pub struct OrderUid(pub [u8; 56]);
 
 impl OrderUid {
@@ -44,6 +44,12 @@ impl OrderUid {
             Address::from_slice(&self.0[32..52]),
             u32::from_le_bytes(self.0[52..].try_into().unwrap()),
         )
+    }
+}
+
+impl AsRef<[u8]> for OrderUid {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
