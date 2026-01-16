@@ -645,9 +645,9 @@ impl Competition {
         }));
 
         match result {
-            Ok(rank) => {
-                let winners = rank.winners().collect::<Vec<_>>();
-                let non_winners = rank.non_winners().collect::<Vec<_>>();
+            Ok(ranked) => {
+                let winners = ranked.iter().filter(|b| b.is_winner()).collect::<Vec<_>>();
+                let non_winners = ranked.iter().filter(|b| !b.is_winner()).collect::<Vec<_>>();
                 tracing::info!(
                     num_winners = winners.len(),
                     num_non_winners = non_winners.len(),
