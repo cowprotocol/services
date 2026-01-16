@@ -1,10 +1,7 @@
 use {
+    super::cache::Cache,
     crate::{
-        domain::competition::{
-            Order,
-            bad_tokens::{Quality, cache::Cache},
-            order,
-        },
+        domain::competition::{Order, order, risk_detector::Quality},
         infra::{self, observe::metrics},
     },
     futures::FutureExt,
@@ -98,7 +95,7 @@ impl Detector {
                         Ok(TokenQuality::Bad { reason }) => {
                             tracing::debug!(reason, token=?sell_token.0, "cache token as unsupported");
                             // All solvers share the same cache for the simulation detector, so there is no need to specify the solver name here.
-                            metrics::get().bad_tokens_detected.with_label_values(&["any", "simulation"]).inc();
+                            metrics::get().bad_tokens_detected.inc();
                             inner
                                 .cache
                                 .update_quality(sell_token, false, now);
