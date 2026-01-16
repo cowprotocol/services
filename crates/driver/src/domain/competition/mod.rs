@@ -40,7 +40,6 @@ use {
 
 pub mod auction;
 pub mod bad_tokens;
-//pub mod local_selection_winner;
 pub mod order;
 mod pre_processing;
 pub mod solution;
