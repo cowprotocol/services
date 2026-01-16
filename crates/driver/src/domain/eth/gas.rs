@@ -45,8 +45,8 @@ impl GasPrice {
     /// Returns the estimated [`EffectiveGasPrice`] for the gas price estimate.
     pub fn effective(&self) -> EffectiveGasPrice {
         U256::from(calc_effective_gas_price(
-            u128::try_from(self.max.0.0).unwrap(),
-            u128::try_from(self.tip.0.0).unwrap(),
+            u128::try_from(self.max.0.0).expect("max fee per gas should fit in a u128"),
+            u128::try_from(self.tip.0.0).expect("max priority fee per gas should fit in a u128"),
             self.base,
         ))
         .into()
