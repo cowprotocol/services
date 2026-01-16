@@ -11,6 +11,7 @@ mod bid;
 mod participation_guard;
 pub mod winner_selection;
 
+use ::winner_selection::solution_hash::{HashableSolution, HashableTradedOrder};
 pub use {
     bid::{Bid, RankType, Ranked, Scored, Unscored},
     participation_guard::SolverParticipationGuard,
@@ -65,6 +66,30 @@ impl Solution {
     }
 }
 
+impl HashableSolution for Solution {
+    type Order = TradedOrder;
+    type OrderId = domain::OrderUid;
+    type TokenAddr = eth::TokenAddress;
+
+    fn solution_id(&self) -> u64 {
+        self.id
+    }
+
+    fn solver_address(&self) -> &[u8] {
+        self.solver.as_slice()
+    }
+
+    fn orders(&self) -> impl Iterator<Item = (&Self::OrderId, &Self::Order)> {
+        self.orders.iter()
+    }
+
+    fn prices(&self) -> impl Iterator<Item = (&Self::TokenAddr, [u8; 32])> {
+        self.prices
+            .iter()
+            .map(|(token, price)| (token, price.get().0.to_be_bytes()))
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct TradedOrder {
     pub side: order::Side,
@@ -76,6 +101,39 @@ pub struct TradedOrder {
     pub executed_sell: eth::TokenAmount,
     /// The effective amount the user received after all fees.
     pub executed_buy: eth::TokenAmount,
+}
+
+impl HashableTradedOrder for TradedOrder {
+    fn side_byte(&self) -> u8 {
+        match self.side {
+            order::Side::Buy => 0,
+            order::Side::Sell => 1,
+        }
+    }
+
+    fn sell_token(&self) -> &[u8] {
+        self.sell.token.0.as_slice()
+    }
+
+    fn sell_amount(&self) -> [u8; 32] {
+        self.sell.amount.0.to_be_bytes()
+    }
+
+    fn buy_token(&self) -> &[u8] {
+        self.buy.token.0.as_slice()
+    }
+
+    fn buy_amount(&self) -> [u8; 32] {
+        self.buy.amount.0.to_be_bytes()
+    }
+
+    fn executed_sell(&self) -> [u8; 32] {
+        self.executed_sell.0.to_be_bytes()
+    }
+
+    fn executed_buy(&self) -> [u8; 32] {
+        self.executed_buy.0.to_be_bytes()
+    }
 }
 
 #[derive(

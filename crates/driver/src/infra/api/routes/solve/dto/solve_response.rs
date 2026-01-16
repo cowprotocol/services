@@ -4,9 +4,11 @@ use {
         infra::Solver,
         util::serialize,
     },
+    autopilot::domain::eth::Address,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
+    winner_selection::solution_hash::{HashableSolution, HashableTradedOrder},
 };
 
 impl SolveResponse {
@@ -107,4 +109,61 @@ pub struct TradedOrder {
 pub enum Side {
     Buy,
     Sell,
+}
+
+impl HashableSolution for Solution {
+    type Order = TradedOrder;
+    type OrderId = OrderId;
+    type TokenAddr = Address;
+
+    fn solution_id(&self) -> u64 {
+        self.solution_id
+    }
+
+    fn solver_address(&self) -> &[u8] {
+        self.submission_address.as_slice()
+    }
+
+    fn orders(&self) -> impl Iterator<Item = (&Self::OrderId, &Self::Order)> {
+        self.orders.iter()
+    }
+
+    fn prices(&self) -> impl Iterator<Item = (&Self::TokenAddr, [u8; 32])> {
+        self.clearing_prices
+            .iter()
+            .map(|(token, price)| (token, price.to_be_bytes()))
+    }
+}
+
+impl HashableTradedOrder for TradedOrder {
+    fn side_byte(&self) -> u8 {
+        match self.side {
+            Side::Buy => 0,
+            Side::Sell => 1,
+        }
+    }
+
+    fn sell_token(&self) -> &[u8] {
+        self.sell_token.as_slice()
+    }
+
+    fn sell_amount(&self) -> [u8; 32] {
+        self.limit_sell.to_be_bytes()
+    }
+
+    fn buy_token(&self) -> &[u8] {
+        self.buy_token.as_slice()
+    }
+
+    fn buy_amount(&self) -> [u8; 32] {
+        self.limit_buy.to_be_bytes()
+    }
+
+    fn executed_sell(&self) -> [u8; 32] {
+        self.executed_sell.to_be_bytes()
+    }
+
+    fn executed_buy(&self) -> [u8; 32] {
+        self.executed_buy.to_be_bytes()
+    }
 }
