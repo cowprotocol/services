@@ -3,6 +3,8 @@
 // and if so checking if it finds a matchable order according to an external
 // price api (0x). If this is the case it alerts.
 
+mod shutdown;
+
 use {
     alloy::primitives::{Address, U256, address},
     anyhow::{Context, Result},
@@ -400,8 +402,15 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 async fn run(args: Arguments) {
-    let filter = observe::metrics::handle_metrics();
-    tokio::task::spawn(warp::serve(filter).bind(([0, 0, 0, 0], args.metrics_port)));
+    let app = observe::metrics::handle_metrics_axum();
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.metrics_port));
+    tokio::task::spawn(async move {
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(shutdown::signal_handler())
+            .await
+            .expect("failed to bind server")
+    });
 
     let client = Client::builder()
         .timeout(Duration::from_secs(10))
