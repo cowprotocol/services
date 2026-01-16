@@ -9,11 +9,11 @@ use {
         infra::{config::file::GasEstimatorType, mempool},
     },
     ethrpc::Web3,
-    gas_estimation::{
+    shared::gas_price_estimation::{
         GasPriceEstimating,
-        nativegasestimator::{NativeGasEstimator, Params},
+        alloy::Eip1559GasPriceEstimator,
+        eth_node::NodeGasPriceEstimator,
     },
-    shared::gas_price_estimation::alloy::AlloyGasPriceEstimator,
     std::sync::Arc,
 };
 
@@ -35,25 +35,8 @@ impl GasPriceEstimator {
         mempools: &[mempool::Config],
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
-            GasEstimatorType::Native {
-                max_reward_percentile,
-                max_block_percentile,
-                min_block_percentile,
-            } => Arc::new(
-                NativeGasEstimator::new(
-                    web3.transport().clone(),
-                    Some(Params {
-                        max_reward_percentile: *max_reward_percentile,
-                        max_block_percentile: *max_block_percentile,
-                        min_block_percentile: *min_block_percentile,
-                        ..Default::default()
-                    }),
-                )
-                .await
-                .map_err(Error::GasPrice)?,
-            ),
-            GasEstimatorType::Web3 => Arc::new(web3.legacy.clone()),
-            GasEstimatorType::Alloy => Arc::new(AlloyGasPriceEstimator::new(web3.alloy.clone())),
+            GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(web3.alloy.clone())),
+            GasEstimatorType::Alloy => Arc::new(Eip1559GasPriceEstimator::new(web3.alloy.clone())),
         };
         // TODO: simplify logic by moving gas price adjustments out of the individual
         // mempool configs
