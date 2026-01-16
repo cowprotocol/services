@@ -3,7 +3,6 @@ use {
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::{Context, Result},
     reqwest::Url,
-    serde::Deserialize,
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -27,14 +26,6 @@ struct CachedGasPrice {
     timestamp: Instant,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// Gas price components in EIP-1559 format.
-struct GasPriceResponse {
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: u128,
-}
-
 const CACHE_DURATION: Duration = Duration::from_secs(5);
 
 impl DriverGasEstimator {
@@ -56,7 +47,7 @@ impl DriverGasEstimator {
             .context("failed to send request to driver")?
             .error_for_status()
             .context("driver returned error status")?
-            .json::<GasPriceResponse>()
+            .json::<Eip1559Estimation>()
             .await
             .context("failed to parse driver response")?;
 
