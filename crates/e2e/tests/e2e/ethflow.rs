@@ -46,7 +46,7 @@ use {
         trade::Trade,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    refunder::refund_service::{INVALIDATED_OWNER, NO_OWNER},
+    refunder::RefundStatus,
     reqwest::Client,
     shared::signature_validator::check_erc1271_result,
 };
@@ -424,7 +424,7 @@ async fn submit_order(
 ) {
     assert_eq!(
         ethflow_order.status(contracts, ethflow_contract).await,
-        EthFlowOrderOnchainStatus::Free
+        RefundStatus::Invalid
     );
 
     let result = ethflow_order
@@ -433,7 +433,7 @@ async fn submit_order(
     assert!(result.status()); // success
     assert_eq!(
         ethflow_order.status(contracts, ethflow_contract).await,
-        EthFlowOrderOnchainStatus::Created(user, ethflow_order.0.validTo)
+        RefundStatus::NotYetRefunded(user)
     );
 }
 
@@ -676,7 +676,7 @@ impl ExtendedEthFlowOrder {
         &self,
         contracts: &Contracts,
         ethflow_contract: &CoWSwapEthFlow::Instance,
-    ) -> EthFlowOrderOnchainStatus {
+    ) -> RefundStatus {
         ethflow_contract
             .orders(self.hash(contracts, ethflow_contract).await)
             .call()
@@ -783,23 +783,6 @@ impl ExtendedEthFlowOrder {
         self.to_cow_swap_order(ethflow_contract, &contracts.weth)
             .data
             .uid(&domain_separator, *ethflow_contract.address())
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum EthFlowOrderOnchainStatus {
-    Invalidated,
-    Created(Address, u32),
-    Free,
-}
-
-impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for EthFlowOrderOnchainStatus {
-    fn from(value: CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn) -> Self {
-        match value.owner {
-            owner if owner == NO_OWNER => Self::Free,
-            owner if owner == INVALIDATED_OWNER => Self::Invalidated,
-            _ => Self::Created(value.owner, value.validTo),
-        }
     }
 }
 

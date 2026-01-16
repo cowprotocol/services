@@ -2,7 +2,7 @@ use {
     crate::submitter::Submitter,
     alloy::{
         network::TxSigner,
-        primitives::{Address, B256, Signature, address},
+        primitives::{Address, B256, Signature},
         providers::Provider,
         rpc::types::TransactionRequest,
     },
@@ -16,12 +16,13 @@ use {
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
     number::conversions::big_decimal_to_u256,
+    shared::gas_price_estimation::eth_node::NodeGasPriceEstimator,
     sqlx::PgPool,
     std::collections::HashMap,
 };
 
 pub const NO_OWNER: Address = Address::ZERO;
-pub const INVALIDATED_OWNER: Address = address!("0xffffffffffffffffffffffffffffffffffffffff");
+pub const INVALIDATED_OWNER: Address = Address::repeat_byte(0xff);
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 type CoWSwapEthFlowAddress = Address;
@@ -37,11 +38,27 @@ pub struct RefundService {
     pub start_priority_fee_tip: u64,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-enum RefundStatus {
+/// Status of an EthFlow order refund eligibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefundStatus {
+    /// Order has already been refunded or cancelled.
     Refunded,
-    NotYetRefunded,
+    /// Order is still active and eligible for refund, with the given owner
+    /// address.
+    NotYetRefunded(Address),
+    /// Order is invalid (never created, already freed, or owner cannot receive
+    /// ETH).
     Invalid,
+}
+
+impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for RefundStatus {
+    fn from(value: CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn) -> Self {
+        match value.owner {
+            NO_OWNER => Self::Invalid,
+            INVALIDATED_OWNER => Self::Refunded,
+            owner => Self::NotYetRefunded(owner),
+        }
+    }
 }
 
 impl RefundService {
@@ -57,7 +74,7 @@ impl RefundService {
         start_priority_fee_tip: u64,
     ) -> Self {
         let signer_address = signer.address();
-        let gas_estimator = Box::new(web3.legacy.clone());
+        let gas_estimator = Box::new(NodeGasPriceEstimator::new(web3.alloy.clone()));
         web3.wallet.register_signer(signer);
         RefundService {
             db,
@@ -79,7 +96,7 @@ impl RefundService {
         }
     }
 
-    pub async fn try_to_refund_all_eligble_orders(&mut self) -> Result<()> {
+    pub async fn try_to_refund_all_eligible_orders(&mut self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
         let to_be_refunded_uids = self
@@ -183,7 +200,7 @@ impl RefundService {
                     );
                     RefundStatus::Invalid
                 } else {
-                    RefundStatus::NotYetRefunded
+                    RefundStatus::NotYetRefunded(order_owner)
                 };
 
                 Some((eth_order_placement.uid, refund_status, ethflow_contract))
@@ -198,7 +215,7 @@ impl RefundService {
             match refund_status {
                 RefundStatus::Refunded => (),
                 RefundStatus::Invalid => invalid_uids.push(uid),
-                RefundStatus::NotYetRefunded => {
+                RefundStatus::NotYetRefunded(_) => {
                     to_be_refunded_uids
                         .entry(*ethflow_contract.address())
                         .or_default()
@@ -292,7 +309,11 @@ impl RefundService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        alloy::primitives::address,
+        shared::gas_price_estimation::eth_node::NodeGasPriceEstimator,
+    };
 
     /// Creates a minimal RefundService for testing purposes.
     fn new_test_service(web3: Web3) -> RefundService {
@@ -307,7 +328,7 @@ mod tests {
             submitter: Submitter {
                 web3: web3.clone(),
                 signer_address: Address::ZERO,
-                gas_estimator: Box::new(web3.legacy.clone()),
+                gas_estimator: Box::new(NodeGasPriceEstimator::new(web3.alloy.clone())),
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
                 max_gas_price: 0,

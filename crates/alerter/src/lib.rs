@@ -402,14 +402,14 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 async fn run(args: Arguments) {
-    let app = observe::metrics::metrics_only_router();
+    let app = observe::metrics::handle_metrics_axum();
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.metrics_port));
     tokio::task::spawn(async move {
         axum::Server::bind(&addr)
             .serve(app.into_make_service())
             .with_graceful_shutdown(shutdown::signal_handler())
             .await
-            .expect("failed to serve metrics")
+            .expect("failed to bind server")
     });
 
     let client = Client::builder()

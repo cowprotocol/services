@@ -23,7 +23,6 @@ tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_support
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
 flate2 = "1.0.30"
 futures = "0.3.30"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.3", features = ["web3_", "tokio_"] }
 const-hex = "1.17.0"
 hex-literal = "0.4.1"
 humantime = "2.1.0"
@@ -40,6 +39,8 @@ prometheus-metric-storage = "0.5.0"
 rand = "0.8.5"
 regex = "1.10.4"
 reqwest = "0.11.27"
+rstest = "0.26"
+ruint = { version = "1.17.2", default-features = false }
 secp256k1 = "0.27.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"

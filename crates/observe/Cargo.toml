@@ -34,4 +34,5 @@ workspace = true
 
 [features]
 default = []
+axum-tracing = ["dep:axum"]
 tokio-console = ["dep:console-subscriber"]

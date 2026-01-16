@@ -25,9 +25,11 @@ pub struct Metrics {
     /// atempted and the error detection.
     #[metric(labels("mempool", "result"))]
     pub mempool_submission_results_blocks_passed: prometheus::IntCounterVec,
+    /// How many orders detected by specific solver and strategy.
+    #[metric(labels("solver"))]
+    pub bad_orders_detected: prometheus::IntCounterVec,
     /// How many tokens detected by specific solver and strategy.
-    #[metric(labels("solver", "strategy"))]
-    pub bad_tokens_detected: prometheus::IntCounterVec,
+    pub bad_tokens_detected: prometheus::IntCounter,
     /// Time spent in the auction preprocessing stage.
     #[metric(
         labels("stage"),
