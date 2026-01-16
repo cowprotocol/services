@@ -160,14 +160,12 @@ where
         let expected_delta = BigRational::from_f64(delta.unwrap_or(0.000000001))
             .expect("delta should be representable using BigRational");
 
-        // We can't use num::Unsigned due to ruint::U256 not implementing it
-        // (due to limitations on const generics)
         // Calculate relative error: |actual - expected| / |expected|
         // Ensures correct behavior with negative numbers
         let diff = (self_.clone() - other.clone()).abs();
         let calculated_delta = diff / other.abs();
 
-        tracing::debug!("{expected_delta} < {calculated_delta}");
+        tracing::debug!("{calculated_delta} <= {expected_delta}",);
 
         calculated_delta <= expected_delta
     }
