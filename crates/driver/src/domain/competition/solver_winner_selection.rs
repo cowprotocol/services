@@ -37,7 +37,7 @@ impl SolverArbitrator {
         &self,
         bids: Vec<Bid<Unscored>>,
         auction: &crate::domain::competition::Auction,
-    ) -> Ranking {
+    ) -> Vec<Bid> {
         let mut bids = bids;
         bids.sort_by_cached_key(|b| winsel::solution_hash::hash_solution(b.solution()));
 
@@ -53,14 +53,6 @@ impl SolverArbitrator {
         }
 
         let ws_ranking = self.0.arbitrate(solutions, &context);
-
-        // Compute reference scores while we still have ws_ranking
-        let reference_scores: HashMap<Address, Score> = self
-            .0
-            .compute_reference_scores(&ws_ranking)
-            .into_iter()
-            .map(|(solver, score)| (solver, Score(eth::Ether(score))))
-            .collect();
 
         let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
         for ws_solution in ws_ranking.filtered_out {
@@ -88,11 +80,7 @@ impl SolverArbitrator {
             );
         }
 
-        Ranking {
-            filtered_out,
-            ranked,
-            reference_scores,
-        }
+        ranked
     }
 }
 
@@ -264,49 +252,5 @@ impl Bid<Unscored> {
             solution,
             state: Unscored,
         }
-    }
-}
-
-pub struct Ranking {
-    /// Solutions that were discarded because they were malformed
-    /// in some way or deemed unfair by the selection mechanism.
-    filtered_out: Vec<Bid<Ranked>>,
-    /// Final ranking of the solutions that passed the fairness
-    /// check. Winners come before non-winners and higher total
-    /// scores come before lower scores.
-    ranked: Vec<Bid<Ranked>>,
-    /// Reference scores for each winning solver, used to compute rewards.
-    reference_scores: HashMap<Address, Score>,
-}
-
-impl Ranking {
-    /// All solutions including the ones that got filtered out.
-    pub fn all(&self) -> impl Iterator<Item = &Bid<Ranked>> {
-        self.ranked.iter().chain(&self.filtered_out)
-    }
-
-    /// Enumerates all solutions. The index is used as solution UID.
-    pub fn enumerated(&self) -> impl Iterator<Item = (usize, &Bid<Ranked>)> {
-        self.all().enumerate()
-    }
-
-    /// All solutions that won the right to get executed.
-    pub fn winners(&self) -> impl Iterator<Item = &Bid<Ranked>> {
-        self.ranked.iter().filter(|b| b.is_winner())
-    }
-
-    /// All solutions that were not filtered out but also did not win.
-    pub fn non_winners(&self) -> impl Iterator<Item = &Bid<Ranked>> {
-        self.ranked.iter().filter(|b| !b.is_winner())
-    }
-
-    /// Reference scores for each winning solver, used to compute rewards.
-    pub fn reference_scores(&self) -> &HashMap<Address, Score> {
-        &self.reference_scores
-    }
-
-    /// All solutions that passed the filtering step.
-    pub fn ranked(&self) -> impl Iterator<Item = &Bid<Ranked>> {
-        self.ranked.iter()
     }
 }
