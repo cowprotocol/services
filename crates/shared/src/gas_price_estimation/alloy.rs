@@ -6,31 +6,29 @@
 //! for the implementation details.
 
 use {
+    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559, u128_to_f64},
     alloy::providers::Provider,
     anyhow::{Context, Result},
     ethrpc::AlloyProvider,
     futures::TryFutureExt,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
-    std::time::Duration,
     tracing::instrument,
 };
 
-pub struct AlloyGasPriceEstimator(AlloyProvider);
+/// Estimates an EIP-1559 gas price based on the 20th percentile of fee rewards
+/// for transactions of the last 10 blocks.
+pub struct Eip1559GasPriceEstimator(AlloyProvider);
 
-impl AlloyGasPriceEstimator {
+impl Eip1559GasPriceEstimator {
     pub fn new(provider: AlloyProvider) -> Self {
         Self(provider)
     }
 }
 
 #[async_trait::async_trait]
-impl GasPriceEstimating for AlloyGasPriceEstimator {
+impl GasPriceEstimating for Eip1559GasPriceEstimator {
+    /// Returns alloy's estimation for the EIP-1559 gas price.
     #[instrument(skip(self))]
-    async fn estimate_with_limits(
-        &self,
-        _gas_limit: f64,
-        _time_limit: Duration,
-    ) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559> {
         let fees = self
             .0
             .estimate_eip1559_fees()
@@ -50,11 +48,4 @@ impl GasPriceEstimating for AlloyGasPriceEstimator {
                 .context("could not convert max_priority_fee_per_gas to f64")?,
         })
     }
-}
-
-fn u128_to_f64(val: u128) -> Result<f64> {
-    if val > 2u128.pow(f64::MANTISSA_DIGITS) {
-        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
-    }
-    Ok(val as f64)
 }

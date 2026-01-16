@@ -728,49 +728,13 @@ pub struct LiquoriceConfig {
     pub http_timeout: Duration,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[serde(tag = "estimator")]
 pub enum GasEstimatorType {
-    #[serde(rename_all = "kebab-case")]
-    Native {
-        // Effective reward value to be selected from each individual block
-        // Example: 20 means 20% of the transactions with the lowest gas price will be analyzed
-        #[serde(default = "default_max_reward_percentile")]
-        max_reward_percentile: usize,
-        // Economical priority fee to be selected from sorted individual block reward percentiles
-        // This constitutes the part of priority fee that doesn't depend on the time_limit
-        #[serde(default = "default_min_block_percentile")]
-        min_block_percentile: f64,
-        // Urgent priority fee to be selected from sorted individual block reward percentiles
-        // This constitutes the part of priority fee that depends on the time_limit
-        #[serde(default = "default_max_block_percentile")]
-        max_block_percentile: f64,
-    },
     Web3,
+    #[default]
     Alloy,
-}
-
-impl Default for GasEstimatorType {
-    fn default() -> Self {
-        GasEstimatorType::Native {
-            max_reward_percentile: default_max_reward_percentile(),
-            min_block_percentile: default_min_block_percentile(),
-            max_block_percentile: default_max_block_percentile(),
-        }
-    }
-}
-
-fn default_max_reward_percentile() -> usize {
-    20
-}
-
-fn default_min_block_percentile() -> f64 {
-    30.
-}
-
-fn default_max_block_percentile() -> f64 {
-    60.
 }
 
 /// Defines various strategies to prioritize orders.

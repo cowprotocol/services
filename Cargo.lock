@@ -2758,7 +2758,6 @@ dependencies = [
  "ethcontract",
  "ethrpc",
  "futures",
- "gas-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -3354,25 +3353,6 @@ name = "futures-utils-wasm"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42012b0f064e01aa58b545fe3727f90f7dd4020f4a3ea735b50344965f5a57e9"
-
-[[package]]
-name = "gas-estimation"
-version = "0.1.0"
-source = "git+https://github.com/cowprotocol/gas-estimation?tag=v0.7.3#5384e9d013bf33fed32b3e5366ed01b2d8cacbe4"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "http 0.2.12",
- "primitive-types",
- "serde",
- "serde_json",
- "serde_with",
- "tokio",
- "tracing",
- "url",
- "web3",
-]
 
 [[package]]
 name = "generic-array"
@@ -5602,7 +5582,6 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
- "gas-estimation",
  "humantime",
  "mimalloc",
  "number",
@@ -6418,7 +6397,6 @@ dependencies = [
  "derive_more 1.0.0",
  "ethrpc",
  "futures",
- "gas-estimation",
  "hex-literal",
  "humantime",
  "indexmap 2.13.0",
