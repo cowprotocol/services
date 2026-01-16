@@ -74,15 +74,14 @@ pub fn get_orders_by_uid(
 mod tests {
     use {
         super::*,
-        crate::api::response_body,
-        warp::{Reply, test::request},
+        warp::test::request,
     };
 
     #[tokio::test]
     async fn get_orders_by_uid_request_ok() {
         let uid = OrderUid::default();
         let request = request()
-            .path(&format!("/v1/orders"))
+            .path("/v1/orders")
             .method("POST")
             .header("content-type", "application-json")
             .json(&[uid]);
