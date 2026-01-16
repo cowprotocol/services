@@ -14,8 +14,8 @@ use {
     tracing::instrument,
 };
 
-/// Estimates the gas price based on alloy's logic for computing a reasonable
-/// EIP-1559 gas price.
+/// Estimates an EIP-1559 gas price based on the 20th percentile of fee rewards
+/// for transactions of the last 10 blocks.
 pub struct Eip1559GasPriceEstimator(AlloyProvider);
 
 impl Eip1559GasPriceEstimator {

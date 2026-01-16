@@ -10,7 +10,7 @@ use {
     ethrpc::AlloyProvider,
 };
 
-/// Gas estimator that queries the node current gas price.
+/// Gas estimator that queries the node current gas price using `eth_gasPrice`.
 pub struct NodeGasPriceEstimator(AlloyProvider);
 
 impl NodeGasPriceEstimator {
