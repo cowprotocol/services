@@ -28,7 +28,7 @@ use {
         primitives::{Address, address},
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
-    anyhow::Result,
+    anyhow::{Result, anyhow},
     autopilot::domain::eth::WrappedNativeToken,
     derivative::Derivative,
     derive_more::{From, Into},
@@ -551,7 +551,7 @@ impl Solver {
 
     async fn make_signer(
         account: infra::solver::Account,
-    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, infra::pod::error::Error> {
+    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, anyhow::Error> {
         match account {
             Account::PrivateKey(private_key_signer) => {
                 tracing::info!("[pod] make_signer PrivateKey variant");
@@ -561,7 +561,7 @@ impl Solver {
                 tracing::info!("[pod] make_signer Kms variant");
                 Ok(Box::new(aws_signer))
             }
-            Account::Address(addr) => Err(infra::pod::error::Error::FailedToConnect(format!(
+            Account::Address(addr) => Err(anyhow!(format!(
                 "[pod] unsupported Address variant: {addr:?}"
             ))),
         }
