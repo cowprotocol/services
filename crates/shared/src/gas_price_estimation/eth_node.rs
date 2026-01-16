@@ -4,8 +4,8 @@
 //! This approach is ported from the [`cowprotocol/gas-estimation`](https://github.com/cowprotocol/gas-estimation/tree/v0.7.3) crate's legacy estimation.
 
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559, u128_to_f64},
-    alloy::providers::Provider,
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::{eips::eip1559::Eip1559Estimation, providers::Provider},
     anyhow::{Context, Result},
     ethrpc::AlloyProvider,
 };

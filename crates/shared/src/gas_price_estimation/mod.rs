@@ -2,7 +2,6 @@ pub mod alloy;
 pub mod driver;
 pub mod eth_node;
 pub mod fake;
-pub mod price;
 pub mod priority;
 
 use {

@@ -1,9 +1,6 @@
 use {
     super::price_estimation::{
-        self,
-        PriceEstimating,
-        PriceEstimationError,
-        native::NativePriceEstimating,
+        self, PriceEstimating, PriceEstimationError, native::NativePriceEstimating,
     },
     crate::{
         account_balances::{BalanceFetching, Query},
@@ -792,15 +789,13 @@ mod tests {
         super::*,
         crate::{
             account_balances::MockBalanceFetching,
-            gas_price_estimation::{FakeGasPriceEstimator, price::GasPrice1559},
+            gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME,
-                MockPriceEstimating,
+                HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating,
                 native::MockNativePriceEstimating,
             },
         },
-        Address,
-        U256 as AlloyU256,
+        Address, U256 as AlloyU256,
         alloy::eips::eip1559::Eip1559Estimation,
         chrono::Utc,
         futures::FutureExt,
