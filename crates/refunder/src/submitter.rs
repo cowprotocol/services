@@ -13,7 +13,10 @@ use {
     anyhow::{Context, Result},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
-    shared::{ethrpc::Web3, gas_price_estimation::GasPriceEstimating},
+    shared::{
+        ethrpc::Web3,
+        gas_price_estimation::{Eip1559EstimationExt, GasPriceEstimating},
+    },
     std::time::Duration,
 };
 
@@ -98,24 +101,6 @@ impl Submitter {
             Err(err) => tracing::debug!("transaction failed with: {err}"),
         }
         Ok(())
-    }
-}
-
-trait Eip1559EstimationExt {
-    fn scaled_by_pml(self, pml: u64) -> Self;
-}
-
-impl Eip1559EstimationExt for Eip1559Estimation {
-    fn scaled_by_pml(mut self, pml: u64) -> Self {
-        self.max_fee_per_gas = {
-            let n = self.max_fee_per_gas;
-            n * (1000 + pml as u128) / 1000
-        };
-        self.max_priority_fee_per_gas = {
-            let n = self.max_priority_fee_per_gas;
-            n * (1000 + pml as u128) / 1000
-        };
-        self
     }
 }
 
