@@ -14,16 +14,18 @@ use {
     tracing::instrument,
 };
 
-pub struct AlloyGasPriceEstimator(AlloyProvider);
+/// Estimates the gas price based on alloy's logic for computing a reasonable EIP-1559 gas price.
+pub struct Eip1559GasPriceEstimator(AlloyProvider);
 
-impl AlloyGasPriceEstimator {
+impl Eip1559GasPriceEstimator {
     pub fn new(provider: AlloyProvider) -> Self {
         Self(provider)
     }
 }
 
 #[async_trait::async_trait]
-impl GasPriceEstimating for AlloyGasPriceEstimator {
+impl GasPriceEstimating for Eip1559GasPriceEstimator {
+    /// Returns alloy's estimation for the EIP-1559 gas price.
     #[instrument(skip(self))]
     async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559> {
         let fees = self
