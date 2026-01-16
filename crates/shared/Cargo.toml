@@ -32,7 +32,6 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-maplit = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
@@ -44,7 +43,6 @@ rand = { workspace = true }
 rate-limit = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
 rust_decimal = { workspace = true, features = ["maths"] }
-secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -63,6 +61,7 @@ alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
+maplit = { workspace = true }
 mockall = { workspace = true }
 regex = { workspace = true }
 testlib = { workspace = true }
