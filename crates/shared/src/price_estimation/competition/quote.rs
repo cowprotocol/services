@@ -1,7 +1,11 @@
 use {
     super::{CompetitionEstimator, PriceRanking, compare_error},
     crate::price_estimation::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
         QuoteVerificationMode,
     },
     alloy::eips::eip1559::calc_effective_gas_price,
@@ -161,7 +165,9 @@ mod tests {
         crate::{
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
-                MockPriceEstimating, QuoteVerificationMode, native::MockNativePriceEstimating,
+                MockPriceEstimating,
+                QuoteVerificationMode,
+                native::MockNativePriceEstimating,
             },
         },
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},

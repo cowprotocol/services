@@ -175,7 +175,9 @@ impl Settlement {
 
         // Ensure that the solver has sufficient balance for the settlement to be mined
         // even if the gas price keeps climbing during the tx submission.
-        let required_eth_balance = gas.required_balance(U256::from(price.max_fee_per_gas * 2));
+        let required_eth_balance =
+            // Converting to U256 first avoids possible overflow
+            gas.required_balance(U256::from(price.max_fee_per_gas) * U256::from(2));
         if eth.balance(solution.solver().address()).await? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,

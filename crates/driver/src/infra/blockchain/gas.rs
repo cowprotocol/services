@@ -8,10 +8,12 @@ use {
         domain::eth,
         infra::{config::file::GasEstimatorType, mempool},
     },
-    alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
+    alloy::eips::eip1559::Eip1559Estimation,
     ethrpc::Web3,
     shared::gas_price_estimation::{
-        GasPriceEstimating, alloy::Eip1559GasPriceEstimator, eth_node::NodeGasPriceEstimator,
+        GasPriceEstimating,
+        alloy::Eip1559GasPriceEstimator,
+        eth_node::NodeGasPriceEstimator,
     },
     std::sync::Arc,
 };
@@ -81,9 +83,16 @@ impl GasPriceEstimator {
             // the driver supports tweaking the tx gas price tip in case the gas
             // price estimator is systematically too low => compute configured tip bump
             let (max_additional_tip, tip_percentage_increase) = self.additional_tip;
-            let additional_tip = (max_additional_tip).min(U256::from(
-                (estimate.max_priority_fee_per_gas as f64) * tip_percentage_increase,
-            ));
+
+            // Calculate additional tip in integer space to avoid precision loss
+            // Convert percentage to basis points (multiply by 1000) to maintain precision
+            // e.g., tip_percentage_increase = 0.125 (12.5%) becomes 125
+            let tip_percentage_as_bps = (tip_percentage_increase * 1000.0) as u128;
+            let calculated_tip = eth::U256::from(estimate.max_priority_fee_per_gas)
+                * eth::U256::from(tip_percentage_as_bps)
+                / eth::U256::from(1000u128);
+
+            let additional_tip = max_additional_tip.min(calculated_tip);
 
             // make sure we tip at least some configurable minimum amount
             std::cmp::max(

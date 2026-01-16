@@ -8,7 +8,8 @@ use {
     crate::{
         ethrpc::Web3,
         gas_price_estimation::{
-            alloy::Eip1559GasPriceEstimator, eth_node::NodeGasPriceEstimator,
+            alloy::Eip1559GasPriceEstimator,
+            eth_node::NodeGasPriceEstimator,
             priority::PriorityGasPriceEstimating,
         },
         http_client::HttpClientFactory,

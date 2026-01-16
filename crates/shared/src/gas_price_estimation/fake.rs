@@ -1,5 +1,6 @@
 use {
-    crate::gas_price_estimation::GasPriceEstimating, alloy::eips::eip1559::Eip1559Estimation,
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::eips::eip1559::Eip1559Estimation,
     anyhow::Result,
 };
 

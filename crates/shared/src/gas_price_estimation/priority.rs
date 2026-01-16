@@ -72,7 +72,9 @@ impl GasPriceEstimating for PriorityGasPriceEstimating {
 mod tests {
     use {
         crate::gas_price_estimation::{
-            GasPriceEstimating, MockGasPriceEstimating, priority::PriorityGasPriceEstimating,
+            GasPriceEstimating,
+            MockGasPriceEstimating,
+            priority::PriorityGasPriceEstimating,
         },
         alloy::eips::eip1559::Eip1559Estimation,
         anyhow::anyhow,
