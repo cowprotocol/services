@@ -10,7 +10,6 @@ pub mod periodic_db_cleanup;
 pub mod run;
 pub mod run_loop;
 pub mod shadow;
-pub mod shutdown_controller;
 pub mod solvable_orders;
 pub mod util;
 

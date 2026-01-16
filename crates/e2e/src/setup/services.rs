@@ -3,9 +3,7 @@ use {
     crate::{
         nodes::NODE_WS_HOST,
         setup::{
-            Contracts,
-            OnchainComponents,
-            TIMEOUT,
+            Contracts, OnchainComponents, TIMEOUT,
             colocation::{self, SolverEngine},
             wait_for_condition,
         },
@@ -188,7 +186,7 @@ impl<'a> Services<'a> {
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
-        control: autopilot::shutdown_controller::ShutdownController,
+        control: shared::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
@@ -237,7 +235,7 @@ impl<'a> Services<'a> {
         self.start_autopilot_with_shutdown_controller(
             solve_deadline,
             extra_args,
-            autopilot::shutdown_controller::ShutdownController::default(),
+            shared::shutdown_controller::ShutdownController::default(),
         )
         .await
     }

@@ -8,8 +8,7 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser,
-                    determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -21,7 +20,6 @@ use {
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
         shadow,
-        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
@@ -33,6 +31,7 @@ use {
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
+    shared::shutdown_controller::ShutdownController,
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,

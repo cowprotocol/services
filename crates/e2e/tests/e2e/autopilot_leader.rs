@@ -1,17 +1,12 @@
 use {
-    autopilot::shutdown_controller::ShutdownController,
     e2e::setup::{
-        OnchainComponents,
-        Services,
-        TIMEOUT,
-        colocation,
-        proxy::ReverseProxy,
-        run_test,
+        OnchainComponents, Services, TIMEOUT, colocation, proxy::ReverseProxy, run_test,
         wait_for_condition,
     },
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
+    shared::shutdown_controller::ShutdownController,
     std::time::Duration,
 };
 

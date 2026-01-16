@@ -2,15 +2,10 @@ use {
     crate::{
         database::competition::Competition,
         domain::{
-            self,
-            OrderUid,
+            self, OrderUid,
             auction::Id,
             competition::{
-                self,
-                Solution,
-                SolutionError,
-                SolverParticipationGuard,
-                Unscored,
+                self, Solution, SolutionError, SolverParticipationGuard, Unscored,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -23,7 +18,6 @@ use {
         leader_lock_tracker::LeaderLockTracker,
         maintenance::Maintenance,
         run::Liveness,
-        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -35,14 +29,11 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     num::ToPrimitive,
     rand::seq::SliceRandom,
+    shared::shutdown_controller::ShutdownController,
     shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{HashMap, HashSet},
