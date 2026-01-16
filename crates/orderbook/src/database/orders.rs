@@ -323,18 +323,24 @@ impl OrderStoring for Postgres {
         let mut results = Vec::new();
 
         for uid in uids {
-            results.push(match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
-                Some(order_with_quote) => {
-                    let (order, quote) = order_with_quote.into_order_and_quote();
-                    Some(full_order_with_quote_into_model_order(order, quote.as_ref()))
-                },
-                None => {
-                    // try to find the order in the JIT orders table
-                    database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
-                        .await?
-                        .map(full_order_into_model_order)
+            results.push(
+                match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+                    Some(order_with_quote) => {
+                        let (order, quote) = order_with_quote.into_order_and_quote();
+                        Some(full_order_with_quote_into_model_order(
+                            order,
+                            quote.as_ref(),
+                        ))
+                    }
+                    None => {
+                        // try to find the order in the JIT orders table
+                        database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
+                            .await?
+                            .map(full_order_into_model_order)
+                    }
                 }
-            }.transpose());
+                .transpose(),
+            );
         }
 
         results.into_iter().collect()

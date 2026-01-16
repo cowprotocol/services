@@ -1,5 +1,8 @@
 use {
-    crate::{api::{error, extract_payload}, orderbook::Orderbook},
+    crate::{
+        api::{error, extract_payload},
+        orderbook::Orderbook,
+    },
     anyhow::Result,
     model::order::{Order, OrderUid},
     std::{convert::Infallible, sync::Arc},
@@ -21,8 +24,7 @@ fn validate(uids: Vec<OrderUid>) -> Result<Vec<OrderUid>, ValidationError> {
 }
 
 fn get_orders_by_uid_request()
--> impl Filter<Extract = (Result<Vec<OrderUid>, ValidationError>,), Error = Rejection> + Clone
-{
+-> impl Filter<Extract = (Result<Vec<OrderUid>, ValidationError>,), Error = Rejection> + Clone {
     warp::path!("v1" / "orders")
         .and(warp::post())
         .and(extract_payload())
@@ -40,25 +42,32 @@ pub fn get_orders_by_uid_response(result: Result<Vec<Option<Order>>>) -> super::
     reply::with_status(reply::json(&orders), StatusCode::OK)
 }
 
-pub fn get_orders_by_uid(orderbook: Arc<Orderbook>,) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    get_orders_by_uid_request().and_then(move |request_result: Result<Vec<OrderUid>, ValidationError>| {
-        let orderbook = orderbook.clone();
-        async move {
-            Result::<_, Infallible>::Ok(match request_result {
-                Ok(uids) => {
-                    let result = orderbook.get_orders(&uids).await;
-                    get_orders_by_uid_response(result)
-                }
-                Err(ValidationError::TooManyOrders(requested)) => {
-                    let err = error(
-                        "TooManyOrders",
-                        format!("Too many order UIDs requested: {requested}. Maximum allowed: {MAX_ORDERS_LIMIT}"),
-                    );
-                    reply::with_status(err, StatusCode::BAD_REQUEST)
-                }
-            })
-        }
-    })
+pub fn get_orders_by_uid(
+    orderbook: Arc<Orderbook>,
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+    get_orders_by_uid_request().and_then(
+        move |request_result: Result<Vec<OrderUid>, ValidationError>| {
+            let orderbook = orderbook.clone();
+            async move {
+                Result::<_, Infallible>::Ok(match request_result {
+                    Ok(uids) => {
+                        let result = orderbook.get_orders(&uids).await;
+                        get_orders_by_uid_response(result)
+                    }
+                    Err(ValidationError::TooManyOrders(requested)) => {
+                        let err = error(
+                            "TooManyOrders",
+                            format!(
+                                "Too many order UIDs requested: {requested}. Maximum allowed: \
+                                 {MAX_ORDERS_LIMIT}"
+                            ),
+                        );
+                        reply::with_status(err, StatusCode::BAD_REQUEST)
+                    }
+                })
+            }
+        },
+    )
 }
 
 #[cfg(test)]
@@ -72,7 +81,8 @@ mod tests {
     #[tokio::test]
     async fn get_orders_by_uid_request_ok() {
         let uid = OrderUid::default();
-        let request = request().path(&format!("/v1/orders"))
+        let request = request()
+            .path(&format!("/v1/orders"))
             .method("POST")
             .header("content-type", "application-json")
             .json(&[uid]);
