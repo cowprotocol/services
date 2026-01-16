@@ -95,13 +95,6 @@ struct AppState {
     startup: Arc<Option<AtomicBool>>,
 }
 
-/// Creates a Router with only the `/metrics` endpoint.
-/// Use this when you only need metrics and want to compose your own axum
-/// application.
-pub fn metrics_only_router() -> Router {
-    Router::new().route("/metrics", get(handle_metrics))
-}
-
 /// Serves metrics on a dedicated server at the given address.
 /// Spawns a background task and returns its handle.
 pub fn serve_metrics(
@@ -135,30 +128,15 @@ async fn handle_metrics() -> String {
     encode(get_registry())
 }
 
-// Axum version of `/metrics` route
-#[cfg(feature = "axum-tracing")]
-pub fn handle_metrics_axum() -> axum::Router {
-    async fn metrics_handler() -> String {
-        encode(get_registry())
-    }
-
-    axum::Router::new().route("/metrics", axum::routing::get(metrics_handler))
-}
-
-fn handle_liveness_probe(
-    liveness_checker: Arc<dyn LivenessChecking>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::path("liveness").and_then(move || {
-        let liveness_checker = liveness_checker.clone();
-        async move {
-            let status = if liveness_checker.is_alive().await {
-                warp::http::StatusCode::OK
-            } else {
-                warp::http::StatusCode::SERVICE_UNAVAILABLE
-            };
-            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
-        }
-    })
+async fn handle_liveness_probe(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Response {
+    let status = if state.liveness.is_alive().await {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    status.into_response()
 }
 
 async fn handle_readiness_probe(
