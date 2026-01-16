@@ -721,26 +721,15 @@ pub fn solvable_orders(
     /// - pending pre-signature
     /// - ethflow specific invalidation conditions
     const OPEN_ORDERS: &str = r#"
-    WITH live_orders AS (
+    WITH live_orders AS MATERIALIZED (
         SELECT o.*
         FROM   orders o
         LEFT   JOIN ethflow_orders e ON e.uid = o.uid
         WHERE  o.cancellation_timestamp IS NULL
-          AND  o.valid_to >= $1
-          AND (e.valid_to IS NULL OR e.valid_to >= $1)
-          AND NOT EXISTS (SELECT 1 FROM invalidations               i  WHERE i.order_uid = o.uid)
-          AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid      = o.uid)
-          AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders       op WHERE op.uid      = o.uid
-                                                                         AND op.placement_error IS NOT NULL)
-    ),
-    trades_agg AS (
-         SELECT t.order_uid,
-                SUM(t.buy_amount) AS sum_buy,
-                SUM(t.sell_amount) AS sum_sell,
-                SUM(t.fee_amount) AS sum_fee
-         FROM trades t
-         JOIN live_orders lo ON lo.uid = t.order_uid
-         GROUP BY t.order_uid
+        AND o.confirmed_valid_to >= $1
+        AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
+        AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
+        AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
     )
     SELECT
         lo.uid,
@@ -815,9 +804,13 @@ pub fn solvable_orders(
         WHERE  order_uid = lo.uid
     ) fee_agg ON TRUE
     LEFT JOIN app_data ad ON ad.contract_app_data = lo.app_data
-    LEFT JOIN trades_agg ta ON  ta.order_uid = lo.uid
-    WHERE ((lo.kind = 'sell' AND COALESCE(ta.sum_sell,0) < lo.sell_amount) OR
-           (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
+    WHERE (
+        lo.kind = 'sell'
+        AND COALESCE((SELECT SUM(sell_amount) FROM trades WHERE order_uid = lo.uid), 0) < lo.sell_amount
+    ) OR (
+        lo.kind = 'buy'
+        AND COALESCE((SELECT SUM(buy_amount) FROM trades WHERE order_uid = lo.uid), 0) < lo.buy_amount
+    );
     "#;
 
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
