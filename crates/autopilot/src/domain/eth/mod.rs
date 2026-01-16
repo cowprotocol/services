@@ -47,6 +47,12 @@ impl TokenAddress {
     }
 }
 
+impl AsRef<[u8]> for TokenAddress {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
 /// ERC20 representation of the chain's native token (e.g. WETH on mainnet,
 /// WXDAI on Gnosis Chain).
 #[derive(Debug, Clone, Copy, From, Into)]
