@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::detector, eth},
+        domain::{competition::risk_detector, eth},
         infra::{
             self,
             blockchain,
@@ -116,8 +116,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             (
                                 eth::TokenAddress(eth::ContractAddress(*token)),
                                 match supported {
-                                    true => detector::Quality::Supported,
-                                    false => detector::Quality::Unsupported,
+                                    true => risk_detector::Quality::Supported,
+                                    false => risk_detector::Quality::Unsupported,
                                 },
                             )
                         })

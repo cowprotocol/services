@@ -4,8 +4,8 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
-                detector,
                 order,
+                risk_detector,
                 solution::{self, Solution},
             },
             eth,
@@ -477,7 +477,7 @@ impl Error {
 #[derive(Debug, Clone)]
 pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
-    pub tokens_supported: HashMap<eth::TokenAddress, detector::Quality>,
+    pub tokens_supported: HashMap<eth::TokenAddress, risk_detector::Quality>,
     pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
