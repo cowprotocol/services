@@ -3,7 +3,9 @@ use {
     crate::{
         nodes::NODE_WS_HOST,
         setup::{
-            Contracts, OnchainComponents, TIMEOUT,
+            Contracts,
+            OnchainComponents,
+            TIMEOUT,
             colocation::{self, SolverEngine},
             wait_for_condition,
         },

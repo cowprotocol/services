@@ -8,7 +8,8 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser,
+                    determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -31,7 +32,6 @@ use {
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
-    shared::shutdown_controller::ShutdownController,
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
@@ -48,6 +48,7 @@ use {
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
+        shutdown_controller::ShutdownController,
         signature_validator,
         sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
