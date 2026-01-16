@@ -5,6 +5,7 @@ pub async fn signal_handler() {
     use tokio::signal::unix::{SignalKind, signal};
 
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+    // equivalent to Ctrl+C
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
 
     tokio::select! {
@@ -19,7 +20,7 @@ pub async fn signal_handler() {
 
 // Best-effort implementation for non-unix systems
 #[cfg(not(unix))]
-pub async fn shutdown_signal_handler() {
+pub async fn signal_handler() {
     tokio::signal::ctrl_c()
         .await
         .expect("failed to install CTRL+C handler");

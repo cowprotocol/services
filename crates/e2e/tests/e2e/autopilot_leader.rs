@@ -1,4 +1,5 @@
 use {
+    autopilot::shutdown_controller::ShutdownController,
     e2e::setup::{
         OnchainComponents,
         Services,
@@ -11,7 +12,6 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
-    shared::shutdown_controller::ShutdownController,
     std::time::Duration,
 };
 

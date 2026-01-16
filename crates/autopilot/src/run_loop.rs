@@ -23,6 +23,7 @@ use {
         leader_lock_tracker::LeaderLockTracker,
         maintenance::Maintenance,
         run::Liveness,
+        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -42,7 +43,7 @@ use {
     },
     num::ToPrimitive,
     rand::seq::SliceRandom,
-    shared::{shutdown_controller::ShutdownController, token_list::AutoUpdatingTokenList},
+    shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,

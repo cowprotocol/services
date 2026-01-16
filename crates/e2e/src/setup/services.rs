@@ -188,7 +188,7 @@ impl<'a> Services<'a> {
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
-        control: shared::shutdown_controller::ShutdownController,
+        control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
@@ -237,7 +237,7 @@ impl<'a> Services<'a> {
         self.start_autopilot_with_shutdown_controller(
             solve_deadline,
             extra_args,
-            shared::shutdown_controller::ShutdownController::default(),
+            autopilot::shutdown_controller::ShutdownController::default(),
         )
         .await
     }
