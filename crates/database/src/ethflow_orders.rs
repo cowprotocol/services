@@ -126,18 +126,18 @@ pub async fn refundable_orders(
     // table order_quotes contains entries with buy_amount = 0 (see
     // https://github.com/cowprotocol/services/pull/1767#issuecomment-1680825756)
     const QUERY: &str = r#"
-SELECT eo.uid, eo.valid_to FROM ethflow_orders eo
-INNER JOIN order_quotes oq ON eo.uid = oq.order_uid
+SELECT eo.uid, eo.valid_to 
+FROM ethflow_orders eo
 JOIN orders o ON o.uid = eo.uid
-WHERE
-eo.valid_to < $1
-AND NOT EXISTS (SELECT 1 FROM ethflow_refunds o_ref WHERE o_ref.order_uid = eo.uid AND o_ref.tx_hash IS NULL)
-AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations o_inv WHERE o_inv.uid = eo.uid)
-AND NOT EXISTS (SELECT 1 FROM trades t WHERE t.order_uid = eo.uid)
-AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.uid = eo.uid AND partially_fillable = false)
-AND o.sell_amount = oq.sell_amount
-AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
-AND eo.valid_to - extract(epoch from o.creation_timestamp)::int > $2
+    AND o.partially_fillable = false
+JOIN order_quotes oq ON oq.order_uid = eo.uid
+    AND o.sell_amount = oq.sell_amount
+    AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
+WHERE eo.valid_to < $1
+    AND eo.valid_to - extract(epoch FROM o.creation_timestamp)::int > $2
+    AND NOT EXISTS (SELECT 1 FROM trades t WHERE t.order_uid = eo.uid)
+    AND NOT EXISTS (SELECT 1 FROM ethflow_refunds o_ref WHERE o_ref.order_uid = eo.uid)
+    AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations o_inv WHERE o_inv.uid = eo.uid)
     "#;
     sqlx::query_as(QUERY)
         .bind(since_valid_to)
