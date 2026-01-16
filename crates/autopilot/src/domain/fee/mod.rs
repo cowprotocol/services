@@ -6,7 +6,7 @@
 
 mod policy;
 
-use {
+pub use {
     crate::{
         arguments::{self},
         boundary::{self},

@@ -2,6 +2,7 @@ pub mod colocation;
 mod deploy;
 #[macro_use]
 pub mod onchain_components;
+mod config;
 pub mod fee;
 pub mod proxy;
 mod services;

@@ -79,9 +79,9 @@ services:
       - EIP1271_SKIP_CREATION_VALIDATION=true
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
-      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline
+      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
+      - DRIVERS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
       - BASELINE_SOURCES=None
@@ -116,14 +116,14 @@ services:
       - SETTLE_INTERVAL=15s
       - GAS_ESTIMATORS=Native,Web3
       - PRICE_ESTIMATORS=None
-      - NATIVE_PRICE_ESTIMATORS=baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline,baseline2
       - BLOCK_STREAM_POLL_INTERVAL=1s
       - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
-      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
+      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
+      - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720,baseline2|http://driver2/baseline2|0x14dC79964da2C08b23698B3D3cc7Ca32193d9955
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
       - RUST_BACKTRACE=1
@@ -175,6 +175,37 @@ services:
       chain:
         condition: service_healthy
 
+  driver2:
+    build:
+      context: ../
+      target: localdev
+      dockerfile: ./playground/Dockerfile
+    restart: always
+    command:
+      [
+        "cargo",
+        "watch",
+        "-x",
+        "run --bin driver -- --config configs/${ENV}/driver2.toml",
+      ]
+    environment:
+      - ETHRPC=http://chain:8545
+      - ADDR=0.0.0.0:80
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
+    ports:
+      - 9003:80 # API & metrics
+      - 6678:6669 # tokio console
+    depends_on:
+      chain:
+        condition: service_healthy
+
   # baseline (solver engine)
   baseline:
     build:
@@ -202,6 +233,33 @@ services:
     ports:
       - 9001:80 # API & metrics
       - 6672:6669 # tokio console
+
+  baseline2:
+    build:
+      context: ../
+      target: localdev
+      dockerfile: ./playground/Dockerfile
+    restart: always
+    command:
+      [
+        "cargo",
+        "watch",
+        "-x",
+        "run --bin solvers -- baseline --config configs/${ENV}/baseline2.toml",
+      ]
+    environment:
+      - ADDR=0.0.0.0:80
+      - LOG=solvers=trace,shared=trace
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
+    volumes:
+      - ../:/src
+    ports:
+      - 9002:80 # API & metrics
+      - 6679:6669 # tokio console
 
   frontend:
     build:

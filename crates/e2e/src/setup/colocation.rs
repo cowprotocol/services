@@ -199,11 +199,17 @@ gas-price-cap = "1000000000000"
 
 [[submission.mempool]]
 url = "{NODE_HOST}"
+
+[pod]
+endpoint = {:?}
+auction-contract-address = {:?}
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
         contracts.balances.address(),
         contracts.signatures.address(),
+        config::pod::POD_ENDPOINT,
+        config::pod::POD_AUCTION_CONTRACT,
     );
 
     let final_config = if let Some(override_str) = config_override {

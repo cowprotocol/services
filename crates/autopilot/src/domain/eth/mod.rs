@@ -47,6 +47,12 @@ impl TokenAddress {
     }
 }
 
+impl AsRef<[u8]> for TokenAddress {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
 /// ERC20 representation of the chain's native token (e.g. WETH on mainnet,
 /// WXDAI on Gnosis Chain).
 #[derive(Debug, Clone, Copy, From, Into)]
@@ -55,6 +61,12 @@ pub struct WrappedNativeToken(TokenAddress);
 impl From<Address> for WrappedNativeToken {
     fn from(value: Address) -> Self {
         WrappedNativeToken(value.into())
+    }
+}
+
+impl From<WrappedNativeToken> for Address {
+    fn from(value: WrappedNativeToken) -> Self {
+        value.0.into()
     }
 }
 
