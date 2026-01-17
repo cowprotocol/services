@@ -77,10 +77,6 @@ impl Postgres {
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
-        // update unused app data metric
-        let count = count_unused_app_data(&mut ex).await?;
-        metrics.unused_app_data.set(count);
-
         Ok(())
     }
 
