@@ -141,6 +141,7 @@ SELECT eo.uid, eo.valid_to
 FROM ethflow_orders eo
 JOIN orders o ON o.uid = eo.uid
     AND o.partially_fillable = false
+    {creation_filter}
 JOIN order_quotes oq ON oq.order_uid = eo.uid
     AND o.sell_amount = oq.sell_amount
     AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
