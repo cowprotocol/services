@@ -39,7 +39,6 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-maplit = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true }
 model = { workspace = true }
@@ -68,6 +67,7 @@ web3 = { workspace = true }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
+maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 shared = { workspace = true, features = ["test-util"] }
