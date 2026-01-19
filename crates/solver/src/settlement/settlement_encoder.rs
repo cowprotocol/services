@@ -8,8 +8,8 @@ use {
         interaction::InteractionData,
         order::{Order, OrderClass, OrderKind},
     },
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext,
         encoded_settlement::EncodedSettlement,
         http_solver::model::InternalizationStrategy,
         interaction::Interaction,

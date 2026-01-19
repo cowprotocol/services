@@ -9,9 +9,11 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 serde_with = { workspace = true }
 const-hex = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
