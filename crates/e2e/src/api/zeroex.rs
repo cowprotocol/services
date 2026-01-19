@@ -43,8 +43,7 @@ impl ZeroExApi {
             .with_state(state);
 
         let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
-        let server = axum::Server::bind(&addr)
-            .serve(app.into_make_service());
+        let server = axum::Server::bind(&addr).serve(app.into_make_service());
 
         let addr = server.local_addr();
         let port = addr.port();

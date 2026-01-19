@@ -2,7 +2,7 @@ use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
     observe::distributed_tracing::tracing_warp::make_span,
-    serde::{Serialize, Deserialize, de::DeserializeOwned},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
         convert::Infallible,

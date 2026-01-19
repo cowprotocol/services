@@ -22,13 +22,14 @@ use {
 fn parse_order_replacement_error(status: StatusCode, body: &str) -> Option<OrderReplacementError> {
     let error: ApiError = serde_json::from_str(body).ok()?;
 
-    match (error.error_type, status) {
-        ("InvalidSignature", StatusCode::BAD_REQUEST) => {
-            Some(OrderReplacementError::InvalidSignature)
-        }
-        ("WrongOwner", StatusCode::UNAUTHORIZED) => Some(OrderReplacementError::WrongOwner),
-        ("OldOrderActivelyBidOn", StatusCode::BAD_REQUEST) => {
-            Some(OrderReplacementError::OldOrderActivelyBidOn)
+    match status {
+        StatusCode::BAD_REQUEST => match error.error_type {
+            "InvalidSignature" => Some(OrderReplacementError::InvalidSignature),
+            "OldOrderActivelyBidOn" => Some(OrderReplacementError::OldOrderActivelyBidOn),
+            _ => None,
+        },
+        StatusCode::UNAUTHORIZED if error.error_type == "WrongOwner" => {
+            Some(OrderReplacementError::WrongOwner)
         }
         _ => None,
     }
@@ -44,20 +45,21 @@ fn parse_order_cancellation_error(
 ) -> Option<OrderCancellationError> {
     let error: ApiError = serde_json::from_str(body).ok()?;
 
-    match (error.error_type, status) {
-        ("InvalidSignature", StatusCode::BAD_REQUEST) => {
-            Some(OrderCancellationError::InvalidSignature)
+    match status {
+        StatusCode::BAD_REQUEST => match error.error_type {
+            "InvalidSignature" => Some(OrderCancellationError::InvalidSignature),
+            "AlreadyCancelled" => Some(OrderCancellationError::AlreadyCancelled),
+            "OrderFullyExecuted" => Some(OrderCancellationError::OrderFullyExecuted),
+            "OrderExpired" => Some(OrderCancellationError::OrderExpired),
+            "OnChainOrder" => Some(OrderCancellationError::OnChainOrder),
+            _ => None,
+        },
+        StatusCode::NOT_FOUND if error.error_type == "OrderNotFound" => {
+            Some(OrderCancellationError::OrderNotFound)
         }
-        ("AlreadyCancelled", StatusCode::BAD_REQUEST) => {
-            Some(OrderCancellationError::AlreadyCancelled)
+        StatusCode::UNAUTHORIZED if error.error_type == "WrongOwner" => {
+            Some(OrderCancellationError::WrongOwner)
         }
-        ("OrderFullyExecuted", StatusCode::BAD_REQUEST) => {
-            Some(OrderCancellationError::OrderFullyExecuted)
-        }
-        ("OrderExpired", StatusCode::BAD_REQUEST) => Some(OrderCancellationError::OrderExpired),
-        ("OrderNotFound", StatusCode::NOT_FOUND) => Some(OrderCancellationError::OrderNotFound),
-        ("WrongOwner", StatusCode::UNAUTHORIZED) => Some(OrderCancellationError::WrongOwner),
-        ("OnChainOrder", StatusCode::BAD_REQUEST) => Some(OrderCancellationError::OnChainOrder),
         _ => None,
     }
 }

@@ -26,12 +26,14 @@ impl LiquoriceApi {
         }));
 
         let app = axum::Router::new()
-            .route("/v1/intent-origin/notification", axum::routing::post(notification_handler))
+            .route(
+                "/v1/intent-origin/notification",
+                axum::routing::post(notification_handler),
+            )
             .with_state(state.clone());
 
         let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
-        let server = axum::Server::bind(&addr)
-            .serve(app.into_make_service());
+        let server = axum::Server::bind(&addr).serve(app.into_make_service());
 
         let addr = server.local_addr();
         let port = addr.port();
