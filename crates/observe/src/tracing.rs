@@ -7,6 +7,7 @@ use {
         },
         tracing_reload_handler::spawn_reload_handler,
     },
+    axum::http::{self, HeaderMap},
     opentelemetry::{
         Context,
         KeyValue,
@@ -31,7 +32,6 @@ use {
         prelude::*,
         util::SubscriberInitExt,
     },
-    axum::http::{self, HeaderMap},
 };
 
 /// Initializes tracing setup that is shared between the binaries.
