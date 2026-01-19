@@ -23,7 +23,6 @@ const-hex = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-hex-literal = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true, optional = true }

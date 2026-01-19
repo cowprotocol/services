@@ -58,7 +58,6 @@ web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
-secp256k1 = { workspace = true }
 
 # TODO These either need to be removed or changed to be direct
 # dependencies rather than workspace dependencies
