@@ -162,7 +162,7 @@ impl NativePriceCache {
 
     /// Returns true if the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.inner.cache.lock().unwrap().is_empty()
     }
 
     /// Get a cached price, optionally creating a placeholder entry for missing

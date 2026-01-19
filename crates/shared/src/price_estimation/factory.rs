@@ -394,8 +394,8 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .await?,
         );
 
-        // Create cache with background maintenance
-        // Maintenance only refreshes Auction-sourced entries
+        // Create cache with background maintenance, which only refreshes
+        // Auction-sourced entries
         let cache = NativePriceCache::new_with_maintenance(
             self.args.native_price_cache_max_age,
             initial_prices,
