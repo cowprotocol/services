@@ -391,12 +391,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     .expect("failed to initialize price estimator factory");
 
     let initial_prices = db_write.fetch_latest_prices().await.unwrap();
-    let native_price_estimators = price_estimator_factory
-        .native_price_estimators(
+    let native_price_estimator = price_estimator_factory
+        .native_price_estimator(
             args.native_price_estimators.as_slice(),
-            args.api_native_price_estimators
-                .as_ref()
-                .map(|e| e.as_slice()),
             args.native_price_estimation_results_required,
             eth.contracts().weth().clone(),
             initial_prices,
@@ -405,8 +402,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
-    let native_price_estimator = native_price_estimators.primary;
-    let api_native_price_estimator = native_price_estimators.secondary;
+    let api_native_price_estimator = Arc::new(
+        shared::price_estimation::native_price_cache::QuoteCompetitionEstimator::new(
+            native_price_estimator.clone(),
+        ),
+    );
 
     let price_estimator = price_estimator_factory
         .price_estimator(

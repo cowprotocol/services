@@ -1052,10 +1052,7 @@ mod tests {
             Duration::from_secs(10),
             Default::default(),
             shared::price_estimation::native_price_cache::MaintenanceConfig {
-                estimators: std::collections::HashMap::from([(
-                    EstimatorSource::Primary,
-                    maintenance_estimator.clone(),
-                )]),
+                estimator: maintenance_estimator.clone(),
                 // Short interval to trigger background fetch quickly
                 update_interval: Duration::from_millis(1),
                 update_size: None,

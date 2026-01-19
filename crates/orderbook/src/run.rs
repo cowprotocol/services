@@ -321,16 +321,14 @@ pub async fn run(args: Arguments) {
 
     let initial_prices = postgres_write.fetch_latest_prices().await.unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimators(
+        .native_price_estimator(
             args.native_price_estimators.as_slice(),
-            None,
             args.fast_price_estimation_results_required,
             native_token.clone(),
             initial_prices,
         )
         .await
-        .unwrap()
-        .primary;
+        .unwrap();
 
     let price_estimator = price_estimator_factory
         .price_estimator(

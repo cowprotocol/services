@@ -21,15 +21,14 @@ use {
 };
 
 /// Identifies which estimator type fetched a cached entry.
-/// Used by maintenance to dispatch to the correct estimator.
+/// Used by maintenance to decide which entries to refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EstimatorSource {
-    /// Primary estimator - the main source for price estimates.
+    /// Auction-related requests - actively maintained by background task.
     #[default]
-    Primary,
-    /// Secondary estimator - supplementary source that may have different
-    /// price sources.
-    Secondary,
+    Auction,
+    /// Quote competition-related requests - cached but not maintained.
+    Quote,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -53,10 +52,9 @@ impl Metrics {
 
 /// Configuration for the background maintenance task that keeps the cache warm.
 pub struct MaintenanceConfig {
-    /// Map of estimators by source type for maintenance.
-    /// Maintenance dispatches to the appropriate estimator based on
-    /// which source originally fetched each cached entry.
-    pub estimators: HashMap<EstimatorSource, Arc<dyn NativePriceEstimating>>,
+    /// Estimator used for maintenance updates.
+    /// Maintenance only refreshes Auction-sourced entries.
+    pub estimator: Arc<dyn NativePriceEstimating>,
     /// How often to run the maintenance task.
     pub update_interval: Duration,
     /// Maximum number of prices to update per maintenance cycle.
@@ -169,22 +167,39 @@ impl NativePriceCache {
 
     /// Get a cached price, optionally creating a placeholder entry for missing
     /// tokens. Returns None if the price is not cached or is expired.
+    ///
     /// If `create_missing_entry` is Some, creates an outdated entry with the
     /// given source type so maintenance will fetch it.
+    ///
+    /// If `upgrade_to_source` is Some(Auction) and the existing entry has Quote
+    /// source, the entry is upgraded to Auction source and its expiration
+    /// is reset. This ensures that tokens originally fetched for quotes
+    /// become actively maintained when they're later needed for auctions.
     fn get_cached_price(
         &self,
         token: Address,
         now: Instant,
         create_missing_entry: Option<EstimatorSource>,
+        upgrade_to_source: Option<EstimatorSource>,
     ) -> Option<CachedResult> {
         let mut cache = self.inner.cache.lock().unwrap();
         match cache.entry(token) {
             Entry::Occupied(mut entry) => {
-                let entry = entry.get_mut();
-                entry.requested_at = now;
+                let cached = entry.get_mut();
+                cached.requested_at = now;
+
+                // Upgrade Quote to Auction if requested - this makes the entry
+                // actively maintained by the background task
+                if upgrade_to_source == Some(EstimatorSource::Auction)
+                    && cached.source == EstimatorSource::Quote
+                {
+                    tracing::trace!(?token, "upgrading Quote-sourced entry to Auction");
+                    cached.source = EstimatorSource::Auction;
+                }
+
                 let is_recent =
-                    now.saturating_duration_since(entry.updated_at) < self.inner.max_age;
-                is_recent.then_some(entry.clone())
+                    now.saturating_duration_since(cached.updated_at) < self.inner.max_age;
+                is_recent.then_some(cached.clone())
             }
             Entry::Vacant(entry) => {
                 if let Some(source) = create_missing_entry {
@@ -217,8 +232,9 @@ impl NativePriceCache {
         token: Address,
         now: Instant,
         create_missing_entry: Option<EstimatorSource>,
+        upgrade_to_source: Option<EstimatorSource>,
     ) -> Option<CachedResult> {
-        self.get_cached_price(token, now, create_missing_entry)
+        self.get_cached_price(token, now, create_missing_entry, upgrade_to_source)
             .filter(|cached| cached.is_ready())
     }
 
@@ -227,21 +243,26 @@ impl NativePriceCache {
         self.inner.cache.lock().unwrap().insert(token, result);
     }
 
-    /// Get tokens that need updating with their sources, sorted by priority.
-    fn sorted_tokens_to_update_with_sources(
+    /// Get Auction-sourced tokens that need updating, sorted by priority.
+    /// Only returns tokens with Auction source since maintenance doesn't
+    /// refresh Quote-sourced entries.
+    fn sorted_auction_tokens_to_update(
         &self,
         max_age: Duration,
         now: Instant,
         high_priority: &IndexSet<Address>,
-    ) -> Vec<(Address, EstimatorSource)> {
+    ) -> Vec<Address> {
         let mut outdated: Vec<_> = self
             .inner
             .cache
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
-            .map(|(token, cached)| (*token, cached.requested_at, cached.source))
+            .filter(|(_, cached)| {
+                cached.source == EstimatorSource::Auction
+                    && now.saturating_duration_since(cached.updated_at) > max_age
+            })
+            .map(|(token, cached)| (*token, cached.requested_at))
             .collect();
 
         let index = |token: &Address| high_priority.get_index_of(token).unwrap_or(usize::MAX);
@@ -251,10 +272,7 @@ impl NativePriceCache {
                 std::cmp::Reverse(entry.1), // important items have recent (i.e. "big") timestamp
             )
         });
-        outdated
-            .into_iter()
-            .map(|(token, _, source)| (token, source))
-            .collect()
+        outdated.into_iter().map(|(token, _)| token).collect()
     }
 
     /// Replaces the set of high-priority tokens with the provided set.
@@ -273,24 +291,23 @@ impl NativePriceCache {
     }
 
     /// Estimates prices for the given tokens and updates the cache.
-    /// Used by the background maintenance task. Each token is processed using
-    /// the estimator corresponding to its source.
-    fn estimate_prices_and_update_cache<'a>(
+    /// Used by the background maintenance task. All tokens are processed using
+    /// the provided estimator and marked as Auction source.
+    fn estimate_prices_and_update_cache_for_maintenance<'a>(
         &'a self,
-        tokens: &'a [(Address, EstimatorSource)],
-        estimators: &'a HashMap<EstimatorSource, Arc<dyn NativePriceEstimating>>,
+        tokens: &'a [Address],
+        estimator: &'a Arc<dyn NativePriceEstimating>,
         concurrent_requests: usize,
         request_timeout: Duration,
     ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
-        let estimates = tokens.iter().filter_map(move |(token, source)| {
-            let source = *source;
-            let estimator = estimators.get(&source)?.clone();
-            Some(async move {
+        let estimates = tokens.iter().map(move |token| {
+            let estimator = estimator.clone();
+            async move {
                 let current_accumulative_errors_count = {
                     // check if the price is cached by now
                     let now = Instant::now();
 
-                    match self.get_cached_price(*token, now, None) {
+                    match self.get_cached_price(*token, now, None, None) {
                         Some(cached) if cached.is_ready() => {
                             return (*token, cached.result);
                         }
@@ -303,7 +320,7 @@ impl NativePriceCache {
                     .estimate_native_price(*token, request_timeout)
                     .await;
 
-                // update price in cache
+                // update price in cache with Auction source
                 if should_cache(&result) {
                     let now = Instant::now();
                     self.insert(
@@ -313,13 +330,13 @@ impl NativePriceCache {
                             now,
                             now,
                             current_accumulative_errors_count,
-                            source,
+                            EstimatorSource::Auction,
                         ),
                     );
                 };
 
                 (*token, result)
-            })
+            }
         });
         futures::stream::iter(estimates)
             .buffered(concurrent_requests)
@@ -328,11 +345,12 @@ impl NativePriceCache {
 }
 
 /// Background task that keeps the cache warm by periodically refreshing prices.
+/// Only refreshes Auction-sourced entries; Quote-sourced entries are cached
+/// but not maintained.
 struct CacheMaintenanceTask {
     cache: Weak<CacheStorage>,
-    /// Map of estimators by source type. Maintenance dispatches to the
-    /// appropriate estimator based on which source fetched each entry.
-    estimators: HashMap<EstimatorSource, Arc<dyn NativePriceEstimating>>,
+    /// Estimator used for maintenance updates.
+    estimator: Arc<dyn NativePriceEstimating>,
     update_interval: Duration,
     update_size: Option<usize>,
     prefetch_time: Duration,
@@ -344,7 +362,7 @@ impl CacheMaintenanceTask {
     fn new(cache: Weak<CacheStorage>, config: MaintenanceConfig) -> Self {
         CacheMaintenanceTask {
             cache,
-            estimators: config.estimators,
+            estimator: config.estimator,
             update_interval: config.update_interval,
             update_size: config.update_size,
             prefetch_time: config.prefetch_time,
@@ -354,6 +372,7 @@ impl CacheMaintenanceTask {
     }
 
     /// Single run of the background updating process.
+    /// Only updates Auction-sourced entries; Quote-sourced entries are skipped.
     async fn single_update(&self, cache: &NativePriceCache) {
         let metrics = Metrics::get();
         metrics
@@ -363,9 +382,9 @@ impl CacheMaintenanceTask {
         let max_age = cache.max_age().saturating_sub(self.prefetch_time);
         let high_priority = cache.inner.high_priority.lock().unwrap().clone();
         let mut outdated_entries =
-            cache.sorted_tokens_to_update_with_sources(max_age, Instant::now(), &high_priority);
+            cache.sorted_auction_tokens_to_update(max_age, Instant::now(), &high_priority);
 
-        tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated prices to fetch");
+        tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated auction prices to fetch");
 
         metrics
             .native_price_cache_outdated_entries
@@ -377,9 +396,9 @@ impl CacheMaintenanceTask {
             return;
         }
 
-        let mut stream = cache.estimate_prices_and_update_cache(
+        let mut stream = cache.estimate_prices_and_update_cache_for_maintenance(
             &outdated_entries,
-            &self.estimators,
+            &self.estimator,
             self.concurrent_requests,
             self.quote_timeout,
         );
@@ -488,6 +507,9 @@ impl Inner {
     /// estimation request gets issued. We check the cache before each
     /// request because they can take a long time and some other task might
     /// have fetched some requested price in the meantime.
+    ///
+    /// If this estimator has Auction source and the cached entry has Quote
+    /// source, the entry is upgraded to Auction source.
     fn estimate_prices_and_update_cache<'a>(
         &'a self,
         tokens: &'a [Address],
@@ -498,7 +520,11 @@ impl Inner {
                 // check if the price is cached by now
                 let now = Instant::now();
 
-                match self.cache.get_cached_price(*token, now, None) {
+                // Pass our source for potential upgrade from Quote to Auction
+                match self
+                    .cache
+                    .get_cached_price(*token, now, None, Some(self.source))
+                {
                     Some(cached) if cached.is_ready() => {
                         return (*token, cached.result);
                     }
@@ -588,7 +614,10 @@ impl CachingNativePriceEstimator {
 
     /// Only returns prices that are currently cached. Missing prices will get
     /// prioritized to get fetched during the next cycles of the maintenance
-    /// background task.
+    /// background task (only for Auction source).
+    ///
+    /// If this estimator has Auction source and a cached entry has Quote
+    /// source, the entry is upgraded to Auction source.
     fn get_cached_prices(
         &self,
         tokens: &[Address],
@@ -596,12 +625,15 @@ impl CachingNativePriceEstimator {
         let now = Instant::now();
         let mut results = HashMap::default();
         for token in tokens {
-            // Pass our source so that if a missing entry is created, it's tagged
-            // with our source for proper maintenance later.
-            let cached =
-                self.0
-                    .cache
-                    .get_ready_to_use_cached_price(*token, now, Some(self.0.source));
+            // Pass our source so that:
+            // 1. If a missing entry is created, it's tagged with our source
+            // 2. If Quote source and we're Auction, upgrade to Auction
+            let cached = self.0.cache.get_ready_to_use_cached_price(
+                *token,
+                now,
+                Some(self.0.source),
+                Some(self.0.source),
+            );
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
                 .native_price_cache_access
@@ -662,7 +694,10 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            let cached = self.0.cache.get_ready_to_use_cached_price(token, now, None);
+            let cached =
+                self.0
+                    .cache
+                    .get_ready_to_use_cached_price(token, now, None, Some(self.0.source));
 
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
@@ -680,6 +715,72 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 .await
                 .unwrap()
                 .1
+        }
+        .boxed()
+    }
+}
+
+/// Wrapper around `CachingNativePriceEstimator` that marks all requests as
+/// Quote source. Used for the autopilot API endpoints where prices should be
+/// cached but not actively maintained by the background task.
+#[derive(Clone)]
+pub struct QuoteCompetitionEstimator(Arc<CachingNativePriceEstimator>);
+
+impl QuoteCompetitionEstimator {
+    /// Creates a new QuoteSourceEstimator wrapping the given estimator.
+    ///
+    /// Prices fetched through this wrapper will be cached with Quote source,
+    /// meaning they won't be actively refreshed by the background maintenance
+    /// task. However, if the same token is later requested for auction
+    /// purposes, the entry will be upgraded to Auction source and become
+    /// actively maintained.
+    pub fn new(estimator: Arc<CachingNativePriceEstimator>) -> Self {
+        Self(estimator)
+    }
+}
+
+impl NativePriceEstimating for QuoteCompetitionEstimator {
+    fn estimate_native_price(
+        &self,
+        token: Address,
+        timeout: Duration,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            let now = Instant::now();
+            let cached = self.0.0.cache.get_ready_to_use_cached_price(
+                token,
+                now,
+                None,
+                Some(EstimatorSource::Quote),
+            );
+
+            let label = if cached.is_some() { "hits" } else { "misses" };
+            Metrics::get()
+                .native_price_cache_access
+                .with_label_values(&[label])
+                .inc_by(1);
+
+            if let Some(cached) = cached {
+                return cached.result;
+            }
+
+            // Fetch the price and cache it with Quote source
+            let result = self
+                .0
+                .0
+                .estimator
+                .estimate_native_price(token, timeout)
+                .await;
+
+            if should_cache(&result) {
+                let now = Instant::now();
+                self.0.0.cache.insert(
+                    token,
+                    CachedResult::new(result.clone(), now, now, 0, EstimatorSource::Quote),
+                );
+            }
+
+            result
         }
         .boxed()
     }
@@ -1042,7 +1143,7 @@ mod tests {
             Duration::from_millis(30),
             Default::default(),
             MaintenanceConfig {
-                estimators: HashMap::from([(EstimatorSource::Primary, Arc::new(maintenance) as _)]),
+                estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
                 update_size: Some(1),
                 prefetch_time: Default::default(),
@@ -1056,7 +1157,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            Default::default(),
+            EstimatorSource::Auction,
         );
 
         // fill cache with 2 different queries
@@ -1105,7 +1206,7 @@ mod tests {
             Duration::from_millis(30),
             Default::default(),
             MaintenanceConfig {
-                estimators: HashMap::from([(EstimatorSource::Primary, Arc::new(maintenance) as _)]),
+                estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
                 update_size: None,
                 prefetch_time: Default::default(),
@@ -1119,7 +1220,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            Default::default(),
+            EstimatorSource::Auction,
         );
 
         let tokens: Vec<_> = (0..10).map(Address::with_last_byte).collect();
@@ -1173,7 +1274,7 @@ mod tests {
             Duration::from_millis(30),
             Default::default(),
             MaintenanceConfig {
-                estimators: HashMap::from([(EstimatorSource::Primary, Arc::new(maintenance) as _)]),
+                estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
                 update_size: None,
                 prefetch_time: Default::default(),
@@ -1187,7 +1288,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            Default::default(),
+            EstimatorSource::Auction,
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(token).collect();
@@ -1220,16 +1321,29 @@ mod tests {
         let t1 = Address::with_last_byte(1);
         let now = Instant::now();
 
-        // Create a cache and populate it directly
+        // Create a cache and populate it directly with Auction-sourced entries
+        // (since maintenance only updates Auction entries)
         let cache =
             NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default());
         cache.insert(
             t0,
-            CachedResult::new(Ok(0.), now, now, Default::default(), Default::default()),
+            CachedResult::new(
+                Ok(0.),
+                now,
+                now,
+                Default::default(),
+                EstimatorSource::Auction,
+            ),
         );
         cache.insert(
             t1,
-            CachedResult::new(Ok(0.), now, now, Default::default(), Default::default()),
+            CachedResult::new(
+                Ok(0.),
+                now,
+                now,
+                Default::default(),
+                EstimatorSource::Auction,
+            ),
         );
 
         let now = now + Duration::from_secs(1);
@@ -1237,15 +1351,15 @@ mod tests {
         let high_priority: IndexSet<Address> = std::iter::once(t0).collect();
         cache.replace_high_priority(high_priority.clone());
         let tokens =
-            cache.sorted_tokens_to_update_with_sources(Duration::from_secs(0), now, &high_priority);
-        assert_eq!(tokens[0].0, t0);
-        assert_eq!(tokens[1].0, t1);
+            cache.sorted_auction_tokens_to_update(Duration::from_secs(0), now, &high_priority);
+        assert_eq!(tokens[0], t0);
+        assert_eq!(tokens[1], t1);
 
         let high_priority: IndexSet<Address> = std::iter::once(t1).collect();
         cache.replace_high_priority(high_priority.clone());
         let tokens =
-            cache.sorted_tokens_to_update_with_sources(Duration::from_secs(0), now, &high_priority);
-        assert_eq!(tokens[0].0, t1);
-        assert_eq!(tokens[1].0, t0);
+            cache.sorted_auction_tokens_to_update(Duration::from_secs(0), now, &high_priority);
+        assert_eq!(tokens[0], t1);
+        assert_eq!(tokens[1], t0);
     }
 }

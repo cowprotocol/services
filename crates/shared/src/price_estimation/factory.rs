@@ -366,61 +366,41 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    /// Creates native price estimators with a shared cache and background
+    /// Creates a native price estimator with a shared cache and background
     /// maintenance task.
     ///
-    /// Each cached entry tracks which estimator (Primary or Secondary)
-    /// originally fetched it. The cache's background maintenance task uses
-    /// this information to dispatch updates to the appropriate estimator,
-    /// ensuring each token is refreshed using the same source that
-    /// originally fetched it.
+    /// The estimator is configured with Auction source, meaning entries are
+    /// actively maintained by the background task. For the quote competition
+    /// use, wrap the returned estimator with `QuoteSourceEstimator` to mark
+    /// prices as Quote source (cached but not actively maintained).
     ///
-    /// The secondary estimators are optional - if not provided, only the
-    /// primary estimator is used.
-    ///
-    /// The `initial_prices` are used to seed the cache before the estimators
-    /// start.
-    pub async fn native_price_estimators(
+    /// The `initial_prices` are used to seed the cache before the estimator
+    /// starts.
+    pub async fn native_price_estimator(
         &mut self,
-        primary_estimators: &[Vec<NativePriceEstimatorSource>],
-        secondary_estimators: Option<&[Vec<NativePriceEstimatorSource>]>,
+        estimators: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: WETH9::Instance,
         initial_prices: HashMap<Address, BigDecimal>,
-    ) -> Result<NativePriceEstimators> {
+    ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        // Create non-caching estimators for main and api
-        let primary_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
-            self.create_competition_native_estimator(primary_estimators, results_required, &weth)
+        // Create non-caching estimator
+        let estimator: Arc<dyn NativePriceEstimating> = Arc::new(
+            self.create_competition_native_estimator(estimators, results_required, &weth)
                 .await?,
         );
 
-        let secondary_estimator: Arc<dyn NativePriceEstimating> = match secondary_estimators {
-            Some(sources) => Arc::new(
-                self.create_competition_native_estimator(sources, results_required, &weth)
-                    .await?,
-            ),
-            None => primary_estimator.clone(),
-        };
-
-        // Build estimators map for maintenance - each source type has its own
-        // estimator so maintenance can dispatch to the correct one
-        let mut estimators = HashMap::new();
-        estimators.insert(EstimatorSource::Primary, primary_estimator.clone());
-        if secondary_estimators.is_some() {
-            estimators.insert(EstimatorSource::Secondary, secondary_estimator.clone());
-        }
-
         // Create cache with background maintenance
+        // Maintenance only refreshes Auction-sourced entries
         let cache = NativePriceCache::new_with_maintenance(
             self.args.native_price_cache_max_age,
             initial_prices,
             MaintenanceConfig {
-                estimators,
+                estimator: estimator.clone(),
                 update_interval: self.args.native_price_cache_refresh,
                 update_size: Some(self.args.native_price_cache_max_update_size),
                 prefetch_time: self.args.native_price_prefetch_time,
@@ -429,27 +409,16 @@ impl<'a> PriceEstimatorFactory<'a> {
             },
         );
 
-        // Wrap estimators with caching layer for on-demand price fetching
-        let primary =
-            self.wrap_with_cache(primary_estimator, cache.clone(), EstimatorSource::Primary);
-        let secondary = if secondary_estimators.is_some() {
-            self.wrap_with_cache(secondary_estimator, cache, EstimatorSource::Secondary)
-        } else {
-            primary.clone()
-        };
-
-        Ok(NativePriceEstimators { primary, secondary })
+        // Wrap with caching layer using Auction source
+        Ok(self.wrap_with_cache(estimator, cache))
     }
 
     /// Wraps a native price estimator with caching functionality.
-    ///
-    /// The `source` parameter identifies this estimator type so cached entries
-    /// are tagged appropriately for maintenance dispatch.
+    /// Uses Auction source so entries are actively maintained.
     fn wrap_with_cache(
         &self,
         estimator: Arc<dyn NativePriceEstimating>,
         cache: NativePriceCache,
-        source: EstimatorSource,
     ) -> Arc<CachingNativePriceEstimator> {
         let approximation_tokens = self
             .args
@@ -463,7 +432,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             cache,
             self.args.native_price_cache_concurrent_requests,
             approximation_tokens,
-            source,
+            EstimatorSource::Auction,
         ))
     }
 
@@ -489,23 +458,6 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .with_early_return(results_required),
         )
     }
-}
-
-/// Result of creating native price estimators with shared cache.
-///
-/// The shared cache tracks which estimator type originally fetched each entry.
-/// The background maintenance task uses this information to dispatch updates
-/// to the appropriate estimator.
-pub struct NativePriceEstimators {
-    /// Primary estimator using the main set of sources for on-demand fetching.
-    /// Cached entries fetched via this estimator are tagged with
-    /// `EstimatorSource::Primary`.
-    pub primary: Arc<CachingNativePriceEstimator>,
-    /// Secondary estimator that shares the cache with primary but uses a
-    /// different set of sources for on-demand fetching. Cached entries
-    /// fetched via this estimator are tagged with
-    /// `EstimatorSource::Secondary`.
-    pub secondary: Arc<CachingNativePriceEstimator>,
 }
 
 /// Trait for modelling the initialization of a Price estimator and its verified
