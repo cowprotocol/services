@@ -115,7 +115,14 @@ impl NativePriceEstimating for NativePriceEstimator {
 }
 
 pub(crate) fn is_price_malformed(price: f64) -> bool {
-    !price.is_normal() || price <= 0.
+    !price.is_normal()
+        || price <= 0.
+        // To convert the f64 native price into a format usable in the auction
+        // the autopilot calls `to_normalized_price()`. Orders placed using a
+        // native price that fails this conversion will likely time out because
+        // the autopilot will not put them into the auction. To prevent that we
+        // already check the conversion here.
+        || to_normalized_price(price).is_none()
 }
 
 #[cfg(test)]
