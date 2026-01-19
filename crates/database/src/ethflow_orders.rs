@@ -514,7 +514,7 @@ mod tests {
             uid: old_order_uid,
             buy_amount: BigDecimal::from(1),
             sell_amount: BigDecimal::from(100u32),
-            creation_timestamp: now - lookback_time - Duration::from_secs(5),
+            creation_timestamp: now - lookback_time - Duration::from_secs(1),
             ..Default::default()
         };
         insert_order(&mut db, &order_old).await.unwrap();
