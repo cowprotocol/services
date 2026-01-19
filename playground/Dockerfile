@@ -6,12 +6,12 @@ ENV PATH="$PATH:/root/.cargo/bin"
 RUN rustup component add clippy rustfmt
 # configure to use the fast linker
 RUN echo "\
-    [build]\n \
-    target = \"$(rustc -Vv | grep host | awk '{print $2}')\"\n \
-    rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\", \"--cfg\", \"tokio_unstable\"]\n \
-    [target.$(rustc -Vv | grep host | awk '{print $2}')]\n \
-    linker = \"clang\"\n \
-    " > ~/.cargo/config.toml
+[build]\n \
+target = \"$(rustc -Vv | grep host | awk '{print $2}')\"\n \
+rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\", \"--cfg\", \"tokio_unstable\"]\n \
+[target.$(rustc -Vv | grep host | awk '{print $2}')]\n \
+linker = \"clang\"\n \
+" > ~/.cargo/config.toml
 
 RUN cargo install cargo-chef
 
