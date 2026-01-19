@@ -1,9 +1,12 @@
 use {
+    axum::Json,
     driver::infra::notify::liquidity_sources::liquorice::client::request::v1::intent_origin::notification,
     serde_json::json,
-    std::{convert::Infallible, net::SocketAddr, sync::Arc},
+    std::{
+        net::{Ipv4Addr, SocketAddr},
+        sync::Arc,
+    },
     tokio::sync::{Mutex, MutexGuard},
-    warp::{Filter, Rejection},
 };
 
 pub struct State {
@@ -22,14 +25,23 @@ impl LiquoriceApi {
             notification_requests: Default::default(),
         }));
 
-        let addr: SocketAddr = ([0, 0, 0, 0], 0).into();
-        let server = warp::serve(Self::notification_route(state.clone()));
-        let (addr, server) = server.bind_ephemeral(addr);
+        let app = axum::Router::new()
+            .route("/v1/intent-origin/notification", axum::routing::post(notification_handler))
+            .with_state(state.clone());
+
+        let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
+        let server = axum::Server::bind(&addr)
+            .serve(app.into_make_service());
+
+        let addr = server.local_addr();
         let port = addr.port();
         assert!(port > 0, "assigned port must be greater than 0");
 
         tokio::spawn(async move {
-            server.await;
+            if let Err(err) = server.await {
+                tracing::error!(?err, "Liquorice API server failed");
+                panic!("Liquorice test server crashed: {}", err);
+            }
         });
 
         tracing::info!("Started Liquorice API server at {}", addr);
@@ -37,22 +49,15 @@ impl LiquoriceApi {
         Self { state, port }
     }
 
-    pub fn notification_route(
-        state: Arc<Mutex<State>>,
-    ) -> impl Filter<Extract = (warp::reply::Json,), Error = Rejection> + Clone {
-        warp::path!("v1" / "intent-origin" / "notification")
-            .and(warp::post())
-            .and(warp::body::json::<notification::post::Request>())
-            .and_then(move |request| {
-                let state = state.clone();
-                async move {
-                    state.lock().await.notification_requests.push(request);
-                    Ok::<warp::reply::Json, Infallible>(warp::reply::json(&json!({})))
-                }
-            })
-    }
-
     pub async fn get_state(&self) -> MutexGuard<'_, State> {
         self.state.lock().await
     }
+}
+
+async fn notification_handler(
+    axum::extract::State(state): axum::extract::State<Arc<Mutex<State>>>,
+    Json(request): Json<notification::post::Request>,
+) -> Json<serde_json::Value> {
+    state.lock().await.notification_requests.push(request);
+    Json(json!({}))
 }
