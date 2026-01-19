@@ -58,15 +58,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
 
-FROM builder AS alerter-build
-COPY --from=chef /.cargo /.cargo
-COPY ./crates/alerter/ ./crates/alerter
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package alerter
-
-FROM base AS alerter
-COPY --from=alerter-build /src/target/release/alerter /usr/local/bin/alerter
-ENTRYPOINT [ "alerter" ]
-
 FROM builder AS autopilot-build
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package autopilot
 
@@ -114,7 +105,6 @@ ENTRYPOINT [ "solvers" ]
 # Extract Binary
 FROM base
 RUN apt-get update && apt-get install -y netcat-openbsd
-COPY --from=alerter-build /src/target/release/alerter /usr/local/bin/alerter
 COPY --from=autopilot-build /src/target/release/autopilot /usr/local/bin/autopilot
 COPY --from=driver-build /src/target/release/driver /usr/local/bin/driver
 COPY --from=orderbook-build /src/target/release/orderbook /usr/local/bin/orderbook

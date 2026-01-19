@@ -31,7 +31,6 @@ number = { workspace = true }
 observe = { workspace = true }
 orderbook = { workspace = true, features = ["e2e"] }
 reqwest = { workspace = true, features = ["blocking"] }
-secp256k1 = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }

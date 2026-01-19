@@ -40,30 +40,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alerter"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "axum",
- "clap",
- "humantime",
- "mimalloc",
- "model",
- "number",
- "observe",
- "prometheus",
- "reqwest 0.11.27",
- "serde",
- "serde_with",
- "shared",
- "tikv-jemallocator",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2047,7 +2023,6 @@ name = "chain"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "derive_more 1.0.0",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -2297,7 +2272,6 @@ dependencies = [
  "syn 2.0.114",
  "tracing",
  "tracing-subscriber",
- "walkdir",
 ]
 
 [[package]]
@@ -2391,7 +2365,6 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
- "hex-literal",
  "model",
  "observe",
  "prometheus",
@@ -2775,7 +2748,6 @@ dependencies = [
  "rand 0.8.5",
  "reqwest 0.11.27",
  "s3",
- "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -2835,7 +2807,6 @@ dependencies = [
  "refunder",
  "reqwest 0.11.27",
  "rstest",
- "secp256k1 0.27.0",
  "serde_json",
  "shared",
  "solver",
@@ -3056,7 +3027,6 @@ dependencies = [
  "const-hex",
  "ethcontract",
  "futures",
- "hex-literal",
  "itertools 0.14.0",
  "jsonrpc-core",
  "mockall",
@@ -3069,7 +3039,6 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
- "testlib",
  "tokio",
  "tokio-stream",
  "tower 0.4.13",
@@ -4495,7 +4464,6 @@ dependencies = [
  "maplit",
  "num",
  "number",
- "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -6024,15 +5992,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "same-file"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6416,7 +6375,6 @@ dependencies = [
  "regex",
  "reqwest 0.11.27",
  "rust_decimal",
- "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -6544,7 +6502,6 @@ dependencies = [
  "derive_more 1.0.0",
  "ethrpc",
  "futures",
- "hex-literal",
  "hyper 0.14.32",
  "itertools 0.14.0",
  "mimalloc",
@@ -6993,7 +6950,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "hex-literal",
  "maplit",
  "serde_json",
 ]
@@ -7775,16 +7731,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "walkdir"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
-dependencies = [
- "same-file",
- "winapi-util",
-]
-
-[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8006,15 +7952,6 @@ name = "winapi-i686-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
-
-[[package]]
-name = "winapi-util"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
-dependencies = [
- "windows-sys 0.61.2",
-]
 
 [[package]]
 name = "winapi-x86_64-pc-windows-gnu"
