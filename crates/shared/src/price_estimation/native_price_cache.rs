@@ -410,18 +410,14 @@ impl CacheMaintenanceTask {
             return;
         }
 
-        let mut stream = cache.estimate_prices_and_update_cache_for_maintenance(
+        let stream = cache.estimate_prices_and_update_cache_for_maintenance(
             &outdated_entries,
             &self.estimator,
             self.concurrent_requests,
             self.quote_timeout,
         );
 
-        let mut updates_count = 0u64;
-        while stream.next().await.is_some() {
-            updates_count += 1;
-        }
-
+        let updates_count = stream.count().await as u64;
         metrics
             .native_price_cache_background_updates
             .inc_by(updates_count);
@@ -548,33 +544,46 @@ impl Inner {
                 }
             };
 
-            let token_to_fetch = *self.approximation_tokens.get(token).unwrap_or(token);
-
             let result = self
-                .estimator
-                .estimate_native_price(token_to_fetch, request_timeout)
-                .await;
-
-            // update price in cache
-            if should_cache(&result) {
-                let now = Instant::now();
-                self.cache.insert(
+                .fetch_and_cache_price(
                     *token,
-                    CachedResult::new(
-                        result.clone(),
-                        now,
-                        now,
-                        current_accumulative_errors_count,
-                        self.source,
-                    ),
-                );
-            };
+                    request_timeout,
+                    self.source,
+                    current_accumulative_errors_count,
+                )
+                .await;
 
             (*token, result)
         });
         futures::stream::iter(estimates)
             .buffered(self.concurrent_requests)
             .boxed()
+    }
+
+    /// Fetches a single price and caches it.
+    async fn fetch_and_cache_price(
+        &self,
+        token: Address,
+        timeout: Duration,
+        source: EstimatorSource,
+        accumulative_errors_count: u32,
+    ) -> NativePriceEstimateResult {
+        let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
+
+        let result = self
+            .estimator
+            .estimate_native_price(token_to_fetch, timeout)
+            .await;
+
+        if should_cache(&result) {
+            let now = Instant::now();
+            self.cache.insert(
+                token,
+                CachedResult::new(result.clone(), now, now, accumulative_errors_count, source),
+            );
+        }
+
+        result
     }
 }
 
@@ -785,23 +794,10 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
                 return cached.result;
             }
 
-            // Fetch the price and cache it with Quote source
-            let result = self
+            self.0
                 .0
-                .0
-                .estimator
-                .estimate_native_price(token, timeout)
-                .await;
-
-            if should_cache(&result) {
-                let now = Instant::now();
-                self.0.0.cache.insert(
-                    token,
-                    CachedResult::new(result.clone(), now, now, 0, EstimatorSource::Quote),
-                );
-            }
-
-            result
+                .fetch_and_cache_price(token, timeout, EstimatorSource::Quote, 0)
+                .await
         }
         .boxed()
     }
