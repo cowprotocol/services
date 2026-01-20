@@ -28,7 +28,7 @@ const GAS_PRICE_BUFFER_PCT: u64 = 30;
 
 // In order to resubmit a new tx with the same nonce, the gas tip and
 // max_fee_per_gas needs to be increased by at least 10 percent.
-const GAS_PRICE_BUMP_PML: u64 = 125;
+const GAS_PRICE_BUMP_PERMIL: u64 = 125;
 
 pub struct Submitter {
     pub web3: Web3,
@@ -126,7 +126,7 @@ fn calculate_submission_gas_price(
         && let Some(gas_price_of_last_submission) = gas_price_of_last_submission
     {
         let gas_price_of_last_submission =
-            gas_price_of_last_submission.scaled_by_pml(GAS_PRICE_BUMP_PML);
+            gas_price_of_last_submission.scaled_by_pml(GAS_PRICE_BUMP_PERMIL);
         new_gas_price.max_fee_per_gas = new_gas_price
             .max_fee_per_gas
             .max(gas_price_of_last_submission.max_fee_per_gas);
@@ -202,10 +202,10 @@ mod tests {
         )
         .unwrap();
         let expected_result = Eip1559Estimation {
-            max_fee_per_gas: max_fee_per_gas_of_last_tx * (1000 + GAS_PRICE_BUMP_PML as u128)
+            max_fee_per_gas: max_fee_per_gas_of_last_tx * (1000 + GAS_PRICE_BUMP_PERMIL as u128)
                 / 1000,
             max_priority_fee_per_gas: (TEST_START_PRIORITY_FEE_TIP as u128)
-                * (1000 + GAS_PRICE_BUMP_PML as u128)
+                * (1000 + GAS_PRICE_BUMP_PERMIL as u128)
                 / 1000,
         };
         assert_eq!(result, expected_result);
