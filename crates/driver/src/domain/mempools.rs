@@ -4,11 +4,11 @@ use {
         domain::{
             BlockNo,
             competition::solution::Settlement,
-            eth::{GasPrice, TxId, TxStatus},
+            eth::{TxId, TxStatus},
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
-    alloy::{consensus::Transaction, primitives::U256},
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -18,9 +18,9 @@ use {
 
 /// Factor by how much a transaction fee needs to be increased to override a
 /// pending transaction at the same nonce. The correct factor is actually
-/// 1.125 but to avoid rounding issues on chains with very low gas prices
+/// 12.5% but to avoid rounding issues on chains with very low gas prices
 /// we increase slightly more.
-const GAS_PRICE_BUMP: f64 = 1.13;
+const GAS_PRICE_BUMP_PCT: u64 = 13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
@@ -146,16 +146,14 @@ impl Mempools {
             .await;
         let final_gas_price = match &replacement_gas_price {
             Ok(Some(replacement_gas_price))
-                if replacement_gas_price.max()
-                    > U256::from(current_gas_price.max_fee_per_gas).into() =>
+                if replacement_gas_price.max_fee_per_gas > current_gas_price.max_fee_per_gas =>
             {
                 *replacement_gas_price
             }
-            _ => GasPrice::new(
-                U256::from(current_gas_price.max_fee_per_gas).into(),
-                U256::from(current_gas_price.max_priority_fee_per_gas).into(),
-                self.ethereum.current_block().borrow().base_fee,
-            ),
+            _ => Eip1559Estimation {
+                max_fee_per_gas: current_gas_price.max_fee_per_gas,
+                max_priority_fee_per_gas: current_gas_price.max_priority_fee_per_gas,
+            },
         };
 
         tracing::debug!(
@@ -273,11 +271,11 @@ impl Mempools {
     async fn cancel(
         &self,
         mempool: &infra::mempool::Mempool,
-        original_tx_gas_price: eth::GasPrice,
+        original_tx_gas_price: Eip1559Estimation,
         solver: &Solver,
         nonce: u64,
     ) -> Result<TxId, Error> {
-        let fallback_gas_price = original_tx_gas_price * GAS_PRICE_BUMP;
+        let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, solver, nonce)
             .await;
@@ -323,28 +321,27 @@ impl Mempools {
         mempool: &infra::Mempool,
         solver: &Solver,
         nonce: u64,
-    ) -> anyhow::Result<Option<eth::GasPrice>> {
-        let pending_tx = match mempool
+    ) -> anyhow::Result<Option<Eip1559Estimation>> {
+        let Some(pending_tx) = mempool
             .find_pending_tx_in_mempool(solver.address(), nonce)
             .await?
-        {
-            Some(tx) => tx,
-            None => return Ok(None),
+        else {
+            return Ok(None);
         };
 
-        let pending_tx_gas_price = eth::GasPrice::new(
-            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-            eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
+        let pending_tx_gas_price = Eip1559Estimation {
+            max_fee_per_gas: pending_tx.max_fee_per_gas(),
+            max_priority_fee_per_gas: pending_tx.max_priority_fee_per_gas().with_context(|| {
                 format!(
                     "pending tx is not EIP 1559 ({})",
                     pending_tx.inner.tx_hash()
                 )
-            })?)
-            .into(),
-            self.ethereum.current_block().borrow().base_fee,
-        );
+            })?,
+        }
         // in order to replace a tx we need to increase the price
-        Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))
+        .scaled_by_pct(GAS_PRICE_BUMP_PCT);
+
+        Ok(Some(pending_tx_gas_price))
     }
 }
 

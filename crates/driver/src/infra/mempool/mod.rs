@@ -6,7 +6,7 @@ use {
     },
     alloy::{
         consensus::Transaction,
-        eips::BlockNumberOrTag,
+        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
     },
@@ -107,23 +107,13 @@ impl Mempool {
     pub async fn submit(
         &self,
         tx: eth::Tx,
-        gas_price: eth::GasPrice,
+        gas_price: Eip1559Estimation,
         gas_limit: eth::Gas,
         solver: &infra::Solver,
         nonce: u64,
     ) -> Result<eth::TxId, mempools::Error> {
-        let max_fee_per_gas = gas_price
-            .max()
-            .0
-            .0
-            .try_into()
-            .map_err(anyhow::Error::from)?;
-        let max_priority_fee_per_gas = gas_price
-            .tip()
-            .0
-            .0
-            .try_into()
-            .map_err(anyhow::Error::from)?;
+        let max_fee_per_gas = gas_price.max_fee_per_gas;
+        let max_priority_fee_per_gas = gas_price.max_priority_fee_per_gas;
         let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
 
         let tx_request = TransactionRequest::default()
