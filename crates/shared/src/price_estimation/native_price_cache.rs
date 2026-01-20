@@ -31,6 +31,22 @@ pub enum EstimatorSource {
     Quote,
 }
 
+/// Specifies what cache modifications to perform during a lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheLookup {
+    /// Read-only access - no modifications to the cache.
+    /// Used by maintenance when checking if a price is already cached.
+    ReadOnly,
+    /// Upgrade existing Quote-sourced entry to Auction if applicable, but don't
+    /// create missing entries. Used by estimators when looking up cached
+    /// prices.
+    UpgradeOnly,
+    /// Create missing entry for maintenance (with Auction source) and upgrade
+    /// existing Quote→Auction. Used when building auctions to ensure missing
+    /// prices get fetched by the maintenance task.
+    CreateForMaintenance,
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// native price cache hits misses
@@ -165,22 +181,19 @@ impl NativePriceCache {
         self.inner.cache.lock().unwrap().is_empty()
     }
 
-    /// Get a cached price, optionally creating a placeholder entry for missing
-    /// tokens. Returns None if the price is not cached or is expired.
+    /// Get a cached price with optional cache modifications.
+    /// Returns None if the price is not cached or is expired.
     ///
-    /// If `create_missing_entry` is Some, creates an outdated entry with the
-    /// given source type so maintenance will fetch it.
-    ///
-    /// If `upgrade_to_source` is Some(Auction) and the existing entry has Quote
-    /// source, the entry is upgraded to Auction source and its expiration
-    /// is reset. This ensures that tokens originally fetched for quotes
-    /// become actively maintained when they're later needed for auctions.
+    /// The `lookup` parameter controls what modifications to perform:
+    /// - `ReadOnly`: No modifications, just check the cache
+    /// - `UpgradeOnly`: Upgrade Quote→Auction entries, but don't create missing
+    /// - `CreateForMaintenance`: Create missing entries with Auction source and
+    ///   upgrade existing Quote→Auction entries
     fn get_cached_price(
         &self,
         token: Address,
         now: Instant,
-        create_missing_entry: Option<EstimatorSource>,
-        upgrade_to_source: Option<EstimatorSource>,
+        lookup: CacheLookup,
     ) -> Option<CachedResult> {
         let mut cache = self.inner.cache.lock().unwrap();
         match cache.entry(token) {
@@ -190,8 +203,10 @@ impl NativePriceCache {
 
                 // Upgrade Quote to Auction if requested - this makes the entry
                 // actively maintained by the background task
-                if upgrade_to_source == Some(EstimatorSource::Auction)
-                    && cached.source == EstimatorSource::Quote
+                if matches!(
+                    lookup,
+                    CacheLookup::UpgradeOnly | CacheLookup::CreateForMaintenance
+                ) && cached.source == EstimatorSource::Quote
                 {
                     tracing::trace!(?token, "upgrading Quote-sourced entry to Auction");
                     cached.source = EstimatorSource::Auction;
@@ -202,7 +217,7 @@ impl NativePriceCache {
                 is_recent.then_some(cached.clone())
             }
             Entry::Vacant(entry) => {
-                if let Some(source) = create_missing_entry {
+                if lookup == CacheLookup::CreateForMaintenance {
                     // Create an outdated cache entry so the background task keeping the cache warm
                     // will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
@@ -214,7 +229,7 @@ impl NativePriceCache {
                         outdated_timestamp,
                         now,
                         Default::default(),
-                        source,
+                        EstimatorSource::Auction,
                     ));
                 }
                 None
@@ -231,10 +246,9 @@ impl NativePriceCache {
         &self,
         token: Address,
         now: Instant,
-        create_missing_entry: Option<EstimatorSource>,
-        upgrade_to_source: Option<EstimatorSource>,
+        lookup: CacheLookup,
     ) -> Option<CachedResult> {
-        self.get_cached_price(token, now, create_missing_entry, upgrade_to_source)
+        self.get_cached_price(token, now, lookup)
             .filter(|cached| cached.is_ready())
     }
 
@@ -307,7 +321,7 @@ impl NativePriceCache {
                     // check if the price is cached by now
                     let now = Instant::now();
 
-                    match self.get_cached_price(*token, now, None, None) {
+                    match self.get_cached_price(*token, now, CacheLookup::ReadOnly) {
                         Some(cached) if cached.is_ready() => {
                             return (*token, cached.result);
                         }
@@ -520,11 +534,12 @@ impl Inner {
                 // check if the price is cached by now
                 let now = Instant::now();
 
-                // Pass our source for potential upgrade from Quote to Auction
-                match self
-                    .cache
-                    .get_cached_price(*token, now, None, Some(self.source))
-                {
+                // Upgrade Quote→Auction if this is an Auction-sourced estimator
+                let lookup = match self.source {
+                    EstimatorSource::Auction => CacheLookup::UpgradeOnly,
+                    EstimatorSource::Quote => CacheLookup::ReadOnly,
+                };
+                match self.cache.get_cached_price(*token, now, lookup) {
                     Some(cached) if cached.is_ready() => {
                         return (*token, cached.result);
                     }
@@ -624,16 +639,17 @@ impl CachingNativePriceEstimator {
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
         let mut results = HashMap::default();
+        // For Auction source: create missing entries and upgrade Quote→Auction
+        // For Quote source: just read (Quote entries shouldn't be maintained)
+        let lookup = match self.0.source {
+            EstimatorSource::Auction => CacheLookup::CreateForMaintenance,
+            EstimatorSource::Quote => CacheLookup::ReadOnly,
+        };
         for token in tokens {
-            // Pass our source so that:
-            // 1. If a missing entry is created, it's tagged with our source
-            // 2. If Quote source and we're Auction, upgrade to Auction
-            let cached = self.0.cache.get_ready_to_use_cached_price(
-                *token,
-                now,
-                Some(self.0.source),
-                Some(self.0.source),
-            );
+            let cached = self
+                .0
+                .cache
+                .get_ready_to_use_cached_price(*token, now, lookup);
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
                 .native_price_cache_access
@@ -694,10 +710,15 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            let cached =
-                self.0
-                    .cache
-                    .get_ready_to_use_cached_price(token, now, None, Some(self.0.source));
+            // Upgrade Quote→Auction if this is an Auction-sourced estimator
+            let lookup = match self.0.source {
+                EstimatorSource::Auction => CacheLookup::UpgradeOnly,
+                EstimatorSource::Quote => CacheLookup::ReadOnly,
+            };
+            let cached = self
+                .0
+                .cache
+                .get_ready_to_use_cached_price(token, now, lookup);
 
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
@@ -747,12 +768,12 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            let cached = self.0.0.cache.get_ready_to_use_cached_price(
-                token,
-                now,
-                None,
-                Some(EstimatorSource::Quote),
-            );
+            // Quote source doesn't upgrade or create entries, just read
+            let cached =
+                self.0
+                    .0
+                    .cache
+                    .get_ready_to_use_cached_price(token, now, CacheLookup::ReadOnly);
 
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
