@@ -3,9 +3,7 @@ use {
     crate::{
         nodes::NODE_WS_HOST,
         setup::{
-            Contracts,
-            OnchainComponents,
-            TIMEOUT,
+            Contracts, OnchainComponents, TIMEOUT,
             colocation::{self, SolverEngine},
             wait_for_condition,
         },
@@ -21,8 +19,7 @@ use {
         AuctionId,
         order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
-        solver_competition,
-        solver_competition_v2,
+        solver_competition, solver_competition_v2,
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
@@ -809,7 +806,7 @@ impl<'a> Services<'a> {
     pub async fn get_solver_competition_v1(
         &self,
         auction_id: AuctionId,
-    ) -> Result<solver_competition::SolverCompetitionAPI, StatusCode> {
+    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
         let response = self
             .http
             .get(format!("{API_HOST}/api/v1/solver_competition/{auction_id}"))
@@ -822,7 +819,7 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err(code),
+            code => Err((code, body)),
         }
     }
 
@@ -830,7 +827,7 @@ impl<'a> Services<'a> {
     pub async fn get_solver_competition_by_tx_v1(
         &self,
         hash: B256,
-    ) -> Result<solver_competition::SolverCompetitionAPI, StatusCode> {
+    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
         let response = self
             .http
             .get(format!(
@@ -845,14 +842,14 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err(code),
+            code => Err((code, body)),
         }
     }
 
     /// Get latest solver competition (v1 - deprecated)
     pub async fn get_latest_solver_competition_v1(
         &self,
-    ) -> Result<solver_competition::SolverCompetitionAPI, StatusCode> {
+    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
         let response = self
             .http
             .get(format!("{API_HOST}/api/v1/solver_competition/latest"))
@@ -865,7 +862,7 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err(code),
+            code => Err((code, body)),
         }
     }
 

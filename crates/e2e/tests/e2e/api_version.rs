@@ -22,7 +22,7 @@ async fn api_version(web3: Web3) {
     let is_valid_version = version.starts_with('v')
         || version
             .chars()
-            .all(|c| c.is_ascii_hexdigit() || c == '-' || c == '.');
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
 
     assert!(
         is_valid_version,
