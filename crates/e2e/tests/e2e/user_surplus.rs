@@ -77,6 +77,19 @@ async fn user_total_surplus(web3: Web3) {
         .await
         .unwrap();
 
+    // Wait for solver competition data to be indexed (needed for surplus
+    // calculation)
+    let indexed_trades = || async {
+        match services.get_trades(&uid).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
+
     // Get total surplus for the trader
     let surplus = services
         .get_user_total_surplus(&trader.address())
@@ -165,6 +178,19 @@ async fn user_total_surplus_multiple_trades(web3: Web3) {
         wait_for_condition(TIMEOUT, settlement_finished)
             .await
             .unwrap();
+
+        // Wait for solver competition data to be indexed (needed for surplus
+        // calculation)
+        let indexed_trades = || async {
+            match services.get_trades(&uid).await.unwrap().first() {
+                Some(trade) => services
+                    .get_solver_competition(trade.tx_hash.unwrap())
+                    .await
+                    .is_ok(),
+                None => false,
+            }
+        };
+        wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
     }
 
     // Get total surplus for the trader
@@ -177,7 +203,6 @@ async fn user_total_surplus_multiple_trades(web3: Web3) {
     // This is a sanity check that surplus is actually accumulating
     // Note: This is approximate since market conditions can vary
     let min_expected_surplus = U256::from(1); // Very conservative minimum
-    tracing::info!("surplus: {surplus}");
     assert!(
         surplus > min_expected_surplus,
         "Surplus from 3 trades should be substantial, got {surplus}"

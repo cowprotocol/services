@@ -239,9 +239,7 @@ async fn solver_competition_v1_latest(web3: Web3) {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 
-    let indexed = || async {
-        services.get_latest_solver_competition_v1().await.is_ok()
-    };
+    let indexed = || async { services.get_latest_solver_competition_v1().await.is_ok() };
     wait_for_condition(TIMEOUT, indexed).await.unwrap();
 
     // Get latest solver competition using v1 endpoint

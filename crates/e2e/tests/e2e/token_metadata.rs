@@ -66,30 +66,36 @@ async fn token_metadata(web3: Web3) {
         let order = services.get_order(&uid).await.unwrap();
         !order.metadata.executed_buy_amount.is_zero()
     };
-    wait_for_condition(TIMEOUT, settlement_finished).await.unwrap();
+    wait_for_condition(TIMEOUT, settlement_finished)
+        .await
+        .unwrap();
 
     // Get metadata for token_a (which was traded)
-    let metadata = services.get_token_metadata(token_a.address()).await.unwrap();
+    let metadata = services
+        .get_token_metadata(token_a.address())
+        .await
+        .unwrap();
 
     // After a trade, the token should have metadata with valid values
-    let first_trade_block = metadata.first_trade_block.expect(
-        "Token should have first_trade_block after being traded"
-    );
+    let first_trade_block = metadata
+        .first_trade_block
+        .expect("Token should have first_trade_block after being traded");
     assert!(
         first_trade_block > 0,
         "First trade block should be greater than 0, got {first_trade_block}"
     );
 
-    let native_price = metadata.native_price.expect(
-        "Token should have native_price after being traded"
-    );
+    let native_price = metadata
+        .native_price
+        .expect("Token should have native_price after being traded");
     assert!(
         !native_price.is_zero(),
         "Native price should be non-zero after trading"
     );
 }
 
-/// Test that the token metadata endpoint returns None values for tokens with no trades
+/// Test that the token metadata endpoint returns None values for tokens with no
+/// trades
 async fn token_metadata_no_trade(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;

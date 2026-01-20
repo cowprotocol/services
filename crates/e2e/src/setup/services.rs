@@ -721,10 +721,7 @@ impl<'a> Services<'a> {
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Trade>, (StatusCode, String)> {
-        let mut query_params = vec![
-            format!("offset={offset}"),
-            format!("limit={limit}"),
-        ];
+        let mut query_params = vec![format!("offset={offset}"), format!("limit={limit}")];
 
         if let Some(uid) = order_uid {
             query_params.push(format!("orderUid={uid}"));

@@ -77,7 +77,9 @@ async fn trades_v2_pagination(web3: Web3) {
         let order = services.get_order(&order_uids[0]).await.unwrap();
         !order.metadata.executed_buy_amount.is_zero()
     };
-    wait_for_condition(TIMEOUT, settlement_finished).await.unwrap();
+    wait_for_condition(TIMEOUT, settlement_finished)
+        .await
+        .unwrap();
 
     // Test pagination with offset and limit
     let all_trades = services
@@ -93,7 +95,11 @@ async fn trades_v2_pagination(web3: Web3) {
         .await
         .unwrap();
 
-    assert_eq!(limited_trades.len(), 2, "Should return exactly 2 trades with limit=2");
+    assert_eq!(
+        limited_trades.len(),
+        2,
+        "Should return exactly 2 trades with limit=2"
+    );
 
     // Test pagination with offset
     let offset_trades = services
@@ -101,7 +107,11 @@ async fn trades_v2_pagination(web3: Web3) {
         .await
         .unwrap();
 
-    assert_eq!(offset_trades.len(), all_trades.len() - 1, "Offset should skip first trade");
+    assert_eq!(
+        offset_trades.len(),
+        all_trades.len() - 1,
+        "Offset should skip first trade"
+    );
 }
 
 /// Test that the v2 trades endpoint returns trades by order UID
@@ -148,7 +158,9 @@ async fn trades_v2_by_order(web3: Web3) {
         let order = services.get_order(&uid).await.unwrap();
         !order.metadata.executed_buy_amount.is_zero()
     };
-    wait_for_condition(TIMEOUT, settlement_finished).await.unwrap();
+    wait_for_condition(TIMEOUT, settlement_finished)
+        .await
+        .unwrap();
 
     // Get trades by order UID
     let trades = services
@@ -234,7 +246,9 @@ async fn trades_v2_by_owner(web3: Web3) {
         !order1.metadata.executed_buy_amount.is_zero()
             && !order2.metadata.executed_buy_amount.is_zero()
     };
-    wait_for_condition(TIMEOUT, settlement_finished).await.unwrap();
+    wait_for_condition(TIMEOUT, settlement_finished)
+        .await
+        .unwrap();
 
     // Get trades for trader1
     let trader1_trades = services
@@ -242,7 +256,11 @@ async fn trades_v2_by_owner(web3: Web3) {
         .await
         .unwrap();
 
-    assert_eq!(trader1_trades.len(), 1, "Trader1 should have exactly 1 trade");
+    assert_eq!(
+        trader1_trades.len(),
+        1,
+        "Trader1 should have exactly 1 trade"
+    );
     assert_eq!(
         trader1_trades[0].order_uid, uid1,
         "Trade should match trader1's order"
@@ -254,7 +272,11 @@ async fn trades_v2_by_owner(web3: Web3) {
         .await
         .unwrap();
 
-    assert_eq!(trader2_trades.len(), 1, "Trader2 should have exactly 1 trade");
+    assert_eq!(
+        trader2_trades.len(),
+        1,
+        "Trader2 should have exactly 1 trade"
+    );
     assert_eq!(
         trader2_trades[0].order_uid, uid2,
         "Trade should match trader2's order"
