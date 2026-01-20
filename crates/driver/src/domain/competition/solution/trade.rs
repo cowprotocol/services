@@ -75,21 +75,7 @@ impl Trade {
     ) -> Result<eth::TokenAmount, error::Math> {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.sell_amount(prices),
-            Trade::Jit(jit) => {
-                let before_fee = match jit.order().side {
-                    order::Side::Sell => jit.executed().0,
-                    order::Side::Buy => jit
-                        .executed()
-                        .0
-                        .checked_mul(prices.buy)
-                        .ok_or(Math::Overflow)?
-                        .checked_div(prices.sell)
-                        .ok_or(Math::DivisionByZero)?,
-                };
-                Ok(eth::TokenAmount(
-                    before_fee.checked_add(jit.fee().0).ok_or(Math::Overflow)?,
-                ))
-            }
+            Trade::Jit(jit) => jit.sell_amount(prices),
         }
     }
 
@@ -102,19 +88,7 @@ impl Trade {
     ) -> Result<eth::TokenAmount, error::Math> {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.buy_amount(prices),
-            Trade::Jit(jit) => {
-                let amount = match jit.order().side {
-                    order::Side::Buy => jit.executed().0,
-                    order::Side::Sell => jit
-                        .executed()
-                        .0
-                        .checked_mul(prices.sell)
-                        .ok_or(Math::Overflow)?
-                        .checked_ceil_div(&prices.buy)
-                        .ok_or(Math::DivisionByZero)?,
-                };
-                Ok(eth::TokenAmount(amount))
-            }
+            Trade::Jit(jit) => jit.buy_amount(prices),
         }
     }
 
@@ -502,6 +476,38 @@ impl Jit {
 
     pub fn fee(&self) -> order::SellAmount {
         self.fee
+    }
+
+    /// The effective amount that left the user's wallet including all fees.
+    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Math> {
+        let before_fee = match self.order.side {
+            Side::Sell => self.executed.0,
+            Side::Buy => self
+                .executed
+                .0
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(
+            before_fee.checked_add(self.fee.0).ok_or(Math::Overflow)?,
+        ))
+    }
+
+    /// The effective amount the user received after all fees.
+    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Math> {
+        let amount = match self.order.side {
+            Side::Buy => self.executed.0,
+            Side::Sell => self
+                .executed
+                .0
+                .checked_mul(prices.sell)
+                .ok_or(Math::Overflow)?
+                .checked_ceil_div(&prices.buy)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(amount))
     }
 }
 
