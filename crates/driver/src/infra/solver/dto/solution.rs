@@ -36,14 +36,12 @@ impl Solutions {
         self.0.solutions
             .into_iter()
             .map(|solution| {
-                // Convert prices to domain types
                 let prices: HashMap<eth::Address, eth::U256> = solution
                     .prices
                     .iter()
                     .map(|(address, price)| (*address, *price))
                     .collect();
 
-                // Process trades
                 let trades: Vec<competition::solution::Trade> = solution
                     .trades
                     .iter()
@@ -61,10 +59,16 @@ impl Solutions {
 
                             // Calculate haircut fee for conservative bidding.
                             // This reduces reported surplus without affecting executed amounts.
-                            let haircut_fee = eth::U256::from(fulfillment.executed_amount)
-                                .checked_mul(eth::U256::from(haircut_bps))
-                                .and_then(|v| v.checked_div(eth::U256::from(Self::MAX_BASE_POINT)))
-                                .unwrap_or_default();
+                            let haircut_fee = if haircut_bps > 0 {
+                                eth::U256::from(fulfillment.executed_amount)
+                                    .checked_mul(eth::U256::from(haircut_bps))
+                                    .and_then(|v| {
+                                        v.checked_div(eth::U256::from(Self::MAX_BASE_POINT))
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                Default::default()
+                            };
 
                             competition::solution::trade::Fulfillment::new(
                                 order,
