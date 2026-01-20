@@ -72,10 +72,7 @@ pub fn get_orders_by_uid(
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        warp::test::request,
-    };
+    use {super::*, warp::test::request};
 
     #[tokio::test]
     async fn get_orders_by_uid_request_ok() {
