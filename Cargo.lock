@@ -2800,6 +2800,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "hex-literal",
+ "hyper 0.14.32",
  "model",
  "number",
  "observe",
@@ -2818,7 +2819,6 @@ dependencies = [
  "toml",
  "tracing",
  "url",
- "warp",
 ]
 
 [[package]]

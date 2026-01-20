@@ -33,7 +33,7 @@ derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
-observe = { workspace = true, features = ["axum-tracing"] }
+observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }

@@ -1,0 +1,41 @@
+FROM node:24-bookworm-slim
+
+# Install dependencies (architecture-aware for ARM64/AMD64 compatibility)
+RUN apt-get update && apt-get install -y git curl postgresql-client && \
+    DPKG_ARCH=$(dpkg --print-architecture) && \
+    case "${DPKG_ARCH}" in \
+        amd64) DBMATE_ARCH="amd64" ;; \
+        arm64) DBMATE_ARCH="arm64" ;; \
+        i386)  DBMATE_ARCH="386" ;; \
+        armhf) DBMATE_ARCH="arm" ;; \
+        *) echo "Unsupported architecture: ${DPKG_ARCH}" && exit 1 ;; \
+    esac && \
+    echo "Downloading dbmate for architecture: ${DBMATE_ARCH} (detected: ${DPKG_ARCH})" && \
+    curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/download/v2.21.0/dbmate-linux-${DBMATE_ARCH} && \
+    chmod +x /usr/local/bin/dbmate && \
+    dbmate --version && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Clone Sourcify with submodules
+RUN git clone --depth 1 --branch master --recurse-submodules https://github.com/argotorg/sourcify.git /sourcify
+
+WORKDIR /sourcify
+
+# Install dependencies and build
+RUN npm install && npm run build:lerna
+
+# Prepare migrations
+WORKDIR /sourcify/services/database
+RUN mkdir -p /migrations && \
+    cp -r database-specs/migrations/* /migrations/ 2>/dev/null || true && \
+    cp -r migrations/* /migrations/ 2>/dev/null || true
+
+WORKDIR /sourcify/services/server
+
+# Copy custom entrypoint
+COPY sourcify-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5555
+
+ENTRYPOINT ["/entrypoint.sh"]
