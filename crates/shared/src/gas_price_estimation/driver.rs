@@ -1,7 +1,10 @@
 use {
     crate::gas_price_estimation::GasPriceEstimating,
-    alloy::eips::eip1559::Eip1559Estimation,
-    anyhow::{Context, Result},
+    alloy::{
+        eips::{BlockId, eip1559::Eip1559Estimation},
+        providers::{DynProvider, Provider},
+    },
+    anyhow::{Context, Result, anyhow},
     reqwest::Url,
     std::{
         sync::Arc,
@@ -18,6 +21,7 @@ pub struct DriverGasEstimator {
     client: reqwest::Client,
     url: Url,
     cache: Arc<Mutex<Option<CachedGasPrice>>>,
+    provider: DynProvider,
 }
 
 #[derive(Debug, Clone)]
@@ -29,11 +33,12 @@ struct CachedGasPrice {
 const CACHE_DURATION: Duration = Duration::from_secs(5);
 
 impl DriverGasEstimator {
-    pub fn new(client: reqwest::Client, driver_url: Url) -> Self {
+    pub fn new(client: reqwest::Client, driver_url: Url, provider: DynProvider) -> Self {
         Self {
             client,
             url: driver_url,
             cache: Arc::new(Mutex::new(None)),
+            provider,
         }
     }
 
@@ -80,5 +85,15 @@ impl GasPriceEstimating for DriverGasEstimator {
         });
 
         Ok(price)
+    }
+
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        Ok(self
+            .provider
+            .get_block(BlockId::latest())
+            .await?
+            .ok_or_else(|| anyhow!("fecthed block does not have header"))?
+            .header
+            .base_fee_per_gas)
     }
 }

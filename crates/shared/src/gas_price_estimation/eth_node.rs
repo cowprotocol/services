@@ -5,8 +5,11 @@
 
 use {
     crate::gas_price_estimation::GasPriceEstimating,
-    alloy::{eips::eip1559::Eip1559Estimation, providers::Provider},
-    anyhow::{Context, Result},
+    alloy::{
+        eips::{BlockId, eip1559::Eip1559Estimation},
+        providers::Provider,
+    },
+    anyhow::{Context, Result, anyhow},
     ethrpc::AlloyProvider,
 };
 
@@ -34,5 +37,15 @@ impl GasPriceEstimating for NodeGasPriceEstimator {
             max_fee_per_gas: legacy,
             max_priority_fee_per_gas: legacy,
         })
+    }
+
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        Ok(self
+            .0
+            .get_block(BlockId::latest())
+            .await?
+            .ok_or_else(|| anyhow!("fecthed block does not have header"))?
+            .header
+            .base_fee_per_gas)
     }
 }

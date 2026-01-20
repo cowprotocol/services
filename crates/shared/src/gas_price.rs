@@ -46,6 +46,10 @@ where
         );
         Ok(estimate)
     }
+
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        self.inner.base_fee().await
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

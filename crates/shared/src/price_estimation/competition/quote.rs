@@ -8,7 +8,6 @@ use {
         Query,
         QuoteVerificationMode,
     },
-    alloy::eips::eip1559::calc_effective_gas_price,
     anyhow::Context,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
@@ -110,14 +109,7 @@ impl PriceRanking {
                 let gas = gas.clone();
                 let native = native.clone();
                 let gas = gas
-                    .estimate()
-                    .map_ok(|gas| {
-                        calc_effective_gas_price(
-                            gas.max_fee_per_gas,
-                            gas.max_priority_fee_per_gas,
-                            None,
-                        )
-                    })
+                    .effective_gas_price()
                     .map_err(PriceEstimationError::ProtocolInternal);
                 let (native_price, gas_price) = futures::try_join!(
                     native.estimate_native_price(token.into_alloy(), timeout),

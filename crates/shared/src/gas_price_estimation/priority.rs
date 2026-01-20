@@ -36,10 +36,10 @@ impl PriorityGasPriceEstimating {
         Self { estimators }
     }
 
-    async fn prioritize<'a, T, F>(&'a self, operation: T) -> Result<Eip1559Estimation>
+    async fn prioritize<'a, T, F, O>(&'a self, operation: T) -> Result<O>
     where
         T: Fn(&'a dyn GasPriceEstimating) -> F,
-        F: Future<Output = Result<Eip1559Estimation>>,
+        F: Future<Output = Result<O>>,
     {
         for (i, estimator) in self.estimators.iter().enumerate() {
             match operation(estimator.estimator.as_ref()).await {
@@ -65,6 +65,10 @@ impl PriorityGasPriceEstimating {
 impl GasPriceEstimating for PriorityGasPriceEstimating {
     async fn estimate(&self) -> Result<Eip1559Estimation> {
         self.prioritize(|estimator| estimator.estimate()).await
+    }
+
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        self.prioritize(|estimator| estimator.base_fee()).await
     }
 }
 

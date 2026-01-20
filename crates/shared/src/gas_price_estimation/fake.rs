@@ -26,4 +26,8 @@ impl GasPriceEstimating for FakeGasPriceEstimator {
     async fn estimate(&self) -> Result<Eip1559Estimation> {
         Ok(self.0)
     }
+
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        Ok(Default::default())
+    }
 }

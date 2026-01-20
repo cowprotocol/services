@@ -14,10 +14,7 @@ use {
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
     },
-    alloy::{
-        eips::eip1559::calc_effective_gas_price,
-        primitives::{Address, U256, U512, ruint::UintTryFrom},
-    },
+    alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
@@ -464,9 +461,9 @@ impl OrderQuoter {
         };
 
         let trade_query = Arc::new(parameters.to_price_query(self.default_quote_timeout));
-        let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
+        let (effective_gas_price, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
-                .estimate()
+                .effective_gas_price()
                 .map_err(|err| CalculateQuoteError::from((
                     EstimatorKind::Gas,
                     PriceEstimationError::ProtocolInternal(err)
@@ -498,11 +495,7 @@ impl OrderQuoter {
         };
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as _,
-            gas_price: calc_effective_gas_price(
-                gas_estimate.max_fee_per_gas,
-                gas_estimate.max_priority_fee_per_gas,
-                None,
-            ) as f64,
+            gas_price: effective_gas_price as f64,
             sell_token_price,
         };
 

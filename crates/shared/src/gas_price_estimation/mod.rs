@@ -30,6 +30,18 @@ pub use {driver::DriverGasEstimator, fake::FakeGasPriceEstimator};
 pub trait GasPriceEstimating: Send + Sync {
     /// Estimate the gas price for a transaction to be mined "quickly".
     async fn estimate(&self) -> Result<Eip1559Estimation>;
+
+    async fn base_fee(&self) -> Result<Option<u64>>;
+
+    async fn effective_gas_price(&self) -> Result<u128> {
+        let estimate = self.estimate().await?;
+        let base_fee = self.base_fee().await?;
+        Ok(calc_effective_gas_price(
+            estimate.max_fee_per_gas,
+            estimate.max_priority_fee_per_gas,
+            base_fee,
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -69,6 +81,7 @@ pub async fn create_priority_estimator(
                 estimators.push(Box::new(DriverGasEstimator::new(
                     http_factory.create(),
                     url.clone(),
+                    web3.alloy.clone(),
                 )));
             }
             GasEstimatorType::Web3 => {
