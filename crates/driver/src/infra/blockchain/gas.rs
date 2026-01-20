@@ -85,12 +85,12 @@ impl GasPriceEstimator {
             let (max_additional_tip, tip_percentage_increase) = self.additional_tip;
 
             // Calculate additional tip in integer space to avoid precision loss
-            // Convert percentage to basis points (multiply by 1000) to maintain precision
-            // e.g., tip_percentage_increase = 0.125 (12.5%) becomes 125
-            let tip_percentage_as_bps = (tip_percentage_increase * 1000.0) as u128;
+            // Convert percentage to basis points (multiply by 10000) to maintain precision
+            // e.g., tip_percentage_increase = 0.125 (12.5%) becomes 1250
+            let tip_percentage_as_bps = (tip_percentage_increase * 10000.0) as u128;
             let calculated_tip = eth::U256::from(estimate.max_priority_fee_per_gas)
                 * eth::U256::from(tip_percentage_as_bps)
-                / eth::U256::from(1000u128);
+                / eth::U256::from(10000u128);
 
             let additional_tip = max_additional_tip.min(calculated_tip);
 
