@@ -73,19 +73,24 @@ impl Trade {
         &self,
         prices: &ClearingPrices,
     ) -> Result<eth::TokenAmount, error::Math> {
-        let before_fee = match self.side() {
-            order::Side::Sell => self.executed().0,
-            order::Side::Buy => self
-                .executed()
-                .0
-                .checked_mul(prices.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Math::DivisionByZero)?,
-        };
-        Ok(eth::TokenAmount(
-            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
-        ))
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.sell_amount(prices),
+            Trade::Jit(jit) => {
+                let before_fee = match jit.order().side {
+                    order::Side::Sell => jit.executed().0,
+                    order::Side::Buy => jit
+                        .executed()
+                        .0
+                        .checked_mul(prices.buy)
+                        .ok_or(Math::Overflow)?
+                        .checked_div(prices.sell)
+                        .ok_or(Math::DivisionByZero)?,
+                };
+                Ok(eth::TokenAmount(
+                    before_fee.checked_add(jit.fee().0).ok_or(Math::Overflow)?,
+                ))
+            }
+        }
     }
 
     /// The effective amount the user received after all fees.
@@ -95,17 +100,22 @@ impl Trade {
         &self,
         prices: &ClearingPrices,
     ) -> Result<eth::TokenAmount, error::Math> {
-        let amount = match self.side() {
-            order::Side::Buy => self.executed().0,
-            order::Side::Sell => self
-                .executed()
-                .0
-                .checked_mul(prices.sell)
-                .ok_or(Math::Overflow)?
-                .checked_ceil_div(&prices.buy)
-                .ok_or(Math::DivisionByZero)?,
-        };
-        Ok(eth::TokenAmount(amount))
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.buy_amount(prices),
+            Trade::Jit(jit) => {
+                let amount = match jit.order().side {
+                    order::Side::Buy => jit.executed().0,
+                    order::Side::Sell => jit
+                        .executed()
+                        .0
+                        .checked_mul(prices.sell)
+                        .ok_or(Math::Overflow)?
+                        .checked_ceil_div(&prices.buy)
+                        .ok_or(Math::DivisionByZero)?,
+                };
+                Ok(eth::TokenAmount(amount))
+            }
+        }
     }
 
     pub fn custom_prices(
@@ -238,11 +248,25 @@ impl Fulfillment {
                 .checked_div(prices.sell)
                 .ok_or(Math::DivisionByZero)?,
         };
+
+        // haircut_fee is denominated in the order's target token (sell token for
+        // sell orders, buy token for buy orders). Convert to sell token for buy
+        // orders.
+        let haircut_in_sell_token = match self.order.side {
+            order::Side::Sell => self.haircut_fee,
+            order::Side::Buy => self
+                .haircut_fee
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?,
+        };
+
         Ok(eth::TokenAmount(
             before_fee
                 .checked_add(self.fee().0)
                 .ok_or(Math::Overflow)?
-                .checked_add(self.haircut_fee)
+                .checked_add(haircut_in_sell_token)
                 .ok_or(Math::Overflow)?,
         ))
     }
