@@ -9,6 +9,7 @@ use {
         account_balances::{BalanceFetching, Query},
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
+        gas_price_estimation::GasPriceEstimating,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
@@ -18,7 +19,6 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::TryFutureExt,
-    gas_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
         order::{OrderClass, OrderKind},
@@ -786,7 +786,7 @@ mod tests {
         super::*,
         crate::{
             account_balances::MockBalanceFetching,
-            gas_price_estimation::FakeGasPriceEstimator,
+            gas_price_estimation::{FakeGasPriceEstimator, price::GasPrice1559},
             price_estimation::{
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 MockPriceEstimating,
@@ -797,7 +797,6 @@ mod tests {
         U256 as AlloyU256,
         chrono::Utc,
         futures::FutureExt,
-        gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::NonZeroU256,

@@ -104,6 +104,16 @@ pub fn handle_metrics() -> impl Filter<Extract = (impl Reply,), Error = Rejectio
     warp::path("metrics").map(move || encode(registry))
 }
 
+// Axum version of `/metrics` route
+#[cfg(feature = "axum-tracing")]
+pub fn handle_metrics_axum() -> axum::Router {
+    async fn metrics_handler() -> String {
+        encode(get_registry())
+    }
+
+    axum::Router::new().route("/metrics", axum::routing::get(metrics_handler))
+}
+
 fn handle_liveness_probe(
     liveness_checker: Arc<dyn LivenessChecking>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
