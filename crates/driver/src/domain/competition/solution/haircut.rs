@@ -1,7 +1,7 @@
 //! Haircut logic for conservative solution bidding.
 //!
-//! Applies a configurable basis points reduction to clearing prices to make
-//! competition bids more conservative, without modifying interaction calldata.
+//! Adjusts the clearing price vector by a configurable basis points reduction
+//! to make competition bids more conservative.
 
 use {
     crate::domain::{competition::order, eth},
@@ -45,7 +45,7 @@ pub fn apply_to_clearing_prices(
         order::Side::Sell => {
             // For sell orders: decrease sell price to reduce the amount of buy tokens
             // received. new_sell_price = sell_price * (10000 - haircut_bps) / 10000
-            let Some(price) = prices.get_mut(&sell_token).filter(|p| !p.is_zero()) else {
+            let Some(price) = prices.get_mut(&sell_token) else {
                 return;
             };
             let original_price = *price;
@@ -66,7 +66,7 @@ pub fn apply_to_clearing_prices(
             // For buy orders: increase buy price to increase the sell tokens paid,
             // making the bid more conservative (less surplus reported).
             // new_buy_price = buy_price * (10000 + haircut_bps) / 10000
-            let Some(price) = prices.get_mut(&buy_token).filter(|p| !p.is_zero()) else {
+            let Some(price) = prices.get_mut(&buy_token) else {
                 return;
             };
             let original_price = *price;
