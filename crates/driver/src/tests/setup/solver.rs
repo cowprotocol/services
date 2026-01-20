@@ -489,7 +489,7 @@ impl Solver {
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let base_fee = eth.current_block().borrow().base_fee;
-                    let effective_gas_price = eth.gas_price().await.unwrap().effective(Some(base_fee)).to_string();
+                    let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
                     let expected = json!({
                         "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,

@@ -89,18 +89,18 @@ pub async fn create_priority_estimator(
 /// Extension trait for EIP-1559 gas price estimations.
 pub trait Eip1559EstimationExt {
     /// Calculates the effective gas price that will be paid given the base fee.
-    fn effective(self, base_fee: Option<u64>) -> u128;
+    fn effective(self, base_fee: u64) -> u128;
 
     /// Scales fees by a multiplier in parts per thousand (e.g., 100 = +10%).
     fn scaled_by_pml(self, pml: u64) -> Self;
 }
 
 impl Eip1559EstimationExt for Eip1559Estimation {
-    fn effective(self, base_fee: Option<u64>) -> u128 {
+    fn effective(self, base_fee: u64) -> u128 {
         calc_effective_gas_price(
             self.max_fee_per_gas,
             self.max_priority_fee_per_gas,
-            base_fee,
+            Some(base_fee),
         )
     }
 
