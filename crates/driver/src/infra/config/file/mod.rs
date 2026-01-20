@@ -315,8 +315,8 @@ struct SolverConfig {
 
     /// Haircut in basis points (0-10000). Applied to solver-reported
     /// economics to make bids more conservative by adjusting clearing prices
-    /// to report lower surplus. Does not modify executed amounts or
-    /// interaction calldata. Default: 0 (no haircut).
+    /// to report lower surplus. Useful for solvers prone to negative slippage.
+    /// Default: 0 (no haircut).
     #[serde(default)]
     haircut_bps: u32,
 }
