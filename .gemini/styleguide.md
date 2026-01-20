@@ -11,4 +11,4 @@
 * **Security & Performance:** Prioritize findings related to resource leaks, unnecessary complexity, or potential security vulnerabilities.
 
 ## 3. Formatting
-* **Conciseness:** Keep comments brief and technical. Skip the introductory and concluding pleasantries.
+* **Conciseness:** Keep comments concise, direct and technical. Skip the introductory and concluding pleasantries.
