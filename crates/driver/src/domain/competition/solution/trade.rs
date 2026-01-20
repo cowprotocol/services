@@ -147,7 +147,8 @@ pub struct Fulfillment {
     fee: Fee,
     /// Additional fee for conservative bidding (haircut). Applied on top of
     /// the regular fee to reduce reported surplus without affecting executed
-    /// amounts. Expressed in sell token.
+    /// amounts. Expressed in the order's target token (sell token for sell
+    /// orders, buy token for buy orders).
     haircut_fee: eth::U256,
 }
 
