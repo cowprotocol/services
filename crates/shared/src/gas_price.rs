@@ -37,11 +37,16 @@ where
     #[instrument(skip_all)]
     async fn estimate(&self) -> Result<Eip1559Estimation> {
         let estimate = self.inner.estimate().await?;
+
+        // do not use effective_gas_price here because it would duplicate the estimate call
+        let base_fee = self.inner.base_fee().await?;
+        self.metrics.base_fee.set(base_fee.unwrap_or(0) as i64);
+
         self.metrics.gas_price.set(
             (calc_effective_gas_price(
                 estimate.max_fee_per_gas,
                 estimate.max_priority_fee_per_gas,
-                None,
+                base_fee,
             ) / 10u128.pow(9)) as f64,
         );
         Ok(estimate)
@@ -56,4 +61,6 @@ where
 struct Metrics {
     /// Last measured gas price in gwei
     gas_price: prometheus::Gauge,
+    /// Last measured base fee
+    base_fee: prometheus::IntGauge,
 }
