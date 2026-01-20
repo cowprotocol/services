@@ -26,12 +26,12 @@ ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
+hyper = { workspace = true }
 model = { workspace = true, features = ["e2e"] }
 number = { workspace = true }
 observe = { workspace = true }
 orderbook = { workspace = true, features = ["e2e"] }
 reqwest = { workspace = true, features = ["blocking"] }
-secp256k1 = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }
@@ -43,7 +43,6 @@ tokio = { workspace = true, features = ["macros", "process"] }
 toml = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-warp = { workspace = true }
 
 [dev-dependencies]
 refunder = { workspace = true }

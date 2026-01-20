@@ -16,8 +16,9 @@ use {
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
     number::conversions::big_decimal_to_u256,
+    shared::gas_price_estimation::eth_node::NodeGasPriceEstimator,
     sqlx::PgPool,
-    std::collections::HashMap,
+    std::{collections::HashMap, time::Duration},
 };
 
 pub const NO_OWNER: Address = Address::ZERO;
@@ -35,6 +36,7 @@ pub struct RefundService {
     pub submitter: Submitter,
     pub max_gas_price: u64,
     pub start_priority_fee_tip: u64,
+    pub lookback_time: Option<Duration>,
 }
 
 /// Status of an EthFlow order refund eligibility.
@@ -71,9 +73,10 @@ impl RefundService {
         signer: Box<dyn TxSigner<Signature> + Send + Sync + 'static>,
         max_gas_price: u64,
         start_priority_fee_tip: u64,
+        lookback_time: Option<Duration>,
     ) -> Self {
         let signer_address = signer.address();
-        let gas_estimator = Box::new(web3.legacy.clone());
+        let gas_estimator = Box::new(NodeGasPriceEstimator::new(web3.alloy.clone()));
         web3.wallet.register_signer(signer);
         RefundService {
             db,
@@ -92,6 +95,7 @@ impl RefundService {
                 max_gas_price,
                 start_priority_fee_tip,
             },
+            lookback_time,
         }
     }
 
@@ -115,6 +119,7 @@ impl RefundService {
             block_time,
             self.min_validity_duration,
             self.min_price_deviation,
+            self.lookback_time,
         )
         .await
         .map_err(|err| {
@@ -308,7 +313,11 @@ impl RefundService {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address};
+    use {
+        super::*,
+        alloy::primitives::address,
+        shared::gas_price_estimation::eth_node::NodeGasPriceEstimator,
+    };
 
     /// Creates a minimal RefundService for testing purposes.
     fn new_test_service(web3: Web3) -> RefundService {
@@ -323,12 +332,13 @@ mod tests {
             submitter: Submitter {
                 web3: web3.clone(),
                 signer_address: Address::ZERO,
-                gas_estimator: Box::new(web3.legacy.clone()),
+                gas_estimator: Box::new(NodeGasPriceEstimator::new(web3.alloy.clone())),
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
                 max_gas_price: 0,
                 start_priority_fee_tip: 0,
             },
+            lookback_time: None,
         }
     }
 
