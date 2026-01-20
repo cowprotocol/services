@@ -1893,7 +1893,6 @@ mod tests {
             sell_amount: 10.into(),
             buy_amount: 100.into(),
             valid_to: 3,
-            confirmed_valid_to: 3,
             partially_fillable: true,
             creation_timestamp: Utc::now(),
             ..Default::default()
