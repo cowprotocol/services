@@ -86,6 +86,7 @@ pub async fn run(args: arguments::Arguments) {
         refunder_account,
         args.max_gas_price,
         args.start_priority_fee_tip,
+        Some(args.lookback_time),
     );
     loop {
         tracing::info!("Staring a new refunding loop");
