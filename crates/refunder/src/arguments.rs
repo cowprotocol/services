@@ -76,6 +76,10 @@ pub struct Arguments {
     /// Default is 30 Gwei (30_000_000_000 wei)
     #[clap(long, env, default_value = "30000000000")]
     pub start_priority_fee_tip: u64,
+
+    /// Time period in which the service looks for refundable orders.
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "1 week")]
+    pub lookback_time: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -94,6 +98,7 @@ impl std::fmt::Display for Arguments {
             refunder_pk,
             max_gas_price,
             start_priority_fee_tip,
+            lookback_time,
         } = self;
 
         write!(f, "{http_client}")?;
@@ -111,6 +116,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "metrics_port: {metrics_port}")?;
         writeln!(f, "max_gas_price: {max_gas_price}")?;
         writeln!(f, "start_priority_fee_tip: {start_priority_fee_tip}")?;
+        writeln!(f, "lookback_time: {lookback_time:?}")?;
         Ok(())
     }
 }

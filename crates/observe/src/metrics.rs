@@ -1,11 +1,16 @@
 use {
+    axum::{
+        Router,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::get,
+    },
     prometheus::{
         Encoder,
         core::{AtomicF64, AtomicU64, GenericCounterVec},
     },
     std::{
         collections::HashMap,
-        convert::Infallible,
         net::SocketAddr,
         sync::{
             Arc,
@@ -14,8 +19,7 @@ use {
         },
         time::Instant,
     },
-    tokio::task::{self, JoinHandle},
-    warp::{Filter, Rejection, Reply},
+    tokio::task::JoinHandle,
 };
 
 /// Global metrics registry used by all components.
@@ -84,96 +88,85 @@ pub trait LivenessChecking: Send + Sync {
     async fn is_alive(&self) -> bool;
 }
 
+#[derive(Clone)]
+struct AppState {
+    liveness: Arc<dyn LivenessChecking>,
+    readiness: Arc<Option<AtomicBool>>,
+    startup: Arc<Option<AtomicBool>>,
+}
+
+/// Serves metrics on a dedicated server at the given address.
+/// Spawns a background task and returns its handle.
 pub fn serve_metrics(
     liveness: Arc<dyn LivenessChecking>,
     address: SocketAddr,
     readiness: Arc<Option<AtomicBool>>,
     startup: Arc<Option<AtomicBool>>,
 ) -> JoinHandle<()> {
-    let filter = handle_metrics()
-        .or(handle_liveness_probe(liveness))
-        .or(handle_readiness_probe(readiness))
-        .or(handle_startup_probe(startup));
+    let app = Router::new()
+        .route("/metrics", get(handle_metrics))
+        .route("/liveness", get(handle_liveness_probe))
+        .route("/ready", get(handle_readiness_probe))
+        .route("/startup", get(handle_startup_probe))
+        .with_state(AppState {
+            liveness,
+            readiness,
+            startup,
+        });
+
     tracing::info!(%address, "serving metrics");
-    task::spawn(warp::serve(filter).bind(address))
+    tokio::spawn(async move {
+        axum::Server::bind(&address)
+            .serve(app.into_make_service())
+            .await
+            .expect("failed to serve metrics")
+    })
 }
 
 // `/metrics` route exposing encoded prometheus data to monitoring system
-pub fn handle_metrics() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let registry = get_registry();
-    warp::path("metrics").map(move || encode(registry))
+async fn handle_metrics() -> String {
+    encode(get_registry())
 }
 
-// Axum version of `/metrics` route
-#[cfg(feature = "axum-tracing")]
-pub fn handle_metrics_axum() -> axum::Router {
-    async fn metrics_handler() -> String {
-        encode(get_registry())
-    }
-
-    axum::Router::new().route("/metrics", axum::routing::get(metrics_handler))
+async fn handle_liveness_probe(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Response {
+    let status = if state.liveness.is_alive().await {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    status.into_response()
 }
 
-fn handle_liveness_probe(
-    liveness_checker: Arc<dyn LivenessChecking>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::path("liveness").and_then(move || {
-        let liveness_checker = liveness_checker.clone();
-        async move {
-            let status = if liveness_checker.is_alive().await {
-                warp::http::StatusCode::OK
-            } else {
-                warp::http::StatusCode::SERVICE_UNAVAILABLE
-            };
-            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
-        }
-    })
+async fn handle_readiness_probe(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Response {
+    let Some(ref readiness) = *state.readiness else {
+        // if readiness is not configured we're ready right away
+        return StatusCode::OK.into_response();
+    };
+    let status = if readiness.load(Ordering::Acquire) {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    status.into_response()
 }
 
-fn handle_readiness_probe(
-    readiness: Arc<Option<AtomicBool>>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::path("ready").and_then(move || {
-        let readiness = readiness.clone();
-        async move {
-            let Some(ref readiness) = *readiness else {
-                // if readiness is not configured we're ready right away
-                return Result::<_, Infallible>::Ok(warp::reply::with_status(
-                    warp::reply(),
-                    warp::http::StatusCode::OK,
-                ));
-            };
-            let status = if readiness.load(Ordering::Acquire) {
-                warp::http::StatusCode::OK
-            } else {
-                warp::http::StatusCode::SERVICE_UNAVAILABLE
-            };
-            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
-        }
-    })
-}
-
-fn handle_startup_probe(
-    startup: Arc<Option<AtomicBool>>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::path("startup").and_then(move || {
-        let startup = startup.clone();
-        async move {
-            let Some(ref startup) = *startup else {
-                // if startup is not configured we're started right away
-                return Result::<_, Infallible>::Ok(warp::reply::with_status(
-                    warp::reply(),
-                    warp::http::StatusCode::OK,
-                ));
-            };
-            let status = if startup.load(Ordering::Acquire) {
-                warp::http::StatusCode::OK
-            } else {
-                warp::http::StatusCode::SERVICE_UNAVAILABLE
-            };
-            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
-        }
-    })
+async fn handle_startup_probe(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Response {
+    let Some(ref startup) = *state.startup else {
+        // if startup is not configured we're started right away
+        return StatusCode::OK.into_response();
+    };
+    let status = if startup.load(Ordering::Acquire) {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    status.into_response()
 }
 
 /// Metrics shared by potentially all processes.

@@ -5,8 +5,8 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Result,
     model::order::{Order, OrderKind},
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext as _,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         http_solver::model::InternalizationStrategy,
     },
