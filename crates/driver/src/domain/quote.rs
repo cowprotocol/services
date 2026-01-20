@@ -16,7 +16,6 @@ use {
         util,
     },
     chrono::Utc,
-    solution::trade::ClearingPrices,
     std::collections::{HashMap, HashSet},
 };
 
@@ -64,58 +63,64 @@ impl Quote {
 
     /// Compute clearing prices for the quote.
     ///
-    /// For quotes with trades (fulfillments), use custom clearing prices which
-    /// include fees and haircut adjustments. This ensures quotes are
-    /// conservative when haircut is enabled.
-    ///
-    /// For quotes without fulfillments, fall back to uniform clearing prices.
+    /// Uses uniform clearing prices from the solution, adjusted for haircut
+    /// when enabled. This ensures quotes are conservative when haircut is
+    /// enabled.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
+        // Start with uniform clearing prices
+        let mut prices: HashMap<eth::Address, eth::U256> = solution
+            .clearing_prices()
+            .into_iter()
+            .map(|(token, amount)| (token.into(), amount))
+            .collect();
+
         // Quote competitions contain only a single order (see `fake_auction()`),
         // so there's at most one fulfillment in the solution.
-        let fulfillment = solution.trades().iter().find_map(|trade| match trade {
-            solution::Trade::Fulfillment(f) => Some(f),
-            solution::Trade::Jit(_) => None,
-        });
+        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
+        // haircut.
+        if let Some(fulfillment) = solution.trades().iter().find_map(|trade| match trade {
+            solution::Trade::Fulfillment(f) if f.haircut_fee() > eth::U256::ZERO => Some(f),
+            _ => None,
+        }) {
+            let haircut_fee = fulfillment.haircut_fee();
+            let executed = fulfillment.executed().0;
 
-        match fulfillment {
-            Some(fulfillment) => {
-                let sell_token = fulfillment.order().sell.token;
-                let buy_token = fulfillment.order().buy.token;
+            // Haircut adjustment: reduce output by haircut percentage.
+            // The downstream formula is: out = in * sell_price / buy_price (for sell
+            // orders) To reduce output by haircut, we adjust the sell token
+            // price down. For buy orders: out = in * buy_price / sell_price, so
+            // we adjust buy price up.
+            let sell_token: eth::Address = fulfillment.order().sell.token.into();
+            let buy_token: eth::Address = fulfillment.order().buy.token.into();
 
-                let uniform_prices = ClearingPrices {
-                    sell: solution
-                        .clearing_price(sell_token)
-                        .ok_or(QuotingFailed::ClearingSellMissing)?,
-                    buy: solution
-                        .clearing_price(buy_token)
-                        .ok_or(QuotingFailed::ClearingBuyMissing)?,
-                };
-
-                // custom_prices includes haircut via sell_amount adjustment
-                let custom_prices = fulfillment
-                    .custom_prices(&uniform_prices)
-                    .map_err(|_| QuotingFailed::ClearingSellMissing)?;
-
-                // custom_prices.sell = buy_amount (what user receives)
-                // custom_prices.buy = sell_amount (what user pays, including haircut)
-                // Map to clearing prices: sell_token price = buy_amount, buy_token price =
-                // sell_amount
-                Ok(HashMap::from([
-                    (sell_token.into(), custom_prices.sell),
-                    (buy_token.into(), custom_prices.buy),
-                ]))
-            }
-            None => {
-                // No fulfillment, use uniform clearing prices
-                Ok(solution
-                    .clearing_prices()
-                    .into_iter()
-                    .map(|(token, amount)| (token.into(), amount))
-                    .collect())
+            match fulfillment.order().side {
+                order::Side::Sell => {
+                    // Reduce sell token price to reduce output
+                    if let Some(price) = prices.get_mut(&sell_token) {
+                        // adjusted = price * (executed - haircut) / executed
+                        *price = price
+                            .saturating_mul(executed.saturating_sub(haircut_fee))
+                            .checked_div(executed)
+                            .unwrap_or(*price);
+                    }
+                }
+                order::Side::Buy => {
+                    // Increase buy token price to increase required input
+                    if let Some(price) = prices.get_mut(&buy_token) {
+                        // adjusted = price * (executed + haircut) / executed
+                        let adjusted = price
+                            .saturating_mul(executed.saturating_add(haircut_fee))
+                            .checked_div(executed)
+                            .unwrap_or(*price);
+                        *price = adjusted;
+                    }
+                }
             }
         }
+
+        Ok(prices)
     }
 }
 
