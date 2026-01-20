@@ -11,15 +11,17 @@ use {
         },
     },
     alloy::{
-        primitives::{Address, B256},
+        primitives::{Address, B256, U256},
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
     model::{
-        order::{Order, OrderCreation, OrderUid},
+        AuctionId,
+        order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
+        solver_competition,
         solver_competition_v2,
         trade::Trade,
     },
@@ -709,6 +711,191 @@ impl<'a> Services<'a> {
             },
         )
         .await
+    }
+
+    /// Get trades with pagination (v2 endpoint)
+    pub async fn get_trades_v2(
+        &self,
+        order_uid: Option<&OrderUid>,
+        owner: Option<&Address>,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<Trade>, (StatusCode, String)> {
+        let mut query_params = vec![
+            format!("offset={offset}"),
+            format!("limit={limit}"),
+        ];
+
+        if let Some(uid) = order_uid {
+            query_params.push(format!("orderUid={uid}"));
+        }
+
+        if let Some(owner_addr) = owner {
+            query_params.push(format!("owner={owner_addr:?}"));
+        }
+
+        let url = format!("{API_HOST}/api/v2/trades?{}", query_params.join("&"));
+        let response = self.http.get(url).send().await.unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get token metadata
+    pub async fn get_token_metadata(
+        &self,
+        token: &Address,
+    ) -> Result<orderbook::dto::TokenMetadata, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/token/{token:?}/metadata"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get API version
+    pub async fn get_api_version(&self) -> Result<String, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{VERSION_ENDPOINT}"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(body),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Cancel a single order (deprecated endpoint)
+    pub async fn cancel_order_single(
+        &self,
+        uid: &OrderUid,
+        payload: &CancellationPayload,
+    ) -> Result<String, (StatusCode, String)> {
+        let response = self
+            .http
+            .delete(format!("{API_HOST}{ORDERS_ENDPOINT}/{uid}"))
+            .json(payload)
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get solver competition by auction ID (v1 - deprecated)
+    pub async fn get_solver_competition_v1(
+        &self,
+        auction_id: AuctionId,
+    ) -> Result<solver_competition::SolverCompetitionAPI, StatusCode> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/solver_competition/{auction_id}"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
+    /// Get solver competition by transaction hash (v1 - deprecated)
+    pub async fn get_solver_competition_by_tx_v1(
+        &self,
+        hash: B256,
+    ) -> Result<solver_competition::SolverCompetitionAPI, StatusCode> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}/api/v1/solver_competition/by_tx_hash/{hash:?}"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
+    /// Get latest solver competition (v1 - deprecated)
+    pub async fn get_latest_solver_competition_v1(
+        &self,
+    ) -> Result<solver_competition::SolverCompetitionAPI, StatusCode> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/solver_competition/latest"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
+    /// Get total surplus for a user (unstable endpoint)
+    pub async fn get_user_total_surplus(
+        &self,
+        user: &Address,
+    ) -> Result<U256, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/users/{user:?}/total_surplus"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => {
+                // Parse JSON response manually to extract totalSurplus
+                let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+                let total_surplus_str = json["totalSurplus"].as_str().unwrap();
+                Ok(U256::from_str_radix(total_surplus_str, 10).unwrap())
+            }
+            code => Err((code, body)),
+        }
     }
 
     pub fn client(&self) -> &Client {
