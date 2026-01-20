@@ -56,7 +56,7 @@ pub struct BlockInfo {
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
-    pub base_fee: Option<u64>,
+    pub base_fee: u64,
     /// When the system noticed the new block.
     pub observed_at: Instant,
 }
@@ -109,7 +109,9 @@ impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
                 .base_fee_per_gas
                 .map(U256::from)
                 .context("no gas price")?,
-            base_fee: value.base_fee_per_gas,
+            base_fee: value
+                .base_fee_per_gas
+                .ok_or_else(|| anyhow!("no base fee available"))?,
             observed_at: Instant::now(),
         })
     }

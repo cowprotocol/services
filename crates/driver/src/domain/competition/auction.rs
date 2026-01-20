@@ -62,7 +62,7 @@ impl Auction {
         let gas_price = GasPrice::new(
             U256::from(gas_est.max_fee_per_gas).into(),
             U256::from(gas_est.max_priority_fee_per_gas).into(),
-            base_fee,
+            Some(base_fee),
         );
 
         Ok(Self {
