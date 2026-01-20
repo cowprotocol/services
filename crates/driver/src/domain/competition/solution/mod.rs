@@ -30,7 +30,6 @@ use {
 
 pub mod encoding;
 pub mod fee;
-pub mod haircut;
 pub mod interaction;
 pub mod scoring;
 pub mod settlement;
@@ -119,6 +118,7 @@ impl Solution {
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),
+                    eth::U256::ZERO, // JIT orders don't get haircut
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );

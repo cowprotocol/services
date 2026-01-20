@@ -135,6 +135,10 @@ pub struct Fulfillment {
     /// order.
     executed: order::TargetAmount,
     fee: Fee,
+    /// Additional fee for conservative bidding (haircut). Applied on top of
+    /// the regular fee to reduce reported surplus without affecting executed
+    /// amounts. Expressed in sell token.
+    haircut_fee: eth::U256,
 }
 
 impl Fulfillment {
@@ -142,6 +146,7 @@ impl Fulfillment {
         order: competition::Order,
         executed: order::TargetAmount,
         fee: Fee,
+        haircut_fee: eth::U256,
     ) -> Result<Self, error::Trade> {
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
@@ -179,6 +184,7 @@ impl Fulfillment {
                 order,
                 executed,
                 fee,
+                haircut_fee,
             })
         } else {
             Err(error::Trade::InvalidExecutedAmount)
@@ -215,6 +221,11 @@ impl Fulfillment {
         }
     }
 
+    /// Returns the haircut fee for conservative bidding.
+    pub fn haircut_fee(&self) -> eth::U256 {
+        self.haircut_fee
+    }
+
     /// The effective amount that left the user's wallet including all fees.
     pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.order.side {
@@ -228,7 +239,11 @@ impl Fulfillment {
                 .ok_or(Math::DivisionByZero)?,
         };
         Ok(eth::TokenAmount(
-            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
+            before_fee
+                .checked_add(self.fee().0)
+                .ok_or(Math::Overflow)?
+                .checked_add(self.haircut_fee)
+                .ok_or(Math::Overflow)?,
         ))
     }
 

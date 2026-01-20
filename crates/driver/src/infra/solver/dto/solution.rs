@@ -14,16 +14,15 @@ use {
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
-    std::{
-        collections::{HashMap, HashSet},
-        str::FromStr,
-    },
+    std::{collections::HashMap, str::FromStr},
 };
 
 #[derive(derive_more::From)]
 pub struct Solutions(solvers_dto::solution::Solutions);
 
 impl Solutions {
+    const MAX_BASE_POINT: u32 = 10000;
+
     pub fn into_domain(
         self,
         auction: &competition::Auction,
@@ -37,18 +36,14 @@ impl Solutions {
         self.0.solutions
             .into_iter()
             .map(|solution| {
-                // Convert prices to domain types (mutable for haircut adjustment)
-                let mut prices: HashMap<eth::Address, eth::U256> = solution
+                // Convert prices to domain types
+                let prices: HashMap<eth::Address, eth::U256> = solution
                     .prices
                     .iter()
                     .map(|(address, price)| (*address, *price))
                     .collect();
 
-                // Track which tokens have been haircut to avoid double-application
-                // when multiple orders trade the same tokens
-                let mut haircut_applied: HashSet<eth::Address> = HashSet::new();
-
-                // Process trades and apply haircut in a single pass
+                // Process trades
                 let trades: Vec<competition::solution::Trade> = solution
                     .trades
                     .iter()
@@ -64,27 +59,12 @@ impl Solutions {
                                 ))?
                                 .clone();
 
-                            // Apply haircut to clearing prices for this fulfillment order.
-                            // This reduces the reported output amounts without changing
-                            // executed amounts. Only apply once per token to avoid
-                            // double-application when multiple orders trade the same tokens.
-                            let sell_token: eth::Address =
-                                order.sell.token.as_erc20(weth).into();
-                            let buy_token: eth::Address =
-                                order.buy.token.as_erc20(weth).into();
-                            let token_to_adjust = match order.side {
-                                competition::order::Side::Sell => sell_token,
-                                competition::order::Side::Buy => buy_token,
-                            };
-                            if haircut_applied.insert(token_to_adjust) {
-                                competition::solution::haircut::apply_to_clearing_prices(
-                                    &mut prices,
-                                    order.side,
-                                    sell_token,
-                                    buy_token,
-                                    haircut_bps,
-                                );
-                            }
+                            // Calculate haircut fee for conservative bidding.
+                            // This reduces reported surplus without affecting executed amounts.
+                            let haircut_fee = eth::U256::from(fulfillment.executed_amount)
+                                .checked_mul(eth::U256::from(haircut_bps))
+                                .and_then(|v| v.checked_div(eth::U256::from(Self::MAX_BASE_POINT)))
+                                .unwrap_or_default();
 
                             competition::solution::trade::Fulfillment::new(
                                 order,
@@ -95,6 +75,7 @@ impl Solutions {
                                     ),
                                     None => competition::solution::trade::Fee::Static,
                                 },
+                                haircut_fee,
                             )
                             .map(competition::solution::Trade::Fulfillment)
                             .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
