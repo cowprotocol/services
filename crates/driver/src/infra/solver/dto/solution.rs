@@ -14,7 +14,10 @@ use {
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
-    std::{collections::HashMap, str::FromStr},
+    std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    },
 };
 
 #[derive(derive_more::From)]
@@ -41,6 +44,10 @@ impl Solutions {
                     .map(|(address, price)| (*address, *price))
                     .collect();
 
+                // Track which tokens have been haircut to avoid double-application
+                // when multiple orders trade the same tokens
+                let mut haircut_applied: HashSet<eth::Address> = HashSet::new();
+
                 // Process trades and apply haircut in a single pass
                 let trades: Vec<competition::solution::Trade> = solution
                     .trades
@@ -59,18 +66,25 @@ impl Solutions {
 
                             // Apply haircut to clearing prices for this fulfillment order.
                             // This reduces the reported output amounts without changing
-                            // executed amounts.
+                            // executed amounts. Only apply once per token to avoid
+                            // double-application when multiple orders trade the same tokens.
                             let sell_token: eth::Address =
                                 order.sell.token.as_erc20(weth).into();
                             let buy_token: eth::Address =
                                 order.buy.token.as_erc20(weth).into();
-                            competition::solution::haircut::apply_to_clearing_prices(
-                                &mut prices,
-                                order.side,
-                                sell_token,
-                                buy_token,
-                                haircut_bps,
-                            );
+                            let token_to_adjust = match order.side {
+                                competition::order::Side::Sell => sell_token,
+                                competition::order::Side::Buy => buy_token,
+                            };
+                            if haircut_applied.insert(token_to_adjust) {
+                                competition::solution::haircut::apply_to_clearing_prices(
+                                    &mut prices,
+                                    order.side,
+                                    sell_token,
+                                    buy_token,
+                                    haircut_bps,
+                                );
+                            }
 
                             competition::solution::trade::Fulfillment::new(
                                 order,
