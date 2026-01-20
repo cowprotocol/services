@@ -249,7 +249,7 @@ Column                    | Type                         | Nullable | Details
  buy\_token               | bytea                        | not null | address of the token that will be bought
  sell\_amount             | numeric                      | not null | amount in sell\_token that should be sold at most
  buy\_amount              | numeric                      | not null | amount of buy\_token that should be bought at least
- valid\_to                | timestamptz                  | not null | point in time when the order can no longer be settled
+ valid\_to                | timestamptz                  | not null | point in time when the order can no longer be settled as signed by the user.
  fee\_amount              | numeric                      | not null | amount in sell\_token the owner agreed upfront as a fee to be taken for the trade
  kind                     | [enum](#orderkind)           | not null | trade semantics of the order
  partially\_fillable      | bool                         | not null | determines if the order can be executed in multiple smaller trades or if everything has to be executed at once (fill-or-kill)
@@ -262,11 +262,11 @@ Column                    | Type                         | Nullable | Details
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
- confirmed_valid_to       | timestamptz                  | not null | timestamp at which order is no longer executable. For ethflow orders it is the validTo parsed from Settlement contract events. For regular orders it is the same value as valid_to.
+ true_valid_to | timestamptz                  | not null | timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
-- PRIMARY KEY: btree(`confirmed_valid_to`)
+- PRIMARY KEY: btree(`true_valid_to`)
 
 ### fee_policies
 

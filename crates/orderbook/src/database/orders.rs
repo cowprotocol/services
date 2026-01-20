@@ -173,7 +173,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         cancellation_timestamp: None,
-        confirmed_valid_to: order.data.valid_to as i64,
     };
 
     database::orders::insert_order(ex, &db_order)
@@ -663,7 +662,6 @@ mod tests {
             sell_amount: BigDecimal::from(1),
             buy_amount: BigDecimal::from(1),
             valid_to: valid_to_timestamp.timestamp(),
-            confirmed_valid_to: valid_to_timestamp.timestamp(),
             app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
