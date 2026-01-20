@@ -1,5 +1,5 @@
 use {
-    crate::{request_id::request_id, tracing::HeaderExtractor},
+    crate::{distributed_tracing::request_id::request_id, tracing::HeaderExtractor},
     opentelemetry::global,
     tracing::info,
     tracing_opentelemetry::OpenTelemetrySpanExt,
