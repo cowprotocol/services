@@ -166,14 +166,9 @@ async fn with_quote_haircut() {
     // baseline Expected: buy_amount_with_haircut ≈ buy_amount_no_haircut * 0.98
     let expected_haircutted = buy_amount_no_haircut * eth::U256::from(98) / eth::U256::from(100);
 
-    // Calculate actual haircut percentage for better diagnostics
-    // haircut_pct = (1 - (haircutted / original)) * 10000 to get basis points
-    let haircut_bps = if buy_amount_no_haircut > eth::U256::ZERO {
-        let ratio = buy_amount_with_haircut * eth::U256::from(10000) / buy_amount_no_haircut;
-        eth::U256::from(10000) - ratio
-    } else {
-        eth::U256::ZERO
-    };
+    // Calculate actual haircut in basis points for diagnostics
+    let ratio = buy_amount_with_haircut * eth::U256::from(10000) / buy_amount_no_haircut;
+    let haircut_bps = eth::U256::from(10000) - ratio;
 
     tracing::info!(
         buy_amount_no_haircut = %buy_amount_no_haircut,
