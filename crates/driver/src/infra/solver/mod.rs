@@ -341,7 +341,11 @@ impl Solver {
         if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
-        super::observe::sending_solve_request(self.config.name.as_str(), timeout, auction.id().is_none());
+        super::observe::sending_solve_request(
+            self.config.name.as_str(),
+            timeout,
+            auction.id().is_none(),
+        );
         let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(

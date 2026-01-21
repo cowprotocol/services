@@ -430,11 +430,7 @@ pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
 
 pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_request: bool) {
     tracing::trace!(?remaining_time, "sending solve request");
-    let kind = if is_quote_request {
-        "quote"
-    } else {
-        "auction"
-    };
+    let kind = if is_quote_request { "quote" } else { "auction" };
     metrics::get()
         .remaining_solve_time
         .with_label_values(&[solver, kind])
