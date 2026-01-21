@@ -8,7 +8,6 @@ use {
     crate::gas_price_estimation::GasPriceEstimating,
     alloy::eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
     anyhow::Result,
-    tracing::instrument,
 };
 
 /// An instrumented gas price estimator that wraps an inner one.
@@ -34,11 +33,17 @@ impl<T> GasPriceEstimating for InstrumentedGasEstimator<T>
 where
     T: GasPriceEstimating,
 {
-    #[instrument(skip_all)]
     async fn estimate(&self) -> Result<Eip1559Estimation> {
-        let estimate = self.inner.estimate().await?;
+        self.inner.estimate().await
+    }
 
-        // do not use effective_gas_price here because it would duplicate the estimate call
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        self.inner.base_fee().await
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn effective_gas_price(&self) -> Result<u128> {
+        let estimate = self.estimate().await?;
         let base_fee = self.inner.base_fee().await?;
         self.metrics.base_fee.set(base_fee.unwrap_or(0) as i64);
 
@@ -53,11 +58,7 @@ where
         );
 
         self.metrics.gas_price.set(effective_gas_price as f64 / 1e9);
-        Ok(estimate)
-    }
-
-    async fn base_fee(&self) -> Result<Option<u64>> {
-        self.inner.base_fee().await
+        Ok(effective_gas_price)
     }
 }
 
