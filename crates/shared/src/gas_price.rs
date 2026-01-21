@@ -42,13 +42,19 @@ where
         let base_fee = self.inner.base_fee().await?;
         self.metrics.base_fee.set(base_fee.unwrap_or(0) as i64);
 
-        self.metrics.gas_price.set(
-            (calc_effective_gas_price(
-                estimate.max_fee_per_gas,
-                estimate.max_priority_fee_per_gas,
-                base_fee,
-            ) / 10u128.pow(9)) as f64,
+        let effective_gas_price = calc_effective_gas_price(
+            estimate.max_fee_per_gas,
+            estimate.max_priority_fee_per_gas,
+            base_fee,
         );
+
+        tracing::info!(
+            "estimate: {estimate:?}, base fee: {base_fee:?}, effective gas price: {effective_gas_price}"
+        );
+
+        self.metrics
+            .gas_price
+            .set((effective_gas_price / 10u128.pow(9)) as f64);
         Ok(estimate)
     }
 
