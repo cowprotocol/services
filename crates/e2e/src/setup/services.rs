@@ -31,6 +31,7 @@ use {
     std::{
         collections::{HashMap, hash_map::Entry},
         ops::DerefMut,
+        str::FromStr,
         sync::LazyLock,
         time::Duration,
     },
@@ -721,18 +722,24 @@ impl<'a> Services<'a> {
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Trade>, (StatusCode, String)> {
-        let mut query_params = vec![format!("offset={offset}"), format!("limit={limit}")];
-
+        let mut query_params = vec![("offset", offset.to_string()), ("limit", limit.to_string())];
         if let Some(uid) = order_uid {
-            query_params.push(format!("orderUid={uid}"));
+            query_params.push(("orderUid", uid.to_string()));
         }
-
         if let Some(owner_addr) = owner {
-            query_params.push(format!("owner={owner_addr:?}"));
+            query_params.push(("owner", owner_addr.to_string()));
         }
 
-        let url = format!("{API_HOST}/api/v2/trades?{}", query_params.join("&"));
-        let response = self.http.get(url).send().await.unwrap();
+        let url = Url::from_str(format!("{API_HOST}/api/v2/trades").as_str())
+            .expect("string should be a valid URL");
+
+        let response = self
+            .http
+            .get(url)
+            .query(&query_params)
+            .send()
+            .await
+            .unwrap();
 
         let status = response.status();
         let body = response.text().await.unwrap();
