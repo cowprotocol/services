@@ -270,7 +270,7 @@ Indexes:
 - order_owner: hash(`owner`)
 - order_quoting_parameters: btree(`sell_token`, `buy_token`, `sell_amount`)
 - order_sell_buy_tokens: btree(`sell_token`, `buy_token`)
-- user_order_creation_timestamp: btree(`owner`, `creation_timestamp`)
+- user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - version_idx: btree(`settlement_contract`)
 
 ### fee_policies
