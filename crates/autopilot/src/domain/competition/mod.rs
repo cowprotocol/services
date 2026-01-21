@@ -7,12 +7,12 @@ use {
     std::collections::HashMap,
 };
 
-mod participant;
+mod bid;
 mod participation_guard;
 pub mod winner_selection;
 
 pub use {
-    participant::{Participant, RankType, Ranked, Scored, Unscored},
+    bid::{Bid, RankType, Ranked, Scored, Unscored},
     participation_guard::SolverParticipationGuard,
 };
 

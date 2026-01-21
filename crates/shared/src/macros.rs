@@ -1,11 +1,4 @@
 #[macro_export]
-macro_rules! addr {
-    ($val:literal) => {
-        ::ethcontract::H160(::hex_literal::hex!($val))
-    };
-}
-
-#[macro_export]
 macro_rules! bfp {
     ($val:literal) => {
         ($val)

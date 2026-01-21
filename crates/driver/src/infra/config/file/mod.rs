@@ -304,14 +304,21 @@ struct SolverConfig {
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
 
-    /// Configuration for bad token detection.
+    /// Configuration for bad order detection.
     #[serde(default, flatten)]
-    bad_token_detection: BadTokenDetectionConfig,
+    bad_order_detection: BadOrderDetectionConfig,
 
     /// The maximum number of `/settle` requests that can be queued up
     /// before the driver starts dropping new `/solve` requests.
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
+
+    /// Haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make bids more conservative by adjusting clearing prices
+    /// to report lower surplus. Useful for solvers prone to negative slippage.
+    /// Default: 0 (no haircut).
+    #[serde(default)]
+    haircut_bps: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -728,49 +735,13 @@ pub struct LiquoriceConfig {
     pub http_timeout: Duration,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[serde(tag = "estimator")]
 pub enum GasEstimatorType {
-    #[serde(rename_all = "kebab-case")]
-    Native {
-        // Effective reward value to be selected from each individual block
-        // Example: 20 means 20% of the transactions with the lowest gas price will be analyzed
-        #[serde(default = "default_max_reward_percentile")]
-        max_reward_percentile: usize,
-        // Economical priority fee to be selected from sorted individual block reward percentiles
-        // This constitutes the part of priority fee that doesn't depend on the time_limit
-        #[serde(default = "default_min_block_percentile")]
-        min_block_percentile: f64,
-        // Urgent priority fee to be selected from sorted individual block reward percentiles
-        // This constitutes the part of priority fee that depends on the time_limit
-        #[serde(default = "default_max_block_percentile")]
-        max_block_percentile: f64,
-    },
     Web3,
+    #[default]
     Alloy,
-}
-
-impl Default for GasEstimatorType {
-    fn default() -> Self {
-        GasEstimatorType::Native {
-            max_reward_percentile: default_max_reward_percentile(),
-            min_block_percentile: default_min_block_percentile(),
-            max_block_percentile: default_max_block_percentile(),
-        }
-    }
-}
-
-fn default_max_reward_percentile() -> usize {
-    20
-}
-
-fn default_min_block_percentile() -> f64 {
-    30.
-}
-
-fn default_max_block_percentile() -> f64 {
-    60.
 }
 
 /// Defines various strategies to prioritize orders.
@@ -829,7 +800,7 @@ fn default_simulation_bad_token_max_age() -> Duration {
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct BadTokenDetectionConfig {
+pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
     #[serde(default)]
     pub token_supported: HashMap<eth::Address, bool>,
@@ -840,46 +811,65 @@ pub struct BadTokenDetectionConfig {
     pub enable_simulation_strategy: bool,
 
     /// Whether the solver opted into detecting unsupported
-    /// tokens with metrics-based detection.
-    #[serde(default, rename = "enable-metrics-bad-token-detection")]
+    /// orders with metrics-based detection. Orders that continue to result
+    /// in reverting solutions will be ignored temporarily.
+    #[serde(default, rename = "enable-metrics-bad-order-detection")]
     pub enable_metrics_strategy: bool,
 
-    /// The ratio of failures to attempts that qualifies a token as unsupported.
+    /// The ratio of failures to attempts that qualifies an order as
+    /// unsupported.
     #[serde(
-        default = "default_metrics_bad_token_detector_failure_ratio",
-        rename = "metrics-bad-token-detection-failure-ratio"
+        default = "default_metrics_bad_order_detector_failure_ratio",
+        rename = "metrics-bad-order-detection-failure-ratio"
     )]
     pub metrics_strategy_failure_ratio: f64,
 
-    /// The minimum number of attempts required before evaluating a token’s
+    /// The minimum number of attempts required before evaluating an order’s
     /// quality.
     #[serde(
-        default = "default_metrics_bad_token_detector_required_measurements",
-        rename = "metrics-bad-token-detection-required-measurements"
+        default = "default_metrics_bad_order_detector_required_measurements",
+        rename = "metrics-bad-order-detection-required-measurements"
     )]
     pub metrics_strategy_required_measurements: u32,
 
     /// Controls whether the metrics based detection strategy should only log
-    /// unsupported tokens or actually filter them out.
+    /// unsupported orders or actually filter them out.
     #[serde(
-        default = "default_metrics_bad_token_detector_log_only",
-        rename = "metrics-bad-token-detection-log-only"
+        default = "default_metrics_bad_order_detector_log_only",
+        rename = "metrics-bad-order-detection-log-only"
     )]
     pub metrics_strategy_log_only: bool,
 
-    /// How long the metrics based bad token detection should flag a token as
+    /// How long the metrics based bad order detection should flag an order as
     /// unsupported before it allows to solve for that token again.
     #[serde(
-        default = "default_metrics_bad_token_detector_freeze_time",
-        rename = "metrics-bad-token-detection-token-freeze-time",
+        default = "default_metrics_bad_order_detector_freeze_time",
+        rename = "metrics-bad-order-detection-order-freeze-time",
         with = "humantime_serde"
     )]
-    pub metrics_strategy_token_freeze_time: Duration,
+    pub metrics_strategy_freeze_time: Duration,
+
+    /// How frequently we try to collect garbage on the metrics cache.
+    #[serde(
+        default = "default_metrics_bad_order_detector_gc_interval",
+        rename = "metrics-bad-order-detection-gc-interval",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_gc_interval: Duration,
+
+    /// How long we must not have seen an order in a solution before
+    /// the associated metrics get evicted from the cache.
+    #[serde(
+        default = "default_metrics_bad_order_detector_gc_max_age",
+        rename = "metrics-bad-order-detection-gc-max-age",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_gc_max_age: Duration,
 }
 
-impl Default for BadTokenDetectionConfig {
+impl Default for BadOrderDetectionConfig {
     fn default() -> Self {
-        serde_json::from_str("{}").expect("MetricsBadTokenDetectorConfig uses default values")
+        serde_json::from_str("{}").expect("MetricsBadOrderDetectorConfig uses default values")
     }
 }
 
@@ -930,11 +920,11 @@ impl<'de> Deserialize<'de> for AppDataFetching {
     }
 }
 
-fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
+fn default_metrics_bad_order_detector_failure_ratio() -> f64 {
     0.9
 }
 
-fn default_metrics_bad_token_detector_required_measurements() -> u32 {
+fn default_metrics_bad_order_detector_required_measurements() -> u32 {
     20
 }
 
@@ -945,12 +935,20 @@ fn default_settle_queue_size() -> usize {
     2
 }
 
-fn default_metrics_bad_token_detector_log_only() -> bool {
+fn default_metrics_bad_order_detector_log_only() -> bool {
     true
 }
 
-fn default_metrics_bad_token_detector_freeze_time() -> Duration {
+fn default_metrics_bad_order_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+fn default_metrics_bad_order_detector_gc_interval() -> Duration {
+    Duration::from_mins(1)
+}
+
+fn default_metrics_bad_order_detector_gc_max_age() -> Duration {
+    Duration::from_hours(1)
 }
 
 /// According to statistics, the average size of the app-data is ~800 bytes.

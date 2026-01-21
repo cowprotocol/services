@@ -10,7 +10,7 @@ use {
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
     alloy::{
-        primitives::{Address, B256, U256, U512, b256},
+        primitives::{Address, B256, U256, U512, b256, keccak256},
         signers::local::PrivateKeySigner,
     },
     anyhow::{Result, anyhow},
@@ -29,7 +29,6 @@ use {
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, VariantNames},
-    web3::signing::{self},
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -256,7 +255,7 @@ impl OrderData {
         hash_data[351] = self.partially_fillable as u8;
         hash_data[352..384].copy_from_slice(&self.sell_token_balance.as_bytes());
         hash_data[384..416].copy_from_slice(&self.buy_token_balance.as_bytes());
-        signing::keccak256(&hash_data)
+        *keccak256(hash_data)
     }
 
     pub fn token_pair(&self) -> Option<TokenPair> {
@@ -515,15 +514,15 @@ impl OrderCancellations {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut encoded_uids = Vec::with_capacity(32 * self.order_uids.len());
         for order_uid in &self.order_uids {
-            encoded_uids.extend_from_slice(&signing::keccak256(&order_uid.0));
+            encoded_uids.extend_from_slice(keccak256(order_uid.0).as_slice());
         }
 
-        let array_hash = signing::keccak256(&encoded_uids);
+        let array_hash = keccak256(&encoded_uids);
 
         let mut hash_data = [0u8; 64];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        hash_data[32..64].copy_from_slice(&array_hash);
-        signing::keccak256(&hash_data)
+        hash_data[32..64].copy_from_slice(array_hash.as_slice());
+        *keccak256(hash_data)
     }
 }
 
@@ -599,8 +598,8 @@ impl OrderCancellation {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        hash_data[32..64].copy_from_slice(&signing::keccak256(&self.order_uid.0));
-        signing::keccak256(&hash_data)
+        hash_data[32..64].copy_from_slice(keccak256(self.order_uid.0).as_slice());
+        *keccak256(hash_data)
     }
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {
@@ -758,7 +757,7 @@ impl OrderUid {
         (
             B256::from_slice(&self.0[0..32]),
             Address::from_slice(&self.0[32..52]),
-            u32::from_le_bytes(self.0[52..].try_into().unwrap()),
+            u32::from_be_bytes(self.0[52..].try_into().unwrap()),
         )
     }
 }
@@ -1452,7 +1451,6 @@ mod tests {
     fn debug_order_data() {
         dbg!(Order::default());
     }
-
     #[test]
     fn order_cancellations_struct_hash() {
         // Generated with Ethers.js as a reference EIP-712 hashing impl.
@@ -1469,5 +1467,26 @@ mod tests {
             let cancellations = OrderCancellations { order_uids };
             assert_eq!(cancellations.hash_struct(), struct_hash);
         }
+    }
+
+    #[test]
+    fn order_uid_parts() {
+        let order_hash = B256::random();
+        let user = Address::random();
+        let valid_to = 12341234;
+        let uid = OrderUid::from_parts(order_hash, user, valid_to);
+        let parts = uid.parts();
+        assert_eq!(order_hash, parts.0);
+        assert_eq!(user, parts.1);
+        assert_eq!(valid_to, parts.2);
+
+        let uid = OrderUid::from_str("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e89984d17af2f18f8c54873c0de68a56cc5a23e0f695ba915").unwrap();
+        let (order_hash, user, valid_to) = uid.parts();
+        assert_eq!(
+            order_hash,
+            b256!("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e")
+        );
+        assert_eq!(user, address!("0x89984d17af2f18f8c54873c0de68a56cc5a23e0f"));
+        assert_eq!(valid_to, 1767614741);
     }
 }

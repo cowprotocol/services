@@ -1,7 +1,8 @@
 pub use alloy::primitives::{Address, B256, U256};
 use {
-    crate::{domain, util::conv::U256Ext},
+    crate::domain,
     derive_more::{Display, From, Into},
+    number::u256_ext::U256Ext,
 };
 
 /// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because

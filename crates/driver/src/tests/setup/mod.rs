@@ -21,6 +21,7 @@ use {
             cases::{
                 AB_ORDER_AMOUNT,
                 AD_ORDER_AMOUNT,
+                ApproxEq,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,
                 DEFAULT_POOL_AMOUNT_B,
@@ -29,7 +30,6 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
                 EtherExt,
-                is_approximately_equal,
             },
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
@@ -360,6 +360,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+    /// Haircut in basis points (0-10000) for conservative bidding.
+    haircut_bps: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +388,7 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
+        haircut_bps: 0,
     }
 }
 
@@ -423,6 +426,13 @@ impl Solver {
     pub fn merge_solutions(mut self) -> Self {
         self.merge_solutions = true;
         self
+    }
+
+    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
+        Self {
+            haircut_bps,
+            ..self
+        }
     }
 }
 
@@ -1358,14 +1368,8 @@ impl SolveOk<'_> {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(is_approximately_equal(
-                u256(trade.get("executedSell").unwrap()),
-                expected_sell
-            ));
-            assert!(is_approximately_equal(
-                u256(trade.get("executedBuy").unwrap()),
-                expected_buy
-            ));
+            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(&expected_sell, None));
+            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(&expected_buy, None));
         }
         self
     }
@@ -1489,6 +1493,11 @@ pub struct QuoteOk<'a> {
 }
 
 impl QuoteOk<'_> {
+    /// Get the JSON response body.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {

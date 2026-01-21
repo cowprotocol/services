@@ -15,7 +15,6 @@ const-hex = { workspace = true }
 number = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
-web3 = { workspace = true }
 
 [lints]
 workspace = true

@@ -5,9 +5,8 @@
 //! anomalies.
 
 use {
+    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
     anyhow::Result,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
-    std::time::Duration,
     tracing::instrument,
 };
 
@@ -34,17 +33,6 @@ impl<T> GasPriceEstimating for InstrumentedGasEstimator<T>
 where
     T: GasPriceEstimating,
 {
-    #[instrument(skip_all)]
-    async fn estimate_with_limits(
-        &self,
-        gas_limit: f64,
-        time_limit: Duration,
-    ) -> Result<GasPrice1559> {
-        // Instrumenting gas estimates with limits is hard. Since we don't use
-        // it in the orderbook, lets leave this out for now.
-        self.inner.estimate_with_limits(gas_limit, time_limit).await
-    }
-
     #[instrument(skip_all)]
     async fn estimate(&self) -> Result<GasPrice1559> {
         let estimate = self.inner.estimate().await?;

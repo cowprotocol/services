@@ -6,15 +6,12 @@ use {
         http_client::HttpClientFactory,
     },
     alloy::{
-        primitives::{Address, B256, TxKind, map::B256Map},
+        primitives::{Address, B256, TxKind, U256, map::B256Map},
         rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
     },
     anyhow::{Result, ensure},
     bytes_hex::BytesHex,
     clap::Parser,
-    contracts::errors::EthcontractErrorType,
-    ethcontract::errors::ExecutionError,
-    ethrpc::alloy::conversions::IntoLegacy,
     prometheus::IntGaugeVec,
     reqwest::{
         Url,
@@ -28,7 +25,6 @@ use {
     },
     thiserror::Error,
     tracing::instrument,
-    web3::types::{H160, H256, U256},
 };
 /// Trait for abstracting Tenderly API.
 #[async_trait::async_trait]
@@ -176,8 +172,8 @@ pub struct SimulationRequest {
     pub block_number: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_index: Option<i64>,
-    pub from: H160,
-    pub to: H160,
+    pub from: Address,
+    pub to: Address,
     #[serde(with = "bytes_hex")]
     pub input: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -252,19 +248,10 @@ pub struct CallTrace {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccessListItem {
     /// Accessed address
-    pub address: H160,
+    pub address: Address,
     /// Accessed storage keys
     #[serde(default)]
-    pub storage_keys: Vec<H256>,
-}
-
-impl From<AccessListItem> for web3::types::AccessListItem {
-    fn from(item: AccessListItem) -> Self {
-        Self {
-            address: item.address,
-            storage_keys: item.storage_keys,
-        }
-    }
+    pub storage_keys: Vec<B256>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -358,19 +345,6 @@ impl Clone for SimulationError {
     }
 }
 
-impl From<web3::Error> for SimulationError {
-    fn from(err: web3::Error) -> Self {
-        let err = ExecutionError::from(err);
-        match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Node => Self::Other(err.into()),
-            EthcontractErrorType::Contract => match err {
-                ExecutionError::Revert(message) => Self::Revert(message),
-                _ => Self::Revert(None),
-            },
-        }
-    }
-}
-
 pub struct TenderlyCodeSimulator {
     tenderly: Arc<dyn TenderlyApi>,
     network_id: String,
@@ -397,24 +371,15 @@ impl TenderlyCodeSimulator {
             // simulation results match in case critical state changed within the block.
             transaction_index: Some(-1),
             network_id: self.network_id.clone(),
-            from: tx.from.map(IntoLegacy::into_legacy).unwrap_or_default(),
-            to: tx
-                .to
-                .and_then(TxKind::into_to)
-                .map(IntoLegacy::into_legacy)
-                .unwrap_or_default(),
-            input: tx
-                .input
-                .into_input()
-                .map(IntoLegacy::into_legacy)
-                .unwrap_or_default()
-                .0,
+            from: tx.from.unwrap_or_default(),
+            to: tx.to.and_then(TxKind::into_to).unwrap_or_default(),
+            input: tx.input.into_input().unwrap_or_default().to_vec(),
             gas: tx.gas,
             gas_price: tx
                 .gas_price
                 .map(TryInto::try_into)
                 .map(|gas_price| gas_price.unwrap()),
-            value: tx.value.map(IntoLegacy::into_legacy),
+            value: tx.value,
             simulation_kind: Some(SimulationKind::Quick),
             state_objects: Some(
                 overrides
@@ -462,16 +427,22 @@ impl TryFrom<alloy::rpc::types::eth::state::AccountOverride> for StateObject {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex, serde_json::json, testlib::assert_json_matches};
+    use {
+        super::*,
+        alloy::primitives::address,
+        hex_literal::hex,
+        serde_json::json,
+        testlib::assert_json_matches,
+    };
 
     #[test]
     fn serialize_deserialize_simulation_request() {
         let request = SimulationRequest {
             network_id: "1".to_string(),
             block_number: Some(14122310),
-            from: addr!("e92f359e6f05564849afa933ce8f62b8007a1d5d"),
+            from: address!("e92f359e6f05564849afa933ce8f62b8007a1d5d"),
             input: hex!("13d79a0b00000000000000000000000000000000000000000000").into(),
-            to: addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            to: address!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
             generate_access_list: Some(true),
             transaction_index: None,
             gas: None,
@@ -501,7 +472,7 @@ mod tests {
         let result = tenderly
             .simulate(SimulationRequest {
                 network_id: "1".to_string(),
-                to: addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
+                to: address!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
                 simulation_kind: Some(SimulationKind::Quick),
                 ..Default::default()
             })

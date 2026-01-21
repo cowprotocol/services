@@ -83,6 +83,7 @@ impl CoinGecko {
             Chain::Lens => "lens".to_string(),
             Chain::Linea => "linea".to_string(),
             Chain::Plasma => "plasma".to_string(),
+            Chain::Ink => "ink".to_string(),
             Chain::Sepolia | Chain::Goerli | Chain::Hardhat => {
                 anyhow::bail!("unsupported network {}", chain.name())
             }
@@ -168,7 +169,7 @@ impl CoinGecko {
             .cloned()
             .ok_or(PriceEstimationError::NoLiquidity)?
             .try_into()
-            .context("failed to convert price to decimal")?;
+            .map_err(|e| anyhow::anyhow!("failed to convert price to decimal: {:?}", e))?;
 
         let prices_in_denominator = tokens
             .into_iter()
@@ -207,7 +208,7 @@ impl CoinGecko {
             .cloned()
             .ok_or(PriceEstimationError::NoLiquidity)?
             .try_into()
-            .context("failed to convert price to decimal")?;
+            .map_err(|e| anyhow::anyhow!("failed to convert price to decimal: {:?}", e))?;
 
         // When the quoted token and the denominator have different number of decimals
         // the computed price effectively needs to be shifted by the difference.

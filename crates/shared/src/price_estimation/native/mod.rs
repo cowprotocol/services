@@ -115,7 +115,14 @@ impl NativePriceEstimating for NativePriceEstimator {
 }
 
 pub(crate) fn is_price_malformed(price: f64) -> bool {
-    !price.is_normal() || price <= 0.
+    !price.is_normal()
+        || price <= 0.
+        // To convert the f64 native price into a format usable in the auction
+        // the autopilot calls `to_normalized_price()`. Orders placed using a
+        // native price that fails this conversion will likely time out because
+        // the autopilot will not put them into the auction. To prevent that we
+        // already check the conversion here.
+        || to_normalized_price(price).is_none()
 }
 
 #[cfg(test)]
@@ -124,7 +131,6 @@ mod tests {
         super::*,
         crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         alloy::primitives::{Address, U256},
-        primitive_types::H160,
         std::str::FromStr,
     };
 
@@ -138,7 +144,7 @@ mod tests {
                 Ok(Estimate {
                     out_amount: U256::from(123_456_789_000_000_000u128),
                     gas: 0,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })

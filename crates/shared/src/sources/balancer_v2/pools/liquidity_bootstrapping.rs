@@ -6,13 +6,12 @@ use {
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
+    alloy::eips::BlockId,
     anyhow::Result,
     contracts::alloy::{
         BalancerV2LiquidityBootstrappingPool,
         BalancerV2LiquidityBootstrappingPoolFactory,
     },
-    ethcontract::BlockId,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
 };
 
@@ -62,7 +61,7 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory::Instance {
         let fetch_common = common_pool_state.map(Result::Ok);
         // Liquidity bootstrapping pools use dynamic weights, meaning that we
         // need to fetch them every time.
-        let weights_block = block.into_alloy();
+        let weights_block = block;
         let swap_block = weights_block;
         let pool_contract_clone = pool_contract.clone();
         let fetch_weights = async move {
@@ -98,7 +97,7 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory::Instance {
                         address,
                         TokenState {
                             common,
-                            weight: Bfp::from_wei(weight.into_legacy()),
+                            weight: Bfp::from_wei(weight),
                         },
                     )
                 })
@@ -120,15 +119,14 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
-        alloy::primitives::Address,
-        ethcontract::H256,
+        alloy::primitives::{Address, B256},
     };
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0xfa),
             swap_enabled: true,

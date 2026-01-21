@@ -29,7 +29,6 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
     futures::{StreamExt, stream},
@@ -498,10 +497,8 @@ where
                     gas_amount: quote.data.fee_parameters.gas_amount,
                     gas_price: quote.data.fee_parameters.gas_price,
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
-                    sell_amount: number::conversions::alloy::u256_to_big_decimal(
-                        &quote.sell_amount,
-                    ),
-                    buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.try_into()?,
@@ -615,11 +612,11 @@ fn convert_onchain_order_placement(
         sell_token: ByteArray(order_data.sell_token.0.0),
         buy_token: ByteArray(order_data.buy_token.0.0),
         receiver: order_data.receiver.map(|addr| ByteArray(addr.0.0)),
-        sell_amount: u256_to_big_decimal(&order_data.sell_amount.into_legacy()),
-        buy_amount: u256_to_big_decimal(&order_data.buy_amount.into_legacy()),
+        sell_amount: u256_to_big_decimal(&order_data.sell_amount),
+        buy_amount: u256_to_big_decimal(&order_data.buy_amount),
         valid_to: order_data.valid_to as i64,
         app_data: ByteArray(order_data.app_data.0),
-        fee_amount: u256_to_big_decimal(&order_data.fee_amount.into_legacy()),
+        fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         kind: order_kind_into(order_data.kind),
         partially_fillable: order_data.partially_fillable,
         signature: order_placement.signature.data.to_vec(),
@@ -793,10 +790,7 @@ mod test {
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
             signature::SigningScheme,
         },
-        number::conversions::{
-            alloy::u256_to_big_decimal as alloy_u256_to_big_decimal,
-            u256_to_big_decimal,
-        },
+        number::conversions::u256_to_big_decimal,
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,
@@ -1015,17 +1009,17 @@ mod test {
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.into_legacy().0),
+            owner: ByteArray(owner.0.0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
             receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
-            sell_amount: alloy_u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: alloy_u256_to_big_decimal(&expected_order_data.buy_amount),
+            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
+            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: alloy_u256_to_big_decimal(&expected_order_data.fee_amount),
+            fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
@@ -1050,7 +1044,7 @@ mod test {
         let buy_amount = U256::from(11);
         let valid_to = 1u32;
         let app_data = [11u8; 32];
-        let fee_amount = U256::from(0);
+        let fee_amount = U256::ZERO;
         let owner = Address::from([5; 20]);
         let order_data = OrderData {
             sell_token,
@@ -1129,17 +1123,17 @@ mod test {
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.into_legacy().0),
+            owner: ByteArray(owner.0.0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
             receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
-            sell_amount: alloy_u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: alloy_u256_to_big_decimal(&expected_order_data.buy_amount),
+            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
+            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: u256_to_big_decimal(&fee_amount.into_legacy()),
+            fee_amount: u256_to_big_decimal(&fee_amount),
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Limit,
             partially_fillable: expected_order_data.partially_fillable,
@@ -1301,8 +1295,8 @@ mod test {
             gas_amount: quote.data.fee_parameters.gas_amount,
             gas_price: quote.data.fee_parameters.gas_price,
             sell_token_price: quote.data.fee_parameters.sell_token_price,
-            sell_amount: number::conversions::alloy::u256_to_big_decimal(&quote.sell_amount),
-            buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+            sell_amount: u256_to_big_decimal(&quote.sell_amount),
+            buy_amount: u256_to_big_decimal(&quote.buy_amount),
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.try_into().unwrap(),
