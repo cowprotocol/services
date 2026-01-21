@@ -29,21 +29,25 @@ pub async fn insert_or_overwrite_ethflow_order(
 ) -> Result<(), sqlx::Error> {
     const INSERT_ETHFLOW_ORDER_QUERY: &str = "\
         INSERT INTO ethflow_orders (uid, valid_to) VALUES ($1, $2) ON CONFLICT (uid) DO UPDATE SET \
-                         valid_to = $2;";
-    ex.execute(sqlx::query(INSERT_ETHFLOW_ORDER_QUERY)
-        .bind(event.uid)
-        .bind(event.valid_to))
-        .await?;
+                                              valid_to = $2;";
+    ex.execute(
+        sqlx::query(INSERT_ETHFLOW_ORDER_QUERY)
+            .bind(event.uid)
+            .bind(event.valid_to),
+    )
+    .await?;
 
     const UPDATE_TRUE_VALID_TO_QUERY: &str = r#"
         UPDATE orders
         SET true_valid_to = $1
         WHERE uid = $2
     "#;
-    ex.execute(sqlx::query(UPDATE_TRUE_VALID_TO_QUERY)
-        .bind(event.valid_to)
-        .bind(event.uid))
-        .await?;
+    ex.execute(
+        sqlx::query(UPDATE_TRUE_VALID_TO_QUERY)
+            .bind(event.valid_to)
+            .bind(event.uid),
+    )
+    .await?;
     Ok(())
 }
 
