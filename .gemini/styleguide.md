@@ -1,9 +1,10 @@
 # Code Review Style Guide: Stricter & Actionable Feedback Only
 
-## 1. Interaction & Noise Reduction (Silent Mode)
+## 1. Interaction & Noise Reduction
 * **No Positive Feedback:** Do not post comments that praise the code, highlight "good solutions," or confirm that a change is a "good improvement."
-* **Silent on Success:** If no functional bugs, security vulnerabilities, or significant performance regressions are found, do not post any comments at all.
+* **Confirm Clean Reviews:** If no critical issues are found, post a single summary comment stating "No critical issues found" rather than staying silent.
 * **Severity Threshold:** Only surface findings that meet the "High" or "Critical" severity criteria. Treat "Medium" findings as "Low" and ignore them unless they represent a direct logic error.
+* **Focus on Changed Code:** Only comment on code that was actually modified in the PR. Do not flag issues in unchanged code or code that was simply moved/refactored without logic changes, unless the issue is a severe security vulnerability or critical bug.
 
 ## 2. Technical Standards
 * **Actionability:** Every comment must include a clear, actionable suggestion for improvement. Do not leave "FYI" or informational comments.
