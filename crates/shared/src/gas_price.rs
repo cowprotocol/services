@@ -45,7 +45,9 @@ where
     async fn effective_gas_price(&self) -> Result<u128> {
         let estimate = self.estimate().await?;
         let base_fee = self.inner.base_fee().await?;
-        self.metrics.base_fee.set(base_fee.unwrap_or(0) as i64);
+        self.metrics
+            .base_fee
+            .set(base_fee.unwrap_or(0).cast_signed());
 
         let effective_gas_price = calc_effective_gas_price(
             estimate.max_fee_per_gas,
