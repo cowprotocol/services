@@ -208,6 +208,7 @@ impl Solver {
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
+                .tcp_keepalive(Duration::from_secs(15))
                 .build()?,
             config,
             eth,

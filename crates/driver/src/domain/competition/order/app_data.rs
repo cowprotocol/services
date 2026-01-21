@@ -5,7 +5,7 @@ use {
     derive_more::From,
     moka::future::Cache,
     reqwest::StatusCode,
-    std::{collections::HashMap, sync::Arc},
+    std::{collections::HashMap, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
 };
@@ -34,7 +34,10 @@ struct Inner {
 impl AppDataRetriever {
     pub fn new(orderbook_url: Url, cache_size: u64) -> Self {
         Self(Arc::new(Inner {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .tcp_keepalive(Duration::from_secs(15))
+                .build()
+                .expect("reqwest client built correctly"),
             base_url: orderbook_url,
             cache: Cache::new(cache_size),
         }))
