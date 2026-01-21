@@ -320,13 +320,13 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
             quote_response_different_receiver
                 .quote
                 .buy_amount
-                .is_approx_eq(&quote_response.quote.buy_amount, Some(0.01))
+                .is_approx_eq(&quote_response.quote.buy_amount, Some(0.0001))
         );
         assert!(
             quote_response_different_receiver
                 .quote
                 .sell_amount
-                .is_approx_eq(&quote_response.quote.sell_amount, Some(0.01))
+                .is_approx_eq(&quote_response.quote.sell_amount, Some(0.0001))
         );
     }
 
