@@ -187,6 +187,10 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
+    /// Quote haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make competition bids more conservative. Does not modify
+    /// interaction calldata. Default: 0 (no haircut).
+    pub haircut_bps: u32,
 }
 
 impl Solver {
@@ -275,6 +279,11 @@ impl Solver {
 
     pub fn fetch_liquidity_at_block(&self) -> infra::liquidity::AtBlock {
         self.config.fetch_liquidity_at_block.clone()
+    }
+
+    /// Quote haircut in basis points (0-10000) for conservative bidding.
+    pub fn haircut_bps(&self) -> u32 {
+        self.config.haircut_bps
     }
 
     /// Make a POST request instructing the solver to solve an auction.

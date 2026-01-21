@@ -319,6 +319,7 @@ async fn create_config_file(
                http-time-buffer = "{}ms"
                fee-handler = {}
                merge-solutions = {}
+               haircut-bps = {}
                "#,
             solver.name,
             addr,
@@ -333,6 +334,7 @@ async fn create_config_file(
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
+            solver.haircut_bps,
         )
         .unwrap();
     }

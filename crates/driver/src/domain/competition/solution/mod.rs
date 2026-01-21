@@ -118,6 +118,9 @@ impl Solution {
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),
+                    // JIT orders don't get haircut because they supply private
+                    // liquidity which should not prone to negative slippage.
+                    eth::U256::ZERO,
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
