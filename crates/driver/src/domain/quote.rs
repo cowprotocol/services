@@ -82,12 +82,12 @@ impl Quote {
         // so there's at most one fulfillment in the solution.
         // Apply haircut adjustment to prices if there's a fulfillment with non-zero
         // haircut.
-        if let Some(fulfillment) = solution.trades().iter().find_map(|trade| match trade {
-            solution::Trade::Fulfillment(f) if f.haircut_fee() > eth::U256::ZERO => Some(f),
-            _ => None,
+        if let Some(trade) = solution.trades().iter().find(|trade| match trade {
+            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
+            _ => false,
         }) {
-            let sell_token: eth::Address = fulfillment.order().sell.token.into();
-            let buy_token: eth::Address = fulfillment.order().buy.token.into();
+            let sell_token: eth::Address = trade.sell().token.into();
+            let buy_token: eth::Address = trade.buy().token.into();
             let uniform_clearing = solution::trade::ClearingPrices {
                 sell: *prices
                     .get(&sell_token)
@@ -96,7 +96,7 @@ impl Quote {
                     .get(&buy_token)
                     .ok_or(QuotingFailed::ClearingBuyMissing)?,
             };
-            let custom_prices = fulfillment
+            let custom_prices = trade
                 .custom_prices(&uniform_clearing)
                 .map_err(|_| QuotingFailed::Math)?;
 
