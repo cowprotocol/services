@@ -726,7 +726,7 @@ pub fn solvable_orders(
         FROM   orders o
         LEFT   JOIN ethflow_orders e ON e.uid = o.uid
         WHERE  o.cancellation_timestamp IS NULL
-        AND o.confirmed_valid_to >= $1
+        AND o.true_valid_to >= $1
         AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
         AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
         AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -760,7 +760,6 @@ pub fn solvable_orders(
         lo.sell_token_balance,
         lo.buy_token_balance,
         lo.class,
-        lo.true_valid_to,
 
         COALESCE(ta.sum_buy, 0) AS sum_buy,
         COALESCE(ta.sum_sell, 0) AS sum_sell,
