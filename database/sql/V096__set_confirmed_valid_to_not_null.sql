@@ -1,7 +1,3 @@
--- This migration should only be applied when the manual steps in
--- V095__add_true_valid_to_for_orders.sql have been completed.
--- to ensure there is no excessive load on db
-
 -- migrate any remaining orders
 UPDATE orders
 SET true_valid_to = COALESCE(

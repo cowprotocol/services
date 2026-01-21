@@ -725,19 +725,19 @@ pub fn solvable_orders(
         SELECT o.*
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
-        AND o.true_valid_to >= $1
-        AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
-        AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
-        AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
+            AND o.true_valid_to >= $1
+            AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
+            AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
+            AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
     ),
     trades_agg AS (
-            SELECT t.order_uid,
-                    SUM(t.buy_amount) AS sum_buy,
-                    SUM(t.sell_amount) AS sum_sell,
-                    SUM(t.fee_amount) AS sum_fee
-            FROM trades t
-            JOIN live_orders lo ON lo.uid = t.order_uid
-            GROUP BY t.order_uid
+        SELECT t.order_uid,
+                SUM(t.buy_amount) AS sum_buy,
+                SUM(t.sell_amount) AS sum_sell,
+                SUM(t.fee_amount) AS sum_fee
+        FROM trades t
+        JOIN live_orders lo ON lo.uid = t.order_uid
+        GROUP BY t.order_uid
     )
     SELECT
         lo.uid,
@@ -962,12 +962,12 @@ pub async fn user_orders_with_quote(
         SELECT o.*
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
-        AND o.true_valid_to >= $1
-        AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
-        AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
-        AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
-        AND  o.owner = $2
-        AND  o.class = 'limit'
+            AND o.true_valid_to >= $1
+            AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
+            AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
+            AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
+            AND  o.owner = $2
+            AND  o.class = 'limit'
     )
     SELECT
         o_quotes.sell_amount  AS quote_sell_amount,
