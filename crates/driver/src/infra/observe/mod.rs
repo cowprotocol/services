@@ -306,6 +306,7 @@ pub fn solver_response(
     res: Result<&str, &http::Error>,
     solver: &str,
     compute_time: Duration,
+    is_quote_request: bool,
 ) {
     match res {
         Ok(res) => {
@@ -315,9 +316,10 @@ pub fn solver_response(
             tracing::warn!(%endpoint, ?err, "failed to receive response from solver")
         }
     }
+    let kind = if is_quote_request { "quote" } else { "auction" };
     metrics::get()
         .used_solve_time
-        .with_label_values(&[solver])
+        .with_label_values(&[solver, kind])
         .observe(compute_time.as_secs_f64());
 }
 
@@ -426,11 +428,12 @@ pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
     tracing::debug!(?deadline, ?timeouts, "computed deadline");
 }
 
-pub fn sending_solve_request(solver: &str, remaining_time: Duration) {
+pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_request: bool) {
     tracing::trace!(?remaining_time, "sending solve request");
+    let kind = if is_quote_request { "quote" } else { "auction" };
     metrics::get()
         .remaining_solve_time
-        .with_label_values(&[solver])
+        .with_label_values(&[solver, kind])
         .observe(remaining_time.as_secs_f64());
 }
 

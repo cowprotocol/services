@@ -759,6 +759,7 @@ pub fn solvable_orders(
         lo.sell_token_balance,
         lo.buy_token_balance,
         lo.class,
+        lo.true_valid_to,
 
         COALESCE(ta.sum_buy, 0) AS sum_buy,
         COALESCE(ta.sum_sell, 0) AS sum_sell,
@@ -862,6 +863,7 @@ SELECT
     so.sell_token_balance,
     so.buy_token_balance,
     so.class,
+    so.true_valid_to,
 
     COALESCE(ta.sum_buy, 0) AS sum_buy,
     COALESCE(ta.sum_sell, 0) AS sum_sell,
