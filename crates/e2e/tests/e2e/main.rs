@@ -21,7 +21,6 @@ mod limit_orders;
 mod liquidity;
 mod liquidity_source_notification;
 mod malformed_requests;
-mod missing_endpoints;
 mod order_cancellation;
 mod partial_fill;
 mod partially_fillable_balance;

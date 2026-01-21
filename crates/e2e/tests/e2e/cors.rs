@@ -1,4 +1,5 @@
-//! Tests for CORS behavior to ensure the warp-to-axum migration preserves headers.
+//! Tests for CORS behavior to ensure the warp-to-axum migration preserves
+//! headers.
 
 use {
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
