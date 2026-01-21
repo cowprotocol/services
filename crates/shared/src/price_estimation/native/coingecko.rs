@@ -83,6 +83,7 @@ impl CoinGecko {
             Chain::Lens => "lens".to_string(),
             Chain::Linea => "linea".to_string(),
             Chain::Plasma => "plasma".to_string(),
+            Chain::Ink => "ink".to_string(),
             Chain::Sepolia | Chain::Goerli | Chain::Hardhat => {
                 anyhow::bail!("unsupported network {}", chain.name())
             }

@@ -21,6 +21,7 @@ use {
             cases::{
                 AB_ORDER_AMOUNT,
                 AD_ORDER_AMOUNT,
+                ApproxEq,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,
                 DEFAULT_POOL_AMOUNT_B,
@@ -29,7 +30,6 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
                 EtherExt,
-                is_approximately_equal,
             },
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
@@ -1368,14 +1368,8 @@ impl SolveOk<'_> {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(is_approximately_equal(
-                u256(trade.get("executedSell").unwrap()),
-                expected_sell
-            ));
-            assert!(is_approximately_equal(
-                u256(trade.get("executedBuy").unwrap()),
-                expected_buy
-            ));
+            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(&expected_sell, None));
+            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(&expected_buy, None));
         }
         self
     }

@@ -8,13 +8,61 @@ use {
     },
     number::units::EthUnit,
     orderbook::{
-        api::IntoWarpReply,
+        api::Error as ApiError,
         orderbook::{OrderCancellationError, OrderReplacementError},
     },
     reqwest::StatusCode,
     shared::ethrpc::Web3,
-    warp::reply::Reply,
 };
+
+// Parse OrderReplacementError from HTTP response
+// Flow: JSON -> orderbook::api::Error -> OrderReplacementError
+// Note: Returns None for unknown error types (cannot construct Other variant
+// without anyhow::Error)
+fn parse_order_replacement_error(status: StatusCode, body: &str) -> Option<OrderReplacementError> {
+    let error: ApiError = serde_json::from_str(body).ok()?;
+
+    match status {
+        StatusCode::BAD_REQUEST => match error.error_type {
+            "InvalidSignature" => Some(OrderReplacementError::InvalidSignature),
+            "OldOrderActivelyBidOn" => Some(OrderReplacementError::OldOrderActivelyBidOn),
+            _ => None,
+        },
+        StatusCode::UNAUTHORIZED if error.error_type == "WrongOwner" => {
+            Some(OrderReplacementError::WrongOwner)
+        }
+        _ => None,
+    }
+}
+
+// Parse OrderCancellationError from HTTP response
+// Flow: JSON -> orderbook::api::Error -> OrderCancellationError
+// Note: Returns None for unknown error types (cannot construct Other variant
+// without anyhow::Error)
+fn parse_order_cancellation_error(
+    status: StatusCode,
+    body: &str,
+) -> Option<OrderCancellationError> {
+    let error: ApiError = serde_json::from_str(body).ok()?;
+
+    match status {
+        StatusCode::BAD_REQUEST => match error.error_type {
+            "InvalidSignature" => Some(OrderCancellationError::InvalidSignature),
+            "AlreadyCancelled" => Some(OrderCancellationError::AlreadyCancelled),
+            "OrderFullyExecuted" => Some(OrderCancellationError::OrderFullyExecuted),
+            "OrderExpired" => Some(OrderCancellationError::OrderExpired),
+            "OnChainOrder" => Some(OrderCancellationError::OnChainOrder),
+            _ => None,
+        },
+        StatusCode::NOT_FOUND if error.error_type == "OrderNotFound" => {
+            Some(OrderCancellationError::OrderNotFound)
+        }
+        StatusCode::UNAUTHORIZED if error.error_type == "WrongOwner" => {
+            Some(OrderCancellationError::WrongOwner)
+        }
+        _ => None,
+    }
+}
 
 #[tokio::test]
 #[ignore]
@@ -166,16 +214,14 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let (error_code, error_message) = response.err().unwrap();
 
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
-
-    let expected_response = OrderReplacementError::OldOrderActivelyBidOn
-        .into_warp_reply()
-        .into_response()
-        .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
-        .await
-        .unwrap();
-    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
-    assert_eq!(error_message, expected_body);
+    let parsed_error = parse_order_replacement_error(error_code, &error_message)
+        .expect("Failed to parse error response");
+    assert!(
+        matches!(parsed_error, OrderReplacementError::OldOrderActivelyBidOn),
+        "Expected OldOrderActivelyBidOn error, got: {:?} (body: {})",
+        parsed_error,
+        error_message
+    );
 
     // Continue automining so our order can be executed
     web3.alloy
@@ -198,15 +244,14 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let (error_code, error_message) = response.err().unwrap();
 
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
-    let expected_response = OrderCancellationError::OrderFullyExecuted
-        .into_warp_reply()
-        .into_response()
-        .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
-        .await
-        .unwrap();
-    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
-    assert_eq!(error_message, expected_body);
+    let parsed_error = parse_order_cancellation_error(error_code, &error_message)
+        .expect("Failed to parse error response");
+    assert!(
+        matches!(parsed_error, OrderCancellationError::OrderFullyExecuted),
+        "Expected OrderFullyExecuted error, got: {:?} (body: {})",
+        parsed_error,
+        error_message
+    );
 }
 
 async fn try_replace_someone_else_order_test(web3: Web3) {

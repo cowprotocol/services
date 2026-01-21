@@ -1,7 +1,6 @@
 use {
     crate::{
         baseline_solver::BaselineSolvable,
-        conversions::U256Ext,
         sources::balancer_v2::pool_fetching::{
             AmplificationParameter,
             StablePool,
@@ -14,6 +13,7 @@ use {
     alloy::primitives::{Address, U256},
     error::Error,
     fixed_point::Bfp,
+    number::u256_ext::U256Ext,
     std::collections::BTreeMap,
 };
 

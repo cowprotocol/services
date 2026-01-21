@@ -17,7 +17,6 @@ async-trait = { workspace = true }
 const-hex = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
-hex-literal = { workspace = true }
 itertools = { workspace = true }
 jsonrpc-core.workspace = true
 mockall = { workspace = true, optional = true }
@@ -39,7 +38,6 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-testlib = { workspace = true }
 
 [features]
 test-util = ["dep:mockall"]

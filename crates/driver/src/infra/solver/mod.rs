@@ -4,8 +4,8 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
-                bad_tokens,
                 order,
+                risk_detector,
                 solution::{self, Solution},
             },
             eth,
@@ -179,7 +179,7 @@ pub struct Config {
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
-    pub bad_token_detection: BadTokenDetection,
+    pub bad_order_detection: BadOrderDetection,
     /// Max size of the pending settlements queue.
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
@@ -219,8 +219,8 @@ impl Solver {
         })
     }
 
-    pub fn bad_token_detection(&self) -> &BadTokenDetection {
-        &self.config.bad_token_detection
+    pub fn bad_order_detection(&self) -> &BadOrderDetection {
+        &self.config.bad_order_detection
     }
 
     pub fn persistence(&self) -> Persistence {
@@ -350,7 +350,11 @@ impl Solver {
         if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
-        super::observe::sending_solve_request(self.config.name.as_str(), timeout);
+        super::observe::sending_solve_request(
+            self.config.name.as_str(),
+            timeout,
+            auction.id().is_none(),
+        );
         let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(
@@ -358,6 +362,7 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
+            auction.id().is_none(),
         );
         let res = res?;
         let res: solvers_dto::solution::Solutions =
@@ -484,13 +489,15 @@ impl Error {
 }
 
 #[derive(Debug, Clone)]
-pub struct BadTokenDetection {
+pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
-    pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
+    pub tokens_supported: HashMap<eth::TokenAddress, risk_detector::Quality>,
     pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,
     pub metrics_strategy_log_only: bool,
-    pub metrics_strategy_token_freeze_time: Duration,
+    pub metrics_strategy_order_freeze_time: Duration,
+    pub metrics_strategy_cache_gc_interval: Duration,
+    pub metrics_strategy_cache_max_age: Duration,
 }

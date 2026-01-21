@@ -2,7 +2,7 @@ use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
     observe::distributed_tracing::tracing_warp::make_span,
-    serde::{Serialize, de::DeserializeOwned},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
         convert::Infallible,
@@ -218,14 +218,14 @@ impl ApiMetrics {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Error<'a> {
-    error_type: &'a str,
-    description: &'a str,
+pub struct Error<'a> {
+    pub error_type: &'a str,
+    pub description: &'a str,
     /// Additional arbitrary data that can be attached to an API error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<serde_json::Value>,
+    pub data: Option<serde_json::Value>,
 }
 
 pub fn error(error_type: &str, description: impl AsRef<str>) -> Json {

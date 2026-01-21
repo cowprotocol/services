@@ -12,7 +12,7 @@ use {
     anyhow::anyhow,
     chain::Chain,
     ethcontract::errors::ExecutionError,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         price_estimation::trade_verifier::balance_overrides::{
@@ -227,8 +227,7 @@ impl Ethereum {
             .estimate_gas(tx)
             .pending()
             .await
-            .map_err(anyhow::Error::from)
-            .map_err(Error::GasPrice)?
+            .map_err(Error::Rpc)?
             .into();
 
         Ok(estimated_gas)
@@ -242,12 +241,7 @@ impl Ethereum {
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
-        self.inner
-            .current_block
-            .borrow()
-            .gas_limit
-            .into_alloy()
-            .into()
+        self.inner.current_block.borrow().gas_limit.into()
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
@@ -361,7 +355,11 @@ impl Error {
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
             Error::ContractRpc(_) => true,
-            Error::Rpc(_) => false,
+            Error::Rpc(err) => {
+                let is_revert = err.is_error_resp();
+                tracing::trace!(is_revert, ?err, "classified error");
+                is_revert
+            }
         }
     }
 }

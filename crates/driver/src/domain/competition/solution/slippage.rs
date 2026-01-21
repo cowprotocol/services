@@ -5,8 +5,7 @@ use {
         liquidity::{ExactOutput, MaxInput},
     },
     num::{BigRational, CheckedDiv, CheckedMul},
-    number::conversions::big_rational_to_u256,
-    shared::conversions::U256Ext,
+    number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
 };
 
 #[derive(Clone)]

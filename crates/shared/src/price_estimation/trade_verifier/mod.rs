@@ -28,11 +28,7 @@ use {
         WETH9,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         DomainSeparator,
         order::{BUY_ETH_ADDRESS, OrderData, OrderKind},
@@ -188,7 +184,7 @@ impl TradeVerifier {
             // The exact price is not important since we are only interested in the used
             // gas units anyway.
             .gas_price(
-                u128::try_from(block.gas_price.saturating_mul(2.into()))
+                u128::try_from(block.gas_price.saturating_mul(U256::from(2)))
                 .map_err(|err| anyhow!(err))
                 .context("converting gas price to u128")?
             );
@@ -224,7 +220,7 @@ impl TradeVerifier {
                 let estimate = Estimate {
                     out_amount: *out_amount,
                     gas: trade.gas_estimate().context("no gas estimate")?,
-                    solver: trade.solver().into_legacy(),
+                    solver: trade.solver(),
                     verified: true,
                     execution: QuoteExecution {
                         interactions: map_interactions_data(&trade.interactions()),
@@ -480,11 +476,11 @@ fn legacy_settlement_to_alloy(
                 sellAmount: t.3,
                 buyAmount: t.4,
                 validTo: t.5,
-                appData: t.6.0.into(),
+                appData: t.6,
                 feeAmount: t.7,
                 flags: t.8,
                 executedAmount: t.9,
-                signature: t.10.into_alloy(),
+                signature: t.10,
             })
             .collect(),
     }
@@ -513,7 +509,7 @@ impl TradeVerifying for TradeVerifier {
             .map(|gas| Estimate {
                 out_amount,
                 gas,
-                solver: trade.solver().into_legacy(),
+                solver: trade.solver(),
                 verified: false,
                 execution: QuoteExecution {
                     interactions: map_interactions_data(&trade.interactions()),
@@ -904,7 +900,7 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: i512_to_u256(&summary.out_amount)?,
         gas: summary.gas_used.saturating_to(),
-        solver: trade.solver().into_legacy(),
+        solver: trade.solver(),
         verified: true,
         execution: QuoteExecution {
             interactions: map_interactions_data(&trade.interactions()),

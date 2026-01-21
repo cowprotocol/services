@@ -51,10 +51,7 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
     },
-    ethrpc::{
-        alloy::conversions::IntoLegacy,
-        block_stream::{BlockRetrieving, CurrentBlockWatcher},
-    },
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
     std::{
@@ -434,10 +431,7 @@ where
         .iter()
         .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number))
         .collect::<Result<_>>()?;
-    let start_sync_at_block = Some((
-        registered_pools.fetched_block_number,
-        fetched_block_hash.into_legacy(),
-    ));
+    let start_sync_at_block = Some((registered_pools.fetched_block_number, fetched_block_hash));
 
     Ok(Box::new(Registry::new(
         block_retriever,

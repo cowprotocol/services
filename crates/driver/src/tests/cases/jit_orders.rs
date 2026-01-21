@@ -5,7 +5,7 @@ use crate::{
     },
     tests::{
         self,
-        cases::{EtherExt, is_approximately_equal},
+        cases::EtherExt,
         setup::{
             self,
             ExpectedOrderAmounts,
@@ -55,6 +55,8 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
+    use crate::tests::cases::ApproxEq;
+
     let test_name = format!("JIT Order: {:?}", test_case.solution.jit_order.order.side);
     // Adjust liquidity pools so that the order is executable at the amounts
     // expected from the solver.
@@ -114,10 +116,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(is_approximately_equal(
-        result.score(),
-        test_case.solution.expected_score,
-    ));
+    assert!(
+        result
+            .score()
+            .is_approx_eq(&test_case.solution.expected_score, None),
+    );
     result.jit_orders(&[jit_order]);
 }
 
