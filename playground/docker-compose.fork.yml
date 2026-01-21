@@ -215,7 +215,7 @@ services:
 
   # Sourcify - Contract verification service
   sourcify-db:
-    image: postgres:15-alpine
+    image: postgres:16
     restart: always
     environment:
       - POSTGRES_USER=sourcify
