@@ -64,8 +64,10 @@ impl Quote {
     /// Compute clearing prices for the quote.
     ///
     /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. This ensures quotes are conservative when haircut is
-    /// enabled.
+    /// when enabled. This uses the same approach as settlement encoding:
+    /// `custom_prices()` which internally uses `sell_amount()` and
+    /// `buy_amount()` to include the haircut in the effective trade
+    /// amounts.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
@@ -84,40 +86,22 @@ impl Quote {
             solution::Trade::Fulfillment(f) if f.haircut_fee() > eth::U256::ZERO => Some(f),
             _ => None,
         }) {
-            let haircut_fee = fulfillment.haircut_fee();
-            let executed = fulfillment.executed().0;
-
-            // Haircut adjustment: reduce output by haircut percentage.
-            // The downstream formula is: out = in * sell_price / buy_price (for sell
-            // orders) To reduce output by haircut, we adjust the sell token
-            // price down. For buy orders: out = in * buy_price / sell_price, so
-            // we adjust buy price up.
             let sell_token: eth::Address = fulfillment.order().sell.token.into();
             let buy_token: eth::Address = fulfillment.order().buy.token.into();
+            let uniform_clearing = solution::trade::ClearingPrices {
+                sell: *prices
+                    .get(&sell_token)
+                    .ok_or(QuotingFailed::ClearingSellMissing)?,
+                buy: *prices
+                    .get(&buy_token)
+                    .ok_or(QuotingFailed::ClearingBuyMissing)?,
+            };
+            let custom_prices = fulfillment
+                .custom_prices(&uniform_clearing)
+                .map_err(|_| QuotingFailed::Math)?;
 
-            match fulfillment.order().side {
-                order::Side::Sell => {
-                    // Reduce sell token price to reduce output
-                    if let Some(price) = prices.get_mut(&sell_token) {
-                        // adjusted = price * (executed - haircut) / executed
-                        *price = price
-                            .saturating_mul(executed.saturating_sub(haircut_fee))
-                            .checked_div(executed)
-                            .unwrap_or(*price);
-                    }
-                }
-                order::Side::Buy => {
-                    // Increase buy token price to increase required input
-                    if let Some(price) = prices.get_mut(&buy_token) {
-                        // adjusted = price * (executed + haircut) / executed
-                        let adjusted = price
-                            .saturating_mul(executed.saturating_add(haircut_fee))
-                            .checked_div(executed)
-                            .unwrap_or(*price);
-                        *price = adjusted;
-                    }
-                }
-            }
+            prices.insert(sell_token, custom_prices.sell);
+            prices.insert(buy_token, custom_prices.buy);
         }
 
         Ok(prices)
@@ -398,6 +382,8 @@ pub enum QuotingFailed {
     ClearingBuyMissing,
     #[error("solver returned no solutions")]
     NoSolutions,
+    #[error("math error computing custom prices")]
+    Math,
 }
 
 #[derive(Debug, thiserror::Error)]
