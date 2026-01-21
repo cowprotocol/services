@@ -2,6 +2,8 @@ pub mod arguments;
 pub mod refund_service;
 pub mod submitter;
 
+// Re-export commonly used types for external consumers (e.g., e2e tests)
+pub use refund_service::RefundStatus;
 use {
     crate::arguments::Arguments,
     alloy::{providers::Provider, signers::local::PrivateKeySigner},
@@ -84,10 +86,11 @@ pub async fn run(args: arguments::Arguments) {
         refunder_account,
         args.max_gas_price,
         args.start_priority_fee_tip,
+        Some(args.lookback_time),
     );
     loop {
         tracing::info!("Staring a new refunding loop");
-        match refunder.try_to_refund_all_eligble_orders().await {
+        match refunder.try_to_refund_all_eligible_orders().await {
             Ok(_) => {
                 track_refunding_loop_result("success");
                 *liveness.last_successful_loop.write().unwrap() = Instant::now()

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::bad_tokens, eth},
+        domain::{competition::risk_detector, eth},
         infra::{
             self,
             blockchain,
@@ -9,7 +9,7 @@ use {
             mempool,
             notify,
             simulator,
-            solver::{self, Account, BadTokenDetection, SolutionMerging},
+            solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
     },
     alloy::signers::{aws::AwsSigner, local::PrivateKeySigner},
@@ -107,39 +107,45 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 solver_native_token: solver_config.manage_native_token.to_domain(),
                 quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
-                bad_token_detection: BadTokenDetection {
+                bad_order_detection: BadOrderDetection {
                     tokens_supported: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .token_supported
                         .iter()
                         .map(|(token, supported)| {
                             (
                                 eth::TokenAddress(eth::ContractAddress(*token)),
                                 match supported {
-                                    true => bad_tokens::Quality::Supported,
-                                    false => bad_tokens::Quality::Unsupported,
+                                    true => risk_detector::Quality::Supported,
+                                    false => risk_detector::Quality::Unsupported,
                                 },
                             )
                         })
                         .collect(),
                     enable_simulation_strategy: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .enable_metrics_strategy,
                     metrics_strategy_failure_ratio: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_failure_ratio,
                     metrics_strategy_required_measurements: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_required_measurements,
                     metrics_strategy_log_only: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_log_only,
-                    metrics_strategy_token_freeze_time: solver_config
-                        .bad_token_detection
-                        .metrics_strategy_token_freeze_time,
+                    metrics_strategy_order_freeze_time: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_freeze_time,
+                    metrics_strategy_cache_gc_interval: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_gc_interval,
+                    metrics_strategy_cache_max_age: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_gc_max_age,
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
@@ -147,6 +153,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Latest => liquidity::AtBlock::Latest,
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
+                haircut_bps: solver_config.haircut_bps,
             }
         }))
         .await,

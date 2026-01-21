@@ -7,7 +7,6 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
-    ethcontract::H160,
     futures::future::BoxFuture,
     itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -293,7 +292,10 @@ where
             "invalid pair values delimiter character, expected: 'value1|value2', got: '{input}'"
         )
     })?;
-    Ok((input[..pos].parse()?, input[pos + 1..].parse()?))
+    Ok((
+        input[..pos].trim().parse()?,
+        input[pos + 1..].trim().parse()?,
+    ))
 }
 
 #[derive(clap::Parser)]
@@ -539,7 +541,7 @@ pub struct Estimate {
     /// full gas cost when settling this order alone on gp
     pub gas: u64,
     /// Address of the solver that provided the quote.
-    pub solver: H160,
+    pub solver: Address,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
     /// Data associated with this estimation.
@@ -623,7 +625,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, clap::Parser};
+    use {super::*, alloy::primitives::address, clap::Parser};
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {
@@ -716,20 +718,20 @@ mod tests {
 
     #[test]
     fn test_parse_tuple() {
-        let result = parse_tuple::<H160, H160>(
+        let result = parse_tuple::<Address, Address>(
             "0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         )
         .unwrap();
         assert_eq!(
             result.0,
-            H160::from_str("0102030405060708091011121314151617181920").unwrap()
+            address!("0102030405060708091011121314151617181920")
         );
         assert_eq!(
             result.1,
-            H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+            address!("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
         );
 
-        let result = parse_tuple::<H160, H160>(
+        let result = parse_tuple::<Address, Address>(
             "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         );
         assert!(result.is_err());
@@ -737,8 +739,8 @@ mod tests {
         // test parsing with delimiter
         #[derive(Parser)]
         struct Cli {
-            #[arg(value_delimiter = ',', value_parser = parse_tuple::<H160, H160>)]
-            param: Vec<(H160, H160)>,
+            #[arg(value_delimiter = ',', value_parser = parse_tuple::<Address, Address>)]
+            param: Vec<(Address, Address)>,
         }
         let cli = Cli::parse_from(vec![
             "",
@@ -749,15 +751,15 @@ mod tests {
         assert_eq!(
             cli.param[0],
             (
-                H160::from_str("0102030405060708091011121314151617181920").unwrap(),
-                H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+                address!("0102030405060708091011121314151617181920"),
+                address!("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
             )
         );
         assert_eq!(
             cli.param[1],
             (
-                H160::from_str("f102030405060708091011121314151617181920").unwrap(),
-                H160::from_str("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+                address!("f102030405060708091011121314151617181920"),
+                address!("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
             )
         );
     }

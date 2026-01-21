@@ -2,12 +2,9 @@
 
 use {
     super::{FactoryIndexing, PoolIndexing, common},
-    crate::{
-        conversions::U256Ext as _,
-        sources::balancer_v2::{
-            graph_api::{PoolData, PoolType},
-            swap::fixed_point::Bfp,
-        },
+    crate::sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
     },
     alloy::{
         eips::BlockId,
@@ -68,7 +65,7 @@ impl AmplificationParameter {
         // don't allow modifications of `self.precision` such that it could
         // become 0.
         debug_assert!(!self.precision.is_zero());
-        BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
+        BigRational::new(self.factor.into(), self.precision.into())
     }
 
     pub fn factor(&self) -> U256 {

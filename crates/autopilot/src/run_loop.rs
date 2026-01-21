@@ -31,7 +31,7 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    ethrpc::{alloy::conversions::IntoAlloy, block_stream::BlockInfo},
+    ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -212,7 +212,7 @@ impl RunLoop {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
         let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
-            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash.into_alloy()) {
+            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
                 // don't emit warning if we finished prev run loop within the same block
                 tracing::warn!(
                     missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
@@ -259,8 +259,7 @@ impl RunLoop {
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.clone());
         if previous.as_ref() == Some(&auction)
-            && prev_block.replace(start_block.hash.into_alloy())
-                == Some(start_block.hash.into_alloy())
+            && prev_block.replace(start_block.hash) == Some(start_block.hash)
         {
             return None;
         }

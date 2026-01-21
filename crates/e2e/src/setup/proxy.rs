@@ -12,11 +12,11 @@
 //! cluster.
 
 use {
-    axum::{Router, http::Request, response::IntoResponse},
+    axum::{Router, body::Body, http::Request, response::IntoResponse},
+    hyper::body::to_bytes,
     std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},
     url::Url,
-    warp::hyper::Body,
 };
 
 /// HTTP reverse proxy with automatic failover that permanently switches
@@ -114,7 +114,7 @@ async fn handle_request(
     let (parts, body) = req.into_parts();
 
     // Convert body to bytes once for reuse across retries
-    let body_bytes = match warp::hyper::body::to_bytes(body).await {
+    let body_bytes = match to_bytes(body).await {
         Ok(bytes) => bytes,
         Err(err) => {
             return (

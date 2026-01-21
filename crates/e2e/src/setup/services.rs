@@ -272,16 +272,27 @@ impl<'a> Services<'a> {
     }
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
+        self.start_protocol_with_args_and_haircut(args, solver, 0)
+            .await;
+    }
+
+    pub async fn start_protocol_with_args_and_haircut(
+        &self,
+        args: ExtraServiceArgs,
+        solver: TestAccount,
+        haircut_bps: u32,
+    ) {
         colocation::start_driver(
             self.contracts,
             vec![
-                colocation::start_baseline_solver(
+                colocation::start_baseline_solver_with_haircut(
                     "test_solver".into(),
                     solver.clone(),
                     *self.contracts.weth.address(),
                     vec![],
                     1,
                     true,
+                    haircut_bps,
                 )
                 .await,
             ],
@@ -336,6 +347,7 @@ impl<'a> Services<'a> {
             endpoint: external_solver_endpoint,
             base_tokens: vec![],
             merge_solutions: true,
+            haircut_bps: 0,
         }];
 
         let (autopilot_args, api_args) = if run_baseline {

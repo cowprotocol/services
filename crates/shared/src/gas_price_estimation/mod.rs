@@ -1,30 +1,38 @@
 pub mod alloy;
 pub mod driver;
+pub mod eth_node;
 pub mod fake;
+pub mod price;
+pub mod priority;
 
 use {
     crate::{
         ethrpc::Web3,
-        gas_price_estimation::alloy::AlloyGasPriceEstimator,
+        gas_price_estimation::{
+            alloy::Eip1559GasPriceEstimator,
+            eth_node::NodeGasPriceEstimator,
+            priority::PriorityGasPriceEstimating,
+        },
         http_client::HttpClientFactory,
     },
     ::alloy::providers::Provider,
     anyhow::Result,
-    gas_estimation::{
-        GasPriceEstimating,
-        PriorityGasPriceEstimating,
-        nativegasestimator::NativeGasEstimator,
-    },
     std::str::FromStr,
     tracing::instrument,
     url::Url,
 };
 pub use {driver::DriverGasEstimator, fake::FakeGasPriceEstimator};
 
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait GasPriceEstimating: Send + Sync {
+    /// Estimate the gas price for a transaction to be mined "quickly".
+    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559>;
+}
+
 #[derive(Clone, Debug)]
 pub enum GasEstimatorType {
     Web3,
-    Native,
     Driver(Url),
     Alloy,
 }
@@ -36,9 +44,8 @@ impl FromStr for GasEstimatorType {
         match s.to_ascii_lowercase().as_str() {
             "web3" => Ok(GasEstimatorType::Web3),
             "alloy" => Ok(GasEstimatorType::Alloy),
-            "native" => Ok(GasEstimatorType::Native),
             _ => Url::parse(s).map(GasEstimatorType::Driver).map_err(|e| {
-                format!("expected 'web3', 'native', or a valid driver URL; got {s:?}: {e}")
+                format!("expected 'web3', 'alloy', or a valid driver URL; got {s:?}: {e}")
             }),
         }
     }
@@ -62,15 +69,11 @@ pub async fn create_priority_estimator(
                     url.clone(),
                 )));
             }
-            GasEstimatorType::Web3 => estimators.push(Box::new(web3.legacy.clone())),
-            GasEstimatorType::Alloy => {
-                estimators.push(Box::new(AlloyGasPriceEstimator::new(web3.alloy.clone())))
+            GasEstimatorType::Web3 => {
+                estimators.push(Box::new(NodeGasPriceEstimator::new(web3.alloy.clone())))
             }
-            GasEstimatorType::Native => {
-                match NativeGasEstimator::new(web3.transport().clone(), None).await {
-                    Ok(estimator) => estimators.push(Box::new(estimator)),
-                    Err(err) => tracing::error!("nativegasestimator failed: {}", err),
-                }
+            GasEstimatorType::Alloy => {
+                estimators.push(Box::new(Eip1559GasPriceEstimator::new(web3.alloy.clone())))
             }
         }
     }
@@ -79,4 +82,11 @@ pub async fn create_priority_estimator(
         "all gas estimators failed to initialize"
     );
     Ok(PriorityGasPriceEstimating::new(estimators))
+}
+
+fn u128_to_f64(val: u128) -> Result<f64> {
+    if val > 2u128.pow(f64::MANTISSA_DIGITS) {
+        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
+    }
+    Ok(val as f64)
 }

@@ -6,11 +6,11 @@
 //! native asset and native wrapped token exist with a value of 1.
 
 use {
-    crate::conversions::U256Ext,
     alloy::primitives::{Address, U256},
     anyhow::{Result, bail},
     model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, One as _, ToPrimitive as _},
+    number::u256_ext::U256Ext,
     std::{
         collections::{BTreeMap, HashMap},
         sync::LazyLock,

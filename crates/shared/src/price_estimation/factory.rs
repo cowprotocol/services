@@ -22,6 +22,7 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc::Web3,
+        gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
             ExternalSolver,
@@ -37,7 +38,6 @@ use {
     bigdecimal::BigDecimal,
     contracts::alloy::WETH9,
     ethrpc::block_stream::CurrentBlockWatcher,
-    gas_estimation::GasPriceEstimating,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,

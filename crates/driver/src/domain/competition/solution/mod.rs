@@ -118,6 +118,9 @@ impl Solution {
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),
+                    // JIT orders don't get haircut because they supply private
+                    // liquidity which should not prone to negative slippage.
+                    eth::U256::ZERO,
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
@@ -394,7 +397,7 @@ impl Solution {
 
     /// Return the trades which fulfill non-liquidity auction orders. These are
     /// the orders placed by end users.
-    fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
+    pub fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
             Trade::Fulfillment(fulfillment) => Some(fulfillment),
             Trade::Jit(_) => None,

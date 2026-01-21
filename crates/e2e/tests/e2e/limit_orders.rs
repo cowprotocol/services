@@ -57,6 +57,15 @@ async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
 
+/// Test that orders with haircut configured still execute on-chain.
+/// The haircut reduces the reported surplus but the order should still be
+/// fillable and execute successfully.
+#[tokio::test]
+#[ignore]
+async fn local_node_limit_order_with_haircut() {
+    run_test(limit_order_with_haircut_test).await;
+}
+
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// USDC whale address as per [FORK_BLOCK_MAINNET].
@@ -1161,4 +1170,156 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await
         .unwrap();
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
+}
+
+/// Test that a limit order with haircut configured still executes on-chain.
+/// The haircut adjusts clearing prices to report lower surplus, but the order
+/// should still be fillable since the limit price allows for enough slack.
+async fn limit_order_with_haircut_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Fund trader accounts
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
+
+    // Create and fund Uniswap pool
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
+            1000u64.eth(),
+            1000u64.eth(),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address(),
+            U256::MAX,
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Approve GPv2 for trading
+    token_a
+        .approve(onchain.contracts().allowance, 10u64.eth())
+        .from(trader_a.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Place Orders
+    let services = Services::new(&onchain).await;
+    // Start protocol with 500 bps (5%) haircut
+    services
+        .start_protocol_with_args_and_haircut(Default::default(), solver, 500)
+        .await;
+
+    // Create order with generous limit to ensure there's slack for haircut
+    // Sell 10 A for at least 5 B (pool has 1:1 ratio so we'd get ~9.9 B without
+    // fees)
+    let order = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: 10u64.eth(),
+        buy_token: *token_b.address(),
+        buy_amount: 5u64.eth(), // Generous limit creates slack for haircut
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader_a.signer,
+    );
+    let trader_balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let settlement_balance_before = token_b
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    let order_id = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Drive solution - order should execute even with haircut applied
+    tracing::info!("Waiting for trade with haircut.");
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+        balance_after.checked_sub(trader_balance_before).unwrap() >= 5u64.eth()
+    })
+    .await
+    .unwrap();
+
+    // Verify that haircut (positive slippage) remains in the settlement contract.
+    // The haircut is 500 bps (5%) of the executed sell amount (10 ETH).
+    // At 1:1 pool ratio, this is approximately 0.5 ETH worth of token_b.
+    let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let settlement_balance_after = token_b
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+
+    let trader_received = trader_balance_after
+        .checked_sub(trader_balance_before)
+        .unwrap();
+    let settlement_received = settlement_balance_after
+        .checked_sub(settlement_balance_before)
+        .unwrap();
+
+    // Expected haircut: 5% of 10 ETH sell amount = 0.5 ETH (in buy token terms at
+    // ~1:1 ratio). Allow some tolerance for fees and rounding.
+    assert!(
+        settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
+        "Settlement contract should have received haircut (positive slippage) between 0.4 and 0.6 \
+         ETH, but got {}",
+        settlement_received
+    );
+
+    // Expected trader amount: output (~9.87 ETH at 1:1 ratio with 0.3% fee)
+    // minus haircut (~0.5 ETH) = ~9.37 ETH. Allow tolerance for rounding.
+    assert!(
+        trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
+        "Trader should have received between 9 and 9.5 ETH (AMM output minus haircut), but got {}",
+        trader_received
+    );
 }

@@ -45,7 +45,6 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        event_handling::AlloyEventRetriever,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
@@ -455,10 +454,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         }
     };
     let settlement_event_indexer = EventUpdater::new(
-        AlloyEventRetriever(boundary::events::settlement::GPv2SettlementContract::new(
+        boundary::events::settlement::GPv2SettlementContract::new(
             web3.alloy.clone(),
             *eth.contracts().settlement().address(),
-        )),
+        ),
         boundary::events::settlement::Indexer::new(
             db_write.clone(),
             settlement_observer,
@@ -601,10 +600,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            AlloyEventRetriever(EthFlowRefundRetriever::new(
-                web3.clone(),
-                args.ethflow_contracts.clone(),
-            )),
+            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -636,10 +632,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            AlloyEventRetriever(CoWSwapOnchainOrdersContract::new(
-                web3.clone(),
-                args.ethflow_contracts,
-            )),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
