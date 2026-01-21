@@ -1,13 +1,16 @@
 //! Tests for the haircut feature which applies conservative bidding by reducing
 //! solver-reported economics.
 
-use crate::{
-    domain::{competition::order, eth},
-    tests::{
-        self,
-        cases::EtherExt,
-        setup::{ab_order, ab_pool, ab_solution},
+use {
+    crate::{
+        domain::{competition::order, eth},
+        tests::{
+            self,
+            cases::EtherExt,
+            setup::{ab_order, ab_pool, ab_solution},
+        },
     },
+    number::units::EthUnit,
 };
 
 /// Test that haircut correctly reduces the solution score for orders in real
@@ -30,7 +33,7 @@ async fn order_haircut_reduces_score() {
             ab_order()
                 .side(side)
                 .kind(kind)
-                .buy_amount(2u64.ether().into_wei()) // Low limit creates slack
+                .buy_amount(2u64.eth()) // Low limit creates surplus
                 .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
@@ -60,30 +63,37 @@ async fn order_haircut_reduces_score() {
     let solve_with_haircut = test_with_haircut.solve().await.ok();
     let score_with_haircut = solve_with_haircut.score();
 
-    tracing::info!(
-        %score_no_haircut,
-        %score_with_haircut,
-        "Comparing scores with and without haircut"
-    );
+    // With 500 bps (5%) haircut, the score should be reduced by approximately 5%.
+    // Compute the actual percentage: (score_with_haircut * 100) / score_no_haircut
+    // Should be approximately 95 (allowing 94-96 range for tolerance).
+    let percentage: u64 = ((score_with_haircut * eth::U256::from(100)) / score_no_haircut)
+        .try_into()
+        .unwrap();
 
-    // The haircutted solution should have a lower score because the adjusted
-    // clearing prices imply less surplus
     assert!(
-        score_with_haircut < score_no_haircut,
-        "Haircut should reduce solution score: {} >= {}",
+        (94..=96).contains(&percentage),
+        "Haircut score {} should be ~95% of baseline {}, but was {}%",
         score_with_haircut,
-        score_no_haircut
+        score_no_haircut,
+        percentage
     );
 }
 
 /// Test that haircut is properly applied for buy orders.
+/// For buy orders, the haircut reduces the effective buy amount, which
+/// increases the sell amount the user pays. This reduces surplus and thus the
+/// score. Note: The percentage reduction for buy orders differs from sell
+/// orders because the haircut is applied to the executed buy amount, not
+/// directly to surplus.
 #[tokio::test]
 #[ignore]
 async fn buy_order_haircut() {
     let side = order::Side::Buy;
     let kind = order::Kind::Limit;
 
-    // For buy orders, haircut reduces the buy amount received
+    // For buy orders, we need to set a buy_amount that creates enough surplus.
+    // The pool has 100000:6000 ratio. For a buy order wanting 2.97 B,
+    // we'd need to sell ~50 A. Setting a generous sell limit creates surplus.
     let test_no_haircut = tests::setup()
         .name("Buy order haircut - baseline")
         .pool(ab_pool())
@@ -91,7 +101,8 @@ async fn buy_order_haircut() {
             ab_order()
                 .side(side)
                 .kind(kind)
-                .sell_amount(100u64.ether().into_wei()) // Generous sell limit
+                .buy_amount(2u64.eth()) // Target buy amount
+                .sell_amount(100u64.ether().into_wei()) // Generous sell limit creates surplus
                 .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
@@ -109,7 +120,8 @@ async fn buy_order_haircut() {
             ab_order()
                 .side(side)
                 .kind(kind)
-                .sell_amount(100u64.ether().into_wei())
+                .buy_amount(2u64.eth()) // Same target buy amount
+                .sell_amount(100u64.ether().into_wei()) // Same generous sell limit
                 .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
@@ -120,17 +132,24 @@ async fn buy_order_haircut() {
     let solve_with_haircut = test_with_haircut.solve().await.ok();
     let score_with_haircut = solve_with_haircut.score();
 
-    tracing::info!(
-        %score_no_haircut,
-        %score_with_haircut,
-        "Comparing buy order scores with and without haircut"
-    );
+    // For buy orders, the haircut is applied to the executed buy amount and then
+    // converted to sell token. The impact on score depends on the price ratio.
+    // With 500 bps (5%) haircut on a 2 ETH buy amount, the haircut is 0.1 ETH in
+    // buy token. When converted to sell token at the pool's price ratio, this
+    // results in a smaller percentage impact on the score compared to sell
+    // orders. Expected: score reduction of ~1% (percentage ~99%) rather than
+    // 5%.
+    let percentage: u64 = ((score_with_haircut * eth::U256::from(100)) / score_no_haircut)
+        .try_into()
+        .unwrap();
 
-    // Haircut should reduce the score
+    // For buy orders with this setup, expect ~99% (1% reduction) due to price
+    // conversion
     assert!(
-        score_with_haircut < score_no_haircut,
-        "Haircut should reduce buy order score: {} >= {}",
+        (98..=100).contains(&percentage) && score_with_haircut < score_no_haircut,
+        "Haircut score {} should be ~99% of baseline {} (reduced by ~1%), but was {}%",
         score_with_haircut,
-        score_no_haircut
+        score_no_haircut,
+        percentage
     );
 }
