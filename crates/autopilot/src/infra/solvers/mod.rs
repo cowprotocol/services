@@ -74,6 +74,7 @@ impl Driver {
             fairness_threshold,
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
+                .tcp_keepalive(Duration::from_secs(60))
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
