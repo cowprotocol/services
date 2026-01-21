@@ -183,14 +183,6 @@ async fn with_quote_haircut() {
         "Comparing buy amounts with and without haircut"
     );
 
-    // The haircutted amount should be less than the original
-    assert!(
-        buy_amount_with_haircut < buy_amount_no_haircut,
-        "Haircut should reduce buy amount: {} >= {}",
-        buy_amount_with_haircut,
-        buy_amount_no_haircut
-    );
-
     // The haircutted amount should be approximately 2% less
     // Allow 1% tolerance for rounding and other factors (between 1% and 3% haircut)
     let lower_bound = buy_amount_no_haircut * eth::U256::from(97) / eth::U256::from(100); // 97%

@@ -1268,21 +1268,58 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         &trader_a.signer,
     );
-    let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let trader_balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let settlement_balance_before = token_b
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
 
     onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
-    // Drive solution - order should execute even with haircut since limit has slack
+    // Drive solution - order should execute even with haircut applied
     tracing::info!("Waiting for trade with haircut.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
-        balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth()
+        balance_after.checked_sub(trader_balance_before).unwrap() >= 5u64.eth()
     })
     .await
     .unwrap();
 
-    tracing::info!("Order with haircut executed successfully.");
+    // Verify that haircut (positive slippage) remains in the settlement contract.
+    // The haircut is 500 bps (5%) of the executed sell amount (10 ETH).
+    // At 1:1 pool ratio, this is approximately 0.5 ETH worth of token_b.
+    let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let settlement_balance_after = token_b
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+
+    let trader_received = trader_balance_after
+        .checked_sub(trader_balance_before)
+        .unwrap();
+    let settlement_received = settlement_balance_after
+        .checked_sub(settlement_balance_before)
+        .unwrap();
+
+    // Expected haircut: 5% of 10 ETH sell amount = 0.5 ETH (in buy token terms at
+    // ~1:1 ratio). Allow some tolerance for fees and rounding.
+    assert!(
+        settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
+        "Settlement contract should have received haircut (positive slippage) between 0.4 and 0.6 \
+         ETH, but got {}",
+        settlement_received
+    );
+
+    // Expected trader amount: output (~9.87 ETH at 1:1 ratio with 0.3% fee)
+    // minus haircut (~0.5 ETH) = ~9.37 ETH. Allow tolerance for rounding.
+    assert!(
+        trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
+        "Trader should have received between 9 and 9.5 ETH (AMM output minus haircut), but got {}",
+        trader_received
+    );
 }
