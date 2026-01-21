@@ -2032,10 +2032,20 @@ components:
           example: "15000000000"
         sellTokenPrice:
           description: |
-            Represents how much one atomic unit of the sell token is worth 
-            in the network's native token (in Wei or the equivalent atom).
+            The price of the sell token expressed in native token atoms per sell token atom.
+
+            Units: `native token atoms / sell token atoms`
+
+            **Example calculation (Mainnet, selling USDC):**
+            - Sell token: USDC (6 decimals)
+            - Native token: ETH (18 decimals)
+            - Market price: 1 ETH = 1000 USDC
+
+            `sellTokenPrice = 1 × 10^18 wei / (1000 × 10^6 USDC atoms) = 10^9`
+
+            This value is used to convert network fees (in native token) to sell token amounts.
           type: string
-          example: "0.0004"
+          example: "1000000000"
         sellAmount:
           description: The quoted sell amount in atoms of the sell token.
           allOf:
