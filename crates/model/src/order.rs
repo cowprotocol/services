@@ -1050,6 +1050,8 @@ pub struct OrderQuote {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee_amount: U256,
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,

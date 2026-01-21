@@ -1,6 +1,7 @@
 use {
     crate::{app_data, arguments::VolumeFeeConfig},
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
+    bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     model::{
         order::OrderCreationAppData,
@@ -165,6 +166,20 @@ impl QuoteHandler {
                     app_data => app_data.clone(),
                 },
                 fee_amount: quote.fee_amount,
+                gas_amount: BigDecimal::from_f64(quote.data.fee_parameters.gas_amount).ok_or(
+                    OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("gas_amount is not a valid BigDecimal").into(),
+                    ),
+                )?,
+                gas_price: BigDecimal::from_f64(quote.data.fee_parameters.gas_price).ok_or(
+                    OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("gas_price is not a valid BigDecimal").into(),
+                    ),
+                )?,
+                sell_token_price: BigDecimal::from_f64(quote.data.fee_parameters.sell_token_price)
+                    .ok_or(OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("sell_token_price is not a valid BigDecimal").into(),
+                    ))?,
                 kind: quote.data.kind,
                 partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
