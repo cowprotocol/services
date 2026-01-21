@@ -7,6 +7,25 @@ use crate::{
     },
 };
 
+/// Extracts the buy amount from a quote response using clearing prices.
+///
+/// For a sell order, calculates: `sell_amount * sell_price / buy_price`
+/// Since the sell token has the lower price in our test setup, this becomes:
+/// `sell_amount * price_low / price_high`
+fn extract_buy_amount(response_body: &str, sell_amount: eth::U256) -> eth::U256 {
+    let body: serde_json::Value = serde_json::from_str(response_body).unwrap();
+    let clearing_prices = body.get("clearingPrices").unwrap().as_object().unwrap();
+
+    let mut prices: Vec<eth::U256> = clearing_prices
+        .values()
+        .map(|v| v.as_str().unwrap().parse::<eth::U256>().unwrap())
+        .collect();
+    prices.sort();
+
+    let (price_low, price_high) = (prices[0], prices[1]);
+    sell_amount * price_low / price_high
+}
+
 /// Run a matrix of tests for all meaningful combinations of order kind and
 /// side, verifying that they get quoted successfully.
 #[tokio::test]
@@ -93,34 +112,8 @@ async fn with_quote_haircut() {
     let quote_no_haircut = test_no_haircut.quote().await;
     let response_no_haircut = quote_no_haircut.ok();
 
-    // Parse clearing prices from JSON response
-    let body_no_haircut: serde_json::Value =
-        serde_json::from_str(response_no_haircut.body()).unwrap();
-    tracing::info!(
-        "Quote response without haircut: {}",
-        serde_json::to_string_pretty(&body_no_haircut).unwrap()
-    );
-    let clearing_prices = body_no_haircut
-        .get("clearingPrices")
-        .unwrap()
-        .as_object()
-        .unwrap();
-
-    // Extract prices and calculate buy amount
-    // For our test: sell_amount * sell_price / buy_price
-    // Since we don't know which token has which price from sorting alone,
-    // we use the ratio that gives a reasonable result (price_low / price_high)
-    let order = ab_order();
-    let sell_amount = order.sell_amount;
-    let mut prices: Vec<eth::U256> = clearing_prices
-        .values()
-        .map(|v| v.as_str().unwrap().parse::<eth::U256>().unwrap())
-        .collect();
-    prices.sort();
-    let (price_low, price_high) = (prices[0], prices[1]);
-    // Note: in our test setup, sell token has lower price, so:
-    // buy_amount = sell_amount * (price_low / price_high)
-    let buy_amount_no_haircut = sell_amount * price_low / price_high;
+    let sell_amount = ab_order().sell_amount;
+    let buy_amount_no_haircut = extract_buy_amount(response_no_haircut.body(), sell_amount);
 
     // Now get a quote with 200 bps (2%) haircut
     let test_with_haircut = tests::setup()
@@ -141,26 +134,7 @@ async fn with_quote_haircut() {
     let quote_with_haircut = test_with_haircut.quote().await;
     let response_with_haircut = quote_with_haircut.ok();
 
-    // Parse clearing prices from JSON response
-    let body_with_haircut: serde_json::Value =
-        serde_json::from_str(response_with_haircut.body()).unwrap();
-    tracing::info!(
-        "Quote response with haircut: {}",
-        serde_json::to_string_pretty(&body_with_haircut).unwrap()
-    );
-    let clearing_prices_haircut = body_with_haircut
-        .get("clearingPrices")
-        .unwrap()
-        .as_object()
-        .unwrap();
-
-    let mut prices_haircut: Vec<eth::U256> = clearing_prices_haircut
-        .values()
-        .map(|v| v.as_str().unwrap().parse::<eth::U256>().unwrap())
-        .collect();
-    prices_haircut.sort();
-    let (price_low_haircut, price_high_haircut) = (prices_haircut[0], prices_haircut[1]);
-    let buy_amount_with_haircut = sell_amount * price_low_haircut / price_high_haircut;
+    let buy_amount_with_haircut = extract_buy_amount(response_with_haircut.body(), sell_amount);
 
     // Verify haircut was applied: haircutted amount should be ~2% less than
     // baseline Expected: buy_amount_with_haircut ≈ buy_amount_no_haircut * 0.98
