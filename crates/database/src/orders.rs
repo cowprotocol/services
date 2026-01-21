@@ -724,7 +724,6 @@ pub fn solvable_orders(
     WITH live_orders AS MATERIALIZED (
         SELECT o.*
         FROM   orders o
-        LEFT   JOIN ethflow_orders e ON e.uid = o.uid
         WHERE  o.cancellation_timestamp IS NULL
         AND o.true_valid_to >= $1
         AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
@@ -961,7 +960,6 @@ pub async fn user_orders_with_quote(
     WITH live_orders AS MATERIALIZED (
         SELECT o.*
         FROM   orders o
-        LEFT   JOIN ethflow_orders e ON e.uid = o.uid
         WHERE  o.cancellation_timestamp IS NULL
         AND o.confirmed_valid_to >= $1
         AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
