@@ -53,10 +53,6 @@ where
             base_fee,
         );
 
-        tracing::info!(
-            "estimate: {estimate:?}, base fee: {base_fee:?}, effective gas price: {effective_gas_price}"
-        );
-
         self.metrics.gas_price.set(effective_gas_price as f64 / 1e9);
         Ok(effective_gas_price)
     }
@@ -64,7 +60,7 @@ where
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
-    /// Last measured gas price in gwei
+    /// Last measured effective gas price in gwei
     gas_price: prometheus::Gauge,
     /// Last measured base fee
     base_fee: prometheus::IntGauge,
