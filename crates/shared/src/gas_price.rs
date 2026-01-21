@@ -52,9 +52,7 @@ where
             "estimate: {estimate:?}, base fee: {base_fee:?}, effective gas price: {effective_gas_price}"
         );
 
-        self.metrics
-            .gas_price
-            .set((effective_gas_price / 10u128.pow(9)) as f64);
+        self.metrics.gas_price.set(effective_gas_price as f64 / 1e9);
         Ok(estimate)
     }
 
