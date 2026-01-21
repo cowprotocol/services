@@ -222,7 +222,7 @@ impl NativePriceCache {
                     // will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
                     // Otherwise malicious actors could easily cause the cache size to blow up.
-                    let outdated_timestamp = now.checked_sub(self.inner.max_age).unwrap();
+                    let outdated_timestamp = now.checked_sub(self.inner.max_age).unwrap_or(now);
                     tracing::trace!(?token, "create outdated price entry");
                     entry.insert(CachedResult::new(
                         Ok(0.),
