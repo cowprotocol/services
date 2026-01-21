@@ -155,13 +155,10 @@ async fn solver_competition_v1_by_auction_id(web3: Web3) {
         .await
         .unwrap();
 
-    // Wait for solver competition to be indexed and get the auction ID
-    for _ in 0..3 {
+    let indexed = || async {
         onchain.mint_block().await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    }
-
-    let indexed = || async { services.get_latest_solver_competition_v1().await.is_ok() };
+        services.get_latest_solver_competition_v1().await.is_ok()
+    };
     wait_for_condition(TIMEOUT, indexed).await.unwrap();
 
     // Get latest competition to extract auction ID
