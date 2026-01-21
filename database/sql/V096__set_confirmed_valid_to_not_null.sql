@@ -1,5 +1,14 @@
 -- This migration should only be applied when the manual steps in
 -- V095__add_true_valid_to_for_orders.sql have been completed.
+-- to ensure there is no excessive load on db
+
+-- migrate any remaining orders
+UPDATE orders
+SET true_valid_to = COALESCE(
+    (SELECT ethflow_orders.valid_to FROM ethflow_orders WHERE ethflow_orders.uid = orders.uid),
+    orders.valid_to
+)
+-- at this point every order has the true_valid_to filled in
 ALTER TABLE orders ALTER COLUMN true_valid_to SET NOT NULL;
 
 --index on `true_valid_to` for quickly discarding expired orders
