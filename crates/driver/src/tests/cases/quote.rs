@@ -2,7 +2,7 @@ use crate::{
     domain::{competition::order, eth},
     tests::{
         self,
-        cases::EtherExt,
+        cases::{ApproxEq, EtherExt},
         setup::{self, ab_order, ab_pool, ab_solution},
     },
 };
@@ -152,18 +152,14 @@ async fn with_quote_haircut() {
         "Comparing buy amounts with and without haircut"
     );
 
-    // The haircutted amount should be approximately 2% less
-    // Allow 1% tolerance for rounding and other factors (between 1% and 3% haircut)
-    let lower_bound = buy_amount_no_haircut * eth::U256::from(97) / eth::U256::from(100); // 97%
-    let upper_bound = buy_amount_no_haircut * eth::U256::from(99) / eth::U256::from(100); // 99%
+    // The haircutted amount should be approximately 2% less (within 1% tolerance)
     assert!(
-        buy_amount_with_haircut >= lower_bound && buy_amount_with_haircut <= upper_bound,
-        "Haircutted amount {} should be approximately 2% less than baseline {} (expected range: \
-         {} to {}, actual haircut: {} bps)",
+        buy_amount_with_haircut.is_approx_eq(&expected_haircutted, Some(0.01)),
+        "Haircutted amount {} should be approximately 2% less than baseline {} (expected: {}, \
+         actual haircut: {} bps)",
         buy_amount_with_haircut,
         buy_amount_no_haircut,
-        lower_bound,
-        upper_bound,
+        expected_haircutted,
         haircut_bps
     );
 }
