@@ -51,7 +51,7 @@ impl ProxyState {
         if let Some(current) = backends.pop_front() {
             backends.push_back(current);
         }
-        tracing::info!(?backends, "rotated backends");
+        tracing::info!(backends = ?backends.iter().map(Url::as_str).collect::<Vec<_>>(), "rotated backends");
     }
 
     /// Returns the total number of backends configured.
@@ -99,7 +99,7 @@ async fn serve(listen_addr: SocketAddr, backends: Vec<Url>, state: ProxyState) {
 
     let app = Router::new().fallback(proxy_handler);
 
-    tracing::info!(?listen_addr, ?backends, "starting reverse proxy");
+    tracing::info!(%listen_addr, backends = ?backends.iter().map(Url::as_str).collect::<Vec<_>>(), "starting reverse proxy");
     axum::Server::bind(&listen_addr)
         .serve(app.into_make_service())
         .await
@@ -133,7 +133,7 @@ async fn handle_request(
         match try_backend(&client, &parts, body_bytes.to_vec(), &backend).await {
             Ok(response) => return response.into_response(),
             Err(err) => {
-                tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
+                tracing::warn!(?err, %backend, attempt, "backend failed, rotating to next");
                 state.rotate_backends().await;
             }
         }
