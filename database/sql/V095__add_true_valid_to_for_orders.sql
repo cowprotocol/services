@@ -1,3 +1,6 @@
+--- Add true_valid_to column which will uniformly store all orders' validity
+--- This will enable creating an index to speedup user_orders_with_quote and solvable_orders queries
+--- which have increased in runtime since a big influx of ethflow orders
 ALTER TABLE orders ADD COLUMN true_valid_to bigint;
 
 /*
@@ -14,8 +17,3 @@ WHERE uid IN (
     LIMIT 10000
 );
 */
-
---index on `true_valid_to` for quickly discarding expired orders
-CREATE INDEX orders_true_valid_to ON orders USING btree (true_valid_to);
--- further drops the query from 100ms to 80ms (warmed cache)
-CREATE INDEX okay_onchain_orders ON onchain_placed_orders USING btree (uid) WHERE placement_error IS NOT NULL;

@@ -175,7 +175,6 @@ Indexes:
 - PRIMARY KEY: btree(`uid`)
 - event\_index: btree(`block_number`, `index`)
 - order\_sender: hash(sender)
-- PRIMARY KEY: btree(`uid`) WHERE placement_error IS NOT NULL
 
 ### order\_events
 
@@ -266,7 +265,6 @@ Column                    | Type                         | Nullable | Details
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
-- PRIMARY KEY: btree(`true_valid_to`)
 
 ### fee_policies
 
