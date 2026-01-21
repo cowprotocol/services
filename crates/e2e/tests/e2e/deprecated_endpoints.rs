@@ -18,20 +18,8 @@ async fn local_node_single_order_cancellation() {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_solver_competition_v1_by_auction_id() {
-    run_test(solver_competition_v1_by_auction_id).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_solver_competition_v1_by_tx_hash() {
-    run_test(solver_competition_v1_by_tx_hash).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_solver_competition_v1_latest() {
-    run_test(solver_competition_v1_latest).await;
+async fn local_node_solver_competition_v1_endpoints() {
+    run_test(solver_competition_v1_endpoints).await;
 }
 
 /// Test the deprecated single order cancellation endpoint (DELETE
@@ -106,8 +94,9 @@ async fn single_order_cancellation(web3: Web3) {
     );
 }
 
-/// Test the deprecated v1 solver competition endpoint by auction ID
-async fn solver_competition_v1_by_auction_id(web3: Web3) {
+/// Test all deprecated v1 solver competition endpoints (by auction ID, by tx
+/// hash, and latest)
+async fn solver_competition_v1_endpoints(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
@@ -165,171 +154,45 @@ async fn solver_competition_v1_by_auction_id(web3: Web3) {
     let latest_competition = services.get_latest_solver_competition_v1().await.unwrap();
     let auction_id = latest_competition.auction_id;
 
-    // Get solver competition using v1 endpoint by auction ID
-    let competition = services
-        .get_solver_competition_v1(auction_id)
-        .await
-        .unwrap();
-
-    // Verify the competition data is returned and matches the auction ID
-    assert_eq!(
-        competition.auction_id, auction_id,
-        "Auction ID should match"
-    );
-    assert!(
-        !competition.common.solutions.is_empty(),
-        "Competition should have at least one solution"
-    );
-}
-
-/// Test the deprecated v1 solver competition endpoint by transaction hash
-async fn solver_competition_v1_by_tx_hash(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let [trader] = onchain.make_accounts(1u64.eth()).await;
-    let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
-        .await;
-
-    token_a.mint(trader.address(), 10u64.eth()).await;
-
-    token_a
-        .approve(onchain.contracts().allowance, 10u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
-
-    // Create and execute an order
-    let order = OrderCreation {
-        sell_token: *token_a.address(),
-        sell_amount: 5u64.eth(),
-        buy_token: *token_b.address(),
-        buy_amount: 1u64.eth(),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        &trader.signer,
-    );
-
-    let uid = services.create_order(&order).await.unwrap();
-
-    // Wait for order to be settled
-    onchain.mint_block().await;
-    let settlement_finished = || async {
-        let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_buy_amount.is_zero()
-    };
-    wait_for_condition(TIMEOUT, settlement_finished)
-        .await
-        .unwrap();
-
     // Get trade to extract transaction hash
     let trades = services.get_trades(&uid).await.unwrap();
     assert!(!trades.is_empty(), "Should have at least one trade");
-
     let tx_hash = trades[0].tx_hash.expect("Trade should have tx_hash");
 
-    // Wait for solver competition to be indexed
-    // Mint a few blocks to ensure indexing completes
-    for _ in 0..3 {
-        onchain.mint_block().await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    }
+    // Test v1 endpoint: by auction ID
+    let competition_by_id = services
+        .get_solver_competition_v1(auction_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        competition_by_id.auction_id, auction_id,
+        "Auction ID should match"
+    );
+    assert!(
+        !competition_by_id.common.solutions.is_empty(),
+        "Competition by ID should have at least one solution"
+    );
 
-    let indexed = || async {
-        services
-            .get_solver_competition_by_tx_v1(tx_hash)
-            .await
-            .is_ok()
-    };
-    wait_for_condition(TIMEOUT, indexed).await.unwrap();
-
-    // Get solver competition using v1 endpoint
-    let competition = services
+    // Test v1 endpoint: by transaction hash
+    let competition_by_tx = services
         .get_solver_competition_by_tx_v1(tx_hash)
         .await
         .unwrap();
-
-    // Verify the competition data is returned
     assert!(
-        !competition.common.solutions.is_empty(),
-        "Competition should have at least one solution"
-    );
-}
-
-/// Test the deprecated v1 latest solver competition endpoint
-async fn solver_competition_v1_latest(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let [trader] = onchain.make_accounts(1u64.eth()).await;
-    let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
-        .await;
-
-    token_a.mint(trader.address(), 10u64.eth()).await;
-
-    token_a
-        .approve(onchain.contracts().allowance, 10u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
-
-    // Create and execute an order
-    let order = OrderCreation {
-        sell_token: *token_a.address(),
-        sell_amount: 5u64.eth(),
-        buy_token: *token_b.address(),
-        buy_amount: 1u64.eth(),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        &trader.signer,
+        !competition_by_tx.common.solutions.is_empty(),
+        "Competition by tx hash should have at least one solution"
     );
 
-    let uid = services.create_order(&order).await.unwrap();
-
-    // Wait for order to be settled
-    onchain.mint_block().await;
-    let settlement_finished = || async {
-        let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_buy_amount.is_zero()
-    };
-    wait_for_condition(TIMEOUT, settlement_finished)
-        .await
-        .unwrap();
-
-    // Wait for solver competition to be indexed
-    // Mint a few blocks to ensure indexing completes
-    for _ in 0..3 {
-        onchain.mint_block().await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    }
-
-    let indexed = || async { services.get_latest_solver_competition_v1().await.is_ok() };
-    wait_for_condition(TIMEOUT, indexed).await.unwrap();
-
-    // Get latest solver competition using v1 endpoint
-    let competition = services.get_latest_solver_competition_v1().await.unwrap();
-
-    // Verify the competition data is returned
+    // Test v1 endpoint: latest
     assert!(
-        !competition.common.solutions.is_empty(),
+        !latest_competition.common.solutions.is_empty(),
         "Latest competition should have at least one solution"
+    );
+
+    // Verify consistency: all endpoints should return data about the same
+    // competition
+    assert_eq!(
+        competition_by_id.auction_id, latest_competition.auction_id,
+        "Competition by ID and latest should have the same auction ID"
     );
 }
