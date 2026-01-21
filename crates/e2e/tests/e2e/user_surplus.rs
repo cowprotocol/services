@@ -13,124 +13,13 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_user_total_surplus() {
-    run_test(user_total_surplus).await;
+async fn local_node_user_surplus_endpoint() {
+    run_test(user_surplus_endpoint).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_user_total_surplus_no_trades() {
-    run_test(user_total_surplus_no_trades).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_user_total_surplus_multiple_trades() {
-    run_test(user_total_surplus_multiple_trades).await;
-}
-
-/// Test that the total surplus endpoint returns surplus for a user with trades
-async fn user_total_surplus(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let [trader] = onchain.make_accounts(1u64.eth()).await;
-    let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
-        .await;
-
-    token_a.mint(trader.address(), 10u64.eth()).await;
-
-    token_a
-        .approve(onchain.contracts().allowance, 10u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
-
-    let order = OrderCreation {
-        sell_token: *token_a.address(),
-        sell_amount: 5u64.eth(),
-        buy_token: *token_b.address(),
-        buy_amount: 1u64.eth(),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        &trader.signer,
-    );
-
-    let uid = services.create_order(&order).await.unwrap();
-
-    // Wait for order to be settled
-    onchain.mint_block().await;
-    let settlement_finished = || async {
-        let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_buy_amount.is_zero()
-    };
-    wait_for_condition(TIMEOUT, settlement_finished)
-        .await
-        .unwrap();
-
-    // Wait for solver competition data to be indexed (needed for surplus
-    // calculation)
-    let indexed_trades = || async {
-        match services.get_trades(&uid).await.unwrap().first() {
-            Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap())
-                .await
-                .is_ok(),
-            None => false,
-        }
-    };
-    wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
-
-    // Get total surplus for the trader
-    let surplus = services
-        .get_user_total_surplus(&trader.address())
-        .await
-        .unwrap();
-
-    // After a successful trade, the user should have positive surplus
-    // Since we're trading through a pool with good liquidity, we expect some
-    // surplus
-    assert!(
-        surplus > U256::ZERO,
-        "Total surplus should be positive after a successful trade, got {surplus}"
-    );
-}
-
-/// Test that the total surplus endpoint returns zero for a user with no trades
-async fn user_total_surplus_no_trades(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let [trader] = onchain.make_accounts(1u64.eth()).await;
-
-    let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
-
-    // Get total surplus for a user who has never traded
-    let surplus = services
-        .get_user_total_surplus(&trader.address())
-        .await
-        .unwrap();
-
-    // User with no trades should have zero surplus
-    assert_eq!(
-        surplus,
-        U256::ZERO,
-        "User with no trades should have zero surplus"
-    );
-}
-
-/// Test that the total surplus endpoint accumulates surplus from multiple
+/// Test the user surplus endpoint with no trades, single trade, and multiple
 /// trades
-async fn user_total_surplus_multiple_trades(web3: Web3) {
+async fn user_surplus_endpoint(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
@@ -150,8 +39,71 @@ async fn user_total_surplus_multiple_trades(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // Create and execute multiple orders
-    for i in 0..3 {
+    // Test 1: User with no trades should have zero surplus
+    let surplus_before = services
+        .get_user_total_surplus(&trader.address())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        surplus_before,
+        U256::ZERO,
+        "User with no trades should have zero surplus"
+    );
+
+    // Create and execute first order
+    let order1 = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: 5u64.eth(),
+        buy_token: *token_b.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    let uid1 = services.create_order(&order1).await.unwrap();
+
+    // Wait for first order to be settled
+    onchain.mint_block().await;
+    let settlement_finished = || async {
+        let order = services.get_order(&uid1).await.unwrap();
+        !order.metadata.executed_buy_amount.is_zero()
+    };
+    wait_for_condition(TIMEOUT, settlement_finished)
+        .await
+        .unwrap();
+
+    // Wait for solver competition data to be indexed
+    let indexed_trades = || async {
+        match services.get_trades(&uid1).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
+
+    // Test 2: User with one trade should have positive surplus
+    let surplus_after_one = services
+        .get_user_total_surplus(&trader.address())
+        .await
+        .unwrap();
+
+    assert!(
+        surplus_after_one > U256::ZERO,
+        "Surplus should be positive after one trade, got {surplus_after_one}"
+    );
+
+    // Create and execute two more orders
+    for i in 1..3 {
         let order = OrderCreation {
             sell_token: *token_a.address(),
             sell_amount: (5u64 + i as u64).eth(),
@@ -179,8 +131,7 @@ async fn user_total_surplus_multiple_trades(web3: Web3) {
             .await
             .unwrap();
 
-        // Wait for solver competition data to be indexed (needed for surplus
-        // calculation)
+        // Wait for solver competition data to be indexed
         let indexed_trades = || async {
             match services.get_trades(&uid).await.unwrap().first() {
                 Some(trade) => services
@@ -193,18 +144,14 @@ async fn user_total_surplus_multiple_trades(web3: Web3) {
         wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
     }
 
-    // Get total surplus for the trader
-    let surplus = services
+    // Test 3: User with multiple trades should have accumulated surplus
+    let surplus_after_three = services
         .get_user_total_surplus(&trader.address())
         .await
         .unwrap();
 
-    // The surplus from 3 trades should be greater than from just 1 trade
-    // This is a sanity check that surplus is actually accumulating
-    // Note: This is approximate since market conditions can vary
-    let min_expected_surplus = U256::from(1); // Very conservative minimum
     assert!(
-        surplus > min_expected_surplus,
-        "Surplus from 3 trades should be substantial, got {surplus}"
+        surplus_after_three > surplus_after_one,
+        "Surplus should accumulate across trades: {surplus_after_one} -> {surplus_after_three}"
     );
 }
