@@ -40,7 +40,7 @@ impl HttpClientFactory {
     pub fn builder(&self) -> ClientBuilder {
         ClientBuilder::new()
             .timeout(self.timeout)
-            .tcp_keepalive(Duration::from_secs(15))
+            .tcp_keepalive(Duration::from_secs(60))
             .user_agent(USER_AGENT)
     }
 }

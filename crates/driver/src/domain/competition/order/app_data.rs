@@ -35,7 +35,7 @@ impl AppDataRetriever {
     pub fn new(orderbook_url: Url, cache_size: u64) -> Self {
         Self(Arc::new(Inner {
             client: reqwest::Client::builder()
-                .tcp_keepalive(Duration::from_secs(15))
+                .tcp_keepalive(Duration::from_secs(60))
                 .build()
                 .expect("reqwest client built correctly"),
             base_url: orderbook_url,
