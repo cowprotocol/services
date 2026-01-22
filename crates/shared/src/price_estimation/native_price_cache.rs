@@ -191,6 +191,19 @@ impl CacheStorage {
         require_updating_price: RequiresUpdatingPrices,
     ) -> Option<CachedResult> {
         let mut cache = self.cache.lock().unwrap();
+        Self::get_cached_price_inner(&mut cache, token, now, require_updating_price, self.max_age)
+    }
+
+    /// Inner implementation of cache lookup that works with an already-locked
+    /// cache. This allows both single and batch lookups to share the same
+    /// logic.
+    fn get_cached_price_inner(
+        cache: &mut HashMap<Address, CachedResult>,
+        token: Address,
+        now: Instant,
+        require_updating_price: RequiresUpdatingPrices,
+        max_age: Duration,
+    ) -> Option<CachedResult> {
         match cache.entry(token) {
             Entry::Occupied(mut entry) => {
                 let cached = entry.get_mut();
@@ -203,7 +216,7 @@ impl CacheStorage {
                     cached.update_price_continuously = KeepPriceUpdated::Yes;
                 }
 
-                let is_recent = now.saturating_duration_since(cached.updated_at) < self.max_age;
+                let is_recent = now.saturating_duration_since(cached.updated_at) < max_age;
                 is_recent.then_some(cached.clone())
             }
             Entry::Vacant(entry) => {
@@ -212,7 +225,7 @@ impl CacheStorage {
                     // will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
                     // Otherwise malicious actors could easily cause the cache size to blow up.
-                    let outdated_timestamp = now.checked_sub(self.max_age).unwrap_or(now);
+                    let outdated_timestamp = now.checked_sub(max_age).unwrap_or(now);
                     tracing::trace!(?token, "create outdated price entry");
                     entry.insert(CachedResult::new(
                         Ok(0.),
@@ -240,6 +253,37 @@ impl CacheStorage {
     ) -> Option<CachedResult> {
         self.get_cached_price(token, now, required_updating_price)
             .filter(|cached| cached.is_ready())
+    }
+
+    /// Batch version of `get_ready_to_use_cached_price` that acquires the lock
+    /// once for all tokens, improving performance when looking up multiple
+    /// prices.
+    ///
+    /// Returns a HashMap of token addresses to their cached results (only for
+    /// tokens that have valid, ready-to-use cached prices).
+    fn get_ready_to_use_cached_prices(
+        &self,
+        tokens: &[Address],
+        now: Instant,
+        require_updating_price: RequiresUpdatingPrices,
+    ) -> HashMap<Address, CachedResult> {
+        let mut cache = self.cache.lock().unwrap();
+        let mut results = HashMap::with_capacity(tokens.len());
+
+        for token in tokens {
+            let cached_result = Self::get_cached_price_inner(
+                &mut cache,
+                *token,
+                now,
+                require_updating_price,
+                self.max_age,
+            );
+            if let Some(cached) = cached_result.filter(|c| c.is_ready()) {
+                results.insert(*token, cached);
+            }
+        }
+
+        results
     }
 
     /// Insert or update a cached result.
@@ -556,24 +600,30 @@ impl CachingNativePriceEstimator {
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        let mut results = HashMap::default();
-        for token in tokens {
-            // TODO: this is currently locking the cache once per token which
-            // has terrible performance. The original functions specifically
-            // pass `MutexGuards` around for that reason.
-            let cached =
-                self.cache
-                    .get_ready_to_use_cached_price(*token, now, self.require_updating_prices);
-            let label = if cached.is_some() { "hits" } else { "misses" };
-            Metrics::get()
+        let cached_results =
+            self.cache
+                .get_ready_to_use_cached_prices(tokens, now, self.require_updating_prices);
+
+        let hits = cached_results.len();
+        let misses = tokens.len().saturating_sub(hits);
+        let metrics = Metrics::get();
+        if hits > 0 {
+            metrics
                 .native_price_cache_access
-                .with_label_values(&[label])
-                .inc_by(1);
-            if let Some(result) = cached {
-                results.insert(*token, result.result);
-            }
+                .with_label_values(&["hits"])
+                .inc_by(hits as u64);
         }
-        results
+        if misses > 0 {
+            metrics
+                .native_price_cache_access
+                .with_label_values(&["misses"])
+                .inc_by(misses as u64);
+        }
+
+        cached_results
+            .into_iter()
+            .map(|(token, cached)| (token, cached.result))
+            .collect()
     }
 
     /// Updates the set of high-priority tokens for maintenance updates.
