@@ -120,7 +120,8 @@ async fn http_validation(web3: Web3) {
 
     // Test malformed auction IDs
     // Note: "-1" returns 404 because it doesn't match the u64 route pattern at all,
-    // while non-numeric strings return 400 as they match the path but fail deserialization
+    // while non-numeric strings return 400 as they match the path but fail
+    // deserialization
     for (id, description, expected_status) in [
         ("not-a-number", "non-numeric", StatusCode::BAD_REQUEST),
         ("-1", "negative number", StatusCode::NOT_FOUND),
