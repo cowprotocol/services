@@ -14,6 +14,7 @@ pub use {
 
 #[serde_as]
 #[derive(Serialize)]
+#[cfg_attr(feature = "e2e", derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub struct TokenMetadata {
     pub first_trade_block: Option<u32>,

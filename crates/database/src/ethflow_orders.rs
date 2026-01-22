@@ -24,15 +24,48 @@ pub async fn insert_or_overwrite_orders(
 
 #[instrument(skip_all)]
 pub async fn insert_or_overwrite_ethflow_order(
+    ex: &mut PgTransaction<'_>,
+    event: &EthOrderPlacement,
+) -> Result<(), sqlx::Error> {
+    const INSERT_ETHFLOW_ORDER_QUERY: &str = "\
+        INSERT INTO ethflow_orders (uid, valid_to) VALUES ($1, $2) ON CONFLICT (uid) DO UPDATE SET \
+                                              valid_to = $2;";
+    ex.execute(
+        sqlx::query(INSERT_ETHFLOW_ORDER_QUERY)
+            .bind(event.uid)
+            .bind(event.valid_to),
+    )
+    .await?;
+
+    const UPDATE_TRUE_VALID_TO_QUERY: &str = r#"
+        UPDATE orders
+        SET true_valid_to = $1
+        WHERE uid = $2
+    "#;
+    ex.execute(
+        sqlx::query(UPDATE_TRUE_VALID_TO_QUERY)
+            .bind(event.valid_to)
+            .bind(event.uid),
+    )
+    .await?;
+    Ok(())
+}
+
+// Ethflow orders are created with valid_to equal to u32::MAX, their
+// true validity is parsed from Settlement contract events.
+#[instrument(skip_all)]
+pub async fn update_true_valid_to_for_ethflow_order(
     ex: &mut PgConnection,
     event: &EthOrderPlacement,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-        INSERT INTO ethflow_orders (uid, valid_to) VALUES ($1, $2) ON CONFLICT (uid) DO UPDATE SET \
-                         valid_to = $2;";
+    const QUERY: &str = r#"
+        UPDATE orders
+        SET true_valid_to = $1
+        WHERE uid = $2
+    "#;
     sqlx::query(QUERY)
-        .bind(event.uid)
         .bind(event.valid_to)
+        .bind(event.uid)
         .execute(ex)
         .await?;
     Ok(())
@@ -320,9 +353,12 @@ mod tests {
         }
         async fn insert_order_parts_in_db(db: &mut PgConnection, order_parts: &EthflowOrderParts) {
             insert_order(db, &order_parts.order).await.unwrap();
-            insert_or_overwrite_ethflow_order(db, &order_parts.eth_order)
+            let mut ex = db.begin().await.unwrap();
+            insert_or_overwrite_ethflow_order(&mut ex, &order_parts.eth_order)
                 .await
                 .unwrap();
+            ex.commit().await.unwrap();
+
             insert_quote(db, &order_parts.quote).await.unwrap();
             if let Some(refund) = &order_parts.refund {
                 let mut ex = db.begin().await.unwrap();
