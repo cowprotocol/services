@@ -3,7 +3,6 @@
 
 use {
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
-    number::units::EthUnit,
     reqwest::{Method, StatusCode},
     shared::ethrpc::Web3,
 };
