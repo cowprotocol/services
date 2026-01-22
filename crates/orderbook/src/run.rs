@@ -22,7 +22,7 @@ use {
         WETH9,
         support::Balances,
     },
-    futures::{FutureExt, StreamExt},
+    futures::StreamExt,
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
@@ -53,9 +53,8 @@ use {
         sources::{self, BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
-    std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::task::{self, JoinHandle},
-    warp::Filter,
 };
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -545,7 +544,7 @@ fn serve_api(
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(
+    let app = api::handle_all_routes(
         database,
         database_replica,
         orderbook,
@@ -553,19 +552,18 @@ fn serve_api(
         app_data,
         native_price_estimator,
         quote_timeout,
-    )
-    .boxed();
+    );
     tracing::info!(%address, "serving order book");
-    let warp_svc = warp::service(filter);
-    let make_svc = hyper::service::make_service_fn(move |_| {
-        let svc = warp_svc.clone();
-        async move { Ok::<_, Infallible>(svc) }
-    });
-    let server = hyper::Server::bind(&address)
-        .serve(make_svc)
-        .with_graceful_shutdown(shutdown_receiver)
-        .map(|_| ());
-    task::spawn(server)
+
+    let server = axum::Server::bind(&address)
+        .serve(app.into_make_service())
+        .with_graceful_shutdown(shutdown_receiver);
+
+    task::spawn(async move {
+        if let Err(err) = server.await {
+            tracing::error!(?err, "server error");
+        }
+    })
 }
 
 /// Check that important constants such as the EIP 712 Domain Separator and

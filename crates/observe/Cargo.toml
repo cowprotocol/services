@@ -27,7 +27,6 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 tracing-serde = { workspace = true }
-warp = { workspace = true }
 jemalloc_pprof = { workspace = true }
 
 [lints]
