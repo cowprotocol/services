@@ -913,7 +913,7 @@ mod tests {
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
-                native_price_cache::{KeepPriceUpdated, NativePriceCache},
+                native_price_cache::{NativePriceCache, RequiresUpdatingPrices},
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
@@ -962,7 +962,7 @@ mod tests {
             NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default()),
             3,
             Default::default(),
-            KeepPriceUpdated::default(),
+            RequiresUpdatingPrices::Yes,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1066,7 +1066,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            KeepPriceUpdated::default(),
+            RequiresUpdatingPrices::Yes,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1161,7 +1161,7 @@ mod tests {
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
-            KeepPriceUpdated::default(),
+            RequiresUpdatingPrices::Yes,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 

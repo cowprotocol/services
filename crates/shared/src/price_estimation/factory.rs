@@ -7,12 +7,7 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
-        native_price_cache::{
-            CachingNativePriceEstimator,
-            KeepPriceUpdated,
-            MaintenanceConfig,
-            NativePriceCache,
-        },
+        native_price_cache::{CachingNativePriceEstimator, MaintenanceConfig, NativePriceCache},
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -29,6 +24,7 @@ use {
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
             native::NativePriceEstimating,
+            native_price_cache::RequiresUpdatingPrices,
         },
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
@@ -432,7 +428,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             cache,
             self.args.native_price_cache_concurrent_requests,
             approximation_tokens,
-            KeepPriceUpdated::Yes,
+            RequiresUpdatingPrices::Yes,
         ))
     }
 

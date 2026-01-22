@@ -35,7 +35,7 @@ pub enum KeepPriceUpdated {
 /// Determines whether we need the price of the token to be
 /// actively kept up to date by the maintenance task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RequireUpdatingPrice {
+pub enum RequiresUpdatingPrices {
     /// The lookup does not care whether the price of the token
     /// is actively being maintained. In other words the flag
     /// of the token should not be changed.
@@ -190,7 +190,7 @@ impl NativePriceCache {
         &self,
         token: Address,
         now: Instant,
-        lookup: RequireUpdatingPrice,
+        require_updating_price: RequiresUpdatingPrices,
     ) -> Option<CachedResult> {
         let mut cache = self.inner.cache.lock().unwrap();
         match cache.entry(token) {
@@ -198,8 +198,8 @@ impl NativePriceCache {
                 let cached = entry.get_mut();
                 cached.requested_at = now;
 
-                if lookup == RequireUpdatingPrice::Yes {
-                    cached.source = KeepPriceUpdated::Yes;
+                if require_updating_price == RequiresUpdatingPrices::Yes {
+                    cached.update_price_continuously = KeepPriceUpdated::Yes;
                 }
 
                 let is_recent =
@@ -207,7 +207,7 @@ impl NativePriceCache {
                 is_recent.then_some(cached.clone())
             }
             Entry::Vacant(entry) => {
-                if lookup == RequireUpdatingPrice::Yes {
+                if require_updating_price == RequiresUpdatingPrices::Yes {
                     // Create an outdated cache entry so the background task keeping the cache warm
                     // will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
@@ -236,9 +236,9 @@ impl NativePriceCache {
         &self,
         token: Address,
         now: Instant,
-        lookup: RequireUpdatingPrice,
+        required_updating_price: RequiresUpdatingPrices,
     ) -> Option<CachedResult> {
-        self.get_cached_price(token, now, lookup)
+        self.get_cached_price(token, now, required_updating_price)
             .filter(|cached| cached.is_ready())
     }
 
@@ -263,7 +263,7 @@ impl NativePriceCache {
             .unwrap()
             .iter()
             .filter(|(_, cached)| {
-                cached.source == KeepPriceUpdated::Yes
+                cached.update_price_continuously == KeepPriceUpdated::Yes
                     && now.saturating_duration_since(cached.updated_at) > max_age
             })
             .map(|(token, cached)| (*token, cached.requested_at))
@@ -311,7 +311,7 @@ impl NativePriceCache {
                     // check if the price is cached by now
                     let now = Instant::now();
 
-                    match self.get_cached_price(*token, now, RequireUpdatingPrice::DontCare) {
+                    match self.get_cached_price(*token, now, RequiresUpdatingPrices::DontCare) {
                         Some(cached) if cached.is_ready() => {
                             return (*token, cached.result);
                         }
@@ -448,9 +448,7 @@ struct Inner {
     /// It's very important that the 2 tokens have the same number of decimals.
     /// After startup this is a read only value.
     approximation_tokens: HashMap<Address, Address>,
-    /// Identifies which estimator type this is, used to track which
-    /// estimator fetched each cached entry for proper maintenance.
-    source: KeepPriceUpdated,
+    require_updating_prices: RequiresUpdatingPrices,
 }
 
 type CacheEntry = Result<f64, PriceEstimationError>;
@@ -461,8 +459,7 @@ struct CachedResult {
     updated_at: Instant,
     requested_at: Instant,
     accumulative_errors_count: u32,
-    /// Which estimator type fetched this entry.
-    source: KeepPriceUpdated,
+    update_price_continuously: KeepPriceUpdated,
 }
 
 /// Defines how many consecutive errors are allowed before the cache starts
@@ -476,7 +473,7 @@ impl CachedResult {
         updated_at: Instant,
         requested_at: Instant,
         current_accumulative_errors_count: u32,
-        source: KeepPriceUpdated,
+        update_price_continuously: KeepPriceUpdated,
     ) -> Self {
         let estimator_internal_errors_count =
             matches!(result, Err(PriceEstimationError::EstimatorInternal(_)))
@@ -488,7 +485,7 @@ impl CachedResult {
             updated_at,
             requested_at,
             accumulative_errors_count: estimator_internal_errors_count,
-            source,
+            update_price_continuously,
         }
     }
 
@@ -520,11 +517,10 @@ impl Inner {
                 // check if the price is cached by now
                 let now = Instant::now();
 
-                let lookup = match self.source {
-                    KeepPriceUpdated::Yes => RequireUpdatingPrice::Yes,
-                    KeepPriceUpdated::No => RequireUpdatingPrice::DontCare,
-                };
-                match self.cache.get_cached_price(*token, now, lookup) {
+                match self
+                    .cache
+                    .get_cached_price(*token, now, self.require_updating_prices)
+                {
                     Some(cached) if cached.is_ready() => {
                         return (*token, cached.result);
                     }
@@ -534,12 +530,7 @@ impl Inner {
             };
 
             let result = self
-                .fetch_and_cache_price(
-                    *token,
-                    request_timeout,
-                    self.source,
-                    current_accumulative_errors_count,
-                )
+                .fetch_and_cache_price(*token, request_timeout, current_accumulative_errors_count)
                 .await;
 
             (*token, result)
@@ -554,7 +545,6 @@ impl Inner {
         &self,
         token: Address,
         timeout: Duration,
-        source: KeepPriceUpdated,
         accumulative_errors_count: u32,
     ) -> NativePriceEstimateResult {
         let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
@@ -566,9 +556,19 @@ impl Inner {
 
         if should_cache(&result) {
             let now = Instant::now();
+            let continuously_update_price = match self.require_updating_prices {
+                RequiresUpdatingPrices::Yes => KeepPriceUpdated::Yes,
+                RequiresUpdatingPrices::DontCare => KeepPriceUpdated::No,
+            };
             self.cache.insert(
                 token,
-                CachedResult::new(result.clone(), now, now, accumulative_errors_count, source),
+                CachedResult::new(
+                    result.clone(),
+                    now,
+                    now,
+                    accumulative_errors_count,
+                    continuously_update_price,
+                ),
             );
         }
 
@@ -614,14 +614,14 @@ impl CachingNativePriceEstimator {
         cache: NativePriceCache,
         concurrent_requests: usize,
         approximation_tokens: HashMap<Address, Address>,
-        source: KeepPriceUpdated,
+        require_updating_prices: RequiresUpdatingPrices,
     ) -> Self {
         Self(Arc::new(Inner {
             estimator,
             cache,
             concurrent_requests,
             approximation_tokens,
-            source,
+            require_updating_prices,
         }))
     }
 
@@ -637,17 +637,12 @@ impl CachingNativePriceEstimator {
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
         let mut results = HashMap::default();
-        // For Auction source: create missing entries and upgrade Quote→Auction
-        // For Quote source: just read (Quote entries shouldn't be maintained)
-        let lookup = match self.0.source {
-            KeepPriceUpdated::Yes => RequireUpdatingPrice::Yes,
-            KeepPriceUpdated::No => RequireUpdatingPrice::DontCare,
-        };
         for token in tokens {
-            let cached = self
-                .0
-                .cache
-                .get_ready_to_use_cached_price(*token, now, lookup);
+            let cached = self.0.cache.get_ready_to_use_cached_price(
+                *token,
+                now,
+                self.0.require_updating_prices,
+            );
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
                 .native_price_cache_access
@@ -708,15 +703,11 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            // Upgrade Quote→Auction if this is an Auction-sourced estimator
-            let lookup = match self.0.source {
-                KeepPriceUpdated::Yes => RequireUpdatingPrice::Yes,
-                KeepPriceUpdated::No => RequireUpdatingPrice::DontCare,
-            };
-            let cached = self
-                .0
-                .cache
-                .get_ready_to_use_cached_price(token, now, lookup);
+            let cached = self.0.cache.get_ready_to_use_cached_price(
+                token,
+                now,
+                self.0.require_updating_prices,
+            );
 
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
@@ -770,7 +761,7 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
             let cached = self.0.0.cache.get_ready_to_use_cached_price(
                 token,
                 now,
-                RequireUpdatingPrice::DontCare,
+                RequiresUpdatingPrices::DontCare,
             );
 
             let label = if cached.is_some() { "hits" } else { "misses" };
@@ -783,10 +774,7 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
                 return cached.result;
             }
 
-            self.0
-                .0
-                .fetch_and_cache_price(token, timeout, KeepPriceUpdated::No, 0)
-                .await
+            self.0.0.fetch_and_cache_price(token, timeout, 0).await
         }
         .boxed()
     }
@@ -828,7 +816,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            Default::default(),
+            RequiresUpdatingPrices::Yes,
         );
 
         {
@@ -865,7 +853,7 @@ mod tests {
             ),
             1,
             Default::default(),
-            Default::default(),
+            RequiresUpdatingPrices::Yes,
         );
 
         for _ in 0..10 {
@@ -907,7 +895,7 @@ mod tests {
                 (Address::with_last_byte(1), Address::with_last_byte(100)),
                 (Address::with_last_byte(2), Address::with_last_byte(200)),
             ]),
-            Default::default(),
+            RequiresUpdatingPrices::Yes,
         );
 
         // no approximation token used for token 0
@@ -958,7 +946,7 @@ mod tests {
             ),
             1,
             Default::default(),
-            Default::default(),
+            RequiresUpdatingPrices::Yes,
         );
 
         for _ in 0..10 {
@@ -1029,7 +1017,7 @@ mod tests {
             ),
             1,
             Default::default(),
-            Default::default(),
+            RequiresUpdatingPrices::Yes,
         );
 
         // First 3 calls: The cache is not used. Counter gets increased.
@@ -1101,7 +1089,7 @@ mod tests {
             ),
             1,
             Default::default(),
-            Default::default(),
+            RequiresUpdatingPrices::Yes,
         );
 
         for _ in 0..10 {
@@ -1163,7 +1151,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            KeepPriceUpdated::Yes,
+            RequiresUpdatingPrices::Yes,
         );
 
         // fill cache with 2 different queries
@@ -1226,7 +1214,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            KeepPriceUpdated::Yes,
+            RequiresUpdatingPrices::Yes,
         );
 
         let tokens: Vec<_> = (0..10).map(Address::with_last_byte).collect();
@@ -1294,7 +1282,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            KeepPriceUpdated::Yes,
+            RequiresUpdatingPrices::Yes,
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(token).collect();
