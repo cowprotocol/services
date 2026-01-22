@@ -913,7 +913,7 @@ mod tests {
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
-                native_price_cache::{NativePriceCache, RequiresUpdatingPrices},
+                native_price_cache::{CacheStorage, RequiresUpdatingPrices},
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
@@ -959,7 +959,7 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Arc::new(native_price_estimator),
-            NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default()),
+            CacheStorage::new_without_maintenance(Duration::from_secs(10), Default::default()),
             3,
             Default::default(),
             RequiresUpdatingPrices::Yes,
@@ -1048,7 +1048,7 @@ mod tests {
         let maintenance_estimator: Arc<
             dyn shared::price_estimation::native::NativePriceEstimating,
         > = Arc::new(native_price_estimator);
-        let cache = NativePriceCache::new_with_maintenance(
+        let cache = CacheStorage::new_with_maintenance(
             Duration::from_secs(10),
             Default::default(),
             shared::price_estimation::native_price_cache::MaintenanceConfig {
@@ -1157,7 +1157,7 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Arc::new(native_price_estimator),
-            NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default()),
+            CacheStorage::new_without_maintenance(Duration::from_secs(10), Default::default()),
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([(token1, token_approx1), (token2, token_approx2)]),

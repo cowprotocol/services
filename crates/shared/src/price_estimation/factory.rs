@@ -7,7 +7,7 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
-        native_price_cache::{CachingNativePriceEstimator, MaintenanceConfig, NativePriceCache},
+        native_price_cache::{CacheStorage, CachingNativePriceEstimator, MaintenanceConfig},
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -392,7 +392,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         // Create cache with background maintenance, which only refreshes
         // Auction-sourced entries
-        let cache = NativePriceCache::new_with_maintenance(
+        let cache = CacheStorage::new_with_maintenance(
             self.args.native_price_cache_max_age,
             initial_prices,
             MaintenanceConfig {
@@ -414,7 +414,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn wrap_with_cache(
         &self,
         estimator: Arc<dyn NativePriceEstimating>,
-        cache: NativePriceCache,
+        cache: Arc<CacheStorage>,
     ) -> Arc<CachingNativePriceEstimator> {
         let approximation_tokens = self
             .args
