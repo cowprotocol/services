@@ -250,10 +250,9 @@ impl NativePriceCache {
         self.inner.cache.lock().unwrap().insert(token, result);
     }
 
-    /// Get Auction-sourced tokens that need updating, sorted by priority.
-    /// Only returns tokens with Auction source since maintenance doesn't
-    /// refresh Quote-sourced entries.
-    fn sorted_auction_tokens_to_update(
+    /// Fetches all tokens that need to be updated sorted by the provided
+    /// priority.
+    fn prioritized_tokens_to_update(
         &self,
         max_age: Duration,
         now: Instant,
@@ -389,7 +388,7 @@ impl CacheMaintenanceTask {
         let max_age = cache.max_age().saturating_sub(self.prefetch_time);
         let high_priority = cache.inner.high_priority.lock().unwrap().clone();
         let mut outdated_entries =
-            cache.sorted_auction_tokens_to_update(max_age, Instant::now(), &high_priority);
+            cache.prioritized_tokens_to_update(max_age, Instant::now(), &high_priority);
 
         tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated auction prices to fetch");
 
@@ -1336,14 +1335,14 @@ mod tests {
         let high_priority: IndexSet<Address> = std::iter::once(t0).collect();
         cache.replace_high_priority(high_priority.clone());
         let tokens =
-            cache.sorted_auction_tokens_to_update(Duration::from_secs(0), now, &high_priority);
+            cache.prioritized_tokens_to_update(Duration::from_secs(0), now, &high_priority);
         assert_eq!(tokens[0], t0);
         assert_eq!(tokens[1], t1);
 
         let high_priority: IndexSet<Address> = std::iter::once(t1).collect();
         cache.replace_high_priority(high_priority.clone());
         let tokens =
-            cache.sorted_auction_tokens_to_update(Duration::from_secs(0), now, &high_priority);
+            cache.prioritized_tokens_to_update(Duration::from_secs(0), now, &high_priority);
         assert_eq!(tokens[0], t1);
         assert_eq!(tokens[1], t0);
     }
