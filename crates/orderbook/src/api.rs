@@ -1,23 +1,22 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
-    observe::distributed_tracing::tracing_warp::make_span,
-    serde::{Deserialize, Serialize, de::DeserializeOwned},
+    axum::{
+        Router,
+        extract::DefaultBodyLimit,
+        http::{Request, StatusCode},
+        middleware::{self, Next},
+        response::{IntoResponse, Json, Response},
+    },
+    observe::distributed_tracing::tracing_axum,
+    serde::{Deserialize, Serialize},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
-        convert::Infallible,
         fmt::Debug,
         sync::Arc,
         time::{Duration, Instant},
     },
-    warp::{
-        Filter,
-        Rejection,
-        Reply,
-        filters::BoxedFilter,
-        hyper::StatusCode,
-        reply::{Json, WithStatus, json, with_status},
-    },
+    tower_http::{cors::CorsLayer, trace::TraceLayer},
 };
 
 mod cancel_order;
@@ -40,6 +39,40 @@ mod post_quote;
 mod put_app_data;
 mod version;
 
+/// Centralized application state shared across all API handlers
+#[derive(Clone)]
+pub struct AppState {
+    pub database_write: Postgres,
+    pub database_read: Postgres,
+    pub orderbook: Arc<Orderbook>,
+    pub quotes: Arc<QuoteHandler>,
+    pub app_data: Arc<app_data::Registry>,
+    pub native_price_estimator: Arc<dyn NativePriceEstimating>,
+    pub quote_timeout: Duration,
+}
+
+/// Metric label attached to requests for Prometheus metrics
+/// Preserves the old warp-based metric naming for compatibility
+#[derive(Clone, Debug)]
+struct MetricLabel(&'static str);
+
+/// Helper to inject a metric label into a request
+/// Returns a middleware function that can be applied to individual routes
+fn inject_metric(
+    label: &'static str,
+) -> impl Fn(
+    Request<axum::body::Body>,
+    Next<axum::body::Body>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
++ Clone {
+    move |mut req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
+        Box::pin(async move {
+            req.extensions_mut().insert(MetricLabel(label));
+            next.run(req).await
+        })
+    }
+}
+
 pub fn handle_all_routes(
     database_write: Postgres,
     database_read: Postgres,
@@ -48,119 +81,188 @@ pub fn handle_all_routes(
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    // Note that we add a string with endpoint's name to all responses.
-    // This string will be used later to report metrics.
-    // It is not used to form the actual server response.
+) -> Router {
+    let state = Arc::new(AppState {
+        database_write,
+        database_read,
+        orderbook,
+        quotes,
+        app_data,
+        native_price_estimator,
+        quote_timeout,
+    });
 
-    let routes = vec![
-        (
-            "v1/create_order",
-            box_filter(post_order::post_order(orderbook.clone())),
-        ),
-        (
-            "v1/get_order",
-            box_filter(get_order_by_uid::get_order_by_uid(orderbook.clone())),
-        ),
-        (
-            "v1/get_order_status",
-            box_filter(get_order_status::get_status(orderbook.clone())),
-        ),
-        (
-            "v1/get_trades",
-            box_filter(get_trades::get_trades(database_read.clone())),
-        ),
-        (
-            "v2/get_trades",
-            box_filter(get_trades_v2::get_trades(database_read.clone())),
-        ),
-        (
-            "v1/cancel_order",
-            box_filter(cancel_order::cancel_order(orderbook.clone())),
-        ),
-        (
-            "v1/cancel_orders",
-            box_filter(cancel_orders::filter(orderbook.clone())),
-        ),
-        (
-            "v1/get_user_orders",
-            box_filter(get_user_orders::get_user_orders(orderbook.clone())),
-        ),
-        (
-            "v1/get_orders_by_tx",
-            box_filter(get_orders_by_tx::get_orders_by_tx(orderbook.clone())),
-        ),
-        ("v1/post_quote", box_filter(post_quote::post_quote(quotes))),
-        (
-            "v1/auction",
-            box_filter(get_auction::get_auction(orderbook.clone())),
-        ),
-        (
-            "v1/solver_competition",
-            box_filter(get_solver_competition::get(Arc::new(
-                database_write.clone(),
-            ))),
-        ),
-        (
-            "v2/solver_competition",
-            box_filter(get_solver_competition_v2::get(database_write.clone())),
-        ),
-        (
-            "v1/solver_competition/latest",
-            box_filter(get_solver_competition::get_latest(Arc::new(
-                database_write.clone(),
-            ))),
-        ),
-        (
-            "v2/solver_competition/latest",
-            box_filter(get_solver_competition_v2::get_latest(
-                database_write.clone(),
-            )),
-        ),
-        ("v1/version", box_filter(version::version())),
-        (
-            "v1/get_native_price",
-            box_filter(get_native_price::get_native_price(
-                native_price_estimator,
-                quote_timeout,
-            )),
-        ),
-        (
-            "v1/get_app_data",
-            get_app_data::get(database_read.clone()).boxed(),
-        ),
-        (
-            "v1/put_app_data",
-            box_filter(put_app_data::filter(app_data)),
-        ),
-        (
-            "v1/get_total_surplus",
-            box_filter(get_total_surplus::get(database_read.clone())),
-        ),
-        (
-            "v1/get_token_metadata",
-            box_filter(get_token_metadata::get_token_metadata(database_read)),
-        ),
+    // Initialize metrics with zero values for all known method/status combinations
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    metrics.reset_requests_rejected();
+
+    // List of all metric labels used in the API
+    let metric_labels = [
+        "v1/create_order",
+        "v1/get_order",
+        "v1/get_order_status",
+        "v1/cancel_order",
+        "v1/cancel_orders",
+        "v1/get_user_orders",
+        "v1/get_orders_by_tx",
+        "v1/get_trades",
+        "v1/post_quote",
+        "v1/auction",
+        "v1/solver_competition",
+        "v1/version",
+        "v1/get_native_price",
+        "v1/get_app_data",
+        "v1/put_app_data",
+        "v1/get_total_surplus",
+        "v1/get_token_metadata",
+        "v2/get_trades",
+        "v2/solver_competition",
     ];
 
-    finalize_router(routes, "orderbook::api::request_summary")
+    for label in &metric_labels {
+        metrics.reset_requests_complete(label);
+    }
+
+    // Build v1 router with inline metric labels
+    let v1_router = Router::new()
+        .route(
+            "/orders",
+            axum::routing::post(post_order::post_order_handler)
+                .layer(middleware::from_fn(inject_metric("v1/create_order"))),
+        )
+        .route(
+            "/orders/:uid",
+            axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_order"))),
+        )
+        .route(
+            "/orders/:uid/status",
+            axum::routing::get(get_order_status::get_status_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_order_status"))),
+        )
+        .route(
+            "/orders/:uid",
+            axum::routing::delete(cancel_order::cancel_order_handler)
+                .layer(middleware::from_fn(inject_metric("v1/cancel_order"))),
+        )
+        .route(
+            "/orders",
+            axum::routing::delete(cancel_orders::cancel_orders_handler)
+                .layer(middleware::from_fn(inject_metric("v1/cancel_orders"))),
+        )
+        .route(
+            "/account/:owner/orders",
+            axum::routing::get(get_user_orders::get_user_orders_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_user_orders"))),
+        )
+        .route(
+            "/transactions/:hash/orders",
+            axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_orders_by_tx"))),
+        )
+        .route(
+            "/trades",
+            axum::routing::get(get_trades::get_trades_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_trades"))),
+        )
+        .route(
+            "/quote",
+            axum::routing::post(post_quote::post_quote_handler)
+                .layer(middleware::from_fn(inject_metric("v1/post_quote"))),
+        )
+        .route(
+            "/auction",
+            axum::routing::get(get_auction::get_auction_handler)
+                .layer(middleware::from_fn(inject_metric("v1/auction"))),
+        )
+        .route(
+            "/solver_competition/:auction_id",
+            axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
+                .layer(middleware::from_fn(inject_metric("v1/solver_competition"))),
+        )
+        .route(
+            "/solver_competition/by_tx_hash/:tx_hash",
+            axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
+                .layer(middleware::from_fn(inject_metric("v1/solver_competition"))),
+        )
+        .route(
+            "/solver_competition/latest",
+            axum::routing::get(get_solver_competition::get_solver_competition_latest_handler)
+                .layer(middleware::from_fn(inject_metric("v1/solver_competition"))),
+        )
+        .route(
+            "/version",
+            axum::routing::get(version::version_handler)
+                .layer(middleware::from_fn(inject_metric("v1/version"))),
+        )
+        .route(
+            "/token/:token/native_price",
+            axum::routing::get(get_native_price::get_native_price_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_native_price"))),
+        )
+        .route(
+            "/app_data/:hash",
+            axum::routing::get(get_app_data::get_app_data_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_app_data"))),
+        )
+        .route(
+            "/app_data",
+            axum::routing::put(put_app_data::put_app_data_without_hash)
+                .layer(middleware::from_fn(inject_metric("v1/put_app_data"))),
+        )
+        .route(
+            "/app_data/:hash",
+            axum::routing::put(put_app_data::put_app_data_with_hash)
+                .layer(middleware::from_fn(inject_metric("v1/put_app_data"))),
+        )
+        .route(
+            "/users/:user/total_surplus",
+            axum::routing::get(get_total_surplus::get_total_surplus_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_total_surplus"))),
+        )
+        .route(
+            "/token/:token/metadata",
+            axum::routing::get(get_token_metadata::get_token_metadata_handler)
+                .layer(middleware::from_fn(inject_metric("v1/get_token_metadata"))),
+        );
+
+    // Build v2 router with inline metric labels
+    let v2_router = Router::new()
+        .route(
+            "/trades",
+            axum::routing::get(get_trades_v2::get_trades_handler)
+                .layer(middleware::from_fn(inject_metric("v2/get_trades"))),
+        )
+        .route(
+            "/solver_competition/:auction_id",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
+                .layer(middleware::from_fn(inject_metric("v2/solver_competition"))),
+        )
+        .route(
+            "/solver_competition/by_tx_hash/:tx_hash",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
+                .layer(middleware::from_fn(inject_metric("v2/solver_competition"))),
+        )
+        .route(
+            "/solver_competition/latest",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler)
+                .layer(middleware::from_fn(inject_metric("v2/solver_competition"))),
+        );
+
+    // Nest API versions and set state
+    let api_router = Router::new()
+        .nest("/v1", v1_router)
+        .nest("/v2", v2_router)
+        .with_state(state);
+
+    finalize_router(api_router)
 }
 
-pub type ApiReply = WithStatus<Json>;
+// ApiReply is now Response for axum compatibility
+pub type ApiReply = Response;
 
-// We turn Rejection into Reply to workaround warp not setting CORS headers on
-// rejections.
-async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
-    let response = err.default_response();
-
-    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-    metrics
-        .requests_rejected
-        .with_label_values(&[response.status().as_str()])
-        .inc();
-
-    Ok(response)
-}
+// Note: Axum doesn't use rejections like warp did. Error handling is now done
+// through IntoResponse implementations in each endpoint.
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "api")]
@@ -220,23 +322,27 @@ impl ApiMetrics {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Error<'a> {
-    pub error_type: &'a str,
-    pub description: &'a str,
+pub struct Error {
+    pub error_type: String,
+    pub description: String,
     /// Additional arbitrary data that can be attached to an API error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
 
-pub fn error(error_type: &str, description: impl AsRef<str>) -> Json {
-    json(&Error {
-        error_type,
-        description: description.as_ref(),
+pub fn error(error_type: &str, description: impl AsRef<str>) -> Json<Error> {
+    Json(Error {
+        error_type: error_type.to_string(),
+        description: description.as_ref().to_string(),
         data: None,
     })
 }
 
-pub fn rich_error(error_type: &str, description: impl AsRef<str>, data: impl Serialize) -> Json {
+pub fn rich_error(
+    error_type: &str,
+    description: impl AsRef<str>,
+    data: impl Serialize,
+) -> Json<Error> {
     let data = match serde_json::to_value(&data) {
         Ok(value) => Some(value),
         Err(err) => {
@@ -245,150 +351,157 @@ pub fn rich_error(error_type: &str, description: impl AsRef<str>, data: impl Ser
         }
     };
 
-    json(&Error {
-        error_type,
-        description: description.as_ref(),
+    Json(Error {
+        error_type: error_type.to_string(),
+        description: description.as_ref().to_string(),
         data,
     })
 }
 
 pub fn internal_error_reply() -> ApiReply {
-    with_status(
-        error("InternalServerError", ""),
+    (
         StatusCode::INTERNAL_SERVER_ERROR,
+        error("InternalServerError", ""),
     )
+        .into_response()
 }
 
-pub fn convert_json_response<T, E>(result: Result<T, E>) -> WithStatus<Json>
+pub fn convert_json_response<T, E>(result: Result<T, E>) -> Response
 where
     T: Serialize,
-    E: IntoWarpReply + Debug,
+    E: IntoResponse + Debug,
 {
     match result {
-        Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
-        Err(err) => err.into_warp_reply(),
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(err) => err.into_response(),
     }
 }
 
-pub trait IntoWarpReply {
-    fn into_warp_reply(self) -> ApiReply;
-}
-
-pub async fn response_body(response: warp::hyper::Response<warp::hyper::Body>) -> Vec<u8> {
+// Note: Generic over body type to support both Body and UnsyncBoxBody (used in
+// tests)
+pub async fn response_body<B>(response: axum::http::Response<B>) -> Vec<u8>
+where
+    B: axum::body::HttpBody + Unpin,
+    B::Data: AsRef<[u8]>,
+    B::Error: Debug,
+{
     let mut body = response.into_body();
     let mut result = Vec::new();
-    while let Some(bytes) = futures::StreamExt::next(&mut body).await {
-        result.extend_from_slice(bytes.unwrap().as_ref());
+    while let Some(frame) = body.data().await {
+        let bytes = frame.unwrap();
+        result.extend_from_slice(bytes.as_ref());
     }
     result
 }
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
-pub fn extract_payload<T: DeserializeOwned + Send>()
--> impl Filter<Extract = (T,), Error = Rejection> + Clone {
-    // (rejecting huge payloads)...
-    extract_payload_with_max_size(MAX_JSON_BODY_PAYLOAD)
-}
+/// Middleware to track metrics for all endpoints
+/// Reads the metric label attached by each endpoint via request extensions
+async fn metrics_middleware<B>(req: Request<B>, next: Next<B>) -> Response {
+    // Extract the metric label that was attached by the endpoint
+    // Default to "unknown" if no label was set (shouldn't happen for API routes)
+    let label = req
+        .extensions()
+        .get::<MetricLabel>()
+        .map(|l| l.0)
+        .unwrap_or("unknown");
 
-pub fn extract_payload_with_max_size<T: DeserializeOwned + Send>(
-    max_size: u64,
-) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
-    warp::body::content_length_limit(max_size).and(warp::body::json())
-}
+    let timer = Instant::now();
+    let response = next.run(req).await;
 
-pub type BoxedRoute = BoxedFilter<(Box<dyn Reply>,)>;
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    let status = response.status();
 
-pub fn box_filter<Filter_, Reply_>(filter: Filter_) -> BoxedFilter<(Box<dyn Reply>,)>
-where
-    Filter_: Filter<Extract = (Reply_,), Error = Rejection> + Send + Sync + 'static,
-    Reply_: Reply + Send + 'static,
-{
-    filter.map(|a| Box::new(a) as Box<dyn Reply>).boxed()
+    // Track completed requests
+    metrics.on_request_completed(label, status, timer);
+
+    // Track rejected requests (4xx and 5xx status codes)
+    if status.is_client_error() || status.is_server_error() {
+        metrics
+            .requests_rejected
+            .with_label_values(&[status.as_str()])
+            .inc();
+    }
+
+    response
 }
 
 /// Sets up basic metrics, cors and proper log tracing for all routes.
-///
-/// # Panics
-///
-/// This method panics if `routes` is empty.
-pub fn finalize_router(
-    routes: Vec<(&'static str, BoxedRoute)>,
-    log_prefix: &'static str,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-    metrics.reset_requests_rejected();
-    for (method, _) in &routes {
-        metrics.reset_requests_complete(method);
-    }
-
-    let router = routes
-        .into_iter()
-        .fold(
-            Option::<BoxedFilter<(&'static str, Box<dyn Reply>)>>::None,
-            |router, (method, route)| {
-                let route = route.map(move |result| (method, result)).untuple_one();
-                let next = match router {
-                    Some(router) => router.or(route).unify().boxed(),
-                    None => route.boxed(),
-                };
-                Some(next)
-            },
-        )
-        .expect("routes cannot be empty");
-
-    let instrumented =
-        warp::any()
-            .map(Instant::now)
-            .and(router)
-            .map(|timer, method, reply: Box<dyn Reply>| {
-                let response = reply.into_response();
-                metrics.on_request_completed(method, response.status(), timer);
-                response
-            });
-
-    // Final setup
-    let cors = warp::cors()
-        .allow_any_origin()
+/// Takes a router with versioned routes and nests under /api, then applies
+/// middleware.
+fn finalize_router(api_router: Router) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
         .allow_methods(vec![
-            "GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH", "HEAD",
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::HEAD,
         ])
-        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
+        .allow_headers(vec![
+            axum::http::header::ORIGIN,
+            axum::http::header::CONTENT_TYPE,
+            // Must be lower case due to HTTP-2 spec compliance
+            axum::http::HeaderName::from_static("x-auth-token"),
+            axum::http::HeaderName::from_static("x-appid"),
+        ]);
 
-    warp::path!("api" / ..)
-        .and(instrumented)
-        .recover(handle_rejection)
-        .with(cors)
-        .with(warp::log::log(log_prefix))
-        .with(warp::trace::trace(make_span))
+    let trace_layer = TraceLayer::new_for_http().make_span_with(tracing_axum::make_span);
+
+    Router::new()
+        .nest("/api", api_router)
+        .layer(middleware::from_fn(metrics_middleware))
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY_PAYLOAD as usize))
+        .layer(cors)
+        .layer(trace_layer)
 }
 
-impl IntoWarpReply for PriceEstimationError {
-    fn into_warp_reply(self) -> WithStatus<Json> {
-        match self {
-            Self::UnsupportedToken { token, reason } => with_status(
+// Newtype wrapper for PriceEstimationError to allow IntoResponse implementation
+// (orphan rules prevent implementing IntoResponse directly on external types)
+pub(crate) struct PriceEstimationErrorWrapper(pub(crate) PriceEstimationError);
+
+impl IntoResponse for PriceEstimationErrorWrapper {
+    fn into_response(self) -> Response {
+        match self.0 {
+            PriceEstimationError::UnsupportedToken { token, reason } => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "UnsupportedToken",
                     format!("Token {token:?} is unsupported: {reason:}"),
                 ),
+            )
+                .into_response(),
+            PriceEstimationError::UnsupportedOrderType(order_type) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            Self::UnsupportedOrderType(order_type) => with_status(
                 error(
                     "UnsupportedOrderType",
                     format!("{order_type} not supported"),
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::NoLiquidity | Self::RateLimited | Self::EstimatorInternal(_) => with_status(
-                error("NoLiquidity", "no route found"),
+            )
+                .into_response(),
+            PriceEstimationError::NoLiquidity
+            | PriceEstimationError::RateLimited
+            | PriceEstimationError::EstimatorInternal(_) => (
                 StatusCode::NOT_FOUND,
-            ),
-            Self::ProtocolInternal(err) => {
+                error("NoLiquidity", "no route found"),
+            )
+                .into_response(),
+            PriceEstimationError::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
             }
         }
+    }
+}
+
+// Implement From to allow easy conversion
+impl From<PriceEstimationError> for PriceEstimationErrorWrapper {
+    fn from(err: PriceEstimationError) -> Self {
+        Self(err)
     }
 }
 
@@ -400,8 +513,8 @@ mod tests {
     fn rich_errors_skip_unset_data_field() {
         assert_eq!(
             serde_json::to_value(&Error {
-                error_type: "foo",
-                description: "bar",
+                error_type: "foo".to_string(),
+                description: "bar".to_string(),
                 data: None,
             })
             .unwrap(),
@@ -412,8 +525,8 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(Error {
-                error_type: "foo",
-                description: "bar",
+                error_type: "foo".to_string(),
+                description: "bar".to_string(),
                 data: Some(json!(42)),
             })
             .unwrap(),
@@ -427,6 +540,8 @@ mod tests {
 
     #[tokio::test]
     async fn rich_errors_handle_serialization_errors() {
+        use axum::body::HttpBody;
+
         struct AlwaysErrors;
         impl Serialize for AlwaysErrors {
             fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
@@ -437,20 +552,27 @@ mod tests {
             }
         }
 
-        let body = warp::hyper::body::to_bytes(
-            rich_error("foo", "bar", AlwaysErrors)
-                .into_response()
-                .into_body(),
-        )
-        .await
-        .unwrap();
+        let response = rich_error("foo", "bar", AlwaysErrors).into_response();
+        let mut body = response.into_body();
+        let mut bytes = Vec::new();
+        while let Some(frame) = body.data().await {
+            let chunk = frame.unwrap();
+            bytes.extend_from_slice(&chunk);
+        }
 
         assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
             json!({
                 "errorType": "foo",
                 "description": "bar",
             })
         );
+    }
+
+    #[test]
+    fn test_metric_label_helper() {
+        // Test that MetricLabel can be created and accessed
+        let label = MetricLabel("v1/test");
+        assert_eq!(label.0, "v1/test");
     }
 }

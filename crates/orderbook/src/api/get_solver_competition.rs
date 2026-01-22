@@ -1,68 +1,56 @@
 use {
-    crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
-    alloy::primitives::B256,
-    anyhow::Result,
-    model::{AuctionId, solver_competition::SolverCompetitionAPI},
-    reqwest::StatusCode,
-    std::{convert::Infallible, sync::Arc},
-    warp::{
-        Filter,
-        Rejection,
-        reply::{Json, WithStatus, with_status},
+    crate::{
+        api::AppState,
+        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
+    alloy::primitives::B256,
+    axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        response::{IntoResponse, Json, Response},
+    },
+    model::{AuctionId, solver_competition::SolverCompetitionAPI},
+    std::sync::Arc,
 };
 
-fn request_id() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("v1" / "solver_competition" / AuctionId)
-        .and(warp::get())
-        .map(Identifier::Id)
+pub async fn get_solver_competition_by_id_handler(
+    State(state): State<Arc<AppState>>,
+    Path(auction_id): Path<AuctionId>,
+) -> impl IntoResponse {
+    let handler: Arc<dyn SolverCompetitionStoring> = Arc::new(state.database_write.clone());
+    let result = handler.load_competition(Identifier::Id(auction_id)).await;
+    response(result)
 }
 
-fn request_hash() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("v1" / "solver_competition" / "by_tx_hash" / B256)
-        .and(warp::get())
-        .map(Identifier::Transaction)
+pub async fn get_solver_competition_by_hash_handler(
+    State(state): State<Arc<AppState>>,
+    Path(tx_hash): Path<B256>,
+) -> impl IntoResponse {
+    let handler: Arc<dyn SolverCompetitionStoring> = Arc::new(state.database_write.clone());
+    let result = handler
+        .load_competition(Identifier::Transaction(tx_hash))
+        .await;
+    response(result)
 }
 
-fn request_latest() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("v1" / "solver_competition" / "latest").and(warp::get())
-}
-pub fn get(
-    handler: Arc<dyn SolverCompetitionStoring>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request_id()
-        .or(request_hash())
-        .unify()
-        .and_then(move |identifier: Identifier| {
-            let handler = handler.clone();
-            async move {
-                let result = handler.load_competition(identifier).await;
-                Result::<_, Infallible>::Ok(response(result))
-            }
-        })
-}
-
-pub fn get_latest(
-    handler: Arc<dyn SolverCompetitionStoring>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request_latest().and_then(move || {
-        let handler = handler.clone();
-        async move {
-            let result = handler.load_latest_competition().await;
-            Result::<_, Infallible>::Ok(response(result))
-        }
-    })
+pub async fn get_solver_competition_latest_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let handler: Arc<dyn SolverCompetitionStoring> = Arc::new(state.database_write.clone());
+    let result = handler.load_latest_competition().await;
+    response(result)
 }
 
 fn response(
     result: Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>,
-) -> WithStatus<Json> {
+) -> Response {
     match result {
-        Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
-        Err(LoadSolverCompetitionError::NotFound) => with_status(
-            super::error("NotFound", "no competition found"),
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(LoadSolverCompetitionError::NotFound) => (
             StatusCode::NOT_FOUND,
-        ),
+            super::error("NotFound", "no competition found"),
+        )
+            .into_response(),
         Err(LoadSolverCompetitionError::Other(err)) => {
             tracing::error!(?err, "load solver competition");
             crate::api::internal_error_reply()
@@ -72,43 +60,21 @@ fn response(
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::solver_competition::MockSolverCompetitionStoring,
-        warp::{Reply, test::request},
-    };
+    use super::*;
 
     #[tokio::test]
-    async fn test() {
-        let mut storage = MockSolverCompetitionStoring::new();
-        storage
-            .expect_load_competition()
-            .times(2)
-            .returning(|_| Ok(Default::default()));
-        storage
-            .expect_load_competition()
-            .times(1)
-            .return_once(|_| Err(LoadSolverCompetitionError::NotFound));
-        let filter = get(Arc::new(storage));
+    async fn test_response_ok() {
+        let result: Result<SolverCompetitionAPI, LoadSolverCompetitionError> =
+            Ok(Default::default());
+        let resp = response(result);
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
 
-        let request_ = request().path("/v1/solver_competition/0").method("GET");
-        let response = request_.filter(&filter).await.unwrap().into_response();
-        dbg!(&response);
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let request_ = request()
-            .path(
-                "/v1/solver_competition/by_tx_hash/\
-                 0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5",
-            )
-            .method("GET");
-        let response = request_.filter(&filter).await.unwrap().into_response();
-        dbg!(&response);
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let request_ = request().path("/v1/solver_competition/1337").method("GET");
-        let response = request_.filter(&filter).await.unwrap().into_response();
-        dbg!(&response);
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    #[tokio::test]
+    async fn test_response_not_found() {
+        let result: Result<SolverCompetitionAPI, LoadSolverCompetitionError> =
+            Err(LoadSolverCompetitionError::NotFound);
+        let resp = response(result);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }

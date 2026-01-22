@@ -1,22 +1,23 @@
 use {
     crate::{
-        api::{ApiReply, error},
-        database::{
-            Postgres,
-            trades::{TradeFilter, TradeRetrieving},
-        },
+        api::{AppState, error},
+        database::trades::{TradeFilter, TradeRetrieving},
     },
     alloy::primitives::Address,
-    anyhow::{Context, Result},
+    anyhow::Context,
+    axum::{
+        extract::{Query, State},
+        http::StatusCode,
+        response::{IntoResponse, Json},
+    },
     model::order::OrderUid,
     serde::Deserialize,
-    std::convert::Infallible,
-    warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
+    std::sync::Arc,
 };
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Query {
+pub(crate) struct QueryParams {
     pub order_uid: Option<OrderUid>,
     pub owner: Option<Address>,
 }
@@ -26,7 +27,7 @@ enum TradeFilterError {
     InvalidFilter(String),
 }
 
-impl Query {
+impl QueryParams {
     fn trade_filter(&self) -> TradeFilter {
         TradeFilter {
             order_uid: self.order_uid,
@@ -44,87 +45,72 @@ impl Query {
     }
 }
 
-fn get_trades_request()
--> impl Filter<Extract = (Result<TradeFilter, TradeFilterError>,), Error = Rejection> + Clone {
-    warp::path!("v1" / "trades")
-        .and(warp::get())
-        .and(warp::query::<Query>())
-        .map(|query: Query| query.validate())
-}
-
-pub fn get_trades(db: Postgres) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    get_trades_request().and_then(move |request_result| {
-        let database = db.clone();
-        async move {
-            Result::<_, Infallible>::Ok(match request_result {
-                Ok(trade_filter) => {
-                    let result = database.trades(&trade_filter).await.context("get_trades");
-                    match result {
-                        Ok(reply) => with_status(warp::reply::json(&reply), StatusCode::OK),
-                        Err(err) => {
-                            tracing::error!(?err, "get_trades");
-                            crate::api::internal_error_reply()
-                        }
-                    }
+pub async fn get_trades_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<QueryParams>,
+) -> impl IntoResponse {
+    let request_result = query.validate();
+    match request_result {
+        Ok(trade_filter) => {
+            let result = state
+                .database_read
+                .trades(&trade_filter)
+                .await
+                .context("get_trades");
+            match result {
+                Ok(reply) => (StatusCode::OK, Json(reply)).into_response(),
+                Err(err) => {
+                    tracing::error!(?err, "get_trades");
+                    crate::api::internal_error_reply()
                 }
-                Err(TradeFilterError::InvalidFilter(msg)) => {
-                    let err = error("InvalidTradeFilter", msg);
-                    with_status(err, StatusCode::BAD_REQUEST)
-                }
-            })
+            }
         }
-    })
+        Err(TradeFilterError::InvalidFilter(msg)) => {
+            let err = error("InvalidTradeFilter", msg);
+            (StatusCode::BAD_REQUEST, err).into_response()
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        warp::test::{RequestBuilder, request},
-    };
+    use {super::*, alloy::primitives::Address, model::order::OrderUid};
 
-    #[tokio::test]
-    async fn get_trades_request_ok() {
-        let trade_filter = |request: RequestBuilder| async move {
-            let filter = get_trades_request();
-            request.method("GET").filter(&filter).await
-        };
-
+    #[test]
+    fn query_validation_ok() {
         let owner = Address::with_last_byte(1);
-        let owner_path = format!("/v1/trades?owner=0x{owner:x}");
-        let result = trade_filter(request().path(owner_path.as_str()))
-            .await
-            .unwrap()
-            .unwrap();
+        let query = QueryParams {
+            owner: Some(owner),
+            order_uid: None,
+        };
+        let result = query.validate().unwrap();
         assert_eq!(result.owner, Some(owner));
         assert_eq!(result.order_uid, None);
 
         let uid = OrderUid([1u8; 56]);
-        let order_uid_path = format!("/v1/trades?orderUid={uid}");
-        let result = trade_filter(request().path(order_uid_path.as_str()))
-            .await
-            .unwrap()
-            .unwrap();
+        let query = QueryParams {
+            owner: None,
+            order_uid: Some(uid),
+        };
+        let result = query.validate().unwrap();
         assert_eq!(result.owner, None);
         assert_eq!(result.order_uid, Some(uid));
     }
 
-    #[tokio::test]
-    async fn get_trades_request_err() {
-        let trade_filter = |request: RequestBuilder| async move {
-            let filter = get_trades_request();
-            request.method("GET").filter(&filter).await
-        };
-
+    #[test]
+    fn query_validation_err() {
         let owner = Address::with_last_byte(1);
         let uid = OrderUid([1u8; 56]);
-        let path = format!("/v1/trades?owner=0x{owner:x}&orderUid={uid}");
+        let query = QueryParams {
+            owner: Some(owner),
+            order_uid: Some(uid),
+        };
+        assert!(query.validate().is_err());
 
-        let result = trade_filter(request().path(path.as_str())).await.unwrap();
-        assert!(result.is_err());
-
-        let path = "/v1/trades";
-        let result = trade_filter(request().path(path)).await.unwrap();
-        assert!(result.is_err());
+        let query = QueryParams {
+            owner: None,
+            order_uid: None,
+        };
+        assert!(query.validate().is_err());
     }
 }
