@@ -732,9 +732,9 @@ pub fn solvable_orders(
     ),
     trades_agg AS (
         SELECT t.order_uid,
-                SUM(t.buy_amount) AS sum_buy,
-                SUM(t.sell_amount) AS sum_sell,
-                SUM(t.fee_amount) AS sum_fee
+           SUM(t.buy_amount) AS sum_buy,
+           SUM(t.sell_amount) AS sum_sell,
+           SUM(t.fee_amount) AS sum_fee
         FROM trades t
         JOIN live_orders lo ON lo.uid = t.order_uid
         GROUP BY t.order_uid
