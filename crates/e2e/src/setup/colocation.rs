@@ -14,6 +14,8 @@ pub struct SolverEngine {
     pub account: TestAccount,
     pub base_tokens: Vec<Address>,
     pub merge_solutions: bool,
+    /// Haircut in basis points (0-10000) for conservative bidding.
+    pub haircut_bps: u32,
 }
 
 pub async fn start_baseline_solver(
@@ -23,6 +25,27 @@ pub async fn start_baseline_solver(
     base_tokens: Vec<Address>,
     max_hops: usize,
     merge_solutions: bool,
+) -> SolverEngine {
+    start_baseline_solver_with_haircut(
+        name,
+        account,
+        weth,
+        base_tokens,
+        max_hops,
+        merge_solutions,
+        0,
+    )
+    .await
+}
+
+pub async fn start_baseline_solver_with_haircut(
+    name: String,
+    account: TestAccount,
+    weth: Address,
+    base_tokens: Vec<Address>,
+    max_hops: usize,
+    merge_solutions: bool,
+    haircut_bps: u32,
 ) -> SolverEngine {
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
     let config_file = config_tmp_file(format!(
@@ -43,6 +66,7 @@ uni-v3-node-url = "http://localhost:8545"
         account,
         base_tokens,
         merge_solutions,
+        haircut_bps,
     }
 }
 
@@ -140,6 +164,7 @@ pub fn start_driver_with_config_override(
                  endpoint,
                  base_tokens: _,
                  merge_solutions,
+                 haircut_bps,
              }| {
                 let account = account.signer.to_bytes();
                 format!(
@@ -155,6 +180,7 @@ enable-simulation-bad-token-detection = true
 enable-metrics-bad-order-detection = true
 http-time-buffer = "100ms"
 solving-share-of-deadline = 1.0
+haircut-bps = {haircut_bps}
 "#
                 )
             },

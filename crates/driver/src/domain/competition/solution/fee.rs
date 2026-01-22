@@ -84,7 +84,7 @@ impl Fulfillment {
             ),
         };
 
-        Fulfillment::new(order, executed, fee).map_err(Into::into)
+        Fulfillment::new(order, executed, fee, self.haircut_fee()).map_err(Into::into)
     }
 
     /// Computed protocol fee in surplus token.

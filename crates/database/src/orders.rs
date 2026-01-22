@@ -145,9 +145,10 @@ INSERT INTO orders (
     sell_token_balance,
     buy_token_balance,
     cancellation_timestamp,
-    class
+    class,
+    true_valid_to
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     "#;
 
 #[instrument(skip_all)]
@@ -189,6 +190,8 @@ async fn insert_order_execute_sqlx(
         .bind(order.buy_token_balance)
         .bind(order.cancellation_timestamp)
         .bind(order.class)
+        // true_valid_to takes the same value as valid_to when inserting an order
+        .bind(order.valid_to)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -759,6 +762,7 @@ pub fn solvable_orders(
         lo.sell_token_balance,
         lo.buy_token_balance,
         lo.class,
+        lo.true_valid_to,
 
         COALESCE(ta.sum_buy, 0) AS sum_buy,
         COALESCE(ta.sum_sell, 0) AS sum_sell,
@@ -862,6 +866,7 @@ SELECT
     so.sell_token_balance,
     so.buy_token_balance,
     so.class,
+    so.true_valid_to,
 
     COALESCE(ta.sum_buy, 0) AS sum_buy,
     COALESCE(ta.sum_sell, 0) AS sum_sell,
