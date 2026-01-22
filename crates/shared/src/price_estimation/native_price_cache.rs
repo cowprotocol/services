@@ -328,10 +328,52 @@ impl CacheStorage {
         *self.high_priority.lock().unwrap() = tokens;
     }
 
-    // TODO: I think it should be possible to unify this with
-    // `estimate_prices_and_update_cache`. Not sure why the new function
-    // suddenly has to exist.
-    //
+    /// Helper for estimating a price with cache check and update.
+    ///
+    /// Returns early if a valid cached price exists, otherwise calls the
+    /// provided fetch function and caches the result.
+    ///
+    /// This is the core logic shared by both on-demand price fetching and
+    /// background maintenance.
+    async fn estimate_with_cache_update<F, Fut>(
+        &self,
+        token: Address,
+        require_updating_price: RequiresUpdatingPrices,
+        keep_updated: KeepPriceUpdated,
+        fetch: F,
+    ) -> NativePriceEstimateResult
+    where
+        F: FnOnce(u32) -> Fut,
+        Fut: std::future::Future<Output = NativePriceEstimateResult>,
+    {
+        let current_accumulative_errors_count = {
+            let now = Instant::now();
+            match self.get_cached_price(token, now, require_updating_price) {
+                Some(cached) if cached.is_ready() => return cached.result,
+                Some(cached) => cached.accumulative_errors_count,
+                None => Default::default(),
+            }
+        };
+
+        let result = fetch(current_accumulative_errors_count).await;
+
+        if should_cache(&result) {
+            let now = Instant::now();
+            self.insert(
+                token,
+                CachedResult::new(
+                    result.clone(),
+                    now,
+                    now,
+                    current_accumulative_errors_count,
+                    keep_updated,
+                ),
+            );
+        }
+
+        result
+    }
+
     /// Estimates prices for the given tokens and updates the cache.
     /// Used by the background maintenance task. All tokens are processed using
     /// the provided estimator and marked as Auction source.
@@ -344,40 +386,17 @@ impl CacheStorage {
     ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| {
             let estimator = estimator.clone();
+            let token = *token;
             async move {
-                let current_accumulative_errors_count = {
-                    // check if the price is cached by now
-                    let now = Instant::now();
-
-                    match self.get_cached_price(*token, now, RequiresUpdatingPrices::DontCare) {
-                        Some(cached) if cached.is_ready() => {
-                            return (*token, cached.result);
-                        }
-                        Some(cached) => cached.accumulative_errors_count,
-                        None => Default::default(),
-                    }
-                };
-
-                let result = estimator
-                    .estimate_native_price(*token, request_timeout)
+                let result = self
+                    .estimate_with_cache_update(
+                        token,
+                        RequiresUpdatingPrices::DontCare,
+                        KeepPriceUpdated::Yes,
+                        |_| estimator.estimate_native_price(token, request_timeout),
+                    )
                     .await;
-
-                // update price in cache with Auction source
-                if should_cache(&result) {
-                    let now = Instant::now();
-                    self.insert(
-                        *token,
-                        CachedResult::new(
-                            result.clone(),
-                            now,
-                            now,
-                            current_accumulative_errors_count,
-                            KeepPriceUpdated::Yes,
-                        ),
-                    );
-                };
-
-                (*token, result)
+                (token, result)
             }
         });
         futures::stream::iter(estimates)
@@ -675,67 +694,37 @@ impl CachingNativePriceEstimator {
         tokens: &'a [Address],
         request_timeout: Duration,
     ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
-        let estimates = tokens.iter().map(move |token| async move {
-            let current_accumulative_errors_count = {
-                // check if the price is cached by now
-                let now = Instant::now();
+        let keep_updated = match self.require_updating_prices {
+            RequiresUpdatingPrices::Yes => KeepPriceUpdated::Yes,
+            RequiresUpdatingPrices::DontCare => KeepPriceUpdated::No,
+        };
 
-                match self
+        let estimates = tokens.iter().map(move |token| {
+            let token = *token;
+            async move {
+                let result = self
                     .cache
-                    .get_cached_price(*token, now, self.require_updating_prices)
-                {
-                    Some(cached) if cached.is_ready() => {
-                        return (*token, cached.result);
-                    }
-                    Some(cached) => cached.accumulative_errors_count,
-                    None => Default::default(),
-                }
-            };
-
-            let result = self
-                .fetch_and_cache_price(*token, request_timeout, current_accumulative_errors_count)
-                .await;
-
-            (*token, result)
+                    .estimate_with_cache_update(
+                        token,
+                        self.require_updating_prices,
+                        keep_updated,
+                        |_| self.fetch_price(token, request_timeout),
+                    )
+                    .await;
+                (token, result)
+            }
         });
         futures::stream::iter(estimates)
             .buffered(self.concurrent_requests)
             .boxed()
     }
 
-    /// Fetches a single price and caches it.
-    async fn fetch_and_cache_price(
-        &self,
-        token: Address,
-        timeout: Duration,
-        accumulative_errors_count: u32,
-    ) -> NativePriceEstimateResult {
+    /// Fetches a single price (without caching).
+    async fn fetch_price(&self, token: Address, timeout: Duration) -> NativePriceEstimateResult {
         let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
-
-        let result = self
-            .estimator
+        self.estimator
             .estimate_native_price(token_to_fetch, timeout)
-            .await;
-
-        if should_cache(&result) {
-            let now = Instant::now();
-            let continuously_update_price = match self.require_updating_prices {
-                RequiresUpdatingPrices::Yes => KeepPriceUpdated::Yes,
-                RequiresUpdatingPrices::DontCare => KeepPriceUpdated::No,
-            };
-            self.cache.insert(
-                token,
-                CachedResult::new(
-                    result.clone(),
-                    now,
-                    now,
-                    accumulative_errors_count,
-                    continuously_update_price,
-                ),
-            );
-        }
-
-        result
+            .await
     }
 }
 
@@ -816,7 +805,16 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
                 return cached.result;
             }
 
-            self.0.fetch_and_cache_price(token, timeout, 0).await
+            // Quote source: cache the result but don't mark for active maintenance
+            self.0
+                .cache
+                .estimate_with_cache_update(
+                    token,
+                    RequiresUpdatingPrices::DontCare,
+                    KeepPriceUpdated::No,
+                    |_| self.0.fetch_price(token, timeout),
+                )
+                .await
         }
         .boxed()
     }
