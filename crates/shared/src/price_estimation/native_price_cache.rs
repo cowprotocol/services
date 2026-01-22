@@ -81,6 +81,8 @@ pub struct MaintenanceConfig {
     pub quote_timeout: Duration,
 }
 
+// TODO: AFAICS occurences of `NativePriceCache` could be replaced with `Arc<CacheStorage>`
+// if the methods of `NativePriceCache` get moved to more appropariate places.
 /// A cache storage for native price estimates.
 ///
 /// Can be shared between multiple `CachingNativePriceEstimator` instances,
@@ -296,6 +298,9 @@ impl NativePriceCache {
         tokio::spawn(update_task);
     }
 
+    // TODO: I think it should be possible to unify this with `estimate_prices_and_update_cache`.
+    // Not sure why the new function suddenly has to exist.
+    //
     /// Estimates prices for the given tokens and updates the cache.
     /// Used by the background maintenance task. All tokens are processed using
     /// the provided estimator and marked as Auction source.
@@ -559,6 +564,9 @@ impl CachingNativePriceEstimator {
         let now = Instant::now();
         let mut results = HashMap::default();
         for token in tokens {
+            // TODO: this is currently locking the cache once per token which
+            // has terrible performance. The original functions specifically
+            // pass `MutexGuards` around for that reason.
             let cached =
                 self.cache
                     .get_ready_to_use_cached_price(*token, now, self.require_updating_prices);
