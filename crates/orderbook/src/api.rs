@@ -301,7 +301,8 @@ pub fn handle_all_routes(
     let api_router = Router::new()
         .nest("/v1", v1_router)
         .nest("/v2", v2_router)
-        .with_state(state);
+        .with_state(state)
+        .layer(middleware::from_fn(metrics_middleware));
 
     finalize_router(api_router)
 }
@@ -489,7 +490,6 @@ fn finalize_router(api_router: Router) -> Router {
 
     Router::new()
         .nest("/api", api_router)
-        .layer(middleware::from_fn(metrics_middleware))
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_PAYLOAD as usize))
         .layer(cors)
         .layer(trace_layer)
