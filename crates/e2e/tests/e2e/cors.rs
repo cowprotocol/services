@@ -40,7 +40,7 @@ async fn cors_preflight(web3: Web3) {
         .expect("Missing access-control-allow-methods header")
         .to_str()
         .unwrap();
-    for method in ["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"] {
+    for method in ["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH", "HEAD"] {
         assert!(
             allow_methods.contains(method),
             "access-control-allow-methods missing {method}: {allow_methods}"
