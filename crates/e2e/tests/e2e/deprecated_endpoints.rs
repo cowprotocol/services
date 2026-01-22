@@ -8,6 +8,7 @@ use {
     },
     number::units::EthUnit,
     shared::ethrpc::Web3,
+    std::collections::HashSet,
 };
 
 #[tokio::test]
@@ -146,18 +147,23 @@ async fn solver_competition_v1_endpoints(web3: Web3) {
 
     let indexed = || async {
         onchain.mint_block().await;
-        services.get_latest_solver_competition_v1().await.is_ok()
+        if let Ok(trades) = services.get_trades(&uid).await {
+            // there's only one trade anyway
+            trades.into_iter().any(|trade| trade.tx_hash.is_some())
+        } else {
+            false
+        }
     };
     wait_for_condition(TIMEOUT, indexed).await.unwrap();
 
     // Get latest competition to extract auction ID
     let latest_competition = services.get_latest_solver_competition_v1().await.unwrap();
     let auction_id = latest_competition.auction_id;
-
-    // Get trade to extract transaction hash
-    let trades = services.get_trades(&uid).await.unwrap();
-    assert!(!trades.is_empty(), "Should have at least one trade");
-    let tx_hash = trades[0].tx_hash.expect("Trade should have tx_hash");
+    // Test v1 endpoint: latest
+    assert!(
+        !latest_competition.common.solutions.is_empty(),
+        "Latest competition should have at least one solution"
+    );
 
     // Test v1 endpoint: by auction ID
     let competition_by_id = services
@@ -173,6 +179,11 @@ async fn solver_competition_v1_endpoints(web3: Web3) {
         "Competition by ID should have at least one solution"
     );
 
+    // Get trade to extract transaction hash
+    let trades = services.get_trades(&uid).await.unwrap();
+    // we checked that trades[0] exists in the wait_for_condition
+    let tx_hash = trades[0].tx_hash.expect("Trade should have tx_hash");
+
     // Test v1 endpoint: by transaction hash
     let competition_by_tx = services
         .get_solver_competition_by_tx_v1(tx_hash)
@@ -183,16 +194,17 @@ async fn solver_competition_v1_endpoints(web3: Web3) {
         "Competition by tx hash should have at least one solution"
     );
 
-    // Test v1 endpoint: latest
-    assert!(
-        !latest_competition.common.solutions.is_empty(),
-        "Latest competition should have at least one solution"
-    );
-
     // Verify consistency: all endpoints should return data about the same
     // competition
+    let mut auction_ids = HashSet::<i64>::new();
+    auction_ids.extend(&[
+        competition_by_id.auction_id,
+        competition_by_id.auction_id,
+        latest_competition.auction_id,
+    ]);
     assert_eq!(
-        competition_by_id.auction_id, latest_competition.auction_id,
-        "Competition by ID and latest should have the same auction ID"
+        auction_ids.len(),
+        1,
+        "Auction IDs do not match between endpoints"
     );
 }
