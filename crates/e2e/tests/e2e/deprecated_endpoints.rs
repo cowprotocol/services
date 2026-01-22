@@ -135,9 +135,8 @@ async fn solver_competition_v1_endpoints(web3: Web3) {
 
     let uid = services.create_order(&order).await.unwrap();
 
-    // Wait for order to be settled
-    onchain.mint_block().await;
     let settlement_finished = || async {
+        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         !order.metadata.executed_buy_amount.is_zero()
     };
