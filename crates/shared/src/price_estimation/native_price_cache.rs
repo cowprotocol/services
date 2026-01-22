@@ -198,7 +198,10 @@ impl NativePriceCache {
                 let cached = entry.get_mut();
                 cached.requested_at = now;
 
-                if require_updating_price == RequiresUpdatingPrices::Yes {
+                if cached.update_price_continuously == KeepPriceUpdated::No
+                    && require_updating_price == RequiresUpdatingPrices::Yes
+                {
+                    tracing::trace!(?token, "marking token for needing active maintenance");
                     cached.update_price_continuously = KeepPriceUpdated::Yes;
                 }
 
