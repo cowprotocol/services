@@ -15,12 +15,16 @@ async fn local_node_cors_preflight() {
 }
 
 async fn cors_preflight(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-
+    let onchain = OnchainComponents::deploy(web3).await;
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
-
+    // since we're testing malformed paths, etc;
+    // we don't really need the rest of the protocol
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        ])
+        .await;
     let client = services.client();
 
     let response = client
@@ -68,17 +72,21 @@ async fn local_node_cors_headers_on_error() {
 }
 
 async fn cors_headers_on_error(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-
+    let onchain = OnchainComponents::deploy(web3).await;
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
-
+    // since we're testing malformed paths, etc;
+    // we don't really need the rest of the protocol
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        ])
+        .await;
     let client = services.client();
 
     let response = client
         .get(format!("{API_HOST}/api/v1/nonexistent"))
-        .header("Origin", "https://example.com")
+        .header("Origin", "https://swap.cow.fi")
         .send()
         .await
         .unwrap();
