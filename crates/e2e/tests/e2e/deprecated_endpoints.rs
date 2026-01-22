@@ -2,6 +2,7 @@ use {
     bigdecimal::Zero,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
+    itertools::Itertools,
     model::{
         order::{CancellationPayload, OrderCancellation, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -195,15 +196,13 @@ async fn solver_competition_v1_endpoints(web3: Web3) {
 
     // Verify consistency: all endpoints should return data about the same
     // competition
-    let mut auction_ids = HashSet::<i64>::new();
-    auction_ids.extend(&[
+    let auction_ids = [
         competition_by_id.auction_id,
         competition_by_id.auction_id,
         latest_competition.auction_id,
-    ]);
-    assert_eq!(
-        auction_ids.len(),
-        1,
+    ];
+    assert!(
+        auction_ids.into_iter().all_equal(),
         "Auction IDs do not match between endpoints"
     );
 }

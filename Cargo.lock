@@ -2801,6 +2801,7 @@ dependencies = [
  "futures",
  "hex-literal",
  "hyper 0.14.32",
+ "itertools 0.14.0",
  "model",
  "number",
  "observe",
