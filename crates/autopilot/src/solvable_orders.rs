@@ -16,7 +16,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::alloy::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},

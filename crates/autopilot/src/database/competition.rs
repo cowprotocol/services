@@ -10,6 +10,7 @@ use {
     },
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
+    number::conversions::u256_to_big_decimal,
     std::collections::{BTreeMap, HashMap, HashSet},
 };
 
@@ -50,7 +51,7 @@ impl super::Postgres {
             .map(|(solver, score)| database::reference_scores::Score {
                 auction_id: competition.auction_id,
                 solver: ByteArray(solver.0.0),
-                reference_score: number::conversions::alloy::u256_to_big_decimal(&score.get().0),
+                reference_score: u256_to_big_decimal(&score.get().0),
             })
             .collect();
 
@@ -66,7 +67,7 @@ impl super::Postgres {
                 .map(|(token, price)| AuctionPrice {
                     auction_id: competition.auction_id,
                     token: ByteArray(token.0.0),
-                    price: number::conversions::alloy::u256_to_big_decimal(&price),
+                    price: u256_to_big_decimal(&price),
                 })
                 .collect::<Vec<_>>()
                 .as_slice(),

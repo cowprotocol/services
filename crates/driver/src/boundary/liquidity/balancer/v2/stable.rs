@@ -6,7 +6,6 @@ use {
             liquidity::{self, balancer},
         },
     },
-    ethrpc::alloy::conversions::IntoAlloy,
     solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 
@@ -28,20 +27,20 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                         Ok(balancer::v2::stable::Reserve {
                             asset: eth::Asset {
                                 token: token.into(),
-                                amount: reserve.balance.into_alloy().into(),
+                                amount: reserve.balance.into(),
                             },
                             scale: balancer::v2::ScalingFactor::from_raw(
-                                reserve.scaling_factor.as_uint256().into_alloy(),
+                                reserve.scaling_factor.as_uint256(),
                             )?,
                         })
                     })
                     .collect::<Result<_>>()?,
             )?,
             amplification_parameter: balancer::v2::stable::AmplificationParameter::new(
-                pool.amplification_parameter.factor().into_alloy(),
-                pool.amplification_parameter.precision().into_alloy(),
+                pool.amplification_parameter.factor(),
+                pool.amplification_parameter.precision(),
             )?,
-            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256().into_alloy()),
+            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256()),
         }),
     })
 }

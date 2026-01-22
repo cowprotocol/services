@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::bad_tokens, eth},
+        domain::{competition::risk_detector, eth},
         infra::{
             self,
             blockchain,
@@ -9,11 +9,11 @@ use {
             mempool,
             notify,
             simulator,
-            solver::{self, BadTokenDetection, SolutionMerging},
+            solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
     },
+    alloy::signers::{aws::AwsSigner, local::PrivateKeySigner},
     chain::Chain,
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
     std::path::Path,
@@ -52,22 +52,24 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     );
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
-            let account = match solver_config.account {
-                file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
-                    ethcontract::PrivateKey::from_raw(private_key.0).unwrap(),
-                    None,
-                ),
-                file::Account::Kms(key_id) => {
-                    let config = ethcontract::aws_config::load_from_env().await;
-                    let account =
-                        ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
-                            .await
-                            .unwrap_or_else(|_| panic!("Unable to load KMS account {key_id:?}"));
-                    ethcontract::Account::Kms(account, None)
+            let account: Account = match solver_config.account {
+                file::Account::PrivateKey(private_key) => {
+                    PrivateKeySigner::from_bytes(&private_key)
+                        .expect(
+                            "private key should
+                                            be valid",
+                        )
+                        .into()
                 }
-                file::Account::Address(address) => {
-                    ethcontract::Account::Local(address.into_legacy(), None)
+                file::Account::Kms(arn) => {
+                    let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
+                    let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
+                    AwsSigner::new(client, arn.0, config.chain_id)
+                        .await
+                        .expect("unable to load kms account {arn:?}")
+                        .into()
                 }
+                file::Account::Address(address) => Account::Address(address),
             };
             solver::Config {
                 endpoint: solver_config.endpoint,
@@ -105,39 +107,45 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 solver_native_token: solver_config.manage_native_token.to_domain(),
                 quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
-                bad_token_detection: BadTokenDetection {
+                bad_order_detection: BadOrderDetection {
                     tokens_supported: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .token_supported
                         .iter()
                         .map(|(token, supported)| {
                             (
                                 eth::TokenAddress(eth::ContractAddress(*token)),
                                 match supported {
-                                    true => bad_tokens::Quality::Supported,
-                                    false => bad_tokens::Quality::Unsupported,
+                                    true => risk_detector::Quality::Supported,
+                                    false => risk_detector::Quality::Unsupported,
                                 },
                             )
                         })
                         .collect(),
                     enable_simulation_strategy: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .enable_metrics_strategy,
                     metrics_strategy_failure_ratio: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_failure_ratio,
                     metrics_strategy_required_measurements: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_required_measurements,
                     metrics_strategy_log_only: solver_config
-                        .bad_token_detection
+                        .bad_order_detection
                         .metrics_strategy_log_only,
-                    metrics_strategy_token_freeze_time: solver_config
-                        .bad_token_detection
-                        .metrics_strategy_token_freeze_time,
+                    metrics_strategy_order_freeze_time: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_freeze_time,
+                    metrics_strategy_cache_gc_interval: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_gc_interval,
+                    metrics_strategy_cache_max_age: solver_config
+                        .bad_order_detection
+                        .metrics_strategy_gc_max_age,
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
@@ -145,6 +153,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Latest => liquidity::AtBlock::Latest,
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
+                haircut_bps: solver_config.haircut_bps,
             }
         }))
         .await,
@@ -324,49 +333,24 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             .submission
             .mempools
             .iter()
-            .map(|mempool| mempool::Config {
+            .enumerate()
+            .map(|(index, mempool)| mempool::Config {
                 min_priority_fee: config.submission.min_priority_fee,
                 gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 nonce_block_number: config.submission.nonce_block_number.map(Into::into),
-                kind: match mempool {
-                    file::Mempool::Public {
-                        max_additional_tip,
-                        additional_tip_percentage,
-                    } => {
-                        // If there is no private mempool, revert protection is
-                        // disabled, otherwise driver would not even try to settle revertable
-                        // settlements
-                        let revert_protection = if config
-                            .submission
-                            .mempools
-                            .iter()
-                            .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
-                        {
-                            mempool::RevertProtection::Enabled
-                        } else {
-                            mempool::RevertProtection::Disabled
-                        };
-
-                        mempool::Kind::Public {
-                            max_additional_tip: *max_additional_tip,
-                            additional_tip_percentage: *additional_tip_percentage,
-                            revert_protection,
-                        }
-                    }
-                    file::Mempool::MevBlocker {
-                        url,
-                        max_additional_tip,
-                        additional_tip_percentage,
-                        use_soft_cancellations,
-                    } => mempool::Kind::MEVBlocker {
-                        url: url.to_owned(),
-                        max_additional_tip: *max_additional_tip,
-                        additional_tip_percentage: *additional_tip_percentage,
-                        use_soft_cancellations: *use_soft_cancellations,
-                    },
+                name: mempool
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("mempool_{index}")),
+                url: mempool.url.clone(),
+                revert_protection: match mempool.mines_reverting_txs {
+                    true => mempool::RevertProtection::Disabled,
+                    false => mempool::RevertProtection::Enabled,
                 },
+                max_additional_tip: mempool.max_additional_tip,
+                additional_tip_percentage: mempool.additional_tip_percentage,
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {

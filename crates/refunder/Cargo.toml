@@ -14,7 +14,6 @@ contracts = { workspace = true }
 database = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 const-hex = { workspace = true }
 humantime = { workspace = true }
 mimalloc = { workspace = true, optional = true }

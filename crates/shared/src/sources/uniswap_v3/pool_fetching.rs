@@ -4,7 +4,7 @@ use {
         graph_api::{PoolData, Token, UniV3SubgraphClient},
     },
     crate::{
-        event_handling::{AlloyEventRetriever, EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
+        event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::uniswap_v3::event_fetching::WithAddress,
@@ -274,11 +274,7 @@ pub struct UniswapV3PoolFetcher {
     /// Recent events used on top of pools_checkpoint to get the `latest_block`
     /// pools state.
     events: tokio::sync::Mutex<
-        EventHandler<
-            AlloyEventRetriever<UniswapV3PoolEventFetcher>,
-            RecentEventsCache,
-            (AlloyUniswapV3PoolEvents, Log),
-        >,
+        EventHandler<UniswapV3PoolEventFetcher, RecentEventsCache, (AlloyUniswapV3PoolEvents, Log)>,
     >,
 }
 
@@ -305,7 +301,7 @@ impl UniswapV3PoolFetcher {
 
         let events = tokio::sync::Mutex::new(EventHandler::new(
             block_retriever,
-            AlloyEventRetriever(UniswapV3PoolEventFetcher(web3.alloy)),
+            UniswapV3PoolEventFetcher(web3.alloy),
             RecentEventsCache::default(),
             Some(init_block),
         ));

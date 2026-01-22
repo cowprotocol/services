@@ -3,14 +3,16 @@ use {
         boundary,
         domain::{eth, eth::U256},
     },
-    alloy::providers::Provider,
+    alloy::{
+        network::TransactionBuilder,
+        providers::Provider,
+        rpc::types::{TransactionReceipt, TransactionRequest},
+        transports::TransportErrorKind,
+    },
+    anyhow::anyhow,
     chain::Chain,
     ethcontract::errors::ExecutionError,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         price_estimation::trade_verifier::balance_overrides::{
@@ -18,11 +20,10 @@ use {
             BalanceOverriding,
         },
     },
-    std::{fmt, sync::Arc, time::Duration},
+    std::{fmt, sync::Arc},
     thiserror::Error,
     tracing::{Level, instrument},
     url::Url,
-    web3::{Transport, types::CallRequest},
 };
 
 pub mod contracts;
@@ -170,8 +171,8 @@ impl Ethereum {
 
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
-        let code = self.web3.eth().code(address.into_legacy(), None).await?;
-        Ok(!code.0.is_empty())
+        let code = self.web3.alloy.get_code_at(address).await?;
+        Ok(!code.is_empty())
     }
 
     /// Returns a type that monitors the block chain to inform about the current
@@ -184,79 +185,71 @@ impl Ethereum {
     #[instrument(skip_all)]
     pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
     where
-        CallRequest: From<T>,
+        T: Into<TransactionRequest>,
     {
-        let mut tx: CallRequest = tx.into();
-        tx.gas = Some(self.inner.tx_gas_limit.into_legacy());
-        tx.gas_price = self
-            .simulation_gas_price()
-            .await
-            .map(IntoLegacy::into_legacy);
+        let tx = tx.into();
 
-        let json = self
-            .web3
-            .transport()
-            .execute(
-                "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap(), "latest".into()],
-            )
-            .await?;
-        if let Some(err) = json.get("error") {
-            return Err(Error::AccessList(err.to_owned()));
-        }
-        let access_list: web3::types::AccessList =
-            serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
-        Ok(access_list.into())
+        let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
+            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
+        })?;
+        let tx = tx.with_gas_limit(gas_limit);
+        let tx = match self.simulation_gas_price().await {
+            Some(gas_price) => tx.with_gas_price(gas_price),
+            _ => tx,
+        };
+
+        let access_list = self.web3.alloy.create_access_list(&tx).pending().await?;
+
+        Ok(access_list
+            .ensure_ok()
+            .map_err(Error::AccessList)?
+            .access_list
+            .into())
     }
 
     /// Estimate gas used by a transaction.
-    pub async fn estimate_gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
-        self.web3
-            .eth()
-            .estimate_gas(
-                web3::types::CallRequest {
-                    from: Some(tx.from.into_legacy()),
-                    to: Some(tx.to.into_legacy()),
-                    value: Some(tx.value.0.into_legacy()),
-                    data: Some(tx.input.clone().into()),
-                    access_list: Some(tx.access_list.clone().into()),
-                    gas_price: self
-                        .simulation_gas_price()
-                        .await
-                        .map(IntoLegacy::into_legacy),
-                    ..Default::default()
-                },
-                None,
-            )
+    pub async fn estimate_gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+        let tx = TransactionRequest::default()
+            .from(tx.from)
+            .to(tx.to)
+            .value(tx.value.0)
+            .input(tx.input.0.into())
+            .access_list(tx.access_list.into());
+
+        let tx = match self.simulation_gas_price().await {
+            Some(gas_price) => tx.with_gas_price(gas_price),
+            _ => tx,
+        };
+
+        let estimated_gas = self
+            .web3
+            .alloy
+            .estimate_gas(tx)
+            .pending()
             .await
-            .map(IntoAlloy::into_alloy)
-            .map(Into::into)
-            .map_err(Into::into)
+            .map_err(Error::Rpc)?
+            .into();
+
+        Ok(estimated_gas)
     }
 
     /// The gas price is determined based on the deadline by which the
     /// transaction must be included on-chain. A shorter deadline requires a
     /// higher gas price to increase the likelihood of timely inclusion.
-    pub async fn gas_price(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
-        self.inner.gas.estimate(time_limit).await
+    pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
+        self.inner.gas.estimate().await
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
-        self.inner
-            .current_block
-            .borrow()
-            .gas_limit
-            .into_alloy()
-            .into()
+        self.inner.current_block.borrow().gas_limit.into()
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
-            .eth()
-            .balance(address.into_legacy(), None)
+            .alloy
+            .get_balance(address)
             .await
-            .map(IntoAlloy::into_alloy)
             .map(Into::into)
             .map_err(Into::into)
     }
@@ -269,32 +262,35 @@ impl Ethereum {
     /// Returns the transaction's on-chain inclusion status.
     pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
-            .eth()
-            .transaction_receipt(tx_hash.0.into_legacy())
+            .alloy
+            .get_transaction_receipt(tx_hash.0)
             .await
-            .map(|result| match result {
-                Some(web3::types::TransactionReceipt {
-                    status: Some(status),
-                    block_number: Some(block),
-                    ..
-                }) => {
-                    if status.is_zero() {
-                        eth::TxStatus::Reverted {
-                            block_number: eth::BlockNo(block.as_u64()),
-                        }
-                    } else {
-                        eth::TxStatus::Executed {
-                            block_number: eth::BlockNo(block.as_u64()),
-                        }
+            .map(|result| {
+                let Some(
+                    receipt @ TransactionReceipt {
+                        block_number: Some(block_number),
+                        ..
+                    },
+                ) = result
+                else {
+                    return eth::TxStatus::Pending;
+                };
+
+                if receipt.status() {
+                    eth::TxStatus::Executed {
+                        block_number: eth::BlockNo(block_number),
+                    }
+                } else {
+                    eth::TxStatus::Reverted {
+                        block_number: eth::BlockNo(block_number),
                     }
                 }
-                _ => eth::TxStatus::Pending,
             })
             .map_err(Into::into)
     }
 
     #[instrument(skip(self), ret(level = Level::DEBUG))]
-    pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
+    pub(super) async fn simulation_gas_price(&self) -> Option<u128> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
         // paths that detect that case to try to behave differently during simulations
@@ -302,12 +298,15 @@ impl Ethereum {
         // default value we estimate the current gas price upfront. But because it's
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
-        self.inner
-            .gas
-            .estimate(None)
-            .await
+        let gas_price = self.inner.gas.estimate().await.ok()?.effective().0.0;
+        u128::try_from(gas_price)
+            .inspect_err(|err| {
+                tracing::debug!(
+                    ?err,
+                    "failed to convert gas estimate to u128, returning None"
+                );
+            })
             .ok()
-            .map(|gas| gas.effective().0.0)
     }
 
     pub fn web3(&self) -> &Web3 {
@@ -329,7 +328,9 @@ impl fmt::Debug for Ethereum {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
-    Rpc(#[from] alloy::contract::Error),
+    ContractRpc(#[from] alloy::contract::Error),
+    #[error("alloy rpc error: {0:?}")]
+    Rpc(#[from] alloy::transports::RpcError<TransportErrorKind>),
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
     #[error("web3 error: {0:?}")]
@@ -337,7 +338,7 @@ pub enum Error {
     #[error("gas price estimation error: {0}")]
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
-    AccessList(serde_json::Value),
+    AccessList(String),
 }
 
 impl Error {
@@ -353,7 +354,12 @@ impl Error {
             }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
-            Error::Rpc(_) => true,
+            Error::ContractRpc(_) => true,
+            Error::Rpc(err) => {
+                let is_revert = err.is_error_resp();
+                tracing::trace!(is_revert, ?err, "classified error");
+                is_revert
+            }
         }
     }
 }
@@ -362,7 +368,7 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
-            contracts::Error::Rpc(err) => Self::Rpc(err),
+            contracts::Error::Rpc(err) => Self::ContractRpc(err),
         }
     }
 }
@@ -370,7 +376,7 @@ impl From<contracts::Error> for Error {
 impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
-            SimulationError::Method(err) => Self::Rpc(err),
+            SimulationError::Method(err) => Self::ContractRpc(err),
             SimulationError::Web3(err) => Self::Web3(err),
         }
     }

@@ -2,9 +2,11 @@ pub mod arguments;
 pub mod refund_service;
 pub mod submitter;
 
+// Re-export commonly used types for external consumers (e.g., e2e tests)
+pub use refund_service::RefundStatus;
 use {
     crate::arguments::Arguments,
-    alloy::signers::local::PrivateKeySigner,
+    alloy::{providers::Provider, signers::local::PrivateKeySigner},
     clap::Parser,
     contracts::alloy::CoWSwapEthFlow,
     observe::metrics::LivenessChecking,
@@ -42,11 +44,10 @@ pub async fn run(args: arguments::Arguments) {
     let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
     if let Some(expected_chain_id) = args.chain_id {
         let chain_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
-            .expect("Could not get chainId")
-            .as_u64();
+            .expect("Could not get chainId");
         assert_eq!(
             chain_id, expected_chain_id,
             "connected to node with incorrect chain ID",
@@ -85,10 +86,11 @@ pub async fn run(args: arguments::Arguments) {
         refunder_account,
         args.max_gas_price,
         args.start_priority_fee_tip,
+        Some(args.lookback_time),
     );
     loop {
         tracing::info!("Staring a new refunding loop");
-        match refunder.try_to_refund_all_eligble_orders().await {
+        match refunder.try_to_refund_all_eligible_orders().await {
             Ok(_) => {
                 track_refunding_loop_result("success");
                 *liveness.last_successful_loop.write().unwrap() = Instant::now()

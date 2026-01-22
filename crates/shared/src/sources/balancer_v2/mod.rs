@@ -44,6 +44,6 @@ pub mod pools;
 pub mod swap;
 
 pub use self::{
-    pool_fetching::{BalancerFactoryKind, BalancerPoolFetcher, BalancerPoolFetching},
+    pool_fetching::{BalancerPoolFetcher, BalancerPoolFetching},
     pools::{Pool, PoolKind},
 };

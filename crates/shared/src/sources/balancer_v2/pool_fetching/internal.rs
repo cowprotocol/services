@@ -3,8 +3,8 @@
 
 use {
     crate::{recent_block_cache::Block, sources::balancer_v2::pools::Pool},
+    alloy::primitives::B256,
     anyhow::Result,
-    ethcontract::H256,
     model::TokenPair,
     std::collections::HashSet,
 };
@@ -16,8 +16,8 @@ use {
 #[async_trait::async_trait]
 pub trait InternalPoolFetching: Send + Sync + 'static {
     /// Retrives all pool IDs that trade the specified pairs.
-    async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<H256>;
+    async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<B256>;
 
     /// Fetches current pool states for the specified IDs and block.
-    async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>>;
+    async fn pools_by_id(&self, pool_ids: HashSet<B256>, block: Block) -> Result<Vec<Pool>>;
 }

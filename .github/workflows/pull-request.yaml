@@ -241,6 +241,28 @@ jobs:
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: just test-driver
 
+  solidity-artifacts:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build Solidity artifacts
+        working-directory: crates/contracts/solidity
+        run: make -B artifacts
+      - name: Verify no JSON changes
+        run: |
+          if git diff --exit-code -- 'crates/contracts/artifacts/*.json'; then
+            echo "✓ Solidity artifacts are up-to-date"
+          else
+            echo "✗ Solidity artifacts are out-of-date. Please run 'cd crates/contracts/solidity && make -B artifacts' and commit the changes."
+            # run the command again to show exactly what the changes would be
+            git diff --exit-code -- 'crates/contracts/artifacts/*.json'
+            exit 1
+          fi
+
+
   openapi:
     timeout-minutes: 60
     runs-on: ubuntu-latest

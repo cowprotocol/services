@@ -1,7 +1,8 @@
 pub use alloy::primitives::{Address, B256, U256};
 use {
-    crate::{domain, util::conv::U256Ext},
+    crate::domain,
     derive_more::{Display, From, Into},
+    number::u256_ext::U256Ext,
 };
 
 /// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
@@ -148,11 +149,23 @@ impl num::Saturating for SellTokenAmount {
 #[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq, From, Into)]
 pub struct Gas(pub U256);
 
+impl From<u64> for Gas {
+    fn from(value: u64) -> Self {
+        Self(U256::from(value))
+    }
+}
+
 /// The `effective_gas_price` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
 #[derive(Debug, Clone, Copy, Display, Default)]
 pub struct EffectiveGasPrice(pub Ether);
+
+impl From<u128> for EffectiveGasPrice {
+    fn from(value: u128) -> Self {
+        Self(U256::from(value).into())
+    }
+}
 
 impl From<U256> for EffectiveGasPrice {
     fn from(value: U256) -> Self {
@@ -302,7 +315,7 @@ impl std::iter::Sum for Ether {
 pub struct DomainSeparator(pub [u8; 32]);
 
 /// Originated from the blockchain transaction input data.
-pub type Calldata = crate::util::Bytes<Vec<u8>>;
+pub type Calldata = alloy::primitives::Bytes;
 
 /// A settlement event emitted by a settlement smart contract.
 #[derive(Debug, Clone, Copy)]

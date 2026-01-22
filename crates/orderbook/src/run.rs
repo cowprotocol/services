@@ -89,11 +89,10 @@ pub async fn run(args: Arguments) {
     });
 
     let chain_id = web3
-        .eth()
-        .chain_id()
+        .alloy
+        .get_chain_id()
         .await
-        .expect("Could not get chainId")
-        .as_u64();
+        .expect("Could not get chainId");
     if let Some(expected_chain_id) = args.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
@@ -401,7 +400,7 @@ pub async fn run(args: Arguments) {
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(
-        native_token.clone(),
+        native_token,
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             args.banned_users,
@@ -419,6 +418,7 @@ pub async fn run(args: Arguments) {
         code_fetcher,
         app_data_validator.clone(),
         args.max_gas_per_order,
+        args.same_tokens_policy,
     ));
     let ipfs = args
         .ipfs_gateway
@@ -453,6 +453,8 @@ pub async fn run(args: Arguments) {
             optimal_quoter,
             app_data.clone(),
             args.volume_fee_config,
+            args.shared.volume_fee_bucket_overrides.clone(),
+            args.shared.enable_sell_equals_buy_volume_fee,
         )
         .with_fast_quoter(fast_quoter),
     );

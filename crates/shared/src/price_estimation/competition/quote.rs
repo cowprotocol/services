@@ -31,12 +31,15 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 .ranking
                 .provide_context(out_token.into_legacy(), query.timeout);
 
-            // Filter out 0 gas cost estimate because they are obviously wrong and would
-            // likely win the price competition which would lead to us paying huge
-            // subsidies.
-            let gas_is_reasonable = |r: &PriceEstimateResult| r.as_ref().is_ok_and(|r| r.gas > 0);
+            // Filter out obviously wrong estimates:
+            // - 0 gas cost would lead to us paying huge subsidies
+            // - 0 out_amount means the quote is useless
+            let is_reasonable = |r: &PriceEstimateResult| {
+                r.as_ref()
+                    .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
+            };
             let get_results = self
-                .produce_results(query.clone(), gas_is_reasonable, |context| {
+                .produce_results(query.clone(), is_reasonable, |context| {
                     context.estimator.estimate(context.query)
                 })
                 .map(Result::Ok);
@@ -45,7 +48,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
 
             let winner = results
                 .into_iter()
-                .filter(|(_index, r)| r.is_err() || gas_is_reasonable(r))
+                .filter(|(_index, r)| r.is_err() || is_reasonable(r))
                 .max_by(|a, b| {
                     compare_quote_result(
                         &query,
@@ -55,7 +58,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                         !matches!(self.verification_mode, QuoteVerificationMode::Unverified),
                     )
                 })
-                .with_context(|| "all price estimates reported 0 gas cost")
+                .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
             self.report_winner(&query, query.kind, winner)
         }
@@ -156,7 +159,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            gas_price_estimation::FakeGasPriceEstimator,
+            gas_price_estimation::{FakeGasPriceEstimator, price::GasPrice1559},
             price_estimation::{
                 MockPriceEstimating,
                 QuoteVerificationMode,
@@ -164,7 +167,6 @@ mod tests {
             },
         },
         alloy::primitives::U256,
-        gas_estimation::GasPrice1559,
         model::order::OrderKind,
     };
 

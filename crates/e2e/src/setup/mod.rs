@@ -3,6 +3,7 @@ mod deploy;
 #[macro_use]
 pub mod onchain_components;
 pub mod fee;
+pub mod proxy;
 mod services;
 mod solver;
 
@@ -10,8 +11,8 @@ use {
     crate::nodes::{NODE_HOST, Node},
     ::alloy::signers::local::{MnemonicBuilder, coins_bip39::English},
     anyhow::{Result, anyhow},
-    ethcontract::futures::FutureExt,
     ethrpc::Web3,
+    futures::FutureExt,
     std::{
         future::Future,
         io::Write,

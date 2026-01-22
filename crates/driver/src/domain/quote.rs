@@ -16,10 +16,7 @@ use {
         util,
     },
     chrono::Utc,
-    std::{
-        collections::{HashMap, HashSet},
-        iter,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 /// A quote describing the expected outcome of an order.
@@ -37,12 +34,10 @@ pub struct Quote {
 
 impl Quote {
     fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
+        let clearing_prices = Self::compute_clearing_prices(&solution)?;
+
         Ok(Self {
-            clearing_prices: solution
-                .clearing_prices()
-                .into_iter()
-                .map(|(token, amount)| (token.into(), amount))
-                .collect(),
+            clearing_prices,
             pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
@@ -64,6 +59,52 @@ impl Quote {
                 })
                 .collect(),
         })
+    }
+
+    /// Compute clearing prices for the quote.
+    ///
+    /// Uses uniform clearing prices from the solution, adjusted for haircut
+    /// when enabled. This uses the same approach as settlement encoding:
+    /// `custom_prices()` which internally uses `sell_amount()` and
+    /// `buy_amount()` to include the haircut in the effective trade
+    /// amounts.
+    fn compute_clearing_prices(
+        solution: &competition::Solution,
+    ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
+        // Start with uniform clearing prices
+        let mut prices: HashMap<eth::Address, eth::U256> = solution
+            .clearing_prices()
+            .into_iter()
+            .map(|(token, amount)| (token.into(), amount))
+            .collect();
+
+        // Quote competitions contain only a single order (see `fake_auction()`),
+        // so there's at most one fulfillment in the solution.
+        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
+        // haircut.
+        if let Some(trade) = solution.trades().iter().find(|trade| match trade {
+            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
+            _ => false,
+        }) {
+            let sell_token: eth::Address = trade.sell().token.into();
+            let buy_token: eth::Address = trade.buy().token.into();
+            let uniform_clearing = solution::trade::ClearingPrices {
+                sell: *prices
+                    .get(&sell_token)
+                    .ok_or(QuotingFailed::ClearingSellMissing)?,
+                buy: *prices
+                    .get(&buy_token)
+                    .ok_or(QuotingFailed::ClearingBuyMissing)?,
+            };
+            let custom_prices = trade
+                .custom_prices(&uniform_clearing)
+                .map_err(|_| QuotingFailed::Math)?;
+
+            prices.insert(sell_token, custom_prices.sell);
+            prices.insert(buy_token, custom_prices.buy);
+        }
+
+        Ok(prices)
     }
 }
 
@@ -91,7 +132,7 @@ impl Order {
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
-                    .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
+                    .fetch(&self.token_liquidity(), infra::liquidity::AtBlock::Recent)
                     .await
             }
             solver::Liquidity::Skip => Default::default(),
@@ -225,15 +266,14 @@ impl Order {
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        let pair = liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
-            .expect("sell != buy by construction");
-        iter::once(pair).collect()
+    fn token_liquidity(&self) -> HashSet<liquidity::TokenPair> {
+        liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
+            .ok()
+            .into_iter()
+            .collect()
     }
 }
 
-/// The sell and buy tokens to quote for. This type maintains the invariant that
-/// the sell and buy tokens are distinct.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Tokens {
     sell: eth::TokenAddress,
@@ -241,13 +281,8 @@ pub struct Tokens {
 }
 
 impl Tokens {
-    /// Creates a new instance of [`Tokens`], verifying that the input buy and
-    /// sell tokens are distinct.
-    pub fn try_new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
-        if sell == buy {
-            return Err(SameTokens);
-        }
-        Ok(Self { sell, buy })
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Self {
+        Self { sell, buy }
     }
 
     pub fn sell(&self) -> eth::TokenAddress {
@@ -347,6 +382,8 @@ pub enum QuotingFailed {
     ClearingBuyMissing,
     #[error("solver returned no solutions")]
     NoSolutions,
+    #[error("math error computing custom prices")]
+    Math,
 }
 
 #[derive(Debug, thiserror::Error)]

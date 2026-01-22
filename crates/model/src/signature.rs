@@ -1,15 +1,14 @@
 use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
-    alloy::primitives::{Address, B256},
+    alloy::{
+        primitives::{Address, B256},
+        signers::{SignerSync, local::PrivateKeySigner},
+    },
     anyhow::{Context as _, Result, ensure},
     serde::{Deserialize, Serialize, de},
     std::{
         convert::TryInto as _,
         fmt::{self, Debug, Formatter},
-    },
-    web3::{
-        signing::{self, Key, SecretKeyRef},
-        types::Recovery,
     },
 };
 
@@ -263,24 +262,21 @@ pub struct EcdsaSignature {
     pub v: u8,
 }
 
-pub fn hashed_eip712_message(
-    domain_separator: &DomainSeparator,
-    struct_hash: &[u8; 32],
-) -> [u8; 32] {
+pub fn hashed_eip712_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> B256 {
     let mut message = [0u8; 66];
     // 0x19 0x01 are the magic prefix bytes for the domain separator
     // https://eips.ethereum.org/EIPS/eip-712#eth_signTypedData
     message[0..2].copy_from_slice(&[0x19, 0x01]);
     message[2..34].copy_from_slice(&domain_separator.0);
     message[34..66].copy_from_slice(struct_hash);
-    signing::keccak256(&message)
+    alloy::primitives::keccak256(message)
 }
 
-fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> [u8; 32] {
+fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> B256 {
     let mut message = [0u8; 60];
     message[..28].copy_from_slice(b"\x19Ethereum Signed Message:\n32");
-    message[28..].copy_from_slice(&hashed_eip712_message(domain_separator, struct_hash));
-    signing::keccak256(&message)
+    message[28..].copy_from_slice(hashed_eip712_message(domain_separator, struct_hash).as_slice());
+    alloy::primitives::keccak256(message)
 }
 
 /// Orders are always hashed into 32 bytes according to EIP-712.
@@ -288,7 +284,7 @@ fn hashed_signing_message(
     signing_scheme: EcdsaSigningScheme,
     domain_separator: &DomainSeparator,
     struct_hash: &[u8; 32],
-) -> [u8; 32] {
+) -> B256 {
     match signing_scheme {
         EcdsaSigningScheme::Eip712 => hashed_eip712_message(domain_separator, struct_hash),
         EcdsaSigningScheme::EthSign => hashed_ethsign_message(domain_separator, struct_hash),
@@ -327,32 +323,22 @@ impl EcdsaSignature {
         struct_hash: &[u8; 32],
     ) -> Result<Recovered> {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
-        let recovery = Recovery::new(message, self.v as u64, self.r.0.into(), self.s.0.into());
-        let (signature, recovery_id) = recovery
-            .as_signature()
-            .context("unexpectedly invalid signature")?;
-        let signer = Address::new(signing::recover(&message, &signature, recovery_id)?.0);
+        let signature = alloy::primitives::Signature::from_raw(&self.to_bytes())?;
+        let signer = signature.recover_address_from_prehash(&message)?;
 
-        Ok(Recovered {
-            message: message.into(),
-            signer,
-        })
+        Ok(Recovered { message, signer })
     }
 
     pub fn sign(
         signing_scheme: EcdsaSigningScheme,
         domain_separator: &DomainSeparator,
         struct_hash: &[u8; 32],
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         // Unwrap because the only error is for invalid messages which we don't create.
-        let signature = key.sign(&message, None).unwrap();
-        Self {
-            v: signature.v as u8,
-            r: signature.r.0.into(),
-            s: signature.s.0.into(),
-        }
+        let signature = key.sign_hash_sync(&message).unwrap();
+        Self::from_bytes(&signature.as_bytes())
     }
 
     /// Returns an arbitrary non-zero signature that can be used for recovery
@@ -593,6 +579,53 @@ mod tests {
                 "signature": "0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
             }))
             .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_ecdsa_signature_recovery() {
+        let private_key = alloy::primitives::U256::from(1u64);
+        let signer = PrivateKeySigner::from_bytes(&private_key.to_be_bytes().into()).unwrap();
+        let signer_address = signer.address();
+
+        let domain_separator = DomainSeparator(*B256::repeat_byte(0xde));
+        let struct_hash = B256::repeat_byte(0xad);
+
+        let eip712_ecdsa_signature = EcdsaSignature::sign(
+            EcdsaSigningScheme::Eip712,
+            &domain_separator,
+            &struct_hash,
+            &signer,
+        );
+        let ethsign_ecdsa_signature = EcdsaSignature::sign(
+            EcdsaSigningScheme::EthSign,
+            &domain_separator,
+            &struct_hash,
+            &signer,
+        );
+
+        // Test Eip712 recovery
+        let eip712_signature = Signature::Eip712(eip712_ecdsa_signature);
+        let recovered_eip712 = eip712_signature
+            .recover(&domain_separator, &struct_hash)
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered_eip712.signer, signer_address);
+        assert_eq!(
+            recovered_eip712.message,
+            hashed_eip712_message(&domain_separator, &struct_hash)
+        );
+
+        // Test EthSign recovery
+        let ethsign_signature = Signature::EthSign(ethsign_ecdsa_signature);
+        let recovered_ethsign = ethsign_signature
+            .recover(&domain_separator, &struct_hash)
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered_ethsign.signer, signer_address);
+        assert_eq!(
+            recovered_ethsign.message,
+            hashed_ethsign_message(&domain_separator, &struct_hash)
         );
     }
 }

@@ -7,12 +7,12 @@ use {
     std::collections::HashMap,
 };
 
-mod participant;
+mod bid;
 mod participation_guard;
 pub mod winner_selection;
 
 pub use {
-    participant::{Participant, Ranked, Unranked},
+    bid::{Bid, RankType, Ranked, Scored, Unscored},
     participation_guard::SolverParticipationGuard,
 };
 
@@ -25,10 +25,6 @@ pub struct Solution {
     solver: Address,
     orders: HashMap<domain::OrderUid, TradedOrder>,
     prices: auction::Prices,
-    /// Score computed by the autopilot based on the solution
-    /// of the solver.
-    // TODO: refactor this to compute the score in the constructor
-    score: Option<Score>,
 }
 
 impl Solution {
@@ -43,22 +39,17 @@ impl Solution {
             solver,
             orders,
             prices,
-            score: None,
         }
     }
+}
 
+impl Solution {
     pub fn id(&self) -> SolutionId {
         self.id
     }
 
     pub fn solver(&self) -> Address {
         self.solver
-    }
-
-    pub fn score(&self) -> Score {
-        self.score.expect(
-            "this function only gets called after the winner selection populated this value",
-        )
     }
 
     pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {

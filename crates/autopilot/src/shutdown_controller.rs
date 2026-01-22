@@ -20,22 +20,31 @@ impl ShutdownController {
     }
 
     async fn wait_for_signal(shutdown: ShutdownSignal) {
-        use tokio::signal;
-        // On Unix-like systems, we can listen for SIGTERM.
         #[cfg(unix)]
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+        {
+            use tokio::{signal, signal::unix};
+            // On Unix-like systems, we can listen for SIGTERM.
+            let mut sigterm = unix::signal(unix::SignalKind::terminate()).unwrap();
 
-        // On all platforms, we can listen for Ctrl+C.
-        let ctrl_c = signal::ctrl_c();
-
-        tokio::select! {
-            _ = ctrl_c => {
-                tracing::info!("Received SIGINT");
-            },
-            _ = sigterm.recv() => {
-                tracing::info!("Received SIGTERM.");
-            },
+            // Equivalent to SIGINT
+            let ctrl_c = signal::ctrl_c();
+            tokio::select! {
+                _ = ctrl_c => {
+                    tracing::info!("Received SIGINT");
+                },
+                _ = sigterm.recv() => {
+                    tracing::info!("Received SIGTERM");
+                },
+            }
         }
+        #[cfg(not(unix))]
+        {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to install CTRL+C handler");
+            tracing::info!("Received SIGINT");
+        }
+
         shutdown.shutdown();
     }
 
