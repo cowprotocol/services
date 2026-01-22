@@ -9,7 +9,6 @@ use {
     },
     number::units::EthUnit,
     shared::ethrpc::Web3,
-    std::collections::HashSet,
 };
 
 #[tokio::test]
