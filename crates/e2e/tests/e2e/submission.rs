@@ -15,7 +15,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::{nonzero::NonZeroU256, units::EthUnit},
+    number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
     shared::ethrpc::Web3,
     std::time::Duration,
 };
@@ -301,6 +301,34 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     assert!(quote_response.id.is_some());
     assert!(quote_response.verified);
     assert!(quote_response.quote.buy_amount < quote_sell_amount);
+
+    {
+        // check that a different receiver does not affect the quoted amount
+        let quote_request_different_receiver = OrderQuoteRequest {
+            receiver: Some(Address::repeat_byte(0x01)),
+            ..quote_request
+        };
+        let quote_response_different_receiver = services
+            .submit_quote(&quote_request_different_receiver)
+            .await
+            .unwrap();
+
+        tracing::info!(?quote_response_different_receiver);
+        assert!(quote_response_different_receiver.id.is_some());
+        assert!(quote_response_different_receiver.verified);
+        assert!(
+            quote_response_different_receiver
+                .quote
+                .buy_amount
+                .is_approx_eq(&quote_response.quote.buy_amount, Some(0.0001))
+        );
+        assert!(
+            quote_response_different_receiver
+                .quote
+                .sell_amount
+                .is_approx_eq(&quote_response.quote.sell_amount, Some(0.0001))
+        );
+    }
 
     let quote_metadata =
         crate::database::quote_metadata(services.db(), quote_response.id.unwrap()).await;
