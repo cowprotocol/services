@@ -45,7 +45,7 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
-    use crate::tests::cases::ApproxEq;
+    use number::testing::ApproxEq;
 
     let test_name = format!(
         "Protocol Fee: {:?} {:?}",
