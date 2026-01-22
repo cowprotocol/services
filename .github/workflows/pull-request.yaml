@@ -5,7 +5,7 @@ on:
   # We require PRs to be up to date before merging so technically it is not needed run the rust job
   # on main. However for the cache to be usable in PRs we do need the job on main.
   push:
-    branches: [ main ]
+    branches: [main]
 jobs:
   lint:
     timeout-minutes: 60
@@ -31,8 +31,8 @@ jobs:
           cargo +nightly fmt --version
           cargo clippy --version
       - run: just fmt --check
-      - run: just clippy 
-  
+      - run: just clippy
+
   trivy:
     runs-on: ubuntu-latest
     steps:
@@ -43,14 +43,14 @@ jobs:
       - name: Run Trivy
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
         with:
-          scan-type: 'fs'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          scan-type: "fs"
+          format: "sarif"
+          output: "trivy-results.sarif"
 
       - name: Upload Trivy scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@51f77329afa6477de8c49fc9c7046c15b9a4e79d # v3.29.5
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: "trivy-results.sarif"
 
   cargo-audit:
     runs-on: ubuntu-latest
@@ -262,7 +262,6 @@ jobs:
             exit 1
           fi
 
-
   openapi:
     timeout-minutes: 60
     runs-on: ubuntu-latest
@@ -280,7 +279,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -318,7 +317,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! just test-e2e forked_node_mainnet_repay_debt_with_collateral_of_safe; then
+            if ! just test-e2e local_node_solver_competition_v1_endpoints; then
               exit 1
             fi
             attempt=$((attempt+1))
