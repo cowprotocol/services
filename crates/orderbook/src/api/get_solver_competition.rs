@@ -17,7 +17,7 @@ pub async fn get_solver_competition_by_id_handler(
     State(state): State<Arc<AppState>>,
     Path(auction_id): Path<AuctionId>,
 ) -> impl IntoResponse {
-    let handler: Arc<dyn SolverCompetitionStoring> = Arc::new(state.database_write.clone());
+    let handler: &dyn SolverCompetitionStoring = &state.database_read;
     let result = handler.load_competition(Identifier::Id(auction_id)).await;
     response(result)
 }
@@ -26,7 +26,7 @@ pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
 ) -> impl IntoResponse {
-    let handler: Arc<dyn SolverCompetitionStoring> = Arc::new(state.database_write.clone());
+    let handler: &dyn SolverCompetitionStoring = &state.database_read;
     let result = handler
         .load_competition(Identifier::Transaction(tx_hash))
         .await;
@@ -36,7 +36,7 @@ pub async fn get_solver_competition_by_hash_handler(
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let handler: Arc<dyn SolverCompetitionStoring> = Arc::new(state.database_write.clone());
+    let handler: &dyn SolverCompetitionStoring = &state.database_read;
     let result = handler.load_latest_competition().await;
     response(result)
 }

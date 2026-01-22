@@ -1,8 +1,5 @@
 use {
-    crate::{
-        api::{AppState, convert_json_response},
-        orderbook::OrderCancellationError,
-    },
+    crate::{api::AppState, orderbook::OrderCancellationError},
     anyhow::Result,
     axum::{
         Json,
@@ -78,7 +75,10 @@ impl IntoResponse for OrderCancellationError {
 }
 
 pub fn cancel_order_response(result: Result<(), OrderCancellationError>) -> super::ApiReply {
-    convert_json_response(result.map(|_| "Cancelled"))
+    match result {
+        Ok(_) => (axum::http::StatusCode::OK, axum::Json("Cancelled")).into_response(),
+        Err(err) => err.into_response(),
+    }
 }
 
 #[cfg(test)]

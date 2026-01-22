@@ -1,7 +1,7 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     crate::{
-        api::{ApiReply, AppState, convert_json_response, error, rich_error},
+        api::{ApiReply, AppState, error, rich_error},
         quoter::OrderQuoteError,
     },
     axum::{Json, extract::State, response::IntoResponse},
@@ -21,10 +21,13 @@ pub async fn post_quote_handler(
         .calculate_quote(&request)
         .await
         .map_err(OrderQuoteErrorWrapper);
-    if let Err(err) = &result {
+    if let Err(ref err) = result {
         tracing::warn!(%err, ?request, "post_quote error");
     }
-    convert_json_response(result)
+    match result {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(err) => err.into_response(),
+    }
 }
 
 #[derive(Debug, Error)]
@@ -287,9 +290,7 @@ mod tests {
             verified: false,
             protocol_fee_bps: Some("2".to_string()),
         };
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
-            order_quote_response.clone(),
-        ));
+        let response = (StatusCode::OK, Json(order_quote_response.clone())).into_response();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
@@ -299,11 +300,10 @@ mod tests {
 
     #[tokio::test]
     async fn post_quote_response_err() {
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Err(
-            OrderQuoteErrorWrapper(OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(
-                anyhow!("Uh oh - error"),
-            ))),
-        ));
+        let response = OrderQuoteErrorWrapper(OrderQuoteError::CalculateQuote(
+            CalculateQuoteError::Other(anyhow!("Uh oh - error")),
+        ))
+        .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
