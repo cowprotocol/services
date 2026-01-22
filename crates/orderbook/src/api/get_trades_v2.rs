@@ -72,7 +72,7 @@ pub async fn get_trades_handler(
     match request_result {
         Ok(trade_filter) => {
             let result = state
-                .database_write
+                .database_read
                 .trades_paginated(&trade_filter)
                 .await
                 .context("get_trades_v2");
