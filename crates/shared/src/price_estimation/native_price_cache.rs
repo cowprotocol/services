@@ -31,20 +31,17 @@ pub enum KeepPriceUpdated {
     No,
 }
 
-/// Specifies what cache modifications to perform during a lookup.
+// This could be a bool but lets keep it as an enum for clarity.
+/// Determines whether we need the price of the token to be
+/// actively kept up to date by the maintenance task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CacheLookup {
-    /// Read-only access - no modifications to the cache.
-    /// Used by maintenance when checking if a price is already cached.
-    ReadOnly,
-    /// Upgrade existing Quote-sourced entry to Auction if applicable, but don't
-    /// create missing entries. Used by estimators when looking up cached
-    /// prices.
-    UpgradeOnly,
-    /// Create missing entry for maintenance (with Auction source) and upgrade
-    /// existing Quote→Auction. Used when building auctions to ensure missing
-    /// prices get fetched by the maintenance task.
-    CreateForMaintenance,
+pub enum RequireUpdatingPrice {
+    /// The lookup does not care whether the price of the token
+    /// is actively being maintained. In other words the flag
+    /// of the token should not be changed.
+    DontCare,
+    /// The token will be marked to require active maintenance.
+    Yes,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -193,7 +190,7 @@ impl NativePriceCache {
         &self,
         token: Address,
         now: Instant,
-        lookup: CacheLookup,
+        lookup: RequireUpdatingPrice,
     ) -> Option<CachedResult> {
         let mut cache = self.inner.cache.lock().unwrap();
         match cache.entry(token) {
@@ -201,14 +198,7 @@ impl NativePriceCache {
                 let cached = entry.get_mut();
                 cached.requested_at = now;
 
-                // Upgrade Quote to Auction if requested - this makes the entry
-                // actively maintained by the background task
-                if matches!(
-                    lookup,
-                    CacheLookup::UpgradeOnly | CacheLookup::CreateForMaintenance
-                ) && cached.source == KeepPriceUpdated::No
-                {
-                    tracing::trace!(?token, "upgrading Quote-sourced entry to Auction");
+                if lookup == RequireUpdatingPrice::Yes {
                     cached.source = KeepPriceUpdated::Yes;
                 }
 
@@ -217,7 +207,7 @@ impl NativePriceCache {
                 is_recent.then_some(cached.clone())
             }
             Entry::Vacant(entry) => {
-                if lookup == CacheLookup::CreateForMaintenance {
+                if lookup == RequireUpdatingPrice::Yes {
                     // Create an outdated cache entry so the background task keeping the cache warm
                     // will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
@@ -246,7 +236,7 @@ impl NativePriceCache {
         &self,
         token: Address,
         now: Instant,
-        lookup: CacheLookup,
+        lookup: RequireUpdatingPrice,
     ) -> Option<CachedResult> {
         self.get_cached_price(token, now, lookup)
             .filter(|cached| cached.is_ready())
@@ -321,7 +311,7 @@ impl NativePriceCache {
                     // check if the price is cached by now
                     let now = Instant::now();
 
-                    match self.get_cached_price(*token, now, CacheLookup::ReadOnly) {
+                    match self.get_cached_price(*token, now, RequireUpdatingPrice::DontCare) {
                         Some(cached) if cached.is_ready() => {
                             return (*token, cached.result);
                         }
@@ -530,10 +520,9 @@ impl Inner {
                 // check if the price is cached by now
                 let now = Instant::now();
 
-                // Upgrade Quote→Auction if this is an Auction-sourced estimator
                 let lookup = match self.source {
-                    KeepPriceUpdated::Yes => CacheLookup::UpgradeOnly,
-                    KeepPriceUpdated::No => CacheLookup::ReadOnly,
+                    KeepPriceUpdated::Yes => RequireUpdatingPrice::Yes,
+                    KeepPriceUpdated::No => RequireUpdatingPrice::DontCare,
                 };
                 match self.cache.get_cached_price(*token, now, lookup) {
                     Some(cached) if cached.is_ready() => {
@@ -651,8 +640,8 @@ impl CachingNativePriceEstimator {
         // For Auction source: create missing entries and upgrade Quote→Auction
         // For Quote source: just read (Quote entries shouldn't be maintained)
         let lookup = match self.0.source {
-            KeepPriceUpdated::Yes => CacheLookup::CreateForMaintenance,
-            KeepPriceUpdated::No => CacheLookup::ReadOnly,
+            KeepPriceUpdated::Yes => RequireUpdatingPrice::Yes,
+            KeepPriceUpdated::No => RequireUpdatingPrice::DontCare,
         };
         for token in tokens {
             let cached = self
@@ -721,8 +710,8 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let now = Instant::now();
             // Upgrade Quote→Auction if this is an Auction-sourced estimator
             let lookup = match self.0.source {
-                KeepPriceUpdated::Yes => CacheLookup::UpgradeOnly,
-                KeepPriceUpdated::No => CacheLookup::ReadOnly,
+                KeepPriceUpdated::Yes => RequireUpdatingPrice::Yes,
+                KeepPriceUpdated::No => RequireUpdatingPrice::DontCare,
             };
             let cached = self
                 .0
@@ -778,11 +767,11 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
         async move {
             let now = Instant::now();
             // Quote source doesn't upgrade or create entries, just read
-            let cached =
-                self.0
-                    .0
-                    .cache
-                    .get_ready_to_use_cached_price(token, now, CacheLookup::ReadOnly);
+            let cached = self.0.0.cache.get_ready_to_use_cached_price(
+                token,
+                now,
+                RequireUpdatingPrice::DontCare,
+            );
 
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
