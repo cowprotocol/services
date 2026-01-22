@@ -9,7 +9,7 @@ use {
         native::{self, NativePriceEstimator},
         native_price_cache::{
             CachingNativePriceEstimator,
-            EstimatorSource,
+            KeepPriceUpdated,
             MaintenanceConfig,
             NativePriceCache,
         },
@@ -432,7 +432,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             cache,
             self.args.native_price_cache_concurrent_requests,
             approximation_tokens,
-            EstimatorSource::Auction,
+            KeepPriceUpdated::Yes,
         ))
     }
 

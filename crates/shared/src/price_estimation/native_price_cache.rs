@@ -20,15 +20,15 @@ use {
     tracing::{Instrument, instrument},
 };
 
-/// Identifies which estimator type fetched a cached entry.
-/// Used by maintenance to decide which entries to refresh.
+// This could be a bool but lets keep it as an enum for clarity.
+// Arguably this should not implement Default for the same argument...
+/// Determines whether the background maintenance task should
+/// keep the token price up to date automatically.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum EstimatorSource {
-    /// Auction-related requests - actively maintained by background task.
+pub enum KeepPriceUpdated {
     #[default]
-    Auction,
-    /// Quote competition-related requests - cached but not maintained.
-    Quote,
+    Yes,
+    No,
 }
 
 /// Specifies what cache modifications to perform during a lookup.
@@ -125,7 +125,7 @@ impl NativePriceCache {
                         updated_at,
                         now,
                         Default::default(),
-                        EstimatorSource::default(),
+                        KeepPriceUpdated::Yes,
                     ),
                 ))
             })
@@ -206,10 +206,10 @@ impl NativePriceCache {
                 if matches!(
                     lookup,
                     CacheLookup::UpgradeOnly | CacheLookup::CreateForMaintenance
-                ) && cached.source == EstimatorSource::Quote
+                ) && cached.source == KeepPriceUpdated::No
                 {
                     tracing::trace!(?token, "upgrading Quote-sourced entry to Auction");
-                    cached.source = EstimatorSource::Auction;
+                    cached.source = KeepPriceUpdated::Yes;
                 }
 
                 let is_recent =
@@ -229,7 +229,7 @@ impl NativePriceCache {
                         outdated_timestamp,
                         now,
                         Default::default(),
-                        EstimatorSource::Auction,
+                        KeepPriceUpdated::Yes,
                     ));
                 }
                 None
@@ -273,7 +273,7 @@ impl NativePriceCache {
             .unwrap()
             .iter()
             .filter(|(_, cached)| {
-                cached.source == EstimatorSource::Auction
+                cached.source == KeepPriceUpdated::Yes
                     && now.saturating_duration_since(cached.updated_at) > max_age
             })
             .map(|(token, cached)| (*token, cached.requested_at))
@@ -344,7 +344,7 @@ impl NativePriceCache {
                             now,
                             now,
                             current_accumulative_errors_count,
-                            EstimatorSource::Auction,
+                            KeepPriceUpdated::Yes,
                         ),
                     );
                 };
@@ -460,7 +460,7 @@ struct Inner {
     approximation_tokens: HashMap<Address, Address>,
     /// Identifies which estimator type this is, used to track which
     /// estimator fetched each cached entry for proper maintenance.
-    source: EstimatorSource,
+    source: KeepPriceUpdated,
 }
 
 type CacheEntry = Result<f64, PriceEstimationError>;
@@ -472,7 +472,7 @@ struct CachedResult {
     requested_at: Instant,
     accumulative_errors_count: u32,
     /// Which estimator type fetched this entry.
-    source: EstimatorSource,
+    source: KeepPriceUpdated,
 }
 
 /// Defines how many consecutive errors are allowed before the cache starts
@@ -486,7 +486,7 @@ impl CachedResult {
         updated_at: Instant,
         requested_at: Instant,
         current_accumulative_errors_count: u32,
-        source: EstimatorSource,
+        source: KeepPriceUpdated,
     ) -> Self {
         let estimator_internal_errors_count =
             matches!(result, Err(PriceEstimationError::EstimatorInternal(_)))
@@ -532,8 +532,8 @@ impl Inner {
 
                 // Upgrade Quote→Auction if this is an Auction-sourced estimator
                 let lookup = match self.source {
-                    EstimatorSource::Auction => CacheLookup::UpgradeOnly,
-                    EstimatorSource::Quote => CacheLookup::ReadOnly,
+                    KeepPriceUpdated::Yes => CacheLookup::UpgradeOnly,
+                    KeepPriceUpdated::No => CacheLookup::ReadOnly,
                 };
                 match self.cache.get_cached_price(*token, now, lookup) {
                     Some(cached) if cached.is_ready() => {
@@ -565,7 +565,7 @@ impl Inner {
         &self,
         token: Address,
         timeout: Duration,
-        source: EstimatorSource,
+        source: KeepPriceUpdated,
         accumulative_errors_count: u32,
     ) -> NativePriceEstimateResult {
         let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
@@ -625,7 +625,7 @@ impl CachingNativePriceEstimator {
         cache: NativePriceCache,
         concurrent_requests: usize,
         approximation_tokens: HashMap<Address, Address>,
-        source: EstimatorSource,
+        source: KeepPriceUpdated,
     ) -> Self {
         Self(Arc::new(Inner {
             estimator,
@@ -651,8 +651,8 @@ impl CachingNativePriceEstimator {
         // For Auction source: create missing entries and upgrade Quote→Auction
         // For Quote source: just read (Quote entries shouldn't be maintained)
         let lookup = match self.0.source {
-            EstimatorSource::Auction => CacheLookup::CreateForMaintenance,
-            EstimatorSource::Quote => CacheLookup::ReadOnly,
+            KeepPriceUpdated::Yes => CacheLookup::CreateForMaintenance,
+            KeepPriceUpdated::No => CacheLookup::ReadOnly,
         };
         for token in tokens {
             let cached = self
@@ -721,8 +721,8 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let now = Instant::now();
             // Upgrade Quote→Auction if this is an Auction-sourced estimator
             let lookup = match self.0.source {
-                EstimatorSource::Auction => CacheLookup::UpgradeOnly,
-                EstimatorSource::Quote => CacheLookup::ReadOnly,
+                KeepPriceUpdated::Yes => CacheLookup::UpgradeOnly,
+                KeepPriceUpdated::No => CacheLookup::ReadOnly,
             };
             let cached = self
                 .0
@@ -796,7 +796,7 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
 
             self.0
                 .0
-                .fetch_and_cache_price(token, timeout, EstimatorSource::Quote, 0)
+                .fetch_and_cache_price(token, timeout, KeepPriceUpdated::No, 0)
                 .await
         }
         .boxed()
@@ -1174,7 +1174,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            EstimatorSource::Auction,
+            KeepPriceUpdated::Yes,
         );
 
         // fill cache with 2 different queries
@@ -1237,7 +1237,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            EstimatorSource::Auction,
+            KeepPriceUpdated::Yes,
         );
 
         let tokens: Vec<_> = (0..10).map(Address::with_last_byte).collect();
@@ -1305,7 +1305,7 @@ mod tests {
             cache,
             1,
             Default::default(),
-            EstimatorSource::Auction,
+            KeepPriceUpdated::Yes,
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(token).collect();
@@ -1344,23 +1344,11 @@ mod tests {
             NativePriceCache::new_without_maintenance(Duration::from_secs(10), Default::default());
         cache.insert(
             t0,
-            CachedResult::new(
-                Ok(0.),
-                now,
-                now,
-                Default::default(),
-                EstimatorSource::Auction,
-            ),
+            CachedResult::new(Ok(0.), now, now, Default::default(), KeepPriceUpdated::Yes),
         );
         cache.insert(
             t1,
-            CachedResult::new(
-                Ok(0.),
-                now,
-                now,
-                Default::default(),
-                EstimatorSource::Auction,
-            ),
+            CachedResult::new(Ok(0.), now, now, Default::default(), KeepPriceUpdated::Yes),
         );
 
         let now = now + Duration::from_secs(1);
