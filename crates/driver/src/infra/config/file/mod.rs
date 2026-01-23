@@ -740,7 +740,7 @@ pub struct LiquoriceConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields, tag = "estimator")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "estimator")]
 pub enum GasEstimatorType {
     Web3,
     /// EIP-1559 gas estimator using alloy's algorithm.
@@ -998,7 +998,7 @@ mod tests {
     fn gas_estimator_alloy_defaults() {
         let config: GasEstimatorType = toml::from_str(
             r#"
-            estimator = "Alloy"
+            estimator = "alloy"
         "#,
         )
         .unwrap();
@@ -1019,7 +1019,7 @@ mod tests {
     fn gas_estimator_alloy_custom_past_blocks() {
         let config: GasEstimatorType = toml::from_str(
             r#"
-            estimator = "Alloy"
+            estimator = "alloy"
             past-blocks = 5
         "#,
         )
@@ -1041,7 +1041,7 @@ mod tests {
     fn gas_estimator_alloy_custom_percentile() {
         let config: GasEstimatorType = toml::from_str(
             r#"
-            estimator = "Alloy"
+            estimator = "alloy"
             reward-percentile = 50.0
         "#,
         )
@@ -1063,7 +1063,7 @@ mod tests {
     fn gas_estimator_alloy_all_custom() {
         let config: GasEstimatorType = toml::from_str(
             r#"
-            estimator = "Alloy"
+            estimator = "alloy"
             past-blocks = 20
             reward-percentile = 75.0
         "#,
@@ -1086,7 +1086,7 @@ mod tests {
     fn gas_estimator_web3() {
         let config: GasEstimatorType = toml::from_str(
             r#"
-            estimator = "Web3"
+            estimator = "web3"
         "#,
         )
         .unwrap();
