@@ -45,7 +45,7 @@ async fn route(
 }
 
 async fn collect_request_body(request: Request<Body>) -> Result<Bytes, competition::Error> {
-    tracing::debug!("received request");
+    tracing::trace!("received request");
     let start = std::time::Instant::now();
 
     // accepting the raw request bypasses axum's request body limiting layer
