@@ -5,7 +5,7 @@ use {
     crate::{
         domain::competition,
         infra::{
-            api::{Error, State},
+            api::{Error, REQUEST_BODY_LIMIT, State},
             observe,
         },
     },
@@ -48,12 +48,13 @@ async fn collect_request_body(request: Request<Body>) -> Result<Bytes, competiti
     tracing::debug!("received request");
     let start = std::time::Instant::now();
 
-    let body_bytes = hyper::body::to_bytes(request.into_body())
-        .await
-        .map_err(|err| {
-            tracing::warn!(?err, "failed to stream request body");
-            competition::Error::MalformedRequest
-        })?;
+    // accepting the raw request bypasses axum's request body limiting layer
+    // so we have to manually ensure the body has a reasonable size.
+    let limited_body = http_body::Limited::new(request.into_body(), REQUEST_BODY_LIMIT);
+    let body_bytes = hyper::body::to_bytes(limited_body).await.map_err(|err| {
+        tracing::warn!(?err, "failed to stream request body");
+        competition::Error::MalformedRequest
+    })?;
 
     tracing::debug!(time = ?start.elapsed(), "finished streaming body");
     Ok(body_bytes)
