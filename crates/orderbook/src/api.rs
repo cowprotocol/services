@@ -60,12 +60,12 @@ pub fn handle_all_routes(
             box_filter(post_order::post_order(orderbook.clone())),
         ),
         (
-            "v1/get_order",
-            box_filter(get_order_by_uid::get_order_by_uid(orderbook.clone())),
-        ),
-        (
             "v1/get_orders",
             box_filter(get_orders_by_uid::get_orders_by_uid(orderbook.clone())),
+        ),
+        (
+            "v1/get_order",
+            box_filter(get_order_by_uid::get_order_by_uid(orderbook.clone())),
         ),
         (
             "v1/get_order_status",

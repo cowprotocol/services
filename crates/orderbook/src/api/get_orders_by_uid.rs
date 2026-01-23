@@ -25,7 +25,7 @@ fn validate(uids: Vec<OrderUid>) -> Result<Vec<OrderUid>, ValidationError> {
 
 fn get_orders_by_uid_request()
 -> impl Filter<Extract = (Result<Vec<OrderUid>, ValidationError>,), Error = Rejection> + Clone {
-    warp::path!("v1" / "orders")
+    warp::path!("v1" / "orders" / "lookup")
         .and(warp::post())
         .and(extract_payload())
         .map(|uids: Vec<OrderUid>| validate(uids))
