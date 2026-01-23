@@ -85,32 +85,25 @@ fn with_labelled_metric(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
 + Clone {
     move |req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
-        Box::pin(
-            async move {
-                let timer = Instant::now();
-                let response = next.run(req).await;
+        Box::pin(async move {
+            let timer = Instant::now();
+            let response = next.run(req).await;
 
-                let metrics =
-                    ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-                let status = response.status();
+            let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+            let status = response.status();
 
-                // Track completed requests
-                metrics.on_request_completed(label, status, timer);
+            // Track completed requests
+            metrics.on_request_completed(label, status, timer);
 
-                // Track rejected requests (4xx and 5xx status codes)
-                if status.is_client_error() || status.is_server_error() {
-                    metrics
-                        .requests_rejected
-                        .with_label_values(&[status.as_str()])
-                        .inc();
-                }
-
-                tracing::error!("handled request: {label} {status}");
-
-                response
+            // Track rejected requests (4xx and 5xx status codes)
+            if status.is_client_error() || status.is_server_error() {
+                metrics
+                    .requests_rejected
+                    .with_label_values(&[status.as_str()])
+                    .inc();
             }
-            .instrument(tracing::info_span!("metrics_middleware")),
-        )
+            response
+        })
     }
 }
 
