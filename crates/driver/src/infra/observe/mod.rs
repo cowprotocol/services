@@ -132,12 +132,7 @@ pub fn encoding_failed(solver: &solver::Name, id: &solution::Id, err: &solution:
 
 /// Observe that two solutions were merged.
 pub fn merged(first: &Solution, other: &Solution, result: &Solution) {
-    tracing::debug!(?first, ?other, ?result, "merged solutions");
-}
-
-/// Observe that it was not possible to merge two solutions.
-pub fn not_merged(first: &Solution, other: &Solution, err: solution::error::Merge) {
-    tracing::debug!(?err, ?first, ?other, "solutions can't be merged");
+    tracing::trace!(?first, ?other, ?result, "merged solutions");
 }
 
 /// Observe that scoring is about to start.
@@ -426,7 +421,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
 }
 
 pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
-    tracing::debug!(?deadline, ?timeouts, "computed deadline");
+    tracing::trace!(?deadline, ?timeouts, "computed deadline");
 }
 
 pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_request: bool) {

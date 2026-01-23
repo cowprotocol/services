@@ -766,14 +766,9 @@ fn merge(
     for solution in solutions.take(MAX_SOLUTIONS_TO_MERGE) {
         let mut extension = vec![];
         for already_merged in merged.iter() {
-            match solution.merge(already_merged, max_orders_per_merged_solution) {
-                Ok(merged) => {
-                    observe::merged(&solution, already_merged, &merged);
-                    extension.push(merged);
-                }
-                Err(err) => {
-                    observe::not_merged(&solution, already_merged, err);
-                }
+            if let Ok(merged) = solution.merge(already_merged, max_orders_per_merged_solution) {
+                observe::merged(&solution, already_merged, &merged);
+                extension.push(merged);
             }
         }
 

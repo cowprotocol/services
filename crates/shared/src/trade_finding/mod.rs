@@ -30,11 +30,12 @@ pub trait TradeFinding: Send + Sync + 'static {
 }
 
 /// A quote.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, derive_more::Debug, Default, Eq, PartialEq)]
 pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: Address,
+    #[debug(ignore)]
     pub execution: QuoteExecution,
 }
 
