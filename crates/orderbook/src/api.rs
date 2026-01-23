@@ -16,6 +16,7 @@ use {
         time::{Duration, Instant},
     },
     tower_http::{cors::CorsLayer, trace::TraceLayer},
+    tracing::Instrument,
 };
 
 mod cancel_order;
@@ -50,11 +51,6 @@ pub struct AppState {
     pub quote_timeout: Duration,
 }
 
-/// Metric label attached to requests for Prometheus metrics
-/// Preserves the old warp-based metric naming for compatibility
-#[derive(Clone, Debug)]
-struct MetricLabel(&'static str);
-
 /// List of all metric labels used in the API for Prometheus metrics
 /// initialization
 const METRIC_LABELS: &[&str] = &[
@@ -81,20 +77,44 @@ const METRIC_LABELS: &[&str] = &[
 
 /// Helper to inject a metric label into a request
 /// Returns a middleware function that can be applied to individual routes
-fn inject_metric(
+fn with_labelled_metric(
     label: &'static str,
 ) -> impl Fn(
     Request<axum::body::Body>,
     Next<axum::body::Body>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
 + Clone {
-    move |mut req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
-        Box::pin(async move {
-            req.extensions_mut().insert(MetricLabel(label));
-            next.run(req).await
-        })
+    move |req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
+        Box::pin(
+            async move {
+                let timer = Instant::now();
+                let response = next.run(req).await;
+
+                let metrics =
+                    ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+                let status = response.status();
+
+                // Track completed requests
+                metrics.on_request_completed(label, status, timer);
+
+                // Track rejected requests (4xx and 5xx status codes)
+                if status.is_client_error() || status.is_server_error() {
+                    metrics
+                        .requests_rejected
+                        .with_label_values(&[status.as_str()])
+                        .inc();
+                }
+
+                tracing::error!("handled request: {label} {status}");
+
+                response
+            }
+            .instrument(tracing::info_span!("metrics_middleware")),
+        )
     }
 }
+
+const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
 pub fn handle_all_routes(
     database_write: Postgres,
@@ -133,7 +153,7 @@ pub fn handle_all_routes(
             Router::new().route(
                 "/orders",
                 axum::routing::get(get_user_orders::get_user_orders_handler)
-                    .layer(middleware::from_fn(inject_metric("v1/get_user_orders"))),
+                    .layer(middleware::from_fn(with_labelled_metric("v1/get_user_orders"))),
             ),
         )
         // /app_data routes
@@ -144,16 +164,16 @@ pub fn handle_all_routes(
                     "/",
                     axum::routing::put(put_app_data::put_app_data_without_hash)
                         .layer(DefaultBodyLimit::max(app_data_size_limit))
-                        .layer(middleware::from_fn(inject_metric("v1/put_app_data"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data"))),
                 )
                 .route(
                     "/:hash",
                     {
                         let get_route = axum::routing::get(get_app_data::get_app_data_handler)
-                            .layer(middleware::from_fn(inject_metric("v1/get_app_data")));
+                            .layer(middleware::from_fn(with_labelled_metric("v1/get_app_data")));
                         let put_route = axum::routing::put(put_app_data::put_app_data_with_hash)
                             .layer(DefaultBodyLimit::max(app_data_size_limit))
-                            .layer(middleware::from_fn(inject_metric("v1/put_app_data")));
+                            .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data")));
                         get_route.merge(put_route)
                     },
                 ),
@@ -162,7 +182,7 @@ pub fn handle_all_routes(
         .route(
             "/auction",
             axum::routing::get(get_auction::get_auction_handler)
-                .layer(middleware::from_fn(inject_metric("v1/auction"))),
+                .layer(middleware::from_fn(with_labelled_metric("v1/auction"))),
         )
         // /orders routes
         // Note: For routes with multiple methods, we apply layers to each method separately
@@ -174,9 +194,9 @@ pub fn handle_all_routes(
                     "/",
                     {
                         let post = axum::routing::post(post_order::post_order_handler)
-                            .layer(middleware::from_fn(inject_metric("v1/create_order")));
+                            .layer(middleware::from_fn(with_labelled_metric("v1/create_order")));
                         let delete = axum::routing::delete(cancel_orders::cancel_orders_handler)
-                            .layer(middleware::from_fn(inject_metric("v1/cancel_orders")));
+                            .layer(middleware::from_fn(with_labelled_metric("v1/cancel_orders")));
                         post.merge(delete)
                     },
                 )
@@ -184,23 +204,23 @@ pub fn handle_all_routes(
                     "/:uid",
                     {
                         let get = axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
-                            .layer(middleware::from_fn(inject_metric("v1/get_order")));
+                            .layer(middleware::from_fn(with_labelled_metric("v1/get_order")));
                         let delete = axum::routing::delete(cancel_order::cancel_order_handler)
-                            .layer(middleware::from_fn(inject_metric("v1/cancel_order")));
+                            .layer(middleware::from_fn(with_labelled_metric("v1/cancel_order")));
                         get.merge(delete)
                     },
                 )
                 .route(
                     "/:uid/status",
                     axum::routing::get(get_order_status::get_status_handler)
-                        .layer(middleware::from_fn(inject_metric("v1/get_order_status"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/get_order_status"))),
                 ),
         )
         // /quote route
         .route(
             "/quote",
             axum::routing::post(post_quote::post_quote_handler)
-                .layer(middleware::from_fn(inject_metric("v1/post_quote"))),
+                .layer(middleware::from_fn(with_labelled_metric("v1/post_quote"))),
         )
         // /solver_competition routes (specific before parameterized)
         .nest(
@@ -209,17 +229,17 @@ pub fn handle_all_routes(
                 .route(
                     "/latest",
                     axum::routing::get(get_solver_competition::get_solver_competition_latest_handler)
-                        .layer(middleware::from_fn(inject_metric("v1/solver_competition"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
                 )
                 .route(
                     "/by_tx_hash/:tx_hash",
                     axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
-                        .layer(middleware::from_fn(inject_metric("v1/solver_competition"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
                 )
                 .route(
                     "/:auction_id",
                     axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
-                        .layer(middleware::from_fn(inject_metric("v1/solver_competition"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
                 ),
         )
         // /token/* routes
@@ -229,19 +249,19 @@ pub fn handle_all_routes(
                 .route(
                     "/metadata",
                     axum::routing::get(get_token_metadata::get_token_metadata_handler)
-                        .layer(middleware::from_fn(inject_metric("v1/get_token_metadata"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/get_token_metadata"))),
                 )
                 .route(
                     "/native_price",
                     axum::routing::get(get_native_price::get_native_price_handler)
-                        .layer(middleware::from_fn(inject_metric("v1/get_native_price"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v1/get_native_price"))),
                 ),
         )
         // /trades route
         .route(
             "/trades",
             axum::routing::get(get_trades::get_trades_handler)
-                .layer(middleware::from_fn(inject_metric("v1/get_trades"))),
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_trades"))),
         )
         // /transactions/* routes
         .nest(
@@ -249,7 +269,7 @@ pub fn handle_all_routes(
             Router::new().route(
                 "/orders",
                 axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
-                    .layer(middleware::from_fn(inject_metric("v1/get_orders_by_tx"))),
+                    .layer(middleware::from_fn(with_labelled_metric("v1/get_orders_by_tx"))),
             ),
         )
         // /users/* routes
@@ -258,14 +278,14 @@ pub fn handle_all_routes(
             Router::new().route(
                 "/total_surplus",
                 axum::routing::get(get_total_surplus::get_total_surplus_handler)
-                    .layer(middleware::from_fn(inject_metric("v1/get_total_surplus"))),
+                    .layer(middleware::from_fn(with_labelled_metric("v1/get_total_surplus"))),
             ),
         )
         // /version route
         .route(
             "/version",
             axum::routing::get(version::version_handler)
-                .layer(middleware::from_fn(inject_metric("v1/version"))),
+                .layer(middleware::from_fn(with_labelled_metric("v1/version"))),
         );
 
     // Build v2 router with inline metric labels
@@ -277,32 +297,31 @@ pub fn handle_all_routes(
                 .route(
                     "/latest",
                     axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler)
-                        .layer(middleware::from_fn(inject_metric("v2/solver_competition"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
                 )
                 .route(
                     "/by_tx_hash/:tx_hash",
                     axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
-                        .layer(middleware::from_fn(inject_metric("v2/solver_competition"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
                 )
                 .route(
                     "/:auction_id",
                     axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
-                        .layer(middleware::from_fn(inject_metric("v2/solver_competition"))),
+                        .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
                 ),
         )
         // /trades route
         .route(
             "/trades",
             axum::routing::get(get_trades_v2::get_trades_handler)
-                .layer(middleware::from_fn(inject_metric("v2/get_trades"))),
+                .layer(middleware::from_fn(with_labelled_metric("v2/get_trades"))),
         );
 
     // Nest API versions and set state
     let api_router = Router::new()
         .nest("/v1", v1_router)
         .nest("/v2", v2_router)
-        .with_state(state)
-        .layer(middleware::from_fn(metrics_middleware));
+        .with_state(state);
 
     finalize_router(api_router)
 }
@@ -428,39 +447,6 @@ where
         result.extend_from_slice(bytes.as_ref());
     }
     result
-}
-
-const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
-
-/// Middleware to track metrics for all endpoints
-/// Reads the metric label attached by each endpoint via request extensions
-async fn metrics_middleware<B>(req: Request<B>, next: Next<B>) -> Response {
-    // Extract the metric label that was attached by the endpoint
-    // Default to "unknown" if no label was set (shouldn't happen for API routes)
-    let label = req
-        .extensions()
-        .get::<MetricLabel>()
-        .map(|l| l.0)
-        .unwrap_or("unknown");
-
-    let timer = Instant::now();
-    let response = next.run(req).await;
-
-    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-    let status = response.status();
-
-    // Track completed requests
-    metrics.on_request_completed(label, status, timer);
-
-    // Track rejected requests (4xx and 5xx status codes)
-    if status.is_client_error() || status.is_server_error() {
-        metrics
-            .requests_rejected
-            .with_label_values(&[status.as_str()])
-            .inc();
-    }
-
-    response
 }
 
 /// Sets up basic metrics, cors and proper log tracing for all routes.
@@ -602,12 +588,5 @@ mod tests {
                 "description": "bar",
             })
         );
-    }
-
-    #[test]
-    fn test_metric_label_helper() {
-        // Test that MetricLabel can be created and accessed
-        let label = MetricLabel("v1/test");
-        assert_eq!(label.0, "v1/test");
     }
 }
