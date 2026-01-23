@@ -26,6 +26,7 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex},
     },
+    tokio::net::TcpListener,
 };
 
 pub const NAME: &str = "test-solver";
@@ -519,9 +520,15 @@ impl Solver {
             ),
         )
         .with_state(State(state));
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
-        let addr = server.local_addr();
+        let listener = TcpListener::bind(
+            &"0.0.0.0:0"
+                .parse::<SocketAddr>()
+                .expect("bind address should be valid"),
+        )
+        .await
+        .expect("failed to bind server listener");
+        let server = axum::serve(listener, app.into_make_service());
+        let addr = server.local_addr().unwrap();
         tokio::spawn(async move { server.await.unwrap() });
         Self { addr }
     }

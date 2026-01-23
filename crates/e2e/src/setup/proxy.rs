@@ -13,7 +13,7 @@
 
 use {
     axum::{Router, body::Body, http::Request, response::IntoResponse},
-    hyper::body::to_bytes,
+    http_body_util::BodyExt,
     std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},
     url::Url,
@@ -99,10 +99,8 @@ async fn serve(listen_addr: SocketAddr, backends: Vec<Url>, state: ProxyState) {
     let app = Router::new().fallback(proxy_handler);
 
     tracing::info!(?listen_addr, ?backends, "starting reverse proxy");
-    axum::Server::bind(&listen_addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind(&listen_addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn handle_request(
@@ -113,8 +111,8 @@ async fn handle_request(
     let (parts, body) = req.into_parts();
 
     // Convert body to bytes once for reuse across retries
-    let body_bytes = match to_bytes(body).await {
-        Ok(bytes) => bytes,
+    let body_bytes = match body.collect().await {
+        Ok(collected) => collected.to_bytes(),
         Err(err) => {
             return (
                 axum::http::StatusCode::BAD_REQUEST,

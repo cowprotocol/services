@@ -26,6 +26,7 @@ driver = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
 hex-literal = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 model = { workspace = true, features = ["e2e"] }

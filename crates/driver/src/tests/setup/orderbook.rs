@@ -45,14 +45,17 @@ impl Orderbook {
         let app = Router::new()
             .route("/api/v1/app_data/:app_data", get(Self::app_data_handler))
             .layer(Extension(app_data_storage));
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
-        let addr = server.local_addr();
 
-        tracing::info!("Orderbook mock server listening on {}", addr);
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            tracing::info!("Orderbook mock server listening on {}", addr);
+            tx.send(addr).unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
 
-        tokio::spawn(server);
-
+        let addr = rx.recv().unwrap();
         Orderbook { addr }
     }
 

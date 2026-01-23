@@ -41,7 +41,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
-reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
+reqwest = { workspace = true, features = ["cookies", "gzip", "json", "query"] }
 rust_decimal = { workspace = true, features = ["maths"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

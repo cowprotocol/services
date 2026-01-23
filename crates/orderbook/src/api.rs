@@ -7,7 +7,7 @@ use {
         middleware::{self, Next},
         response::{IntoResponse, Json, Response},
     },
-    observe::distributed_tracing::tracing_axum,
+    observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
     serde::{Deserialize, Serialize},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
@@ -80,10 +80,10 @@ fn with_labelled_metric(
     label: &'static str,
 ) -> impl Fn(
     Request<axum::body::Body>,
-    Next<axum::body::Body>,
+    Next,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
 + Clone {
-    move |req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
+    move |req: Request<axum::body::Body>, next: Next| {
         Box::pin(async move {
             let timer = Instant::now();
             let response = next.run(req).await;
@@ -432,11 +432,14 @@ where
     B::Data: AsRef<[u8]>,
     B::Error: Debug,
 {
+    use http_body_util::BodyExt;
+
     let mut body = response.into_body();
     let mut result = Vec::new();
-    while let Some(frame) = body.data().await {
-        let bytes = frame.unwrap();
-        result.extend_from_slice(bytes.as_ref());
+    while let Some(Ok(frame)) = body.frame().await {
+        if let Some(bytes) = frame.data_ref() {
+            result.extend_from_slice(bytes.as_ref());
+        }
     }
     result
 }
@@ -464,13 +467,18 @@ fn finalize_router(api_router: Router) -> Router {
             axum::http::HeaderName::from_static("x-appid"),
         ]);
 
-    let trace_layer = TraceLayer::new_for_http().make_span_with(tracing_axum::make_span);
-
     Router::new()
         .nest("/api", api_router)
+        // Layers are applied as a stack (last applied = outermost)
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_PAYLOAD as usize))
         .layer(cors)
-        .layer(trace_layer)
+        .layer(axum::middleware::from_fn(
+            |req, next: axum::middleware::Next| async move {
+                let req = record_trace_id(req);
+                next.run(req).await
+            },
+        ))
+        .layer(TraceLayer::new_for_http().make_span_with(make_span))
 }
 
 // Newtype wrapper for PriceEstimationError to allow IntoResponse implementation
@@ -553,8 +561,6 @@ mod tests {
 
     #[tokio::test]
     async fn rich_errors_handle_serialization_errors() {
-        use axum::body::HttpBody;
-
         struct AlwaysErrors;
         impl Serialize for AlwaysErrors {
             fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
@@ -568,9 +574,12 @@ mod tests {
         let response = rich_error("foo", "bar", AlwaysErrors).into_response();
         let mut body = response.into_body();
         let mut bytes = Vec::new();
-        while let Some(frame) = body.data().await {
-            let chunk = frame.unwrap();
-            bytes.extend_from_slice(&chunk);
+
+        use http_body_util::BodyExt;
+        while let Some(Ok(frame)) = body.frame().await {
+            if let Some(chunk) = frame.data_ref() {
+                bytes.extend_from_slice(chunk);
+            }
         }
 
         assert_eq!(

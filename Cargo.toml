@@ -9,7 +9,7 @@ alloy = { version = "1.1.0", default-features = false }
 alloy-signer = { version = "1.1.0", default-features = false}
 anyhow = "1.0.100"
 async-trait = "0.1.80"
-axum = "0.6"
+axum = "0.8"
 bigdecimal = "0.3"
 cached = { version = "0.49.3", default-features = false }
 chrono = { version = "0.4.38", default-features = false }
@@ -27,7 +27,8 @@ const-hex = "1.17.0"
 hex-literal = "0.4.1"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
-hyper = "0.14.29"
+http-body-util = "0.1"
+hyper = "1.8.1"
 indexmap = "2.2.6"
 itertools = "0.14"
 maplit = "1.0.2"
@@ -38,7 +39,7 @@ prometheus = "0.13.4"
 prometheus-metric-storage = "0.5.0"
 rand = "0.8.5"
 regex = "1.10.4"
-reqwest = "0.11.27"
+reqwest = "0.13"
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 serde = { version = "1.0.203", features = ["derive"] }
@@ -64,7 +65,7 @@ aws-config = "1.5.1"
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 bytes-hex = { path = "crates/bytes-hex" }
 chain = { path = "crates/chain" }
-console-subscriber = "0.3.0"
+console-subscriber = "0.5"
 const_format = "0.2.32"
 contracts = { path = "crates/contracts" }
 cow-amm = { path = "crates/cow-amm" }
@@ -78,6 +79,7 @@ number = { path = "crates/number" }
 observe = { path = "crates/observe" }
 order-validation = { path = "crates/order-validation" }
 opentelemetry = { version = "0.30", features = ["tracing"] }
+opentelemetry-http = "0.30"
 opentelemetry-otlp = "0.30"
 opentelemetry_sdk = "0.30"
 orderbook = { path = "crates/orderbook" }
@@ -96,8 +98,8 @@ testlib = { path = "crates/testlib" }
 winner-selection = { path = "crates/winner-selection" }
 time = "0.3.37"
 tiny-keccak = "2.0.2"
-tower = "0.4"
-tower-http = "0.4"
+tower = "0.5"
+tower-http = "0.6"
 tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
 vergen = "8"

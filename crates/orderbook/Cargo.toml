@@ -32,6 +32,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
+http-body-util = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 mimalloc = { workspace = true, optional = true }

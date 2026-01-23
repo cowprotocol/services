@@ -62,17 +62,22 @@ impl Default for Mock {
             .route("/solve", axum::routing::post(solve))
             .with_state(state.clone());
 
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::task::spawn(async move {
+            let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+            let local_addr = listener.local_addr().unwrap();
+            tx.send(local_addr).unwrap();
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+                .unwrap();
+        });
 
-        let mock = Mock {
+        let local_addr = rx.recv().unwrap();
+        Mock {
             state,
-            url: format!("http://{}", server.local_addr()).parse().unwrap(),
-        };
-
-        tokio::task::spawn(server.with_graceful_shutdown(shutdown_signal()));
-
-        mock
+            url: format!("http://{}", local_addr).parse().unwrap(),
+        }
     }
 }
 
