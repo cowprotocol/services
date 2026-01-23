@@ -19,7 +19,7 @@ use {
         },
         time::Instant,
     },
-    tokio::task::JoinHandle,
+    tokio::{net::TcpListener, task::JoinHandle},
 };
 
 /// Global metrics registry used by all components.
@@ -116,8 +116,10 @@ pub fn serve_metrics(
 
     tracing::info!(%address, "serving metrics");
     tokio::spawn(async move {
-        axum::Server::bind(&address)
-            .serve(app.into_make_service())
+        let listener = TcpListener::bind(address)
+            .await
+            .expect("failed to bind server listener");
+        axum::serve(listener, app.into_make_service())
             .await
             .expect("failed to serve metrics")
     })

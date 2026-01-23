@@ -25,7 +25,7 @@ use {
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
     shared::account_balances,
     std::{net::SocketAddr, sync::Arc},
-    tokio::sync::oneshot,
+    tokio::{net::TcpListener, sync::oneshot},
 };
 
 mod error;
@@ -53,11 +53,8 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
-    ) -> Result<(), hyper::Error> {
-        // Add middleware.
-        let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
-            tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
-        ));
+    ) -> std::io::Result<()> {
+        let mut app = axum::Router::new();
 
         let balance_fetcher = account_balances::cached(
             self.eth.web3(),
@@ -140,19 +137,31 @@ impl Api {
         }
 
         app = app
+            // Layers are applied as a stack (last applied = outermost)
             // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
             .layer(axum::extract::DefaultBodyLimit::disable())
-            .layer(
-                tower::ServiceBuilder::new()
-                    .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
-                    .map_request(record_trace_id),
-            );
+            .layer(tower_http::limit::RequestBodyLimitLayer::new(
+                REQUEST_BODY_LIMIT,
+            ))
+            .layer(axum::middleware::from_fn(
+                |req, next: axum::middleware::Next| async move {
+                    let req = record_trace_id(req);
+                    next.run(req).await
+                },
+            ))
+            .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span));
 
         // Start the server.
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
-        tracing::info!(port = server.local_addr().port(), "serving driver");
+        let listener = TcpListener::bind(&self.addr)
+            .await
+            .expect("failed to bind server listener");
+        let server = axum::serve(listener, app.into_make_service());
+        let local_addr = server
+            .local_addr()
+            .expect("failed to get server local address");
+        tracing::info!(port = local_addr.port(), "serving driver");
         if let Some(addr_sender) = self.addr_sender {
-            addr_sender.send(server.local_addr()).unwrap();
+            addr_sender.send(local_addr).unwrap();
         }
         server.with_graceful_shutdown(shutdown).await
     }

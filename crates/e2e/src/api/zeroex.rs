@@ -43,14 +43,13 @@ impl ZeroExApi {
             .with_state(state);
 
         let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
-        let server = axum::Server::bind(&addr).serve(app.into_make_service());
-
-        let addr = server.local_addr();
+        let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+        let addr = listener.local_addr().unwrap();
         let port = addr.port();
         assert!(port > 0, "assigned port must be greater than 0");
 
         tokio::spawn(async move {
-            if let Err(err) = server.await {
+            if let Err(err) = axum::serve(listener, app).await {
                 tracing::error!(?err, "ZeroEx API server failed");
                 panic!("ZeroEx test server crashed: {}", err);
             }

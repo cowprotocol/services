@@ -555,12 +555,19 @@ fn serve_api(
     );
     tracing::info!(%address, "serving order book");
 
-    let server = axum::Server::bind(&address)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(shutdown_receiver);
-
     task::spawn(async move {
-        if let Err(err) = server.await {
+        let listener = match tokio::net::TcpListener::bind(&address).await {
+            Ok(listener) => listener,
+            Err(err) => {
+                tracing::error!(?err, "failed to bind server");
+                return;
+            }
+        };
+
+        if let Err(err) = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_receiver)
+            .await
+        {
             tracing::error!(?err, "server error");
         }
     })
