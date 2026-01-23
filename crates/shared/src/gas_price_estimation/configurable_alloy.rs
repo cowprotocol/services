@@ -24,6 +24,14 @@ pub struct EstimatorConfig {
     pub reward_percentile: f64,
 }
 
+pub fn default_past_blocks() -> u64 {
+    10
+}
+
+pub fn default_reward_percentile() -> f64 {
+    20.0
+}
+
 /// A configurable EIP-1559 gas price estimator.
 ///
 /// Uses alloy's default estimation algorithm but with configurable

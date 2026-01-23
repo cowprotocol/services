@@ -6,6 +6,10 @@ use {
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
+    shared::gas_price_estimation::configurable_alloy::{
+        default_past_blocks,
+        default_reward_percentile,
+    },
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
 };
@@ -760,14 +764,6 @@ impl Default for GasEstimatorType {
             reward_percentile: default_reward_percentile(),
         }
     }
-}
-
-fn default_past_blocks() -> u64 {
-    10
-}
-
-fn default_reward_percentile() -> f64 {
-    20.0
 }
 
 /// Defines various strategies to prioritize orders.
