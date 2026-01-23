@@ -16,7 +16,6 @@ use {
         time::{Duration, Instant},
     },
     tower_http::{cors::CorsLayer, trace::TraceLayer},
-    tracing::Instrument,
 };
 
 mod cancel_order;
