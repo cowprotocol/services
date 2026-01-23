@@ -9,7 +9,7 @@ use {
             observe,
         },
     },
-    axum::{body::Body, http::Request},
+    axum::{RequestExt, body::Body, http::Request},
     hyper::body::Bytes,
     tracing::Instrument,
 };
@@ -48,12 +48,14 @@ async fn collect_request_body(request: Request<Body>) -> Result<Bytes, competiti
     tracing::debug!("received request");
     let start = std::time::Instant::now();
 
-    let body_bytes = hyper::body::to_bytes(request.into_body())
-        .await
-        .map_err(|err| {
-            tracing::warn!(?err, "failed to stream request body");
-            competition::Error::MalformedRequest
-        })?;
+    let body = request.into_limited_body().map_err(|err| {
+        tracing::warn!(?err, "request body exceeds size limit");
+        competition::Error::MalformedRequest
+    })?;
+    let body_bytes = hyper::body::to_bytes(body).await.map_err(|err| {
+        tracing::warn!(?err, "failed to stream request body");
+        competition::Error::MalformedRequest
+    })?;
 
     tracing::debug!(time = ?start.elapsed(), "finished streaming body");
     Ok(body_bytes)
