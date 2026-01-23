@@ -89,7 +89,7 @@ impl GasPriceEstimator {
             // e.g., tip_percentage_increase = 0.125 (12.5%) becomes 1250
             let tip_percentage_as_bps = tip_percentage_increase * 10000.0;
             let calculated_tip = eth::U256::from(estimate.max_priority_fee_per_gas)
-                * eth::U256::from(tip_percentage_as_bps)
+                .saturating_sub(eth::U256::from(tip_percentage_as_bps))
                 / eth::U256::from(10000u128);
 
             let additional_tip = max_additional_tip.min(calculated_tip);

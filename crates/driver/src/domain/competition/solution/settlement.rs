@@ -177,7 +177,7 @@ impl Settlement {
         // even if the gas price keeps climbing during the tx submission.
         let required_eth_balance =
             // Converting to U256 first avoids possible overflow
-            gas.required_balance(U256::from(price.max_fee_per_gas) * U256::from(2));
+            gas.required_balance(U256::from(price.max_fee_per_gas).saturating_mul(U256::from(2)));
         if eth.balance(solution.solver().address()).await? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,
