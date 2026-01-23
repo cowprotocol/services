@@ -45,7 +45,7 @@ async fn route(
 }
 
 async fn collect_request_body(request: Request<Body>) -> Result<Bytes, competition::Error> {
-    tracing::debug!("received /solve request");
+    tracing::debug!("received request");
     let start = std::time::Instant::now();
 
     let body_bytes = hyper::body::to_bytes(request.into_body())
@@ -55,6 +55,6 @@ async fn collect_request_body(request: Request<Body>) -> Result<Bytes, competiti
             competition::Error::MalformedRequest
         })?;
 
-    tracing::debug!(time = ?start.elapsed(), "finished streaming `/solve` body");
+    tracing::debug!(time = ?start.elapsed(), "finished streaming body");
     Ok(body_bytes)
 }
