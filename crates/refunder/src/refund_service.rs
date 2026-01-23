@@ -14,6 +14,7 @@ use {
 };
 
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
+const BASIS_POINT_DENOMINATOR: f64 = 10_000.0;
 
 type CoWSwapEthFlowAddress = Address;
 
@@ -185,7 +186,7 @@ where
             .get_refundable_orders(
                 block_time,
                 self.min_validity_duration,
-                self.min_price_deviation_bps as f64 / 10_000.0,
+                self.min_price_deviation_bps as f64 / BASIS_POINT_DENOMINATOR,
             )
             .await
     }
