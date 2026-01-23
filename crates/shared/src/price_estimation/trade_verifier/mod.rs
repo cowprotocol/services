@@ -267,12 +267,15 @@ impl TradeVerifier {
             }
 
             // The swap simulation computes the out_amount like this:
-            // sell order => trader_balance_before - trader_balance_after
-            // buy_order => trader_balance_after - trader_balance_before
+            // sell order => receiver_buy_balance_before - receiver_buy_balance_after
+            // buy_order => trader_sell_balance_after - trader_sell_balance_before
             //
-            // In case of sell=buy, the balance is only ever getting smaller, as the trader
-            // will always get less tokens out, which causes the above calculations to be
-            // wrong, and result in a negative number for sell order
+            // The trade verification assumes that the sell tokens don't flow back into
+            // the same account.
+            // However, in case of sell=buy where the receiver is also the owner, this
+            // assumption is broken. The balance is only ever getting smaller, as the
+            // trader will always get less tokens out, which causes the above calculations
+            // to result in 0 or (more likely) negative values.
             //
             // Example sell order:
             // Trader having 1 ETH in their account, selling 0.3 ETH, with tx hooks cost of
@@ -296,7 +299,9 @@ impl TradeVerifier {
             // Meaning they can buy 1 wei for 0.1ETH + 1 wei, considering the costs
             //
             // The general formula being: correct_out_amount = query.input + out_amount
-            if query.sell_token == query.buy_token {
+            let owner_is_receiver =
+                verification.receiver.is_zero() || verification.receiver == verification.from;
+            if query.sell_token == query.buy_token && owner_is_receiver {
                 summary.out_amount = I512::from(query.in_amount.get()) + summary.out_amount;
             } else if summary.out_amount < I512::ZERO {
                 tracing::debug!("Trade out amount is negative");

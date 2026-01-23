@@ -187,6 +187,10 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
+    /// Quote haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make competition bids more conservative. Does not modify
+    /// interaction calldata. Default: 0 (no haircut).
+    pub haircut_bps: u32,
 }
 
 impl Solver {
@@ -208,6 +212,7 @@ impl Solver {
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
+                .tcp_keepalive(Duration::from_secs(60))
                 .build()?,
             config,
             eth,
@@ -277,6 +282,11 @@ impl Solver {
         self.config.fetch_liquidity_at_block.clone()
     }
 
+    /// Quote haircut in basis points (0-10000) for conservative bidding.
+    pub fn haircut_bps(&self) -> u32 {
+        self.config.haircut_bps
+    }
+
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
     #[instrument(name = "solver_engine", skip_all)]
@@ -341,7 +351,11 @@ impl Solver {
         if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
-        super::observe::sending_solve_request(self.config.name.as_str(), timeout);
+        super::observe::sending_solve_request(
+            self.config.name.as_str(),
+            timeout,
+            auction.id().is_none(),
+        );
         let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(
@@ -349,6 +363,7 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
+            auction.id().is_none(),
         );
         let res = res?;
         let res: solvers_dto::solution::Solutions =
