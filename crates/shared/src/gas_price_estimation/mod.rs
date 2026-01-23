@@ -1,4 +1,5 @@
 pub mod alloy;
+pub mod configurable_alloy;
 pub mod driver;
 pub mod eth_node;
 pub mod fake;

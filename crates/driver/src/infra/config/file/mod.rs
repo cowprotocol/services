@@ -735,13 +735,40 @@ pub struct LiquoriceConfig {
     pub http_timeout: Duration,
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[serde(tag = "estimator")]
 pub enum GasEstimatorType {
     Web3,
-    #[default]
-    Alloy,
+    /// EIP-1559 gas estimator using alloy's algorithm.
+    /// Optionally configure the fee history query parameters.
+    #[serde(rename_all = "kebab-case")]
+    Alloy {
+        /// Number of blocks to look back for fee history (default: 10)
+        #[serde(default = "default_past_blocks")]
+        past_blocks: u64,
+        /// Percentile of rewards to use for priority fee estimation (default:
+        /// 20.0)
+        #[serde(default = "default_reward_percentile")]
+        reward_percentile: f64,
+    },
+}
+
+impl Default for GasEstimatorType {
+    fn default() -> Self {
+        Self::Alloy {
+            past_blocks: default_past_blocks(),
+            reward_percentile: default_reward_percentile(),
+        }
+    }
+}
+
+fn default_past_blocks() -> u64 {
+    10
+}
+
+fn default_reward_percentile() -> f64 {
+    20.0
 }
 
 /// Defines various strategies to prioritize orders.
