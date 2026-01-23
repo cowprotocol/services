@@ -78,7 +78,7 @@ mod tests {
     async fn get_orders_by_uid_request_ok() {
         let uid = OrderUid::default();
         let request = request()
-            .path("/v1/orders")
+            .path("/v1/orders/lookup")
             .method("POST")
             .header("content-type", "application-json")
             .json(&[uid]);
