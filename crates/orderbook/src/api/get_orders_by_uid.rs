@@ -87,4 +87,22 @@ mod tests {
         let result = request.filter(&filter).await.unwrap().unwrap();
         assert_eq!(result, [uid]);
     }
+
+    #[tokio::test]
+    async fn get_orders_by_uid_request_too_many_orders() {
+        let mut uids = Vec::new();
+        for _ in 0..5001 {
+            uids.push(OrderUid::default());
+        }
+        let request = request()
+            .path("/v1/orders/lookup")
+            .method("POST")
+            .header("content-type", "application-json")
+            .json(&uids);
+
+        let filter = get_orders_by_uid_request();
+        let result = request.filter(&filter).await;
+        // Assert that the error is a rejection.
+        assert!(result.is_err());
+    }
 }
