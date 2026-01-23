@@ -43,7 +43,7 @@ impl Orderbook {
             .collect::<HashMap<_, _>>();
 
         let app = Router::new()
-            .route("/api/v1/app_data/:app_data", get(Self::app_data_handler))
+            .route("/api/v1/app_data/{app_data}", get(Self::app_data_handler))
             .layer(Extension(app_data_storage));
 
         let (tx, rx) = std::sync::mpsc::channel();

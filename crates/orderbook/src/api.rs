@@ -141,7 +141,7 @@ pub fn handle_all_routes(
     let v1_router = Router::new()
         // /account/* routes
         .nest(
-            "/account/:owner",
+            "/account/{owner}",
             Router::new().route(
                 "/orders",
                 axum::routing::get(get_user_orders::get_user_orders_handler)
@@ -159,7 +159,7 @@ pub fn handle_all_routes(
                         .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data"))),
                 )
                 .route(
-                    "/:hash",
+                    "/{hash}",
                     {
                         let get_route = axum::routing::get(get_app_data::get_app_data_handler)
                             .layer(middleware::from_fn(with_labelled_metric("v1/get_app_data")));
@@ -193,7 +193,7 @@ pub fn handle_all_routes(
                     },
                 )
                 .route(
-                    "/:uid",
+                    "/{uid}",
                     {
                         let get = axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
                             .layer(middleware::from_fn(with_labelled_metric("v1/get_order")));
@@ -203,7 +203,7 @@ pub fn handle_all_routes(
                     },
                 )
                 .route(
-                    "/:uid/status",
+                    "/{uid}/status",
                     axum::routing::get(get_order_status::get_status_handler)
                         .layer(middleware::from_fn(with_labelled_metric("v1/get_order_status"))),
                 ),
@@ -224,19 +224,19 @@ pub fn handle_all_routes(
                         .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
                 )
                 .route(
-                    "/by_tx_hash/:tx_hash",
+                    "/by_tx_hash/{tx_hash}",
                     axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
                         .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
                 )
                 .route(
-                    "/:auction_id",
+                    "/{auction_id}",
                     axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
                         .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
                 ),
         )
         // /token/* routes
         .nest(
-            "/token/:token",
+            "/token/{token}",
             Router::new()
                 .route(
                     "/metadata",
@@ -257,7 +257,7 @@ pub fn handle_all_routes(
         )
         // /transactions/* routes
         .nest(
-            "/transactions/:hash",
+            "/transactions/{hash}",
             Router::new().route(
                 "/orders",
                 axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
@@ -266,7 +266,7 @@ pub fn handle_all_routes(
         )
         // /users/* routes
         .nest(
-            "/users/:user",
+            "/users/{user}",
             Router::new().route(
                 "/total_surplus",
                 axum::routing::get(get_total_surplus::get_total_surplus_handler)
@@ -292,12 +292,12 @@ pub fn handle_all_routes(
                         .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
                 )
                 .route(
-                    "/by_tx_hash/:tx_hash",
+                    "/by_tx_hash/{tx_hash}",
                     axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
                         .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
                 )
                 .route(
-                    "/:auction_id",
+                    "/{auction_id}",
                     axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
                         .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
                 ),

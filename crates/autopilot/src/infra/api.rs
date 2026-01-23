@@ -52,7 +52,7 @@ pub async fn serve(
     };
 
     let app = Router::new()
-        .route("/native_price/:token", get(get_native_price))
+        .route("/native_price/{token}", get(get_native_price))
         .with_state(state)
         // Layers are applied as a stack (last applied = outermost)
         .layer(axum::middleware::from_fn(
