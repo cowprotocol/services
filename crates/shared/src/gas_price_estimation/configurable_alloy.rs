@@ -65,11 +65,25 @@ impl GasPriceEstimating for ConfigurableGasPriceEstimator {
             .await
             .context("failed to fetch fee history")?;
 
-        // Get base fee: use latest block's base fee, or fall back to predicted
-        // next block base fee if unavailable
+        // Get base fee: use latest block's base fee, or fall back to fetching
+        // latest block directly if fee history is empty
         let base_fee_per_gas = match fee_history.latest_block_base_fee() {
             Some(base_fee) if base_fee != 0 => base_fee,
-            _ => fee_history.base_fee_per_gas.last().copied().unwrap_or(0),
+            _ => {
+                // empty response, fetch basefee from latest block directly
+                let block = self
+                    .provider
+                    .get_block_by_number(BlockNumberOrTag::Latest)
+                    .await
+                    .context("failed to fetch latest block")?
+                    .context("latest block not found")?;
+                u128::from(
+                    block
+                        .header
+                        .base_fee_per_gas
+                        .context("base_fee_per_gas not available (eip1559 not supported)")?,
+                )
+            }
         };
 
         // Use alloy's default estimation algorithm
