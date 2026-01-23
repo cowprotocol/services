@@ -21,7 +21,6 @@ use {
             cases::{
                 AB_ORDER_AMOUNT,
                 AD_ORDER_AMOUNT,
-                ApproxEq,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,
                 DEFAULT_POOL_AMOUNT_B,
@@ -47,7 +46,7 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
-    number::serialization::HexOrDecimalU256,
+    number::{serialization::HexOrDecimalU256, testing::ApproxEq},
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
