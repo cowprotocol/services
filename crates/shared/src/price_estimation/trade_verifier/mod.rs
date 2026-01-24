@@ -223,9 +223,9 @@ impl TradeVerifier {
                     solver: trade.solver(),
                     verified: true,
                     execution: QuoteExecution {
-                        interactions: map_interactions_data(&trade.interactions()),
-                        pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                        jit_orders: trade.jit_orders(),
+                        interactions: map_interactions_data(trade.interactions()),
+                        pre_interactions: map_interactions_data(trade.pre_interactions()),
+                        jit_orders: trade.jit_orders().cloned().collect(),
                     },
                 };
                 tracing::warn!(
@@ -517,9 +517,9 @@ impl TradeVerifying for TradeVerifier {
                 solver: trade.solver(),
                 verified: false,
                 execution: QuoteExecution {
-                    interactions: map_interactions_data(&trade.interactions()),
-                    pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                    jit_orders: trade.jit_orders(),
+                    interactions: map_interactions_data(trade.interactions()),
+                    pre_interactions: map_interactions_data(trade.pre_interactions()),
+                    jit_orders: trade.jit_orders().cloned().collect(),
                 },
             })
             .context("solver provided no gas estimate");
@@ -569,8 +569,10 @@ impl TradeVerifying for TradeVerifier {
     }
 }
 
-fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> {
-    interactions.iter().map(|i| i.encode()).collect()
+fn encode_interactions<'a>(
+    interactions: impl IntoIterator<Item = &'a Interaction>,
+) -> Vec<EncodedInteraction> {
+    interactions.into_iter().map(|i| i.encode()).collect()
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -585,7 +587,7 @@ fn encode_settlement(
     domain_separator: &DomainSeparator,
     settlement: Address,
 ) -> Result<EncodedSettlement> {
-    let mut trade_interactions = encode_interactions(&trade.interactions());
+    let mut trade_interactions = encode_interactions(trade.interactions());
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
         // does not have to emit unwraps to pay out `ETH` in a trade.
@@ -644,7 +646,7 @@ fn encode_settlement(
 
     let user_interactions = verification.pre_interactions.iter().cloned();
     let pre_interactions: Vec<_> = user_interactions
-        .chain(trade.pre_interactions())
+        .chain(trade.pre_interactions().cloned())
         .chain([trade_setup_interaction])
         .collect();
 
@@ -928,9 +930,9 @@ fn ensure_quote_accuracy(
         solver: trade.solver(),
         verified: true,
         execution: QuoteExecution {
-            interactions: map_interactions_data(&trade.interactions()),
-            pre_interactions: map_interactions_data(&trade.pre_interactions()),
-            jit_orders: trade.jit_orders(),
+            interactions: map_interactions_data(trade.interactions()),
+            pre_interactions: map_interactions_data(trade.pre_interactions()),
+            jit_orders: trade.jit_orders().cloned().collect(),
         },
     })
 }
