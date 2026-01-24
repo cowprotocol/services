@@ -95,6 +95,14 @@ impl TradeKind {
         }
     }
 
+    /// Returns whether the solution contains anything that could
+    /// actually produce the promised buy tokens.
+    pub fn has_execution_plan(&self) -> bool {
+        !self.interactions().is_empty()
+            || !self.jit_orders().is_empty()
+            || !self.pre_interactions().is_empty()
+    }
+
     pub fn interactions(&self) -> Vec<Interaction> {
         match self {
             TradeKind::Legacy(trade) => trade.interactions.clone(),

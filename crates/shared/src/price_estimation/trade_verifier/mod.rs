@@ -305,7 +305,7 @@ impl TradeVerifier {
                 summary.out_amount = I512::from(query.in_amount.get()) + summary.out_amount;
             } else if summary.out_amount < I512::ZERO {
                 tracing::debug!("Trade out amount is negative");
-                return Err(Error::TooInaccurate);
+                return Err(Error::BuffersPayForOrder);
             }
         }
 
@@ -537,13 +537,33 @@ impl TradeVerifying for TradeVerifier {
             .await
         {
             Ok(verified) => Ok(verified),
-            Err(Error::SimulationFailed(err)) => {
-                tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
-                unverified_result
-            }
-            Err(err @ Error::TooInaccurate) => {
-                tracing::debug!("discarding quote because it's too inaccurate");
-                Err(err.into())
+            Err(err) => {
+                // For some tokens it's not possible to provide verifiable calldata in the
+                // quote (e.g. when they require the use of proprietary APIs which don't give
+                // out calldata willy nilly).
+                //
+                // Since you can't magically make up calldata that makes your quote verifiable
+                // solvers don't provide any call data in those cases.
+                // This has 2 possible outcomes:
+                // 1. the settlement contract has enough buy_tokens to pay for the order =>
+                //    Error::BuffersPayForOrder
+                // 2. not enough buy tokens in buffer => error::SimulationFailure
+                //
+                // To make handling of these quotes more predictable we'll only discard
+                // `Error::BufferPayForOrder` errors if the solver actually tried to provide a
+                // an execution plan but it's just not correct. In all other cases we just flag
+                // the solution as unverified but let it pass.
+                let has_call_data = trade.has_execution_plan();
+                if !has_call_data && matches!(err, Error::BuffersPayForOrder) {
+                    tracing::debug!(
+                        has_call_data,
+                        "discarding quote because buffers pay for order"
+                    );
+                    Err(err.into())
+                } else {
+                    tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
+                    unverified_result
+                }
             }
         }
     }
@@ -899,7 +919,7 @@ fn ensure_quote_accuracy(
         .context("summary buy token is missing")?;
 
     if (*sell_token_lost >= sell_token_lost_limit) || (*buy_token_lost >= buy_token_lost_limit) {
-        return Err(Error::TooInaccurate);
+        return Err(Error::BuffersPayForOrder);
     }
 
     Ok(Estimate {
@@ -927,9 +947,10 @@ pub struct PriceQuery {
 #[derive(thiserror::Error, Debug)]
 enum Error {
     /// Verification logic ran successfully but the quote was deemed too
-    /// inaccurate to be usable.
-    #[error("too inaccurate")]
-    TooInaccurate,
+    /// inaccurate because too many buy tokens came from the settlement
+    /// contract's buffers.
+    #[error("buffers pay for order")]
+    BuffersPayForOrder,
     /// Some error caused the simulation to not finish successfully.
     #[error("quote could not be simulated")]
     SimulationFailed(#[from] anyhow::Error),
@@ -1010,7 +1031,7 @@ mod tests {
 
         let estimate =
             ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
-        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+        assert!(matches!(estimate, Err(Error::BuffersPayForOrder)));
 
         // passes with slightly higher tolerance
         let estimate =
@@ -1030,7 +1051,7 @@ mod tests {
 
         let estimate =
             ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
-        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+        assert!(matches!(estimate, Err(Error::BuffersPayForOrder)));
 
         // passes with slightly higher tolerance
         let estimate =
