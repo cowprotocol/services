@@ -574,6 +574,10 @@ pub async fn fetch_in_flight_orders(
     WHERE
         deadline > $1
         AND ps.is_winner = true
+        AND NOT EXISTS (
+            SELECT 1 FROM settlement_executions se
+            WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid
+        )
     "#;
 
     sqlx::query_as(QUERY)
@@ -1365,5 +1369,21 @@ mod tests {
                 .into_iter()
                 .all(|id| later_block.contains(&order_uid(id)))
         );
+
+        crate::settlement_executions::insert(
+            &mut db,
+            1, // auction_id
+            Default::default(),
+            3, // solution uid => contains order 3
+            Default::default(),
+            5,
+            10,
+        )
+        .await
+        .unwrap();
+
+        // when an order gets marked as settled we dont consider it inflight anymore
+        let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
+        assert_eq!(later_block_with_settlement, vec![order_uid(2)]);
     }
 }
