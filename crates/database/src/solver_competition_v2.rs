@@ -563,6 +563,25 @@ fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::
     Ok(solutions)
 }
 
+pub async fn fetch_in_flight_orders(
+    ex: &mut PgConnection,
+    current_block: i64,
+) -> Result<Vec<OrderUid>, sqlx::Error> {
+    const QUERY: &str = r#"
+    SELECT DISTINCT(pte.order_uid) FROM competition_auctions ca
+    JOIN proposed_solutions ps ON ps.auction_id = ca.id
+    JOIN proposed_trade_executions pte ON pte.solution_uid = ps.uid AND pte.auction_id = ca.id
+    WHERE
+        deadline > $1
+        AND ps.filtered_out = false
+    "#;
+
+    sqlx::query_as(QUERY)
+        .bind(current_block)
+        .fetch_all(ex)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use {

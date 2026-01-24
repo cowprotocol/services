@@ -21,7 +21,7 @@ use {
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
-        solver_competition_v2::{Order, Solution},
+        solver_competition_v2::{self, Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -1023,6 +1023,26 @@ impl Persistence {
             .await
             .context("solver_competition::fetch_solver_winning_solutions")?,
         )
+    }
+
+    /// Saves the surplus capturing jit order owners to the DB
+    pub async fn fetch_in_flight_orders(
+        &self,
+        current_block: u64,
+    ) -> anyhow::Result<HashSet<crate::domain::OrderUid>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["inflight_orders"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let orders =
+            solver_competition_v2::fetch_in_flight_orders(&mut ex, current_block.cast_signed())
+                .await?;
+        Ok(orders
+            .into_iter()
+            .map(|o| crate::domain::OrderUid(o.0))
+            .collect())
     }
 }
 
