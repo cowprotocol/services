@@ -553,10 +553,10 @@ impl TradeVerifying for TradeVerifier {
                 // `Error::BufferPayForOrder` errors if the solver actually tried to provide a
                 // an execution plan but it's just not correct. In all other cases we just flag
                 // the solution as unverified but let it pass.
-                let has_call_data = trade.has_execution_plan();
-                if has_call_data && matches!(err, Error::BuffersPayForOrder) {
+                let has_execution_plan = trade.has_execution_plan();
+                if has_execution_plan && matches!(err, Error::BuffersPayForOrder) {
                     tracing::debug!(
-                        has_call_data,
+                        has_execution_plan,
                         "discarding quote because buffers pay for order"
                     );
                     Err(err.into())
