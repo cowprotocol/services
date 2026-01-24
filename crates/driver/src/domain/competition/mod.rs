@@ -635,6 +635,7 @@ impl Competition {
                     Either::Left((_closed, settle_fut)) => {
                         // Add a grace period to give driver the last chance to fetch the settlement
                         // tx.
+                        tracing::debug!("autopilot aborted settle request - starting grace period");
                         tokio::time::timeout(Duration::from_secs(1), settle_fut)
                             .await
                             .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
