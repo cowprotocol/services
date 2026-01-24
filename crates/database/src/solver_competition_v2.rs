@@ -573,7 +573,7 @@ pub async fn fetch_in_flight_orders(
     JOIN proposed_trade_executions pte ON pte.solution_uid = ps.uid AND pte.auction_id = ca.id
     WHERE
         deadline > $1
-        AND ps.filtered_out = false
+        AND ps.is_winner = true
     "#;
 
     sqlx::query_as(QUERY)
@@ -1260,5 +1260,92 @@ mod tests {
             .unwrap();
         assert_eq!(auction_participants.len(), 1);
         assert_eq!(auction_participants[0].participant, solutions[0].solver);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_fetch_inflight_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // insert an order to "orders" table to prevent orders from being
+        // inserted into the proposed_jit_orders table
+        let order_uid = |i| ByteArray([i; 56]);
+        for i in 0..4 {
+            let order = crate::orders::Order {
+                uid: order_uid(i),
+                ..Default::default()
+            };
+            crate::orders::insert_order(&mut db, &order).await.unwrap();
+        }
+
+        let order = |i| Order {
+            uid: order_uid(i),
+            ..Default::default()
+        };
+        let solutions = vec![
+            Solution {
+                uid: 0,
+                id: 0.into(),
+                orders: vec![order(0)],
+                is_winner: true,
+                ..Default::default()
+            },
+            Solution {
+                uid: 1,
+                id: 0.into(),
+                orders: vec![order(1)],
+                is_winner: true,
+                ..Default::default()
+            },
+        ];
+        crate::auction::save(&mut db, crate::auction::Auction {
+            id: 0,
+            block: 0,
+            deadline: 5,
+            order_uids: Default::default(),
+            price_tokens: Default::default(),
+            price_values: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
+        }).await.unwrap();
+        save(&mut db, 0, &solutions).await.unwrap();
+
+        let solutions = vec![
+            Solution {
+                uid: 2,
+                id: 1.into(),
+                orders: vec![order(2)],
+                is_winner: true,
+                ..Default::default()
+            },
+            Solution {
+                uid: 3,
+                id: 1.into(),
+                orders: vec![order(3)],
+                is_winner: true,
+                ..Default::default()
+            },
+        ];
+        crate::auction::save(&mut db, crate::auction::Auction {
+            id: 1,
+            block: 5,
+            deadline: 10,
+            order_uids: Default::default(),
+            price_tokens: Default::default(),
+            price_values: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
+        }).await.unwrap();
+        save(&mut db, 1, &solutions).await.unwrap();
+
+        // all orders in flight at block 4
+        let early_block = fetch_in_flight_orders(&mut db, 4).await.unwrap();
+        assert_eq!(early_block.len(), 4);
+        assert!([0, 1, 2, 3].into_iter().all(|id| early_block.contains(&order_uid(id))));
+
+        // only orders from the later auction in flight at block 5
+        let later_block = fetch_in_flight_orders(&mut db, 5).await.unwrap();
+        assert_eq!(later_block.len(), 2);
+        assert!([2, 3].into_iter().all(|id| later_block.contains(&order_uid(id))));
     }
 }
