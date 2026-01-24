@@ -5,13 +5,14 @@ use {
         infra::{self, solver::Account},
     },
     alloy::{
-        consensus::Transaction,
         eips::BlockNumberOrTag,
-        providers::{Provider, ext::TxPoolApi},
+        primitives::Address,
+        providers::Provider,
         rpc::types::TransactionRequest,
     },
-    anyhow::Context,
+    dashmap::DashMap,
     ethrpc::Web3,
+    std::sync::Arc,
     url::Url,
 };
 
@@ -64,6 +65,13 @@ pub enum RevertProtection {
 pub struct Mempool {
     transport: Web3,
     config: Config,
+    last_submissions: Arc<DashMap<Address, Submission>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Submission {
+    pub nonce: u64,
+    pub gas_price: eth::GasPrice,
 }
 
 impl std::fmt::Display for Mempool {
@@ -79,7 +87,11 @@ impl Mempool {
         for account in solver_accounts {
             transport.wallet.register_signer(account);
         }
-        Self { transport, config }
+        Self {
+            transport,
+            config,
+            last_submissions: Default::default(),
+        }
     }
 
     /// Fetches the transaction count (nonce) for the given address at the
@@ -153,19 +165,19 @@ impl Mempool {
                     solver = ?solver.address(),
                     "successfully submitted tx to mempool"
                 );
+                self.last_submissions
+                    .insert(solver.address(), Submission { nonce, gas_price });
                 Ok(eth::TxId(*tx.tx_hash()))
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
-                let pending_tx = self
-                    .find_pending_tx_in_mempool(solver.address(), nonce)
-                    .await;
+                let last_submission = self.last_submission(solver.address());
 
                 tracing::debug!(
                     ?err,
                     new_gas_price = ?gas_price,
                     ?nonce,
-                    ?pending_tx,
+                    ?last_submission,
                     ?gas_limit,
                     solver = ?solver.address(),
                     "failed to submit tx to mempool"
@@ -175,28 +187,11 @@ impl Mempool {
         }
     }
 
-    /// Queries the mempool for a pending transaction of the given solver and
-    /// nonce.
-    pub async fn find_pending_tx_in_mempool(
-        &self,
-        signer: eth::Address,
-        nonce: u64,
-    ) -> anyhow::Result<Option<alloy::rpc::types::Transaction>> {
-        let tx_pool_content = self
-            .transport
-            .alloy
-            .txpool_content_from(signer)
-            .await
-            .context("failed to query pending transactions")?;
-
-        // find the one with the specified nonce
-        let pending_tx = tx_pool_content
-            .pending
-            .into_iter()
-            .chain(tx_pool_content.queued)
-            .find(|(_signer, tx)| tx.nonce() == nonce)
-            .map(|(_, tx)| tx);
-        Ok(pending_tx)
+    /// Looks up the last tx that was submitted for that signer.
+    pub fn last_submission(&self, signer: eth::Address) -> Option<Submission> {
+        self.last_submissions
+            .get(&signer)
+            .map(|entry| entry.value().clone())
     }
 
     pub fn config(&self) -> &Config {
