@@ -1025,7 +1025,8 @@ impl Persistence {
         )
     }
 
-    /// Saves the surplus capturing jit order owners to the DB
+    /// Fetches orders which are currently inflight. Those orders should
+    /// be omitted from the current auction to avoid onchain reverts.
     pub async fn fetch_in_flight_orders(
         &self,
         current_block: u64,
