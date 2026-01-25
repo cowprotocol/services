@@ -585,8 +585,8 @@ pub async fn fetch_in_flight_orders(
     WHERE ca.deadline > $1
         AND ps.is_winner = true
         AND NOT EXISTS (
-            SELECT 1 FROM settlement_executions se
-            WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid
+            SELECT 1 FROM settlements s
+            WHERE s.auction_id = ca.id AND s.solution_uid = ps.uid
         );
     "#;
 
