@@ -577,11 +577,7 @@ pub async fn fetch_in_flight_orders(
     SELECT DISTINCT order_uid
     FROM competition_auctions ca
     JOIN proposed_solutions ps ON ps.auction_id = ca.id
-    JOIN (
-        SELECT auction_id, solution_uid, order_uid FROM proposed_trade_executions
-        UNION ALL
-        SELECT auction_id, solution_uid, order_uid FROM proposed_jit_orders
-    ) orders ON orders.solution_uid = ps.uid AND orders.auction_id = ca.id
+    JOIN proposed_trade_executions pte ON pte.auction_id = ca.id AND pte.solution_uid = ps.uid
     WHERE ca.deadline > $1
         AND ps.is_winner = true
         AND NOT EXISTS (
@@ -1283,17 +1279,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // insert an order to "orders" table to prevent orders from being
-        // inserted into the proposed_jit_orders table
         let order_uid = |i| ByteArray([i; 56]);
-        for i in 0..4 {
-            let order = crate::orders::Order {
-                uid: order_uid(i),
-                ..Default::default()
-            };
-            crate::orders::insert_order(&mut db, &order).await.unwrap();
-        }
-
         let order = |i| Order {
             uid: order_uid(i),
             ..Default::default()
@@ -1380,17 +1366,25 @@ mod tests {
                 .all(|id| later_block.contains(&order_uid(id)))
         );
 
-        crate::settlement_executions::insert(
+        // observe settlement event
+        crate::events::insert_settlement(
             &mut db,
-            1, // auction_id
-            Default::default(),
-            3, // solution uid => contains order 3
-            Default::default(),
-            5,
-            10,
+            &EventIndex {
+                block_number: 5,
+                log_index: 0,
+            },
+            &Default::default(),
         )
         .await
         .unwrap();
+        // associate with auction 1
+        settlements::update_settlement_auction(&mut db, 5, 0, 1)
+            .await
+            .unwrap();
+        // associate with solution 3
+        settlements::update_settlement_solver(&mut db, 5, 0, Default::default(), 3)
+            .await
+            .unwrap();
 
         // when an order gets marked as settled we dont consider it inflight anymore
         let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
