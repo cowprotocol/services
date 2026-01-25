@@ -583,7 +583,7 @@ pub async fn fetch_in_flight_orders(
         SELECT auction_id, solution_uid, order_uid FROM proposed_jit_orders
     ) orders ON orders.solution_uid = ps.uid AND orders.auction_id = ca.id
     WHERE ca.deadline > $1
-        AND ps.winning = true
+        AND ps.is_winner = true
         AND NOT EXISTS (
             SELECT 1 FROM settlement_executions se
             WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid
