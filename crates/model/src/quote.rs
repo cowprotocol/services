@@ -21,6 +21,7 @@ use {
     serde_with::{DisplayFromStr, serde_as},
     std::time::Duration,
 };
+use crate::order::OrderCreation;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -146,6 +147,15 @@ pub struct OrderQuoteRequest {
         serialize_with = "serialize_timeout"
     )]
     pub timeout: Option<Duration>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuoteRequestV2 {
+    #[serde(flatten)]
+    pub base: OrderQuoteRequest,
+    /// Slippage in basis points.
+    pub slippage_bps: u32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -346,6 +356,16 @@ pub struct OrderQuoteResponse {
     /// Protocol fee in basis points (e.g., "2" for 0.02%)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_fee_bps: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuoteResponseV2 {
+    pub quote: OrderCreation,
+    pub from: Address,
+    pub expiration: DateTime<Utc>,
+    pub id: Option<QuoteId>,
+    pub verified: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
