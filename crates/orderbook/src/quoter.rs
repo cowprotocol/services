@@ -24,6 +24,10 @@ use {
     thiserror::Error,
     tracing::instrument,
 };
+use model::order::{OrderCreation, OrderKind};
+use model::quote::{OrderQuoteRequestV2, OrderQuoteResponseV2};
+
+const MAX_BPS: u64 = 10_000;
 
 /// Adjusted quote amounts after applying volume fee.
 struct AdjustedQuoteData {
@@ -195,6 +199,62 @@ impl QuoteHandler {
 
         tracing::debug!(?response, "finished computing quote");
         Ok(response)
+    }
+}
+
+impl QuoteHandler {
+    pub async fn calculate_quote_v2(&self, request: &OrderQuoteRequestV2) -> Result<OrderQuoteResponseV2, OrderQuoteError> {
+        let v1_response = self.calculate_quote(&request.base).await?;
+
+        let mut order = OrderCreation {
+            sell_token: v1_response.quote.sell_token,
+            buy_token: v1_response.quote.buy_token,
+            receiver: v1_response.quote.receiver,
+            sell_amount: v1_response.quote.sell_amount,
+            buy_amount: v1_response.quote.buy_amount,
+            valid_to: v1_response.quote.valid_to,
+            fee_amount: U256::ZERO, // Solver-competition model uses 0 fee signed by user.
+            kind: v1_response.quote.kind,
+            partially_fillable: v1_response.quote.partially_fillable,
+            sell_token_balance: v1_response.quote.sell_token_balance,
+            buy_token_balance: v1_response.quote.buy_token_balance,
+            app_data: v1_response.quote.app_data,
+            quote_id: v1_response.id,
+            ..Default::default()
+        };
+
+        // Apply slippage.
+        let slippage_factor = request.slippage_bps as u64;
+        match order.kind {
+            OrderKind::Sell => {
+                // buyAmount = buyAmount * (10000 - slippageBps) / 10000
+                order.buy_amount = U256::uint_try_from(
+                    order
+                        .buy_amount
+                        .widening_mul(U256::from(MAX_BPS - slippage_factor))
+                        / U512::from(MAX_BPS),
+                )
+                .unwrap_or(U256::MAX);
+            }
+            OrderKind::Buy => {
+                // sellAmount = sellAmount * (10000 + slippageBps) / 10000
+                order.sell_amount = U256::uint_try_from(
+                    order
+                        .sell_amount
+                        .widening_mul(U256::from(MAX_BPS + slippage_factor))
+                        / U512::from(MAX_BPS),
+                )
+                .unwrap_or(U256::MAX);
+            }
+        }
+
+        Ok(OrderQuoteResponseV2 {
+            quote: order,
+            from: v1_response.from,
+            expiration: v1_response.expiration,
+            id: v1_response.id,
+            verified: v1_response.verified,
+        })
     }
 }
 
