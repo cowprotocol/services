@@ -370,7 +370,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
         let expected_error = json!({"errorType": "InternalServerError", "description": ""});
         assert_eq!(body, expected_error);
-        // there are many other FeeAndQuoteErrors, but writing a test for each
+        // There are many other FeeAndQuoteErrors, but writing a test for each
         // would follow the same pattern as this.
     }
 
