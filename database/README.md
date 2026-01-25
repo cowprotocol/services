@@ -64,6 +64,7 @@ Contains all auctions for which a valid solver competition exists.
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
+- competition_auction_deadline: btree(`deadline`)
 
 ### ethflow\_orders
 
