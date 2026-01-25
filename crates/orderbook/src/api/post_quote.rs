@@ -12,6 +12,7 @@ use {
     thiserror::Error,
     warp::{Filter, Rejection},
 };
+use model::quote::OrderQuoteRequestV2;
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("v1" / "quote")
@@ -32,6 +33,27 @@ pub fn post_quote(
             if let Err(err) = &result {
                 tracing::warn!(%err, ?request, "post_quote error");
             }
+            Result::<_, Infallible>::Ok(convert_json_response(result))
+        }
+    })
+}
+
+fn post_quote_v2_request() -> impl Filter<Extract = (OrderQuoteRequestV2,), Error = Rejection> + Clone {
+    warp::path!("v2" / "quote")
+        .and(warp::post())
+        .and(api::extract_payload())
+}
+
+pub fn post_quote_v2(
+    quotes: Arc<QuoteHandler>,
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+    post_quote_v2_request().and_then(move |request: OrderQuoteRequestV2| {
+        let quotes = quotes.clone();
+        async move {
+            let result = quotes
+                .calculate_quote_v2(&request)
+                .await
+                .map_err(OrderQuoteErrorWrapper);
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
     })
@@ -348,7 +370,23 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
         let expected_error = json!({"errorType": "InternalServerError", "description": ""});
         assert_eq!(body, expected_error);
-        // There are many other FeeAndQuoteErrors, but writing a test for each
+        // there are many other FeeAndQuoteErrors, but writing a test for each
         // would follow the same pattern as this.
+    }
+
+    #[tokio::test]
+    async fn post_quote_v2_request_ok() {
+        let filter = post_quote_v2_request();
+        let request_payload = OrderQuoteRequestV2 {
+            base: OrderQuoteRequest::default(),
+            slippage_bps: 100,
+        };
+        let request = request()
+            .path("/v2/quote")
+            .method("POST")
+            .header("content-type", "application/json")
+            .json(&request_payload);
+        let result = request.filter(&filter).await.unwrap();
+        assert_eq!(result, request_payload);
     }
 }
