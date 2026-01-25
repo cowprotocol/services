@@ -231,20 +231,21 @@ impl QuoteHandler {
                 order.buy_amount = U256::uint_try_from(
                     order
                         .buy_amount
-                        .widening_mul(U256::from(MAX_BPS - slippage_factor))
+                        .widening_mul(U256::from(MAX_BPS.saturating_sub(slippage_factor)))
                         / U512::from(MAX_BPS),
                 )
-                .unwrap_or(U256::MAX);
+                    .unwrap_or(U256::MAX);
             }
             OrderKind::Buy => {
                 // sellAmount = sellAmount * (10000 + slippageBps) / 10000
+                // For buy orders, overflow is theoretically possible but capped
                 order.sell_amount = U256::uint_try_from(
                     order
                         .sell_amount
-                        .widening_mul(U256::from(MAX_BPS + slippage_factor))
+                        .widening_mul(U256::from(MAX_BPS.saturating_add(slippage_factor)))
                         / U512::from(MAX_BPS),
                 )
-                .unwrap_or(U256::MAX);
+                    .unwrap_or(U256::MAX);
             }
         }
 
