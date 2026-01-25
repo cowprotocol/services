@@ -563,21 +563,31 @@ fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::
     Ok(solutions)
 }
 
+/// Fetches all orders for which we must assume that there are
+/// still onchain transactions being mined or submitted.
+///
+/// Those are all orders (JIT or regular) that belong to winning
+/// solutions with a deadline greater than the current block
+/// where the execution actually has not been observed onchain yet.
 pub async fn fetch_in_flight_orders(
     ex: &mut PgConnection,
     current_block: i64,
 ) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = r#"
-    SELECT DISTINCT(pte.order_uid) FROM competition_auctions ca
+    SELECT DISTINCT order_uid
+    FROM competition_auctions ca
     JOIN proposed_solutions ps ON ps.auction_id = ca.id
-    JOIN proposed_trade_executions pte ON pte.solution_uid = ps.uid AND pte.auction_id = ca.id
-    WHERE
-        deadline > $1
-        AND ps.is_winner = true
+    JOIN (
+        SELECT auction_id, solution_uid, order_uid FROM proposed_trade_executions
+        UNION ALL
+        SELECT auction_id, solution_uid, order_uid FROM proposed_jit_orders
+    ) orders ON orders.solution_uid = ps.uid AND orders.auction_id = ca.id
+    WHERE ca.deadline > $1
+        AND ps.winning = true
         AND NOT EXISTS (
             SELECT 1 FROM settlement_executions se
             WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid
-        )
+        );
     "#;
 
     sqlx::query_as(QUERY)
