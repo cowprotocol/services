@@ -20,15 +20,19 @@ use {
 };
 
 /// A quote describing the expected outcome of an order.
-#[derive(Debug)]
+#[derive(derive_more::Debug)]
 pub struct Quote {
     pub clearing_prices: HashMap<eth::Address, eth::U256>,
+    #[debug(ignore)]
     pub pre_interactions: Vec<eth::Interaction>,
+    #[debug(ignore)]
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
+    #[debug(ignore)]
     pub tx_origin: Option<eth::Address>,
+    #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
 }
 

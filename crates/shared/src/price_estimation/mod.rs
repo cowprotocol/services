@@ -535,7 +535,7 @@ pub struct Verification {
     pub buy_token_destination: BuyTokenDestination,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, derive_more::Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
@@ -545,6 +545,7 @@ pub struct Estimate {
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
     /// Data associated with this estimation.
+    #[debug(ignore)]
     pub execution: QuoteExecution,
 }
 
