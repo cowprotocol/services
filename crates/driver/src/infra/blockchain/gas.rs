@@ -11,7 +11,7 @@ use {
     ethrpc::Web3,
     shared::gas_price_estimation::{
         GasPriceEstimating,
-        alloy::Eip1559GasPriceEstimator,
+        configurable_alloy::{ConfigurableGasPriceEstimator, EstimatorConfig},
         eth_node::NodeGasPriceEstimator,
     },
     std::sync::Arc,
@@ -36,7 +36,16 @@ impl GasPriceEstimator {
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
             GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(web3.alloy.clone())),
-            GasEstimatorType::Alloy => Arc::new(Eip1559GasPriceEstimator::new(web3.alloy.clone())),
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => Arc::new(ConfigurableGasPriceEstimator::new(
+                web3.alloy.clone(),
+                EstimatorConfig {
+                    past_blocks: *past_blocks,
+                    reward_percentile: *reward_percentile,
+                },
+            )),
         };
         // TODO: simplify logic by moving gas price adjustments out of the individual
         // mempool configs

@@ -219,9 +219,9 @@ impl TradeFinding for ExternalTradeFinder {
             gas_estimate,
             solver: trade.solver(),
             execution: QuoteExecution {
-                interactions: map_interactions_data(&trade.interactions()),
-                pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                jit_orders: trade.jit_orders(),
+                interactions: map_interactions_data(trade.interactions()),
+                pre_interactions: map_interactions_data(trade.pre_interactions()),
+                jit_orders: trade.jit_orders().cloned().collect(),
             },
         })
     }
