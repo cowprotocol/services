@@ -265,6 +265,8 @@ Column                    | Type                         | Nullable | Details
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
+- orders\_true\_valid\_to: btree(`true_valid_to`)
+- okay\_onchain\_orders: btree(`uid`) WHERE placement\_error IS NOT NULL
 
 ### fee_policies
 
