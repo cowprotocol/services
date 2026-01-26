@@ -12,7 +12,6 @@ use {
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::alloy::ERC20,
     ethrpc::Web3,
-    maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -155,7 +154,7 @@ impl AllowanceManaging for AllowanceManager {
         Ok(fetch_allowances(
             self.web3.alloy.clone(),
             self.owner,
-            hashmap! { spender => tokens },
+            HashMap::from([(spender, tokens)]),
         )
         .await?
         .remove(&spender)

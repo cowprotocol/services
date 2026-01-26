@@ -132,12 +132,7 @@ pub fn encoding_failed(solver: &solver::Name, id: &solution::Id, err: &solution:
 
 /// Observe that two solutions were merged.
 pub fn merged(first: &Solution, other: &Solution, result: &Solution) {
-    tracing::debug!(?first, ?other, ?result, "merged solutions");
-}
-
-/// Observe that it was not possible to merge two solutions.
-pub fn not_merged(first: &Solution, other: &Solution, err: solution::error::Merge) {
-    tracing::debug!(?err, ?first, ?other, "solutions can't be merged");
+    tracing::trace!(?first, ?other, ?result, "merged solutions");
 }
 
 /// Observe that scoring is about to start.
@@ -222,27 +217,27 @@ pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, comp
 }
 
 /// Observe the result of solving an auction.
-pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition::Error>) {
+pub fn solved(solver: &str, result: &Result<Option<Solved>, competition::Error>) {
     match result {
         Ok(Some(solved)) => {
             tracing::info!(?solved, "solved auction");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), "Success"])
+                .with_label_values(&[solver, "Success"])
                 .inc();
         }
         Ok(None) => {
             tracing::debug!("no solution found");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), "SolutionNotFound"])
+                .with_label_values(&[solver, "SolutionNotFound"])
                 .inc();
         }
         Err(err) => {
             tracing::warn!(?err, "failed to solve auction");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), competition_error(err)])
+                .with_label_values(&[solver, competition_error(err)])
                 .inc();
         }
     }

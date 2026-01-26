@@ -241,7 +241,7 @@ impl RunLoop {
 
     /// Sleeps until the next auction is supposed to start, builds it and
     /// returns it.
-    #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
+    #[instrument(skip_all)]
     async fn next_auction(
         &self,
         start_block: BlockInfo,
@@ -260,7 +260,7 @@ impl RunLoop {
             return None;
         }
 
-        observe::log_auction_delta(&previous, &auction);
+        observe::log_auction_delta(&previous, &auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
@@ -307,7 +307,7 @@ impl RunLoop {
         })
     }
 
-    #[instrument(skip_all, fields(auction_id = auction.id, auction_block = auction.block, auction_orders = auction.orders.len()))]
+    #[instrument(skip_all)]
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
@@ -1117,10 +1117,15 @@ pub mod observe {
             self,
             competition::{Unscored, winner_selection::Ranking},
         },
+        ethrpc::block_stream::BlockInfo,
         std::collections::HashSet,
     };
 
-    pub fn log_auction_delta(previous: &Option<domain::Auction>, current: &domain::Auction) {
+    pub fn log_auction_delta(
+        previous: &Option<domain::Auction>,
+        current: &domain::Auction,
+        start_block: &BlockInfo,
+    ) {
         let previous_uids = match previous {
             Some(previous) => previous
                 .orders
@@ -1146,6 +1151,7 @@ pub mod observe {
             removed = ?removed,
             "Orders no longer in auction"
         );
+        tracing::debug!(auction_id = current.id, ?start_block);
     }
 
     pub fn bids(bids: &[domain::competition::Bid<Unscored>]) {
