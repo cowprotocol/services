@@ -339,13 +339,12 @@ impl Mempools {
                 eth::U256::from(
                     pending_tx
                         .max_priority_fee_per_gas()
-                        .with_context(|| {
-                            format!(
-                                "pending tx is not EIP 1559 ({})",
-                                pending_tx.inner.tx_hash()
-                            )
-                        })
-                        .ok()?,
+                        .or_else(|| {
+                            tracing::error!(
+                                tx = ?pending_tx.inner.tx_hash(),
+                                "pending tx is not EIP 1559");
+                            None
+                        })?
                 )
                 .into(),
                 eth::U256::from(pending_tx.max_fee_per_gas()).into(),
