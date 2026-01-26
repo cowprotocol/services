@@ -3,7 +3,6 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            OrderUid,
             auction::Id,
             competition::{
                 self,
@@ -53,7 +52,6 @@ use {
         },
         time::{Duration, Instant},
     },
-    tokio::sync::Mutex,
     tracing::{Instrument, instrument},
 };
 
@@ -83,7 +81,6 @@ pub struct RunLoop {
     solver_participation_guard: SolverParticipationGuard,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
-    in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
     probes: Probes,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
@@ -126,7 +123,6 @@ impl RunLoop {
             solver_participation_guard,
             solvable_orders_cache,
             trusted_tokens,
-            in_flight_orders: Default::default(),
             probes,
             maintenance,
             competition_updates_sender,
@@ -403,11 +399,6 @@ impl RunLoop {
         block_deadline: u64,
     ) {
         let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
-        self.in_flight_orders
-            .lock()
-            .await
-            .extend(solved_order_uids.clone());
-
         let solution_id = solution.id();
         let solver = solution.solver();
         let self_ = self.clone();
@@ -420,7 +411,6 @@ impl RunLoop {
             match self_
                 .settle(
                     &driver_,
-                    solved_order_uids.clone(),
                     solver,
                     auction_id,
                     solution_id,
@@ -734,11 +724,9 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    #[expect(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,
-        solved_order_uids: HashSet<OrderUid>,
         solver: eth::Address,
         auction_id: i64,
         solution_id: u64,
@@ -793,12 +781,6 @@ impl RunLoop {
         };
 
         self.store_execution_ended(solver, auction_id, solution_uid, &result);
-
-        // Clean up the in-flight orders regardless the result.
-        self.in_flight_orders
-            .lock()
-            .await
-            .retain(|order| !solved_order_uids.contains(order));
 
         result
     }
@@ -913,13 +895,19 @@ impl RunLoop {
         Err(SettleError::Timeout)
     }
 
-    /// Removes orders that are currently being settled to avoid solvers trying
-    /// to fill an order a second time.
+    /// Removes orders that are currently being settled to avoid solver
+    /// solutions conflicting with each other.
     async fn remove_in_flight_orders(
         &self,
         mut auction: domain::RawAuctionData,
     ) -> domain::RawAuctionData {
-        let in_flight = &*self.in_flight_orders.lock().await;
+        let in_flight = self
+            .persistence
+            .fetch_in_flight_orders(auction.block)
+            .await
+            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
+            .unwrap_or_default();
+
         if in_flight.is_empty() {
             return auction;
         };
