@@ -751,7 +751,8 @@ pub enum GasEstimatorType {
         #[serde(default = "default_past_blocks")]
         past_blocks: u64,
         /// Percentile of rewards to use for priority fee estimation (default:
-        /// 20.0)
+        /// 20.0). This is what Metamask uses as medium priority:
+        /// https://github.com/MetaMask/core/blob/0fd4b397e7237f104d1c81579a0c4321624d076b/packages/gas-fee-controller/src/fetchGasEstimatesViaEthFeeHistory/calculateGasFeeEstimatesForPriorityLevels.ts#L14-L45
         #[serde(default = "default_reward_percentile")]
         reward_percentile: f64,
     },
