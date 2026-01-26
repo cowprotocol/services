@@ -1,0 +1,106 @@
+//! Configurable EIP-1559 gas price estimator.
+//!
+//! Unlike alloy's default estimator which uses hardcoded values (10 blocks,
+//! 20th percentile), this estimator allows configuring:
+//! - Number of blocks to look back
+//! - Reward percentile to use
+
+use {
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::{
+        eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
+        providers::{Provider, utils::eip1559_default_estimator},
+    },
+    anyhow::{Context, Result},
+    ethrpc::AlloyProvider,
+    tracing::instrument,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub struct EstimatorConfig {
+    /// Number of blocks to look back for fee history
+    pub past_blocks: u64,
+    /// Percentile of rewards to use for priority fee estimation
+    pub reward_percentile: f64,
+}
+
+pub fn default_past_blocks() -> u64 {
+    10
+}
+
+pub fn default_reward_percentile() -> f64 {
+    20.0
+}
+
+/// A configurable EIP-1559 gas price estimator.
+///
+/// Uses alloy's default estimation algorithm but with configurable
+/// `past_blocks` and `reward_percentile` parameters for the fee history query.
+pub struct ConfigurableGasPriceEstimator {
+    provider: AlloyProvider,
+    config: EstimatorConfig,
+}
+
+impl ConfigurableGasPriceEstimator {
+    pub fn new(provider: AlloyProvider, config: EstimatorConfig) -> Self {
+        Self { provider, config }
+    }
+}
+
+#[async_trait::async_trait]
+impl GasPriceEstimating for ConfigurableGasPriceEstimator {
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        Ok(self
+            .provider
+            .get_block(BlockId::latest())
+            .await?
+            .and_then(|block| block.header.base_fee_per_gas))
+    }
+
+    #[instrument(skip(self), fields(
+        past_blocks = %self.config.past_blocks,
+        reward_percentile = %self.config.reward_percentile
+    ))]
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
+        // Fetch fee history with our configured parameters
+        let fee_history = self
+            .provider
+            .get_fee_history(
+                self.config.past_blocks,
+                BlockNumberOrTag::Latest,
+                &[self.config.reward_percentile],
+            )
+            .await
+            .context("failed to fetch fee history")?;
+
+        // Get base fee: use latest block's base fee, or fall back to fetching
+        // latest block directly if fee history is empty
+        let base_fee_per_gas = match fee_history.latest_block_base_fee() {
+            Some(base_fee) if base_fee != 0 => base_fee,
+            _ => {
+                // empty response, fetch basefee from latest block directly
+                let block = self
+                    .provider
+                    .get_block_by_number(BlockNumberOrTag::Latest)
+                    .await
+                    .context("failed to fetch latest block")?
+                    .context("latest block not found")?;
+                u128::from(
+                    block
+                        .header
+                        .base_fee_per_gas
+                        .context("base_fee_per_gas not available (eip1559 not supported)")?,
+                )
+            }
+        };
+
+        // Use alloy's default estimation algorithm
+        let estimation =
+            eip1559_default_estimator(base_fee_per_gas, &fee_history.reward.unwrap_or_default());
+
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: estimation.max_fee_per_gas,
+            max_priority_fee_per_gas: estimation.max_priority_fee_per_gas,
+        })
+    }
+}

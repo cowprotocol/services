@@ -1,4 +1,4 @@
-pub mod alloy;
+pub mod configurable_alloy;
 pub mod driver;
 pub mod eth_node;
 pub mod fake;
@@ -8,7 +8,12 @@ use {
     crate::{
         ethrpc::Web3,
         gas_price_estimation::{
-            alloy::Eip1559GasPriceEstimator,
+            configurable_alloy::{
+                ConfigurableGasPriceEstimator,
+                EstimatorConfig,
+                default_past_blocks,
+                default_reward_percentile,
+            },
             eth_node::NodeGasPriceEstimator,
             priority::PriorityGasPriceEstimating,
         },
@@ -88,7 +93,14 @@ pub async fn create_priority_estimator(
                 estimators.push(Box::new(NodeGasPriceEstimator::new(web3.alloy.clone())))
             }
             GasEstimatorType::Alloy => {
-                estimators.push(Box::new(Eip1559GasPriceEstimator::new(web3.alloy.clone())))
+                let estimator = ConfigurableGasPriceEstimator::new(
+                    web3.alloy.clone(),
+                    EstimatorConfig {
+                        past_blocks: default_past_blocks(),
+                        reward_percentile: default_reward_percentile(),
+                    },
+                );
+                estimators.push(Box::new(estimator))
             }
         }
     }

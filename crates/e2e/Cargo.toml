@@ -9,7 +9,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local", "signer-mnemonic", "provider-anvil-api", "provider-debug-api", "sol-types"] }
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "provider-txpool-api", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local", "signer-mnemonic", "provider-anvil-api", "provider-debug-api", "sol-types"] }
 alloy-signer = {workspace = true, default-features = false, features = ["eip712"]}
 anyhow = { workspace = true }
 app-data = { workspace = true }
