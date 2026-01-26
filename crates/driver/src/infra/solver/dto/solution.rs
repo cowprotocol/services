@@ -53,23 +53,96 @@ impl Solutions {
                                     ))?
                                     .clone();
 
-                                // Calculate haircut fee for conservative bidding.
-                                // This reduces reported surplus without affecting executed amounts.
-                                let haircut_fee = if haircut_bps > 0 {
-                                    eth::U256::from(fulfillment.executed_amount)
+                                // Handle haircut differently based on order type:
+                                // - For orders with dynamic fees (settlements): incorporate
+                                //   haircut into executed/fee so on-chain matches reported
+                                // - For orders without dynamic fees (quotes): keep haircut_fee
+                                //   separate so sell_amount() includes it for conservative quotes
+                                let has_dynamic_fee = fulfillment.fee.is_some();
+
+                                // Calculate haircut in target token
+                                let haircut_in_target = if haircut_bps > 0 {
+                                    fulfillment
+                                        .executed_amount
                                         .checked_mul(eth::U256::from(haircut_bps))
                                         .and_then(|v| {
                                             v.checked_div(eth::U256::from(Self::MAX_BASE_POINT))
                                         })
                                         .unwrap_or_default()
                                 } else {
-                                    Default::default()
+                                    eth::U256::ZERO
                                 };
+
+                                let (executed_with_haircut, fee_with_haircut, haircut_fee) =
+                                    if haircut_in_target > eth::U256::ZERO && has_dynamic_fee {
+                                        // For settlements: incorporate haircut into fee/executed
+                                        // Apply haircut like protocol fees:
+                                        // - SELL orders: reduce executed by haircut, add haircut to
+                                        //   fee
+                                        // - BUY orders: keep executed unchanged, convert haircut to
+                                        //   sell tokens and add to fee
+                                        let (executed, haircut_in_sell) = match order.side {
+                                            competition::order::Side::Sell => {
+                                                // Haircut is already in sell tokens
+                                                let executed = fulfillment
+                                                    .executed_amount
+                                                    .checked_sub(haircut_in_target)
+                                                    .unwrap_or(fulfillment.executed_amount);
+                                                (executed, haircut_in_target)
+                                            }
+                                            competition::order::Side::Buy => {
+                                                // Convert haircut from buy to sell tokens
+                                                let buy_token: alloy::primitives::Address =
+                                                    order.buy.token.0 .0;
+                                                let sell_token: alloy::primitives::Address =
+                                                    order.sell.token.0 .0;
+                                                let haircut_in_sell = solution
+                                                    .prices
+                                                    .get(&buy_token)
+                                                    .and_then(|buy_price| {
+                                                        solution.prices.get(&sell_token).and_then(
+                                                            |sell_price| {
+                                                                haircut_in_target
+                                                                    .checked_mul(*buy_price)
+                                                                    .and_then(|v| {
+                                                                        v.checked_div(*sell_price)
+                                                                    })
+                                                            },
+                                                        )
+                                                    })
+                                                    .unwrap_or_default();
+                                                (fulfillment.executed_amount, haircut_in_sell)
+                                            }
+                                        };
+
+                                        let fee = fulfillment.fee.map(|f| {
+                                            eth::U256::from(f)
+                                                .checked_add(haircut_in_sell)
+                                                .unwrap_or(f)
+                                        });
+                                        // Haircut incorporated into fee, no separate haircut_fee
+                                        (executed, fee, eth::U256::ZERO)
+                                    } else if haircut_in_target > eth::U256::ZERO {
+                                        // For quotes: keep haircut_fee separate for conservative
+                                        // estimates. sell_amount() will add this to the total.
+                                        (
+                                            fulfillment.executed_amount,
+                                            fulfillment.fee.map(eth::U256::from),
+                                            haircut_in_target,
+                                        )
+                                    } else {
+                                        // No haircut - keep original values
+                                        (
+                                            fulfillment.executed_amount,
+                                            fulfillment.fee.map(eth::U256::from),
+                                            eth::U256::ZERO,
+                                        )
+                                    };
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,
-                                    fulfillment.executed_amount.into(),
-                                    match fulfillment.fee {
+                                    executed_with_haircut.into(),
+                                    match fee_with_haircut {
                                         Some(fee) => competition::solution::trade::Fee::Dynamic(
                                             competition::order::SellAmount(fee),
                                         ),

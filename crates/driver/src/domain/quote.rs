@@ -67,45 +67,46 @@ impl Quote {
 
     /// Compute clearing prices for the quote.
     ///
-    /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. This uses the same approach as settlement encoding:
-    /// `custom_prices()` which internally uses `sell_amount()` and
-    /// `buy_amount()` to include the haircut in the effective trade
-    /// amounts.
+    /// Returns uniform clearing prices from the solution. For fulfillments with
+    /// haircut, custom clearing prices are applied to give users conservative
+    /// quotes that account for the haircut.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
-        // Start with uniform clearing prices
         let mut prices: HashMap<eth::Address, eth::U256> = solution
             .clearing_prices()
             .into_iter()
             .map(|(token, amount)| (token.into(), amount))
             .collect();
 
-        // Quote competitions contain only a single order (see `fake_auction()`),
-        // so there's at most one fulfillment in the solution.
-        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
-        // haircut.
-        if let Some(trade) = solution.trades().iter().find(|trade| match trade {
-            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
-            _ => false,
-        }) {
-            let sell_token: eth::Address = trade.sell().token.into();
-            let buy_token: eth::Address = trade.buy().token.into();
-            let uniform_clearing = solution::trade::ClearingPrices {
-                sell: *prices
-                    .get(&sell_token)
-                    .ok_or(QuotingFailed::ClearingSellMissing)?,
-                buy: *prices
-                    .get(&buy_token)
-                    .ok_or(QuotingFailed::ClearingBuyMissing)?,
-            };
-            let custom_prices = trade
-                .custom_prices(&uniform_clearing)
-                .map_err(|_| QuotingFailed::Math)?;
+        // Apply custom prices for fulfillments with haircut to provide
+        // conservative user-facing quotes
+        for trade in solution.trades() {
+            if let solution::Trade::Fulfillment(fulfillment) = trade
+                && fulfillment.haircut_fee() > eth::U256::ZERO
+            {
+                let sell_token: eth::Address = fulfillment.order().sell.token.into();
+                let buy_token: eth::Address = fulfillment.order().buy.token.into();
 
-            prices.insert(sell_token, custom_prices.sell);
-            prices.insert(buy_token, custom_prices.buy);
+                let sell_price = prices
+                    .get(&sell_token)
+                    .ok_or(QuotingFailed::ClearingSellMissing)?;
+                let buy_price = prices
+                    .get(&buy_token)
+                    .ok_or(QuotingFailed::ClearingBuyMissing)?;
+
+                let uniform_clearing = solution::trade::ClearingPrices {
+                    sell: *sell_price,
+                    buy: *buy_price,
+                };
+
+                let custom = fulfillment
+                    .custom_prices(&uniform_clearing)
+                    .map_err(|_| QuotingFailed::Math)?;
+
+                prices.insert(sell_token, custom.sell);
+                prices.insert(buy_token, custom.buy);
+            }
         }
 
         Ok(prices)

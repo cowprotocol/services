@@ -212,6 +212,11 @@ impl Fulfillment {
     }
 
     /// The effective amount that left the user's wallet including all fees.
+    ///
+    /// For orders with dynamic fees (settlements), haircut is incorporated into
+    /// fee/executed so this returns the correct on-chain amount. For orders
+    /// without dynamic fees (quotes), haircut_fee is kept separate and added
+    /// here to provide conservative user-facing quotes.
     pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
@@ -224,17 +229,21 @@ impl Fulfillment {
                 .ok_or(Math::DivisionByZero)?,
         };
 
-        // haircut_fee is denominated in the order's target token (sell token for
-        // sell orders, buy token for buy orders). Convert to sell token for buy
-        // orders.
+        // For settlements: haircut_fee is 0 (incorporated into fee)
+        // For quotes: haircut_fee > 0 (added here for conservative estimate)
         let haircut_in_sell_token = match self.order.side {
             order::Side::Sell => self.haircut_fee,
-            order::Side::Buy => self
-                .haircut_fee
-                .checked_mul(prices.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Math::DivisionByZero)?,
+            order::Side::Buy => {
+                // Convert haircut from buy to sell tokens using clearing prices
+                if self.haircut_fee > eth::U256::ZERO {
+                    self.haircut_fee
+                        .checked_mul(prices.buy)
+                        .and_then(|v| v.checked_div(prices.sell))
+                        .unwrap_or_default()
+                } else {
+                    eth::U256::ZERO
+                }
+            }
         };
 
         Ok(eth::TokenAmount(
