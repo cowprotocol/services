@@ -5,11 +5,13 @@ use {
         infra::{self, solver::Account},
     },
     alloy::{
+        consensus::Transaction,
         eips::BlockNumberOrTag,
         primitives::Address,
-        providers::Provider,
+        providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
     },
+    anyhow::Context,
     dashmap::DashMap,
     ethrpc::Web3,
     std::sync::Arc,
@@ -185,6 +187,30 @@ impl Mempool {
                 Err(mempools::Error::Other(err))
             }
         }
+    }
+
+    /// Queries the mempool for a pending transaction of the given solver and
+    /// nonce.
+    pub async fn find_pending_tx_in_mempool(
+        &self,
+        signer: eth::Address,
+        nonce: u64,
+    ) -> anyhow::Result<Option<alloy::rpc::types::Transaction>> {
+        let tx_pool_content = self
+            .transport
+            .alloy
+            .txpool_content_from(signer)
+            .await
+            .context("failed to query pending transactions")?;
+
+        // find the one with the specified nonce
+        let pending_tx = tx_pool_content
+            .pending
+            .into_iter()
+            .chain(tx_pool_content.queued)
+            .find(|(_signer, tx)| tx.nonce() == nonce)
+            .map(|(_, tx)| tx);
+        Ok(pending_tx)
     }
 
     /// Looks up the last tx that was submitted for that signer.
