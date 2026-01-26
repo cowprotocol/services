@@ -1492,6 +1492,11 @@ pub struct QuoteOk<'a> {
 }
 
 impl QuoteOk<'_> {
+    /// Get the JSON response body.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {
