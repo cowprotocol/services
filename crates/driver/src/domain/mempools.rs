@@ -145,7 +145,7 @@ impl Mempools {
             .minimum_replacement_gas_price(mempool, solver, nonce)
             .await;
         let final_gas_price = match &replacement_gas_price {
-            Ok(Some(replacement_gas_price))
+            Some(replacement_gas_price)
                 if replacement_gas_price.max() > current_gas_price.max() =>
             {
                 *replacement_gas_price
@@ -281,7 +281,7 @@ impl Mempools {
         // replacement gas price, but if that fails for whatever reason
         // we use our best estimate based on the originally submitted tx
         let final_gas_price = match &replacement_gas_price {
-            Ok(Some(replacement)) => *replacement,
+            Some(replacement) => *replacement,
             _ => fallback_gas_price,
         };
 
@@ -311,35 +311,40 @@ impl Mempools {
             .await
     }
 
-    /// Tries to determine the minimum price to replace an existing
-    /// transaction in the mempool.
+    /// Computes minimum price to replace the last tx that was submitted
+    /// with the given nonce. Returns `None` if no tx was submitted with
+    /// that nonce yet.
     async fn minimum_replacement_gas_price(
         &self,
         mempool: &infra::Mempool,
         solver: &Solver,
-        nonce: u64,
-    ) -> anyhow::Result<Option<eth::GasPrice>> {
-        let pending_tx = match mempool
-            .find_pending_tx_in_mempool(solver.address(), nonce)
-            .await?
-        {
-            Some(tx) => tx,
-            None => return Ok(None),
-        };
+        next_nonce: u64,
+    ) -> Option<eth::GasPrice> {
+        if let Some(last_submission) = mempool.last_submission(solver.address()) {
+            (last_submission.nonce == next_nonce)
+                .then_some(last_submission.gas_price * GAS_PRICE_BUMP)
+        } else {
+            // If we don't have the last submission in-memory (i.e. first submission
+            // attempt after a restart) we try to inspect the nodes transaction mempool.
+            // This is only done as a backup since it can incur significant latency and
+            // is generally not very widely supported.
+            let pending_tx = mempool
+                .find_pending_tx_in_mempool(solver.address(), next_nonce)
+                .await
+                .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
+                .ok()??;
 
-        let pending_tx_gas_price = eth::GasPrice::new(
-            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-            eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
-                format!(
-                    "pending tx is not EIP 1559 ({})",
-                    pending_tx.inner.tx_hash()
-                )
-            })?)
-            .into(),
-            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-        );
-        // in order to replace a tx we need to increase the price
-        Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))
+            let pending_tx_gas_price = eth::GasPrice::new(
+                eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+                eth::U256::from(pending_tx.max_priority_fee_per_gas().or_else(|| {
+                    tracing::error!(tx = ?pending_tx.inner.tx_hash(), "pending tx is not EIP 1559");
+                    None
+                })?)
+                .into(),
+                eth::U256::from(pending_tx.max_fee_per_gas()).into(),
+            );
+            Some(pending_tx_gas_price * GAS_PRICE_BUMP)
+        }
     }
 }
 

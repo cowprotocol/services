@@ -634,19 +634,20 @@ impl Competition {
                     // disconnected). This is a fallback to recover from issues
                     // like a stuck driver (e.g., stalled block stream).
                     Either::Left((_closed, settle_fut)) => {
-                        // Add a grace period to give driver the last chance to fetch the settlement
-                        // tx.
+                        tracing::debug!("autopilot terminated settle call");
+                        // Add a grace period to give driver the last chance to cancel the
+                        // tx if needed.
                         tokio::time::timeout(Duration::from_secs(1), settle_fut)
                             .await
-                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
+                            .unwrap_or_else(|_| {
+                                tracing::error!("didn't finish tx submission within grace period");
+                                Err(DeadlineExceeded.into())
+                            })
                     }
                     Either::Right((res, _)) => res,
                 };
                 observe::settled(self.solver.name(), &result);
-
-                if let Err(err) = response_sender.send(result) {
-                    tracing::error!(?err, "Failed to send /settle response");
-                }
+                let _ = response_sender.send(result);
             }
             .instrument(tracing_span)
             .await
