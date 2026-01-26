@@ -6,6 +6,10 @@ use {
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
+    shared::gas_price_estimation::configurable_alloy::{
+        default_past_blocks,
+        default_reward_percentile,
+    },
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
 };
@@ -735,13 +739,32 @@ pub struct LiquoriceConfig {
     pub http_timeout: Duration,
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-#[serde(tag = "estimator")]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "estimator")]
 pub enum GasEstimatorType {
     Web3,
-    #[default]
-    Alloy,
+    /// EIP-1559 gas estimator using alloy's algorithm.
+    /// Optionally configure the fee history query parameters.
+    #[serde(rename_all = "kebab-case")]
+    Alloy {
+        /// Number of blocks to look back for fee history (default: 10)
+        #[serde(default = "default_past_blocks")]
+        past_blocks: u64,
+        /// Percentile of rewards to use for priority fee estimation (default:
+        /// 20.0). This is what Metamask uses as medium priority:
+        /// https://github.com/MetaMask/core/blob/0fd4b397e7237f104d1c81579a0c4321624d076b/packages/gas-fee-controller/src/fetchGasEstimatesViaEthFeeHistory/calculateGasFeeEstimatesForPriorityLevels.ts#L14-L45
+        #[serde(default = "default_reward_percentile")]
+        reward_percentile: f64,
+    },
+}
+
+impl Default for GasEstimatorType {
+    fn default() -> Self {
+        Self::Alloy {
+            past_blocks: default_past_blocks(),
+            reward_percentile: default_reward_percentile(),
+        }
+    }
 }
 
 /// Defines various strategies to prioritize orders.
@@ -966,4 +989,125 @@ enum AtBlock {
     Latest,
     /// Use the latest finalized block.
     Finalized,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gas_estimator_alloy_defaults() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 10);
+                assert_eq!(reward_percentile, 20.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_alloy_custom_past_blocks() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+            past-blocks = 5
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 5);
+                assert_eq!(reward_percentile, 20.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_alloy_custom_percentile() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+            reward-percentile = 50.0
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 10);
+                assert_eq!(reward_percentile, 50.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_alloy_all_custom() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+            past-blocks = 20
+            reward-percentile = 75.0
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 20);
+                assert_eq!(reward_percentile, 75.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_web3() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "web3"
+        "#,
+        )
+        .unwrap();
+
+        assert!(matches!(config, GasEstimatorType::Web3));
+    }
+
+    #[test]
+    fn gas_estimator_default() {
+        let config = GasEstimatorType::default();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 10);
+                assert_eq!(reward_percentile, 20.0);
+            }
+            _ => panic!("expected Alloy variant as default"),
+        }
+    }
 }

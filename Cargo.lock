@@ -2732,6 +2732,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "hex-literal",
+ "http-body 0.4.6",
  "humantime",
  "humantime-serde",
  "hyper 0.14.32",

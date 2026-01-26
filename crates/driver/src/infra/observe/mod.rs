@@ -222,27 +222,27 @@ pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, comp
 }
 
 /// Observe the result of solving an auction.
-pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition::Error>) {
+pub fn solved(solver: &str, result: &Result<Option<Solved>, competition::Error>) {
     match result {
         Ok(Some(solved)) => {
             tracing::info!(?solved, "solved auction");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), "Success"])
+                .with_label_values(&[solver, "Success"])
                 .inc();
         }
         Ok(None) => {
             tracing::debug!("no solution found");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), "SolutionNotFound"])
+                .with_label_values(&[solver, "SolutionNotFound"])
                 .inc();
         }
         Err(err) => {
             tracing::warn!(?err, "failed to solve auction");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), competition_error(err)])
+                .with_label_values(&[solver, competition_error(err)])
                 .inc();
         }
     }

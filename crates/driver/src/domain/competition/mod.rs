@@ -22,6 +22,7 @@ use {
         util::{Bytes, math},
     },
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
+    hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
     std::{
         cmp::Reverse,
@@ -112,7 +113,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, auction: RequestBytes) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");

@@ -31,7 +31,7 @@ use {
 mod error;
 pub mod routes;
 
-const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
+pub const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub solvers: Vec<Solver>,
