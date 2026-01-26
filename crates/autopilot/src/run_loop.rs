@@ -1163,7 +1163,7 @@ pub mod observe {
             removed = ?removed,
             "Orders no longer in auction"
         );
-        tracing::debug!(?start_block);
+        tracing::debug!(auction_id = current.id, ?start_block);
     }
 
     pub fn bids(bids: &[domain::competition::Bid<Unscored>]) {
