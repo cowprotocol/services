@@ -233,17 +233,12 @@ impl Fulfillment {
         // For quotes: haircut_fee > 0 (added here for conservative estimate)
         let haircut_in_sell_token = match self.order.side {
             order::Side::Sell => self.haircut_fee,
-            order::Side::Buy => {
-                // Convert haircut from buy to sell tokens using clearing prices
-                if self.haircut_fee > eth::U256::ZERO {
-                    self.haircut_fee
-                        .checked_mul(prices.buy)
-                        .and_then(|v| v.checked_div(prices.sell))
-                        .unwrap_or_default()
-                } else {
-                    eth::U256::ZERO
-                }
-            }
+            order::Side::Buy => self
+                .haircut_fee
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?,
         };
 
         Ok(eth::TokenAmount(
