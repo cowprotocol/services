@@ -1458,9 +1458,6 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     // At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
     // We use a generous sell_limit to ensure the order executes, then verify
     // that the driver's reported sell_amount doesn't exceed reasonable bounds.
-    // The haircut bug would cause reported sell_amount to be inflated by the
-    // haircut amount (5% of 5 ETH = 0.25 ETH), which we detect via solver
-    // competition API.
     let signed_buy_amount = 5u64.eth();
     let sell_limit = 10u64.eth(); // Generous limit to ensure execution
     let order = OrderCreation {
@@ -1546,11 +1543,10 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         sell_limit_u256
     );
 
-    // 3. Verify haircut bug is fixed: reported sell_amount should be close to
-    // what's actually needed (~5.04 ETH for buying 5 ETH at 1:1 with 0.3% fee).
-    // The haircut bug would inflate this by ~5% of buy_amount (0.25 ETH),
-    // resulting in ~5.29 ETH reported sell_amount.
-    // We check that sell_amount is less than 5.2 ETH to catch the bug.
+    // 3. Reported sell_amount should be close to what's actually needed (~5.04 ETH
+    //    for buying 5 ETH at 1:1 with 0.3% fee).
+    // We check that sell_amount is less than 5.2 ETH (5.0 ETH + 5% haircut = 5.25
+    // ETH).
     let reasonable_max_sell = U256::from(5_200_000_000_000_000_000u128); // 5.2 ETH
     assert!(
         reported_sell_amount <= reasonable_max_sell,
