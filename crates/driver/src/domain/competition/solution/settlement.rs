@@ -38,20 +38,22 @@ use {
 /// for the solver (earning reduced rewards). Enforcing these rules ensures that
 /// the settlement can be broadcast safely with high confidence that it will not
 /// be reverted and that it will not result in slashing for the solver.
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct Settlement {
     pub auction_id: auction::Id,
     /// The prepared on-chain transaction for this settlement
     transaction: SettlementTx,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
+    #[debug(ignore)]
     solution: Solution,
 }
 
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 struct SettlementTx {
     /// Transaction with all internalizable interactions omitted
     internalized: eth::Tx,
+    #[debug(ignore)]
     /// Full Transaction without internalizing any interactions
     uninternalized: eth::Tx,
     /// Whether this settlement has interactions that could make it revert

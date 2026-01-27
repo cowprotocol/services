@@ -64,6 +64,7 @@ Contains all auctions for which a valid solver competition exists.
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
+- competition_auction_deadline: btree(`deadline`)
 
 ### ethflow\_orders
 
@@ -272,6 +273,8 @@ Indexes:
 - order_sell_buy_tokens: btree(`sell_token`, `buy_token`)
 - user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - version_idx: btree(`settlement_contract`)
+- orders\_true\_valid\_to: btree(`true_valid_to`)
+- okay\_onchain\_orders: btree(`uid`) WHERE placement\_error IS NOT NULL
 
 ### fee_policies
 
