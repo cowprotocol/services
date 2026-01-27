@@ -327,6 +327,46 @@ impl QuoteHandler {
             },
         })
     }
+
+    /// Apply slippage protection to the order amounts.
+    fn apply_slipage(&self, order: &mut OrderCreation, slippage_bps: u32) -> Result<(), OrderQuoteError> {
+        let slippage_factor = slippage_bps as u64;
+
+        match order.kind {
+            OrderKind::Sell => {
+                // For sell orders: reduce buy_amount to account for slippage
+                // buyAmount = buyAmount * (10000 - slippageBps) / 10000
+                order.buy_amount = U256::uint_try_from(
+                    order
+                        .buy_amount
+                        .widening_mul(U256::from(MAX_BPS.saturating_sub(slippage_factor)))
+                        / U512::from(MAX_BPS),
+                )
+                    .map_err(|_| {
+                        OrderQuoteError::CalculateQuote(
+                            anyhow::anyhow!("Slippage calculation overflow for sell order").into()
+                        )
+                    })?;
+            }
+            OrderKind::Buy => {
+                // For buy orders: increase sell_amount to account for slippage
+                // sellAmount = sellAmount * (10000 + slippageBps) / 10000
+                order.sell_amount = U256::uint_try_from(
+                    order
+                        .sell_amount
+                        .widening_mul(U256::from(MAX_BPS.saturating_add(slippage_factor)))
+                        / U512::from(MAX_BPS),
+                )
+                    .map_err(|_| {
+                        OrderQuoteError::CalculateQuote(
+                            anyhow::anyhow!("Slippage calculation overflow for buy order").into()
+                        )
+                    })?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Calculates the protocol fee based on volume fee and adjusts quote
