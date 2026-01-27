@@ -1322,4 +1322,46 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         "Trader should have received between 9 and 9.5 ETH (AMM output minus haircut), but got {}",
         trader_received
     );
+
+    // Wait for solver competition data to be indexed
+    tracing::info!("Waiting for solver competition to be indexed");
+    let indexed = || async {
+        onchain.mint_block().await;
+        match services.get_trades(&order_id).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed).await.unwrap();
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    let tx_hash = trades[0].tx_hash.unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    // Find our order in the winning solution
+    let winner = competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("Should have winning solution");
+
+    let reported_order = winner
+        .orders
+        .iter()
+        .find(|o| o.id == order_id)
+        .expect("Order should be in solution");
+
+    let signed_sell_amount = U256::from(order.sell_amount);
+    let reported_sell_amount = reported_order.sell_amount;
+
+    assert!(
+        reported_sell_amount <= signed_sell_amount,
+        "Driver reported sell_amount {} exceeds signed sell_amount {}. Haircut should reduce \
+         surplus/score, not inflate the reported sell amount!",
+        reported_sell_amount,
+        signed_sell_amount
+    );
 }
