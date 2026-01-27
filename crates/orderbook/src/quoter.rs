@@ -25,7 +25,7 @@ use {
     tracing::instrument,
 };
 use model::order::{OrderCreation, OrderKind};
-use model::quote::{OrderQuoteRequestV2, OrderQuoteResponseV2};
+use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteResponseV2, ProtocolFeeCost, SlippageInfo};
 
 const MAX_BPS: u64 = 10_000;
 
@@ -203,9 +203,93 @@ impl QuoteHandler {
 }
 
 impl QuoteHandler {
+    /// Calculate detailed cost breakdown from v1 quote response
+    fn calculate_cost_breakdown(v1_response: &OrderQuoteResponse) -> Result<CostBreakdown, OrderQuoteError> {
+        let quote = &v1_response.quote;
+
+        // Network fee: Convert using sell_token_price.
+        // 1 sell_token = X native_token (ETH/xDAI)
+        // fee_amount is in sell_token
+        let network_fee = Self::calculate_network_fee(quote)?;
+
+        // Protocol fee: Calculate from protocol_fee_bps if present
+        let protocol_fee = Self::calculate_protocol_fee(v1_response)?;
+
+        // Partner fee: Will be extracted from appData later
+        // TODO: extract from appData
+        let partner_fee = None;
+
+        Ok(CostBreakdown {
+            network_fee,
+            partner_fee,
+            protocol_fee,
+        })
+    }
+
+    /// Calculate network fee in both sell and buy currency.
+    fn calculate_network_fee(quote: &OrderQuote) -> Result<NetworkFeeCost, OrderQuoteError> {
+        // fee_amount is always in sel_token.
+        let amount_in_sell_currency = quote.fee_amount;
+
+        // Convert to buy_token using price ratio
+        // if sell_token_price = X ETH and gas_price = Y ETH/gas and gas_amount = Z gas
+        // then fee in sell_token = (Y * Z) / X
+        // To convert to buy_token, I'll need the exchange rate between sell and buy.
+
+        // TODO: proper conversion, using buy_token price
+        // temporarily, I'll return fee_amount for both, and fix this in later.
+        let amount_in_buy_currency = quote.fee_amount;
+
+        Ok(NetworkFeeCost {
+            amount_in_sell_currency,
+            amount_in_buy_currency,
+        })
+    }
+
+    /// Calculate protocol fee from v1 response.
+    fn calculate_protocol_fee(v1_response: &OrderQuoteResponse) -> Result<ProtocolFeeCost, OrderQuoteError> {
+        let quote = &v1_response.quote;
+
+        if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
+            let bps = fee_bps_str
+                .parse::<u32>()
+                .map_err(|_| OrderQuoteError::CalculateQuote(anyhow::anyhow!("Invalid protocol fee bps: {}", fee_bps_str).into()))?;
+
+            // Protocol fee is calculated on the surplus token.
+            let amount = match quote.kind {
+                OrderKind::Sell => {
+                    // For sell orders, fee is on buy_amount.
+                    U256::uint_try_from(quote.buy_amount.widening_mul(U256::from(bps as u64)) / U512::from(MAX_BPS))
+                        .map_err(|_| {
+                            OrderQuoteError::CalculateQuote(anyhow::anyhow!("Protocol fee calculation overflow").into())
+                        })?
+                }
+                OrderKind::Buy => {
+                    // For buy orders, fee is on sell_amount.
+                    U256::uint_try_from(quote.sell_amount.widening_mul(U256::from(bps as u64)) / U512::from(MAX_BPS))
+                        .map_err(|_| {
+                            OrderQuoteError::CalculateQuote(anyhow::anyhow!("Protocol fee calculation overflow").into())
+                        })?
+                }
+            };
+
+            Ok(ProtocolFeeCost { amount, bps: bps as u64 })
+        } else {
+            // No protocol fee
+            Ok(ProtocolFeeCost {
+                amount: U256::ZERO,
+                bps: 0,
+            })
+        }
+    }
+
     pub async fn calculate_quote_v2(&self, request: &OrderQuoteRequestV2) -> Result<OrderQuoteResponseV2, OrderQuoteError> {
         let v1_response = self.calculate_quote(&request.base).await?;
 
+        // calculate cost breakdown.
+        let costs = Self::calculate_cost_breakdown(&v1_response)?;
+
+        // Build the signable order.
         let mut order = OrderCreation {
             sell_token: v1_response.quote.sell_token,
             buy_token: v1_response.quote.buy_token,
@@ -224,30 +308,10 @@ impl QuoteHandler {
         };
 
         // Apply slippage.
-        let slippage_factor = request.slippage_bps as u64;
-        match order.kind {
-            OrderKind::Sell => {
-                // buyAmount = buyAmount * (10000 - slippageBps) / 10000
-                order.buy_amount = U256::uint_try_from(
-                    order
-                        .buy_amount
-                        .widening_mul(U256::from(MAX_BPS.saturating_sub(slippage_factor)))
-                        / U512::from(MAX_BPS),
-                )
-                    .unwrap_or(U256::MAX);
-            }
-            OrderKind::Buy => {
-                // sellAmount = sellAmount * (10000 + slippageBps) / 10000
-                // For buy orders, overflow is theoretically possible but capped
-                order.sell_amount = U256::uint_try_from(
-                    order
-                        .sell_amount
-                        .widening_mul(U256::from(MAX_BPS.saturating_add(slippage_factor)))
-                        / U512::from(MAX_BPS),
-                )
-                    .unwrap_or(U256::MAX);
-            }
-        }
+        self.apply_slipage(&mut order, request.slippage_bps)?;
+
+        // Calculate amounts breakdown
+        let amounts = Self::calculate_amounts_breakdown(&v1_response, &order)?;
 
         Ok(OrderQuoteResponseV2 {
             quote: order,
@@ -255,6 +319,12 @@ impl QuoteHandler {
             expiration: v1_response.expiration,
             id: v1_response.id,
             verified: v1_response.verified,
+            amounts,
+            costs,
+            slippage: SlippageInfo {
+                applied_bps: request.slippage_bps,
+                recommended_bps: None, // TODO: smart slippage.
+            },
         })
     }
 }
