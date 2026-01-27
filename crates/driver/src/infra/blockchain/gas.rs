@@ -9,6 +9,7 @@ use {
         infra::{config::file::GasEstimatorType, mempool},
     },
     alloy::eips::eip1559::Eip1559Estimation,
+    anyhow::anyhow,
     ethrpc::Web3,
     shared::gas_price_estimation::{
         GasPriceEstimating,
@@ -96,9 +97,15 @@ impl GasPriceEstimator {
             // Calculate additional tip in integer space to avoid precision loss
             // Convert percentage to basis points (multiply by 10000) to maintain precision
             // e.g., tip_percentage_increase = 0.125 (12.5%) becomes 1250
+            let overflow_err = || {
+                Error::GasPrice(anyhow!(
+                    "overflow on multiplication (max_priority_fee_per_gas * tip_percentage_as_bps)"
+                ))
+            };
             let tip_percentage_as_bps = tip_percentage_increase * 10000.0;
             let calculated_tip = eth::U256::from(estimate.max_priority_fee_per_gas)
-                .saturating_sub(eth::U256::from(tip_percentage_as_bps))
+                .checked_mul(eth::U256::from(tip_percentage_as_bps))
+                .ok_or_else(overflow_err)?
                 / eth::U256::from(10000u128);
 
             let additional_tip = max_additional_tip.min(calculated_tip);

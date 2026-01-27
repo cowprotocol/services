@@ -38,7 +38,7 @@ pub struct GasPrice {
     tip: FeePerGas,
     /// The current base gas price that will be charged to all accounts on the
     /// next block.
-    base: Option<u64>,
+    base: u64,
 }
 
 impl GasPrice {
@@ -47,7 +47,7 @@ impl GasPrice {
         U256::from(calc_effective_gas_price(
             u128::try_from(self.max.0.0).expect("max fee per gas should fit in a u128"),
             u128::try_from(self.tip.0.0).expect("max priority fee per gas should fit in a u128"),
-            self.base,
+            Some(self.base),
         ))
         .into()
     }
@@ -60,11 +60,11 @@ impl GasPrice {
         self.tip
     }
 
-    pub fn base(&self) -> Option<u64> {
+    pub fn base(&self) -> u64 {
         self.base
     }
 
-    pub fn new(max: FeePerGas, tip: FeePerGas, base: Option<u64>) -> Self {
+    pub fn new(max: FeePerGas, tip: FeePerGas, base: u64) -> Self {
         Self { max, tip, base }
     }
 }
@@ -79,17 +79,6 @@ impl std::ops::Mul<f64> for GasPrice {
             max: self.max.mul_ceil(rhs),
             tip: self.tip.mul_ceil(rhs),
             base: self.base,
-        }
-    }
-}
-
-impl From<EffectiveGasPrice> for GasPrice {
-    fn from(value: EffectiveGasPrice) -> Self {
-        let value = value.0.0;
-        Self {
-            max: value.into(),
-            tip: value.into(),
-            base: u64::try_from(value).ok(),
         }
     }
 }
