@@ -368,45 +368,28 @@ impl QuoteHandler {
         Ok(())
     }
 
-    /// Calculate the three amount breakdowns frontendss need to display.
+    /// Calculate the three amount breakdowns frontends need to display.
     fn calculate_amounts_breakdown(
         v1_response: &OrderQuoteResponse,
         order_after_slippage: &OrderCreation,
     ) -> Result<QuoteBreakdown, OrderQuoteError> {
         let quote = &v1_response.quote;
 
+        // Calculate protocol fee (used by both order types)
+        let protocol_fee = Self::parse_protocol_fee_amount(v1_response, quote)?;
+        let network_fee = quote.fee_amount;
+
         match quote.kind {
             OrderKind::Sell => {
                 // For SELL orders (selling exact amount, buying at least minimum):
                 // - before_all_fees: original buy_amount from v1 (best case)
                 // - after_network_costs: buy_amount - network_fee - protocol_fee
-                // - after_slippage: buy_amount from order_after_slippage. this gets signed.
+                // - after_slippage: buy_amount from order_after_slippage (what gets signed)
 
                 let before_all_fees = quote.buy_amount;
-
-                // Calculate protocol fee if present.
-                let protocol_fee = if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
-                    let fee_bps = fee_bps_str
-                        .parse::<u64>()
-                        .map_err(|_| {
-                            OrderQuoteError::CalculateQuote(
-                                anyhow::anyhow!("Invalid protocol fee bps").into()
-                            )
-                        })?;
-
-                    U256::uint_try_from(before_all_fees.widening_mul(U256::from(fee_bps)) / U512::from(MAX_BPS))
-                        .unwrap_or(U256::ZERO)
-                } else {
-                    U256::ZERO
-                };
-
-                // Network fee is already in the quote.
-                let network_fee = quote.fee_amount;
-
-                // after_network_costs = before_all_fees - network_fee - protocol_fee
-                let after_network_costs = before_all_fees.saturating_add(network_fee).saturating_add(protocol_fee);
-
-                // after_slippage is what the user will actually sign.
+                let after_network_costs = before_all_fees
+                    .saturating_sub(network_fee)
+                    .saturating_sub(protocol_fee);
                 let after_slippage = order_after_slippage.buy_amount;
 
                 Ok(QuoteBreakdown {
@@ -422,35 +405,9 @@ impl QuoteHandler {
                 // - after_slippage: sell_amount from order_after_slippage (what gets signed)
 
                 let before_all_fees = quote.sell_amount;
-
-                // Calculate protocol fee if present
-                let protocol_fee = if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
-                    let fee_bps = fee_bps_str
-                        .parse::<u64>()
-                        .map_err(|_| {
-                            OrderQuoteError::CalculateQuote(
-                                anyhow::anyhow!("Invalid protocol fee bps").into()
-                            )
-                        })?;
-
-                    U256::uint_try_from(
-                        before_all_fees
-                            .widening_mul(U256::from(fee_bps))
-                            / U512::from(MAX_BPS)
-                    )
-                        .unwrap_or(U256::ZERO)
-                } else {
-                    U256::ZERO
-                };
-
-                let network_fee = quote.fee_amount;
-
-                // after_network_costs = before_all_fees + network_fee + protocol_fee
                 let after_network_costs = before_all_fees
                     .saturating_add(network_fee)
                     .saturating_add(protocol_fee);
-
-                // after_slippage is what the user will actually sign
                 let after_slippage = order_after_slippage.sell_amount;
 
                 Ok(QuoteBreakdown {
@@ -459,6 +416,35 @@ impl QuoteHandler {
                     after_slippage,
                 })
             }
+        }
+    }
+
+    /// Helper to parse protocol fee amount from v1 response
+    fn parse_protocol_fee_amount(
+        v1_response: &OrderQuoteResponse,
+        quote: &OrderQuote,
+    ) -> Result<U256, OrderQuoteError> {
+        if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
+            let fee_bps = fee_bps_str
+                .parse::<u64>()
+                .map_err(|_| {
+                    OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("Invalid protocol fee bps").into()
+                    )
+                })?;
+
+            // Use the base amount depending on order type
+            let base_amount = match quote.kind {
+                OrderKind::Sell => quote.buy_amount,
+                OrderKind::Buy => quote.sell_amount,
+            };
+
+            Ok(U256::uint_try_from(
+                base_amount.widening_mul(U256::from(fee_bps)) / U512::from(MAX_BPS)
+            )
+                .unwrap_or(U256::ZERO))
+        } else {
+            Ok(U256::ZERO)
         }
     }
 }
