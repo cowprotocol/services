@@ -25,7 +25,7 @@ use {
     tracing::instrument,
 };
 use model::order::{OrderCreation, OrderKind};
-use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteResponseV2, ProtocolFeeCost, SlippageInfo};
+use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteResponseV2, ProtocolFeeCost, QuoteBreakdown, SlippageInfo};
 
 const MAX_BPS: u64 = 10_000;
 
@@ -302,13 +302,13 @@ impl QuoteHandler {
             partially_fillable: v1_response.quote.partially_fillable,
             sell_token_balance: v1_response.quote.sell_token_balance,
             buy_token_balance: v1_response.quote.buy_token_balance,
-            app_data: v1_response.quote.app_data,
+            app_data: v1_response.quote.app_data.clone(),
             quote_id: v1_response.id,
             ..Default::default()
         };
 
         // Apply slippage.
-        self.apply_slipage(&mut order, request.slippage_bps)?;
+        Self::apply_slippage(&mut order, request.slippage_bps)?;
 
         // Calculate amounts breakdown
         let amounts = Self::calculate_amounts_breakdown(&v1_response, &order)?;
@@ -329,7 +329,7 @@ impl QuoteHandler {
     }
 
     /// Apply slippage protection to the order amounts.
-    fn apply_slipage(&self, order: &mut OrderCreation, slippage_bps: u32) -> Result<(), OrderQuoteError> {
+    fn apply_slippage(order: &mut OrderCreation, slippage_bps: u32) -> Result<(), OrderQuoteError> {
         let slippage_factor = slippage_bps as u64;
 
         match order.kind {
@@ -366,6 +366,100 @@ impl QuoteHandler {
         }
 
         Ok(())
+    }
+
+    /// Calculate the three amount breakdowns frontendss need to display.
+    fn calculate_amounts_breakdown(
+        v1_response: &OrderQuoteResponse,
+        order_after_slippage: &OrderCreation,
+    ) -> Result<QuoteBreakdown, OrderQuoteError> {
+        let quote = &v1_response.quote;
+
+        match quote.kind {
+            OrderKind::Sell => {
+                // For SELL orders (selling exact amount, buying at least minimum):
+                // - before_all_fees: original buy_amount from v1 (best case)
+                // - after_network_costs: buy_amount - network_fee - protocol_fee
+                // - after_slippage: buy_amount from order_after_slippage. this gets signed.
+
+                let before_all_fees = quote.buy_amount;
+
+                // Calculate protocol fee if present.
+                let protocol_fee = if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
+                    let fee_bps = fee_bps_str
+                        .parse::<u64>()
+                        .map_err(|_| {
+                            OrderQuoteError::CalculateQuote(
+                                anyhow::anyhow!("Invalid protocol fee bps").into()
+                            )
+                        })?;
+
+                    U256::uint_try_from(before_all_fees.widening_mul(U256::from(fee_bps)) / U512::from(MAX_BPS))
+                        .unwrap_or(U256::ZERO)
+                } else {
+                    U256::ZERO
+                };
+
+                // Network fee is already in the quote.
+                let network_fee = quote.fee_amount;
+
+                // after_network_costs = before_all_fees - network_fee - protocol_fee
+                let after_network_costs = before_all_fees.saturating_add(network_fee).saturating_add(protocol_fee);
+
+                // after_slippage is what the user will actually sign.
+                let after_slippage = order_after_slippage.buy_amount;
+
+                Ok(QuoteBreakdown {
+                    before_all_fees,
+                    after_network_costs,
+                    after_slippage,
+                })
+            }
+            OrderKind::Buy => {
+                // For BUY orders (buying exact amount, selling at most maximum):
+                // - before_all_fees: original sell_amount from v1 (best case)
+                // - after_network_costs: sell_amount + network_fee + protocol_fee
+                // - after_slippage: sell_amount from order_after_slippage (what gets signed)
+
+                let before_all_fees = quote.sell_amount;
+
+                // Calculate protocol fee if present
+                let protocol_fee = if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
+                    let fee_bps = fee_bps_str
+                        .parse::<u64>()
+                        .map_err(|_| {
+                            OrderQuoteError::CalculateQuote(
+                                anyhow::anyhow!("Invalid protocol fee bps").into()
+                            )
+                        })?;
+
+                    U256::uint_try_from(
+                        before_all_fees
+                            .widening_mul(U256::from(fee_bps))
+                            / U512::from(MAX_BPS)
+                    )
+                        .unwrap_or(U256::ZERO)
+                } else {
+                    U256::ZERO
+                };
+
+                let network_fee = quote.fee_amount;
+
+                // after_network_costs = before_all_fees + network_fee + protocol_fee
+                let after_network_costs = before_all_fees
+                    .saturating_add(network_fee)
+                    .saturating_add(protocol_fee);
+
+                // after_slippage is what the user will actually sign
+                let after_slippage = order_after_slippage.sell_amount;
+
+                Ok(QuoteBreakdown {
+                    before_all_fees,
+                    after_network_costs,
+                    after_slippage,
+                })
+            }
+        }
     }
 }
 
@@ -739,4 +833,6 @@ mod tests {
         assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, None);
     }
+
+    // TODO: tests for quote v2 methods.
 }
