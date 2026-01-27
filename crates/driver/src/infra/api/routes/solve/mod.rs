@@ -5,7 +5,7 @@ use {
     crate::{
         domain::competition,
         infra::{
-            api::{Error, REQUEST_BODY_LIMIT, State},
+            api::{Error, State},
             observe,
         },
     },
@@ -58,13 +58,12 @@ async fn collect_request_body(
     tracing::trace!("start streaming request body");
     let start = Instant::now();
 
-    // accepting the raw request bypasses axum's request body limiting layer
-    // so we have to manually ensure the body has a reasonable size.
-    let limited_body = http_body::Limited::new(request.into_body(), REQUEST_BODY_LIMIT);
-    let body_bytes = hyper::body::to_bytes(limited_body).await.map_err(|err| {
-        tracing::warn!(?err, "failed to stream request body");
-        competition::Error::MalformedRequest
-    })?;
+    let body_bytes = hyper::body::to_bytes(request.into_body())
+        .await
+        .map_err(|err| {
+            tracing::warn!(?err, "failed to stream request body");
+            competition::Error::MalformedRequest
+        })?;
 
     let duration = start.elapsed();
     Metrics::measure_solve_transfer_time(solver, duration);
