@@ -1266,7 +1266,7 @@ impl SolveOk<'_> {
     /// Extracts the first solution from the response. This is expected to be
     /// always valid if there is a valid solution, as we expect from driver to
     /// not send multiple solutions (yet).
-    fn solution(&self) -> serde_json::Value {
+    pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();

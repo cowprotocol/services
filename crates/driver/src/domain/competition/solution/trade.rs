@@ -96,10 +96,10 @@ impl Trade {
         &self,
         prices: &ClearingPrices,
     ) -> Result<CustomClearingPrices, error::Math> {
-        Ok(CustomClearingPrices {
-            sell: self.buy_amount(prices)?.into(),
-            buy: self.sell_amount(prices)?.into(),
-        })
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.custom_prices(prices),
+            Trade::Jit(jit) => jit.custom_prices(prices),
+        }
     }
 
     pub fn receiver(&self) -> eth::Address {
@@ -224,25 +224,8 @@ impl Fulfillment {
                 .ok_or(Math::DivisionByZero)?,
         };
 
-        // haircut_fee is denominated in the order's target token (sell token for
-        // sell orders, buy token for buy orders). Convert to sell token for buy
-        // orders.
-        let haircut_in_sell_token = match self.order.side {
-            order::Side::Sell => self.haircut_fee,
-            order::Side::Buy => self
-                .haircut_fee
-                .checked_mul(prices.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Math::DivisionByZero)?,
-        };
-
         Ok(eth::TokenAmount(
-            before_fee
-                .checked_add(self.fee().0)
-                .ok_or(Math::Overflow)?
-                .checked_add(haircut_in_sell_token)
-                .ok_or(Math::Overflow)?,
+            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
         ))
     }
 
@@ -263,13 +246,36 @@ impl Fulfillment {
         Ok(eth::TokenAmount(amount))
     }
 
+    /// Computes the haircut amount in sell token for use in custom_prices().
+    /// This applies haircut to pricing while keeping sell_amount() clean for
+    /// reporting.
+    fn haircut_in_sell_token(&self, prices: &ClearingPrices) -> Result<eth::U256, error::Math> {
+        match self.order.side {
+            order::Side::Sell => Ok(self.haircut_fee),
+            order::Side::Buy => self
+                .haircut_fee
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero),
+        }
+    }
+
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,
     ) -> Result<CustomClearingPrices, error::Math> {
+        // Include haircut in custom prices for quotes/scoring.
+        // This makes bids more conservative without affecting the actual
+        // reported sell_amount (which is used for user-facing reporting).
+        let haircut = self.haircut_in_sell_token(prices)?;
         Ok(CustomClearingPrices {
             sell: self.buy_amount(prices)?.into(),
-            buy: self.sell_amount(prices)?.into(),
+            buy: self
+                .sell_amount(prices)?
+                .0
+                .checked_add(haircut)
+                .ok_or(Math::Overflow)?,
         })
     }
 
@@ -508,6 +514,18 @@ impl Jit {
                 .ok_or(Math::DivisionByZero)?,
         };
         Ok(eth::TokenAmount(amount))
+    }
+
+    pub fn custom_prices(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<CustomClearingPrices, error::Math> {
+        // JIT orders don't have haircut, so custom prices are simply derived
+        // from sell_amount and buy_amount.
+        Ok(CustomClearingPrices {
+            sell: self.buy_amount(prices)?.into(),
+            buy: self.sell_amount(prices)?.into(),
+        })
     }
 }
 
