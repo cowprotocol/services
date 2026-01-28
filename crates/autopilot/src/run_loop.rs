@@ -8,7 +8,6 @@ use {
                 self,
                 Solution,
                 SolutionError,
-                SolverParticipationGuard,
                 Unscored,
                 winner_selection::{self, Ranking},
             },
@@ -78,7 +77,6 @@ pub struct RunLoop {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
-    solver_participation_guard: SolverParticipationGuard,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     probes: Probes,
@@ -97,7 +95,6 @@ impl RunLoop {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
-        solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
@@ -118,7 +115,6 @@ impl RunLoop {
             eth,
             persistence,
             drivers,
-            solver_participation_guard,
             solvable_orders_cache,
             trusted_tokens,
             probes,
@@ -660,11 +656,14 @@ impl RunLoop {
     {
         let (can_participate, response) = {
             let driver = driver.clone();
-            let guard = self.solver_participation_guard.clone();
+            let eth = self.eth.clone();
             let mut handle = tokio::task::spawn(async move {
                 let fetch_response = driver.solve(request);
-                let check_allowed = guard.can_participate(&driver.submission_address);
-                tokio::join!(check_allowed, fetch_response)
+                let check_allowed = eth
+                    .contracts()
+                    .authenticator()
+                    .isSolver(driver.submission_address);
+                tokio::join!(check_allowed.call(), fetch_response)
             });
             tokio::time::timeout(self.config.solve_deadline, &mut handle)
                 .await

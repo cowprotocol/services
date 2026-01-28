@@ -15,7 +15,7 @@ use {
                 event_retriever::CoWSwapOnchainOrdersContract,
             },
         },
-        domain::{self, competition::SolverParticipationGuard},
+        domain,
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -673,14 +673,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .into_iter()
         .collect();
 
-    let solver_participation_guard = SolverParticipationGuard::new(eth.clone());
-
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
         drivers,
-        solver_participation_guard,
         solvable_orders_cache,
         trusted_tokens,
         run_loop::Probes {
