@@ -780,7 +780,6 @@ mod test {
 
     use {
         super::*,
-        crate::database::Config,
         alloy::primitives::U256,
         contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
@@ -802,7 +801,6 @@ mod test {
             order_quoting::{MockOrderQuoting, Quote, QuoteData},
         },
         sqlx::PgPool,
-        std::num::NonZeroUsize,
     };
 
     #[test]

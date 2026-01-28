@@ -1,5 +1,5 @@
 use {
-    crate::infra,
+    crate::{database::INSERT_BATCH_SIZE_DEFAULT, infra},
     alloy::primitives::{Address, U256},
     anyhow::{Context, anyhow, ensure},
     chrono::{DateTime, Utc},
@@ -72,7 +72,7 @@ pub struct Arguments {
     pub db_write_url: Url,
 
     /// The number of order events to insert in a single batch.
-    #[clap(long, env, default_value = "500")]
+    #[clap(long, env, default_value_t = INSERT_BATCH_SIZE_DEFAULT)]
     pub insert_batch_size: NonZeroUsize,
 
     /// Skip syncing past events (useful for local deployments)

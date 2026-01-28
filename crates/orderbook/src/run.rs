@@ -173,7 +173,7 @@ pub async fn run(args: Arguments) {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let db_config = crate::database::Config {
-        max_pool_size: args.database_pool.db_max_connections,
+        max_pool_size: args.database_pool.db_max_connections.get(),
     };
     let postgres_write = Postgres::try_new(args.db_write_url.as_str(), db_config.clone())
         .expect("failed to create database");

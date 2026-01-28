@@ -14,6 +14,7 @@ use {
     anyhow::Result,
     database::byte_array::ByteArray,
     model::order::Order,
+    shared::arguments::DB_MAX_CONNECTIONS_DEFAULT,
     sqlx::{PgConnection, PgPool, postgres::PgPoolOptions},
 };
 
@@ -30,7 +31,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             // Match SQLx default pool size
-            max_pool_size: 10,
+            max_pool_size: DB_MAX_CONNECTIONS_DEFAULT.get(),
         }
     }
 }

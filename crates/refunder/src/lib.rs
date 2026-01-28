@@ -55,7 +55,7 @@ pub async fn run(args: arguments::Arguments) {
     }
 
     let pg_pool = PgPoolOptions::new()
-        .max_connections(args.database_pool.db_max_connections)
+        .max_connections(args.database_pool.db_max_connections.get())
         .connect_lazy(args.db_url.as_str())
         .expect("failed to create database");
 

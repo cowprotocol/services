@@ -13,7 +13,7 @@ use {
     std::{
         collections::HashSet,
         fmt::{self, Display, Formatter},
-        num::NonZeroU64,
+        num::{NonZeroU32, NonZeroU64},
         str::FromStr,
         time::Duration,
     },
@@ -126,11 +126,15 @@ pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<T
     ))
 }
 
+// Matches SQLx default connection pool size.
+// SAFETY: 10 > 0
+pub const DB_MAX_CONNECTIONS_DEFAULT: NonZeroU32 = NonZeroU32::new(10).unwrap();
+
 #[derive(Debug, Clone, clap::Parser)]
 pub struct DatabasePoolConfig {
     /// Maximum number of connections in the database connection pool.
-    #[clap(long, env, default_value = "10")]
-    pub db_max_connections: u32,
+    #[clap(long, env, default_value_t = DB_MAX_CONNECTIONS_DEFAULT)]
+    pub db_max_connections: NonZeroU32,
 }
 
 impl Display for DatabasePoolConfig {
