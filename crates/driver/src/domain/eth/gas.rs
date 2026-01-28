@@ -1,7 +1,8 @@
 use {
     super::{Ether, U256},
+    alloy::eips::eip1559::calc_effective_gas_price,
     derive_more::{Display, From, Into},
-    std::{ops, ops::Add},
+    std::ops::{self, Add},
 };
 
 /// Gas amount in gas units.
@@ -37,16 +38,18 @@ pub struct GasPrice {
     tip: FeePerGas,
     /// The current base gas price that will be charged to all accounts on the
     /// next block.
-    base: FeePerGas,
+    base: u64,
 }
 
 impl GasPrice {
     /// Returns the estimated [`EffectiveGasPrice`] for the gas price estimate.
     pub fn effective(&self) -> EffectiveGasPrice {
-        let max = self.max.0.0;
-        let base = self.base.0.0;
-        let tip = self.tip.0.0;
-        max.min(base.saturating_add(tip)).into()
+        U256::from(calc_effective_gas_price(
+            u128::try_from(self.max.0.0).expect("max fee per gas should fit in a u128"),
+            u128::try_from(self.tip.0.0).expect("max priority fee per gas should fit in a u128"),
+            Some(self.base),
+        ))
+        .into()
     }
 
     pub fn max(&self) -> FeePerGas {
@@ -57,11 +60,11 @@ impl GasPrice {
         self.tip
     }
 
-    pub fn base(&self) -> FeePerGas {
+    pub fn base(&self) -> u64 {
         self.base
     }
 
-    pub fn new(max: FeePerGas, tip: FeePerGas, base: FeePerGas) -> Self {
+    pub fn new(max: FeePerGas, tip: FeePerGas, base: u64) -> Self {
         Self { max, tip, base }
     }
 }
@@ -76,17 +79,6 @@ impl std::ops::Mul<f64> for GasPrice {
             max: self.max.mul_ceil(rhs),
             tip: self.tip.mul_ceil(rhs),
             base: self.base,
-        }
-    }
-}
-
-impl From<EffectiveGasPrice> for GasPrice {
-    fn from(value: EffectiveGasPrice) -> Self {
-        let value = value.0.0;
-        Self {
-            max: value.into(),
-            tip: value.into(),
-            base: value.into(),
         }
     }
 }

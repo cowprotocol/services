@@ -4,6 +4,7 @@ use {
         domain::{eth, eth::U256},
     },
     alloy::{
+        eips::eip1559::Eip1559Estimation,
         network::TransactionBuilder,
         providers::Provider,
         rpc::types::{TransactionReceipt, TransactionRequest},
@@ -15,6 +16,7 @@ use {
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
+        gas_price_estimation::Eip1559EstimationExt,
         price_estimation::trade_verifier::balance_overrides::{
             BalanceOverrides,
             BalanceOverriding,
@@ -236,7 +238,7 @@ impl Ethereum {
     /// The gas price is determined based on the deadline by which the
     /// transaction must be included on-chain. A shorter deadline requires a
     /// higher gas price to increase the likelihood of timely inclusion.
-    pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
+    pub async fn gas_price(&self) -> Result<Eip1559Estimation, Error> {
         self.inner.gas.estimate().await
     }
 
@@ -291,6 +293,7 @@ impl Ethereum {
 
     #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<u128> {
+        let base_fee = self.current_block().borrow().base_fee;
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
         // paths that detect that case to try to behave differently during simulations
@@ -298,15 +301,7 @@ impl Ethereum {
         // default value we estimate the current gas price upfront. But because it's
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
-        let gas_price = self.inner.gas.estimate().await.ok()?.effective().0.0;
-        u128::try_from(gas_price)
-            .inspect_err(|err| {
-                tracing::debug!(
-                    ?err,
-                    "failed to convert gas estimate to u128, returning None"
-                );
-            })
-            .ok()
+        Some(self.inner.gas.estimate().await.ok()?.effective(base_fee))
     }
 
     pub fn web3(&self) -> &Web3 {

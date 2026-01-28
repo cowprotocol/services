@@ -6,9 +6,9 @@
 //! - Reward percentile to use
 
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559, u128_to_f64},
+    crate::gas_price_estimation::GasPriceEstimating,
     alloy::{
-        eips::BlockNumberOrTag,
+        eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
         providers::{Provider, utils::eip1559_default_estimator},
     },
     anyhow::{Context, Result},
@@ -49,11 +49,19 @@ impl ConfigurableGasPriceEstimator {
 
 #[async_trait::async_trait]
 impl GasPriceEstimating for ConfigurableGasPriceEstimator {
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        Ok(self
+            .provider
+            .get_block(BlockId::latest())
+            .await?
+            .and_then(|block| block.header.base_fee_per_gas))
+    }
+
     #[instrument(skip(self), fields(
         past_blocks = %self.config.past_blocks,
         reward_percentile = %self.config.reward_percentile
     ))]
-    async fn estimate(&self) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
         // Fetch fee history with our configured parameters
         let fee_history = self
             .provider
@@ -90,13 +98,9 @@ impl GasPriceEstimating for ConfigurableGasPriceEstimator {
         let estimation =
             eip1559_default_estimator(base_fee_per_gas, &fee_history.reward.unwrap_or_default());
 
-        Ok(GasPrice1559 {
-            base_fee_per_gas: u128_to_f64(base_fee_per_gas)
-                .context("could not convert base_fee_per_gas to f64")?,
-            max_fee_per_gas: u128_to_f64(estimation.max_fee_per_gas)
-                .context("could not convert max_fee_per_gas to f64")?,
-            max_priority_fee_per_gas: u128_to_f64(estimation.max_priority_fee_per_gas)
-                .context("could not convert max_priority_fee_per_gas to f64")?,
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: estimation.max_fee_per_gas,
+            max_priority_fee_per_gas: estimation.max_priority_fee_per_gas,
         })
     }
 }
