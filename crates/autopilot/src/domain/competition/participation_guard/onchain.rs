@@ -6,9 +6,8 @@ pub(super) struct Validator {
     pub eth: infra::Ethereum,
 }
 
-#[async_trait::async_trait]
-impl super::SolverValidator for Validator {
-    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
+impl Validator {
+    pub async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         Ok(self
             .eth
             .contracts()

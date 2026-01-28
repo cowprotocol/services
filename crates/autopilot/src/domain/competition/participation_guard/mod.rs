@@ -1,67 +1,23 @@
-mod db;
 mod onchain;
 
-use {
-    crate::{arguments::DbBasedSolverParticipationGuardConfig, domain::eth, infra},
-    std::sync::Arc,
-};
+use {crate::infra, std::sync::Arc};
 
 /// This struct checks whether a solver can participate in the competition by
-/// using different validators.
+/// using the onchain validator.
 #[derive(Clone)]
-pub struct SolverParticipationGuard(Arc<Inner>);
-
-struct Inner {
-    /// Stores the validators in order they will be called.
-    validators: Vec<Box<dyn SolverValidator + Send + Sync>>,
-}
+pub struct SolverParticipationGuard(Arc<onchain::Validator>);
 
 impl SolverParticipationGuard {
-    pub fn new(
-        eth: infra::Ethereum,
-        persistence: infra::Persistence,
-        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
-        db_based_validator_config: DbBasedSolverParticipationGuardConfig,
-        drivers: impl IntoIterator<Item = Arc<infra::Driver>>,
-    ) -> Self {
-        let mut validators: Vec<Box<dyn SolverValidator + Send + Sync>> = Vec::new();
-
-        let current_block = eth.current_block().clone();
-        let database_solver_participation_validator = db::SolverValidator::new(
-            persistence,
-            current_block,
-            competition_updates_receiver,
-            db_based_validator_config,
-            drivers
-                .into_iter()
-                .map(|driver| (driver.submission_address, driver.clone()))
-                .collect(),
-        );
-        validators.push(Box::new(database_solver_participation_validator));
-
-        let onchain_solver_participation_validator = onchain::Validator { eth };
-        validators.push(Box::new(onchain_solver_participation_validator));
-
-        Self(Arc::new(Inner { validators }))
+    pub fn new(eth: infra::Ethereum) -> Self {
+        Self(Arc::new(onchain::Validator { eth }))
     }
 
-    /// Checks if a solver can participate in the competition.
-    /// Sequentially asks internal validators to avoid redundant RPC calls in
-    /// the following order:
-    /// 1. DB-based validator: operates fast since it uses in-memory cache.
-    /// 2. Onchain-based validator: only then calls the Authenticator contract.
-    pub async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
-        for validator in &self.0.validators {
-            if !validator.is_allowed(solver).await? {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+    /// Checks if a solver can participate in the competition by calling the
+    /// Authenticator contract.
+    pub async fn can_participate(
+        &self,
+        solver: &crate::domain::eth::Address,
+    ) -> anyhow::Result<bool> {
+        self.0.is_allowed(solver).await
     }
-}
-
-#[async_trait::async_trait]
-trait SolverValidator: Send + Sync {
-    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool>;
 }
