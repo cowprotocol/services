@@ -163,9 +163,15 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
-        .await
-        .unwrap();
+    let db_write = Postgres::new(
+        args.db_write_url.as_str(),
+        crate::database::Config {
+            insert_batch_size: args.insert_batch_size,
+            max_pool_size: args.database_pool.db_max_connections,
+        },
+    )
+    .await
+    .unwrap();
 
     // If the DB is in read-only mode, running ANALYZE is not possible and will
     // trigger and error https://www.postgresql.org/docs/current/hot-standby.html

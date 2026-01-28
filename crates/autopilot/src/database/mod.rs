@@ -1,6 +1,6 @@
 use {
     num::ToPrimitive,
-    sqlx::{Executor, PgConnection, PgPool},
+    sqlx::{Executor, PgConnection, PgPool, postgres::PgPoolOptions},
     std::{num::NonZeroUsize, time::Duration},
     tracing::Instrument,
 };
@@ -18,6 +18,16 @@ mod quotes;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub insert_batch_size: NonZeroUsize,
+    pub max_pool_size: u32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            insert_batch_size: NonZeroUsize::new(500).unwrap(),
+            max_pool_size: 10,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,15 +37,15 @@ pub struct Postgres {
 }
 
 impl Postgres {
-    pub async fn new(url: &str, insert_batch_size: NonZeroUsize) -> sqlx::Result<Self> {
-        let pool = PgPool::connect(url).await?;
+    pub async fn new(url: &str, config: Config) -> sqlx::Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(config.max_pool_size)
+            .connect(url)
+            .await?;
 
         Self::start_db_metrics_job(pool.clone());
 
-        Ok(Self {
-            pool,
-            config: Config { insert_batch_size },
-        })
+        Ok(Self { pool, config })
     }
 
     fn start_db_metrics_job(pool: PgPool) {
@@ -57,7 +67,7 @@ impl Postgres {
     }
 
     pub async fn with_defaults() -> sqlx::Result<Self> {
-        Self::new("postgresql://", NonZeroUsize::new(500).unwrap()).await
+        Self::new("postgresql://", Default::default()).await
     }
 
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {

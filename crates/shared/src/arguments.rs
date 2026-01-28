@@ -126,6 +126,19 @@ pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<T
     ))
 }
 
+#[derive(Debug, Clone, clap::Parser)]
+pub struct DatabasePoolConfig {
+    /// Maximum number of connections in the database connection pool.
+    #[clap(long, env, default_value = "10")]
+    pub db_max_connections: u32,
+}
+
+impl Display for DatabasePoolConfig {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "db_max_connections: {}", self.db_max_connections)
+    }
+}
+
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {

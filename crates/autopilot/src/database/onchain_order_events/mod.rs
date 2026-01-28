@@ -1250,9 +1250,7 @@ mod test {
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
-                config: Config {
-                    insert_batch_size: NonZeroUsize::new(500).unwrap(),
-                },
+                config: Default::default(),
             },
             trampoline: HooksTrampoline::Instance::deployed(&web3.alloy)
                 .await
