@@ -8,5 +8,5 @@ pub use {
     blockchain::Ethereum,
     order_validation::banned,
     persistence::Persistence,
-    solvers::{Driver, notify_banned_solver},
+    solvers::Driver,
 };

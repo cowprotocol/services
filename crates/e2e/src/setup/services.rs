@@ -204,8 +204,6 @@ impl<'a> Services<'a> {
 
         let args = [
             "autopilot".to_string(),
-            "--non-settling-solvers-blacklisting-enabled=false".to_string(),
-            "--low-settling-solvers-blacklisting-enabled=false".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contracts={ethflow_contracts}"),

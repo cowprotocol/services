@@ -8,13 +8,9 @@ use {
 };
 
 mod bid;
-mod participation_guard;
 pub mod winner_selection;
 
-pub use {
-    bid::{Bid, RankType, Ranked, Scored, Unscored},
-    participation_guard::SolverParticipationGuard,
-};
+pub use bid::{Bid, RankType, Ranked, Scored, Unscored};
 
 type SolutionId = u64;
 
