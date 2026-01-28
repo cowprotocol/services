@@ -42,7 +42,7 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 > The EthFlow is not configured by default, the next section explains how to set it up.
 > You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see how the Protocol interacts.
 > If you make any changes to the files in your repo directory, services will automatically be recompiled and restarted.
-> The CoW Explorer is avialable at http://localhost:8001 to see more information about transaction status
+> The CoW Explorer is available at http://localhost:8001 to see more information about transaction status
 
 ### Resetting the playground
 
@@ -147,7 +147,7 @@ In this mode, the stack will spin up:
 - Driver
 - Baseline
 - Cow Swap
-- Cow Explorer (*not yet implemented*)
+- Cow Explorer
 
 ### Local
 
