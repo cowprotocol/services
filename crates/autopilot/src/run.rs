@@ -395,17 +395,23 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     .await
     .expect("failed to initialize price estimator factory");
 
+    let initial_prices = db_write.fetch_latest_prices().await.unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.native_price_estimation_results_required,
             eth.contracts().weth().clone(),
+            initial_prices,
         )
         .instrument(info_span!("native_price_estimator"))
         .await
         .unwrap();
-    let prices = db_write.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices);
+
+    let api_native_price_estimator = Arc::new(
+        shared::price_estimation::native_price_cache::QuoteCompetitionEstimator::new(
+            native_price_estimator.clone(),
+        ),
+    );
 
     let price_estimator = price_estimator_factory
         .price_estimator(
@@ -542,7 +548,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let api_task = tokio::spawn(infra::api::serve(
         args.api_address,
-        native_price_estimator.clone(),
+        api_native_price_estimator,
         args.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
