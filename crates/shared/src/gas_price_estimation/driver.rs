@@ -69,8 +69,11 @@ impl DriverGasEstimator {
 
         Ok(GasPrice1559 {
             base_fee_per_gas: f64::from(response.base_fee_per_gas),
-            max_fee_per_gas: f64::from(response.max_fee_per_gas),
-            max_priority_fee_per_gas: f64::from(response.max_priority_fee_per_gas),
+            // add 0.9 Gwei to be inline with historic values
+            max_fee_per_gas: f64::from(response.max_fee_per_gas + U256::from(900_000_000)),
+            max_priority_fee_per_gas: f64::from(
+                response.max_priority_fee_per_gas + U256::from(900_000_000),
+            ),
         })
     }
 }
