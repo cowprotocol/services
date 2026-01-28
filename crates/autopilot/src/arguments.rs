@@ -1,5 +1,5 @@
 use {
-    crate::infra,
+    crate::{database::INSERT_BATCH_SIZE_DEFAULT, infra},
     alloy::primitives::{Address, U256},
     anyhow::{Context, anyhow, ensure},
     chrono::{DateTime, Utc},
@@ -37,6 +37,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
+
     /// Address of the ethflow contracts. If not specified, eth-flow orders are
     /// disabled.
     /// In general, one contract is sufficient for the service to function.
@@ -69,7 +72,7 @@ pub struct Arguments {
     pub db_write_url: Url,
 
     /// The number of order events to insert in a single batch.
-    #[clap(long, env, default_value = "500")]
+    #[clap(long, env, default_value_t = INSERT_BATCH_SIZE_DEFAULT)]
     pub insert_batch_size: NonZeroUsize,
 
     /// Skip syncing past events (useful for local deployments)
@@ -370,6 +373,7 @@ impl std::fmt::Display for Arguments {
             http_client,
             token_owner_finder,
             price_estimation,
+            database_pool,
             tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
@@ -418,6 +422,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{http_client}")?;
         write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
+        write!(f, "{database_pool}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
