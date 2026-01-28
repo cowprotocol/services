@@ -1,23 +1,36 @@
 use {
-    crate::api::{IntoWarpReply, internal_error_reply},
+    crate::api::{AppState, internal_error_reply},
     anyhow::Result,
     app_data::{AppDataDocument, AppDataHash},
-    reqwest::StatusCode,
-    std::{convert::Infallible, sync::Arc},
-    warp::{Filter, Rejection, body, reply},
+    axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        response::{IntoResponse, Json},
+    },
+    std::sync::Arc,
 };
 
-fn request(
-    max_size: usize,
-) -> impl Filter<Extract = (Option<AppDataHash>, AppDataDocument), Error = Rejection> + Clone {
-    let opt = warp::path::param::<AppDataHash>()
-        .map(Some)
-        .or_else(|_| async { Ok::<(Option<AppDataHash>,), std::convert::Infallible>((None,)) });
-    warp::path!("v1" / "app_data" / ..)
-        .and(opt)
-        .and(warp::put())
-        .and(body::content_length_limit(max_size as _))
-        .and(body::json())
+pub async fn put_app_data_without_hash(
+    State(state): State<Arc<AppState>>,
+    Json(document): Json<AppDataDocument>,
+) -> impl IntoResponse {
+    let result = state
+        .app_data
+        .register(None, document.full_app_data.as_bytes())
+        .await;
+    response(result)
+}
+
+pub async fn put_app_data_with_hash(
+    State(state): State<Arc<AppState>>,
+    Path(hash): Path<AppDataHash>,
+    Json(document): Json<AppDataDocument>,
+) -> impl IntoResponse {
+    let result = state
+        .app_data
+        .register(Some(hash), document.full_app_data.as_bytes())
+        .await;
+    response(result)
 }
 
 fn response(
@@ -29,41 +42,30 @@ fn response(
                 crate::app_data::Registered::New => StatusCode::CREATED,
                 crate::app_data::Registered::AlreadyExisted => StatusCode::OK,
             };
-            reply::with_status(reply::json(&hash), status)
+            (status, Json(hash)).into_response()
         }
-        Err(err) => err.into_warp_reply(),
+        Err(err) => err.into_response(),
     }
 }
 
-pub fn filter(
-    registry: Arc<crate::app_data::Registry>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request(registry.size_limit()).and_then(move |hash, document: AppDataDocument| {
-        let registry = registry.clone();
-        async move {
-            let result = registry
-                .register(hash, document.full_app_data.as_bytes())
-                .await;
-            Result::<_, Infallible>::Ok(response(result))
-        }
-    })
-}
-
-impl IntoWarpReply for crate::app_data::RegisterError {
-    fn into_warp_reply(self) -> super::ApiReply {
+impl IntoResponse for crate::app_data::RegisterError {
+    fn into_response(self) -> super::ApiReply {
         match self {
-            Self::Invalid(err) => reply::with_status(
+            Self::Invalid(err) => (
+                StatusCode::BAD_REQUEST,
                 super::error("AppDataInvalid", err.to_string()),
+            )
+                .into_response(),
+            err @ Self::HashMismatch { .. } => (
                 StatusCode::BAD_REQUEST,
-            ),
-            err @ Self::HashMismatch { .. } => reply::with_status(
                 super::error("AppDataHashMismatch", err.to_string()),
+            )
+                .into_response(),
+            err @ Self::DataMismatch { .. } => (
                 StatusCode::BAD_REQUEST,
-            ),
-            err @ Self::DataMismatch { .. } => reply::with_status(
                 super::error("AppDataMismatch", err.to_string()),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
             Self::Other(err) => {
                 tracing::error!(?err, "app_data::SaveError::Other");
                 internal_error_reply()
