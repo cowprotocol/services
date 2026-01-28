@@ -10,13 +10,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
 RUN git clone https://github.com/cowprotocol/cowswap . && \
     git submodule update --init --recursive
 
-# Install npm dependencies
-RUN yarn install --frozen-lockfile --no-cache
+# Enable corepack and install npm dependencies
+RUN corepack enable \
+ && corepack prepare pnpm@10.12.1 --activate \
+ && pnpm install --frozen-lockfile
 
 ENV REACT_APP_ORDER_BOOK_URLS='{"1":"http://localhost:8080"}'
 
 # Build the frontend
-RUN APP_ID=1 yarn build:explorer
+RUN APP_ID=1 pnpm run build:explorer
 
 # Stage 2: Copy the frontend to the nginx container
 FROM docker.io/nginx:1.21-alpine AS frontend

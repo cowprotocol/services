@@ -18,8 +18,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
 RUN git clone https://github.com/cowprotocol/cowswap . && \
     git submodule update --init --recursive
 
-# Install npm dependencies
-RUN yarn install --frozen-lockfile --no-cache
+# Enable corepack and install npm dependencies
+RUN corepack enable \
+    && corepack prepare pnpm@10.12.1 --activate \
+    && pnpm install --frozen-lockfile
 
 # Set the environment variable "chain"
 ARG CHAIN
@@ -51,7 +53,7 @@ RUN if [ -n "$ETH_RPC_URL" ]; then \
                 REACT_APP_ORDER_BOOK_URLS=$(echo $REACT_APP_ORDER_BOOK_URLS | jq --arg chain "100" '.[$chain]="http://127.0.0.1:8080"') \
                 ;; \
         esac; \
-        NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true yarn build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
+        NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true pnpm build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
                    --env REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5 \
                    --env REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100 \
                    --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"; \
