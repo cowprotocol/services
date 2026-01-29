@@ -250,11 +250,22 @@ impl SigningScheme {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Hash)]
 pub struct EcdsaSignature {
     pub r: B256,
     pub s: B256,
     pub v: u8,
+}
+
+impl Default for EcdsaSignature {
+    fn default() -> Self {
+        Self {
+            r: B256::ZERO,
+            s: B256::ZERO,
+            // Use normalized v value for Solidity ecrecover compatibility
+            v: 27,
+        }
+    }
 }
 
 pub fn hashed_eip712_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> B256 {
@@ -470,13 +481,17 @@ mod tests {
 
     #[test]
     fn signature_to_bytes() {
+        // Default ECDSA signatures have normalized v = 27
+        let mut expected_ecdsa = [0u8; 65];
+        expected_ecdsa[64] = 27;
+
         assert_eq!(
             Signature::default_with(SigningScheme::Eip712).to_bytes(),
-            [0u8; 65].to_vec()
+            expected_ecdsa.to_vec()
         );
         assert_eq!(
             Signature::default_with(SigningScheme::EthSign).to_bytes(),
-            [0u8; 65].to_vec()
+            expected_ecdsa.to_vec()
         );
         assert_eq!(
             Signature::default_with(SigningScheme::PreSign).to_bytes(),
