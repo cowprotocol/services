@@ -176,6 +176,7 @@ Indexes:
 - PRIMARY KEY: btree(`uid`)
 - event\_index: btree(`block_number`, `index`)
 - order\_sender: hash(sender)
+- okay\_onchain\_orders: btree(`uid`) WHERE placement\_error IS NOT NULL
 
 ### order\_events
 
@@ -274,7 +275,6 @@ Indexes:
 - user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - version_idx: btree(`settlement_contract`)
 - orders\_true\_valid\_to: btree(`true_valid_to`)
-- okay\_onchain\_orders: btree(`uid`) WHERE placement\_error IS NOT NULL
 
 ### fee_policies
 
