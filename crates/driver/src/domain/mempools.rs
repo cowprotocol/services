@@ -12,6 +12,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    shared::gas_price_estimation::Eip1559EstimationExt,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -153,18 +154,29 @@ impl Mempools {
             _ => current_gas_price,
         };
 
+        // Get gas bumping configuration
+        let bump_interval = mempool.config().gas_bump_interval;
+        let bump_factor = mempool.config().gas_bump_factor;
+        let max_bumps = mempool.config().max_gas_bumps;
+
+        // Track mutable state for gas bumping
+        let mut current_gas_price = final_gas_price;
+        let mut gas_bumps_performed: u64 = 0;
+        let mut blocks_since_submit: u64 = 0;
+
         tracing::debug!(
             submission_block,
             blocks_until_deadline,
             ?replacement_gas_price,
             ?current_gas_price,
-            ?final_gas_price,
+            bump_interval,
+            max_bumps,
             "submitting settlement tx"
         );
-        let hash = mempool
+        let mut hash = mempool
             .submit(
                 tx.clone(),
-                final_gas_price,
+                current_gas_price,
                 settlement.gas.limit,
                 solver,
                 nonce,
@@ -197,6 +209,50 @@ impl Mempools {
                         })
                     }
                     TxStatus::Pending => {
+                        blocks_since_submit += 1;
+
+                        // Check if we should bump priority fee for pending tx
+                        if bump_interval > 0
+                            && blocks_since_submit >= bump_interval
+                            && (max_bumps == 0 || gas_bumps_performed < max_bumps)
+                            && block.number < submission_deadline
+                        {
+                            let new_gas_price = current_gas_price.bump_tip(bump_factor);
+                            tracing::debug!(
+                                ?current_gas_price,
+                                ?new_gas_price,
+                                gas_bumps_performed,
+                                blocks_since_submit,
+                                "bumping priority fee for pending tx"
+                            );
+
+                            // Resubmit with higher priority fee (same nonce replaces old tx)
+                            match mempool
+                                .submit(
+                                    tx.clone(),
+                                    new_gas_price,
+                                    settlement.gas.limit,
+                                    solver,
+                                    nonce,
+                                )
+                                .await
+                            {
+                                Ok(new_hash) => {
+                                    hash = new_hash;
+                                    current_gas_price = new_gas_price;
+                                    gas_bumps_performed += 1;
+                                    blocks_since_submit = 0;
+                                }
+                                Err(err) => {
+                                    // Don't fail - continue with original tx
+                                    tracing::warn!(
+                                        ?err,
+                                        "failed to submit bumped tx, continuing with original"
+                                    );
+                                }
+                            }
+                        }
+
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
                             tracing::debug!(
@@ -206,7 +262,7 @@ impl Mempools {
                                 "exceeded submission deadline, cancelling"
                             );
                             let _ = self
-                                .cancel(mempool, final_gas_price, solver, nonce)
+                                .cancel(mempool, current_gas_price, solver, nonce)
                                 .await;
                             return Err(Error::Expired {
                                 tx_id: hash.clone(),
@@ -223,7 +279,7 @@ impl Mempools {
                                     "tx started failing in mempool, cancelling"
                                 );
                                 let _ = self
-                                    .cancel(mempool, final_gas_price, solver, nonce)
+                                    .cancel(mempool, current_gas_price, solver, nonce)
                                     .await;
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block: submission_block,

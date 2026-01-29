@@ -32,6 +32,12 @@ pub struct Config {
     pub revert_protection: RevertProtection,
     pub max_additional_tip: eth::U256,
     pub additional_tip_percentage: f64,
+    /// Number of blocks to wait before bumping priority fee. 0 = disabled.
+    pub gas_bump_interval: u64,
+    /// Factor to multiply priority fee by on each bump.
+    pub gas_bump_factor: f64,
+    /// Maximum number of gas bumps. 0 = unlimited.
+    pub max_gas_bumps: u64,
 }
 
 #[cfg(test)]
@@ -48,6 +54,9 @@ impl Config {
             revert_protection: infra::mempool::RevertProtection::Disabled,
             nonce_block_number: None,
             url,
+            gas_bump_interval: 2,
+            gas_bump_factor: 1.125,
+            max_gas_bumps: 5,
         }
     }
 }

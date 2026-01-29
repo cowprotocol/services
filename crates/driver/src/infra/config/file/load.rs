@@ -351,6 +351,9 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 max_additional_tip: mempool.max_additional_tip,
                 additional_tip_percentage: mempool.additional_tip_percentage,
+                gas_bump_interval: config.submission.gas_bump_interval,
+                gas_bump_factor: config.submission.gas_bump_factor,
+                max_gas_bumps: config.submission.max_gas_bumps,
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {

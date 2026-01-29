@@ -128,6 +128,20 @@ struct SubmissionConfig {
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
+
+    /// Number of blocks to wait before bumping priority fee for pending
+    /// transactions. Set to 0 to disable gas bumping.
+    #[serde(default = "default_gas_bump_interval")]
+    gas_bump_interval: u64,
+
+    /// Factor to multiply priority fee by on each bump (e.g., 1.125).
+    /// Must be >= 1.125 to meet EIP-1559 replacement requirements.
+    #[serde(default = "default_gas_bump_factor")]
+    gas_bump_factor: f64,
+
+    /// Maximum number of gas bumps to perform. Set to 0 for unlimited.
+    #[serde(default = "default_max_gas_bumps")]
+    max_gas_bumps: u64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -226,6 +240,21 @@ fn default_target_confirm_time() -> Duration {
 
 fn default_retry_interval() -> Duration {
     Duration::from_secs(2)
+}
+
+/// Bump priority fee every 2 blocks (~24 seconds on mainnet)
+fn default_gas_bump_interval() -> u64 {
+    1
+}
+
+/// Minimum bump factor to replace a pending tx (EIP-1559 requires >= 1.125)
+fn default_gas_bump_factor() -> f64 {
+    1.125
+}
+
+/// Allow up to 5 bumps (~1.8x total increase: 1.125^5 ≈ 1.80)
+fn default_max_gas_bumps() -> u64 {
+    5
 }
 
 /// 3 gwei
