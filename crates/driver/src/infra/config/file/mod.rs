@@ -242,9 +242,10 @@ fn default_retry_interval() -> Duration {
     Duration::from_secs(2)
 }
 
-/// Bump priority fee every N blocks (~12 seconds per on mainnet)
+/// Bump priority fee every N blocks (~12 seconds per on mainnet), disabled by
+/// default
 fn default_gas_bump_interval() -> u64 {
-    1
+    0
 }
 
 /// Minimum bump factor to replace a pending tx (EIP-1559 requires >= 1.125)
