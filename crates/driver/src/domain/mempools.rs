@@ -8,7 +8,7 @@ use {
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
-    alloy::consensus::Transaction,
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -18,9 +18,9 @@ use {
 
 /// Factor by how much a transaction fee needs to be increased to override a
 /// pending transaction at the same nonce. The correct factor is actually
-/// 1.125 but to avoid rounding issues on chains with very low gas prices
+/// 12.5% but to avoid rounding issues on chains with very low gas prices
 /// we increase slightly more.
-const GAS_PRICE_BUMP: f64 = 1.13;
+const GAS_PRICE_BUMP_PCT: u64 = 13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
@@ -146,7 +146,7 @@ impl Mempools {
             .await;
         let final_gas_price = match &replacement_gas_price {
             Some(replacement_gas_price)
-                if replacement_gas_price.max() > current_gas_price.max() =>
+                if replacement_gas_price.max_fee_per_gas > current_gas_price.max_fee_per_gas =>
             {
                 *replacement_gas_price
             }
@@ -268,11 +268,11 @@ impl Mempools {
     async fn cancel(
         &self,
         mempool: &infra::mempool::Mempool,
-        original_tx_gas_price: eth::GasPrice,
+        original_tx_gas_price: Eip1559Estimation,
         solver: &Solver,
         nonce: u64,
     ) -> Result<TxId, Error> {
-        let fallback_gas_price = original_tx_gas_price * GAS_PRICE_BUMP;
+        let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, solver, nonce)
             .await;
@@ -314,15 +314,19 @@ impl Mempools {
     /// Computes minimum price to replace the last tx that was submitted
     /// with the given nonce. Returns `None` if no tx was submitted with
     /// that nonce yet.
+    #[tracing::instrument(skip_all)]
     async fn minimum_replacement_gas_price(
         &self,
         mempool: &infra::Mempool,
         solver: &Solver,
         next_nonce: u64,
-    ) -> Option<eth::GasPrice> {
+    ) -> Option<Eip1559Estimation> {
         if let Some(last_submission) = mempool.last_submission(solver.address()) {
-            (last_submission.nonce == next_nonce)
-                .then_some(last_submission.gas_price * GAS_PRICE_BUMP)
+            if last_submission.nonce == next_nonce {
+                Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
+            } else {
+                None
+            }
         } else {
             // If we don't have the last submission in-memory (i.e. first submission
             // attempt after a restart) we try to inspect the nodes transaction mempool.
@@ -334,16 +338,15 @@ impl Mempools {
                 .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
                 .ok()??;
 
-            let pending_tx_gas_price = eth::GasPrice::new(
-                eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-                eth::U256::from(pending_tx.max_priority_fee_per_gas().or_else(|| {
+            let pending_tx_gas_price = Eip1559Estimation {
+                max_fee_per_gas: pending_tx.max_fee_per_gas(),
+                max_priority_fee_per_gas: pending_tx.max_priority_fee_per_gas().or_else(|| {
                     tracing::error!(tx = ?pending_tx.inner.tx_hash(), "pending tx is not EIP 1559");
                     None
-                })?)
-                .into(),
-                eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-            );
-            Some(pending_tx_gas_price * GAS_PRICE_BUMP)
+                })?,
+            };
+
+            Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
     }
 }

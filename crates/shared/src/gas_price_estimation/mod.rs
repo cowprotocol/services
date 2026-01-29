@@ -2,7 +2,6 @@ pub mod configurable_alloy;
 pub mod driver;
 pub mod eth_node;
 pub mod fake;
-pub mod price;
 pub mod priority;
 
 use {
@@ -20,7 +19,10 @@ use {
         },
         http_client::HttpClientFactory,
     },
-    ::alloy::providers::Provider,
+    ::alloy::{
+        eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
+        providers::Provider,
+    },
     anyhow::Result,
     std::str::FromStr,
     tracing::instrument,
@@ -32,7 +34,19 @@ pub use {driver::DriverGasEstimator, fake::FakeGasPriceEstimator};
 #[async_trait::async_trait]
 pub trait GasPriceEstimating: Send + Sync {
     /// Estimate the gas price for a transaction to be mined "quickly".
-    async fn estimate(&self) -> Result<crate::gas_price_estimation::price::GasPrice1559>;
+    async fn estimate(&self) -> Result<Eip1559Estimation>;
+
+    async fn base_fee(&self) -> Result<Option<u64>>;
+
+    async fn effective_gas_price(&self) -> Result<u128> {
+        let estimate = self.estimate().await?;
+        let base_fee = self.base_fee().await?;
+        Ok(calc_effective_gas_price(
+            estimate.max_fee_per_gas,
+            estimate.max_priority_fee_per_gas,
+            base_fee,
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -72,6 +86,7 @@ pub async fn create_priority_estimator(
                 estimators.push(Box::new(DriverGasEstimator::new(
                     http_factory.create(),
                     url.clone(),
+                    web3.alloy.clone(),
                 )));
             }
             GasEstimatorType::Web3 => {
@@ -96,9 +111,33 @@ pub async fn create_priority_estimator(
     Ok(PriorityGasPriceEstimating::new(estimators))
 }
 
-fn u128_to_f64(val: u128) -> Result<f64> {
-    if val > 2u128.pow(f64::MANTISSA_DIGITS) {
-        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
+/// Extension trait for EIP-1559 gas price estimations.
+pub trait Eip1559EstimationExt {
+    /// Calculates the effective gas price that will be paid given the base fee.
+    fn effective(self, base_fee: u64) -> u128;
+
+    /// Scales fees by a multiplier in parts per thousand (e.g., 100 = +10%).
+    fn scaled_by_pml(self, pml: u64) -> Self;
+}
+
+impl Eip1559EstimationExt for Eip1559Estimation {
+    fn effective(self, base_fee: u64) -> u128 {
+        calc_effective_gas_price(
+            self.max_fee_per_gas,
+            self.max_priority_fee_per_gas,
+            Some(base_fee),
+        )
     }
-    Ok(val as f64)
+
+    fn scaled_by_pml(mut self, pml: u64) -> Self {
+        self.max_fee_per_gas = {
+            let n = self.max_fee_per_gas;
+            n * (1000 + pml as u128) / 1000
+        };
+        self.max_priority_fee_per_gas = {
+            let n = self.max_priority_fee_per_gas;
+            n * (1000 + pml as u128) / 1000
+        };
+        self
+    }
 }
