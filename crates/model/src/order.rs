@@ -1479,7 +1479,7 @@ mod tests {
                 order_uid: OrderUid(hex!(
                     "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                 )),
-                signature: EcdsaSignature::from_bytes(signature),
+                signature: EcdsaSignature::from_bytes(signature).unwrap(),
                 signing_scheme: *signing_scheme,
             };
             let owner = cancellation.validate(&domain_separator).unwrap();

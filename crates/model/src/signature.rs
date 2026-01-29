@@ -118,7 +118,7 @@ impl Signature {
                 let bytes: [u8; 65] = bytes
                     .try_into()
                     .context("ECDSA signature must be 65 bytes long")?;
-                EcdsaSignature::from_bytes(&bytes).to_signature(
+                EcdsaSignature::from_bytes(&bytes)?.to_signature(
                     scheme
                         .try_to_ecdsa_scheme()
                         .expect("scheme is an ecdsa scheme"),
@@ -314,17 +314,23 @@ impl EcdsaSignature {
         bytes
     }
 
-    pub fn from_bytes(bytes: &[u8; 65]) -> Self {
+    pub fn from_bytes(bytes: &[u8; 65]) -> Result<Self> {
         let v = bytes[64];
-        EcdsaSignature {
+        // Normalize v to legacy format (27/28) for Solidity ecrecover compatibility.
+        // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover expects
+        // v = 27 or 28. Alloy normalizes internally for off-chain recovery, but
+        // on-chain ecrecover(hash, v=0, r, s) returns address(0) and fails.
+        // Only valid v values are 0, 1, 27, 28.
+        let normalized_v = match v {
+            0 | 27 => 27,
+            1 | 28 => 28,
+            _ => anyhow::bail!("invalid signature v value: {v}, expected 0, 1, 27, or 28"),
+        };
+        Ok(EcdsaSignature {
             r: B256::from_slice(&bytes[..32]),
             s: B256::from_slice(&bytes[32..64]),
-            // Normalize v to legacy format (27/28) for Solidity ecrecover compatibility.
-            // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover expects
-            // v = 27 or 28. Alloy normalizes internally for off-chain recovery, but
-            // on-chain ecrecover(hash, v=0, r, s) returns address(0) and fails.
-            v: if v < 27 { v + 27 } else { v },
-        }
+            v: normalized_v,
+        })
     }
 
     pub fn recover(
@@ -349,7 +355,8 @@ impl EcdsaSignature {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         // Unwrap because the only error is for invalid messages which we don't create.
         let signature = key.sign_hash_sync(&message).unwrap();
-        Self::from_bytes(&signature.as_bytes())
+        // Signing always produces valid v values (0, 1, 27, or 28), so unwrap is safe.
+        Self::from_bytes(&signature.as_bytes()).expect("signing produces valid v values")
     }
 
     /// Returns an arbitrary non-zero signature that can be used for recovery
@@ -391,7 +398,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
                 write!(
                     formatter,
                     "the 65 ecdsa signature bytes as a hex encoded string, ordered as r, s, v, \
-                     where v is either 27 or 28"
+                     where v is 0, 1, 27, or 28"
                 )
             }
 
@@ -411,7 +418,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
                         "failed to decode {s:?} as hex ecdsa signature: {err}"
                     ))
                 })?;
-                Ok(EcdsaSignature::from_bytes(&bytes))
+                EcdsaSignature::from_bytes(&bytes).map_err(de::Error::custom)
             }
         }
 
@@ -568,25 +575,25 @@ mod tests {
         assert_eq!(deserialized, expected_signature);
         assert_json_matches!(json!(deserialized), expected_output_json);
 
-        // Test EthSign with v=3 normalizing to v=30 (3+27)
+        // Test EthSign with v=1 normalizing to v=28
         let input_json = json!({
             "signingScheme": "ethsign",
             "signature": "0x\
                 0101010101010101010101010101010101010101010101010101010101010101\
                 0202020202020202020202020202020202020202020202020202020202020202\
-                03",
+                01",
         });
         let expected_signature = Signature::EthSign(EcdsaSignature {
             r: B256::repeat_byte(1),
             s: B256::repeat_byte(2),
-            v: 30, // normalized from v=3
+            v: 28, // normalized from v=1
         });
         let expected_output_json = json!({
             "signingScheme": "ethsign",
             "signature": "0x\
                 0101010101010101010101010101010101010101010101010101010101010101\
                 0202020202020202020202020202020202020202020202020202020202020202\
-                1e",
+                1c",
         });
 
         let deserialized: Signature = serde_json::from_value(input_json).unwrap();
@@ -689,28 +696,28 @@ mod tests {
         // v = 0 should be normalized to 27
         let mut bytes_v0 = [0u8; 65];
         bytes_v0[64] = 0;
-        let sig = EcdsaSignature::from_bytes(&bytes_v0);
+        let sig = EcdsaSignature::from_bytes(&bytes_v0).unwrap();
         assert_eq!(sig.v, 27);
         assert_eq!(sig.to_bytes()[64], 27);
 
         // v = 1 should be normalized to 28
         let mut bytes_v1 = [0u8; 65];
         bytes_v1[64] = 1;
-        let sig = EcdsaSignature::from_bytes(&bytes_v1);
+        let sig = EcdsaSignature::from_bytes(&bytes_v1).unwrap();
         assert_eq!(sig.v, 28);
         assert_eq!(sig.to_bytes()[64], 28);
 
         // v = 27 should stay 27
         let mut bytes_v27 = [0u8; 65];
         bytes_v27[64] = 27;
-        let sig = EcdsaSignature::from_bytes(&bytes_v27);
+        let sig = EcdsaSignature::from_bytes(&bytes_v27).unwrap();
         assert_eq!(sig.v, 27);
         assert_eq!(sig.to_bytes()[64], 27);
 
         // v = 28 should stay 28
         let mut bytes_v28 = [0u8; 65];
         bytes_v28[64] = 28;
-        let sig = EcdsaSignature::from_bytes(&bytes_v28);
+        let sig = EcdsaSignature::from_bytes(&bytes_v28).unwrap();
         assert_eq!(sig.v, 28);
         assert_eq!(sig.to_bytes()[64], 28);
 
@@ -720,5 +727,45 @@ mod tests {
 
         let sig = Signature::from_bytes(SigningScheme::EthSign, &bytes_v1).unwrap();
         assert_eq!(sig.to_bytes()[64], 28);
+    }
+
+    #[test]
+    fn ecdsa_signature_invalid_v_rejected() {
+        // Invalid v values should be rejected
+        for invalid_v in [2u8, 3, 26, 29, 30, 255] {
+            let mut bytes = [0u8; 65];
+            bytes[64] = invalid_v;
+
+            // EcdsaSignature::from_bytes should return an error
+            let result = EcdsaSignature::from_bytes(&bytes);
+            assert!(
+                result.is_err(),
+                "v={invalid_v} should be rejected but was accepted"
+            );
+
+            // Signature::from_bytes should also return an error
+            let result = Signature::from_bytes(SigningScheme::Eip712, &bytes);
+            assert!(
+                result.is_err(),
+                "v={invalid_v} should be rejected via Signature::from_bytes"
+            );
+
+            // Deserialization should also fail
+            let hex_sig = format!(
+                "0x{}{}{}",
+                const_hex::encode([0u8; 32]),
+                const_hex::encode([0u8; 32]),
+                const_hex::encode([invalid_v])
+            );
+            let json = json!({
+                "signingScheme": "eip712",
+                "signature": hex_sig,
+            });
+            let result: Result<Signature, _> = serde_json::from_value(json);
+            assert!(
+                result.is_err(),
+                "v={invalid_v} should be rejected during deserialization"
+            );
+        }
     }
 }
