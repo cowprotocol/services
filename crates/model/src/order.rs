@@ -1096,7 +1096,8 @@ mod tests {
             "kind": "buy",
             "class": "limit",
             "partiallyFillable": false,
-            "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
+            "signature": "0x02000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005\
+        1c",
             "signingScheme": "eip712",
             "status": "open",
             "settlementContract": "0x0000000000000000000000000000000000000002",
@@ -1146,7 +1147,8 @@ mod tests {
                 buy_token_balance: BuyTokenDestination::Internal,
             },
             signature: EcdsaSignature {
-                v: 1,
+                // v=0x01 in input gets normalized to 28 for Solidity ecrecover compatibility
+                v: 28,
                 r: b256!("0200000000000000000000000000000000000000000000000000000000000003"),
                 s: b256!("0400000000000000000000000000000000000000000000000000000000000005"),
             }
@@ -1162,22 +1164,31 @@ mod tests {
     #[test]
     fn order_creation_serialization() {
         let owner = Address::repeat_byte(0xff);
+        // Note: ECDSA signatures use v=27 (0x1b) after normalization from v=0
         for (signature, signing_scheme, from, signature_bytes) in [
             (
-                Signature::default_with(SigningScheme::Eip712),
+                Signature::Eip712(EcdsaSignature {
+                    r: B256::ZERO,
+                    s: B256::ZERO,
+                    v: 27,
+                }),
                 "eip712",
                 Some(owner),
                 "0x0000000000000000000000000000000000000000000000000000000000000000\
                    0000000000000000000000000000000000000000000000000000000000000000\
-                   00",
+                   1b",
             ),
             (
-                Signature::default_with(SigningScheme::EthSign),
+                Signature::EthSign(EcdsaSignature {
+                    r: B256::ZERO,
+                    s: B256::ZERO,
+                    v: 27,
+                }),
                 "ethsign",
                 None,
                 "0x0000000000000000000000000000000000000000000000000000000000000000\
                    0000000000000000000000000000000000000000000000000000000000000000\
-                   00",
+                   1b",
             ),
             (Signature::PreSign, "presign", Some(owner), "0x"),
         ] {

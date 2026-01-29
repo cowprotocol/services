@@ -118,12 +118,7 @@ impl Signature {
                 let bytes: [u8; 65] = bytes
                     .try_into()
                     .context("ECDSA signature must be 65 bytes long")?;
-                EcdsaSignature {
-                    r: B256::from_slice(&bytes[..32]),
-                    s: B256::from_slice(&bytes[32..64]),
-                    v: bytes[64],
-                }
-                .to_signature(
+                EcdsaSignature::from_bytes(&bytes).to_signature(
                     scheme
                         .try_to_ecdsa_scheme()
                         .expect("scheme is an ecdsa scheme"),
@@ -309,10 +304,15 @@ impl EcdsaSignature {
     }
 
     pub fn from_bytes(bytes: &[u8; 65]) -> Self {
+        let v = bytes[64];
         EcdsaSignature {
             r: B256::from_slice(&bytes[..32]),
             s: B256::from_slice(&bytes[32..64]),
-            v: bytes[64],
+            // Normalize v to legacy format (27/28) for Solidity ecrecover compatibility.
+            // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover expects
+            // v = 27 or 28. Alloy normalizes internally for off-chain recovery, but
+            // on-chain ecrecover(hash, v=0, r, s) returns address(0) and fails.
+            v: if v < 27 { v + 27 } else { v },
         }
     }
 
@@ -437,13 +437,22 @@ mod tests {
         assert!(Signature::from_bytes(SigningScheme::EthSign, &[0u8; 20]).is_err());
         assert!(Signature::from_bytes(SigningScheme::PreSign, &[0u8; 32]).is_err());
 
+        // Note: v=0 in input bytes gets normalized to v=27 for ecrecover compatibility
         assert_eq!(
             Signature::from_bytes(SigningScheme::Eip712, &[0u8; 65]).unwrap(),
-            Signature::default_with(SigningScheme::Eip712)
+            Signature::Eip712(EcdsaSignature {
+                r: B256::ZERO,
+                s: B256::ZERO,
+                v: 27,
+            })
         );
         assert_eq!(
             Signature::from_bytes(SigningScheme::EthSign, &[0u8; 65]).unwrap(),
-            Signature::default_with(SigningScheme::EthSign)
+            Signature::EthSign(EcdsaSignature {
+                r: B256::ZERO,
+                s: B256::ZERO,
+                v: 27,
+            })
         );
         assert_eq!(
             Signature::from_bytes(SigningScheme::PreSign, &[]).unwrap(),
@@ -492,27 +501,31 @@ mod tests {
     fn deserialize_and_back() {
         for (signature, json) in [
             (
-                Signature::Eip712(Default::default()),
+                Signature::Eip712(EcdsaSignature {
+                    r: B256::ZERO,
+                    s: B256::ZERO,
+                    v: 27, // 0x1b - v is normalized from input
+                }),
                 json!({
                     "signingScheme": "eip712",
                     "signature": "0x\
                         0000000000000000000000000000000000000000000000000000000000000000\
                         0000000000000000000000000000000000000000000000000000000000000000\
-                        00",
+                        1b",
                 }),
             ),
             (
                 Signature::EthSign(EcdsaSignature {
                     r: B256::repeat_byte(1),
                     s: B256::repeat_byte(2),
-                    v: 3,
+                    v: 30, // v=3 gets normalized to 3+27=30
                 }),
                 json!({
                     "signingScheme": "ethsign",
                     "signature": "0x\
                         0101010101010101010101010101010101010101010101010101010101010101\
                         0202020202020202020202020202020202020202020202020202020202020202\
-                        03",
+                        1e",
                 }),
             ),
             (
@@ -627,5 +640,46 @@ mod tests {
             recovered_ethsign.message,
             hashed_ethsign_message(&domain_separator, &struct_hash)
         );
+    }
+
+    #[test]
+    fn ecdsa_signature_v_normalization() {
+        // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover expects
+        // v = 27 or 28. This test verifies that v values are normalized correctly.
+
+        // v = 0 should be normalized to 27
+        let mut bytes_v0 = [0u8; 65];
+        bytes_v0[64] = 0;
+        let sig = EcdsaSignature::from_bytes(&bytes_v0);
+        assert_eq!(sig.v, 27);
+        assert_eq!(sig.to_bytes()[64], 27);
+
+        // v = 1 should be normalized to 28
+        let mut bytes_v1 = [0u8; 65];
+        bytes_v1[64] = 1;
+        let sig = EcdsaSignature::from_bytes(&bytes_v1);
+        assert_eq!(sig.v, 28);
+        assert_eq!(sig.to_bytes()[64], 28);
+
+        // v = 27 should stay 27
+        let mut bytes_v27 = [0u8; 65];
+        bytes_v27[64] = 27;
+        let sig = EcdsaSignature::from_bytes(&bytes_v27);
+        assert_eq!(sig.v, 27);
+        assert_eq!(sig.to_bytes()[64], 27);
+
+        // v = 28 should stay 28
+        let mut bytes_v28 = [0u8; 65];
+        bytes_v28[64] = 28;
+        let sig = EcdsaSignature::from_bytes(&bytes_v28);
+        assert_eq!(sig.v, 28);
+        assert_eq!(sig.to_bytes()[64], 28);
+
+        // Verify normalization also works through Signature::from_bytes
+        let sig = Signature::from_bytes(SigningScheme::Eip712, &bytes_v0).unwrap();
+        assert_eq!(sig.to_bytes()[64], 27);
+
+        let sig = Signature::from_bytes(SigningScheme::EthSign, &bytes_v1).unwrap();
+        assert_eq!(sig.to_bytes()[64], 28);
     }
 }
