@@ -12,8 +12,7 @@ use {
     },
     anyhow::anyhow,
     chain::Chain,
-    ethcontract::errors::ExecutionError,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         gas_price_estimation::Eip1559EstimationExt,
@@ -73,8 +72,6 @@ impl Rpc {
 
 #[derive(Debug, Error)]
 pub enum RpcError {
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
     #[error("alloy transport error: {0:?}")]
     Alloy(#[from] alloy::transports::TransportError),
     #[error("unsupported chain")]
@@ -161,7 +158,7 @@ impl Ethereum {
     /// the provided label.
     pub fn with_metric_label(&self, label: String) -> Self {
         Self {
-            web3: ethrpc::instrumented::instrument_with_label(&self.web3, label),
+            web3: self.web3.labeled(label),
             ..self.clone()
         }
     }
@@ -326,10 +323,6 @@ pub enum Error {
     ContractRpc(#[from] alloy::contract::Error),
     #[error("alloy rpc error: {0:?}")]
     Rpc(#[from] alloy::transports::RpcError<TransportErrorKind>),
-    #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
     #[error("gas price estimation error: {0}")]
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
@@ -342,11 +335,6 @@ impl Error {
     pub fn is_revert(&self) -> bool {
         // This behavior is node dependent
         match self {
-            Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
-            Error::Web3(inner) => {
-                let error = ExecutionError::from(inner.clone());
-                matches!(error, ExecutionError::Revert(_))
-            }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
             Error::ContractRpc(_) => true,
@@ -362,7 +350,6 @@ impl Error {
 impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
-            contracts::Error::Method(err) => Self::Method(err),
             contracts::Error::Rpc(err) => Self::ContractRpc(err),
         }
     }
@@ -372,7 +359,6 @@ impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
             SimulationError::Method(err) => Self::ContractRpc(err),
-            SimulationError::Web3(err) => Self::Web3(err),
         }
     }
 }

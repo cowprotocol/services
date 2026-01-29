@@ -178,15 +178,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(
-        &args.shared.ethrpc,
-        &http_factory,
-        &args.shared.node_url,
-        "base",
-    );
-    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
+    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let simulation_web3 = args
+        .shared
+        .simulation_node_url
+        .as_ref()
+        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .alloy
@@ -334,12 +331,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         CachingDetector::new(
             Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(
-                    &args.shared.ethrpc,
-                    &http_factory,
-                    tracing_node_url,
-                    "trace",
-                ),
+                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
                 *eth.contracts().settlement().address(),
                 finder,
             )),
@@ -750,12 +742,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::ethrpc::web3(
-        &args.shared.ethrpc,
-        &http_factory,
-        &args.shared.node_url,
-        "base",
-    );
+    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let weth = WETH9::Instance::deployed(&web3.alloy)
         .await
         .expect("couldn't find deployed WETH contract");
