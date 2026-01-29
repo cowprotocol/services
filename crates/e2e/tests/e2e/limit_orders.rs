@@ -63,7 +63,7 @@ async fn local_node_no_liquidity_limit_order() {
 #[tokio::test]
 #[ignore]
 async fn local_node_limit_order_with_haircut() {
-    run_test(limit_order_with_haircut_test).await;
+    run_test(sell_order_with_haircut_test).await;
 }
 
 /// Test that buy orders with haircut configured still execute on-chain.
@@ -1185,7 +1185,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 /// Test that a limit order with haircut configured still executes on-chain.
 /// The haircut adjusts clearing prices to report lower surplus, but the order
 /// should still be fillable since the limit price allows for enough slack.
-async fn limit_order_with_haircut_test(web3: Web3) {
+async fn sell_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
