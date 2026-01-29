@@ -499,35 +499,8 @@ mod tests {
 
     #[test]
     fn deserialize_and_back() {
+        // Test round-trip for non-ECDSA signatures (no normalization needed)
         for (signature, json) in [
-            (
-                Signature::Eip712(EcdsaSignature {
-                    r: B256::ZERO,
-                    s: B256::ZERO,
-                    v: 27, // 0x1b - v is normalized from input
-                }),
-                json!({
-                    "signingScheme": "eip712",
-                    "signature": "0x\
-                        0000000000000000000000000000000000000000000000000000000000000000\
-                        0000000000000000000000000000000000000000000000000000000000000000\
-                        1b",
-                }),
-            ),
-            (
-                Signature::EthSign(EcdsaSignature {
-                    r: B256::repeat_byte(1),
-                    s: B256::repeat_byte(2),
-                    v: 30, // v=3 gets normalized to 3+27=30
-                }),
-                json!({
-                    "signingScheme": "ethsign",
-                    "signature": "0x\
-                        0101010101010101010101010101010101010101010101010101010101010101\
-                        0202020202020202020202020202020202020202020202020202020202020202\
-                        1e",
-                }),
-            ),
             (
                 Signature::Eip1271(vec![1, 2, 3]),
                 json!({
@@ -553,6 +526,57 @@ mod tests {
             assert_eq!(signature, serde_json::from_value(json.clone()).unwrap());
             assert_json_matches!(json, json!(signature));
         }
+
+        // Test ECDSA signature deserialization with v normalization.
+        // Input v=0x00 normalizes to v=27, so serialization outputs v=0x1b.
+        let input_json = json!({
+            "signingScheme": "eip712",
+            "signature": "0x\
+                0000000000000000000000000000000000000000000000000000000000000000\
+                0000000000000000000000000000000000000000000000000000000000000000\
+                00",
+        });
+        let expected_signature = Signature::Eip712(EcdsaSignature {
+            r: B256::ZERO,
+            s: B256::ZERO,
+            v: 27, // normalized from v=0
+        });
+        let expected_output_json = json!({
+            "signingScheme": "eip712",
+            "signature": "0x\
+                0000000000000000000000000000000000000000000000000000000000000000\
+                0000000000000000000000000000000000000000000000000000000000000000\
+                1b",
+        });
+
+        let deserialized: Signature = serde_json::from_value(input_json).unwrap();
+        assert_eq!(deserialized, expected_signature);
+        assert_json_matches!(json!(deserialized), expected_output_json);
+
+        // Test EthSign with v=3 normalizing to v=30 (3+27)
+        let input_json = json!({
+            "signingScheme": "ethsign",
+            "signature": "0x\
+                0101010101010101010101010101010101010101010101010101010101010101\
+                0202020202020202020202020202020202020202020202020202020202020202\
+                03",
+        });
+        let expected_signature = Signature::EthSign(EcdsaSignature {
+            r: B256::repeat_byte(1),
+            s: B256::repeat_byte(2),
+            v: 30, // normalized from v=3
+        });
+        let expected_output_json = json!({
+            "signingScheme": "ethsign",
+            "signature": "0x\
+                0101010101010101010101010101010101010101010101010101010101010101\
+                0202020202020202020202020202020202020202020202020202020202020202\
+                1e",
+        });
+
+        let deserialized: Signature = serde_json::from_value(input_json).unwrap();
+        assert_eq!(deserialized, expected_signature);
+        assert_json_matches!(json!(deserialized), expected_output_json);
     }
 
     #[test]
