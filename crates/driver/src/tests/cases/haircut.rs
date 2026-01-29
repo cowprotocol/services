@@ -17,8 +17,8 @@ use {
 /// The haircut adjusts clearing prices to report lower output amounts, making
 /// the bid more conservative.
 ///
-/// Also verifies that the reported sell amount never exceeds the user's signed
-/// sell amount - haircut should reduce surplus, not inflate what the user pays.
+/// Also verifies that the reported sell amount matches the user's signed
+/// sell amount exactly (fill-or-kill requires exact execution).
 #[tokio::test]
 #[ignore]
 async fn order_haircut_reduces_score() {
@@ -82,8 +82,8 @@ async fn order_haircut_reduces_score() {
         percentage
     );
 
-    // Verify that reported sell amount doesn't exceed signed amount.
-    // This catches a bug where haircut was incorrectly added to sell_amount.
+    // Verify that reported sell amount matches signed amount exactly.
+    // Fill-or-kill orders require exact execution.
     let solution = solve_with_haircut.solution();
     let orders = solution.get("orders").unwrap().as_object().unwrap();
     for (_uid, order_data) in orders {
@@ -99,9 +99,9 @@ async fn order_haircut_reduces_score() {
             .unwrap();
 
         assert!(
-            executed_sell <= signed_sell_amount,
-            "Reported sell amount {} exceeds signed amount {}. Haircut should reduce surplus, not \
-             inflate sell amount!",
+            executed_sell == signed_sell_amount,
+            "Sell order: executedSell {} does not match signed sell amount {} (fill-or-kill \
+             requires exact execution)",
             executed_sell,
             signed_sell_amount
         );
@@ -122,7 +122,7 @@ async fn order_haircut_reduces_score() {
 /// directly to surplus.
 ///
 /// Also verifies that:
-/// - `executedBuy >= signedBuyAmount` (user gets at least what they signed for)
+/// - `executedBuy == signedBuyAmount` (fill-or-kill must execute exactly)
 /// - `executedSell <= sellLimit` (don't take more than user's maximum)
 #[tokio::test]
 #[ignore]
@@ -195,7 +195,7 @@ async fn buy_order_haircut() {
     );
 
     // Verify buy order constraints:
-    // - User gets at least what they signed for (executedBuy >= signedBuyAmount)
+    // - Fill-or-kill must execute exactly (executedBuy == signedBuyAmount)
     // - Don't take more than user's maximum (executedSell <= sellLimit)
     let solution = solve_with_haircut.solution();
     let orders = solution.get("orders").unwrap().as_object().unwrap();
@@ -217,8 +217,9 @@ async fn buy_order_haircut() {
             .unwrap();
 
         assert!(
-            executed_buy >= signed_buy_amount,
-            "Buy order: executedBuy {} is less than signed buy amount {}",
+            executed_buy == signed_buy_amount,
+            "Buy order: executedBuy {} does not match signed buy amount {} (fill-or-kill requires \
+             exact execution)",
             executed_buy,
             signed_buy_amount
         );
