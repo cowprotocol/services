@@ -1,5 +1,6 @@
 use {
-    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::eips::eip1559::Eip1559Estimation,
     anyhow::{Result, anyhow},
     std::{
         future::Future,
@@ -35,10 +36,10 @@ impl PriorityGasPriceEstimating {
         Self { estimators }
     }
 
-    async fn prioritize<'a, T, F>(&'a self, operation: T) -> Result<GasPrice1559>
+    async fn prioritize<'a, T, F, O>(&'a self, operation: T) -> Result<O>
     where
         T: Fn(&'a dyn GasPriceEstimating) -> F,
-        F: Future<Output = Result<GasPrice1559>>,
+        F: Future<Output = Result<O>>,
     {
         for (i, estimator) in self.estimators.iter().enumerate() {
             match operation(estimator.estimator.as_ref()).await {
@@ -62,8 +63,12 @@ impl PriorityGasPriceEstimating {
 
 #[async_trait::async_trait]
 impl GasPriceEstimating for PriorityGasPriceEstimating {
-    async fn estimate(&self) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
         self.prioritize(|estimator| estimator.estimate()).await
+    }
+
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        self.prioritize(|estimator| estimator.base_fee()).await
     }
 }
 
@@ -73,30 +78,12 @@ mod tests {
         crate::gas_price_estimation::{
             GasPriceEstimating,
             MockGasPriceEstimating,
-            price::GasPrice1559,
             priority::PriorityGasPriceEstimating,
         },
+        alloy::eips::eip1559::Eip1559Estimation,
         anyhow::anyhow,
         futures::future::FutureExt,
     };
-
-    // Copied from the source: https://github.com/ashleygwilliams/assert_approx_eq/blob/master/src/lib.rs
-    // should be removed as we move away from expressing gas in f64
-    macro_rules! assert_approx_eq {
-        ($a:expr, $b:expr) => {{
-            let eps = 1.0e-6;
-            let (a, b) = (&$a, &$b);
-            assert!(
-                (*a - *b).abs() < eps,
-                "assertion failed: `(left !== right)` (left: `{:?}`, right: `{:?}`, expect diff: \
-                 `{:?}`, real diff: `{:?}`)",
-                *a,
-                *b,
-                eps,
-                (*a - *b).abs()
-            );
-        }};
-    }
 
     #[test]
     fn prioritize_picks_first_if_first_succeeds() {
@@ -104,9 +91,9 @@ mod tests {
         let estimator_1 = MockGasPriceEstimating::new();
 
         estimator_0.expect_estimate().times(1).returning(|| {
-            Ok(GasPrice1559 {
-                base_fee_per_gas: 1.0,
-                ..Default::default()
+            Ok(Eip1559Estimation {
+                max_fee_per_gas: 10,
+                max_priority_fee_per_gas: 0,
             })
         });
 
@@ -126,16 +113,16 @@ mod tests {
             .times(1)
             .returning(|| Err(anyhow!("")));
         estimator_1.expect_estimate().times(1).returning(|| {
-            Ok(GasPrice1559 {
-                base_fee_per_gas: 2.0,
-                ..Default::default()
+            Ok(Eip1559Estimation {
+                max_fee_per_gas: 10,
+                max_priority_fee_per_gas: 0,
             })
         });
 
         let priority =
             PriorityGasPriceEstimating::new(vec![Box::new(estimator_0), Box::new(estimator_1)]);
         let result = priority.estimate().now_or_never().unwrap().unwrap();
-        assert_approx_eq!(result.base_fee_per_gas, 2.0);
+        assert_eq!(result.max_fee_per_gas, 10);
     }
 
     #[test]
