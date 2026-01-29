@@ -242,7 +242,7 @@ fn default_retry_interval() -> Duration {
     Duration::from_secs(2)
 }
 
-/// Bump priority fee every 2 blocks (~24 seconds on mainnet)
+/// Bump priority fee every N blocks (~12 seconds per on mainnet)
 fn default_gas_bump_interval() -> u64 {
     1
 }
