@@ -49,25 +49,24 @@ pub async fn get_trades_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<QueryParams>,
 ) -> Response {
-    let request_result = query.validate();
-    match request_result {
-        Ok(trade_filter) => {
-            let result = state
-                .database_read
-                .trades(&trade_filter)
-                .await
-                .context("get_trades");
-            match result {
-                Ok(reply) => (StatusCode::OK, Json(reply)).into_response(),
-                Err(err) => {
-                    tracing::error!(?err, "get_trades");
-                    crate::api::internal_error_reply()
-                }
-            }
-        }
+    let trade_filter = match query.validate() {
+        Ok(trade_filter) => trade_filter,
         Err(TradeFilterError::InvalidFilter(msg)) => {
             let err = error("InvalidTradeFilter", msg);
-            (StatusCode::BAD_REQUEST, err).into_response()
+            return (StatusCode::BAD_REQUEST, err).into_response();
+        }
+    };
+
+    let result = state
+        .database_read
+        .trades(&trade_filter)
+        .await
+        .context("get_trades");
+    match result {
+        Ok(reply) => (StatusCode::OK, Json(reply)).into_response(),
+        Err(err) => {
+            tracing::error!(?err, "get_trades");
+            crate::api::internal_error_reply()
         }
     }
 }
