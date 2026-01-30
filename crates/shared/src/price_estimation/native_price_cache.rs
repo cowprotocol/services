@@ -96,13 +96,27 @@ pub struct CacheStorage {
     max_age: Duration,
     /// Tokens that should be prioritized during maintenance updates.
     high_priority: Mutex<IndexSet<Address>>,
+    // TODO remove when implementing a less hacky solution
+    /// Maps a requested token to an approximating token. If the system
+    /// wants to get the native price for the requested token the native
+    /// price of the approximating token should be fetched and returned instead.
+    /// This can be useful for tokens that are hard to route but are pegged to
+    /// the same underlying asset so approximating their native prices is deemed
+    /// safe (e.g. csUSDL => Dai).
+    /// It's very important that the 2 tokens have the same number of decimals.
+    /// After startup this is a read only value.
+    approximation_tokens: HashMap<Address, Address>,
 }
 
 impl CacheStorage {
     /// Creates a new cache with the given max age for entries and initial
     /// prices. Entries are initialized with random ages to avoid expiration
     /// spikes.
-    fn new(max_age: Duration, initial_prices: HashMap<Address, BigDecimal>) -> Arc<Self> {
+    fn new(
+        max_age: Duration,
+        initial_prices: HashMap<Address, BigDecimal>,
+        approximation_tokens: HashMap<Address, Address>,
+    ) -> Arc<Self> {
         let mut rng = rand::thread_rng();
         let now = std::time::Instant::now();
 
@@ -132,6 +146,7 @@ impl CacheStorage {
             cache: Mutex::new(cache),
             max_age,
             high_priority: Default::default(),
+            approximation_tokens,
         })
     }
 
@@ -142,9 +157,10 @@ impl CacheStorage {
     pub fn new_with_maintenance(
         max_age: Duration,
         initial_prices: HashMap<Address, BigDecimal>,
+        approximation_tokens: HashMap<Address, Address>,
         config: MaintenanceConfig,
     ) -> Arc<Self> {
-        let cache = Self::new(max_age, initial_prices);
+        let cache = Self::new(max_age, initial_prices, approximation_tokens);
         spawn_maintenance_task(&cache, config);
         cache
     }
@@ -157,13 +173,19 @@ impl CacheStorage {
     pub fn new_without_maintenance(
         max_age: Duration,
         initial_prices: HashMap<Address, BigDecimal>,
+        approximation_tokens: HashMap<Address, Address>,
     ) -> Arc<Self> {
-        Self::new(max_age, initial_prices)
+        Self::new(max_age, initial_prices, approximation_tokens)
     }
 
     /// Returns the max age configuration for this cache.
     pub fn max_age(&self) -> Duration {
         self.max_age
+    }
+
+    /// Returns the approximation tokens mapping.
+    pub fn approximation_tokens(&self) -> &HashMap<Address, Address> {
+        &self.approximation_tokens
     }
 
     /// Returns the number of entries in the cache.
@@ -365,13 +387,14 @@ impl CacheStorage {
         let estimates = tokens.iter().map(move |token| {
             let estimator = estimator.clone();
             let token = *token;
+            let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
             async move {
                 let result = self
                     .estimate_with_cache_update(
                         token,
                         RequiresUpdatingPrices::DontCare,
                         KeepPriceUpdated::Yes,
-                        |_| estimator.estimate_native_price(token, request_timeout),
+                        |_| estimator.estimate_native_price(token_to_fetch, request_timeout),
                     )
                     .await;
                 (token, result)
@@ -477,16 +500,6 @@ pub struct CachingNativePriceEstimator {
     cache: NativePriceCache,
     estimator: Arc<dyn NativePriceEstimating>,
     concurrent_requests: usize,
-    // TODO remove when implementing a less hacky solution
-    /// Maps a requested token to an approximating token. If the system
-    /// wants to get the native price for the requested token the native
-    /// price of the approximating token should be fetched and returned instead.
-    /// This can be useful for tokens that are hard to route but are pegged to
-    /// the same underlying asset so approximating their native prices is deemed
-    /// safe (e.g. csUSDL => Dai).
-    /// It's very important that the 2 tokens have the same number of decimals.
-    /// After startup this is a read only value.
-    approximation_tokens: HashMap<Address, Address>,
     require_updating_prices: RequiresUpdatingPrices,
 }
 
@@ -574,14 +587,12 @@ impl CachingNativePriceEstimator {
         estimator: Arc<dyn NativePriceEstimating>,
         cache: NativePriceCache,
         concurrent_requests: usize,
-        approximation_tokens: HashMap<Address, Address>,
         require_updating_prices: RequiresUpdatingPrices,
     ) -> Self {
         Self {
             estimator,
             cache,
             concurrent_requests,
-            approximation_tokens,
             require_updating_prices,
         }
     }
@@ -680,7 +691,11 @@ impl CachingNativePriceEstimator {
 
     /// Fetches a single price (without caching).
     async fn fetch_price(&self, token: Address, timeout: Duration) -> NativePriceEstimateResult {
-        let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
+        let token_to_fetch = *self
+            .cache
+            .approximation_tokens()
+            .get(&token)
+            .unwrap_or(&token);
         self.estimator
             .estimate_native_price(token_to_fetch, timeout)
             .await
@@ -793,13 +808,15 @@ mod tests {
 
         let prices =
             HashMap::from_iter((0..10).map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())));
-        let cache =
-            CacheStorage::new_without_maintenance(Duration::from_secs(MAX_AGE_SECS), prices);
+        let cache = CacheStorage::new_without_maintenance(
+            Duration::from_secs(MAX_AGE_SECS),
+            prices,
+            Default::default(),
+        );
         let estimator = CachingNativePriceEstimator::new(
             Arc::new(inner),
             cache,
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -831,9 +848,12 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new(
             Arc::new(inner),
-            CacheStorage::new_without_maintenance(Duration::from_millis(30), Default::default()),
+            CacheStorage::new_without_maintenance(
+                Duration::from_millis(30),
+                Default::default(),
+                Default::default(),
+            ),
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -866,13 +886,16 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new(
             Arc::new(inner),
-            CacheStorage::new_without_maintenance(Duration::from_millis(30), Default::default()),
-            1,
             // set token approximations for tokens 1 and 2
-            HashMap::from([
-                (Address::with_last_byte(1), Address::with_last_byte(100)),
-                (Address::with_last_byte(2), Address::with_last_byte(200)),
-            ]),
+            CacheStorage::new_without_maintenance(
+                Duration::from_millis(30),
+                Default::default(),
+                HashMap::from([
+                    (Address::with_last_byte(1), Address::with_last_byte(100)),
+                    (Address::with_last_byte(2), Address::with_last_byte(200)),
+                ]),
+            ),
+            1,
             RequiresUpdatingPrices::Yes,
         );
 
@@ -918,9 +941,12 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new(
             Arc::new(inner),
-            CacheStorage::new_without_maintenance(Duration::from_millis(30), Default::default()),
+            CacheStorage::new_without_maintenance(
+                Duration::from_millis(30),
+                Default::default(),
+                Default::default(),
+            ),
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -986,9 +1012,12 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new(
             Arc::new(inner),
-            CacheStorage::new_without_maintenance(Duration::from_millis(100), Default::default()),
+            CacheStorage::new_without_maintenance(
+                Duration::from_millis(100),
+                Default::default(),
+                Default::default(),
+            ),
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -1055,9 +1084,12 @@ mod tests {
 
         let estimator = CachingNativePriceEstimator::new(
             Arc::new(inner),
-            CacheStorage::new_without_maintenance(Duration::from_millis(30), Default::default()),
+            CacheStorage::new_without_maintenance(
+                Duration::from_millis(30),
+                Default::default(),
+                Default::default(),
+            ),
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -1105,6 +1137,7 @@ mod tests {
         let cache = CacheStorage::new_with_maintenance(
             Duration::from_millis(30),
             Default::default(),
+            Default::default(),
             MaintenanceConfig {
                 estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
@@ -1119,7 +1152,6 @@ mod tests {
             Arc::new(on_demand),
             cache,
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -1168,6 +1200,7 @@ mod tests {
         let cache = CacheStorage::new_with_maintenance(
             Duration::from_millis(30),
             Default::default(),
+            Default::default(),
             MaintenanceConfig {
                 estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
@@ -1182,7 +1215,6 @@ mod tests {
             Arc::new(on_demand),
             cache,
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -1236,6 +1268,7 @@ mod tests {
         let cache = CacheStorage::new_with_maintenance(
             Duration::from_millis(30),
             Default::default(),
+            Default::default(),
             MaintenanceConfig {
                 estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
@@ -1250,7 +1283,6 @@ mod tests {
             Arc::new(on_demand),
             cache,
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
 
@@ -1286,8 +1318,11 @@ mod tests {
 
         // Create a cache and populate it directly with Auction-sourced entries
         // (since maintenance only updates Auction entries)
-        let cache =
-            CacheStorage::new_without_maintenance(Duration::from_secs(10), Default::default());
+        let cache = CacheStorage::new_without_maintenance(
+            Duration::from_secs(10),
+            Default::default(),
+            Default::default(),
+        );
         cache.insert(
             t0,
             CachedResult::new(Ok(0.), now, now, Default::default(), KeepPriceUpdated::Yes),

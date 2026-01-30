@@ -959,9 +959,12 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Arc::new(native_price_estimator),
-            CacheStorage::new_without_maintenance(Duration::from_secs(10), Default::default()),
+            CacheStorage::new_without_maintenance(
+                Duration::from_secs(10),
+                Default::default(),
+                Default::default(),
+            ),
             3,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
@@ -1051,6 +1054,7 @@ mod tests {
         let cache = CacheStorage::new_with_maintenance(
             Duration::from_secs(10),
             Default::default(),
+            Default::default(),
             shared::price_estimation::native_price_cache::MaintenanceConfig {
                 estimator: maintenance_estimator.clone(),
                 // Short interval to trigger background fetch quickly
@@ -1065,7 +1069,6 @@ mod tests {
             maintenance_estimator,
             cache,
             1,
-            Default::default(),
             RequiresUpdatingPrices::Yes,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
@@ -1157,10 +1160,13 @@ mod tests {
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Arc::new(native_price_estimator),
-            CacheStorage::new_without_maintenance(Duration::from_secs(10), Default::default()),
-            3,
             // Set to use native price approximations for the following tokens
-            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            CacheStorage::new_without_maintenance(
+                Duration::from_secs(10),
+                Default::default(),
+                HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            ),
+            3,
             RequiresUpdatingPrices::Yes,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();

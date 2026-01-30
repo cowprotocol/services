@@ -390,11 +390,19 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .await?,
         );
 
+        let approximation_tokens = self
+            .args
+            .native_price_approximation_tokens
+            .iter()
+            .copied()
+            .collect();
+
         // Create cache with background maintenance, which only refreshes
         // Auction-sourced entries
         let cache = CacheStorage::new_with_maintenance(
             self.args.native_price_cache_max_age,
             initial_prices,
+            approximation_tokens,
             MaintenanceConfig {
                 estimator: estimator.clone(),
                 update_interval: self.args.native_price_cache_refresh,
@@ -416,18 +424,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         estimator: Arc<dyn NativePriceEstimating>,
         cache: Arc<CacheStorage>,
     ) -> Arc<CachingNativePriceEstimator> {
-        let approximation_tokens = self
-            .args
-            .native_price_approximation_tokens
-            .iter()
-            .copied()
-            .collect();
-
         Arc::new(CachingNativePriceEstimator::new(
             estimator,
             cache,
             self.args.native_price_cache_concurrent_requests,
-            approximation_tokens,
             RequiresUpdatingPrices::Yes,
         ))
     }
