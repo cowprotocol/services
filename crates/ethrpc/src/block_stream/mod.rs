@@ -56,6 +56,7 @@ pub struct BlockInfo {
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
+    pub base_fee: u64,
     /// When the system noticed the new block.
     pub observed_at: Instant,
 }
@@ -69,6 +70,7 @@ impl Default for BlockInfo {
             timestamp: Default::default(),
             gas_limit: Default::default(),
             gas_price: Default::default(),
+            base_fee: Default::default(),
             observed_at: Instant::now(),
         }
     }
@@ -89,19 +91,7 @@ impl TryFrom<Block> for BlockInfo {
     type Error = anyhow::Error;
 
     fn try_from(value: Block) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            number: value.header.number,
-            hash: value.header.hash,
-            parent_hash: value.header.parent_hash,
-            timestamp: value.header.timestamp,
-            gas_limit: U256::from(value.header.gas_limit),
-            gas_price: value
-                .header
-                .base_fee_per_gas
-                .map(U256::from)
-                .context("no gas price")?,
-            observed_at: Instant::now(),
-        })
+        value.header.try_into()
     }
 }
 
@@ -119,6 +109,9 @@ impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
                 .base_fee_per_gas
                 .map(U256::from)
                 .context("no gas price")?,
+            base_fee: value
+                .base_fee_per_gas
+                .ok_or_else(|| anyhow!("no base fee available"))?,
             observed_at: Instant::now(),
         })
     }

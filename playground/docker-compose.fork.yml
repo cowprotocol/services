@@ -80,7 +80,7 @@ services:
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
@@ -114,7 +114,7 @@ services:
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
-      - GAS_ESTIMATORS=Native,Web3
+      - GAS_ESTIMATORS=Web3
       - PRICE_ESTIMATORS=None
       - BLOCK_STREAM_POLL_INTERVAL=1s
       - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100

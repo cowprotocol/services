@@ -31,7 +31,7 @@ use {
 mod error;
 pub mod routes;
 
-pub const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
+const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub solvers: Vec<Solver>,
@@ -96,7 +96,6 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
-            let router = routes::notify(router);
 
             let bad_order_config = solver.bad_order_detection();
             let mut bad_tokens =

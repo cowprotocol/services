@@ -755,6 +755,7 @@ impl OrderValidating for OrderValidator {
                             },
                             data.kind,
                         ) {
+                            tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                             self.check_max_limit_orders(owner).await?;
                         }
                         (class, Some(quote))
@@ -786,6 +787,7 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
+                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                     self.check_max_limit_orders(owner).await?;
                 }
                 (OrderClass::Limit, None)
@@ -1002,14 +1004,7 @@ pub fn is_order_outside_market_price(
         }
     };
 
-    check().unwrap_or_else(|| {
-        tracing::warn!(
-            ?order,
-            ?quote,
-            "failed to check if order is outside market price"
-        );
-        true
-    })
+    check().unwrap_or(true)
 }
 
 pub struct InvalidSigningScheme;

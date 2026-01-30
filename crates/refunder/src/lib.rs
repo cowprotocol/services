@@ -12,7 +12,7 @@ use {
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
-    sqlx::PgPool,
+    sqlx::postgres::PgPoolOptions,
     std::{
         sync::{Arc, RwLock},
         time::{Duration, Instant},
@@ -54,7 +54,10 @@ pub async fn run(args: arguments::Arguments) {
         );
     }
 
-    let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
+    let pg_pool = PgPoolOptions::new()
+        .max_connections(args.database_pool.db_max_connections.get())
+        .connect_lazy(args.db_url.as_str())
+        .expect("failed to create database");
 
     let liveness = Arc::new(Liveness {
         // Program will be healthy at the start even if no loop was ran yet.

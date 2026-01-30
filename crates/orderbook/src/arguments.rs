@@ -28,6 +28,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
+
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
     #[clap(long, env)]
@@ -181,6 +184,7 @@ impl std::fmt::Display for Arguments {
             http_client,
             token_owner_finder,
             price_estimation,
+            database_pool,
             tracing_node_url,
             bind_address,
             min_order_validity_period,
@@ -211,6 +215,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{http_client}")?;
         write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
+        write!(f, "{database_pool}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;

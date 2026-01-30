@@ -364,25 +364,14 @@ pub enum TxStatus {
 }
 
 /// An onchain transaction.
-#[derive(Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
+    #[debug(ignore)]
     pub access_list: AccessList,
-}
-
-impl std::fmt::Debug for Tx {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tx")
-            .field("from", &self.from)
-            .field("to", &self.to)
-            .field("value", &self.value)
-            .field("input", &self.input)
-            .field("access_list", &self.access_list)
-            .finish()
-    }
 }
 
 impl From<Tx> for TransactionRequest {

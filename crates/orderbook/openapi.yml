@@ -39,6 +39,10 @@ servers:
     url: "https://api.cow.fi/bnb"
   - description: BNB (Staging)
     url: "https://barn.api.cow.fi/bnb"
+  - description: Plasma (Prod)
+    url: "https://api.cow.fi/plasma"
+  - description: Plasma (Staging)
+    url: "https://barn.api.cow.fi/plasma"
   - description: Sepolia (Prod)
     url: "https://api.cow.fi/sepolia"
   - description: Sepolia (Staging)

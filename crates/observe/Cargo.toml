@@ -7,7 +7,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 axum = { workspace = true }
-atty = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true, features = ["now"] }
 console-subscriber = { workspace = true, optional = true }
