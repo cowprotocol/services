@@ -1183,8 +1183,9 @@ async fn no_liquidity_limit_order(web3: Web3) {
 }
 
 /// Test that a limit order with haircut configured still executes on-chain.
-/// The haircut adjusts clearing prices to report lower surplus, but the order
-/// should still be fillable since the limit price allows for enough slack.
+/// The haircut adjusts scoring/quoting prices to report lower surplus, but
+/// does NOT affect on-chain execution. The order should execute at the same
+/// rate as without haircut.
 async fn sell_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -1299,9 +1300,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     .await
     .unwrap();
 
-    // Verify that haircut (positive slippage) remains in the settlement contract.
-    // The haircut is 500 bps (5%) of the executed sell amount (10 ETH).
-    // At 1:1 pool ratio, this is approximately 0.5 ETH worth of token_b.
+    // Verify that haircut does NOT affect on-chain execution.
+    // The haircut only affects scoring/quoting, so the trader should receive
+    // the full AMM output without any reduction.
     let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let settlement_balance_after = token_b
         .balanceOf(*onchain.contracts().gp_settlement.address())
@@ -1316,20 +1317,20 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .checked_sub(settlement_balance_before)
         .unwrap();
 
-    // Expected haircut: 5% of 10 ETH sell amount = 0.5 ETH (in buy token terms at
-    // ~1:1 ratio). Allow some tolerance for fees and rounding.
+    // Haircut should NOT go to settlement contract - it only affects scoring.
+    // Small amounts may still end up in settlement due to rounding.
     assert!(
-        settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
-        "Settlement contract should have received haircut (positive slippage) between 0.4 and 0.6 \
-         ETH, but got {}",
+        settlement_received < 0.1.eth(),
+        "Settlement contract should not have received haircut (haircut only affects scoring), but \
+         got {}",
         settlement_received
     );
 
-    // Expected trader amount: output (~9.87 ETH at 1:1 ratio with 0.3% fee)
-    // minus haircut (~0.5 ETH) = ~9.37 ETH. Allow tolerance for rounding.
+    // Expected trader amount: full AMM output (~9.87 ETH at 1:1 ratio with 0.3%
+    // fee). Haircut does NOT reduce what trader receives on-chain.
     assert!(
-        trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
-        "Trader should have received between 9 and 9.5 ETH (AMM output minus haircut), but got {}",
+        trader_received >= 9.5.eth() && trader_received <= 10u64.eth(),
+        "Trader should have received full AMM output (~9.87 ETH), but got {}",
         trader_received
     );
 
@@ -1379,6 +1380,7 @@ async fn sell_order_with_haircut_test(web3: Web3) {
 /// Test that a buy order with haircut configured executes correctly.
 /// For buy orders, the user signs for a specific buy_amount they want to
 /// receive, and sell_amount is the maximum they're willing to pay.
+/// Haircut only affects scoring/quoting, not on-chain execution.
 /// Verifies that reported amounts respect these constraints.
 async fn buy_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;

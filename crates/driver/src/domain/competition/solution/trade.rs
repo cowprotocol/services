@@ -102,6 +102,17 @@ impl Trade {
         }
     }
 
+    /// Custom clearing prices for scoring/quoting (includes haircut).
+    pub fn custom_prices_for_scoring(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<CustomClearingPrices, error::Math> {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.custom_prices_for_scoring(prices),
+            Trade::Jit(jit) => jit.custom_prices(prices), // JIT orders don't have haircut
+        }
+    }
+
     pub fn receiver(&self) -> eth::Address {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.order().receiver(),
@@ -246,9 +257,9 @@ impl Fulfillment {
         Ok(eth::TokenAmount(amount))
     }
 
-    /// Computes the haircut amount in sell token for use in custom_prices().
-    /// This applies haircut to pricing while keeping sell_amount() clean for
-    /// reporting.
+    /// Computes the haircut amount in sell token for use in
+    /// custom_prices_for_scoring(). This applies haircut to pricing while
+    /// keeping sell_amount() clean for reporting.
     fn haircut_in_sell_token(&self, prices: &ClearingPrices) -> Result<eth::U256, error::Math> {
         match self.order.side {
             order::Side::Sell => Ok(self.haircut_fee),
@@ -261,13 +272,26 @@ impl Fulfillment {
         }
     }
 
+    /// Custom clearing prices for on-chain encoding.
+    /// Does NOT include haircut - the on-chain execution should match reported
+    /// amounts.
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,
     ) -> Result<CustomClearingPrices, error::Math> {
-        // Include haircut in custom prices for quotes/scoring.
-        // This makes bids more conservative without affecting the actual
-        // reported sell_amount (which is used for user-facing reporting).
+        Ok(CustomClearingPrices {
+            sell: self.buy_amount(prices)?.into(),
+            buy: self.sell_amount(prices)?.into(),
+        })
+    }
+
+    /// Custom clearing prices for scoring/quoting.
+    /// Includes haircut to make bids more conservative without affecting
+    /// actual on-chain execution or reported amounts.
+    pub fn custom_prices_for_scoring(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<CustomClearingPrices, error::Math> {
         let haircut = self.haircut_in_sell_token(prices)?;
         Ok(CustomClearingPrices {
             sell: self.buy_amount(prices)?.into(),
