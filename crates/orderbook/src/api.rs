@@ -426,21 +426,6 @@ pub fn internal_error_reply() -> ApiReply {
         .into_response()
 }
 
-pub async fn response_body<B>(response: axum::http::Response<B>) -> Vec<u8>
-where
-    B: axum::body::HttpBody + Unpin,
-    B::Data: AsRef<[u8]>,
-    B::Error: Debug,
-{
-    let mut body = response.into_body();
-    let mut result = Vec::new();
-    while let Some(frame) = body.data().await {
-        let bytes = frame.unwrap();
-        result.extend_from_slice(bytes.as_ref());
-    }
-    result
-}
-
 /// Sets up basic metrics, cors and proper log tracing for all routes.
 /// Takes a router with versioned routes and nests under /api, then applies
 /// middleware.
@@ -516,6 +501,22 @@ impl From<PriceEstimationError> for PriceEstimationErrorWrapper {
     fn from(err: PriceEstimationError) -> Self {
         Self(err)
     }
+}
+
+#[cfg(test)]
+pub async fn response_body<B>(response: axum::http::Response<B>) -> Vec<u8>
+where
+    B: axum::body::HttpBody + Unpin,
+    B::Data: AsRef<[u8]>,
+    B::Error: Debug,
+{
+    let mut body = response.into_body();
+    let mut result = Vec::new();
+    while let Some(frame) = body.data().await {
+        let bytes = frame.unwrap();
+        result.extend_from_slice(bytes.as_ref());
+    }
+    result
 }
 
 #[cfg(test)]
