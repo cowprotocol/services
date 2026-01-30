@@ -14,11 +14,13 @@ use {
 };
 
 /// Test that haircut correctly reduces the solution score for sell orders.
-/// The haircut adjusts clearing prices to report lower output amounts, making
-/// the bid more conservative.
+/// The haircut reduces the reported buy_amount, making the bid more
+/// conservative.
 ///
-/// Also verifies that the reported sell amount matches the user's signed
-/// sell amount exactly (fill-or-kill requires exact execution).
+/// Verifies that:
+/// - `executedSell == signedSellAmount` (fill-or-kill requires exact execution)
+/// - `executedBuy` with haircut < `executedBuy` without haircut (haircut
+///   reduces output)
 #[tokio::test]
 #[ignore]
 async fn order_haircut_reduces_score() {
@@ -82,6 +84,22 @@ async fn order_haircut_reduces_score() {
         percentage
     );
 
+    // Extract executedBuy from baseline (no haircut)
+    let solution_no_haircut = solve_no_haircut.solution();
+    let orders_no_haircut = solution_no_haircut
+        .get("orders")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    let executed_buy_no_haircut = orders_no_haircut
+        .values()
+        .next()
+        .unwrap()
+        .get("executedBuy")
+        .and_then(|v| v.as_str())
+        .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
+        .unwrap();
+
     // Verify that reported sell amount matches signed amount exactly.
     // Fill-or-kill orders require exact execution.
     let solution = solve_with_haircut.solution();
@@ -89,6 +107,11 @@ async fn order_haircut_reduces_score() {
     for (_uid, order_data) in orders {
         let executed_sell = order_data
             .get("executedSell")
+            .and_then(|v| v.as_str())
+            .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
+            .unwrap();
+        let executed_buy = order_data
+            .get("executedBuy")
             .and_then(|v| v.as_str())
             .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
             .unwrap();
@@ -111,6 +134,14 @@ async fn order_haircut_reduces_score() {
             executed_sell,
             limit_sell
         );
+
+        // Verify haircut reduces executedBuy for sell orders
+        assert!(
+            executed_buy < executed_buy_no_haircut,
+            "Sell order: executedBuy with haircut {} should be less than without haircut {}",
+            executed_buy,
+            executed_buy_no_haircut
+        );
     }
 }
 
@@ -122,6 +153,8 @@ async fn order_haircut_reduces_score() {
 /// - `executedBuy == signedBuyAmount` (fill-or-kill must execute exactly)
 /// - `executedSell <= sellLimit` (haircut increases sell, but must stay within
 ///   limit)
+/// - `executedSell` with haircut > `executedSell` without haircut (haircut
+///   increases cost)
 #[tokio::test]
 #[ignore]
 async fn buy_order_haircut() {
@@ -192,6 +225,22 @@ async fn buy_order_haircut() {
         percentage
     );
 
+    // Extract executedSell from baseline (no haircut)
+    let solution_no_haircut = solve_no_haircut.solution();
+    let orders_no_haircut = solution_no_haircut
+        .get("orders")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    let executed_sell_no_haircut = orders_no_haircut
+        .values()
+        .next()
+        .unwrap()
+        .get("executedSell")
+        .and_then(|v| v.as_str())
+        .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
+        .unwrap();
+
     // Verify buy order constraints:
     // - Fill-or-kill must execute exactly (executedBuy == signedBuyAmount)
     // - Don't take more than user's maximum (executedSell <= sellLimit)
@@ -233,6 +282,14 @@ async fn buy_order_haircut() {
             "executedSell {} exceeds limitSell {}",
             executed_sell,
             limit_sell
+        );
+
+        // Verify haircut increases executedSell for buy orders
+        assert!(
+            executed_sell > executed_sell_no_haircut,
+            "Buy order: executedSell with haircut {} should be greater than without haircut {}",
+            executed_sell,
+            executed_sell_no_haircut
         );
     }
 }
