@@ -165,6 +165,8 @@ impl ProviderLabelingExt for Web3 {
         let client = RpcClient::with_random_id(transport_with_label, is_local);
         let alloy = ProviderBuilder::new()
             .wallet(self.wallet.clone())
+            // TODO: eventually remove this and all the other simple nonce managers
+            .with_simple_nonce_management()
             .connect_client(client)
             .erased();
 
