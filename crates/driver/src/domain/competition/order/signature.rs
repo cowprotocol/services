@@ -19,12 +19,14 @@ impl Signature {
         // that PreSign, for example, carries no data. Everything should be
         // reflected in the types!
         match self.scheme {
-            Scheme::Eip712 => model::signature::Signature::Eip712(EcdsaSignature::from_bytes(
-                self.data.0.as_slice().try_into().unwrap(),
-            )),
-            Scheme::EthSign => model::signature::Signature::EthSign(EcdsaSignature::from_bytes(
-                self.data.0.as_slice().try_into().unwrap(),
-            )),
+            Scheme::Eip712 => model::signature::Signature::Eip712(
+                EcdsaSignature::from_bytes(self.data.0.as_slice().try_into().unwrap())
+                    .expect("signature data was validated at order creation"),
+            ),
+            Scheme::EthSign => model::signature::Signature::EthSign(
+                EcdsaSignature::from_bytes(self.data.0.as_slice().try_into().unwrap())
+                    .expect("signature data was validated at order creation"),
+            ),
             Scheme::Eip1271 => model::signature::Signature::Eip1271(self.data.clone().into()),
             Scheme::PreSign => model::signature::Signature::PreSign,
         }
