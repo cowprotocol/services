@@ -406,7 +406,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             MaintenanceConfig {
                 estimator: estimator.clone(),
                 update_interval: self.args.native_price_cache_refresh,
-                update_size: Some(self.args.native_price_cache_max_update_size),
+                update_size: self.args.native_price_cache_max_update_size,
                 prefetch_time: self.args.native_price_prefetch_time,
                 concurrent_requests: self.args.native_price_cache_concurrent_requests,
                 quote_timeout: self.args.quote_timeout,

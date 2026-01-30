@@ -71,10 +71,10 @@ pub struct MaintenanceConfig {
     /// How often to run the maintenance task.
     pub update_interval: Duration,
     /// Maximum number of prices to update per maintenance cycle.
-    /// None means unlimited. High-priority tokens are updated first, so if this
+    /// 0 means unlimited. High-priority tokens are updated first, so if this
     /// limit is smaller than the number of outdated high-priority tokens,
     /// non-priority tokens won't be updated until the backlog clears.
-    pub update_size: Option<usize>,
+    pub update_size: usize,
     /// How early before expiration to refresh prices.
     pub prefetch_time: Duration,
     /// Number of concurrent price fetch requests.
@@ -429,7 +429,7 @@ struct CacheMaintenanceTask {
     /// Estimator used for maintenance updates.
     estimator: Arc<dyn NativePriceEstimating>,
     update_interval: Duration,
-    update_size: Option<usize>,
+    update_size: usize,
     prefetch_time: Duration,
     concurrent_requests: usize,
     quote_timeout: Duration,
@@ -467,7 +467,9 @@ impl CacheMaintenanceTask {
             .native_price_cache_outdated_entries
             .set(i64::try_from(outdated_entries.len()).unwrap_or(i64::MAX));
 
-        outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
+        if self.update_size > 0 {
+            outdated_entries.truncate(self.update_size);
+        }
 
         if outdated_entries.is_empty() {
             return;
@@ -1148,7 +1150,7 @@ mod tests {
             MaintenanceConfig {
                 estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
-                update_size: Some(1),
+                update_size: 1,
                 prefetch_time: Default::default(),
                 concurrent_requests: 1,
                 quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1211,7 +1213,7 @@ mod tests {
             MaintenanceConfig {
                 estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
-                update_size: None,
+                update_size: 0,
                 prefetch_time: Default::default(),
                 concurrent_requests: 1,
                 quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1279,7 +1281,7 @@ mod tests {
             MaintenanceConfig {
                 estimator: Arc::new(maintenance),
                 update_interval: Duration::from_millis(50),
-                update_size: None,
+                update_size: 0,
                 prefetch_time: Default::default(),
                 concurrent_requests: BATCH_SIZE,
                 quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
