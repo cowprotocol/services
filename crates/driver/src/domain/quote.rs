@@ -68,10 +68,8 @@ impl Quote {
     /// Compute clearing prices for the quote.
     ///
     /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. This uses the same approach as settlement encoding:
-    /// `custom_prices()` which internally uses `sell_amount()` and
-    /// `buy_amount()` to include the haircut in the effective trade
-    /// amounts.
+    /// when enabled. Uses `custom_prices()` which includes haircut effects
+    /// to make quotes conservative for users.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {

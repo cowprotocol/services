@@ -14,11 +14,13 @@ use {
 };
 
 /// Test that haircut correctly reduces the solution score for sell orders.
-/// The haircut adjusts clearing prices to report lower output amounts, making
-/// the bid more conservative.
+/// The haircut reduces the reported buy_amount, making the bid more
+/// conservative.
 ///
-/// Also verifies that the reported sell amount matches the user's signed
-/// sell amount exactly (fill-or-kill requires exact execution).
+/// Verifies that:
+/// - `executedSell == signedSellAmount` (fill-or-kill requires exact execution)
+/// - `executedBuy` with haircut < `executedBuy` without haircut (haircut
+///   reduces output)
 #[tokio::test]
 #[ignore]
 async fn order_haircut_reduces_score() {
@@ -82,6 +84,22 @@ async fn order_haircut_reduces_score() {
         percentage
     );
 
+    // Extract executedBuy from baseline (no haircut)
+    let solution_no_haircut = solve_no_haircut.solution();
+    let orders_no_haircut = solution_no_haircut
+        .get("orders")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    let executed_buy_no_haircut = orders_no_haircut
+        .values()
+        .next()
+        .unwrap()
+        .get("executedBuy")
+        .and_then(|v| v.as_str())
+        .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
+        .unwrap();
+
     // Verify that reported sell amount matches signed amount exactly.
     // Fill-or-kill orders require exact execution.
     let solution = solve_with_haircut.solution();
@@ -89,6 +107,11 @@ async fn order_haircut_reduces_score() {
     for (_uid, order_data) in orders {
         let executed_sell = order_data
             .get("executedSell")
+            .and_then(|v| v.as_str())
+            .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
+            .unwrap();
+        let executed_buy = order_data
+            .get("executedBuy")
             .and_then(|v| v.as_str())
             .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
             .unwrap();
@@ -111,19 +134,27 @@ async fn order_haircut_reduces_score() {
             executed_sell,
             limit_sell
         );
+
+        // Verify haircut reduces executedBuy for sell orders
+        assert!(
+            executed_buy < executed_buy_no_haircut,
+            "Sell order: executedBuy with haircut {} should be less than without haircut {}",
+            executed_buy,
+            executed_buy_no_haircut
+        );
     }
 }
 
 /// Test that haircut is properly applied for buy orders.
-/// For buy orders, the haircut reduces the effective buy amount, which
-/// increases the sell amount the user pays. This reduces surplus and thus the
-/// score. Note: The percentage reduction for buy orders differs from sell
-/// orders because the haircut is applied to the executed buy amount, not
-/// directly to surplus.
+/// For buy orders, the haircut increases the sell_amount the user pays.
+/// This reduces surplus and thus the score.
 ///
-/// Also verifies that:
+/// Verifies that:
 /// - `executedBuy == signedBuyAmount` (fill-or-kill must execute exactly)
-/// - `executedSell <= sellLimit` (don't take more than user's maximum)
+/// - `executedSell <= sellLimit` (haircut increases sell, but must stay within
+///   limit)
+/// - `executedSell` with haircut > `executedSell` without haircut (haircut
+///   increases cost)
 #[tokio::test]
 #[ignore]
 async fn buy_order_haircut() {
@@ -194,6 +225,22 @@ async fn buy_order_haircut() {
         percentage
     );
 
+    // Extract executedSell from baseline (no haircut)
+    let solution_no_haircut = solve_no_haircut.solution();
+    let orders_no_haircut = solution_no_haircut
+        .get("orders")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    let executed_sell_no_haircut = orders_no_haircut
+        .values()
+        .next()
+        .unwrap()
+        .get("executedSell")
+        .and_then(|v| v.as_str())
+        .and_then(|s| eth::U256::from_str_radix(s, 10).ok())
+        .unwrap();
+
     // Verify buy order constraints:
     // - Fill-or-kill must execute exactly (executedBuy == signedBuyAmount)
     // - Don't take more than user's maximum (executedSell <= sellLimit)
@@ -225,8 +272,8 @@ async fn buy_order_haircut() {
         );
         assert!(
             executed_sell <= sell_limit,
-            "Buy order: executedSell {} exceeds sell limit {}. Haircut should reduce surplus, not \
-             inflate sell amount!",
+            "Buy order: executedSell {} exceeds sell limit {}. Haircut increases sell_amount but \
+             it must still respect the user's limit!",
             executed_sell,
             sell_limit
         );
@@ -235,6 +282,14 @@ async fn buy_order_haircut() {
             "executedSell {} exceeds limitSell {}",
             executed_sell,
             limit_sell
+        );
+
+        // Verify haircut increases executedSell for buy orders
+        assert!(
+            executed_sell > executed_sell_no_haircut,
+            "Buy order: executedSell with haircut {} should be greater than without haircut {}",
+            executed_sell,
+            executed_sell_no_haircut
         );
     }
 }
