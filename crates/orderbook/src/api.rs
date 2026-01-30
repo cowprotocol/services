@@ -83,12 +83,12 @@ fn with_labelled_metric(
     Next<axum::body::Body>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
 + Clone {
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     move |req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
         Box::pin(async move {
             let timer = Instant::now();
             let response = next.run(req).await;
 
-            let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
             let status = response.status();
 
             // Track completed requests
