@@ -264,7 +264,7 @@ impl Fulfillment {
                     .ok_or(Math::Overflow)?
                     .checked_div(prices.buy)
                     .ok_or(Math::DivisionByZero)?;
-                base.checked_sub(haircut_in_buy).ok_or(Math::Overflow)?
+                base.checked_sub(haircut_in_buy).ok_or(Math::Negative)?
             }
         };
         Ok(eth::TokenAmount(amount))
