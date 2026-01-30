@@ -458,19 +458,11 @@ mod tests {
         // Note: v=0 in input bytes gets normalized to v=27 for ecrecover compatibility
         assert_eq!(
             Signature::from_bytes(SigningScheme::Eip712, &[0u8; 65]).unwrap(),
-            Signature::Eip712(EcdsaSignature {
-                r: B256::ZERO,
-                s: B256::ZERO,
-                v: 27,
-            })
+            Signature::default_with(SigningScheme::Eip712)
         );
         assert_eq!(
             Signature::from_bytes(SigningScheme::EthSign, &[0u8; 65]).unwrap(),
-            Signature::EthSign(EcdsaSignature {
-                r: B256::ZERO,
-                s: B256::ZERO,
-                v: 27,
-            })
+            Signature::default_with(SigningScheme::EthSign)
         );
         assert_eq!(
             Signature::from_bytes(SigningScheme::PreSign, &[]).unwrap(),
