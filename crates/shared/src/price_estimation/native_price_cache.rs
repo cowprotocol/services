@@ -244,46 +244,24 @@ impl CacheStorage {
     /// state).
     ///
     /// Returns None if the price is not cached, is expired, or is not ready to
-    /// use.
+    /// use. Also updates cache access metrics (hits/misses).
     fn get_ready_to_use_cached_price(
         &self,
         token: Address,
         now: Instant,
         required_updating_price: RequiresUpdatingPrices,
     ) -> Option<CachedResult> {
-        self.get_cached_price(token, now, required_updating_price)
-            .filter(|cached| cached.is_ready())
-    }
+        let cached = self
+            .get_cached_price(token, now, required_updating_price)
+            .filter(|cached| cached.is_ready());
 
-    /// Batch version of `get_ready_to_use_cached_price` that acquires the lock
-    /// once for all tokens, improving performance when looking up multiple
-    /// prices.
-    ///
-    /// Returns a HashMap of token addresses to their cached results (only for
-    /// tokens that have valid, ready-to-use cached prices).
-    fn get_ready_to_use_cached_prices(
-        &self,
-        tokens: &[Address],
-        now: Instant,
-        require_updating_price: RequiresUpdatingPrices,
-    ) -> HashMap<Address, CachedResult> {
-        let mut cache = self.cache.lock().unwrap();
-        let mut results = HashMap::with_capacity(tokens.len());
+        let label = if cached.is_some() { "hits" } else { "misses" };
+        Metrics::get()
+            .native_price_cache_access
+            .with_label_values(&[label])
+            .inc_by(1);
 
-        for token in tokens {
-            let cached_result = Self::get_cached_price_inner(
-                &mut cache,
-                *token,
-                now,
-                require_updating_price,
-                self.max_age,
-            );
-            if let Some(cached) = cached_result.filter(|c| c.is_ready()) {
-                results.insert(*token, cached);
-            }
-        }
-
-        results
+        cached
     }
 
     /// Insert or update a cached result.
@@ -619,29 +597,13 @@ impl CachingNativePriceEstimator {
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        let cached_results =
-            self.cache
-                .get_ready_to_use_cached_prices(tokens, now, self.require_updating_prices);
-
-        let hits = cached_results.len();
-        let misses = tokens.len().saturating_sub(hits);
-        let metrics = Metrics::get();
-        if hits > 0 {
-            metrics
-                .native_price_cache_access
-                .with_label_values(&["hits"])
-                .inc_by(hits as u64);
-        }
-        if misses > 0 {
-            metrics
-                .native_price_cache_access
-                .with_label_values(&["misses"])
-                .inc_by(misses as u64);
-        }
-
-        cached_results
-            .into_iter()
-            .map(|(token, cached)| (token, cached.result))
+        tokens
+            .iter()
+            .filter_map(|token| {
+                self.cache
+                    .get_ready_to_use_cached_price(*token, now, self.require_updating_prices)
+                    .map(|cached| (*token, cached.result))
+            })
             .collect()
     }
 
@@ -699,20 +661,17 @@ impl CachingNativePriceEstimator {
             RequiresUpdatingPrices::DontCare => KeepPriceUpdated::No,
         };
 
-        let estimates = tokens.iter().map(move |token| {
-            let token = *token;
-            async move {
-                let result = self
-                    .cache
-                    .estimate_with_cache_update(
-                        token,
-                        self.require_updating_prices,
-                        keep_updated,
-                        |_| self.fetch_price(token, request_timeout),
-                    )
-                    .await;
-                (token, result)
-            }
+        let estimates = tokens.iter().cloned().map(move |token| async move {
+            let result = self
+                .cache
+                .estimate_with_cache_update(
+                    token,
+                    self.require_updating_prices,
+                    keep_updated,
+                    |_| self.fetch_price(token, request_timeout),
+                )
+                .await;
+            (token, result)
         });
         futures::stream::iter(estimates)
             .buffered(self.concurrent_requests)
@@ -737,17 +696,10 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            let cached =
+            if let Some(cached) =
                 self.cache
-                    .get_ready_to_use_cached_price(token, now, self.require_updating_prices);
-
-            let label = if cached.is_some() { "hits" } else { "misses" };
-            Metrics::get()
-                .native_price_cache_access
-                .with_label_values(&[label])
-                .inc_by(1);
-
-            if let Some(cached) = cached {
+                    .get_ready_to_use_cached_price(token, now, self.require_updating_prices)
+            {
                 return cached.result;
             }
 
@@ -789,19 +741,11 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
         async move {
             let now = Instant::now();
             // Quote source doesn't upgrade or create entries, just read
-            let cached = self.0.cache.get_ready_to_use_cached_price(
+            if let Some(cached) = self.0.cache.get_ready_to_use_cached_price(
                 token,
                 now,
                 RequiresUpdatingPrices::DontCare,
-            );
-
-            let label = if cached.is_some() { "hits" } else { "misses" };
-            Metrics::get()
-                .native_price_cache_access
-                .with_label_values(&[label])
-                .inc_by(1);
-
-            if let Some(cached) = cached {
+            ) {
                 return cached.result;
             }
 
