@@ -494,7 +494,7 @@ impl Orderbook {
         self.database_replica.single_order(uid).await
     }
 
-    pub async fn get_orders(&self, uids: &[OrderUid]) -> Result<Vec<Option<Order>>> {
+    pub async fn get_orders(&self, uids: &[OrderUid]) -> Result<Vec<Order>> {
         self.database_replica.many_orders(uids).await
     }
 

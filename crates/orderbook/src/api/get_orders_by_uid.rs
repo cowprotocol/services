@@ -31,7 +31,7 @@ fn get_orders_by_uid_request()
         .map(|uids: Vec<OrderUid>| validate(uids))
 }
 
-pub fn get_orders_by_uid_response(result: Result<Vec<Option<Order>>>) -> super::ApiReply {
+pub fn get_orders_by_uid_response(result: Result<Vec<Order>>) -> super::ApiReply {
     let orders = match result {
         Ok(orders) => orders,
         Err(err) => {
