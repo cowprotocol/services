@@ -262,7 +262,7 @@ impl Default for EcdsaSignature {
         Self {
             r: B256::ZERO,
             s: B256::ZERO,
-            // Use normalized v value for Solidity ecrecover compatibility
+            // Use normalized v value (equivalent to 0) for Solidity ecrecover compatibility
             v: 27,
         }
     }
@@ -355,7 +355,6 @@ impl EcdsaSignature {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         // Unwrap because the only error is for invalid messages which we don't create.
         let signature = key.sign_hash_sync(&message).unwrap();
-        // Signing always produces valid v values (0, 1, 27, or 28), so unwrap is safe.
         Self::from_bytes(&signature.as_bytes()).expect("signing produces valid v values")
     }
 
@@ -480,7 +479,7 @@ mod tests {
 
     #[test]
     fn signature_to_bytes() {
-        // Default ECDSA signatures have normalized v = 27
+        // Default ECDSA signatures have normalized v = 27 (equivalent to 0)
         let mut expected_ecdsa = [0u8; 65];
         expected_ecdsa[64] = 27;
 

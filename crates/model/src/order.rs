@@ -1295,6 +1295,12 @@ mod tests {
             }),
             quote_id: Some(42),
         };
+
+        // Deserialization normalizes v=0 to v=27
+        let deserialized: OrderCreation = serde_json::from_value(input_json_v0).unwrap();
+        assert_eq!(deserialized, expected_order);
+
+        // Serialization outputs normalized v=0x1b
         let output_json_v27 = json!({
             "sellToken": "0x1111111111111111111111111111111111111111",
             "buyToken": "0x2222222222222222222222222222222222222222",
@@ -1315,12 +1321,6 @@ mod tests {
                           1b",
             "from": owner,
         });
-
-        // Deserialization normalizes v=0 to v=27
-        let deserialized: OrderCreation = serde_json::from_value(input_json_v0).unwrap();
-        assert_eq!(deserialized, expected_order);
-
-        // Serialization outputs normalized v=0x1b
         assert_json_matches!(json!(expected_order), output_json_v27);
     }
 
