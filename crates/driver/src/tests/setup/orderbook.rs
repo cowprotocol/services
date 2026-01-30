@@ -2,7 +2,9 @@ use {
     crate::{domain::competition::order::app_data::AppData, tests::setup::Order},
     app_data::AppDataDocument,
     axum::{
-        Extension, Json, Router,
+        Extension,
+        Json,
+        Router,
         extract::Path,
         http::StatusCode,
         response::{IntoResponse, Response},
