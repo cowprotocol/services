@@ -71,7 +71,9 @@ pub struct MaintenanceConfig {
     /// How often to run the maintenance task.
     pub update_interval: Duration,
     /// Maximum number of prices to update per maintenance cycle.
-    /// None means unlimited.
+    /// None means unlimited. High-priority tokens are updated first, so if this
+    /// limit is smaller than the number of outdated high-priority tokens,
+    /// non-priority tokens won't be updated until the backlog clears.
     pub update_size: Option<usize>,
     /// How early before expiration to refresh prices.
     pub prefetch_time: Duration,
@@ -95,6 +97,12 @@ pub struct CacheStorage {
     cache: Mutex<HashMap<Address, CachedResult>>,
     max_age: Duration,
     /// Tokens that should be prioritized during maintenance updates.
+    ///
+    /// These tokens are updated before non-priority tokens during each
+    /// maintenance cycle. Note: If the number of outdated high-priority tokens
+    /// exceeds `MaintenanceConfig::update_size`, only that many will be updated
+    /// per cycle (in priority order), and non-priority tokens won't be updated
+    /// until the high-priority backlog clears.
     high_priority: Mutex<IndexSet<Address>>,
     // TODO remove when implementing a less hacky solution
     /// Maps a requested token to an approximating token. If the system
