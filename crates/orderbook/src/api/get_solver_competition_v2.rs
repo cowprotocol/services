@@ -4,44 +4,42 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
-    model::{AuctionId, solver_competition_v2::Response},
+    model::{AuctionId, solver_competition_v2},
     std::sync::Arc,
 };
 
 pub async fn get_solver_competition_by_id_handler(
     State(state): State<Arc<AppState>>,
     Path(auction_id): Path<AuctionId>,
-) -> impl IntoResponse {
-    let result = state
-        .database_write
-        .load_competition_by_id(auction_id)
-        .await;
+) -> Response {
+    let result = state.database_read.load_competition_by_id(auction_id).await;
     response(result)
 }
 
 pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
-        .database_write
+        .database_read
         .load_competition_by_tx_hash(tx_hash)
         .await;
     response(result)
 }
 
-pub async fn get_solver_competition_latest_handler(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    let result = state.database_write.load_latest_competition().await;
+pub async fn get_solver_competition_latest_handler(State(state): State<Arc<AppState>>) -> Response {
+    let result = state.database_read.load_latest_competition().await;
     response(result)
 }
 
 fn response(
-    result: Result<Response, crate::solver_competition::LoadSolverCompetitionError>,
-) -> axum::response::Response {
+    result: Result<
+        solver_competition_v2::Response,
+        crate::solver_competition::LoadSolverCompetitionError,
+    >,
+) -> Response {
     match result {
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(LoadSolverCompetitionError::NotFound) => (
