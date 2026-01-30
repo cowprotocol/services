@@ -20,17 +20,13 @@ pub async fn post_quote_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<OrderQuoteRequest>,
 ) -> Response {
-    let result = state
-        .quotes
-        .calculate_quote(&request)
-        .await
-        .map_err(OrderQuoteErrorWrapper);
-    if let Err(ref err) = result {
-        tracing::warn!(%err, ?request, "post_quote error");
-    }
+    let result = state.quotes.calculate_quote(&request).await;
     match result {
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
-        Err(err) => err.into_response(),
+        Err(err) => {
+            tracing::warn!(%err, ?request, "post_quote error");
+            OrderQuoteErrorWrapper(err).into_response()
+        }
     }
 }
 
@@ -93,8 +89,13 @@ mod tests {
         model::{
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
-                OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
-                SellAmount, Validity,
+                OrderQuote,
+                OrderQuoteResponse,
+                OrderQuoteSide,
+                PriceQuality,
+                QuoteSigningScheme,
+                SellAmount,
+                Validity,
             },
         },
         number::nonzero::NonZeroU256,
