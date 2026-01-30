@@ -1,27 +1,29 @@
 use {
     crate::{
-        api::{ApiReply, AppState, error},
+        api::{AppState, error},
         orderbook::{AddOrderError, OrderReplacementError},
     },
     anyhow::Result,
-    axum::{Json, extract::State, http::StatusCode, response::IntoResponse},
+    axum::{
+        Json,
+        extract::State,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+    },
     model::{
         order::{AppdataFromMismatch, OrderCreation, OrderUid},
         quote::QuoteId,
         signature,
     },
     shared::order_validation::{
-        AppDataValidationError,
-        OrderValidToError,
-        PartialValidationError,
-        ValidationError,
+        AppDataValidationError, OrderValidToError, PartialValidationError, ValidationError,
     },
     std::sync::Arc,
 };
 
 pub struct PartialValidationErrorWrapper(pub PartialValidationError);
 impl IntoResponse for PartialValidationErrorWrapper {
-    fn into_response(self) -> ApiReply {
+    fn into_response(self) -> Response {
         match self.0 {
             PartialValidationError::UnsupportedBuyTokenDestination(dest) => (
                 StatusCode::BAD_REQUEST,
@@ -93,7 +95,7 @@ impl IntoResponse for PartialValidationErrorWrapper {
 
 pub struct AppDataValidationErrorWrapper(pub AppDataValidationError);
 impl IntoResponse for AppDataValidationErrorWrapper {
-    fn into_response(self) -> ApiReply {
+    fn into_response(self) -> Response {
         match self.0 {
             AppDataValidationError::Invalid(err) => (
                 StatusCode::BAD_REQUEST,
@@ -117,7 +119,7 @@ impl IntoResponse for AppDataValidationErrorWrapper {
 
 pub struct ValidationErrorWrapper(ValidationError);
 impl IntoResponse for ValidationErrorWrapper {
-    fn into_response(self) -> ApiReply {
+    fn into_response(self) -> Response {
         match self.0 {
             ValidationError::Partial(pre) => PartialValidationErrorWrapper(pre).into_response(),
             ValidationError::AppData(err) => AppDataValidationErrorWrapper(err).into_response(),
@@ -249,7 +251,7 @@ impl IntoResponse for ValidationErrorWrapper {
 }
 
 impl IntoResponse for AddOrderError {
-    fn into_response(self) -> ApiReply {
+    fn into_response(self) -> Response {
         match self {
             Self::OrderValidation(err) => ValidationErrorWrapper(err).into_response(),
             Self::DuplicatedOrder => (
@@ -287,7 +289,7 @@ impl IntoResponse for AddOrderError {
 }
 
 impl IntoResponse for OrderReplacementError {
-    fn into_response(self) -> super::ApiReply {
+    fn into_response(self) -> Response {
         match self {
             OrderReplacementError::InvalidSignature => (
                 StatusCode::BAD_REQUEST,
@@ -317,7 +319,7 @@ impl IntoResponse for OrderReplacementError {
 
 pub fn create_order_response(
     result: Result<(OrderUid, Option<QuoteId>), AddOrderError>,
-) -> ApiReply {
+) -> Response {
     match result {
         Ok((uid, _)) => (StatusCode::CREATED, Json(uid)).into_response(),
         Err(err) => err.into_response(),
@@ -327,7 +329,7 @@ pub fn create_order_response(
 pub async fn post_order_handler(
     State(state): State<Arc<AppState>>,
     Json(order): Json<OrderCreation>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
         .orderbook
         .add_order(order.clone())
@@ -356,7 +358,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
-        let expected= json!(
+        let expected = json!(
             "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
         );
         assert_eq!(body, expected);

@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     model::quote::NativeTokenPrice,
     std::sync::Arc,
@@ -13,7 +13,7 @@ use {
 pub async fn get_native_price_handler(
     State(state): State<Arc<AppState>>,
     Path(token): Path<Address>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
         .native_price_estimator
         .estimate_native_price(token, state.quote_timeout)

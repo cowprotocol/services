@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     model::order::{Order, OrderUid},
     std::sync::Arc,
@@ -13,12 +13,12 @@ use {
 pub async fn get_order_by_uid_handler(
     State(state): State<Arc<AppState>>,
     Path(uid): Path<OrderUid>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state.orderbook.get_order(&uid).await;
     get_order_by_uid_response(result)
 }
 
-pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> super::ApiReply {
+pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> Response {
     let order = match result {
         Ok(order) => order,
         Err(err) => {

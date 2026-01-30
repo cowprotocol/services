@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     serde_json::json,
     std::sync::Arc,
@@ -13,7 +13,7 @@ use {
 pub async fn get_total_surplus_handler(
     State(state): State<Arc<AppState>>,
     Path(user): Path<Address>,
-) -> impl IntoResponse {
+) -> Response {
     let surplus = state.database_read.total_surplus(&user).await;
     match surplus {
         Ok(surplus) => (

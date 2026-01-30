@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     std::sync::Arc,
 };
@@ -12,7 +12,7 @@ use {
 pub async fn get_token_metadata_handler(
     State(state): State<Arc<AppState>>,
     Path(token): Path<Address>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state.database_read.token_metadata(&token).await;
     match result {
         Ok(metadata) => (StatusCode::OK, Json(metadata)).into_response(),

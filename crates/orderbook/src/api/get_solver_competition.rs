@@ -16,7 +16,7 @@ use {
 pub async fn get_solver_competition_by_id_handler(
     State(state): State<Arc<AppState>>,
     Path(auction_id): Path<AuctionId>,
-) -> impl IntoResponse {
+) -> Response {
     let handler: &dyn SolverCompetitionStoring = &state.database_read;
     let result = handler.load_competition(Identifier::Id(auction_id)).await;
     response(result)
@@ -25,7 +25,7 @@ pub async fn get_solver_competition_by_id_handler(
 pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
-) -> impl IntoResponse {
+) -> Response {
     let handler: &dyn SolverCompetitionStoring = &state.database_read;
     let result = handler
         .load_competition(Identifier::Transaction(tx_hash))
@@ -33,9 +33,7 @@ pub async fn get_solver_competition_by_hash_handler(
     response(result)
 }
 
-pub async fn get_solver_competition_latest_handler(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn get_solver_competition_latest_handler(State(state): State<Arc<AppState>>) -> Response {
     let handler: &dyn SolverCompetitionStoring = &state.database_read;
     let result = handler.load_latest_competition().await;
     response(result)

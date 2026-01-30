@@ -318,12 +318,6 @@ pub fn handle_all_routes(
     finalize_router(api_router)
 }
 
-// ApiReply is now Response for axum compatibility
-pub type ApiReply = Response;
-
-// Note: Axum doesn't use rejections like warp did. Error handling is now done
-// through IntoResponse implementations in each endpoint.
-
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "api")]
 struct ApiMetrics {
@@ -418,7 +412,7 @@ pub fn rich_error(
     })
 }
 
-pub fn internal_error_reply() -> ApiReply {
+pub fn internal_error_reply() -> Response {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         error("InternalServerError", ""),

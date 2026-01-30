@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, Query, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     serde::Deserialize,
     std::sync::Arc,
@@ -20,7 +20,7 @@ pub async fn get_user_orders_handler(
     State(state): State<Arc<AppState>>,
     Path(owner): Path<Address>,
     Query(query): Query<QueryParams>,
-) -> impl IntoResponse {
+) -> Response {
     const DEFAULT_OFFSET: u64 = 0;
     const DEFAULT_LIMIT: u64 = 10;
     const MIN_LIMIT: u64 = 1;

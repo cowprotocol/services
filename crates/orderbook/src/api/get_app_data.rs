@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     std::sync::Arc,
 };
@@ -12,7 +12,7 @@ use {
 pub async fn get_app_data_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_app_data): Path<AppDataHash>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
         .database_read
         .get_full_app_data(&contract_app_data)

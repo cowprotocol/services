@@ -3,7 +3,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     model::order::OrderUid,
     std::sync::Arc,
@@ -12,7 +12,7 @@ use {
 pub async fn get_status_handler(
     State(state): State<Arc<AppState>>,
     Path(uid): Path<OrderUid>,
-) -> impl IntoResponse {
+) -> Response {
     let status = state.orderbook.get_order_status(&uid).await;
     match status {
         Ok(status) => (StatusCode::OK, Json(status)).into_response(),

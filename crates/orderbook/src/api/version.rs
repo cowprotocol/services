@@ -1,5 +1,8 @@
-use axum::{http::StatusCode, response::IntoResponse};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 
-pub async fn version_handler() -> impl IntoResponse {
-    (StatusCode::OK, env!("VERGEN_GIT_DESCRIBE"))
+pub async fn version_handler() -> Response {
+    (StatusCode::OK, env!("VERGEN_GIT_DESCRIBE")).into_response()
 }

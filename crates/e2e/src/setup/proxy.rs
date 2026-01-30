@@ -109,7 +109,7 @@ async fn handle_request(
     client: reqwest::Client,
     state: ProxyState,
     req: Request<Body>,
-) -> impl IntoResponse {
+) -> Response {
     let (parts, body) = req.into_parts();
 
     // Convert body to bytes once for reuse across retries

@@ -8,7 +8,7 @@ use {
     axum::{
         extract::{Query, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     model::order::OrderUid,
     serde::Deserialize,
@@ -48,7 +48,7 @@ impl QueryParams {
 pub async fn get_trades_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<QueryParams>,
-) -> impl IntoResponse {
+) -> Response {
     let request_result = query.validate();
     match request_result {
         Ok(trade_filter) => {

@@ -5,7 +5,7 @@ use {
         Json,
         extract::{Path, State},
         http::StatusCode,
-        response::IntoResponse,
+        response::{IntoResponse, Response},
     },
     model::order::{CancellationPayload, OrderCancellation, OrderUid},
     std::sync::Arc,
@@ -15,7 +15,7 @@ pub async fn cancel_order_handler(
     State(state): State<Arc<AppState>>,
     Path(uid): Path<OrderUid>,
     Json(payload): Json<CancellationPayload>,
-) -> impl IntoResponse {
+) -> Response {
     let order_cancellation = OrderCancellation {
         order_uid: uid,
         signature: payload.signature,
@@ -26,7 +26,7 @@ pub async fn cancel_order_handler(
 }
 
 impl IntoResponse for OrderCancellationError {
-    fn into_response(self) -> super::ApiReply {
+    fn into_response(self) -> Response {
         match self {
             Self::InvalidSignature => (
                 StatusCode::BAD_REQUEST,
@@ -74,7 +74,7 @@ impl IntoResponse for OrderCancellationError {
     }
 }
 
-pub fn cancel_order_response(result: Result<(), OrderCancellationError>) -> super::ApiReply {
+pub fn cancel_order_response(result: Result<(), OrderCancellationError>) -> Response {
     match result {
         Ok(_) => (axum::http::StatusCode::OK, axum::Json("Cancelled")).into_response(),
         Err(err) => err.into_response(),

@@ -2,12 +2,10 @@ use {
     crate::{domain::competition::order::app_data::AppData, tests::setup::Order},
     app_data::AppDataDocument,
     axum::{
-        Extension,
-        Json,
-        Router,
+        Extension, Json, Router,
         extract::Path,
         http::StatusCode,
-        response::IntoResponse,
+        response::{IntoResponse, Response},
         routing::get,
     },
     std::{collections::HashMap, net::SocketAddr},
@@ -59,7 +57,7 @@ impl Orderbook {
     async fn app_data_handler(
         Path(app_data): Path<String>,
         Extension(app_data_storage): Extension<HashMap<app_data::AppDataHash, app_data::Root>>,
-    ) -> impl IntoResponse {
+    ) -> Response {
         tracing::debug!("Orderbook received an app_data request: {}", app_data);
 
         let app_data_hash = match app_data.parse::<app_data::AppDataHash>() {

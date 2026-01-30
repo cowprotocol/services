@@ -1,10 +1,14 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     crate::{
-        api::{ApiReply, AppState, error, rich_error},
+        api::{AppState, error, rich_error},
         quoter::OrderQuoteError,
     },
-    axum::{Json, extract::State, response::IntoResponse},
+    axum::{
+        Json,
+        extract::State,
+        response::{IntoResponse, Response},
+    },
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
@@ -15,7 +19,7 @@ use {
 pub async fn post_quote_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<OrderQuoteRequest>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
         .quotes
         .calculate_quote(&request)
@@ -34,7 +38,7 @@ pub async fn post_quote_handler(
 #[error(transparent)]
 pub struct OrderQuoteErrorWrapper(pub OrderQuoteError);
 impl IntoResponse for OrderQuoteErrorWrapper {
-    fn into_response(self) -> ApiReply {
+    fn into_response(self) -> Response {
         match self.0 {
             OrderQuoteError::AppData(err) => AppDataValidationErrorWrapper(err).into_response(),
             OrderQuoteError::Order(err) => PartialValidationErrorWrapper(err).into_response(),
@@ -45,7 +49,7 @@ impl IntoResponse for OrderQuoteErrorWrapper {
 
 pub struct CalculateQuoteErrorWrapper(CalculateQuoteError);
 impl IntoResponse for CalculateQuoteErrorWrapper {
-    fn into_response(self) -> ApiReply {
+    fn into_response(self) -> Response {
         match self.0 {
             CalculateQuoteError::Price { source, .. } => {
                 super::PriceEstimationErrorWrapper(source).into_response()
@@ -89,13 +93,8 @@ mod tests {
         model::{
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
-                OrderQuote,
-                OrderQuoteResponse,
-                OrderQuoteSide,
-                PriceQuality,
-                QuoteSigningScheme,
-                SellAmount,
-                Validity,
+                OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
+                SellAmount, Validity,
             },
         },
         number::nonzero::NonZeroU256,

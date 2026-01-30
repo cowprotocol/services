@@ -3,12 +3,12 @@ use {
     axum::{
         extract::State,
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     std::sync::Arc,
 };
 
-pub async fn get_auction_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn get_auction_handler(State(state): State<Arc<AppState>>) -> Response {
     let result = state.orderbook.get_auction().await;
     match result {
         Ok(Some(auction)) => (StatusCode::OK, Json(auction)).into_response(),

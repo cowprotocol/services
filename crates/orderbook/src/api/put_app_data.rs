@@ -5,7 +5,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json},
+        response::{IntoResponse, Json, Response},
     },
     std::sync::Arc,
 };
@@ -13,7 +13,7 @@ use {
 pub async fn put_app_data_without_hash(
     State(state): State<Arc<AppState>>,
     Json(document): Json<AppDataDocument>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
         .app_data
         .register(None, document.full_app_data.as_bytes())
@@ -25,7 +25,7 @@ pub async fn put_app_data_with_hash(
     State(state): State<Arc<AppState>>,
     Path(hash): Path<AppDataHash>,
     Json(document): Json<AppDataDocument>,
-) -> impl IntoResponse {
+) -> Response {
     let result = state
         .app_data
         .register(Some(hash), document.full_app_data.as_bytes())
@@ -35,7 +35,7 @@ pub async fn put_app_data_with_hash(
 
 fn response(
     result: Result<(crate::app_data::Registered, AppDataHash), crate::app_data::RegisterError>,
-) -> super::ApiReply {
+) -> Response {
     match result {
         Ok((registered, hash)) => {
             let status = match registered {
@@ -49,7 +49,7 @@ fn response(
 }
 
 impl IntoResponse for crate::app_data::RegisterError {
-    fn into_response(self) -> super::ApiReply {
+    fn into_response(self) -> Response {
         match self {
             Self::Invalid(err) => (
                 StatusCode::BAD_REQUEST,

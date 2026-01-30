@@ -4,7 +4,7 @@ use {
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json, Response as AxumResponse},
+        response::{IntoResponse, Json},
     },
     model::{AuctionId, solver_competition_v2::Response},
     std::sync::Arc,
@@ -41,7 +41,7 @@ pub async fn get_solver_competition_latest_handler(
 
 fn response(
     result: Result<Response, crate::solver_competition::LoadSolverCompetitionError>,
-) -> AxumResponse {
+) -> axum::response::Response {
     match result {
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(LoadSolverCompetitionError::NotFound) => (
