@@ -22,7 +22,6 @@ mod networks {
     pub const AVALANCHE: u64 = 43114;
     pub const BNB: u64 = 56;
     pub const OPTIMISM: u64 = 10;
-    pub const LENS: u64 = 232;
     pub const LINEA: u64 = 59144;
     pub const PLASMA: u64 = 9745;
     pub const INK: u64 = 57073;
@@ -104,7 +103,7 @@ fn main() {
             BNB => "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
             OPTIMISM => "0xdef1abe32c034e558cdd535791643c58a13acc10",
             POLYGON => "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
-            // Not available on Lens
+            // Not available on Linea, Plasma and Ink
         ]))
         // Misc
         .add_contract(Contract::new("ERC20"))
@@ -129,7 +128,7 @@ fn main() {
                 MAINNET => ("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9", 12272147),
                 // Not available on Sepolia (only version ≥ 4)
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
-                // Not available on Lens, Linea, Plasma and Ink
+                // Not available on Linea, Plasma and Ink
             ]),
         )
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/mainnet.html#ungrouped-active-current-contracts>
@@ -149,7 +148,7 @@ fn main() {
                 BNB => ("0x6e4cF292C5349c79cCd66349c3Ed56357dD11B46", 25474982),
                 // Not available on Sepolia (only version ≥ 4)
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
-                // Not available on Lens, Linea, Plasma and Ink
+                // Not available on Linea, Plasma and Ink
             ]),
         )
         .add_contract(
@@ -173,7 +172,7 @@ fn main() {
                 POLYGON => ("0xFc8a407Bba312ac761D8BFe04CE1201904842B76", 40611103),
                 // <https://bscscan.com/tx/0xc7fada60761e3240332c4cbd169633f1828b2a15de23f0148db9d121afebbb4b>
                 BNB => ("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a", 26665331),
-                // Not available on Base, Lens, Linea, Plasma and Ink
+                // Not available on Base, Linea, Plasma and Ink
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
             ]),
         )
@@ -187,7 +186,7 @@ fn main() {
                 OPTIMISM => ("0xdAE7e32ADc5d490a43cCba1f0c736033F2b4eFca", 7005512),
                 // <https://polygonscan.com/tx/0xb8ac851249cc95bc0943ef0732d28bbd53b0b36c7dd808372666acd8c5f26e1c>
                 POLYGON => ("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9", 15832998),
-                // Not available on Sepolia, Base, Avalanche, BNB, Lens, Linea, Plasma and Ink
+                // Not available on Sepolia, Base, Avalanche, BNB, Linea, Plasma and Ink
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
             ]),
@@ -204,7 +203,7 @@ fn main() {
                 OPTIMISM => ("0xeb151668006CD04DAdD098AFd0a82e78F77076c3", 11088891),
                 // <https://polygonscan.com/tx/0xa2c41d014791888a29a9491204446c1b9b2f5dee3f3eb31ad03f290259067b44>
                 POLYGON => ("0xcA96C4f198d343E251b1a01F3EBA061ef3DA73C1", 29371951),
-                // Not available on Sepolia, Base, Avalanche, BNB, Lens, Linea, Plasma and Ink
+                // Not available on Sepolia, Base, Avalanche, BNB, Linea, Plasma and Ink
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
             ]),
@@ -217,7 +216,7 @@ fn main() {
                 ARBITRUM_ONE => ("0x142B9666a0a3A30477b052962ddA81547E7029ab", 222870),
                 // <https://polygonscan.com/tx/0xd9b5b9a9e6ea17a87f85574e93577e3646c9c2f9c8f38644f936949e6c853288>
                 POLYGON => ("0x751A0bC0e3f75b38e01Cf25bFCE7fF36DE1C87DE", 17116402),
-                // Not available on Sepolia, Base, Avalanche, BNB, Optimism, Lens, Linea, Plasma and Ink
+                // Not available on Sepolia, Base, Avalanche, BNB, Optimism, Linea, Plasma and Ink
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
             ]),
@@ -245,7 +244,7 @@ fn main() {
                     OPTIMISM => ("0xf302f9F50958c5593770FDf4d4812309fF77414f", 7005915),
                     // <https://polygonscan.com/tx/0x125bc007a86d771f8dc8f5fa1017de6e5a11162a458a72f25814503404bbeb0b>
                     POLYGON => ("0x41B953164995c11C81DA73D212ED8Af25741b7Ac", 22067480),
-                    // Not available on Lens, Linea, Plasma and Ink
+                    // Not available on Linea, Plasma and Ink
                 ]),
         )
         .add_contract(
@@ -259,7 +258,7 @@ fn main() {
                 OPTIMISM => ("0xf145caFB67081895EE80eB7c04A30Cf87f07b745", 22182522),
                 // <https://polygonscan.com/tx/0xe5d908be686056f1519663a407167c088924f60d29c799ec74438b9de891989e>
                 POLYGON => ("0x136FD06Fa01eCF624C7F2B3CB15742c1339dC2c4", 32774224),
-                // Not available on Sepolia, Gnosis Chain, Base, Avalanche, Lens, Linea, Plasma and Ink
+                // Not available on Sepolia, Gnosis Chain, Base, Avalanche, Linea, Plasma and Ink
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
             ]),
@@ -280,7 +279,7 @@ fn main() {
                 // Not available on Sepolia (only version ≥ 4) and on Base (only version ≥ 5)
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
-                // Not available on Lens, Linea, Plasma and Ink
+                // Not available on Linea, Plasma and Ink
             ]),
         )
         .add_contract(
@@ -301,7 +300,7 @@ fn main() {
                 OPTIMISM => ("0x1802953277FD955f9a254B80Aa0582f193cF1d77", 82748180),
                 // <https://polygonscan.com/tx/0x2cea6a0683e67ebdb7d4a1cf1ad303126c5f228f05f8c9e2ccafdb1f5a024376>
                 POLYGON => ("0x6Ab5549bBd766A43aFb687776ad8466F8b42f777", 40613553),
-                // Not available on Base, Lens, Linea, Plasma and Ink
+                // Not available on Base, Linea, Plasma and Ink
                 // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
             ]),
         )
@@ -325,7 +324,7 @@ fn main() {
                 OPTIMISM => ("0x043A2daD730d585C44FB79D2614F295D2d625412", 106752707),
                 // <https://polygonscan.com/tx/0xa3d9a1cf00eaca469d6f9ec2fb836bbbfdfbc3b0eeadc07619bb9e695bfdecb8>
                 POLYGON => ("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b", 44961548),
-                // Not available on Lens, Linea, Plasma and Ink
+                // Not available on Linea, Plasma and Ink
             ]),
         )
         .add_contract(
@@ -348,7 +347,7 @@ fn main() {
                 OPTIMISM => ("0x4bdCc2fb18AEb9e2d281b0278D946445070EAda7", 116694338),
                 // <https://polygonscan.com/tx/0x7b9678ad538b1cd3f3a03e63455e7d49a1bc716ea42310fbf99df4bf93ecfdfa>
                 POLYGON => ("0xEAedc32a51c510d35ebC11088fD5fF2b47aACF2E", 53996258),
-                // Not available on Lens, Linea, Plasma and Ink
+                // Not available on Linea, Plasma and Ink
             ]),
         )
         // Balancer addresses can be obtained from:
@@ -374,7 +373,7 @@ fn main() {
             POLYGON => ("0xBA12222222228d8Ba445958a75a0704d566BF2C8", 15832990),
             // <https://explorer.inkonchain.com/address/0xBA12222222228d8Ba445958a75a0704d566BF2C8>
             INK => ("0xBA12222222228d8Ba445958a75a0704d566BF2C8", 34313901),
-            // Not available on Lens, Linea and Plasma
+            // Not available on Linea and Plasma
         ]))
         .add_contract(
             Contract::new("BalancerV3BatchRouter").with_networks(networks![
@@ -394,7 +393,7 @@ fn main() {
                 OPTIMISM => ("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E", 133969588),
                 // <https://plasmascan.to/tx/0x7368609020622059d1061b4e3cc16aa448315956cace1e089f6876143cf2f90c?chainid=9745>
                 PLASMA => ("0x85a80afee867aDf27B50BdB7b76DA70f1E853062", 782312),
-                // Not available on Lens, Polygon, BNB, Linea and Ink
+                // Not available on Polygon, BNB, Linea and Ink
             ]),
         )
         // UniV2
@@ -433,7 +432,7 @@ fn main() {
             OPTIMISM => "0x2abf469074dc0b54d793850807e6eb5faf2625b1",
             // <https://polygonscan.com/tx/0x3dcf8fc780ae6fbe40b1ae57927a8fb405f54cbe89d0021a781a100d2086e5ba>
             POLYGON => "0x1b02da8cb0d097eb8d57a175b88c7d8b47997506",
-            // Not available on Lens
+            // Not available on Linea, Plasma and Ink
         ]))
         // <https://swapr.gitbook.io/swapr/contracts>
         .add_contract(Contract::new("SwaprRouter").with_networks(networks![
@@ -443,7 +442,7 @@ fn main() {
             GNOSIS => "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0",
             // <https://arbiscan.io/tx/0x09771774fc138775472910f6bb0f2e03ff74e1e32a658e9c3e4d8f59f6431ba8>
             ARBITRUM_ONE => "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E",
-            // Not available on Base and Lens
+            // Not available on Base, Linea, Plasma and Ink
         ]))
         .add_contract(Contract::new("ISwaprPair"))
         .add_contract(
@@ -472,7 +471,7 @@ fn main() {
             OPTIMISM => "0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf",
             // <https://polygonscan.com/tx/0x712ac56155a301fca4b7a761e232233f41a104865a74b1a59293835da355292a>
             POLYGON => "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C",
-            // Not available on Lens and Ink (no Uniswap V2)
+            // Not available on Ink (no Uniswap V2)
         ]))
         // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
         .add_contract(Contract::new("UniswapV2Router02").with_networks(networks![
@@ -494,7 +493,7 @@ fn main() {
             OPTIMISM => "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
             // <https://polygonscan.com/tx/0x66186e0cacd2f6b3ad2eae586bd331daafd0572eb80bf71be694181858198025>
             POLYGON => "0xedf6066a2b290C185783862C7F4776A2C8077AD1",
-            // Not available on Lens and Ink (no Uniswap V2)
+            // Not available on Ink (no Uniswap V2)
         ]))
         .add_contract(Contract::new("IUniswapLikeRouter"))
         .add_contract(Contract::new("IUniswapLikePair"))
@@ -508,7 +507,6 @@ fn main() {
             BNB => "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
             OPTIMISM => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
             POLYGON => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-            LENS => "0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1",
             LINEA => "0x42bE4D6527829FeFA1493e1fb9F3676d2425C3C1",
             // not official (deployed by oku trade)
             // <https://docs.oku.trade/home/extra-information/deployed-contracts#plasma>
@@ -527,7 +525,6 @@ fn main() {
                 BASE => "0x2626664c2603336E57B271c5C0b26F421741e481",
                 AVALANCHE => "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
                 BNB => "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2",
-                LENS => "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13",
                 LINEA => "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
                 // not official (deployed by oku trade)
                 // <https://docs.oku.trade/home/extra-information/deployed-contracts#plasma>
@@ -547,8 +544,6 @@ fn main() {
             BNB => "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",
             OPTIMISM => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             POLYGON => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-            // not official
-            LENS => "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3",
             LINEA => "0x31FAfd4889FA1269F7a13A66eE0fB458f27D72A9",
             // not official (deployed by oku trade)
             // <https://docs.oku.trade/home/extra-information/deployed-contracts#plasma>
@@ -569,7 +564,6 @@ fn main() {
             BNB => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             OPTIMISM => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             POLYGON => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
-            LENS => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             LINEA => "0x60bf78233f48ec42ee3f101b9a05ec7878728006",
             PLASMA => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             INK => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
@@ -594,8 +588,6 @@ fn main() {
             OPTIMISM => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 134607215),
             // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
             POLYGON => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 71296258),
-            // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
-            LENS => ("0xFb337f8a725A142f65fb9ff4902d41cc901de222", 3007173),
             // <https://lineascan.build/tx/0x0e20a4e0bbce2e28b89b7dcfc4dd4dfb48f5b0b8473b3b5bdeb1bf9f09943485>
             LINEA => ("0x04501b9b1d52e67f6862d157e00d13419d2d6e95", 24522097),
             // <https://plasmascan.to/tx/0xda72b111ac2a7d182bf3c884373882add6f4c78f6d4bdae7efcae143be716b38>
@@ -619,7 +611,7 @@ fn main() {
             POLYGON => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 30988035),
             // <https://snowtrace.io/tx/0xf484e1efde47209bad5f72642bcb8d8e2a4092a5036434724ffa2d039e93a1bf?chainid=43114>
             AVALANCHE => ("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD", 26387068),
-            // Not available on Lens, Linea, Plasma and Ink
+            // Not available on Linea, Plasma and Ink
         ]))
         // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
         .add_contract(
@@ -692,8 +684,6 @@ fn main() {
                 OPTIMISM => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 134254466),
                 // <https://polygonscan.com/tx/0x686e4bbcfd6ebae91f0fcc667407c831953629877ec622457916729de3d461c3>
                 POLYGON => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 45854728),
-                // <https://explorer.lens.xyz/tx/0x0730c21885153dcc9a25ab7abdc38309ec7c7a8db15b763fbbaf574d1e7ec498>
-                LENS => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 2612937),
                 // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
                 LINEA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 24333100),
                 // <https://plasmascan.to/tx/0xc2ac50ad302e402c4db1e956bd357af7d84e3684ad65e4fdee58abea092ac88c>
@@ -721,8 +711,6 @@ fn main() {
             OPTIMISM => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 134254624),
             // <https://polygonscan.com/tx/0x0e24d3a2a8530eaad5ae62e54e64d57665a77ce3970227d20c1b77da315cbbf6>
             POLYGON => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 45859743),
-            // <https://explorer.lens.xyz/tx/0x01584b767dda7b115394b93dbcfecadfe589862ae3f7957846a2db82f2f5c703>
-            LENS => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 2621745),
             // <https://lineascan.build/tx/0x6e5d2c4381320efdd21ccde1534560ded1b9ab07638776833faa22820c378155>
             LINEA => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 24333100),
             // <https://plasmascan.to/tx/0xf16bd6f307dce94ab252d8dd8266ab30091879fb3d631cbcf3d0ffddf9e6ad05?chainid=9745>
@@ -742,7 +730,6 @@ fn main() {
             BNB => "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
             OPTIMISM => "0x4200000000000000000000000000000000000006",
             POLYGON => "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-            LENS => "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F",
             LINEA => "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f",
             PLASMA => "0x6100E367285b01F48D07953803A2d8dCA5D19873",
             INK => "0x4200000000000000000000000000000000000006",
@@ -804,7 +791,6 @@ fn main() {
                     BNB => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     OPTIMISM => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     POLYGON => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-                    LENS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     GNOSIS => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     SEPOLIA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     // built with evm=London, because deployment reverts on Linea otherwise
@@ -821,7 +807,6 @@ fn main() {
                     BNB => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
                     OPTIMISM => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
                     POLYGON => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
-                    LENS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
                     GNOSIS => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
                     SEPOLIA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",
                     PLASMA => "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b",

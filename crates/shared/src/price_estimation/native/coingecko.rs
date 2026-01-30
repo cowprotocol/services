@@ -80,7 +80,6 @@ impl CoinGecko {
             Chain::Polygon => "polygon-pos".to_string(),
             Chain::Optimism => "optimistic-ethereum".to_string(),
             Chain::Bnb => "binance-smart-chain".to_string(),
-            Chain::Lens => "lens".to_string(),
             Chain::Linea => "linea".to_string(),
             Chain::Plasma => "plasma".to_string(),
             Chain::Ink => "ink".to_string(),
