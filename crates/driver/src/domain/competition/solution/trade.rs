@@ -227,9 +227,7 @@ impl Fulfillment {
                 .ok_or(Math::DivisionByZero)?,
         };
 
-        // Add fee
         let with_fee = before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?;
-
         // Add haircut for buy orders (haircut is in buy token, convert to sell token)
         let haircut = match self.order.side {
             order::Side::Sell => eth::U256::ZERO, // Haircut applied to buy_amount for sell orders
@@ -286,10 +284,6 @@ impl Fulfillment {
         }
     }
 
-    /// Custom clearing prices for on-chain encoding.
-    ///
-    /// sell_amount() and buy_amount() already include haircut effects,
-    /// so on-chain execution matches reported amounts.
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,

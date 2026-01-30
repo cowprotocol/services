@@ -98,8 +98,6 @@ impl Quote {
                     .get(&buy_token)
                     .ok_or(QuotingFailed::ClearingBuyMissing)?,
             };
-            // Use custom_prices() which includes haircut effects for
-            // conservative quote pricing.
             let custom_prices = trade
                 .custom_prices(&uniform_clearing)
                 .map_err(|_| QuotingFailed::Math)?;
