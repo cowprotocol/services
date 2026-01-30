@@ -57,19 +57,21 @@ async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
 
-/// Test that sell orders with haircut configured still execute on-chain.
-/// The haircut reduces the reported surplus but the order should still be
-/// fillable and execute successfully.
+/// Test that sell orders with haircut configured execute on-chain with
+/// haircutted amounts. The haircut reduces both the reported buy_amount and
+/// the on-chain buy_amount (they should match). User receives less than
+/// without haircut, with the difference going to the settlement contract.
 #[tokio::test]
 #[ignore]
 async fn local_node_limit_order_with_haircut() {
     run_test(sell_order_with_haircut_test).await;
 }
 
-/// Test that buy orders with haircut configured still execute on-chain.
-/// For buy orders, verifies that:
-/// - executedBuy >= signedBuyAmount (user gets at least what they signed for)
-/// - executedSell <= sellLimit (don't take more than user's maximum)
+/// Test that buy orders with haircut configured execute on-chain with
+/// haircutted amounts. The haircut increases both the reported sell_amount and
+/// the on-chain sell_amount (they should match). Verifies that:
+/// - executedBuy == signedBuyAmount (user gets exactly what they signed for)
+/// - executedSell includes haircut (but still <= sellLimit)
 #[tokio::test]
 #[ignore]
 async fn local_node_buy_order_with_haircut() {
@@ -1182,10 +1184,10 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
 }
 
-/// Test that a limit order with haircut configured still executes on-chain.
-/// The haircut adjusts scoring/quoting prices to report lower surplus, but
-/// does NOT affect on-chain execution. The order should execute at the same
-/// rate as without haircut.
+/// Test that a limit order with haircut configured executes on-chain with
+/// haircutted amounts. The haircut reduces the buy_amount the user receives,
+/// both in reported amounts and on-chain execution (they should match).
+/// The haircut difference goes to the settlement contract.
 async fn sell_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -1300,9 +1302,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     .await
     .unwrap();
 
-    // Verify that haircut does NOT affect on-chain execution.
-    // The haircut only affects scoring/quoting, so the trader should receive
-    // the full AMM output without any reduction.
+    // Verify that haircut DOES affect on-chain execution.
+    // The haircut reduces the buy_amount the user receives, with the difference
+    // going to the settlement contract.
     let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let settlement_balance_after = token_b
         .balanceOf(*onchain.contracts().gp_settlement.address())
@@ -1317,20 +1319,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .checked_sub(settlement_balance_before)
         .unwrap();
 
-    // Haircut should NOT go to settlement contract - it only affects scoring.
-    // Small amounts may still end up in settlement due to rounding.
+    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should receive
+    // ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
     assert!(
-        settlement_received < 0.1.eth(),
-        "Settlement contract should not have received haircut (haircut only affects scoring), but \
-         got {}",
+        settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
+        "Settlement contract should have received haircut (~0.49 ETH), but got {}",
         settlement_received
     );
 
-    // Expected trader amount: full AMM output (~9.87 ETH at 1:1 ratio with 0.3%
-    // fee). Haircut does NOT reduce what trader receives on-chain.
+    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38 ETH).
+    // Haircut reduces what trader receives on-chain.
     assert!(
-        trader_received >= 9.5.eth() && trader_received <= 10u64.eth(),
-        "Trader should have received full AMM output (~9.87 ETH), but got {}",
+        trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
+        "Trader should have received AMM output minus haircut (~9.38 ETH), but got {}",
         trader_received
     );
 
@@ -1380,8 +1381,8 @@ async fn sell_order_with_haircut_test(web3: Web3) {
 /// Test that a buy order with haircut configured executes correctly.
 /// For buy orders, the user signs for a specific buy_amount they want to
 /// receive, and sell_amount is the maximum they're willing to pay.
-/// Haircut only affects scoring/quoting, not on-chain execution.
-/// Verifies that reported amounts respect these constraints.
+/// Haircut increases the sell_amount on-chain (user pays more).
+/// Verifies that reported amounts match on-chain execution.
 async fn buy_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -1545,15 +1546,15 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         sell_limit_u256
     );
 
-    // 3. Reported sell_amount should be close to what's actually needed (~5.04 ETH
-    //    for buying 5 ETH at 1:1 with 0.3% fee).
-    // We check that sell_amount is less than 5.2 ETH (5.0 ETH + 5% haircut = 5.25
-    // ETH).
-    let reasonable_max_sell = U256::from(5_200_000_000_000_000_000u128); // 5.2 ETH
+    // 3. For buy orders, haircut INCREASES sell_amount (user pays more). Base
+    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH. So
+    //    sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5 ETH to
+    //    account for variance.
+    let reasonable_max_sell = U256::from(5_500_000_000_000_000_000u128); // 5.5 ETH
     assert!(
         reported_sell_amount <= reasonable_max_sell,
-        "Driver reported sell_amount {} exceeds expected max {} (actual needed is ~5.04 ETH). \
-         Haircut should reduce surplus/score, not inflate the reported sell amount!",
+        "Driver reported sell_amount {} exceeds expected max {} (actual needed + haircut is ~5.29 \
+         ETH)",
         reported_sell_amount,
         reasonable_max_sell
     );

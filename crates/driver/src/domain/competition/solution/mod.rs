@@ -273,7 +273,7 @@ impl Solution {
                 buy,
                 trade.side(),
                 executed,
-                trade.custom_prices_for_scoring(&uniform_prices)?,
+                trade.custom_prices(&uniform_prices)?,
                 trade.protocol_fees(),
             ))
         }

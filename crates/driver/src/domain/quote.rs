@@ -68,7 +68,7 @@ impl Quote {
     /// Compute clearing prices for the quote.
     ///
     /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. Uses `custom_prices_for_scoring()` which includes haircut
+    /// when enabled. Uses `custom_prices()` which includes haircut effects
     /// to make quotes conservative for users.
     fn compute_clearing_prices(
         solution: &competition::Solution,
@@ -98,10 +98,10 @@ impl Quote {
                     .get(&buy_token)
                     .ok_or(QuotingFailed::ClearingBuyMissing)?,
             };
-            // Use custom_prices_for_scoring() which includes haircut for
+            // Use custom_prices() which includes haircut effects for
             // conservative quote pricing.
             let custom_prices = trade
-                .custom_prices_for_scoring(&uniform_clearing)
+                .custom_prices(&uniform_clearing)
                 .map_err(|_| QuotingFailed::Math)?;
 
             prices.insert(sell_token, custom_prices.sell);

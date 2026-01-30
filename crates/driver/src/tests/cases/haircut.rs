@@ -115,15 +115,13 @@ async fn order_haircut_reduces_score() {
 }
 
 /// Test that haircut is properly applied for buy orders.
-/// For buy orders, the haircut reduces the effective buy amount, which
-/// increases the sell amount the user pays. This reduces surplus and thus the
-/// score. Note: The percentage reduction for buy orders differs from sell
-/// orders because the haircut is applied to the executed buy amount, not
-/// directly to surplus.
+/// For buy orders, the haircut increases the sell_amount the user pays.
+/// This reduces surplus and thus the score.
 ///
-/// Also verifies that:
+/// Verifies that:
 /// - `executedBuy == signedBuyAmount` (fill-or-kill must execute exactly)
-/// - `executedSell <= sellLimit` (don't take more than user's maximum)
+/// - `executedSell <= sellLimit` (haircut increases sell, but must stay within
+///   limit)
 #[tokio::test]
 #[ignore]
 async fn buy_order_haircut() {
@@ -225,8 +223,8 @@ async fn buy_order_haircut() {
         );
         assert!(
             executed_sell <= sell_limit,
-            "Buy order: executedSell {} exceeds sell limit {}. Haircut should reduce surplus, not \
-             inflate sell amount!",
+            "Buy order: executedSell {} exceeds sell limit {}. Haircut increases sell_amount but \
+             it must still respect the user's limit!",
             executed_sell,
             sell_limit
         );
