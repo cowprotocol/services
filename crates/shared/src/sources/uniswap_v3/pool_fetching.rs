@@ -20,6 +20,7 @@ use {
     },
     ethrpc::{
         Web3,
+        alloy::ProviderLabelingExt,
         block_stream::{BlockRetrieving, RangeInclusive},
     },
     itertools::{Either, Itertools},
@@ -287,7 +288,7 @@ impl UniswapV3PoolFetcher {
         max_pools_to_initialize: usize,
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
-        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "uniswapV3".into());
+        let web3 = web3.labeled("uniswapV3");
         let checkpoint = PoolsCheckpointHandler::new(
             subgraph_url,
             client,

@@ -8,7 +8,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
-    ethrpc::Web3,
+    ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::future,
     model::order::SellTokenSource,
     tracing::instrument,
@@ -28,7 +28,7 @@ impl Balances {
         // contracts exist at addresses that get called. This allows us to
         // properly check if the `source` is not supported for the deployment
         // work without additional code paths :tada:!
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
+        let web3 = web3.labeled("balanceFetching");
 
         Self {
             web3,

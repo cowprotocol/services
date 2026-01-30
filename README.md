@@ -31,7 +31,7 @@ The `autopilot` connects to the same PostgreSQL database as the `orderbook` and 
 
 There are additional crates that live in the cargo workspace.
 
-- `contracts` provides _[ethcontract-rs](https://github.com/gnosis/ethcontract-rs)_ based smart contract bindings
+- `contracts` provides Alloy-based smart contract bindings
 - `database` provides the shared database and storage layer logic shared between the `autopilot` and `orderbook`
 - `driver` an in-development binary that intends to replace the `solver`; it has a slightly different design that allows co-location with external solvers
 - `e2e` end-to-end tests
@@ -160,4 +160,3 @@ Each process opens a UNIX socket at `/tmp/log_filter_override_<program_name>_<pi
 You can also reset the log filter to the filter the program was initially started with by entering `reset`.
 
 See [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for documentation on the supported log filter format.
-

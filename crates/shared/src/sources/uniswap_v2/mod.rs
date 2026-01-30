@@ -16,6 +16,7 @@ use {
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     contracts::alloy::IUniswapLikeRouter,
+    ethrpc::alloy::ProviderLabelingExt,
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
@@ -102,7 +103,7 @@ impl UniV2BaselineSourceParameters {
     }
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
+        let web3 = web3.labeled("uniswapV2");
         let router =
             contracts::alloy::IUniswapLikeRouter::Instance::new(self.router, web3.alloy.clone());
         let factory = router.factory().call().await.context("factory")?;

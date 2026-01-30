@@ -542,7 +542,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(mock_web3.erased(), 60),
+                Detector::new(mock_web3, 60),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };
@@ -590,7 +590,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(mock_web3.erased(), 60),
+                Detector::new(mock_web3, 60),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };

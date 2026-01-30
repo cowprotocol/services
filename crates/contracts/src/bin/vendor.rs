@@ -1,7 +1,3 @@
-//! This script is used to vendor Truffle JSON artifacts to be used for code
-//! generation with `ethcontract`. This is done instead of fetching contracts
-//! at build time to reduce the risk of failure.
-
 use {
     anyhow::Result,
     reqwest::Url,

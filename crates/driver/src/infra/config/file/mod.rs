@@ -138,16 +138,6 @@ enum BlockNumber {
     Earliest,
 }
 
-impl From<BlockNumber> for web3::types::BlockNumber {
-    fn from(bn: BlockNumber) -> Self {
-        match bn {
-            BlockNumber::Pending => web3::types::BlockNumber::Pending,
-            BlockNumber::Latest => web3::types::BlockNumber::Latest,
-            BlockNumber::Earliest => web3::types::BlockNumber::Earliest,
-        }
-    }
-}
-
 impl From<BlockNumber> for BlockNumberOrTag {
     fn from(value: BlockNumber) -> Self {
         match value {

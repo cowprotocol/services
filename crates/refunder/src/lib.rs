@@ -11,7 +11,6 @@ use {
     contracts::alloy::CoWSwapEthFlow,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
-    shared::http_client::HttpClientFactory,
     sqlx::postgres::PgPoolOptions,
     std::{
         sync::{Arc, RwLock},
@@ -40,8 +39,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(args: arguments::Arguments) {
-    let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
+    let web3 = shared::ethrpc::web3(&args.ethrpc, &args.node_url, "base");
     if let Some(expected_chain_id) = args.chain_id {
         let chain_id = web3
             .alloy

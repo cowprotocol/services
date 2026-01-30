@@ -33,7 +33,7 @@ use {
     anyhow::{Context, Result},
     chain::Chain,
     contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
-    ethrpc::alloy::errors::ContractErrorExt,
+    ethrpc::alloy::{ProviderLabelingExt, errors::ContractErrorExt},
     futures::{Stream, StreamExt as _},
     rate_limit::Strategy,
     reqwest::Url,
@@ -294,7 +294,7 @@ pub async fn init(
     base_tokens: &BaseTokens,
     settlement_contract: Address,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
-    let web3 = ethrpc::instrumented::instrument_with_label(&web3, "tokenOwners".into());
+    let web3 = web3.labeled("tokenOwners");
     let finders = args
         .token_owner_finders
         .as_deref()

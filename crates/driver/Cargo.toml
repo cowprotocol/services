@@ -55,7 +55,6 @@ toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
-web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
@@ -65,7 +64,6 @@ web3 = { workspace = true, features = ["http"] }
 anyhow = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
-ethcontract = { workspace = true }
 model = { workspace = true }
 observe = { workspace = true }
 shared = { workspace = true }

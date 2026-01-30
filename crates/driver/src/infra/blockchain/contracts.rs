@@ -168,7 +168,5 @@ impl Contracts {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
-    #[error("method error: {0:?}")]
     Rpc(#[from] alloy::contract::Error),
 }

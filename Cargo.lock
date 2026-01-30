@@ -102,7 +102,7 @@ dependencies = [
  "k256",
  "once_cell",
  "rand 0.8.5",
- "secp256k1 0.30.0",
+ "secp256k1",
  "serde",
  "serde_json",
  "serde_with",
@@ -1208,7 +1208,6 @@ dependencies = [
  "tracing",
  "url",
  "vergen",
- "web3",
  "winner-selection",
 ]
 
@@ -2265,12 +2264,6 @@ dependencies = [
 
 [[package]]
 name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
-
-[[package]]
-name = "convert_case"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
@@ -2598,19 +2591,6 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "0.99.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
-dependencies = [
- "convert_case 0.4.0",
- "proc-macro2",
- "quote",
- "rustc_version 0.4.1",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "derive_more"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
@@ -2717,7 +2697,6 @@ dependencies = [
  "cow-amm",
  "dashmap",
  "derive_more 1.0.0",
- "ethcontract",
  "ethrpc",
  "futures",
  "hex-literal",
@@ -2754,7 +2733,6 @@ dependencies = [
  "tracing",
  "url",
  "vergen",
- "web3",
 ]
 
 [[package]]
@@ -2925,90 +2903,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ethabi"
-version = "18.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7413c5f74cc903ea37386a8965a936cbeb334bd270862fdece542c1b2dcbc898"
-dependencies = [
- "ethereum-types",
- "hex",
- "once_cell",
- "regex",
- "serde",
- "serde_json",
- "sha3",
- "thiserror 1.0.69",
- "uint",
-]
-
-[[package]]
-name = "ethbloom"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c22d4b5885b6aa2fe5e8b9329fb8d232bf739e434e6b87347c63bdd00c120f60"
-dependencies = [
- "crunchy",
- "fixed-hash",
- "impl-rlp",
- "impl-serde",
- "tiny-keccak",
-]
-
-[[package]]
-name = "ethcontract"
-version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
-dependencies = [
- "arrayvec",
- "aws-config",
- "aws-sdk-kms",
- "ethcontract-common",
- "futures",
- "futures-timer",
- "hex",
- "jsonrpc-core",
- "lazy_static",
- "primitive-types",
- "rlp",
- "secp256k1 0.27.0",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "uint",
- "web3",
- "zeroize",
-]
-
-[[package]]
-name = "ethcontract-common"
-version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
-dependencies = [
- "ethabi",
- "hex",
- "serde",
- "serde_derive",
- "serde_json",
- "thiserror 1.0.69",
- "tiny-keccak",
- "web3",
-]
-
-[[package]]
-name = "ethereum-types"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02d215cbf040552efcbe99a38372fe80ab9d00268e20012b79fcd0f073edd8ee"
-dependencies = [
- "ethbloom",
- "fixed-hash",
- "impl-rlp",
- "impl-serde",
- "primitive-types",
- "uint",
-]
-
-[[package]]
 name = "ethrpc"
 version = "0.1.0"
 dependencies = [
@@ -3016,13 +2910,11 @@ dependencies = [
  "anyhow",
  "async-trait",
  "const-hex",
- "ethcontract",
  "futures",
  "itertools 0.14.0",
  "jsonrpc-core",
  "mockall",
  "observe",
- "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
@@ -3035,7 +2927,6 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "url",
- "web3",
 ]
 
 [[package]]
@@ -3932,16 +3823,6 @@ dependencies = [
 
 [[package]]
 name = "idna"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d20d6b07bfbc108882d88ed8e37d39636dcc260e15e30c45e6ba089610b917c"
-dependencies = [
- "unicode-bidi",
- "unicode-normalization",
-]
-
-[[package]]
-name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b0875f23caa03898994f6ddc501886a45c7d3d62d04d2d90788d47be1b1e4de"
@@ -3968,24 +3849,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba6a270039626615617f3f36d15fc827041df3b78c439da2cadfa47455a77f2f"
 dependencies = [
  "parity-scale-codec",
-]
-
-[[package]]
-name = "impl-rlp"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28220f89297a075ddc7245cd538076ee98b01f2a9c23a53a4f1105d5a322808"
-dependencies = [
- "rlp",
-]
-
-[[package]]
-name = "impl-serde"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebc88fc67028ae3db0c853baa36269d398d5f45b6982f95549ff5def78c935cd"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -5178,8 +5041,6 @@ checksum = "0b34d9fd68ae0b74a41b21c03c2f62847aa0ffea044eee893b4c140b37e244e2"
 dependencies = [
  "fixed-hash",
  "impl-codec",
- "impl-rlp",
- "impl-serde",
  "uint",
 ]
 
@@ -6044,32 +5905,14 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
-dependencies = [
- "secp256k1-sys 0.8.2",
-]
-
-[[package]]
-name = "secp256k1"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
 dependencies = [
  "bitcoin_hashes",
  "rand 0.8.5",
- "secp256k1-sys 0.10.1",
+ "secp256k1-sys",
  "serde",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4473013577ec77b4ee3668179ef1186df3146e2cf2d927bd200974c6fe60fd99"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -6348,7 +6191,6 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
- "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
@@ -6366,7 +6208,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "web3",
 ]
 
 [[package]]
@@ -7857,37 +7698,6 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "web3"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5388522c899d1e1c96a4c307e3797e0f697ba7c77dd8e0e625ecba9dd0342937"
-dependencies = [
- "arrayvec",
- "base64 0.21.7",
- "bytes",
- "derive_more 0.99.20",
- "ethabi",
- "ethereum-types",
- "futures",
- "futures-timer",
- "headers",
- "hex",
- "idna 0.4.0",
- "jsonrpc-core",
- "log",
- "once_cell",
- "parking_lot",
- "pin-project",
- "reqwest 0.11.27",
- "rlp",
- "secp256k1 0.27.0",
- "serde",
- "serde_json",
- "tiny-keccak",
- "url",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use {
-    crate::{AlloyProvider, alloy::ProviderLabelingExt},
+    crate::AlloyProvider,
     alloy::{
         eips::{BlockId, BlockNumberOrTag},
         primitives::{B256, U256},
@@ -235,8 +235,8 @@ pub async fn current_block_stream(
 ) -> Result<CurrentBlockWatcher> {
     // Build an alloy transport specifically for the current block stream to avoid
     // batching requests together on chains with a very high block frequency.
-    let (provider, _) = crate::alloy::unbuffered_provider(url.as_str());
-    let provider = provider.labeled("base_currentBlockStream".into());
+    let (provider, _) =
+        crate::alloy::unbuffered_provider(url.as_str(), Some("base_currentBlockStream"));
 
     let first_block = provider.current_block().await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");

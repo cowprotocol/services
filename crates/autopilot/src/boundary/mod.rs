@@ -29,11 +29,7 @@ pub mod order;
 
 /// Builds a web3 client based on the ethrpc args config.
 pub fn web3_client(ethrpc: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> Web3 {
-    let http_factory =
-        shared::http_client::HttpClientFactory::new(&shared::http_client::Arguments {
-            http_timeout: std::time::Duration::from_secs(10),
-        });
-    shared::ethrpc::web3(ethrpc_args, &http_factory, ethrpc, "base")
+    shared::ethrpc::web3(ethrpc_args, ethrpc, "base")
 }
 
 pub struct SolvableOrders {
