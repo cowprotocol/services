@@ -7,7 +7,7 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
-        native_price_cache::CachingNativePriceEstimator,
+        native_price_cache::{CacheStorage, CachingNativePriceEstimator, MaintenanceConfig},
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -24,12 +24,14 @@ use {
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
             native::NativePriceEstimating,
+            native_price_cache::RequiresUpdatingPrices,
         },
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
+    bigdecimal::BigDecimal,
     contracts::alloy::WETH9,
     ethrpc::block_stream::CurrentBlockWatcher,
     number::nonzero::NonZeroU256,
@@ -360,45 +362,97 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
+    /// Creates a native price estimator with a shared cache and background
+    /// maintenance task.
+    ///
+    /// The estimator is configured with Auction source, meaning entries are
+    /// actively maintained by the background task. For the quote competition
+    /// use, wrap the returned estimator with `QuoteSourceEstimator` to mark
+    /// prices as Quote source (cached but not actively maintained).
+    ///
+    /// The `initial_prices` are used to seed the cache before the estimator
+    /// starts.
     pub async fn native_price_estimator(
         &mut self,
-        native: &[Vec<NativePriceEstimatorSource>],
+        estimators: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: WETH9::Instance,
+        initial_prices: HashMap<Address, BigDecimal>,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        let mut estimators = Vec::with_capacity(native.len());
-        for stage in native.iter() {
+        // Create non-caching estimator
+        let estimator: Arc<dyn NativePriceEstimating> = Arc::new(
+            self.create_competition_native_estimator(estimators, results_required, &weth)
+                .await?,
+        );
+
+        let approximation_tokens = self
+            .args
+            .native_price_approximation_tokens
+            .iter()
+            .copied()
+            .collect();
+
+        // Create cache with background maintenance, which only refreshes
+        // Auction-sourced entries
+        let cache = CacheStorage::new_with_maintenance(
+            self.args.native_price_cache_max_age,
+            initial_prices,
+            approximation_tokens,
+            MaintenanceConfig {
+                estimator: estimator.clone(),
+                update_interval: self.args.native_price_cache_refresh,
+                update_size: self.args.native_price_cache_max_update_size,
+                prefetch_time: self.args.native_price_prefetch_time,
+                concurrent_requests: self.args.native_price_cache_concurrent_requests,
+                quote_timeout: self.args.quote_timeout,
+            },
+        );
+
+        // Wrap with caching layer using Auction source
+        Ok(self.wrap_with_cache(estimator, cache))
+    }
+
+    /// Wraps a native price estimator with caching functionality.
+    /// Uses Auction source so entries are actively maintained.
+    fn wrap_with_cache(
+        &self,
+        estimator: Arc<dyn NativePriceEstimating>,
+        cache: Arc<CacheStorage>,
+    ) -> Arc<CachingNativePriceEstimator> {
+        Arc::new(CachingNativePriceEstimator::new(
+            estimator,
+            cache,
+            self.args.native_price_cache_concurrent_requests,
+            RequiresUpdatingPrices::Yes,
+        ))
+    }
+
+    /// Helper to create a CompetitionEstimator for native price estimation.
+    async fn create_competition_native_estimator(
+        &mut self,
+        sources: &[Vec<NativePriceEstimatorSource>],
+        results_required: NonZeroUsize,
+        weth: &WETH9::Instance,
+    ) -> Result<CompetitionEstimator<Arc<dyn NativePriceEstimating>>> {
+        let mut estimators = Vec::with_capacity(sources.len());
+        for stage in sources.iter() {
             let mut stages = Vec::with_capacity(stage.len());
             for source in stage {
-                stages.push(self.create_native_estimator(source, &weth).await?);
+                stages.push(self.create_native_estimator(source, weth).await?);
             }
             estimators.push(stages);
         }
 
-        let competition_estimator =
+        Ok(
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
                 .with_verification(self.args.quote_verification)
-                .with_early_return(results_required);
-        let native_estimator = Arc::new(CachingNativePriceEstimator::new(
-            Box::new(competition_estimator),
-            self.args.native_price_cache_max_age,
-            self.args.native_price_cache_refresh,
-            Some(self.args.native_price_cache_max_update_size),
-            self.args.native_price_prefetch_time,
-            self.args.native_price_cache_concurrent_requests,
-            self.args
-                .native_price_approximation_tokens
-                .iter()
-                .copied()
-                .collect(),
-            self.args.quote_timeout,
-        ));
-        Ok(native_estimator)
+                .with_early_return(results_required),
+        )
     }
 }
 
