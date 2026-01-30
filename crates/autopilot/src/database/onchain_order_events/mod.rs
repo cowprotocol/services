@@ -780,7 +780,6 @@ mod test {
 
     use {
         super::*,
-        crate::database::Config,
         alloy::primitives::U256,
         contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
@@ -802,7 +801,6 @@ mod test {
             order_quoting::{MockOrderQuoting, Quote, QuoteData},
         },
         sqlx::PgPool,
-        std::num::NonZeroUsize,
     };
 
     #[test]
@@ -1250,9 +1248,7 @@ mod test {
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
-                config: Config {
-                    insert_batch_size: NonZeroUsize::new(500).unwrap(),
-                },
+                config: Default::default(),
             },
             trampoline: HooksTrampoline::Instance::deployed(&web3.alloy)
                 .await

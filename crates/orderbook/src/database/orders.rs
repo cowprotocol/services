@@ -900,7 +900,7 @@ mod tests {
     async fn postgres_replace_order() {
         let owner = Address::repeat_byte(0x77);
 
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -966,7 +966,7 @@ mod tests {
     async fn postgres_replace_order_no_cancellation_on_error() {
         let owner = Address::repeat_byte(0x77);
 
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -1010,7 +1010,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_presignature_status() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
@@ -1083,7 +1083,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_cancel_orders() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         // Define some helper closures to make the test easier to read.
@@ -1132,7 +1132,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let interaction = |byte: u8| InteractionData {
@@ -1189,7 +1189,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions_and_verified() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let quote = Quote {

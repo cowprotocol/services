@@ -57,13 +57,23 @@ async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
 
-/// Test that orders with haircut configured still execute on-chain.
+/// Test that sell orders with haircut configured still execute on-chain.
 /// The haircut reduces the reported surplus but the order should still be
 /// fillable and execute successfully.
 #[tokio::test]
 #[ignore]
 async fn local_node_limit_order_with_haircut() {
-    run_test(limit_order_with_haircut_test).await;
+    run_test(sell_order_with_haircut_test).await;
+}
+
+/// Test that buy orders with haircut configured still execute on-chain.
+/// For buy orders, verifies that:
+/// - executedBuy >= signedBuyAmount (user gets at least what they signed for)
+/// - executedSell <= sellLimit (don't take more than user's maximum)
+#[tokio::test]
+#[ignore]
+async fn local_node_buy_order_with_haircut() {
+    run_test(buy_order_with_haircut_test).await;
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -1175,7 +1185,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 /// Test that a limit order with haircut configured still executes on-chain.
 /// The haircut adjusts clearing prices to report lower surplus, but the order
 /// should still be fillable since the limit price allows for enough slack.
-async fn limit_order_with_haircut_test(web3: Web3) {
+async fn sell_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -1321,5 +1331,228 @@ async fn limit_order_with_haircut_test(web3: Web3) {
         trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
         "Trader should have received between 9 and 9.5 ETH (AMM output minus haircut), but got {}",
         trader_received
+    );
+
+    // Wait for solver competition data to be indexed
+    tracing::info!("Waiting for solver competition to be indexed");
+    let indexed = || async {
+        onchain.mint_block().await;
+        match services.get_trades(&order_id).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed).await.unwrap();
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    let tx_hash = trades[0].tx_hash.unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    // Find our order in the winning solution
+    let winner = competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("Should have winning solution");
+
+    let reported_order = winner
+        .orders
+        .iter()
+        .find(|o| o.id == order_id)
+        .expect("Order should be in solution");
+
+    let signed_sell_amount = U256::from(order.sell_amount);
+    let reported_sell_amount = reported_order.sell_amount;
+
+    assert!(
+        reported_sell_amount <= signed_sell_amount,
+        "Driver reported sell_amount {} exceeds signed sell_amount {}. Haircut should reduce \
+         surplus/score, not inflate the reported sell amount!",
+        reported_sell_amount,
+        signed_sell_amount
+    );
+}
+
+/// Test that a buy order with haircut configured executes correctly.
+/// For buy orders, the user signs for a specific buy_amount they want to
+/// receive, and sell_amount is the maximum they're willing to pay.
+/// Verifies that reported amounts respect these constraints.
+async fn buy_order_with_haircut_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Create and fund Uniswap pool (1:1 ratio)
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
+            1000u64.eth(),
+            1000u64.eth(),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address(),
+            U256::MAX,
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Fund trader with token_a for selling
+    token_a.mint(trader.address(), 100u64.eth()).await;
+    token_a
+        .approve(onchain.contracts().allowance, 100u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Start protocol with 500 bps (5%) haircut
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args_and_haircut(Default::default(), solver, 500)
+        .await;
+
+    // Create BUY order: want to buy 5 token_b, willing to sell up to 10 token_a.
+    // At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
+    // We use a generous sell_limit to ensure the order executes, then verify
+    // that the driver's reported sell_amount doesn't exceed reasonable bounds.
+    let signed_buy_amount = 5u64.eth();
+    let sell_limit = 10u64.eth(); // Generous limit to ensure execution
+    let order = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: sell_limit,
+        buy_token: *token_b.address(),
+        buy_amount: signed_buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Buy,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Wait for trade to execute
+    tracing::info!("Waiting for buy order trade with haircut.");
+    let trader_b_balance_before = token_b.balanceOf(trader.address()).call().await.unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
+        balance_after > trader_b_balance_before
+    })
+    .await
+    .unwrap();
+
+    // Wait for solver competition data to be indexed
+    tracing::info!("Waiting for solver competition to be indexed");
+    let indexed = || async {
+        onchain.mint_block().await;
+        match services.get_trades(&order_id).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed).await.unwrap();
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    let tx_hash = trades[0].tx_hash.unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    // Find our order in the winning solution
+    let winner = competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("Should have winning solution");
+
+    let reported_order = winner
+        .orders
+        .iter()
+        .find(|o| o.id == order_id)
+        .expect("Order should be in solution");
+
+    let signed_buy_amount_u256 = U256::from(signed_buy_amount);
+    let sell_limit_u256 = U256::from(sell_limit);
+    let reported_sell_amount = reported_order.sell_amount;
+    let reported_buy_amount = reported_order.buy_amount;
+
+    // For buy orders:
+    // 1. User should get at least what they signed for
+    assert!(
+        reported_buy_amount >= signed_buy_amount_u256,
+        "Buy order: reported buy_amount {} is less than signed buy_amount {}",
+        reported_buy_amount,
+        signed_buy_amount_u256
+    );
+
+    // 2. Don't take more than user's maximum
+    assert!(
+        reported_sell_amount <= sell_limit_u256,
+        "Driver reported sell_amount {} exceeds sell limit {}",
+        reported_sell_amount,
+        sell_limit_u256
+    );
+
+    // 3. Reported sell_amount should be close to what's actually needed (~5.04 ETH
+    //    for buying 5 ETH at 1:1 with 0.3% fee).
+    // We check that sell_amount is less than 5.2 ETH (5.0 ETH + 5% haircut = 5.25
+    // ETH).
+    let reasonable_max_sell = U256::from(5_200_000_000_000_000_000u128); // 5.2 ETH
+    assert!(
+        reported_sell_amount <= reasonable_max_sell,
+        "Driver reported sell_amount {} exceeds expected max {} (actual needed is ~5.04 ETH). \
+         Haircut should reduce surplus/score, not inflate the reported sell amount!",
+        reported_sell_amount,
+        reasonable_max_sell
     );
 }
