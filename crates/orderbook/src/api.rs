@@ -28,6 +28,7 @@ mod get_native_price;
 mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
+mod get_orders_by_uid;
 mod get_solver_competition;
 mod get_solver_competition_v2;
 mod get_token_metadata;
@@ -57,6 +58,10 @@ pub fn handle_all_routes(
         (
             "v1/create_order",
             box_filter(post_order::post_order(orderbook.clone())),
+        ),
+        (
+            "v1/get_orders",
+            box_filter(get_orders_by_uid::get_orders_by_uid(orderbook.clone())),
         ),
         (
             "v1/get_order",

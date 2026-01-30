@@ -75,6 +75,7 @@ pub trait OrderStoring: Send + Sync {
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
+    async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<Order>>;
 }
 
 #[derive(Debug)]
@@ -311,6 +312,38 @@ impl OrderStoring for Postgres {
             }
         }
         .transpose()
+    }
+
+    async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["many_orders"])
+            .start_timer();
+        let mut ex = self.pool.acquire().await?;
+        let uids = uids
+            .into_iter()
+            .map(|uid| ByteArray(uid.0))
+            .collect::<Vec<_>>();
+
+        let orders: Vec<Result<Order>> =
+            orders::many_full_orders_with_quotes(&mut ex, uids.as_slice())
+                .await
+                .filter_map(async |order| order.ok())
+                .map(|order| {
+                    let (order, quote) = order.into_order_and_quote();
+                    full_order_with_quote_into_model_order(order, quote.as_ref())
+                })
+                .collect()
+                .await;
+        let jit_orders: Vec<Result<Order>> =
+            database::jit_orders::get_many_by_id(&mut ex, uids.as_slice())
+                .await
+                .filter_map(async |order| order.ok())
+                .map(|order| full_order_into_model_order(order))
+                .collect()
+                .await;
+
+        orders.into_iter().chain(jit_orders).collect()
     }
 
     async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
