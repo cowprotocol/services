@@ -201,11 +201,10 @@ impl CacheStorage {
     /// Get a cached price with optional cache modifications.
     /// Returns None if the price is not cached or is expired.
     ///
-    /// The `lookup` parameter controls what modifications to perform:
-    /// - `ReadOnly`: No modifications, just check the cache
-    /// - `UpgradeOnly`: Upgrade Quote→Auction entries, but don't create missing
-    /// - `CreateForMaintenance`: Create missing entries with Auction source and
-    ///   upgrade existing Quote→Auction entries
+    /// The `require_updating_price` parameter controls whether to mark the
+    /// token for active price maintenance:
+    /// - `DontCare`: Don't modify the token's maintenance flag
+    /// - `Yes`: Mark the token to require active price updates
     fn get_cached_price(
         &self,
         token: Address,
