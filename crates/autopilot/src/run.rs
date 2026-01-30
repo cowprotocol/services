@@ -15,7 +15,7 @@ use {
                 event_retriever::CoWSwapOnchainOrdersContract,
             },
         },
-        domain::{self, competition::SolverParticipationGuard},
+        domain,
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -430,9 +430,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         None
     };
 
-    let (competition_updates_sender, competition_updates_receiver) =
-        tokio::sync::mpsc::unbounded_channel();
-
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
@@ -669,7 +666,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
-                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
@@ -683,20 +679,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .into_iter()
         .collect();
 
-    let solver_participation_guard = SolverParticipationGuard::new(
-        eth.clone(),
-        persistence.clone(),
-        competition_updates_receiver,
-        args.db_based_solver_participation_guard,
-        drivers.iter().cloned(),
-    );
-
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
         drivers,
-        solver_participation_guard,
         solvable_orders_cache,
         trusted_tokens,
         run_loop::Probes {
@@ -704,7 +691,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             startup,
         },
         Arc::new(maintenance),
-        competition_updates_sender,
     );
     run.run_forever(shutdown_controller).await;
 
@@ -737,7 +723,6 @@ async fn shadow_mode(args: Arguments) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)

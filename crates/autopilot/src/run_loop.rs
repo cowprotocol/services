@@ -8,7 +8,6 @@ use {
                 self,
                 Solution,
                 SolutionError,
-                SolverParticipationGuard,
                 Unscored,
                 winner_selection::{self, Ranking},
             },
@@ -78,14 +77,12 @@ pub struct RunLoop {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
-    solver_participation_guard: SolverParticipationGuard,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     probes: Probes,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
-    competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
@@ -98,12 +95,10 @@ impl RunLoop {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
-        solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: Arc<Maintenance>,
-        competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -120,12 +115,10 @@ impl RunLoop {
             eth,
             persistence,
             drivers,
-            solver_participation_guard,
             solvable_orders_cache,
             trusted_tokens,
             probes,
             maintenance,
-            competition_updates_sender,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify,
         }
@@ -538,26 +531,6 @@ impl RunLoop {
             competition_table,
         };
 
-        let save_solutions = self
-            .persistence
-            .save_solutions(auction.id, ranking.all())
-            .map(|res| match res {
-                Ok(_) => {
-                    // Notify the solver participation guard that the proposed solutions have been
-                    // saved.
-                    if let Err(err) = self.competition_updates_sender.send(()) {
-                        tracing::error!(?err, "failed to notify solver participation guard");
-                    }
-                    Ok(())
-                }
-                Err(err) => {
-                    // Don't error if saving of auction and solution fails, until stable.
-                    // Various edge cases with JIT orders verifiable only in production.
-                    tracing::warn!(?err, "failed to save new competition data");
-                    Err(err.0.context("failed to save solutions"))
-                }
-            });
-
         tracing::trace!(?competition, "saving competition");
 
         futures::try_join!(
@@ -579,7 +552,6 @@ impl RunLoop {
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
-            save_solutions
         )
         .inspect_err(|err| tracing::warn!(?err, "failed to write post processed data to DB"))?;
 
@@ -684,11 +656,14 @@ impl RunLoop {
     {
         let (can_participate, response) = {
             let driver = driver.clone();
-            let guard = self.solver_participation_guard.clone();
+            let eth = self.eth.clone();
             let mut handle = tokio::task::spawn(async move {
                 let fetch_response = driver.solve(request);
-                let check_allowed = guard.can_participate(&driver.submission_address);
-                tokio::join!(check_allowed, fetch_response)
+                let check_allowed = eth
+                    .contracts()
+                    .authenticator()
+                    .isSolver(driver.submission_address);
+                tokio::join!(check_allowed.call(), fetch_response)
             });
             tokio::time::timeout(self.config.solve_deadline, &mut handle)
                 .await
