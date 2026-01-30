@@ -12,7 +12,12 @@
 //! cluster.
 
 use {
-    axum::{Router, body::Body, http::Request, response::IntoResponse},
+    axum::{
+        Router,
+        body::Body,
+        http::Request,
+        response::{IntoResponse, Response},
+    },
     hyper::body::to_bytes,
     std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},

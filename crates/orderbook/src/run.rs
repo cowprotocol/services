@@ -330,6 +330,7 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
+    // NOTE for reviewers: this could this be postgres_read (?)
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
