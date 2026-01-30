@@ -138,181 +138,130 @@ pub fn handle_all_routes(
         metrics.reset_requests_complete(label);
     }
 
-    let v1_router = Router::new()
-        // /account/* routes
-        .nest(
-            "/account/:owner",
-            Router::new().route(
-                "/orders",
-                axum::routing::get(get_user_orders::get_user_orders_handler)
-                    .layer(middleware::from_fn(with_labelled_metric("v1/get_user_orders"))),
-            ),
+    let api_router = Router::new()
+        // V1 routes
+        .route(
+            "/v1/account/:owner/orders",
+            axum::routing::get(get_user_orders::get_user_orders_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_user_orders"))),
         )
-        // /app_data routes
-        .nest(
-            "/app_data",
-            Router::new()
-                .route(
-                    "/",
-                    axum::routing::put(put_app_data::put_app_data_without_hash)
+        .route(
+            "/v1/app_data",
+            axum::routing::put(put_app_data::put_app_data_without_hash)
+                .layer(DefaultBodyLimit::max(app_data_size_limit))
+                .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data"))),
+        )
+        .route(
+            "/v1/app_data/:hash",
+            axum::routing::get(get_app_data::get_app_data_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_app_data")))
+                .merge(
+                    axum::routing::put(put_app_data::put_app_data_with_hash)
                         .layer(DefaultBodyLimit::max(app_data_size_limit))
                         .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data"))),
-                )
-                .route(
-                    "/:hash",
-                    {
-                        let get_route = axum::routing::get(get_app_data::get_app_data_handler)
-                            .layer(middleware::from_fn(with_labelled_metric("v1/get_app_data")));
-                        let put_route = axum::routing::put(put_app_data::put_app_data_with_hash)
-                            .layer(DefaultBodyLimit::max(app_data_size_limit))
-                            .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data")));
-                        get_route.merge(put_route)
-                    },
                 ),
         )
-        // /auction route
         .route(
-            "/auction",
+            "/v1/auction",
             axum::routing::get(get_auction::get_auction_handler)
                 .layer(middleware::from_fn(with_labelled_metric("v1/auction"))),
         )
-        // /orders routes
-        // Note: For routes with multiple methods, we apply layers to each method separately
-        // before merging to ensure correct metric labels per method.
-        .nest(
-            "/orders",
-            Router::new()
-                .route(
-                    "/",
-                    {
-                        let post = axum::routing::post(post_order::post_order_handler)
-                            .layer(middleware::from_fn(with_labelled_metric("v1/create_order")));
-                        let delete = axum::routing::delete(cancel_orders::cancel_orders_handler)
-                            .layer(middleware::from_fn(with_labelled_metric("v1/cancel_orders")));
-                        post.merge(delete)
-                    },
-                )
-                .route(
-                    "/:uid",
-                    {
-                        let get = axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
-                            .layer(middleware::from_fn(with_labelled_metric("v1/get_order")));
-                        let delete = axum::routing::delete(cancel_order::cancel_order_handler)
-                            .layer(middleware::from_fn(with_labelled_metric("v1/cancel_order")));
-                        get.merge(delete)
-                    },
-                )
-                .route(
-                    "/:uid/status",
-                    axum::routing::get(get_order_status::get_status_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/get_order_status"))),
+        .route(
+            "/v1/orders",
+            axum::routing::post(post_order::post_order_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/create_order")))
+                .merge(
+                    axum::routing::delete(cancel_orders::cancel_orders_handler)
+                        .layer(middleware::from_fn(with_labelled_metric("v1/cancel_orders"))),
                 ),
         )
-        // /quote route
         .route(
-            "/quote",
+            "/v1/orders/:uid",
+            axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_order")))
+                .merge(
+                    axum::routing::delete(cancel_order::cancel_order_handler)
+                        .layer(middleware::from_fn(with_labelled_metric("v1/cancel_order"))),
+                ),
+        )
+        .route(
+            "/v1/orders/:uid/status",
+            axum::routing::get(get_order_status::get_status_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_order_status"))),
+        )
+        .route(
+            "/v1/quote",
             axum::routing::post(post_quote::post_quote_handler)
                 .layer(middleware::from_fn(with_labelled_metric("v1/post_quote"))),
         )
         // /solver_competition routes (specific before parameterized)
-        .nest(
-            "/solver_competition",
-            Router::new()
-                .route(
-                    "/latest",
-                    axum::routing::get(get_solver_competition::get_solver_competition_latest_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
-                )
-                .route(
-                    "/by_tx_hash/:tx_hash",
-                    axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
-                )
-                .route(
-                    "/:auction_id",
-                    axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
-                ),
-        )
-        // /token/* routes
-        .nest(
-            "/token/:token",
-            Router::new()
-                .route(
-                    "/metadata",
-                    axum::routing::get(get_token_metadata::get_token_metadata_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/get_token_metadata"))),
-                )
-                .route(
-                    "/native_price",
-                    axum::routing::get(get_native_price::get_native_price_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/get_native_price"))),
-                ),
-        )
-        // /trades route
         .route(
-            "/trades",
+            "/v1/solver_competition/latest",
+            axum::routing::get(get_solver_competition::get_solver_competition_latest_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
+        )
+        .route(
+            "/v1/solver_competition/by_tx_hash/:tx_hash",
+            axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
+        )
+        .route(
+            "/v1/solver_competition/:auction_id",
+            axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
+        )
+        .route(
+            "/v1/token/:token/metadata",
+            axum::routing::get(get_token_metadata::get_token_metadata_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_token_metadata"))),
+        )
+        .route(
+            "/v1/token/:token/native_price",
+            axum::routing::get(get_native_price::get_native_price_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_native_price"))),
+        )
+        .route(
+            "/v1/trades",
             axum::routing::get(get_trades::get_trades_handler)
                 .layer(middleware::from_fn(with_labelled_metric("v1/get_trades"))),
         )
-        // /transactions/* routes
-        .nest(
-            "/transactions/:hash",
-            Router::new().route(
-                "/orders",
-                axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
-                    .layer(middleware::from_fn(with_labelled_metric("v1/get_orders_by_tx"))),
-            ),
-        )
-        // /users/* routes
-        .nest(
-            "/users/:user",
-            Router::new().route(
-                "/total_surplus",
-                axum::routing::get(get_total_surplus::get_total_surplus_handler)
-                    .layer(middleware::from_fn(with_labelled_metric("v1/get_total_surplus"))),
-            ),
-        )
-        // /version route
         .route(
-            "/version",
+            "/v1/transactions/:hash/orders",
+            axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_orders_by_tx"))),
+        )
+        .route(
+            "/v1/users/:user/total_surplus",
+            axum::routing::get(get_total_surplus::get_total_surplus_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v1/get_total_surplus"))),
+        )
+        .route(
+            "/v1/version",
             axum::routing::get(version::version_handler)
                 .layer(middleware::from_fn(with_labelled_metric("v1/version"))),
-        );
-
-    // Build v2 router with inline metric labels
-    let v2_router = Router::new()
-        // /solver_competition routes (specific before parameterized)
-        .nest(
-            "/solver_competition",
-            Router::new()
-                .route(
-                    "/latest",
-                    axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
-                )
-                .route(
-                    "/by_tx_hash/:tx_hash",
-                    axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
-                )
-                .route(
-                    "/:auction_id",
-                    axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
-                ),
         )
-        // /trades route
+        // V2 routes
+        // /solver_competition routes (specific before parameterized)
         .route(
-            "/trades",
+            "/v2/solver_competition/latest",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
+        )
+        .route(
+            "/v2/solver_competition/by_tx_hash/:tx_hash",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
+        )
+        .route(
+            "/v2/solver_competition/:auction_id",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
+                .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
+        )
+        .route(
+            "/v2/trades",
             axum::routing::get(get_trades_v2::get_trades_handler)
                 .layer(middleware::from_fn(with_labelled_metric("v2/get_trades"))),
-        );
-
-    // Nest API versions and set state
-    let api_router = Router::new()
-        .nest("/v1", v1_router)
-        .nest("/v2", v2_router)
+        )
         .with_state(state);
 
     finalize_router(api_router)
