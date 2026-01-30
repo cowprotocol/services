@@ -82,7 +82,7 @@ services:
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
@@ -115,7 +115,7 @@ services:
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
-      - GAS_ESTIMATORS=Native,Web3
+      - GAS_ESTIMATORS=Web3
       - PRICE_ESTIMATORS=None
       - NATIVE_PRICE_ESTIMATORS=baseline
       - BLOCK_STREAM_POLL_INTERVAL=1s
@@ -123,7 +123,7 @@ services:
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
