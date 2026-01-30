@@ -118,6 +118,10 @@ pub trait Eip1559EstimationExt {
 
     /// Scales fees by a multiplier in parts per thousand (e.g., 100 = +10%).
     fn scaled_by_pml(self, pml: u64) -> Self;
+
+    /// Bumps only the priority fee (tip) by the given factor, rounding up.
+    /// Unlike `scaled_by_pml`, this keeps `max_fee_per_gas` unchanged.
+    fn bump_tip(self, factor: f64) -> Self;
 }
 
 impl Eip1559EstimationExt for Eip1559Estimation {
@@ -138,6 +142,12 @@ impl Eip1559EstimationExt for Eip1559Estimation {
             let n = self.max_priority_fee_per_gas;
             n * (1000 + pml as u128) / 1000
         };
+        self
+    }
+
+    fn bump_tip(mut self, factor: f64) -> Self {
+        self.max_priority_fee_per_gas =
+            (self.max_priority_fee_per_gas as f64 * factor).ceil() as u128;
         self
     }
 }
