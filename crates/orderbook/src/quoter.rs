@@ -270,7 +270,7 @@ impl QuoteHandler {
         } else {
             // fee_in_buy = fee_in_sell * (buy_amount / sell_amount)
             U256::uint_try_from(
-                amount_in_sell_currency.widening_mul(quote.buy_amount.into())
+                amount_in_sell_currency.widening_mul(quote.buy_amount)
                     / U512::from(quote.sell_amount),
             )
             .unwrap_or(amount_in_sell_currency)
@@ -1455,7 +1455,7 @@ mod tests {
         // 100 / 10000 = 1% = 100 bps
         // Result is clamped to min 10 bps
         assert!(
-            slippage >= 100 && slippage <= 110,
+            (100..=110).contains(&slippage),
             "Expected ~100 bps, got {}",
             slippage
         );
@@ -1483,7 +1483,7 @@ mod tests {
         // Only volume slippage: 10000 * 0.5% = 50 tokens = 50 bps
         // Clamped to min 10 bps, but 50 > 10 so should be 50
         assert!(
-            slippage >= 50 && slippage <= 60,
+            (50..=60).contains(&slippage),
             "Expected ~50 bps for no-fee sell, got {}",
             slippage
         );
@@ -1516,7 +1516,7 @@ mod tests {
         // Total: 100 tokens, convert to bps relative to 10000 (before fee)
         // 100 / 10000 ≈ 100 bps
         assert!(
-            slippage >= 100 && slippage <= 110,
+            (100..=110).contains(&slippage),
             "Expected ~100 bps for buy with fee, got {}",
             slippage
         );
@@ -1565,7 +1565,7 @@ mod tests {
         // Both should produce slippage in similar range
         // (exact values might differ due to order type specifics)
         assert!(
-            (sell_slippage as i32 - buy_slippage as i32).abs() < 50,
+            (sell_slippage.cast_signed() - buy_slippage.cast_signed()).abs() < 50,
             "Sell slippage {} vs Buy slippage {} - should be similar",
             sell_slippage,
             buy_slippage
