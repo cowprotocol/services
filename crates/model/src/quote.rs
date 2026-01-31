@@ -1,6 +1,12 @@
 use {
     crate::{
-        order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderKind,
+            SellTokenSource,
+        },
         signature::SigningScheme,
         time,
     },
@@ -146,6 +152,30 @@ pub struct OrderQuoteRequest {
         serialize_with = "serialize_timeout"
     )]
     pub timeout: Option<Duration>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuoteRequestV2 {
+    #[serde(flatten)]
+    pub base: OrderQuoteRequest,
+    /// Slippage in basis points.
+    pub slippage_bps: u32,
+    /// Optional signing method override (presign, ethflow)
+    /// If not provided, uses the signing method from base request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_method: Option<SigningMethod>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SigningMethod {
+    /// Standard EIP-712 signature.
+    Eip712,
+    /// Pre-sign (returns transaction to execute)
+    Presign,
+    /// ETH Flow (native ETH wrapping transaction)
+    EthFlow,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -346,6 +376,131 @@ pub struct OrderQuoteResponse {
     /// Protocol fee in basis points (e.g., "2" for 0.02%)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_fee_bps: Option<String>,
+}
+
+/// Standard order quote response
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuoteV2 {
+    /// The complete order ready to be signed.
+    pub quote: OrderCreation,
+    pub from: Address,
+    pub expiration: DateTime<Utc>,
+    pub id: Option<QuoteId>,
+    pub verified: bool,
+
+    /// Breakdown of amounts at different calculation stagess.
+    pub amounts: QuoteBreakdown,
+
+    /// Detailed cost breakdown
+    pub costs: CostBreakdown,
+
+    /// Slippage information
+    pub slippage: SlippageInfo,
+
+    /// Signing method for this quote
+    pub signing_method: SigningMethod,
+}
+
+/// V2 response
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuoteResponseV2 {
+    /// The complete order ready to be signed
+    pub quote: OrderCreation,
+    pub from: Address,
+    pub expiration: DateTime<Utc>,
+    pub id: Option<QuoteId>,
+    pub verified: bool,
+
+    /// Breakdown of amounts at different stages
+    pub amounts: QuoteBreakdown,
+
+    /// Detailed cost breakdown
+    pub costs: CostBreakdown,
+
+    /// Slippage information
+    pub slippage: SlippageInfo,
+
+    /// Signing method for this quote
+    pub signing_method: SigningMethod,
+}
+
+/// Amounts at different stages of quote calculation for UI display.
+/// Based on SDK naming: beforeAllFees, afterNetworkCosts, afterSlippage.
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteBreakdown {
+    /// Amount before any fees are applied (display value)
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub before_all_fees: U256,
+
+    /// Amount after network costs and protocol fees (expected to receive)
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub after_network_costs: U256,
+
+    /// Amount after slippage protection (minimum receive / signed amount)
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub after_slippage: U256,
+}
+
+/// Detailed breakdown of all costs for quote v2.
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CostBreakdown {
+    pub network_fee: NetworkFeeCost,
+
+    /// Partner fee extracted from appData if present
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partner_fee: Option<PartnerFeeCost>,
+
+    pub protocol_fee: ProtocolFeeCost,
+}
+
+/// Network fee in both currencies for UI flexibility.
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkFeeCost {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub amount_in_sell_currency: U256,
+
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub amount_in_buy_currency: U256,
+}
+
+/// Simplified partner fee cost (derived from AppData PartnerFee)
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartnerFeeCost {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub amount: U256,
+    pub bps: u64,
+}
+
+/// Protocol fee cost
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolFeeCost {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub amount: U256,
+    pub bps: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlippageInfo {
+    /// Slippage that was applied (user-provided)
+    pub applied_bps: u32,
+
+    /// Recommended smart slippage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_bps: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
