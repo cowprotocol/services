@@ -236,17 +236,22 @@ impl QuoteHandler {
 
     /// Calculate network fee in both sell and buy currency.
     fn calculate_network_fee(quote: &OrderQuote) -> Result<NetworkFeeCost, OrderQuoteError> {
-        // fee_amount is always in sel_token.
+        // fee_amount is always in sell_token
         let amount_in_sell_currency = quote.fee_amount;
 
-        // Convert to buy_token using price ratio
-        // if sell_token_price = X ETH and gas_price = Y ETH/gas and gas_amount = Z gas
-        // then fee in sell_token = (Y * Z) / X
-        // To convert to buy_token, I'll need the exchange rate between sell and buy.
-
-        // TODO: proper conversion, using buy_token price
-        // temporarily, I'll return fee_amount for both, and fix this in later.
-        let amount_in_buy_currency = quote.fee_amount;
+        // Convert to buy_token using the quote's exchange rate.
+        // Exchange rate: buy_amount / sell_amount = how much buy token per sell token
+        let amount_in_buy_currency = if quote.sell_amount.is_zero() {
+            // Can't convert if sell amount is zero
+            amount_in_sell_currency
+        } else {
+            // fee_in_buy = fee_in_sell * (buy_amount / sell_amount)
+            U256::uint_try_from(
+                amount_in_sell_currency
+                    .widening_mul(quote.buy_amount.into())
+                    / U512::from(quote.sell_amount)
+            ).unwrap_or(amount_in_sell_currency)
+        };
 
         Ok(NetworkFeeCost {
             amount_in_sell_currency,
