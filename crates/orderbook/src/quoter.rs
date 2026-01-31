@@ -25,7 +25,10 @@ use {
     tracing::instrument,
 };
 use model::order::{OrderCreation, OrderKind};
-use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteV2, PartnerFeeCost, ProtocolFeeCost, QuoteBreakdown, SlippageInfo};
+use model::quote::{
+    CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteV2, PartnerFeeCost,
+    ProtocolFeeCost, QuoteBreakdown, SigningMethod, SlippageInfo,
+};
 use ::app_data::{PartnerFees, FeePolicy};
 use shared::order_validation::OrderAppData;
 
@@ -97,6 +100,15 @@ impl QuoteHandler {
         &self,
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
+        let (response, _quote) = self.calculate_quote_internal(request).await?;
+        Ok(response)
+    }
+
+    #[instrument(skip_all, fields(buy_token = ?request.buy_token, sell_token = ?request.sell_token, price_quality = ?request.price_quality))]
+    async fn calculate_quote_internal(
+        &self,
+        request: &OrderQuoteRequest,
+    ) -> Result<(OrderQuoteResponse, Quote), OrderQuoteError> {
         tracing::debug!(?request, "calculating quote");
 
         let full_app_data_override = match request.app_data {
@@ -200,7 +212,7 @@ impl QuoteHandler {
         };
 
         tracing::debug!(?response, "finished computing quote");
-        Ok(response)
+        Ok((response, quote))
     }
 }
 
@@ -209,6 +221,7 @@ impl QuoteHandler {
     fn calculate_cost_breakdown(
         v1_response: &OrderQuoteResponse,
         validated_app_data: &OrderAppData,
+        unadjusted_quote: &Quote,
     ) -> Result<CostBreakdown, OrderQuoteError> {
         let quote = &v1_response.quote;
 
@@ -223,8 +236,7 @@ impl QuoteHandler {
         // Partner fee: Extract from validated appData.
         let partner_fee = Self::extract_partner_fee(
             &validated_app_data.inner.protocol.partner_fee,
-            quote,
-            v1_response.protocol_fee_bps.as_deref(),
+            unadjusted_quote,
         )?;
 
         Ok(CostBreakdown {
@@ -241,6 +253,7 @@ impl QuoteHandler {
 
         // Convert to buy_token using the quote's exchange rate.
         // Exchange rate: buy_amount / sell_amount = how much buy token per sell token
+        // NOTE: This is an approximation as it uses the quote's exchange rate.
         let amount_in_buy_currency = if quote.sell_amount.is_zero() {
             // Can't convert if sell amount is zero
             amount_in_sell_currency
@@ -272,17 +285,54 @@ impl QuoteHandler {
             let amount = match quote.kind {
                 OrderKind::Sell => {
                     // For sell orders, fee is on buy_amount.
-                    U256::uint_try_from(quote.buy_amount.widening_mul(U256::from(bps as u64)) / U512::from(MAX_BPS))
-                        .map_err(|_| {
-                            OrderQuoteError::CalculateQuote(anyhow::anyhow!("Protocol fee calculation overflow").into())
-                        })?
+                    // NOTE: buy_amount in OrderQuote is already adjusted (reduced) by protocol fee
+                    // So we need to calculate it such that adjusted_buy = buy_before_fee * (1 - bps/10000)
+                    // adjusted_buy / (1 - bps/10000) = buy_before_fee
+                    // buy_before_fee = adjusted_buy * 10000 / (10000 - bps)
+                    // protocol_fee = buy_before_fee - adjusted_buy
+                    // protocol_fee = adjusted_buy * 10000 / (10000 - bps) - adjusted_buy
+                    // protocol_fee = adjusted_buy * (10000 / (10000 - bps) - 1)
+                    // protocol_fee = adjusted_buy * (10000 - (10000 - bps)) / (10000 - bps)
+                    // protocol_fee = adjusted_buy * bps / (10000 - bps)
+
+                    let denominator = MAX_BPS.saturating_sub(bps as u64);
+                    if denominator == 0 {
+                        return Err(OrderQuoteError::CalculateQuote(
+                            anyhow::anyhow!("Protocol fee bps too high: {}", bps).into(),
+                        ));
+                    }
+                    U256::uint_try_from(
+                        quote.buy_amount.widening_mul(U256::from(bps as u64))
+                            / U512::from(denominator),
+                    )
+                    .map_err(|_| {
+                        OrderQuoteError::CalculateQuote(
+                            anyhow::anyhow!("Protocol fee calculation overflow").into(),
+                        )
+                    })?
                 }
                 OrderKind::Buy => {
                     // For buy orders, fee is on sell_amount.
-                    U256::uint_try_from(quote.sell_amount.widening_mul(U256::from(bps as u64)) / U512::from(MAX_BPS))
-                        .map_err(|_| {
-                            OrderQuoteError::CalculateQuote(anyhow::anyhow!("Protocol fee calculation overflow").into())
-                        })?
+                    // NOTE: sell_amount in OrderQuote is already adjusted (increased) by protocol fee
+                    // adjusted_sell = sell_before_fee * (1 + bps/10000)
+                    // adjusted_sell / (1 + bps/10000) = sell_before_fee
+                    // sell_before_fee = adjusted_sell * 10000 / (10000 + bps)
+                    // protocol_fee = adjusted_sell - sell_before_fee
+                    // protocol_fee = adjusted_sell - adjusted_sell * 10000 / (10000 + bps)
+                    // protocol_fee = adjusted_sell * (1 - 10000 / (10000 + bps))
+                    // protocol_fee = adjusted_sell * (10000 + bps - 10000) / (10000 + bps)
+                    // protocol_fee = adjusted_sell * bps / (10000 + bps)
+
+                    let denominator = MAX_BPS.saturating_add(bps as u64);
+                    U256::uint_try_from(
+                        quote.sell_amount.widening_mul(U256::from(bps as u64))
+                            / U512::from(denominator),
+                    )
+                    .map_err(|_| {
+                        OrderQuoteError::CalculateQuote(
+                            anyhow::anyhow!("Protocol fee calculation overflow").into(),
+                        )
+                    })?
                 }
             };
 
@@ -297,7 +347,7 @@ impl QuoteHandler {
     }
 
     pub async fn calculate_quote_v2(&self, request: &OrderQuoteRequestV2) -> Result<OrderQuoteV2, OrderQuoteError> {
-        let v1_response = self.calculate_quote(&request.base).await?;
+        let (v1_response, unadjusted_quote) = self.calculate_quote_internal(&request.base).await?;
 
         // Get validated app data (already validated in calculate_quote)
         let full_app_data_override = match request.base.app_data {
@@ -315,7 +365,7 @@ impl QuoteHandler {
         ).ok(); // Dont fail if smart slippage calculation errors.
 
         // calculate cost breakdown.
-        let costs = Self::calculate_cost_breakdown(&v1_response, &validated_app_data)?;
+        let costs = Self::calculate_cost_breakdown(&v1_response, &validated_app_data, &unadjusted_quote)?;
 
         // Build the signable order.
         let mut order = OrderCreation {
@@ -339,7 +389,9 @@ impl QuoteHandler {
         Self::apply_slippage(&mut order, request.slippage_bps)?;
 
         // Calculate amounts breakdown
-        let amounts = Self::calculate_amounts_breakdown(&v1_response, &order)?;
+        let amounts = Self::calculate_amounts_breakdown(&v1_response, &order, &unadjusted_quote)?;
+
+        let signing_method = request.signing_method.as_ref().cloned().unwrap_or(SigningMethod::Eip712);
 
         Ok(OrderQuoteV2 {
             quote: order,
@@ -353,6 +405,7 @@ impl QuoteHandler {
                 applied_bps: request.slippage_bps,
                 recommended_bps: recommended_slippage_bps,
             },
+            signing_method,
         })
     }
 
@@ -400,24 +453,13 @@ impl QuoteHandler {
     fn calculate_amounts_breakdown(
         v1_response: &OrderQuoteResponse,
         order_after_slippage: &OrderCreation,
+        unadjusted_quote: &Quote,
     ) -> Result<QuoteBreakdown, OrderQuoteError> {
-        let quote = &v1_response.quote;
-
-        // Calculate protocol fee (used by both order types)
-        let protocol_fee = Self::parse_protocol_fee_amount(v1_response, quote)?;
-        let network_fee = quote.fee_amount;
-
-        match quote.kind {
+        match unadjusted_quote.data.kind {
             OrderKind::Sell => {
-                // For SELL orders (selling exact amount, buying at least minimum):
-                // - before_all_fees: original buy_amount from v1 (best case)
-                // - after_network_costs: buy_amount - network_fee - protocol_fee
-                // - after_slippage: buy_amount from order_after_slippage (what gets signed)
-
-                let before_all_fees = quote.buy_amount;
-                let after_network_costs = before_all_fees
-                    .saturating_sub(network_fee)
-                    .saturating_sub(protocol_fee);
+                // For SELL orders (selling exact amount, buying at least minimum)
+                let before_all_fees = unadjusted_quote.buy_amount;
+                let after_network_costs = v1_response.quote.buy_amount;
                 let after_slippage = order_after_slippage.buy_amount;
 
                 Ok(QuoteBreakdown {
@@ -427,15 +469,9 @@ impl QuoteHandler {
                 })
             }
             OrderKind::Buy => {
-                // For BUY orders (buying exact amount, selling at most maximum):
-                // - before_all_fees: original sell_amount from v1 (best case)
-                // - after_network_costs: sell_amount + network_fee + protocol_fee
-                // - after_slippage: sell_amount from order_after_slippage (what gets signed)
-
-                let before_all_fees = quote.sell_amount;
-                let after_network_costs = before_all_fees
-                    .saturating_add(network_fee)
-                    .saturating_add(protocol_fee);
+                // For BUY orders (buying exact amount, selling at most maximum)
+                let before_all_fees = unadjusted_quote.sell_amount;
+                let after_network_costs = v1_response.quote.sell_amount;
                 let after_slippage = order_after_slippage.sell_amount;
 
                 Ok(QuoteBreakdown {
@@ -505,8 +541,9 @@ impl QuoteHandler {
     /// Calculate slippage from fee increase.
     /// Returns absolute slippage amount in sell token.
     ///
-    /// Formula: feeAmount * (multiplyingFactorPercent / 100)
-    /// Example: fee=100, factor=50% -> slippage = 50
+    /// Formula: `feeAmount * (multiplyingFactorPercent / 100)`
+    ///
+    /// Example: `fee=100, factor=50% -> slippage = 50`
     fn suggest_slippage_from_fee(fee_amount: U256, multiplying_factor_percent: u64) -> U256 {
         // Apply percentage: fee_amount * (factor / 100)
         U256::uint_try_from(
@@ -519,8 +556,9 @@ impl QuoteHandler {
     /// Calculate slippage from volume/price movement.
     /// Returns absolute slippage amount in sell token.
     ///
-    /// Formula: sellAmount * (slippagePercentBps / 10000)
-    /// Example: sellAmount=10000, slippage=40 bps (0.5%) -> slippage=5
+    /// Formula: `sellAmount * (slippagePercentBps / 10000)`
+    ///
+    /// Example: `sellAmount=10000, slippage=40 bps (0.5%) -> slippage=5`
     fn suggest_slippage_from_volume(
         sell_amount_before_network_cost: U256,
         sell_amount_after_network_cost: U256,
@@ -610,8 +648,7 @@ impl QuoteHandler {
     /// Extract partner fee from appData if present
     fn extract_partner_fee(
         partner_fees: &PartnerFees,
-        quote: &OrderQuote,
-        protocol_fee_bps: Option<&str>,
+        unadjusted_quote: &Quote,
     ) -> Result<Option<PartnerFeeCost>, OrderQuoteError> {
         // Get the first partner fee (most common case is single partner fee)
         let partner_fee = partner_fees.iter().next();
@@ -629,30 +666,16 @@ impl QuoteHandler {
             }
 
             // Calculate partner fee amount
-            // Partner fees are applied on top of protocol fees
-            let base_amount = match quote.kind {
+            // Discovered and used the unadjusted quote amount as the base for the partner fee
+            // to avoid double-counting with protocol fees.
+            let base_amount = match unadjusted_quote.data.kind {
                 OrderKind::Sell => {
-                    // For sell orders: calculate on buy amount after protocol fee
-                    let protocol_fee_amount = if let Some(fee_bps_str) = protocol_fee_bps {
-                        let protocol_bps = fee_bps_str.parse::<u64>()
-                            .map_err(|_| OrderQuoteError::CalculateQuote(
-                                anyhow::anyhow!("Invalid protocol fee bps").into()
-                            ))?;
-
-                        U256::uint_try_from(
-                            quote.buy_amount
-                                .widening_mul(U256::from(protocol_bps))
-                                / U512::from(MAX_BPS)
-                        ).unwrap_or(U256::ZERO)
-                    } else {
-                        U256::ZERO
-                    };
-
-                    quote.buy_amount.saturating_sub(protocol_fee_amount)
+                    // For sell orders: calculate on the amount the user expects to buy.
+                    unadjusted_quote.buy_amount
                 }
                 OrderKind::Buy => {
-                    // For buy orders: calculate on sell amount before protocol fee
-                    quote.sell_amount
+                    // For buy orders: calculate on the amount the user expects to sell.
+                    unadjusted_quote.sell_amount
                 }
             };
 
@@ -668,35 +691,6 @@ impl QuoteHandler {
             Ok(Some(PartnerFeeCost { amount, bps }))
         } else {
             Ok(None)
-        }
-    }
-
-    /// Helper to parse protocol fee amount from v1 response
-    fn parse_protocol_fee_amount(
-        v1_response: &OrderQuoteResponse,
-        quote: &OrderQuote,
-    ) -> Result<U256, OrderQuoteError> {
-        if let Some(fee_bps_str) = &v1_response.protocol_fee_bps {
-            let fee_bps = fee_bps_str
-                .parse::<u64>()
-                .map_err(|_| {
-                    OrderQuoteError::CalculateQuote(
-                        anyhow::anyhow!("Invalid protocol fee bps").into()
-                    )
-                })?;
-
-            // Use the base amount depending on order type
-            let base_amount = match quote.kind {
-                OrderKind::Sell => quote.buy_amount,
-                OrderKind::Buy => quote.sell_amount,
-            };
-
-            Ok(U256::uint_try_from(
-                base_amount.widening_mul(U256::from(fee_bps)) / U512::from(MAX_BPS)
-            )
-                .unwrap_or(U256::ZERO))
-        } else {
-            Ok(U256::ZERO)
         }
     }
 }
@@ -804,8 +798,13 @@ impl From<PartialValidationError> for OrderQuoteError {
 mod tests {
     use {
         super::*,
-        alloy::primitives::U256,
-        model::quote::OrderQuoteSide,
+        ::app_data::{AppDataHash, ProtocolAppData, ValidatedAppData},
+        alloy::primitives::{Address, U256},
+        model::{
+            order::{BuyTokenDestination, Interactions, SellTokenSource},
+            quote::OrderQuoteSide,
+            signature::SigningScheme,
+        },
         number::units::EthUnit,
         shared::{
             arguments::FeeFactor,
@@ -1072,5 +1071,455 @@ mod tests {
         assert_eq!(result.protocol_fee_bps, None);
     }
 
-    // TODO: tests for quote v2 methods.
+    #[test]
+    fn test_calculate_cost_breakdown() {
+        let unadjusted_quote = create_test_quote(U256::from(10000), U256::from(20000));
+        let v1_response = OrderQuoteResponse {
+            quote: OrderQuote {
+                fee_amount: U256::from(100),
+                sell_amount: U256::from(10000),
+                buy_amount: U256::from(19000),
+                kind: OrderKind::Sell,
+                ..create_order_quote()
+            },
+            protocol_fee_bps: Some("2".to_string()),
+            ..create_order_quote_response()
+        };
+        let validated_app_data = OrderAppData {
+            inner: ValidatedAppData {
+                hash: AppDataHash::default(),
+                document: "{}".to_string(),
+                protocol: ProtocolAppData {
+                    partner_fee: serde_json::from_value::<PartnerFees>(serde_json::json!([
+                        {
+                            "volumeBps": 100,
+                            "recipient": "0x0000000000000000000000000000000000000000"
+                        }
+                    ])).unwrap(),
+                    ..Default::default()
+                },
+            },
+            interactions: Interactions::default(),
+        };
+
+        let costs = QuoteHandler::calculate_cost_breakdown(
+            &v1_response,
+            &validated_app_data,
+            &unadjusted_quote,
+        ).unwrap();
+
+        assert_eq!(costs.network_fee.amount_in_sell_currency, U256::from(100));
+        assert_eq!(costs.protocol_fee.bps, 2);
+        // Partner fee: 1% of 20000 = 200
+        assert_eq!(costs.partner_fee.unwrap().amount, U256::from(200));
+    }
+    #[test]
+    fn test_calculate_network_fee() {
+        let quote = OrderQuote {
+            fee_amount: U256::from(100),
+            sell_amount: U256::from(1000),
+            buy_amount: U256::from(2000),
+            ..create_order_quote()
+        };
+
+        let network_fee = QuoteHandler::calculate_network_fee(&quote).unwrap();
+        assert_eq!(network_fee.amount_in_sell_currency, U256::from(100));
+        // 100 * (2000 / 1000) = 200
+        assert_eq!(network_fee.amount_in_buy_currency, U256::from(200));
+    }
+
+    #[test]
+    fn test_extract_partner_fee() {
+        let mut partner_fees = serde_json::from_value::<PartnerFees>(serde_json::json!([])).unwrap();
+        let unadjusted_quote = create_test_quote(U256::from(10000), U256::from(20000));
+
+        // No partner fee
+        let fee = QuoteHandler::extract_partner_fee(&partner_fees, &unadjusted_quote).unwrap();
+        assert!(fee.is_none());
+
+        // 1% partner fee
+        partner_fees = serde_json::from_value::<PartnerFees>(serde_json::json!([
+            {
+                "volumeBps": 100,
+                "recipient": "0x0000000000000000000000000000000000000000"
+            }
+        ])).unwrap();
+
+        let fee = QuoteHandler::extract_partner_fee(&partner_fees, &unadjusted_quote).unwrap().unwrap();
+        // Sell order: 1% of unadjusted buy_amount (20000) = 200
+        assert_eq!(fee.amount, U256::from(200));
+        assert_eq!(fee.bps, 100);
+
+        // Buy order
+        let mut unadjusted_quote = create_test_quote(U256::from(10000), U256::from(20000));
+        unadjusted_quote.data.kind = OrderKind::Buy;
+        let fee = QuoteHandler::extract_partner_fee(&partner_fees, &unadjusted_quote).unwrap().unwrap();
+        // Buy order: 1% of unadjusted sell_amount (10000) = 100
+        assert_eq!(fee.amount, U256::from(100));
+    }
+
+    #[test]
+    fn test_calculate_amounts_breakdown() {
+        let unadjusted_quote = create_test_quote(U256::from(10000), U256::from(20000));
+        let v1_response = OrderQuoteResponse {
+            quote: OrderQuote {
+                sell_amount: U256::from(10000),
+                buy_amount: U256::from(19000), // Adjusted down by protocol fee
+                kind: OrderKind::Sell,
+                ..create_order_quote()
+            },
+            ..create_order_quote_response()
+        };
+        let mut order_after_slippage = OrderCreation {
+            kind: OrderKind::Sell,
+            buy_amount: U256::from(18000), // Further adjusted by slippage
+            ..Default::default()
+        };
+
+        let breakdown = QuoteHandler::calculate_amounts_breakdown(
+            &v1_response,
+            &order_after_slippage,
+            &unadjusted_quote,
+        ).unwrap();
+
+        assert_eq!(breakdown.before_all_fees, U256::from(20000));
+        assert_eq!(breakdown.after_network_costs, U256::from(19000));
+        assert_eq!(breakdown.after_slippage, U256::from(18000));
+
+        // Buy order
+        let mut unadjusted_quote = create_test_quote(U256::from(10000), U256::from(20000));
+        unadjusted_quote.data.kind = OrderKind::Buy;
+        let v1_response = OrderQuoteResponse {
+            quote: OrderQuote {
+                sell_amount: U256::from(11000), // Adjusted up by protocol fee
+                buy_amount: U256::from(20000),
+                kind: OrderKind::Buy,
+                ..create_order_quote()
+            },
+            ..create_order_quote_response()
+        };
+        order_after_slippage.kind = OrderKind::Buy;
+        order_after_slippage.sell_amount = U256::from(12000); // Further adjusted by slippage
+
+        let breakdown = QuoteHandler::calculate_amounts_breakdown(
+            &v1_response,
+            &order_after_slippage,
+            &unadjusted_quote,
+        ).unwrap();
+
+        assert_eq!(breakdown.before_all_fees, U256::from(10000));
+        assert_eq!(breakdown.after_network_costs, U256::from(11000));
+        assert_eq!(breakdown.after_slippage, U256::from(12000));
+    }
+
+    #[test]
+    fn test_apply_slippage() {
+        let mut order = OrderCreation {
+            kind: OrderKind::Sell,
+            buy_amount: U256::from(10000),
+            sell_amount: U256::from(10000),
+            ..Default::default()
+        };
+
+        // 1% slippage = 100 bps
+        QuoteHandler::apply_slippage(&mut order, 100).unwrap();
+        // Sell order: buy_amount reduced by 1%
+        assert_eq!(order.buy_amount, U256::from(9900));
+
+        let mut order = OrderCreation {
+            kind: OrderKind::Buy,
+            buy_amount: U256::from(10000),
+            sell_amount: U256::from(10000),
+            ..Default::default()
+        };
+        QuoteHandler::apply_slippage(&mut order, 100).unwrap();
+        // Buy order: sell_amount increased by 1%
+        assert_eq!(order.sell_amount, U256::from(10100));
+    }
+
+    #[test]
+    fn test_calculate_protocol_fee_sell() {
+        let buy_amount_after_fee = U256::from(9998); // 10000 - 2 bps (approx)
+        let v1_response = OrderQuoteResponse {
+            quote: OrderQuote {
+                kind: OrderKind::Sell,
+                buy_amount: buy_amount_after_fee,
+                ..create_order_quote()
+            },
+            protocol_fee_bps: Some("2".to_string()),
+            ..create_order_quote_response()
+        };
+
+        let protocol_fee = QuoteHandler::calculate_protocol_fee(&v1_response).unwrap();
+        // protocol_fee = 9998 * 2 / (10000 - 2) = 19996 / 9998 = 2
+        assert_eq!(protocol_fee.amount, U256::from(2));
+        assert_eq!(protocol_fee.bps, 2);
+    }
+
+    #[test]
+    fn test_calculate_protocol_fee_buy() {
+        let sell_amount_after_fee = U256::from(10002); // 10000 + 2 bps (approx)
+        let v1_response = OrderQuoteResponse {
+            quote: OrderQuote {
+                kind: OrderKind::Buy,
+                sell_amount: sell_amount_after_fee,
+                ..create_order_quote()
+            },
+            protocol_fee_bps: Some("2".to_string()),
+            ..create_order_quote_response()
+        };
+
+        let protocol_fee = QuoteHandler::calculate_protocol_fee(&v1_response).unwrap();
+        // protocol_fee = 10002 * 2 / (10000 + 2) = 20004 / 10002 = 2
+        assert_eq!(protocol_fee.amount, U256::from(2));
+    }
+
+    fn create_order_quote() -> OrderQuote {
+        OrderQuote {
+            sell_token: TEST_SELL_TOKEN,
+            buy_token: TEST_BUY_TOKEN,
+            receiver: None,
+            sell_amount: U256::ZERO,
+            buy_amount: U256::ZERO,
+            valid_to: 0,
+            app_data: OrderCreationAppData::default(),
+            fee_amount: U256::ZERO,
+            gas_amount: BigDecimal::from(0),
+            gas_price: BigDecimal::from(0),
+            sell_token_price: BigDecimal::from(0),
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+            sell_token_balance: SellTokenSource::Erc20,
+            buy_token_balance: BuyTokenDestination::Erc20,
+            signing_scheme: SigningScheme::Eip712,
+        }
+    }
+
+    fn create_order_quote_response() -> OrderQuoteResponse {
+        OrderQuoteResponse {
+            quote: create_order_quote(),
+            from: Address::ZERO,
+            expiration: chrono::Utc::now(),
+            id: None,
+            verified: false,
+            protocol_fee_bps: None,
+        }
+    }
+
+    #[test]
+    fn test_suggest_slippage_from_fee_basic() {
+        // Fee = 100, factor = 50% -> slippage = 50
+        let slippage = QuoteHandler::suggest_slippage_from_fee(U256::from(100), 50);
+        assert_eq!(slippage, U256::from(50), "50% of 100 should be 50");
+
+        // Fee = 1000, factor = 50% -> slippage = 500
+        let slippage = QuoteHandler::suggest_slippage_from_fee(U256::from(1000), 50);
+        assert_eq!(slippage, U256::from(500), "50% of 1000 should be 500");
+
+        // Fee = 0, factor = 50% -> slippage = 0
+        let slippage = QuoteHandler::suggest_slippage_from_fee(U256::from(0), 50);
+        assert_eq!(slippage, U256::from(0), "50% of 0 should be 0");
+    }
+
+    #[test]
+    fn test_suggest_slippage_from_fee_different_factors() {
+        let fee = U256::from(1000);
+
+        // 25% factor
+        let slippage = QuoteHandler::suggest_slippage_from_fee(fee, 25);
+        assert_eq!(slippage, U256::from(250), "25% of 1000 should be 250");
+
+        // 100% factor
+        let slippage = QuoteHandler::suggest_slippage_from_fee(fee, 100);
+        assert_eq!(slippage, U256::from(1000), "100% of 1000 should be 1000");
+
+        // 0% factor
+        let slippage = QuoteHandler::suggest_slippage_from_fee(fee, 0);
+        assert_eq!(slippage, U256::from(0), "0% of 1000 should be 0");
+    }
+
+    #[test]
+    fn test_suggest_slippage_from_volume_sell_order() {
+        // Sell order: use amount after network costs
+        // 10000 tokens, 50 bps (0.5%) slippage
+        let slippage = QuoteHandler::suggest_slippage_from_volume(
+            U256::from(10000), // before
+            U256::from(10000), // after
+            true,              // is_sell
+            50,                // slippage_bps (0.5%)
+        );
+        // 10000 * 50 / 10000 = 50
+        assert_eq!(slippage, U256::from(50), "0.5% of 10000 should be 50");
+    }
+
+    #[test]
+    fn test_suggest_slippage_from_volume_buy_order() {
+        // Buy order: use amount before network costs
+        // 10000 tokens (after fee) - 100 tokens (before fee)
+        let slippage = QuoteHandler::suggest_slippage_from_volume(
+            U256::from(9900),  // before (10000 - 100 fee)
+            U256::from(10000), // after
+            false,             // is_buy
+            50,                // slippage_bps (0.5%)
+        );
+        // 9900 * 50 / 10000 = 49.5 -> 49 (truncated)
+        assert_eq!(slippage, U256::from(49), "0.5% of 9900 should be ~50");
+    }
+
+    #[test]
+    fn test_suggest_slippage_from_volume_zero_amount() {
+        // Zero amount should return zero slippage
+        let slippage = QuoteHandler::suggest_slippage_from_volume(
+            U256::from(0),
+            U256::from(0),
+            true,
+            50,
+        );
+        assert_eq!(slippage, U256::from(0), "0% slippage on zero amount should be zero");
+    }
+
+    #[test]
+    fn test_calculate_slippage_bps_precision() {
+        // Test high-precision calculation
+        // 1000000 tokens, 1 token slippage
+        // Expected: 1 / 1000000 = 0.0001% = 1 bps
+        let bps = QuoteHandler::calculate_slippage_bps(
+            U256::from(1_000_000),
+            U256::from(1_000_000),
+            true,
+            U256::from(1),
+        ).unwrap();
+        // With 1e6 precision scale, this should give accurate result
+        assert!(bps <= 2, "1 token out of 1M should be ~1 bps, got {}", bps);
+    }
+
+    #[test]
+    fn test_calculate_smart_slippage_sell_order_with_fee() {
+        // Sell order: selling 10000 tokens
+        // Fee: 100 tokens
+        // Expected calculation:
+        // - Fee slippage: 100 * 50% = 50 tokens
+        // - Volume slippage: 10000 * 0.5% = 50 tokens
+        // - Total: 100 tokens = 1% = 100 bps
+        let quote = OrderQuote {
+            sell_amount: U256::from(10000),
+            buy_amount: U256::from(10000), // 1:1 price
+            fee_amount: U256::from(100),
+            ..create_order_quote()
+        };
+
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: number::nonzero::NonZeroU256::try_from(U256::from(10000)).unwrap(),
+            },
+        };
+
+        let slippage = QuoteHandler::calculate_smart_slippage(&quote, &side).unwrap();
+
+        // Fee slippage: 50, Volume slippage: 50, Total: 100 tokens
+        // 100 / 10000 = 1% = 100 bps
+        // Result is clamped to min 10 bps
+        assert!(slippage >= 100 && slippage <= 110,
+                "Expected ~100 bps, got {}", slippage);
+    }
+
+    #[test]
+    fn test_calculate_smart_slippage_sell_order_no_fee() {
+        // Sell order with no fee
+        // Expected: only volume slippage = 0.5% = 50 bps (clamped to min 10)
+        let quote = OrderQuote {
+            sell_amount: U256::from(10000),
+            buy_amount: U256::from(10000),
+            fee_amount: U256::from(0), // No fee
+            ..create_order_quote()
+        };
+
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: number::nonzero::NonZeroU256::try_from(U256::from(10000)).unwrap(),
+            },
+        };
+
+        let slippage = QuoteHandler::calculate_smart_slippage(&quote, &side).unwrap();
+
+        // Only volume slippage: 10000 * 0.5% = 50 tokens = 50 bps
+        // Clamped to min 10 bps, but 50 > 10 so should be 50
+        assert!(slippage >= 50 && slippage <= 60,
+                "Expected ~50 bps for no-fee sell, got {}", slippage);
+    }
+
+    #[test]
+    fn test_calculate_smart_slippage_buy_order_with_fee() {
+        // Buy order: buying 10000 tokens, selling ~10100 tokens (includes fee)
+        // Fee: 100 tokens
+        // For buy orders:
+        // - sell_amount_before = 10100 - 100 = 10000
+        // - sell_amount_after = 10100
+        let quote = OrderQuote {
+            sell_amount: U256::from(10100), // includes fee
+            buy_amount: U256::from(10000),
+            fee_amount: U256::from(100),
+            kind: OrderKind::Buy,
+            ..create_order_quote()
+        };
+
+        let side = OrderQuoteSide::Buy {
+            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(U256::from(10000)).unwrap(),
+        };
+
+        let slippage = QuoteHandler::calculate_smart_slippage(&quote, &side).unwrap();
+
+        // Fee slippage: 100 * 50% = 50
+        // Volume slippage: 10000 * 0.5% = 50
+        // Total: 100 tokens, convert to bps relative to 10000 (before fee)
+        // 100 / 10000 ≈ 100 bps
+        assert!(slippage >= 100 && slippage <= 110,
+                "Expected ~100 bps for buy with fee, got {}", slippage);
+    }
+
+    #[test]
+    fn test_calculate_smart_slippage_consistency_between_orders() {
+        // Same absolute amounts and fees should produce similar slippage
+        // for sell and buy orders (relative to their respective bases)
+        let fee = U256::from(100);
+        let amount = U256::from(10000);
+
+        // Sell order
+        let sell_quote = OrderQuote {
+            sell_amount: amount,
+            buy_amount: amount,
+            fee_amount: fee,
+            kind: OrderKind::Sell,
+            ..create_order_quote()
+        };
+
+        let sell_side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: number::nonzero::NonZeroU256::try_from(amount).unwrap(),
+            },
+        };
+
+        let sell_slippage = QuoteHandler::calculate_smart_slippage(&sell_quote, &sell_side).unwrap();
+
+        // Buy order with equivalent amounts
+        let buy_quote = OrderQuote {
+            sell_amount: amount.saturating_add(fee),
+            buy_amount: amount,
+            fee_amount: fee,
+            kind: OrderKind::Buy,
+            ..create_order_quote()
+        };
+
+        let buy_side = OrderQuoteSide::Buy {
+            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(amount).unwrap(),
+        };
+
+        let buy_slippage = QuoteHandler::calculate_smart_slippage(&buy_quote, &buy_side).unwrap();
+
+        // Both should produce slippage in similar range
+        // (exact values might differ due to order type specifics)
+        assert!((sell_slippage as i32 - buy_slippage as i32).abs() < 50,
+                "Sell slippage {} vs Buy slippage {} - should be similar",
+                sell_slippage, buy_slippage);
+    }
 }

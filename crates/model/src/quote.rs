@@ -393,8 +393,10 @@ pub struct OrderQuoteV2 {
 
     /// Slippage information
     pub slippage: SlippageInfo,
-}
 
+    /// Signing method for this quote
+    pub signing_method: SigningMethod,
+}
 
 /// V2 response
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -415,6 +417,9 @@ pub struct OrderQuoteResponseV2 {
 
     /// Slippage information
     pub slippage: SlippageInfo,
+
+    /// Signing method for this quote
+    pub signing_method: SigningMethod,
 }
 
 /// Amounts at different stages of quote calculation for UI display.

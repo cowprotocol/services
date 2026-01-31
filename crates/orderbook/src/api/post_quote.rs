@@ -380,6 +380,7 @@ mod tests {
         let request_payload = OrderQuoteRequestV2 {
             base: OrderQuoteRequest::default(),
             slippage_bps: 100,
+            signing_method: None,
         };
         let request = request()
             .path("/v2/quote")
