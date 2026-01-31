@@ -25,7 +25,9 @@ use {
     tracing::instrument,
 };
 use model::order::{OrderCreation, OrderKind};
-use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteV2, ProtocolFeeCost, QuoteBreakdown, SlippageInfo};
+use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteV2, PartnerFeeCost, ProtocolFeeCost, QuoteBreakdown, SlippageInfo};
+use ::app_data::{PartnerFees, FeePolicy};
+use shared::order_validation::OrderAppData;
 
 const MAX_BPS: u64 = 10_000;
 
@@ -204,7 +206,10 @@ impl QuoteHandler {
 
 impl QuoteHandler {
     /// Calculate detailed cost breakdown from v1 quote response
-    fn calculate_cost_breakdown(v1_response: &OrderQuoteResponse) -> Result<CostBreakdown, OrderQuoteError> {
+    fn calculate_cost_breakdown(
+        v1_response: &OrderQuoteResponse,
+        validated_app_data: &OrderAppData,
+    ) -> Result<CostBreakdown, OrderQuoteError> {
         let quote = &v1_response.quote;
 
         // Network fee: Convert using sell_token_price.
@@ -215,9 +220,12 @@ impl QuoteHandler {
         // Protocol fee: Calculate from protocol_fee_bps if present
         let protocol_fee = Self::calculate_protocol_fee(v1_response)?;
 
-        // Partner fee: Will be extracted from appData later
-        // TODO: extract from appData
-        let partner_fee = None;
+        // Partner fee: Extract from validated appData.
+        let partner_fee = Self::extract_partner_fee(
+            &validated_app_data.inner.protocol.partner_fee,
+            quote,
+            v1_response.protocol_fee_bps.as_deref(),
+        )?;
 
         Ok(CostBreakdown {
             network_fee,
@@ -286,13 +294,23 @@ impl QuoteHandler {
     pub async fn calculate_quote_v2(&self, request: &OrderQuoteRequestV2) -> Result<OrderQuoteV2, OrderQuoteError> {
         let v1_response = self.calculate_quote(&request.base).await?;
 
+        // Get validated app data (already validated in calculate_quote)
+        let full_app_data_override = match request.base.app_data {
+            OrderCreationAppData::Hash { hash } => self.app_data.find(&hash).await.unwrap_or(None),
+            _ => None,
+        };
+
+        let validated_app_data = self
+            .order_validator
+            .validate_app_data(&request.base.app_data, &full_app_data_override)?;
+
         let recommended_slippage_bps = Self::calculate_smart_slippage(
             &v1_response.quote,
             &request.base.side
         ).ok(); // Dont fail if smart slippage calculation errors.
 
         // calculate cost breakdown.
-        let costs = Self::calculate_cost_breakdown(&v1_response)?;
+        let costs = Self::calculate_cost_breakdown(&v1_response, &validated_app_data)?;
 
         // Build the signable order.
         let mut order = OrderCreation {
@@ -582,6 +600,70 @@ impl QuoteHandler {
         let bps = bps_u256.to::<u64>().min(u32::MAX as u64) as u32;
 
         Ok(bps)
+    }
+
+    /// Extract partner fee from appData if present
+    fn extract_partner_fee(
+        partner_fees: &PartnerFees,
+        quote: &OrderQuote,
+        protocol_fee_bps: Option<&str>,
+    ) -> Result<Option<PartnerFeeCost>, OrderQuoteError> {
+        // Get the first partner fee (most common case is single partner fee)
+        let partner_fee = partner_fees.iter().next();
+
+        if let Some(fee) = partner_fee {
+            // Extract BPS from the fee policy
+            let bps = match &fee.policy {
+                FeePolicy::Surplus { bps, .. } => *bps,
+                FeePolicy::PriceImprovement { bps, .. } => *bps,
+                FeePolicy::Volume { bps } => *bps,
+            };
+
+            if bps == 0 {
+                return Ok(None);
+            }
+
+            // Calculate partner fee amount
+            // Partner fees are applied on top of protocol fees
+            let base_amount = match quote.kind {
+                OrderKind::Sell => {
+                    // For sell orders: calculate on buy amount after protocol fee
+                    let protocol_fee_amount = if let Some(fee_bps_str) = protocol_fee_bps {
+                        let protocol_bps = fee_bps_str.parse::<u64>()
+                            .map_err(|_| OrderQuoteError::CalculateQuote(
+                                anyhow::anyhow!("Invalid protocol fee bps").into()
+                            ))?;
+
+                        U256::uint_try_from(
+                            quote.buy_amount
+                                .widening_mul(U256::from(protocol_bps))
+                                / U512::from(MAX_BPS)
+                        ).unwrap_or(U256::ZERO)
+                    } else {
+                        U256::ZERO
+                    };
+
+                    quote.buy_amount.saturating_sub(protocol_fee_amount)
+                }
+                OrderKind::Buy => {
+                    // For buy orders: calculate on sell amount before protocol fee
+                    quote.sell_amount
+                }
+            };
+
+            let amount = U256::uint_try_from(
+                base_amount
+                    .widening_mul(U256::from(bps))
+                    / U512::from(MAX_BPS)
+            )
+                .map_err(|_| OrderQuoteError::CalculateQuote(
+                    anyhow::anyhow!("Partner fee calculation overflow").into()
+                ))?;
+
+            Ok(Some(PartnerFeeCost { amount, bps }))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Helper to parse protocol fee amount from v1 response
