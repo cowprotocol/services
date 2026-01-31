@@ -5,14 +5,13 @@ use {
         quoter::{OrderQuoteError, QuoteHandler},
     },
     anyhow::Result,
-    model::quote::OrderQuoteRequest,
+    model::quote::{OrderQuoteRequest, OrderQuoteRequestV2},
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
     std::{convert::Infallible, sync::Arc},
     thiserror::Error,
     warp::{Filter, Rejection},
 };
-use model::quote::OrderQuoteRequestV2;
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("v1" / "quote")
@@ -38,7 +37,8 @@ pub fn post_quote(
     })
 }
 
-fn post_quote_v2_request() -> impl Filter<Extract = (OrderQuoteRequestV2,), Error = Rejection> + Clone {
+fn post_quote_v2_request()
+-> impl Filter<Extract = (OrderQuoteRequestV2,), Error = Rejection> + Clone {
     warp::path!("v2" / "quote")
         .and(warp::post())
         .and(api::extract_payload())

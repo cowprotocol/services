@@ -90,7 +90,10 @@ pub fn handle_all_routes(
             "v1/get_orders_by_tx",
             box_filter(get_orders_by_tx::get_orders_by_tx(orderbook.clone())),
         ),
-        ("v1/post_quote", box_filter(post_quote::post_quote(quotes.clone()))),
+        (
+            "v1/post_quote",
+            box_filter(post_quote::post_quote(quotes.clone())),
+        ),
         (
             "v2/post_quote",
             box_filter(post_quote::post_quote_v2(quotes.clone())),

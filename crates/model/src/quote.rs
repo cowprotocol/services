@@ -1,6 +1,12 @@
 use {
     crate::{
-        order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderKind,
+            SellTokenSource,
+        },
         signature::SigningScheme,
         time,
     },
@@ -21,7 +27,6 @@ use {
     serde_with::{DisplayFromStr, serde_as},
     std::time::Duration,
 };
-use crate::order::OrderCreation;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
