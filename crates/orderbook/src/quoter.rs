@@ -25,7 +25,7 @@ use {
     tracing::instrument,
 };
 use model::order::{OrderCreation, OrderKind};
-use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteResponseV2, ProtocolFeeCost, QuoteBreakdown, SlippageInfo};
+use model::quote::{CostBreakdown, NetworkFeeCost, OrderQuoteRequestV2, OrderQuoteV2, ProtocolFeeCost, QuoteBreakdown, SlippageInfo};
 
 const MAX_BPS: u64 = 10_000;
 
@@ -283,8 +283,13 @@ impl QuoteHandler {
         }
     }
 
-    pub async fn calculate_quote_v2(&self, request: &OrderQuoteRequestV2) -> Result<OrderQuoteResponseV2, OrderQuoteError> {
+    pub async fn calculate_quote_v2(&self, request: &OrderQuoteRequestV2) -> Result<OrderQuoteV2, OrderQuoteError> {
         let v1_response = self.calculate_quote(&request.base).await?;
+
+        let recommended_slippage_bps = Self::calculate_smart_slippage(
+            &v1_response.quote,
+            &request.base.side
+        ).ok(); // Dont fail if smart slippage calculation errors.
 
         // calculate cost breakdown.
         let costs = Self::calculate_cost_breakdown(&v1_response)?;
@@ -307,13 +312,13 @@ impl QuoteHandler {
             ..Default::default()
         };
 
-        // Apply slippage.
+        // Apply user-provided slippage to the order.
         Self::apply_slippage(&mut order, request.slippage_bps)?;
 
         // Calculate amounts breakdown
         let amounts = Self::calculate_amounts_breakdown(&v1_response, &order)?;
 
-        Ok(OrderQuoteResponseV2 {
+        Ok(OrderQuoteV2 {
             quote: order,
             from: v1_response.from,
             expiration: v1_response.expiration,
@@ -323,7 +328,7 @@ impl QuoteHandler {
             costs,
             slippage: SlippageInfo {
                 applied_bps: request.slippage_bps,
-                recommended_bps: None, // TODO: smart slippage.
+                recommended_bps: recommended_slippage_bps,
             },
         })
     }
@@ -417,6 +422,166 @@ impl QuoteHandler {
                 })
             }
         }
+    }
+
+    /// Calculate smart slippage recommendation based on fee and volume.
+    ///
+    /// Algorithm ported from Trading SDK's suggestSlippageBps:
+    /// 1. Account for potential 50% fee increase (fee slippage)
+    /// 2. Account for 0.5% price movement (volume slippage)
+    /// 3. Combine both into total suggested slippage.
+    fn calculate_smart_slippage(quote: &OrderQuote, side: &OrderQuoteSide) -> Result<u32, OrderQuoteError> {
+        // Constants
+        const SLIPPAGE_FEE_MULTIPLIER_PERCENT: u64 = 50;
+        const SLIPPAGE_VOLUME_MULTIPLIER_PERCENT: u64 = 50;
+
+        let fee_amount = quote.fee_amount;
+
+        // Determine sell amounts before and after network costs.
+        let (sell_amount_before_network_costs, sell_amount_after_network_costs, is_sell) = match side {
+            OrderQuoteSide::Sell { .. } => {
+                // For sell orders: user specifies exact sell amount
+                let before = quote.sell_amount;
+                let after = quote.sell_amount; // Fee is already in quote.fee_amount
+                (before, after, true)
+            }
+            OrderQuoteSide::Buy { .. } => {
+                // For buy orders: sell amount includes fee
+                let before = quote.sell_amount.saturating_sub(fee_amount);
+                let after = quote.sell_amount;
+                (before, after, false)
+            }
+        };
+
+        // 1. Calculate slippage from fee (allow fee to increase by 50%)
+        let slippage_from_fee = Self::suggest_slippage_from_fee(fee_amount, SLIPPAGE_FEE_MULTIPLIER_PERCENT);
+
+        // 2. Calculate slippage from volume (0.5% price movement)
+        let slippage_from_volume = Self::suggest_slippage_from_volume(
+            sell_amount_before_network_costs,
+            sell_amount_after_network_costs,
+            is_sell,
+            SLIPPAGE_VOLUME_MULTIPLIER_PERCENT,
+        );
+
+        // 3. Total slippage is the sum of both components.
+        let total_slippage_amount = slippage_from_fee.saturating_add(slippage_from_volume);
+
+        // 4. Convert absolute slippage amount to percentage (BPS)
+        let slippage_bps = Self::calculate_slippage_bps(
+            sell_amount_before_network_costs,
+            sell_amount_after_network_costs,
+            is_sell,
+            total_slippage_amount,
+        )?;
+
+        // Clamp to reasonable bounds: min 10 bps (0.1%), max 10000 bps (100%)
+        Ok(slippage_bps.clamp(10, MAX_BPS as u32))
+    }
+
+    /// Calculate slippage from fee increase.
+    /// Returns absolute slippage amount in sell token.
+    ///
+    /// Formula: feeAmount * (multiplyingFactorPercent / 100)
+    /// Example: fee=100, factor=50% -> slippage = 50
+    fn suggest_slippage_from_fee(fee_amount: U256, multiplying_factor_percent: u64) -> U256 {
+        // Apply percentage: fee_amount * (factor / 100)
+        U256::uint_try_from(
+            fee_amount
+                .widening_mul(U256::from(multiplying_factor_percent))
+            / U512::from(100u64)
+        ).unwrap_or(U256::ZERO)
+    }
+
+    /// Calculate slippage from volume/price movement.
+    /// Returns absolute slippage amount in sell token.
+    ///
+    /// Formula: sellAmount * (slippagePercentBps / 10000)
+    /// Example: sellAmount=10000, slippage=40 bps (0.5%) -> slippage=5
+    fn suggest_slippage_from_volume(
+        sell_amount_before_network_cost: U256,
+        sell_amount_after_network_cost: U256,
+        is_sell: bool,
+        slippage_percent_bps: u64,
+    ) -> U256 {
+        // For sell orders: use amount after network costs.
+        // For buy orders: use amount before network costs.
+        let sell_amount = if is_sell {
+            sell_amount_after_network_cost
+        } else {
+            sell_amount_before_network_cost
+        };
+
+        if sell_amount.is_zero() {
+            return U256::ZERO;
+        }
+
+        // Apply slippage percentage: sellAmount * (bps / 10000)
+        U256::uint_try_from(
+            sell_amount
+                .widening_mul(U256::from(slippage_percent_bps))
+            / U512::from(MAX_BPS)
+        ).unwrap_or(U256::ZERO)
+    }
+
+    /// Convert absolute slippage amount to basis points (BPS)
+    ///
+    /// This uses high-precision arithmetic (1e6 scale) to avoid rounding errors.
+    fn calculate_slippage_bps(
+        sell_amount_before_network_cost: U256,
+        sell_amount_after_network_cost: U256,
+        is_sell: bool,
+        slippage_amount: U256,
+    ) -> Result<u32, OrderQuoteError> {
+        const PRECISION_SCALE: u64 = 1_000_000; // 1e6 for precision
+
+        let sell_amount = if is_sell {
+            sell_amount_after_network_cost
+        } else {
+            sell_amount_before_network_cost
+        };
+
+        if sell_amount.is_zero() {
+            return Ok(0)
+        }
+
+        // Calculate percentage with precision
+        let percentage_scaled = if is_sell{
+            // For sell: 1 - (sellAmount - slippage) / sellAmount
+            // = SCALE - (SCALE * (sellAmount - slippage)) / sellAMount
+            let remaining = sell_amount.saturating_sub(slippage_amount);
+            let fraction = U256::uint_try_from(
+                U256::from(PRECISION_SCALE)
+                    .widening_mul(remaining)
+                / U512::from(sell_amount)
+            ).unwrap_or(U256::from(PRECISION_SCALE));
+
+            U256::from(PRECISION_SCALE).saturating_sub(fraction)
+        } else {
+            // For buy: ((sellAmount + slippage) / sellAmount) - 1
+            // = (SCALE * (sellAmount + slippage)) / sellAmount - SCALE
+            let total = sell_amount.saturating_add(slippage_amount);
+            let fraction = U256::uint_try_from(
+                U256::from(PRECISION_SCALE)
+                    .widening_mul(total)
+                    / U512::from(sell_amount)
+            ).unwrap_or(U256::from(PRECISION_SCALE));
+
+            fraction.saturating_sub(U256::from(PRECISION_SCALE))
+        };
+
+        // Convert from precision scale to BPS
+        let bps_u256 = U256::uint_try_from(
+            percentage_scaled
+                .widening_mul(U256::from(MAX_BPS))
+                / U512::from(PRECISION_SCALE)
+        )
+            .unwrap_or(U256::ZERO);
+
+        // Convert U256 to u32, safely clamping to u32::MAX
+        let bps = bps_u256.to::<u64>().min(u32::MAX as u64) as u32;
+
+        Ok(bps)
     }
 
     /// Helper to parse protocol fee amount from v1 response

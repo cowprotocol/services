@@ -156,6 +156,21 @@ pub struct OrderQuoteRequestV2 {
     pub base: OrderQuoteRequest,
     /// Slippage in basis points.
     pub slippage_bps: u32,
+    /// Optional signing method override (presign, ethflow)
+    /// If not provided, uses the signing method from base request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_method: Option<SigningMethod>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SigningMethod {
+    /// Standard EIP-712 signature.
+    Eip712,
+    /// Pre-sign (returns transaction to execute)
+    Presign,
+    /// ETH Flow (native ETH wrapping transaction)
+    EthFlow,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -358,10 +373,11 @@ pub struct OrderQuoteResponse {
     pub protocol_fee_bps: Option<String>,
 }
 
+/// Standard order quote response
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderQuoteResponseV2 {
+pub struct OrderQuoteV2 {
     /// The complete order ready to be signed.
     pub quote: OrderCreation,
     pub from: Address,
@@ -370,6 +386,28 @@ pub struct OrderQuoteResponseV2 {
     pub verified: bool,
 
     /// Breakdown of amounts at different calculation stagess.
+    pub amounts: QuoteBreakdown,
+
+    /// Detailed cost breakdown
+    pub costs: CostBreakdown,
+
+    /// Slippage information
+    pub slippage: SlippageInfo,
+}
+
+
+/// V2 response
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuoteResponseV2 {
+    /// The complete order ready to be signed
+    pub quote: OrderCreation,
+    pub from: Address,
+    pub expiration: DateTime<Utc>,
+    pub id: Option<QuoteId>,
+    pub verified: bool,
+
+    /// Breakdown of amounts at different stages
     pub amounts: QuoteBreakdown,
 
     /// Detailed cost breakdown
@@ -389,7 +427,7 @@ pub struct QuoteBreakdown {
     #[serde_as(as = "HexOrDecimalU256")]
     pub before_all_fees: U256,
 
-    /// Amount after network costs and protocol fees (expected receipve)
+    /// Amount after network costs and protocol fees (expected to receive)
     #[serde_as(as = "HexOrDecimalU256")]
     pub after_network_costs: U256,
 
