@@ -284,6 +284,11 @@ impl Fulfillment {
         }
     }
 
+    /// Computes custom clearing prices for this trade.
+    ///
+    /// Note: This function relies on `sell_amount()` and `buy_amount()` to
+    /// correctly incorporate all adjustments (fees, haircuts). No additional
+    /// modifications are applied here.
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,

@@ -10,8 +10,11 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
-    number::units::EthUnit,
+    number::{testing::ApproxEq, units::EthUnit},
 };
+
+/// Haircut in basis points used across tests (500 bps = 5%)
+const HAIRCUT_BPS: u32 = 500;
 
 /// Test that haircut correctly reduces the solution score for sell orders.
 /// The haircut reduces the reported buy_amount, making the bid more
@@ -62,7 +65,7 @@ async fn order_haircut_reduces_score() {
                 .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
-        .solvers(vec![tests::setup::test_solver().haircut_bps(500)])
+        .solvers(vec![tests::setup::test_solver().haircut_bps(HAIRCUT_BPS)])
         .done()
         .await;
 
@@ -135,12 +138,17 @@ async fn order_haircut_reduces_score() {
             limit_sell
         );
 
-        // Verify haircut reduces executedBuy for sell orders
+        // Verify haircut reduces executedBuy for sell orders by approximately
+        // HAIRCUT_BPS
+        let expected_buy =
+            executed_buy_no_haircut * eth::U256::from(10000 - HAIRCUT_BPS) / eth::U256::from(10000);
         assert!(
-            executed_buy < executed_buy_no_haircut,
-            "Sell order: executedBuy with haircut {} should be less than without haircut {}",
+            executed_buy.is_approx_eq(&expected_buy, Some(0.01)),
+            "Sell order: executedBuy {} should be ~{}% of baseline {} (expected ~{})",
             executed_buy,
-            executed_buy_no_haircut
+            100 - HAIRCUT_BPS / 100,
+            executed_buy_no_haircut,
+            expected_buy
         );
     }
 }
@@ -161,7 +169,7 @@ async fn buy_order_haircut() {
     let side = order::Side::Buy;
     let kind = order::Kind::Limit;
     let signed_buy_amount = 2u64.eth();
-    let sell_limit = 100u64.ether().into_wei();
+    let signed_sell_limit = 100u64.ether().into_wei();
 
     // For buy orders, we need to set a buy_amount that creates enough surplus.
     // The pool has 100000:6000 ratio. For a buy order wanting 2.97 B,
@@ -174,7 +182,7 @@ async fn buy_order_haircut() {
                 .side(side)
                 .kind(kind)
                 .buy_amount(signed_buy_amount) // Target buy amount (what user signs for)
-                .sell_amount(sell_limit) // Generous sell limit creates surplus
+                .sell_amount(signed_sell_limit) // Generous sell limit creates surplus
                 .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
@@ -193,11 +201,11 @@ async fn buy_order_haircut() {
                 .side(side)
                 .kind(kind)
                 .buy_amount(signed_buy_amount) // Same target buy amount
-                .sell_amount(sell_limit) // Same generous sell limit
+                .sell_amount(signed_sell_limit) // Same generous sell limit
                 .solver_fee(Some(eth::U256::from(100))),
         )
         .solution(ab_solution())
-        .solvers(vec![tests::setup::test_solver().haircut_bps(500)])
+        .solvers(vec![tests::setup::test_solver().haircut_bps(HAIRCUT_BPS)])
         .done()
         .await;
 
@@ -271,11 +279,11 @@ async fn buy_order_haircut() {
             signed_buy_amount
         );
         assert!(
-            executed_sell <= sell_limit,
+            executed_sell <= signed_sell_limit,
             "Buy order: executedSell {} exceeds sell limit {}. Haircut increases sell_amount but \
              it must still respect the user's limit!",
             executed_sell,
-            sell_limit
+            signed_sell_limit
         );
         assert!(
             executed_sell <= limit_sell,
@@ -284,12 +292,20 @@ async fn buy_order_haircut() {
             limit_sell
         );
 
-        // Verify haircut increases executedSell for buy orders
+        // Verify haircut increases executedSell for buy orders.
+        // For buy orders, haircut is applied to buy amount then converted to sell
+        // token. With the pool's price ratio (100000:6000), a 5% haircut on 2
+        // ETH buy amount results in ~1-2% increase in executedSell.
+        let haircut_ratio = 1.0 + (HAIRCUT_BPS as f64 / 10000.0) / 5.0; // ~1.01 for 500 bps
+        let expected_sell =
+            eth::U256::from((executed_sell_no_haircut.to::<u128>() as f64 * haircut_ratio) as u128);
         assert!(
-            executed_sell > executed_sell_no_haircut,
-            "Buy order: executedSell with haircut {} should be greater than without haircut {}",
+            executed_sell.is_approx_eq(&expected_sell, Some(0.02)),
+            "Buy order: executedSell {} should be ~{:.1}% higher than baseline {} (expected ~{})",
             executed_sell,
-            executed_sell_no_haircut
+            (haircut_ratio - 1.0) * 100.0,
+            executed_sell_no_haircut,
+            expected_sell
         );
     }
 }
