@@ -1209,8 +1209,7 @@ mod tests {
     fn order_creation_serialization() {
         let owner = Address::repeat_byte(0xff);
 
-        // Test PreSign round-trip (no signature normalization needed)
-        let presign_order = OrderCreation {
+        let template_order = OrderCreation {
             sell_token: Address::repeat_byte(0x11),
             buy_token: Address::repeat_byte(0x22),
             receiver: Some(Address::repeat_byte(0x33)),
@@ -1229,6 +1228,9 @@ mod tests {
             signature: Signature::PreSign,
             quote_id: Some(42),
         };
+
+        // Test PreSign round-trip (no signature normalization needed)
+        let presign_order = template_order.clone();
         let presign_json = json!({
             "sellToken": "0x1111111111111111111111111111111111111111",
             "buyToken": "0x2222222222222222222222222222222222222222",
@@ -1273,27 +1275,12 @@ mod tests {
             "from": owner,
         });
         let expected_order = OrderCreation {
-            sell_token: Address::repeat_byte(0x11),
-            buy_token: Address::repeat_byte(0x22),
-            receiver: Some(Address::repeat_byte(0x33)),
-            sell_amount: alloy::primitives::U256::from(123),
-            buy_amount: alloy::primitives::U256::from(456),
-            valid_to: 1337,
-            app_data: OrderCreationAppData::Hash {
-                hash: AppDataHash([0x44; 32]),
-            },
-            fee_amount: alloy::primitives::U256::from(789),
-            kind: OrderKind::Sell,
-            partially_fillable: false,
-            sell_token_balance: SellTokenSource::Erc20,
-            buy_token_balance: BuyTokenDestination::Erc20,
-            from: Some(owner),
             signature: Signature::Eip712(EcdsaSignature {
                 r: B256::ZERO,
                 s: B256::ZERO,
                 v: 27, // normalized from v=0
             }),
-            quote_id: Some(42),
+            ..template_order.clone()
         };
 
         // Deserialization normalizes v=0 to v=27
