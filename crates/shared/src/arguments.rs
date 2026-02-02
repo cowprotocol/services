@@ -563,7 +563,7 @@ impl FeeFactor {
     /// Supports fractional BPS values (e.g., 0.00003 -> "0.3")
     /// Rounds to 2 decimal places to avoid floating point representation
     /// issues.
-    pub fn to_bps(&self) -> String {
+    pub fn to_bps_str(&self) -> String {
         let bps = (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() / 100.0;
         format!("{bps}")
     }
@@ -730,17 +730,17 @@ mod test {
 
     #[test]
     fn fee_factor_to_bps() {
-        assert_eq!(FeeFactor::new(0.0001).to_bps(), "1");
-        assert_eq!(FeeFactor::new(0.001).to_bps(), "10");
+        assert_eq!(FeeFactor::new(0.0001).to_bps_str(), "1");
+        assert_eq!(FeeFactor::new(0.001).to_bps_str(), "10");
 
         // Fractional BPS values (sub-basis-point precision)
-        assert_eq!(FeeFactor::new(0.00003).to_bps(), "0.3");
-        assert_eq!(FeeFactor::new(0.00005).to_bps(), "0.5");
-        assert_eq!(FeeFactor::new(0.000025).to_bps(), "0.25");
-        assert_eq!(FeeFactor::new(0.000075).to_bps(), "0.75");
-        assert_eq!(FeeFactor::new(0.00015).to_bps(), "1.5");
+        assert_eq!(FeeFactor::new(0.00003).to_bps_str(), "0.3");
+        assert_eq!(FeeFactor::new(0.00005).to_bps_str(), "0.5");
+        assert_eq!(FeeFactor::new(0.000025).to_bps_str(), "0.25");
+        assert_eq!(FeeFactor::new(0.000075).to_bps_str(), "0.75");
+        assert_eq!(FeeFactor::new(0.00015).to_bps_str(), "1.5");
 
-        assert_eq!(FeeFactor::new(0.0).to_bps(), "0");
+        assert_eq!(FeeFactor::new(0.0).to_bps_str(), "0");
     }
 
     #[test]

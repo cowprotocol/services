@@ -271,7 +271,7 @@ fn get_vol_fee_adjusted_quote_data(
     Ok(AdjustedQuoteData {
         sell_amount: adjusted_sell_amount,
         buy_amount: adjusted_buy_amount,
-        protocol_fee_bps: Some(factor.to_bps()),
+        protocol_fee_bps: Some(factor.to_bps_str()),
     })
 }
 
