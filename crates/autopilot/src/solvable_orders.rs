@@ -1059,7 +1059,7 @@ mod tests {
                 estimator: maintenance_estimator.clone(),
                 // Short interval to trigger background fetch quickly
                 update_interval: Duration::from_millis(1),
-                update_size: None,
+                update_size: Default::default(),
                 prefetch_time: Default::default(),
                 concurrent_requests: 1,
                 quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
