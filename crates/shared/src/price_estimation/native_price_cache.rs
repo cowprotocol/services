@@ -334,6 +334,32 @@ impl CacheStorage {
         self.cache.lock().unwrap().insert(token, result);
     }
 
+    /// Creates placeholder entries for tokens that are not in the cache.
+    /// These entries are immediately outdated so the maintenance task will
+    /// fetch them in the next cycle.
+    fn mark_tokens_for_maintenance(&self, tokens: &[Address]) {
+        if tokens.is_empty() {
+            return;
+        }
+
+        let now = Instant::now();
+        let outdated_timestamp = now.checked_sub(self.max_age).unwrap_or(now);
+        let mut cache = self.cache.lock().unwrap();
+
+        for &token in tokens {
+            if let Entry::Vacant(entry) = cache.entry(token) {
+                tracing::trace!(?token, "create outdated price entry for maintenance");
+                entry.insert(CachedResult::new(
+                    Ok(0.),
+                    outdated_timestamp,
+                    now,
+                    Default::default(),
+                    KeepPriceUpdated::Yes,
+                ));
+            }
+        }
+    }
+
     /// Fetches all tokens that need to be updated sorted by the provided
     /// priority.
     fn prioritized_tokens_to_update(
@@ -663,8 +689,19 @@ impl CachingNativePriceEstimator {
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        self.cache
-            .get_ready_to_use_cached_prices(tokens, now)
+        let cached = self.cache.get_ready_to_use_cached_prices(tokens, now);
+
+        // For Auction source, mark missing tokens for background maintenance
+        if self.require_updating_prices == RequiresUpdatingPrices::Yes {
+            let missing_tokens: Vec<_> = tokens
+                .iter()
+                .filter(|t| !cached.contains_key(*t))
+                .copied()
+                .collect();
+            self.cache.mark_tokens_for_maintenance(&missing_tokens);
+        }
+
+        cached
             .into_iter()
             .map(|(token, cached)| (token, cached.result))
             .collect()
