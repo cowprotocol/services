@@ -254,10 +254,9 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
         web3.wallet.register_signer(signer);
 
         // Transaction submitter
-        let gas_estimator =
-            Box::new(shared::gas_price_estimation::eth_node::NodeGasPriceEstimator::new(
-                web3.alloy.clone(),
-            ));
+        let gas_estimator = Box::new(
+            shared::gas_price_estimation::eth_node::NodeGasPriceEstimator::new(web3.alloy.clone()),
+        );
         let submitter = Submitter {
             web3,
             signer_address,
