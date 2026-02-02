@@ -213,25 +213,12 @@ impl CacheStorage {
     /// token for active price maintenance:
     /// - `DontCare`: Don't modify the token's maintenance flag
     /// - `Yes`: Mark the token to require active price updates
-    fn get_cached_price(
-        &self,
-        token: Address,
-        now: Instant,
-        require_updating_price: RequiresUpdatingPrices,
-    ) -> Option<CachedResult> {
-        let mut cache = self.cache.lock().unwrap();
-        Self::get_cached_price_inner(&mut cache, token, now, require_updating_price, self.max_age)
-    }
-
-    /// Inner implementation of cache lookup that works with an already-locked
-    /// cache. This allows both single and batch lookups to share the same
-    /// logic.
-    fn get_cached_price_inner(
+    fn lookup_cached_price(
         cache: &mut HashMap<Address, CachedResult>,
         token: Address,
         now: Instant,
-        require_updating_price: RequiresUpdatingPrices,
         max_age: Duration,
+        require_updating_price: RequiresUpdatingPrices,
     ) -> Option<CachedResult> {
         match cache.entry(token) {
             Entry::Occupied(mut entry) => {
@@ -250,10 +237,11 @@ impl CacheStorage {
             }
             Entry::Vacant(entry) => {
                 if require_updating_price == RequiresUpdatingPrices::Yes {
-                    // Create an outdated cache entry so the background task keeping the cache warm
-                    // will fetch the price during the next maintenance cycle.
+                    // Create an outdated cache entry so the background task keeping the
+                    // cache warm will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
-                    // Otherwise malicious actors could easily cause the cache size to blow up.
+                    // Otherwise malicious actors could easily cause the cache size to blow
+                    // up.
                     let outdated_timestamp = now.checked_sub(max_age).unwrap_or(now);
                     tracing::trace!(?token, "create outdated price entry");
                     entry.insert(CachedResult::new(
@@ -269,28 +257,65 @@ impl CacheStorage {
         }
     }
 
-    /// Get a cached price that is ready to use (not in error accumulation
+    /// Get cached prices that are ready to use (not in error accumulation
     /// state).
     ///
-    /// Returns None if the price is not cached, is expired, or is not ready to
-    /// use. Also updates cache access metrics (hits/misses).
-    fn get_ready_to_use_cached_price(
+    /// Returns a map of token -> cached result for tokens that have valid
+    /// cached prices. Missing tokens (not cached or expired) are not
+    /// included in the result. Also updates cache access metrics
+    /// (hits/misses).
+    ///
+    /// Note: This method does NOT create placeholder entries for missing
+    /// tokens. Use `lookup_cached_price` directly if you need that behavior
+    /// (e.g., in `estimate_with_cache_update` where the fetch immediately
+    /// follows).
+    fn get_ready_to_use_cached_prices(
         &self,
-        token: Address,
+        tokens: &[Address],
         now: Instant,
-        required_updating_price: RequiresUpdatingPrices,
-    ) -> Option<CachedResult> {
-        let cached = self
-            .get_cached_price(token, now, required_updating_price)
-            .filter(|cached| cached.is_ready());
+    ) -> HashMap<Address, CachedResult> {
+        let mut cache = self.cache.lock().unwrap();
+        let max_age = self.max_age;
 
-        let label = if cached.is_some() { "hits" } else { "misses" };
-        Metrics::get()
-            .native_price_cache_access
-            .with_label_values(&[label])
-            .inc_by(1);
+        let mut results = HashMap::new();
+        let mut hits = 0u64;
+        let mut misses = 0u64;
 
-        cached
+        for &token in tokens {
+            let cached = match cache.get_mut(&token) {
+                Some(cached) => {
+                    cached.requested_at = now;
+                    let is_recent = now.saturating_duration_since(cached.updated_at) < max_age;
+                    is_recent.then_some(cached.clone())
+                }
+                None => None,
+            };
+
+            if let Some(cached) = cached.filter(|c| c.is_ready()) {
+                results.insert(token, cached);
+                hits += 1;
+            } else {
+                misses += 1;
+            }
+        }
+
+        drop(cache); // Release lock before metrics update
+
+        let metrics = Metrics::get();
+        if hits > 0 {
+            metrics
+                .native_price_cache_access
+                .with_label_values(&["hits"])
+                .inc_by(hits);
+        }
+        if misses > 0 {
+            metrics
+                .native_price_cache_access
+                .with_label_values(&["misses"])
+                .inc_by(misses);
+        }
+
+        results
     }
 
     /// Insert or update a cached result.
@@ -355,7 +380,16 @@ impl CacheStorage {
     {
         let current_accumulative_errors_count = {
             let now = Instant::now();
-            match self.get_cached_price(token, now, require_updating_price) {
+            let mut cache = self.cache.lock().unwrap();
+            let cached = Self::lookup_cached_price(
+                &mut cache,
+                token,
+                now,
+                self.max_age,
+                require_updating_price,
+            );
+
+            match cached {
                 Some(cached) if cached.is_ready() => return cached.result,
                 Some(cached) => cached.accumulative_errors_count,
                 None => Default::default(),
@@ -617,13 +651,10 @@ impl CachingNativePriceEstimator {
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        tokens
-            .iter()
-            .filter_map(|token| {
-                self.cache
-                    .get_ready_to_use_cached_price(*token, now, self.require_updating_prices)
-                    .map(|cached| (*token, cached.result))
-            })
+        self.cache
+            .get_ready_to_use_cached_prices(tokens, now)
+            .into_iter()
+            .map(|(token, cached)| (token, cached.result))
             .collect()
     }
 
@@ -720,9 +751,10 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            if let Some(cached) =
-                self.cache
-                    .get_ready_to_use_cached_price(token, now, self.require_updating_prices)
+            if let Some(cached) = self
+                .cache
+                .get_ready_to_use_cached_prices(&[token], now)
+                .remove(&token)
             {
                 return cached.result;
             }
@@ -765,11 +797,12 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
         async move {
             let now = Instant::now();
             // Quote source doesn't upgrade or create entries, just read
-            if let Some(cached) = self.0.cache.get_ready_to_use_cached_price(
-                token,
-                now,
-                RequiresUpdatingPrices::DontCare,
-            ) {
+            if let Some(cached) = self
+                .0
+                .cache
+                .get_ready_to_use_cached_prices(&[token], now)
+                .remove(&token)
+            {
                 return cached.result;
             }
 
