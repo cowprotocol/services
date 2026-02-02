@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_volume_fee_sub_basis_point_precision() {
-        // Test sub-BPS precision: 0.00003 = 0.3 BPS (previously would round to 0)
+        // Test sub-BPS precision: 0.00003 = 0.3 BPS
         let volume_fee = FeeFactor::try_from(0.00003).unwrap();
         let volume_fee_config = VolumeFeeConfig {
             factor: Some(volume_fee),
