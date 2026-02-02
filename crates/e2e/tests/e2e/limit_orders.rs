@@ -1550,7 +1550,7 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH. So
     //    sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5 ETH to
     //    account for variance.
-    let reasonable_max_sell = U256::from(5_500_000_000_000_000_000u128); // 5.5 ETH
+    let reasonable_max_sell = 5.5.eth();
     assert!(
         reported_sell_amount <= reasonable_max_sell,
         "Driver reported sell_amount {} exceeds expected max {} (actual needed + haircut is ~5.29 \
