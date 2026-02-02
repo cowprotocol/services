@@ -61,6 +61,17 @@ impl Metrics {
     fn get() -> &'static Self {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
+
+    /// Resets counters on startup to ensure clean metrics for this run.
+    fn reset(&self) {
+        self.native_price_cache_access
+            .with_label_values(&["hits"])
+            .reset();
+        self.native_price_cache_access
+            .with_label_values(&["misses"])
+            .reset();
+        self.native_price_cache_background_updates.reset();
+    }
 }
 
 /// Configuration for the background maintenance task that keeps the cache warm.
@@ -449,6 +460,7 @@ impl CacheStorage {
 
 /// Spawns a background maintenance task for the given cache.
 fn spawn_maintenance_task(cache: &Arc<CacheStorage>, config: MaintenanceConfig) {
+    Metrics::get().reset();
     let update_task = CacheMaintenanceTask::new(Arc::downgrade(cache), config)
         .run()
         .instrument(tracing::info_span!("native_price_cache_maintenance"));
