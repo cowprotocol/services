@@ -293,10 +293,8 @@ async fn buy_order_haircut() {
         );
 
         // Verify haircut increases executedSell for buy orders.
-        // For buy orders, haircut is applied to buy amount then converted to sell
-        // token. With the pool's price ratio (100000:6000), a 5% haircut on 2
-        // ETH buy amount results in ~1-2% increase in executedSell.
-        let haircut_ratio = 1.0 + (HAIRCUT_BPS as f64 / 10000.0) / 5.0; // ~1.01 for 500 bps
+        // For buy orders, haircut increases the sell amount proportionally.
+        let haircut_ratio = 1.0 + (HAIRCUT_BPS as f64 / 10000.0); // ~1.05 for 500 bps
         let expected_sell =
             eth::U256::from((executed_sell_no_haircut.to::<u128>() as f64 * haircut_ratio) as u128);
         assert!(
