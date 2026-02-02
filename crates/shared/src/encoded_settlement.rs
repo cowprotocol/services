@@ -181,8 +181,11 @@ mod tests {
     #[test]
     fn trade_signature_encoding() {
         let owner = Address::repeat_byte(1);
+        // Default EcdsaSignature has v = 27 (normalized for Solidity ecrecover)
+        let mut default_ecdsa_bytes = vec![0; 65];
+        default_ecdsa_bytes[64] = 27;
         for (signature, bytes) in [
-            (Signature::Eip712(Default::default()), vec![0; 65]),
+            (Signature::Eip712(Default::default()), default_ecdsa_bytes),
             (
                 Signature::EthSign(EcdsaSignature {
                     r: B256::repeat_byte(1),
