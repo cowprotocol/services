@@ -239,6 +239,7 @@ impl Competition {
                     .user_trades()
                     .map(|trade| trade.order().uid)
                     .collect();
+                let has_haircut = solution.has_haircut();
                 observe::encoding(&id);
                 let settlement = solution
                     .encode(
@@ -248,10 +249,10 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, orders, settlement)
+                (id, orders, has_haircut, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, orders, result)| async move {
+            .filter_map(|(id, orders, has_haircut, result)| async move {
                 match result {
                     Ok(solution) => {
                         self.risk_detector.encoding_succeeded(&orders);
@@ -259,6 +260,12 @@ impl Competition {
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
+                    // track bad orders but don't alert solver on haircut failures
+                    Err(err) if has_haircut => {
+                        self.risk_detector.encoding_failed(&orders);
+                        observe::encoding_failed(self.solver.name(), &id, &err);
+                        None
+                    }
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
                         observe::encoding_failed(self.solver.name(), &id, &err);
