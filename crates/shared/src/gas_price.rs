@@ -5,10 +5,9 @@
 //! anomalies.
 
 use {
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
     anyhow::Result,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
-    std::time::Duration,
-    tracing::instrument,
 };
 
 /// An instrumented gas price estimator that wraps an inner one.
@@ -34,29 +33,37 @@ impl<T> GasPriceEstimating for InstrumentedGasEstimator<T>
 where
     T: GasPriceEstimating,
 {
-    #[instrument(skip_all)]
-    async fn estimate_with_limits(
-        &self,
-        gas_limit: f64,
-        time_limit: Duration,
-    ) -> Result<GasPrice1559> {
-        // Instrumenting gas estimates with limits is hard. Since we don't use
-        // it in the orderbook, lets leave this out for now.
-        self.inner.estimate_with_limits(gas_limit, time_limit).await
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
+        self.inner.estimate().await
     }
 
-    #[instrument(skip_all)]
-    async fn estimate(&self) -> Result<GasPrice1559> {
-        let estimate = self.inner.estimate().await?;
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        self.inner.base_fee().await
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn effective_gas_price(&self) -> Result<u128> {
+        let estimate = self.estimate().await?;
+        let base_fee = self.inner.base_fee().await?;
         self.metrics
-            .gas_price
-            .set(estimate.effective_gas_price() / 1e9);
-        Ok(estimate)
+            .base_fee
+            .set(base_fee.unwrap_or(0).cast_signed());
+
+        let effective_gas_price = calc_effective_gas_price(
+            estimate.max_fee_per_gas,
+            estimate.max_priority_fee_per_gas,
+            base_fee,
+        );
+
+        self.metrics.gas_price.set(effective_gas_price as f64 / 1e9);
+        Ok(effective_gas_price)
     }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
-    /// Last measured gas price in gwei
+    /// Last measured effective gas price in gwei
     gas_price: prometheus::Gauge,
+    /// Last measured base fee
+    base_fee: prometheus::IntGauge,
 }

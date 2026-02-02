@@ -301,6 +301,7 @@ async fn run_refunder_threshold_test(
         refunder_account.signer.clone(),
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
+        None,
     );
 
     // Verify order is still eligible for refund (not yet reimbursed)
@@ -427,6 +428,7 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
         refunder_account.signer.clone(),
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
+        None,
     );
 
     // The order should already be invalidated on-chain before the refunder runs
@@ -534,6 +536,7 @@ async fn refunder_skips_settled_orders(web3: Web3) {
         refunder_account.signer,
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
+        None,
     );
 
     // Run the refunder - it should NOT try to refund this already-settled order
@@ -630,6 +633,7 @@ async fn refunder_multiple_ethflow_contracts(web3: Web3) {
         refunder.signer,
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
+        None,
     );
 
     // Verify orders are not yet refunded

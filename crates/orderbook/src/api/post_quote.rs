@@ -91,6 +91,7 @@ mod tests {
         alloy::primitives::Address,
         anyhow::anyhow,
         app_data::AppDataHash,
+        bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},
         model::{
             order::{BuyTokenDestination, SellTokenSource},
@@ -108,7 +109,7 @@ mod tests {
         reqwest::StatusCode,
         serde_json::json,
         shared::order_quoting::CalculateQuoteError,
-        std::time::Duration,
+        std::{str::FromStr, time::Duration},
         warp::{Reply, test::request},
     };
 
@@ -306,6 +307,9 @@ mod tests {
             valid_to: 0,
             app_data: Default::default(),
             fee_amount: Default::default(),
+            gas_amount: BigDecimal::from_str("100000").unwrap(),
+            gas_price: BigDecimal::from_str("10000000000").unwrap(),
+            sell_token_price: BigDecimal::from_str("0.0004").unwrap(),
             kind: Default::default(),
             partially_fillable: false,
             sell_token_balance: Default::default(),

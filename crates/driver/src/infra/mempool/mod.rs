@@ -6,12 +6,16 @@ use {
     },
     alloy::{
         consensus::Transaction,
-        eips::BlockNumberOrTag,
+        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
+        primitives::Address,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
     },
     anyhow::Context,
+    dashmap::DashMap,
     ethrpc::Web3,
+    std::sync::Arc,
+    url::Url,
 };
 
 #[derive(Debug, Clone)]
@@ -23,11 +27,29 @@ pub struct Config {
     /// Optional block number to use when fetching nonces. If None, uses the
     /// web3 lib's default behavior, which is `latest`.
     pub nonce_block_number: Option<BlockNumberOrTag>,
-    pub url: reqwest::Url,
+    pub url: Url,
     pub name: String,
     pub revert_protection: RevertProtection,
     pub max_additional_tip: eth::U256,
     pub additional_tip_percentage: f64,
+}
+
+#[cfg(test)]
+impl Config {
+    pub fn test_config(url: Url) -> Self {
+        Self {
+            min_priority_fee: Default::default(),
+            gas_price_cap: eth::U256::from(1000000000000_u128),
+            target_confirm_time: Default::default(),
+            retry_interval: Default::default(),
+            name: "default_rpc".to_string(),
+            max_additional_tip: eth::U256::from(3000000000_u128),
+            additional_tip_percentage: 0.,
+            revert_protection: infra::mempool::RevertProtection::Disabled,
+            nonce_block_number: None,
+            url,
+        }
+    }
 }
 
 /// Don't submit transactions with high revert risk (i.e. transactions
@@ -45,6 +67,13 @@ pub enum RevertProtection {
 pub struct Mempool {
     transport: Web3,
     config: Config,
+    last_submissions: Arc<DashMap<Address, Submission>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Submission {
+    pub nonce: u64,
+    pub gas_price: Eip1559Estimation,
 }
 
 impl std::fmt::Display for Mempool {
@@ -60,7 +89,11 @@ impl Mempool {
         for account in solver_accounts {
             transport.wallet.register_signer(account);
         }
-        Self { transport, config }
+        Self {
+            transport,
+            config,
+            last_submissions: Default::default(),
+        }
     }
 
     /// Fetches the transaction count (nonce) for the given address at the
@@ -88,23 +121,13 @@ impl Mempool {
     pub async fn submit(
         &self,
         tx: eth::Tx,
-        gas_price: eth::GasPrice,
+        gas_price: Eip1559Estimation,
         gas_limit: eth::Gas,
         solver: &infra::Solver,
         nonce: u64,
     ) -> Result<eth::TxId, mempools::Error> {
-        let max_fee_per_gas = gas_price
-            .max()
-            .0
-            .0
-            .try_into()
-            .map_err(anyhow::Error::from)?;
-        let max_priority_fee_per_gas = gas_price
-            .tip()
-            .0
-            .0
-            .try_into()
-            .map_err(anyhow::Error::from)?;
+        let max_fee_per_gas = gas_price.max_fee_per_gas;
+        let max_priority_fee_per_gas = gas_price.max_priority_fee_per_gas;
         let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
 
         let tx_request = TransactionRequest::default()
@@ -134,19 +157,19 @@ impl Mempool {
                     solver = ?solver.address(),
                     "successfully submitted tx to mempool"
                 );
+                self.last_submissions
+                    .insert(solver.address(), Submission { nonce, gas_price });
                 Ok(eth::TxId(*tx.tx_hash()))
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
-                let pending_tx = self
-                    .find_pending_tx_in_mempool(solver.address(), nonce)
-                    .await;
+                let last_submission = self.last_submission(solver.address());
 
                 tracing::debug!(
                     ?err,
                     new_gas_price = ?gas_price,
                     ?nonce,
-                    ?pending_tx,
+                    ?last_submission,
                     ?gas_limit,
                     solver = ?solver.address(),
                     "failed to submit tx to mempool"
@@ -178,6 +201,13 @@ impl Mempool {
             .find(|(_signer, tx)| tx.nonce() == nonce)
             .map(|(_, tx)| tx);
         Ok(pending_tx)
+    }
+
+    /// Looks up the last tx that was submitted for that signer.
+    pub fn last_submission(&self, signer: eth::Address) -> Option<Submission> {
+        self.last_submissions
+            .get(&signer)
+            .map(|entry| entry.value().clone())
     }
 
     pub fn config(&self) -> &Config {

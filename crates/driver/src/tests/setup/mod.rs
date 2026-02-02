@@ -29,7 +29,6 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
                 EtherExt,
-                is_approximately_equal,
             },
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
@@ -47,7 +46,7 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
-    number::serialization::HexOrDecimalU256,
+    number::{serialization::HexOrDecimalU256, testing::ApproxEq},
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
@@ -360,6 +359,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+    /// Haircut in basis points (0-10000) for conservative bidding.
+    haircut_bps: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +387,7 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
+        haircut_bps: 0,
     }
 }
 
@@ -423,6 +425,13 @@ impl Solver {
     pub fn merge_solutions(mut self) -> Self {
         self.merge_solutions = true;
         self
+    }
+
+    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
+        Self {
+            haircut_bps,
+            ..self
+        }
     }
 }
 
@@ -1257,7 +1266,7 @@ impl SolveOk<'_> {
     /// Extracts the first solution from the response. This is expected to be
     /// always valid if there is a valid solution, as we expect from driver to
     /// not send multiple solutions (yet).
-    fn solution(&self) -> serde_json::Value {
+    pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
@@ -1358,14 +1367,8 @@ impl SolveOk<'_> {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(is_approximately_equal(
-                u256(trade.get("executedSell").unwrap()),
-                expected_sell
-            ));
-            assert!(is_approximately_equal(
-                u256(trade.get("executedBuy").unwrap()),
-                expected_buy
-            ));
+            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(&expected_sell, None));
+            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(&expected_buy, None));
         }
         self
     }
@@ -1489,6 +1492,11 @@ pub struct QuoteOk<'a> {
 }
 
 impl QuoteOk<'_> {
+    /// Get the JSON response body.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {

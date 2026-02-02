@@ -31,7 +31,7 @@ pub async fn send(limit_bytes: usize, req: reqwest::RequestBuilder) -> Result<St
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("response error: {0:?}")]
+    #[error("response error: {0}")]
     Response(#[from] reqwest::Error),
     #[error("the response was too large, the limit was {limit_bytes} bytes")]
     ResponseTooLarge { limit_bytes: usize },

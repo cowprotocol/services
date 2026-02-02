@@ -20,26 +20,28 @@ use {
 };
 
 /// A quote describing the expected outcome of an order.
-#[derive(Debug)]
+#[derive(derive_more::Debug)]
 pub struct Quote {
     pub clearing_prices: HashMap<eth::Address, eth::U256>,
+    #[debug(ignore)]
     pub pre_interactions: Vec<eth::Interaction>,
+    #[debug(ignore)]
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
+    #[debug(ignore)]
     pub tx_origin: Option<eth::Address>,
+    #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
 }
 
 impl Quote {
     fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
+        let clearing_prices = Self::compute_clearing_prices(&solution)?;
+
         Ok(Self {
-            clearing_prices: solution
-                .clearing_prices()
-                .into_iter()
-                .map(|(token, amount)| (token.into(), amount))
-                .collect(),
+            clearing_prices,
             pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
@@ -61,6 +63,50 @@ impl Quote {
                 })
                 .collect(),
         })
+    }
+
+    /// Compute clearing prices for the quote.
+    ///
+    /// Uses uniform clearing prices from the solution, adjusted for haircut
+    /// when enabled. Uses `custom_prices()` which includes haircut effects
+    /// to make quotes conservative for users.
+    fn compute_clearing_prices(
+        solution: &competition::Solution,
+    ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
+        // Start with uniform clearing prices
+        let mut prices: HashMap<eth::Address, eth::U256> = solution
+            .clearing_prices()
+            .into_iter()
+            .map(|(token, amount)| (token.into(), amount))
+            .collect();
+
+        // Quote competitions contain only a single order (see `fake_auction()`),
+        // so there's at most one fulfillment in the solution.
+        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
+        // haircut.
+        if let Some(trade) = solution.trades().iter().find(|trade| match trade {
+            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
+            _ => false,
+        }) {
+            let sell_token: eth::Address = trade.sell().token.into();
+            let buy_token: eth::Address = trade.buy().token.into();
+            let uniform_clearing = solution::trade::ClearingPrices {
+                sell: *prices
+                    .get(&sell_token)
+                    .ok_or(QuotingFailed::ClearingSellMissing)?,
+                buy: *prices
+                    .get(&buy_token)
+                    .ok_or(QuotingFailed::ClearingBuyMissing)?,
+            };
+            let custom_prices = trade
+                .custom_prices(&uniform_clearing)
+                .map_err(|_| QuotingFailed::Math)?;
+
+            prices.insert(sell_token, custom_prices.sell);
+            prices.insert(buy_token, custom_prices.buy);
+        }
+
+        Ok(prices)
     }
 }
 
@@ -338,6 +384,8 @@ pub enum QuotingFailed {
     ClearingBuyMissing,
     #[error("solver returned no solutions")]
     NoSolutions,
+    #[error("math error computing custom prices")]
+    Math,
 }
 
 #[derive(Debug, thiserror::Error)]

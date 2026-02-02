@@ -1,13 +1,25 @@
 use {
     crate::setup::TestAccount,
     alloy::primitives::{Address, B256, U256},
+    axum::Json,
     chrono::{DateTime, NaiveDateTime, Utc},
     hex_literal::hex,
     model::DomainSeparator,
     shared::zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
-    std::net::SocketAddr,
-    warp::{Filter, Reply},
+    std::{
+        net::{Ipv4Addr, SocketAddr},
+        sync::Arc,
+    },
 };
+
+// Mock pagination constants for test API responses
+const MOCK_PAGE: u64 = 1;
+const MOCK_PER_PAGE: u64 = 100;
+
+#[derive(Clone)]
+struct State {
+    orders: Arc<Vec<OrderRecord>>,
+}
 
 pub struct ZeroExApi {
     orders: Vec<OrderRecord>,
@@ -22,30 +34,43 @@ impl ZeroExApi {
 
     /// Starts the server and returns the assigned port number.
     pub async fn run(self) -> u16 {
-        let orders_route = warp::path!("orderbook" / "v1" / "orders").map(move || {
-            warp::reply::json(&zeroex_api::OrdersResponse {
-                total: self.orders.len() as u64,
-                page: 1,
-                per_page: 100,
-                records: self.orders.clone(),
-            })
-            .into_response()
-        });
+        let state = State {
+            orders: Arc::new(self.orders),
+        };
 
-        let addr: SocketAddr = ([0, 0, 0, 0], 0).into();
-        let server = warp::serve(orders_route);
-        let (addr, server) = server.bind_ephemeral(addr);
+        let app = axum::Router::new()
+            .route("/orderbook/v1/orders", axum::routing::get(orders_handler))
+            .with_state(state);
+
+        let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
+        let server = axum::Server::bind(&addr).serve(app.into_make_service());
+
+        let addr = server.local_addr();
         let port = addr.port();
         assert!(port > 0, "assigned port must be greater than 0");
 
         tokio::spawn(async move {
-            server.await;
+            if let Err(err) = server.await {
+                tracing::error!(?err, "ZeroEx API server failed");
+                panic!("ZeroEx test server crashed: {}", err);
+            }
         });
 
         tracing::info!("Started ZeroEx API server at {}", addr);
 
         port
     }
+}
+
+async fn orders_handler(
+    axum::extract::State(state): axum::extract::State<State>,
+) -> Json<zeroex_api::OrdersResponse> {
+    Json(zeroex_api::OrdersResponse {
+        total: state.orders.len() as u64,
+        page: MOCK_PAGE,
+        per_page: MOCK_PER_PAGE,
+        records: (*state.orders).clone(),
+    })
 }
 
 pub struct Eip712TypedZeroExOrder {

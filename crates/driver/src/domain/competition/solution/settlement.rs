@@ -12,6 +12,7 @@ use {
         },
         infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
+    alloy::primitives::U256,
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
@@ -37,20 +38,22 @@ use {
 /// for the solver (earning reduced rewards). Enforcing these rules ensures that
 /// the settlement can be broadcast safely with high confidence that it will not
 /// be reverted and that it will not result in slashing for the solver.
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct Settlement {
     pub auction_id: auction::Id,
     /// The prepared on-chain transaction for this settlement
     transaction: SettlementTx,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
+    #[debug(ignore)]
     solution: Solution,
 }
 
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 struct SettlementTx {
     /// Transaction with all internalizable interactions omitted
     internalized: eth::Tx,
+    #[debug(ignore)]
     /// Full Transaction without internalizing any interactions
     uninternalized: eth::Tx,
     /// Whether this settlement has interactions that could make it revert
@@ -174,7 +177,9 @@ impl Settlement {
 
         // Ensure that the solver has sufficient balance for the settlement to be mined
         // even if the gas price keeps climbing during the tx submission.
-        let required_eth_balance = gas.required_balance(price * 2.);
+        let required_eth_balance =
+            // Converting to U256 first avoids possible overflow
+            gas.required_balance(U256::from(price.max_fee_per_gas).saturating_mul(U256::from(2)));
         if eth.balance(solution.solver().address()).await? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,
@@ -398,7 +403,7 @@ impl Gas {
 
     /// The balance required to ensure settlement execution with the given gas
     /// parameters.
-    pub fn required_balance(&self, price: eth::GasPrice) -> eth::Ether {
-        self.limit * price.max()
+    pub fn required_balance(&self, max_fee_per_gas: U256) -> eth::Ether {
+        self.limit * max_fee_per_gas.into()
     }
 }

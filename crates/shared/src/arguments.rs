@@ -13,7 +13,7 @@ use {
     std::{
         collections::HashSet,
         fmt::{self, Display, Formatter},
-        num::NonZeroU64,
+        num::{NonZeroU32, NonZeroU64},
         str::FromStr,
         time::Duration,
     },
@@ -124,6 +124,23 @@ pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<T
         args.tracing_exporter_timeout,
         args.tracing_level,
     ))
+}
+
+// Matches SQLx default connection pool size.
+// SAFETY: 10 > 0
+pub const DB_MAX_CONNECTIONS_DEFAULT: NonZeroU32 = NonZeroU32::new(10).unwrap();
+
+#[derive(Debug, Clone, clap::Parser)]
+pub struct DatabasePoolConfig {
+    /// Maximum number of connections in the database connection pool.
+    #[clap(long, env, default_value_t = DB_MAX_CONNECTIONS_DEFAULT)]
+    pub db_max_connections: NonZeroU32,
+}
+
+impl Display for DatabasePoolConfig {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "db_max_connections: {}", self.db_max_connections)
+    }
 }
 
 #[derive(clap::Parser)]
@@ -532,17 +549,30 @@ impl FromStr for ExternalSolver {
 pub struct FeeFactor(f64);
 
 impl FeeFactor {
-    /// Number of basis points that make up 100%.
-    pub const MAX_BPS: u32 = 10_000;
+    /// High precision scale factor (1 million) for sub-basis-point precision.
+    /// Allows representing factors like 0.00003 (0.3 BPS) without rounding to
+    /// 0. Also used for converting to BPS string with 2 decimal precision
+    /// (1_000_000 / 100 = 10_000 BPS scale).
+    pub const HIGH_PRECISION_SCALE: u64 = 1_000_000;
 
     pub fn new(factor: f64) -> Self {
         Self(factor)
     }
 
     /// Converts the fee factor to basis points (BPS).
-    /// For example, 0.0002 -> 2 BPS
-    pub fn to_bps(&self) -> u64 {
-        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
+    /// Supports fractional BPS values (e.g., 0.00003 -> "0.3")
+    /// Rounds to 2 decimal places to avoid floating point representation
+    /// issues.
+    pub fn to_bps_str(&self) -> String {
+        let bps = (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() / 100.0;
+        format!("{bps}")
+    }
+
+    /// Converts the fee factor to a high precision scaled integer.
+    /// For example, 0.00003 -> 30 (with scale of 1_000_000)
+    /// This allows sub-basis-point precision in calculations.
+    pub fn to_high_precision(&self) -> u64 {
+        (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() as u64
     }
 
     /// Get the inner value
@@ -696,5 +726,30 @@ mod test {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn fee_factor_to_bps() {
+        assert_eq!(FeeFactor::new(0.0001).to_bps_str(), "1");
+        assert_eq!(FeeFactor::new(0.001).to_bps_str(), "10");
+
+        // Fractional BPS values (sub-basis-point precision)
+        assert_eq!(FeeFactor::new(0.00003).to_bps_str(), "0.3");
+        assert_eq!(FeeFactor::new(0.00005).to_bps_str(), "0.5");
+        assert_eq!(FeeFactor::new(0.000025).to_bps_str(), "0.25");
+        assert_eq!(FeeFactor::new(0.000075).to_bps_str(), "0.75");
+        assert_eq!(FeeFactor::new(0.00015).to_bps_str(), "1.5");
+
+        assert_eq!(FeeFactor::new(0.0).to_bps_str(), "0");
+    }
+
+    #[test]
+    fn fee_factor_to_high_precision() {
+        // Verify high precision scaling
+        assert_eq!(FeeFactor::new(0.00003).to_high_precision(), 30);
+        assert_eq!(FeeFactor::new(0.0001).to_high_precision(), 100);
+        assert_eq!(FeeFactor::new(0.001).to_high_precision(), 1000);
+        assert_eq!(FeeFactor::new(0.01).to_high_precision(), 10_000);
+        assert_eq!(FeeFactor::new(0.1).to_high_precision(), 100_000);
     }
 }

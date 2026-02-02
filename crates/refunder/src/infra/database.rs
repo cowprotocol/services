@@ -12,16 +12,21 @@ use {
     },
     number::conversions::big_decimal_to_u256,
     sqlx::PgPool,
+    std::time::Duration,
 };
 
 /// [`DbRead`] implementation using PostgreSQL.
 pub struct Postgres {
     pool: PgPool,
+    lookback_time: Option<Duration>,
 }
 
 impl Postgres {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, lookback_time: Option<Duration>) -> Self {
+        Self {
+            pool,
+            lookback_time,
+        }
     }
 }
 
@@ -38,6 +43,7 @@ impl DbRead for Postgres {
             block_time,
             min_validity_duration,
             min_price_deviation,
+            self.lookback_time,
         )
         .await
         .context("Error while retrieving the refundable ethflow orders from db")

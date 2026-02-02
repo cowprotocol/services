@@ -22,7 +22,7 @@ use {
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
-    sqlx::PgPool,
+    sqlx::postgres::PgPoolOptions,
     std::{
         sync::{Arc, RwLock},
         time::{Duration, Instant},
@@ -62,7 +62,10 @@ pub async fn run(args: arguments::Arguments) {
     );
 
     // Database initialization
-    let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
+    let pg_pool = PgPoolOptions::new()
+        .max_connections(args.database_pool.db_max_connections.get())
+        .connect_lazy(args.db_url.as_str())
+        .expect("failed to create database");
 
     // Blockchain/RPC setup
     let web3 = shared::ethrpc::web3(
@@ -103,6 +106,7 @@ pub async fn run(args: arguments::Arguments) {
         signer,
         args.max_gas_price,
         args.start_priority_fee_tip,
+        Some(args.lookback_time),
     );
 
     // Main loop

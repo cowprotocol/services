@@ -7,6 +7,7 @@ use {
         },
         tracing_reload_handler::spawn_reload_handler,
     },
+    axum::http::{self, HeaderMap},
     opentelemetry::{
         Context,
         KeyValue,
@@ -31,7 +32,6 @@ use {
         prelude::*,
         util::SubscriberInitExt,
     },
-    warp::{http, http::HeaderMap},
 };
 
 /// Initializes tracing setup that is shared between the binaries.
@@ -84,11 +84,12 @@ fn set_tracing_subscriber(config: &Config) {
                     .with_filter($env_filter)
                     .boxed()
             } else {
+                let is_terminal = std::io::IsTerminal::is_terminal(&std::io::stdout());
                 tracing_subscriber::fmt::layer()
                     .with_timer(timer)
-                    .with_ansi(atty::is(atty::Stream::Stdout))
+                    .with_ansi(is_terminal)
                     .map_event_format(|formatter| TraceIdFmt {
-                        inner: formatter.with_ansi(atty::is(atty::Stream::Stdout)),
+                        inner: formatter.with_ansi(is_terminal),
                     })
                     .with_writer(writer)
                     .with_filter($env_filter)

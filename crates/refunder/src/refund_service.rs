@@ -241,9 +241,10 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
         signer: alloy::signers::local::PrivateKeySigner,
         max_gas_price: u64,
         start_priority_fee_tip: u64,
+        lookback_time: Option<std::time::Duration>,
     ) -> Self {
         // Database layer
-        let database = Postgres::new(db);
+        let database = Postgres::new(db, lookback_time);
 
         // Chain reader
         let chain = AlloyChain::new(web3.alloy.clone(), ethflow_addresses);
@@ -253,7 +254,10 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
         web3.wallet.register_signer(signer);
 
         // Transaction submitter
-        let gas_estimator = Box::new(web3.legacy.clone());
+        let gas_estimator =
+            Box::new(shared::gas_price_estimation::eth_node::NodeGasPriceEstimator::new(
+                web3.alloy.clone(),
+            ));
         let submitter = Submitter {
             web3,
             signer_address,

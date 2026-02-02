@@ -5,8 +5,7 @@ use {
         liquidity::{ExactOutput, MaxInput},
     },
     num::{BigRational, CheckedDiv, CheckedMul},
-    number::conversions::big_rational_to_u256,
-    shared::conversions::U256Ext,
+    number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
 };
 
 #[derive(Clone)]
@@ -88,7 +87,7 @@ impl Parameters {
                 .checked_div(&interaction.output.amount)
                 .ok_or(super::error::Math::DivisionByZero)?
         } else {
-            tracing::warn!(
+            tracing::trace!(
                 input_token = ?interaction.input.token,
                 output_token = ?interaction.output.token,
                 "unable to compute capped slippage; falling back to relative slippage",
@@ -99,7 +98,7 @@ impl Parameters {
                 .into()
         };
 
-        tracing::debug!(?interaction, ?slippage, "applying slippage to liquidity",);
+        tracing::trace!(?interaction, ?slippage, "applying slippage to liquidity",);
         Ok((
             MaxInput(eth::Asset {
                 amount: interaction.input.amount + slippage,

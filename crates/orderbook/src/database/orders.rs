@@ -867,7 +867,7 @@ mod tests {
     async fn postgres_replace_order() {
         let owner = Address::repeat_byte(0x77);
 
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -933,7 +933,7 @@ mod tests {
     async fn postgres_replace_order_no_cancellation_on_error() {
         let owner = Address::repeat_byte(0x77);
 
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -977,7 +977,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_presignature_status() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
@@ -1050,7 +1050,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_cancel_orders() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         // Define some helper closures to make the test easier to read.
@@ -1099,7 +1099,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let interaction = |byte: u8| InteractionData {
@@ -1108,19 +1108,20 @@ mod tests {
             call_data: vec![byte; byte as _],
         };
 
+        let fee_parameters = FeeParameters {
+            sell_token_price: 2.5,
+            gas_amount: 0.01,
+            gas_price: 0.003,
+        };
         let quote = Quote {
             id: Some(5),
             sell_amount: alloy::primitives::U256::from(1),
             buy_amount: alloy::primitives::U256::from(2),
+            fee_amount: fee_parameters.fee(),
             data: QuoteData {
-                fee_parameters: FeeParameters {
-                    sell_token_price: 2.5,
-                    gas_amount: 0.01,
-                    gas_price: 0.003,
-                },
+                fee_parameters,
                 ..Default::default()
             },
-            ..Default::default()
         };
 
         let uid = OrderUid([0x42; 56]);
@@ -1155,7 +1156,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions_and_verified() {
-        let db = Postgres::try_new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let quote = Quote {

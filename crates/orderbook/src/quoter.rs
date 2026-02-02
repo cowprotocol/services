@@ -1,6 +1,7 @@
 use {
     crate::{app_data, arguments::VolumeFeeConfig},
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
+    bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     model::{
         order::OrderCreationAppData,
@@ -165,6 +166,20 @@ impl QuoteHandler {
                     app_data => app_data.clone(),
                 },
                 fee_amount: quote.fee_amount,
+                gas_amount: BigDecimal::from_f64(quote.data.fee_parameters.gas_amount).ok_or(
+                    OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("gas_amount is not a valid BigDecimal").into(),
+                    ),
+                )?,
+                gas_price: BigDecimal::from_f64(quote.data.fee_parameters.gas_price).ok_or(
+                    OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("gas_price is not a valid BigDecimal").into(),
+                    ),
+                )?,
+                sell_token_price: BigDecimal::from_f64(quote.data.fee_parameters.sell_token_price)
+                    .ok_or(OrderQuoteError::CalculateQuote(
+                        anyhow::anyhow!("sell_token_price is not a valid BigDecimal").into(),
+                    ))?,
                 kind: quote.data.kind,
                 partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
@@ -213,14 +228,18 @@ fn get_vol_fee_adjusted_quote_data(
     // Calculate the volume (surplus token amount) to apply fee to
     // Following driver's logic in
     // crates/driver/src/domain/competition/solution/fee.rs:189-202:
+    // Use high precision scaling to support sub-basis-point fee factors (e.g., 0.3
+    // BPS)
+    let scaled_factor = U256::from(factor.to_high_precision());
+    let scale = U512::from(FeeFactor::HIGH_PRECISION_SCALE);
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
             // For SELL orders, fee is calculated on buy amount
             let protocol_fee = U256::uint_try_from(
                 quote
                     .buy_amount
-                    .widening_mul(U256::from(factor.to_bps()))
-                    .checked_div(U512::from(FeeFactor::MAX_BPS))
+                    .widening_mul(scaled_factor)
+                    .checked_div(scale)
                     .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
             )
             .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
@@ -234,11 +253,10 @@ fn get_vol_fee_adjusted_quote_data(
             // For BUY orders, fee is calculated on sell amount + network fee.
             // Network fee is already in sell token, so it is added to get the total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
-            let factor = U256::from(factor.to_bps());
-            let volume_bps: Uint<512, 8> = total_sell_volume.widening_mul(factor);
+            let volume_scaled: Uint<512, 8> = total_sell_volume.widening_mul(scaled_factor);
             let protocol_fee = U256::uint_try_from(
-                volume_bps
-                    .checked_div(U512::from(FeeFactor::MAX_BPS))
+                volume_scaled
+                    .checked_div(scale)
                     .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
             )
             .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
@@ -253,7 +271,7 @@ fn get_vol_fee_adjusted_quote_data(
     Ok(AdjustedQuoteData {
         sell_amount: adjusted_sell_amount,
         buy_amount: adjusted_buy_amount,
-        protocol_fee_bps: Some(factor.to_bps().to_string()),
+        protocol_fee_bps: Some(factor.to_bps_str()),
     })
 }
 
@@ -552,5 +570,46 @@ mod tests {
         assert_eq!(result.sell_amount, 100u64.eth());
         assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, None);
+    }
+
+    #[test]
+    fn test_volume_fee_sub_basis_point_precision() {
+        // Test sub-BPS precision: 0.00003 = 0.3 BPS
+        let volume_fee = FeeFactor::try_from(0.00003).unwrap();
+        let volume_fee_config = VolumeFeeConfig {
+            factor: Some(volume_fee),
+            effective_from_timestamp: None,
+        };
+        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+
+        // Large amount to make the sub-BPS fee visible
+        let sell_amount = 1_000_000u64.eth();
+        let buy_amount = 1_000_000u64.eth();
+        let quote = create_test_quote(sell_amount, buy_amount);
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: number::nonzero::NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        };
+
+        let result = get_vol_fee_adjusted_quote_data(
+            &quote,
+            &side,
+            Some(&volume_fee_config),
+            &volume_fee_policy,
+            TEST_BUY_TOKEN,
+            TEST_SELL_TOKEN,
+        )
+        .unwrap();
+
+        // Protocol fee = 0.3 BPS
+        assert_eq!(result.protocol_fee_bps, Some("0.3".to_string()));
+        assert_eq!(result.sell_amount, sell_amount);
+
+        // Expected fee: 1_000_000 * 0.00003 = 30 tokens
+        // buy_amount should be reduced by 30 tokens
+        let expected_fee = 30u64.eth();
+        let expected_buy = buy_amount - expected_fee;
+        assert_eq!(result.buy_amount, expected_buy);
     }
 }

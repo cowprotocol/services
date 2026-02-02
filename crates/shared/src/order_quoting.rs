@@ -9,6 +9,7 @@ use {
         account_balances::{BalanceFetching, Query},
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
+        gas_price_estimation::GasPriceEstimating,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
@@ -18,7 +19,6 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::TryFutureExt,
-    gas_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
         order::{OrderClass, OrderKind},
@@ -168,6 +168,7 @@ impl Quote {
             .context("sell token price is not a valid BigDecimal")?,
             sell_amount: self.sell_amount,
             buy_amount: self.buy_amount,
+            fee_amount: self.fee_amount,
             solver: self.data.solver,
             verified: self.data.verified,
             metadata: serde_json::to_value(&self.data.metadata)?,
@@ -461,9 +462,9 @@ impl OrderQuoter {
         };
 
         let trade_query = Arc::new(parameters.to_price_query(self.default_quote_timeout));
-        let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
+        let (effective_gas_price, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
-                .estimate()
+                .effective_gas_price()
                 .map_err(|err| CalculateQuoteError::from((
                     EstimatorKind::Gas,
                     PriceEstimationError::ProtocolInternal(err)
@@ -495,7 +496,7 @@ impl OrderQuoter {
         };
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as _,
-            gas_price: gas_estimate.effective_gas_price(),
+            gas_price: effective_gas_price as f64,
             sell_token_price,
         };
 
@@ -794,9 +795,9 @@ mod tests {
         },
         Address,
         U256 as AlloyU256,
+        alloy::eips::eip1559::Eip1559Estimation,
         chrono::Utc,
         futures::FutureExt,
-        gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::NonZeroU256,
@@ -853,10 +854,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.5,
-            max_fee_per_gas: 3.0,
-            max_priority_fee_per_gas: 0.5,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -994,10 +994,9 @@ mod tests {
             additional_gas: 2,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.5,
-            max_fee_per_gas: 3.0,
-            max_priority_fee_per_gas: 0.5,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1130,10 +1129,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.5,
-            max_fee_per_gas: 3.0,
-            max_priority_fee_per_gas: 0.5,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1267,10 +1265,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.,
-            max_fee_per_gas: 2.,
-            max_priority_fee_per_gas: 0.,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1341,10 +1338,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.,
-            max_fee_per_gas: 2.,
-            max_priority_fee_per_gas: 0.,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 0,
         };
 
         let mut price_estimator = MockPriceEstimating::new();

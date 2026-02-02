@@ -31,12 +31,15 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 .ranking
                 .provide_context(out_token.into_legacy(), query.timeout);
 
-            // Filter out 0 gas cost estimate because they are obviously wrong and would
-            // likely win the price competition which would lead to us paying huge
-            // subsidies.
-            let gas_is_reasonable = |r: &PriceEstimateResult| r.as_ref().is_ok_and(|r| r.gas > 0);
+            // Filter out obviously wrong estimates:
+            // - 0 gas cost would lead to us paying huge subsidies
+            // - 0 out_amount means the quote is useless
+            let is_reasonable = |r: &PriceEstimateResult| {
+                r.as_ref()
+                    .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
+            };
             let get_results = self
-                .produce_results(query.clone(), gas_is_reasonable, |context| {
+                .produce_results(query.clone(), is_reasonable, |context| {
                     context.estimator.estimate(context.query)
                 })
                 .map(Result::Ok);
@@ -45,7 +48,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
 
             let winner = results
                 .into_iter()
-                .filter(|(_index, r)| r.is_err() || gas_is_reasonable(r))
+                .filter(|(_index, r)| r.is_err() || is_reasonable(r))
                 .max_by(|a, b| {
                     compare_quote_result(
                         &query,
@@ -55,7 +58,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                         !matches!(self.verification_mode, QuoteVerificationMode::Unverified),
                     )
                 })
-                .with_context(|| "all price estimates reported 0 gas cost")
+                .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
             self.report_winner(&query, query.kind, winner)
         }
@@ -109,8 +112,7 @@ impl PriceRanking {
                 let gas = gas.clone();
                 let native = native.clone();
                 let gas = gas
-                    .estimate()
-                    .map_ok(|gas| gas.effective_gas_price())
+                    .effective_gas_price()
                     .map_err(PriceEstimationError::ProtocolInternal);
                 let (native_price, gas_price) = futures::try_join!(
                     native.estimate_native_price(token.into_alloy(), timeout),
@@ -119,7 +121,7 @@ impl PriceRanking {
 
                 Ok(RankingContext {
                     native_price,
-                    gas_price,
+                    gas_price: gas_price as f64,
                 })
             }
         }
@@ -163,8 +165,7 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
-        alloy::primitives::U256,
-        gas_estimation::GasPrice1559,
+        alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         model::order::OrderKind,
     };
 
@@ -191,10 +192,9 @@ mod tests {
         native
             .expect_estimate_native_price()
             .returning(move |_, _| async { Ok(0.5) }.boxed());
-        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 2.0,
-            max_fee_per_gas: 2.0,
-            max_priority_fee_per_gas: 2.0,
+        let gas = Arc::new(FakeGasPriceEstimator::new(Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 2,
         }));
         PriceRanking::BestBangForBuck {
             native: Arc::new(native),

@@ -172,13 +172,17 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
-    let postgres_write =
-        Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
+    let db_config = crate::database::Config {
+        max_pool_size: args.database_pool.db_max_connections.get(),
+    };
+    let postgres_write = Postgres::try_new(args.db_write_url.as_str(), db_config.clone())
+        .expect("failed to create database");
 
     let postgres_read = if let Some(db_read_url) = args.db_read_url
         && args.db_write_url != db_read_url
     {
-        Postgres::try_new(db_read_url.as_str()).expect("failed to create read replica databaseR")
+        Postgres::try_new(db_read_url.as_str(), db_config)
+            .expect("failed to create read replica database")
     } else {
         postgres_write.clone()
     };
