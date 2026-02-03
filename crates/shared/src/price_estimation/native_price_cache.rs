@@ -276,6 +276,9 @@ impl CacheStorage {
     /// included in the result. Also updates cache access metrics
     /// (hits/misses).
     ///
+    /// The `require_updating_price` parameter controls whether to mark tokens
+    /// for active price maintenance (upgrading from Quote to Auction source).
+    ///
     /// Note: This method does NOT create placeholder entries for missing
     /// tokens. Use `lookup_cached_price` directly if you need that behavior
     /// (e.g., in `estimate_with_cache_update` where the fetch immediately
@@ -284,6 +287,7 @@ impl CacheStorage {
         &self,
         tokens: &[Address],
         now: Instant,
+        require_updating_price: RequiresUpdatingPrices,
     ) -> HashMap<Address, CachedResult> {
         let mut cache = self.cache.lock().unwrap();
         let max_age = self.max_age;
@@ -293,16 +297,21 @@ impl CacheStorage {
         let mut misses = 0u64;
 
         for &token in tokens {
-            let cached = match cache.get_mut(&token) {
-                Some(cached) => {
-                    cached.requested_at = now;
-                    let is_recent = now.saturating_duration_since(cached.updated_at) < max_age;
-                    is_recent.then_some(cached.clone())
-                }
-                None => None,
-            };
+            let cached = cache.get_mut(&token).and_then(|cached| {
+                cached.requested_at = now;
 
-            if let Some(cached) = cached.filter(|c| c.is_ready()) {
+                if cached.update_price_continuously == KeepPriceUpdated::No
+                    && require_updating_price == RequiresUpdatingPrices::Yes
+                {
+                    tracing::trace!(?token, "marking token for needing active maintenance");
+                    cached.update_price_continuously = KeepPriceUpdated::Yes;
+                }
+
+                let is_recent = now.saturating_duration_since(cached.updated_at) < max_age;
+                (is_recent && cached.is_ready()).then_some(cached.clone())
+            });
+
+            if let Some(cached) = cached {
                 results.insert(token, cached);
                 hits += 1;
             } else {
@@ -689,7 +698,9 @@ impl CachingNativePriceEstimator {
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        let cached = self.cache.get_ready_to_use_cached_prices(tokens, now);
+        let cached =
+            self.cache
+                .get_ready_to_use_cached_prices(tokens, now, self.require_updating_prices);
 
         // For Auction source, mark missing tokens for background maintenance
         if self.require_updating_prices == RequiresUpdatingPrices::Yes {
@@ -802,7 +813,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let now = Instant::now();
             if let Some(cached) = self
                 .cache
-                .get_ready_to_use_cached_prices(&[token], now)
+                .get_ready_to_use_cached_prices(&[token], now, self.require_updating_prices)
                 .remove(&token)
             {
                 return cached.result;
@@ -849,7 +860,7 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
             if let Some(cached) = self
                 .0
                 .cache
-                .get_ready_to_use_cached_prices(&[token], now)
+                .get_ready_to_use_cached_prices(&[token], now, RequiresUpdatingPrices::DontCare)
                 .remove(&token)
             {
                 return cached.result;
