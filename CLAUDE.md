@@ -19,6 +19,45 @@ This is a Rust workspace containing multiple services and libraries:
 - **model** - Serialization models for API
 - **contracts** - Smart contract bindings
 
+## Architecture Overview
+
+```
+User signs order → Orderbook validates → Autopilot includes in auction
+                                              ↓
+                    ┌─────────────────────────┴─────────────────────────┐
+                    ↓                                                   ↓
+          Colocated External Solvers                    Our Drivers + Non-Colocated Solvers
+          (run their own driver+solver)                      ↓                    ↓
+                    │                                 Our solvers          External solver APIs
+                    │                                 (baseline,           (non-colocated partners
+                    │                                  balancer, ...)       like 1inch, 0x, etc)
+                    └─────────────────────────┬─────────────────────────┘
+                                              ↓
+                              Autopilot ranks solutions, picks winner(s)
+                                              ↓
+                              Winning driver submits to chain (2-3 block window)
+                                              ↓
+                              Settlement contract executes:
+                              1. Pre-interactions (incl user pre-hooks)
+                              2. Transfer sell tokens in
+                              3. Main interactions (swaps/routing)
+                              4. Pay out buy tokens
+                              5. Post-interactions (incl user post-hooks)
+                                              ↓
+                              Circuit breaker monitors compliance
+```
+
+**Solver types:**
+- **Colocated**: External partners run their own driver + solver. Full control, full responsibility.
+- **Non-colocated**: We run the driver, configured with their solver API endpoint. We handle simulation/submission.
+
+**Key components:**
+- **Orderbook**: Validates + stores orders, handles quoting
+- **Autopilot**: Central auctioneer, runs every ~12-15s (eventually every block), filters orders, adds fee policies, sends auction to solvers, ranks solutions
+- **Driver**: Fetches liquidity, encodes solutions to calldata, simulates, submits to chain. Handles everything except route-finding.
+- **Solver Engine**: Pure math — finds best routes/matches. Can be internal (baseline, balancer) or external API calls.
+- **Circuit Breaker**: Monitors on-chain settlements match off-chain auction outcomes. Jails misbehaving solvers.
+
 ## Technology Stack
 
 - **Language**: Rust 2021+ Edition
