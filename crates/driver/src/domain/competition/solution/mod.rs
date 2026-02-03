@@ -62,7 +62,9 @@ pub struct Solution {
     interactions: Vec<Interaction>,
     #[debug(ignore)]
     post_interactions: Vec<eth::Interaction>,
+    #[debug("{}", solver.name())]
     solver: Solver,
+    #[debug(ignore)]
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
