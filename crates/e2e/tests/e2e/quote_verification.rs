@@ -143,7 +143,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         "https" => url.set_scheme("wss").unwrap(),
         _ => unreachable!("unexpected scheme"),
     }
-    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.alloy.clone(), url)
+    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), url)
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
@@ -421,7 +421,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     assert!(
         onchain
             .web3()
-            .alloy
+            .provider
             .get_balance(trader.address())
             .await
             .unwrap()
@@ -567,7 +567,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // offset within a struct mapping, making it undetectable by standard slot
     // calculation methods
     let struct_offset_token =
-        contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.alloy.clone())
+        contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
             .await
             .unwrap();
 
@@ -577,14 +577,14 @@ async fn trace_based_balance_detection(web3: Web3) {
     // calling another contract to get a balance--or calling another contract to
     // *not* get a balance)
     let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.alloy.clone(),
+        web3.provider.clone(),
         weth,
         true,
     )
     .await
     .unwrap();
     let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.alloy.clone(),
+        web3.provider.clone(),
         weth,
         false,
     )
@@ -697,7 +697,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         let (override_token, state_override) = override_result.unwrap();
 
         // Call balanceOf with the state override to verify it works
-        let token_contract = ERC20::Instance::new(token, web3.alloy.clone());
+        let token_contract = ERC20::Instance::new(token, web3.provider.clone());
         let balance = token_contract
             .balanceOf(test_account)
             .state(AddressMap::from_iter([(

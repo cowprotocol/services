@@ -178,18 +178,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(
-        &args.shared.ethrpc,
-        &http_factory,
-        &args.shared.node_url,
-        "base",
-    );
-    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
+    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let simulation_web3 = args
+        .shared
+        .simulation_node_url
+        .as_ref()
+        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
-        .alloy
+        .provider
         .get_chain_id()
         .instrument(info_span!("chain_id"))
         .await
@@ -243,9 +240,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         addr
     });
     let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
 
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
         .instrument(info_span!("uniswapv3_deployed"))
         .await
         .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
@@ -334,12 +331,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         CachingDetector::new(
             Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(
-                    &args.shared.ethrpc,
-                    &http_factory,
-                    tracing_node_url,
-                    "trace",
-                ),
+                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
                 *eth.contracts().settlement().address(),
                 finder,
             )),
@@ -361,7 +353,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = Arc::new(web3.alloy.clone());
+    let block_retriever = Arc::new(web3.provider.clone());
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
@@ -422,7 +414,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let skip_event_sync_start = if args.skip_event_sync {
         Some(
-            block_number_to_block_number_hash(&web3.alloy, BlockNumberOrTag::Latest)
+            block_number_to_block_number_hash(&web3.provider, BlockNumberOrTag::Latest)
                 .await
                 .expect("Failed to fetch latest block"),
         )
@@ -452,7 +444,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
-            web3.alloy.clone(),
+            web3.provider.clone(),
             *eth.contracts().settlement().address(),
         ),
         boundary::events::settlement::Indexer::new(
@@ -734,19 +726,14 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::ethrpc::web3(
-        &args.shared.ethrpc,
-        &http_factory,
-        &args.shared.node_url,
-        "base",
-    );
-    let weth = WETH9::Instance::deployed(&web3.alloy)
+    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");
 
     let trusted_tokens = {
         let chain_id = web3
-            .alloy
+            .provider
             .get_chain_id()
             .await
             .expect("Could not get chainId");
@@ -778,7 +765,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     let current_block = args
         .shared
         .current_block
-        .stream(args.shared.node_url, web3.alloy.clone())
+        .stream(args.shared.node_url, web3.provider.clone())
         .await
         .expect("couldn't initialize current block stream");
 

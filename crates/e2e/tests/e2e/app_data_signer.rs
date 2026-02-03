@@ -94,7 +94,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
 
     // EIP-1271
 
-    let safe = Safe::deploy(safe_owner.clone(), web3.alloy.clone()).await;
+    let safe = Safe::deploy(safe_owner.clone(), web3.provider.clone()).await;
     token_a.mint(safe.address(), 10u64.eth()).await;
     safe.exec_alloy_call(
         token_a

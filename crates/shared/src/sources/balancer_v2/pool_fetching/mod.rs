@@ -51,7 +51,10 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
     },
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethrpc::{
+        alloy::ProviderLabelingExt,
+        block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    },
     model::TokenPair,
     reqwest::{Client, Url},
     std::{
@@ -247,7 +250,7 @@ impl BalancerPoolFetcher {
         deny_listed_pool_ids: Vec<B256>,
     ) -> Result<Self> {
         let pool_initializer = BalancerSubgraphClient::from_subgraph_url(subgraph_url, client)?;
-        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "balancerV2".into());
+        let web3 = web3.labeled("balancerV2");
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(
                 web3,
@@ -326,7 +329,7 @@ async fn create_aggregate_pool_fetcher(
     let registered_pools = pool_initializer.initialize_pools().await?;
     let fetched_block_number = registered_pools.fetched_block_number;
     let fetched_block_hash = web3
-        .alloy
+        .provider
         .get_block_by_number(BlockNumberOrTag::Number(fetched_block_number))
         .await?
         .context("failed to get block by block number")?

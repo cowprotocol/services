@@ -35,15 +35,15 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
 
     let token_dai = ERC20::Instance::new(
         address!("6b175474e89094c44da98b954eedeac495271d0f"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_dai
                 .transfer(BANNED_USER, 1000u64.eth())
@@ -61,7 +61,7 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
         .unwrap();
 
     // Approve GPv2 for trading
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_dai
                 .approve(onchain.contracts().allowance, 1000u64.eth())

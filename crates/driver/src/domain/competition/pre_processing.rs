@@ -140,7 +140,7 @@ impl DataAggregator {
             .map(|(factory, helper)| (factory.0, helper.0))
             .collect();
         let cow_amm_cache =
-            cow_amm::Cache::new(eth.web3().alloy.clone(), cow_amm_helper_by_factory);
+            cow_amm::Cache::new(eth.web3().provider.clone(), cow_amm_helper_by_factory);
 
         Self {
             utilities: Arc::new(Utilities {

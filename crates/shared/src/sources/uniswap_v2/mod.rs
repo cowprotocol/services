@@ -16,6 +16,7 @@ use {
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     contracts::alloy::IUniswapLikeRouter,
+    ethrpc::alloy::ProviderLabelingExt,
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
@@ -102,9 +103,9 @@ impl UniV2BaselineSourceParameters {
     }
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
+        let web3 = web3.labeled("uniswapV2");
         let router =
-            contracts::alloy::IUniswapLikeRouter::Instance::new(self.router, web3.alloy.clone());
+            contracts::alloy::IUniswapLikeRouter::Instance::new(self.router, web3.provider.clone());
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
             factory,
@@ -206,7 +207,7 @@ mod tests {
         token1: Address,
         expected_pool_address: Address,
     ) {
-        let version_ = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version_ = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version_, version, "wrong node for test");
         let source = UniV2BaselineSourceParameters::from_baseline_source(source, version)
             .unwrap()
@@ -222,7 +223,7 @@ mod tests {
     #[ignore]
     async fn baseline_mainnet() {
         let web3 = ethrpc::Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version, "1", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "1", source, token0, token1, expected)
@@ -255,7 +256,7 @@ mod tests {
     #[ignore]
     async fn baseline_sepolia() {
         let web3 = ethrpc::Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version, "11155111", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "11155111", source, token0, token1, expected)
@@ -275,7 +276,7 @@ mod tests {
     #[ignore]
     async fn baseline_xdai() {
         let web3 = ethrpc::Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version, "100", "test must be run with xdai node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "100", source, token0, token1, expected)
@@ -304,7 +305,7 @@ mod tests {
     #[ignore]
     async fn fetch_baoswap_pool() {
         let web3 = Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         let pool_fetcher =
             UniV2BaselineSourceParameters::from_baseline_source(BaselineSource::Baoswap, &version)
                 .unwrap()
@@ -340,7 +341,7 @@ mod tests {
     #[ignore]
     async fn fetch_honeyswap_pool() {
         let web3 = Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         let pool_fetcher = UniV2BaselineSourceParameters::from_baseline_source(
             BaselineSource::Honeyswap,
             &version,

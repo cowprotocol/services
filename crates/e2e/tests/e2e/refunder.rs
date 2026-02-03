@@ -31,11 +31,11 @@ async fn advance_time_past_expiration(web3: &Web3, valid_to: u32) {
     // Add 60 seconds buffer so the order is definitively expired, not just at the
     // boundary.
     let target_timestamp = valid_to as u64 + 60;
-    web3.alloy
+    web3.provider
         .evm_set_next_block_timestamp(target_timestamp)
         .await
         .expect("Must be able to set block timestamp");
-    web3.alloy
+    web3.provider
         .evm_mine(None)
         .await
         .expect("Unable to mine next block");
@@ -277,7 +277,7 @@ async fn run_refunder_threshold_test(
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
 
     // Compute absolute valid_to timestamp from blockchain time + duration
-    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.provider)
         .await
         .unwrap()
         + validity.order;
@@ -292,13 +292,13 @@ async fn run_refunder_threshold_test(
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = RefundService::new(
+    let mut refund_service = RefundService::from_components(
         services.db().clone(),
         web3.clone(),
-        vec![ethflow_contract.clone()],
+        vec![*ethflow_contract.address()],
         validity.enforced,
         slippage.enforced,
-        Box::new(refunder_account.signer.clone()),
+        refunder_account.signer.clone(),
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
         None,
@@ -419,13 +419,13 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = RefundService::new(
+    let mut refund_service = RefundService::from_components(
         services.db().clone(),
         web3.clone(),
-        vec![ethflow_contract.clone()],
+        vec![*ethflow_contract.address()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
-        Box::new(refunder_account.signer.clone()),
+        refunder_account.signer.clone(),
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
         None,
@@ -527,13 +527,13 @@ async fn refunder_skips_settled_orders(web3: Web3) {
         "Settled order should not be invalidated on-chain"
     );
 
-    let mut refund_service = RefundService::new(
+    let mut refund_service = RefundService::from_components(
         services.db().clone(),
         web3.clone(),
-        vec![ethflow_contract.clone()],
+        vec![*ethflow_contract.address()],
         0, // min_validity_duration = 0 (permissive)
         0, // min_price_deviation_bps = 0 (permissive)
-        Box::new(refunder_account.signer),
+        refunder_account.signer,
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
         None,
@@ -596,7 +596,7 @@ async fn refunder_multiple_ethflow_contracts(web3: Web3) {
     let buy_token = *token.address();
 
     let validity_duration = 600u32;
-    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.provider)
         .await
         .unwrap()
         + validity_duration;
@@ -624,13 +624,13 @@ async fn refunder_multiple_ethflow_contracts(web3: Web3) {
 
     advance_time_past_expiration(&web3, valid_to).await;
 
-    let mut refund_service = RefundService::new(
+    let mut refund_service = RefundService::from_components(
         services.db().clone(),
         web3,
-        vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
+        vec![*ethflow_contract.address(), *ethflow_contract_2.address()],
         validity_duration as i64 / 2,
         10,
-        Box::new(refunder.signer),
+        refunder.signer,
         MAX_GAS_PRICE,
         START_PRIORITY_FEE_TIP,
         None,

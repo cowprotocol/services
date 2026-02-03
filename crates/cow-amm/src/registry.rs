@@ -44,7 +44,7 @@ impl Registry {
     ) {
         let storage = Storage::new(
             deployment_block,
-            CowAmmLegacyHelper::Instance::new(helper_contract, self.web3.alloy.clone()),
+            CowAmmLegacyHelper::Instance::new(helper_contract, self.web3.provider.clone()),
             factory,
             db,
         )
@@ -57,7 +57,7 @@ impl Registry {
             address: factory,
         };
         let event_handler =
-            EventHandler::new(Arc::new(self.web3.alloy.clone()), indexer, storage, None);
+            EventHandler::new(Arc::new(self.web3.provider.clone()), indexer, storage, None);
         let token_balance_maintainer =
             EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
 

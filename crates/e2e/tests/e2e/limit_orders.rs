@@ -863,16 +863,16 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), 1000u64.matom())
@@ -963,16 +963,16 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("ddafbb505ad214d7b80b1f830fccc89b60fb7a83"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_wxdai = ERC20::Instance::new(
         address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), 1000u64.matom())
