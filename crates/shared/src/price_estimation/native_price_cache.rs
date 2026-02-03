@@ -433,9 +433,10 @@ impl CacheStorage {
         F: FnOnce(u32) -> Fut,
         Fut: std::future::Future<Output = NativePriceEstimateResult>,
     {
-        let current_accumulative_errors_count = {
+        let (current_accumulative_errors_count, existing_keep_updated) = {
             let now = Instant::now();
             let mut cache = self.cache.lock().unwrap();
+
             let cached = Self::lookup_cached_price(
                 &mut cache,
                 token,
@@ -446,8 +447,19 @@ impl CacheStorage {
 
             match cached {
                 Some(cached) if cached.is_ready() => return cached.result,
-                Some(cached) => cached.accumulative_errors_count,
-                None => Default::default(),
+                Some(cached) => (
+                    cached.accumulative_errors_count,
+                    cached.update_price_continuously,
+                ),
+                None => {
+                    // Entry might exist but be expired - preserve its flag if so.
+                    // If entry doesn't exist, use the caller's preference.
+                    let existing_keep_updated = cache
+                        .get(&token)
+                        .map(|c| c.update_price_continuously)
+                        .unwrap_or(KeepPriceUpdated::No);
+                    (Default::default(), existing_keep_updated)
+                }
             }
         };
 
@@ -455,6 +467,14 @@ impl CacheStorage {
 
         if should_cache(&result) {
             let now = Instant::now();
+            // Preserve Yes if existing entry had it, otherwise use the requested
+            // keep_updated. This prevents downgrading auction-related tokens
+            // when QuoteCompetitionEstimator requests them after expiration.
+            let final_keep_updated = if existing_keep_updated == KeepPriceUpdated::Yes {
+                KeepPriceUpdated::Yes
+            } else {
+                keep_updated
+            };
             self.insert(
                 token,
                 CachedResult::new(
@@ -462,7 +482,7 @@ impl CacheStorage {
                     now,
                     now,
                     current_accumulative_errors_count,
-                    keep_updated,
+                    final_keep_updated,
                 ),
             );
         }
@@ -1470,5 +1490,78 @@ mod tests {
         let tokens = cache.prioritized_tokens_to_update(Duration::from_secs(0), now);
         assert_eq!(tokens[0], t1);
         assert_eq!(tokens[1], t0);
+    }
+
+    #[tokio::test]
+    async fn quote_competition_estimator_preserves_keep_updated_yes() {
+        // This test verifies that when QuoteCompetitionEstimator requests a token
+        // that was previously marked with KeepPriceUpdated::Yes, the flag is preserved
+        // even after the cache entry expires and needs to be re-fetched.
+
+        let mut inner = MockNativePriceEstimating::new();
+        // First call: auction-related estimator fetches the price
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .returning(|_, _| async { Ok(1.0) }.boxed());
+        // Second call: QuoteCompetitionEstimator re-fetches after expiration
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .returning(|_, _| async { Ok(2.0) }.boxed());
+
+        let cache = CacheStorage::new_without_maintenance(
+            Duration::from_millis(50),
+            Default::default(),
+            Default::default(),
+        );
+
+        // Create auction-related estimator (marks entries with KeepPriceUpdated::Yes)
+        let auction_estimator = CachingNativePriceEstimator::new(
+            Arc::new(inner),
+            cache.clone(),
+            1,
+            RequiresUpdatingPrices::Yes,
+        );
+
+        // Create QuoteCompetitionEstimator (uses KeepPriceUpdated::No)
+        let quote_estimator = QuoteCompetitionEstimator::new(Arc::new(auction_estimator));
+
+        let t0 = token(0);
+
+        // Step 1: Auction estimator fetches the price, marking it with Yes
+        let result = quote_estimator
+            .0
+            .estimate_native_price(t0, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(result.unwrap().to_i64().unwrap(), 1);
+
+        // Verify the entry has KeepPriceUpdated::Yes
+        {
+            let cache_guard = cache.cache.lock().unwrap();
+            let entry = cache_guard.get(&t0).unwrap();
+            assert_eq!(entry.update_price_continuously, KeepPriceUpdated::Yes);
+        }
+
+        // Step 2: Wait for the cache entry to expire
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        // Step 3: QuoteCompetitionEstimator requests the same token (after expiration)
+        // This would previously downgrade the entry to KeepPriceUpdated::No
+        let result = quote_estimator
+            .estimate_native_price(t0, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(result.unwrap().to_i64().unwrap(), 2);
+
+        // Step 4: Verify the entry STILL has KeepPriceUpdated::Yes (not downgraded)
+        {
+            let cache_guard = cache.cache.lock().unwrap();
+            let entry = cache_guard.get(&t0).unwrap();
+            assert_eq!(
+                entry.update_price_continuously,
+                KeepPriceUpdated::Yes,
+                "QuoteCompetitionEstimator should not downgrade KeepPriceUpdated::Yes to No"
+            );
+        }
     }
 }
