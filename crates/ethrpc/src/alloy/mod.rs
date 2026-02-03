@@ -1,5 +1,4 @@
 mod buffering;
-pub mod conversions;
 pub mod errors;
 mod evm_ext;
 mod instrumentation;
@@ -13,22 +12,18 @@ use {
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
-    std::time::Duration,
 };
 pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
 /// [`InstrumentationLayer`] and [`BatchCallLayer`].
-fn rpc(url: &str) -> RpcClient {
+fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
     ClientBuilder::default()
         .layer(LabelingLayer {
-            label: "main".into(),
+            label: label.unwrap_or("main").into(),
         })
         .layer(InstrumentationLayer)
-        .layer(BatchCallLayer::new(Config {
-            ethrpc_batch_delay: Duration::ZERO,
-            ..Default::default()
-        }))
+        .layer(BatchCallLayer::new(config))
         .http(url.parse().unwrap())
 }
 
@@ -38,10 +33,10 @@ fn rpc(url: &str) -> RpcClient {
 ///
 /// This is useful for components that need to avoid batching (e.g., block
 /// stream polling on high-frequency chains).
-fn unbuffered_rpc(url: &str) -> RpcClient {
+fn unbuffered_rpc(url: &str, label: Option<&str>) -> RpcClient {
     ClientBuilder::default()
         .layer(LabelingLayer {
-            label: "main_unbuffered".into(),
+            label: label.unwrap_or("main_unbuffered").into(),
         })
         .layer(InstrumentationLayer)
         .http(url.parse().unwrap())
@@ -53,8 +48,8 @@ fn unbuffered_rpc(url: &str) -> RpcClient {
 /// Useful for read-only operations like block polling.
 ///
 /// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn unbuffered_provider(url: &str) -> (AlloyProvider, MutWallet) {
-    let rpc = unbuffered_rpc(url);
+pub fn unbuffered_provider(url: &str, label: Option<&str>) -> (AlloyProvider, MutWallet) {
+    let rpc = unbuffered_rpc(url, label);
     let wallet = MutWallet::default();
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
@@ -68,13 +63,13 @@ pub fn unbuffered_provider(url: &str) -> (AlloyProvider, MutWallet) {
 /// Creates a provider with the provided URL and an empty [`MutWallet`].
 ///
 /// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn provider(url: &str) -> (AlloyProvider, MutWallet) {
-    let rpc = rpc(url);
+pub fn provider(url: &str, config: Config, label: Option<&str>) -> (AlloyProvider, MutWallet) {
+    let rpc = rpc(url, config, label);
     let wallet = MutWallet::default();
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
         // will query the node for the nonce every time that it is needed
-        // adds overhead but makes working with alloy/ethcontract at the same time much simpler
+        // adds overhead but makes working with alloy at the same time much simpler
         .with_simple_nonce_management()
         .connect_client(rpc)
         .erased();

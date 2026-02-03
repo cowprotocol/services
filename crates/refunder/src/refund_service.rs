@@ -1039,8 +1039,11 @@ mod tests {
     async fn test_problematic_sepolia_address() {
         use crate::infra::AlloyChain;
 
-        let (provider, _wallet) =
-            ethrpc::alloy::provider("https://ethereum-sepolia-rpc.publicnode.com");
+        let (provider, _wallet) = ethrpc::alloy::provider(
+            "https://ethereum-sepolia-rpc.publicnode.com",
+            ethrpc::Config::default(),
+            None,
+        );
         let chain = AlloyChain::new(provider, vec![]);
 
         // EOF contract that cannot receive ETH (0xef01... bytecode prefix)

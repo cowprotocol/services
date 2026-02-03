@@ -31,7 +31,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
@@ -99,7 +99,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         let Some(web3) = network.simulation_web3.clone() else {
             return Ok(None);
         };
-        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
+        let web3 = web3.labeled("simulator");
 
         let tenderly = shared_args
             .tenderly

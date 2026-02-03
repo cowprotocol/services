@@ -19,7 +19,7 @@ use {
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
-        maintenance::Maintenance,
+        maintenance::MaintenanceSync,
         run::Liveness,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
@@ -82,7 +82,7 @@ pub struct RunLoop {
     probes: Probes,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
-    maintenance: Arc<Maintenance>,
+    maintenance: MaintenanceSync,
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
@@ -98,7 +98,7 @@ impl RunLoop {
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
-        maintenance: Arc<Maintenance>,
+        maintenance: MaintenanceSync,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -125,11 +125,6 @@ impl RunLoop {
     }
 
     pub async fn run_forever(self, mut control: ShutdownController) {
-        Maintenance::spawn_cow_amm_indexing_task(
-            self.maintenance.clone(),
-            self.eth.current_block().clone(),
-        );
-
         let mut last_auction = None;
         let mut last_block = None;
 
@@ -263,7 +258,9 @@ impl RunLoop {
     /// the latest available state.
     async fn run_maintenance(&self, block: &BlockInfo) {
         let start = Instant::now();
-        self.maintenance.update(block).await;
+        self.maintenance
+            .wait_until_block_processed(block.number)
+            .await;
         Metrics::ran_maintenance(start.elapsed());
     }
 

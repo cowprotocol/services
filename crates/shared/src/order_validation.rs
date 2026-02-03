@@ -23,7 +23,6 @@ use {
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::alloy::{HooksTrampoline, WETH9},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -608,10 +607,9 @@ impl OrderValidating for OrderValidator {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
-        let app_data_signer = app_data.inner.protocol.signer.map(IntoLegacy::into_legacy);
+        let app_data_signer = app_data.inner.protocol.signer;
 
-        let owner =
-            order.verify_owner(domain_separator, app_data_signer.map(IntoAlloy::into_alloy))?;
+        let owner = order.verify_owner(domain_separator, app_data_signer)?;
         tracing::debug!(?owner, "recovered owner from order and signature");
         let signing_scheme = order.signature.scheme();
         let data = OrderData {

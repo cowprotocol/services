@@ -21,7 +21,6 @@ use {
     clap::Parser,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
-    shared::http_client::HttpClientFactory,
     sqlx::postgres::PgPoolOptions,
     std::{
         sync::{Arc, RwLock},
@@ -68,12 +67,7 @@ pub async fn run(args: arguments::Arguments) {
         .expect("failed to create database");
 
     // Blockchain/RPC setup
-    let web3 = shared::ethrpc::web3(
-        &args.ethrpc,
-        &HttpClientFactory::new(&args.http_client),
-        &args.node_url,
-        "base",
-    );
+    let web3 = shared::ethrpc::web3(&args.ethrpc, &args.node_url, "base");
 
     if let Some(expected_chain_id) = args.chain_id {
         let chain_id = web3

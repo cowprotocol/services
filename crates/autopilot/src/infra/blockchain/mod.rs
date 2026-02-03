@@ -178,8 +178,6 @@ impl From<alloy::rpc::types::trace::geth::CallFrame> for eth::CallFrame {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
     #[error("alloy transport error: {0:?}")]
     Alloy(#[from] alloy::transports::TransportError),
     #[error("missing field {0}, node client bug?")]
