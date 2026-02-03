@@ -510,8 +510,11 @@ async fn find_invalid_signature_orders(
     let mut signature_check_futures = FuturesUnordered::new();
 
     for order in orders {
-        // Skip signature validation for orders that should bypass filtering
-        if filter_bypass_orders.contains(&order.metadata.uid) {
+        // Skip signature validation for EIP-1271 orders that should bypass filtering.
+        // ECDSA orders must always be validated as they don't rely on pre-interactions.
+        if filter_bypass_orders.contains(&order.metadata.uid)
+            && matches!(order.signature, Signature::Eip1271(_))
+        {
             continue;
         }
 
@@ -911,7 +914,7 @@ impl OrderFilterCounter {
     }
 }
 
-/// Determines which orders should bypass signature/balance validation based on
+/// Determines which orders should bypass certain validation checks based on
 /// their appCode. Caches parsed appCode values to avoid re-parsing JSON.
 struct AppCodeBypass {
     sources: HashSet<String>,
@@ -928,7 +931,9 @@ impl AppCodeBypass {
         }
     }
 
-    /// Returns the set of order UIDs that should bypass filtering.
+    /// Returns the set of order UIDs that should bypass filtering based on
+    /// appCode. Note: signature validation has additional restrictions (only
+    /// EIP-1271 orders can bypass).
     async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
         let start = Instant::now();
 
@@ -1709,6 +1714,7 @@ mod tests {
                     app_data: AppDataHash([1; 32]),
                     ..Default::default()
                 },
+                signature: Signature::Eip1271(vec![1]),
                 ..Default::default()
             },
             Order {
@@ -1721,6 +1727,7 @@ mod tests {
                     app_data: AppDataHash([2; 32]),
                     ..Default::default()
                 },
+                signature: Signature::Eip1271(vec![2]),
                 ..Default::default()
             },
             Order {
@@ -1733,6 +1740,7 @@ mod tests {
                     app_data: AppDataHash([3; 32]),
                     ..Default::default()
                 },
+                signature: Signature::Eip1271(vec![3]),
                 ..Default::default()
             },
         ];
@@ -1759,6 +1767,56 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains(&order1_uid));
         assert!(result.contains(&order2_uid));
+    }
+
+    #[tokio::test]
+    async fn app_code_bypass_includes_all_matching_orders() {
+        // The bypass set includes all orders with matching appCode, regardless of
+        // signature type. The EIP-1271 restriction is enforced at the usage site
+        // (signature validation), not in the bypass set itself.
+        let eip1271_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
+        let ecdsa_uid = OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2);
+
+        let orders = vec![
+            // EIP-1271 order with matching appCode
+            Order {
+                metadata: OrderMetadata {
+                    uid: eip1271_uid,
+                    full_app_data: Some(r#"{"appCode": "Barter"}"#.to_string()),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    app_data: AppDataHash([1; 32]),
+                    ..Default::default()
+                },
+                signature: Signature::Eip1271(vec![1]),
+                ..Default::default()
+            },
+            // ECDSA order with matching appCode
+            Order {
+                metadata: OrderMetadata {
+                    uid: ecdsa_uid,
+                    full_app_data: Some(r#"{"appCode": "Barter"}"#.to_string()),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    app_data: AppDataHash([2; 32]),
+                    ..Default::default()
+                },
+                // Default signature is Eip712 (ECDSA)
+                ..Default::default()
+            },
+        ];
+
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        let bypass = AppCodeBypass::new(HashSet::from(["Barter".to_string()]), metrics);
+        let result = bypass.build_bypass_set(&orders).await;
+
+        // Both orders should be in the bypass set (signature type check is at usage
+        // site)
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&eip1271_uid));
+        assert!(result.contains(&ecdsa_uid));
     }
 
     #[test]
