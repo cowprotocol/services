@@ -577,12 +577,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(
-        settlement_event_indexer,
-        db_write.clone(),
-        args.max_maintenance_timeout,
-    );
-    maintenance.with_cow_amms(&cow_amm_registry);
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
+    maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
@@ -638,7 +634,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
 
-        maintenance.spawn_ethflow_indexer(onchain_order_indexer);
+        maintenance.add_ethflow_indexer(onchain_order_indexer);
         // refunds are not critical for correctness and can therefore be indexed
         // sporadically in a background task
         let service_maintainer = ServiceMaintenance::new(vec![Arc::new(refund_event_handler)]);
@@ -679,6 +675,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .into_iter()
         .collect();
 
+    let awaiter = maintenance
+        .spawn_maintenance_task(eth.current_block().clone(), args.max_maintenance_timeout);
+
     let run = RunLoop::new(
         run_loop_config,
         eth,
@@ -690,7 +689,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             liveness: liveness.clone(),
             startup,
         },
-        Arc::new(maintenance),
+        awaiter,
     );
     run.run_forever(shutdown_controller).await;
 
