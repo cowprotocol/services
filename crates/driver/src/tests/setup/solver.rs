@@ -412,7 +412,7 @@ impl Solver {
             .flat_map(|f| {
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
-                    let contract = ERC20::Instance::new(token, config.blockchain.web3.alloy.clone());
+                    let contract = ERC20::Instance::new(token, config.blockchain.web3.provider.clone());
                     let settlement = config.blockchain.settlement.address();
                     (
                         token.encode_hex_with_prefix(),

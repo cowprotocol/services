@@ -86,7 +86,7 @@ pub async fn run(args: Arguments) {
         .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
-        .alloy
+        .provider
         .get_chain_id()
         .await
         .expect("Could not get chainId");
@@ -98,14 +98,14 @@ pub async fn run(args: Arguments) {
     }
 
     let settlement_contract = match args.shared.settlement_contract_address {
-        Some(address) => GPv2Settlement::Instance::new(address, web3.alloy.clone()),
-        None => GPv2Settlement::Instance::deployed(&web3.alloy)
+        Some(address) => GPv2Settlement::Instance::new(address, web3.provider.clone()),
+        None => GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .expect("load settlement contract"),
     };
     let balances_contract = match args.shared.balances_contract_address {
-        Some(address) => Balances::Instance::new(address, web3.alloy.clone()),
-        None => Balances::Instance::deployed(&web3.alloy.clone())
+        Some(address) => Balances::Instance::new(address, web3.provider.clone()),
+        None => Balances::Instance::deployed(&web3.provider.clone())
             .await
             .expect("load balances contract"),
     };
@@ -116,15 +116,15 @@ pub async fn run(args: Arguments) {
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
         Some(address) => {
-            contracts::alloy::support::Signatures::Instance::new(address, web3.alloy.clone())
+            contracts::alloy::support::Signatures::Instance::new(address, web3.provider.clone())
         }
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.alloy)
+        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.provider)
             .await
             .expect("load signatures contract"),
     };
     let native_token = match args.shared.native_token_address {
-        Some(address) => WETH9::Instance::new(address, web3.alloy.clone()),
-        None => WETH9::Instance::deployed(&web3.alloy)
+        Some(address) => WETH9::Instance::new(address, web3.provider.clone()),
+        None => WETH9::Instance::deployed(&web3.provider)
             .await
             .expect("load native token contract"),
     };
@@ -156,11 +156,11 @@ pub async fn run(args: Arguments) {
         }
     });
     let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
-        Some(address) => HooksTrampoline::Instance::new(address, web3.alloy.clone()),
-        None => HooksTrampoline::Instance::deployed(&web3.alloy)
+        Some(address) => HooksTrampoline::Instance::new(address, web3.provider.clone()),
+        None => HooksTrampoline::Instance::deployed(&web3.provider)
             .await
             .expect("load hooks trampoline contract"),
     };
@@ -234,7 +234,7 @@ pub async fn run(args: Arguments) {
     allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
         .await
         .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
         .ok();
@@ -278,7 +278,7 @@ pub async fn run(args: Arguments) {
     let current_block_stream = args
         .shared
         .current_block
-        .stream(args.shared.node_url.clone(), web3.alloy.clone())
+        .stream(args.shared.node_url.clone(), web3.provider.clone())
         .await
         .unwrap();
 
@@ -392,7 +392,7 @@ pub async fn run(args: Arguments) {
     let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
 
     let app_data_validator = Validator::new(args.app_data_size_limit);
-    let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
+    let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(

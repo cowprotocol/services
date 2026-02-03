@@ -54,7 +54,7 @@ impl Rpc {
             args.max_batch_size,
             args.max_concurrent_requests,
         );
-        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)?;
+        let chain = Chain::try_from(web3.provider.get_chain_id().await?)?;
 
         Ok(Self { web3, chain, args })
     }
@@ -112,7 +112,7 @@ impl Ethereum {
         let Rpc { web3, chain, args } = rpc;
 
         let current_block_stream = current_block_args
-            .stream(args.url.clone(), web3.alloy.clone())
+            .stream(args.url.clone(), web3.provider.clone())
             .await
             .expect("couldn't initialize current block stream");
 
@@ -170,7 +170,7 @@ impl Ethereum {
 
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
-        let code = self.web3.alloy.get_code_at(address).await?;
+        let code = self.web3.provider.get_code_at(address).await?;
         Ok(!code.is_empty())
     }
 
@@ -197,7 +197,7 @@ impl Ethereum {
             _ => tx,
         };
 
-        let access_list = self.web3.alloy.create_access_list(&tx).pending().await?;
+        let access_list = self.web3.provider.create_access_list(&tx).pending().await?;
 
         Ok(access_list
             .ensure_ok()
@@ -222,7 +222,7 @@ impl Ethereum {
 
         let estimated_gas = self
             .web3
-            .alloy
+            .provider
             .estimate_gas(tx)
             .pending()
             .await
@@ -246,7 +246,7 @@ impl Ethereum {
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
-            .alloy
+            .provider
             .get_balance(address)
             .await
             .map(Into::into)
@@ -261,7 +261,7 @@ impl Ethereum {
     /// Returns the transaction's on-chain inclusion status.
     pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
-            .alloy
+            .provider
             .get_transaction_receipt(tx_hash.0)
             .await
             .map(|result| {

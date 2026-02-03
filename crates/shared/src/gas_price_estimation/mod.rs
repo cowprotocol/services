@@ -76,7 +76,7 @@ pub async fn create_priority_estimator(
     web3: &Web3,
     estimator_types: &[GasEstimatorType],
 ) -> Result<impl GasPriceEstimating + use<>> {
-    let network_id = web3.alloy.get_chain_id().await?.to_string();
+    let network_id = web3.provider.get_chain_id().await?.to_string();
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
 
     for estimator_type in estimator_types {
@@ -86,15 +86,15 @@ pub async fn create_priority_estimator(
                 estimators.push(Box::new(DriverGasEstimator::new(
                     http_factory.create(),
                     url.clone(),
-                    web3.alloy.clone(),
+                    web3.provider.clone(),
                 )));
             }
             GasEstimatorType::Web3 => {
-                estimators.push(Box::new(NodeGasPriceEstimator::new(web3.alloy.clone())))
+                estimators.push(Box::new(NodeGasPriceEstimator::new(web3.provider.clone())))
             }
             GasEstimatorType::Alloy => {
                 let estimator = ConfigurableGasPriceEstimator::new(
-                    web3.alloy.clone(),
+                    web3.provider.clone(),
                     EstimatorConfig {
                         past_blocks: default_past_blocks(),
                         reward_percentile: default_reward_percentile(),

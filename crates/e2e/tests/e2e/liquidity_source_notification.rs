@@ -65,17 +65,17 @@ async fn liquidity_source_notification(web3: Web3) {
     // Access trade tokens contracts
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // CoW onchain setup
     // Fund trader
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), trade_amount)
@@ -93,7 +93,7 @@ async fn liquidity_source_notification(web3: Web3) {
         .unwrap();
 
     // Fund solver
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(solver.address(), trade_amount)
@@ -122,7 +122,7 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Liquorice settlement contract through which we will trade with the
     // `liquorice_maker`
-    let liquorice_settlement = LiquoriceSettlement::Instance::deployed(&web3.alloy)
+    let liquorice_settlement = LiquoriceSettlement::Instance::deployed(&web3.provider)
         .await
         .unwrap();
 
@@ -133,7 +133,7 @@ async fn liquidity_source_notification(web3: Web3) {
         .expect("no balance manager found");
 
     // Fund `liquorice_maker`
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdt
                 .transfer(liquorice_maker.address(), trade_amount)

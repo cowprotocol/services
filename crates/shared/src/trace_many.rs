@@ -24,7 +24,7 @@ pub async fn trace_many(
         .zip(std::iter::repeat([TraceType::Trace].as_slice()))
         .collect();
 
-    web3.alloy.trace_call_many(r.as_slice()).latest().await
+    web3.provider.trace_call_many(r.as_slice()).latest().await
 }
 
 /// Check the return value of `trace_many` for whether all top level

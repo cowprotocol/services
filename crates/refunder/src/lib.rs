@@ -71,7 +71,7 @@ pub async fn run(args: arguments::Arguments) {
 
     if let Some(expected_chain_id) = args.chain_id {
         let chain_id = web3
-            .alloy
+            .provider
             .get_chain_id()
             .await
             .expect("Could not get chainId");

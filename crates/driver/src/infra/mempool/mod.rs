@@ -100,7 +100,7 @@ impl Mempool {
     /// specified block number. If no block number is provided in the config,
     /// uses the alloy's default behavior.
     pub async fn get_nonce(&self, address: eth::Address) -> Result<u64, mempools::Error> {
-        let call = self.transport.alloy.get_transaction_count(address);
+        let call = self.transport.provider.get_transaction_count(address);
         match self.config.nonce_block_number {
             Some(BlockNumberOrTag::Latest) => call.latest(),
             Some(BlockNumberOrTag::Earliest) => call.earliest(),
@@ -143,7 +143,7 @@ impl Mempool {
 
         let submission = self
             .transport
-            .alloy
+            .provider
             .send_transaction(tx_request)
             .await
             .map_err(anyhow::Error::from);
@@ -188,7 +188,7 @@ impl Mempool {
     ) -> anyhow::Result<Option<alloy::rpc::types::Transaction>> {
         let tx_pool_content = self
             .transport
-            .alloy
+            .provider
             .txpool_content_from(signer)
             .await
             .context("failed to query pending transactions")?;
