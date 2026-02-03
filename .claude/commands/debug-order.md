@@ -12,5 +12,6 @@ Key steps:
 3. Check order_events in DB for lifecycle events
 4. Search Victoria Logs for the order UID
 5. Identify root cause and report findings with evidence
+6. If you haven't found anything go wil and try all SQL / log searches / codebase searches you can think of
 
 Always show your evidence (log lines, DB results, API responses) when presenting findings.
