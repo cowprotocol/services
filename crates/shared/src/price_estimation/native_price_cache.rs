@@ -290,13 +290,12 @@ impl CacheStorage {
         now: Instant,
         require_updating_price: RequiresUpdatingPrices,
     ) -> HashMap<Address, CachedResult> {
-        let mut cache = self.cache.lock().unwrap();
         let max_age = self.max_age;
-
         let mut results = HashMap::new();
         let mut hits = 0u64;
         let mut misses = 0u64;
 
+        let mut cache = self.cache.lock().unwrap();
         for &token in tokens {
             let cached = cache.get_mut(&token).and_then(|cached| {
                 cached.requested_at = now;
@@ -340,8 +339,35 @@ impl CacheStorage {
     }
 
     /// Insert or update a cached result.
+    ///
+    /// Note: This locks the cache. Do not call in a loop; prefer batch
+    /// operations instead.
     fn insert(&self, token: Address, result: CachedResult) {
         self.cache.lock().unwrap().insert(token, result);
+    }
+
+    /// Insert or update multiple cached results in a single lock acquisition.
+    fn insert_batch(&self, results: impl IntoIterator<Item = (Address, CachedResult)>) {
+        let mut cache = self.cache.lock().unwrap();
+        for (token, result) in results {
+            cache.insert(token, result);
+        }
+    }
+
+    /// Get accumulative error counts for multiple tokens in a single lock.
+    /// Returns a map of token -> error count. Tokens not in cache return 0.
+    fn get_accumulative_errors(&self, tokens: &[Address]) -> HashMap<Address, u32> {
+        let cache = self.cache.lock().unwrap();
+        tokens
+            .iter()
+            .map(|&token| {
+                let count = cache
+                    .get(&token)
+                    .map(|c| c.accumulative_errors_count)
+                    .unwrap_or_default();
+                (token, count)
+            })
+            .collect()
     }
 
     /// Creates placeholder entries for tokens that are not in the cache.
@@ -370,14 +396,10 @@ impl CacheStorage {
         }
     }
 
-    /// Fetches all tokens that need to be updated sorted by the provided
-    /// priority.
-    fn prioritized_tokens_to_update(
-        &self,
-        max_age: Duration,
-        now: Instant,
-        high_priority: &IndexSet<Address>,
-    ) -> Vec<Address> {
+    /// Fetches all tokens that need to be updated sorted by priority.
+    /// High-priority tokens (from `self.high_priority`) are returned first.
+    fn prioritized_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<Address> {
+        let high_priority = self.high_priority.lock().unwrap();
         let mut outdated: Vec<_> = self
             .cache
             .lock()
@@ -465,32 +487,61 @@ impl CacheStorage {
     /// Estimates prices for the given tokens and updates the cache.
     /// Used by the background maintenance task. All tokens are processed using
     /// the provided estimator and marked with `KeepPriceUpdated::Yes`.
-    fn estimate_prices_and_update_cache_for_maintenance<'a>(
-        &'a self,
-        tokens: &'a [Address],
-        estimator: &'a Arc<dyn NativePriceEstimating>,
+    ///
+    /// This method batches lock acquisitions: one lock to get error counts,
+    /// then concurrent fetches without locking, then one lock to insert
+    /// results.
+    async fn estimate_prices_and_update_cache_for_maintenance(
+        &self,
+        tokens: &[Address],
+        estimator: &Arc<dyn NativePriceEstimating>,
         concurrent_requests: usize,
         request_timeout: Duration,
-    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
-        let estimates = tokens.iter().map(move |token| {
-            let estimator = estimator.clone();
-            let token = *token;
-            let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
-            async move {
-                let result = self
-                    .estimate_with_cache_update(
-                        token,
-                        RequiresUpdatingPrices::DontCare,
-                        KeepPriceUpdated::Yes,
-                        |_| estimator.estimate_native_price(token_to_fetch, request_timeout),
-                    )
-                    .await;
-                (token, result)
-            }
-        });
-        futures::stream::iter(estimates)
+    ) -> usize {
+        if tokens.is_empty() {
+            return 0;
+        }
+
+        let error_counts = self.get_accumulative_errors(tokens);
+        let futures: Vec<_> = tokens
+            .iter()
+            .map(|&token| {
+                let estimator = estimator.clone();
+                let token_to_fetch = *self.approximation_tokens.get(&token).unwrap_or(&token);
+                let error_count = error_counts.get(&token).copied().unwrap_or_default();
+                async move {
+                    let result = estimator
+                        .estimate_native_price(token_to_fetch, request_timeout)
+                        .await;
+                    (token, result, error_count)
+                }
+            })
+            .collect();
+
+        let results: Vec<_> = futures::stream::iter(futures)
             .buffered(concurrent_requests)
-            .boxed()
+            .collect()
+            .await;
+
+        let now = Instant::now();
+        let to_insert = results
+            .iter()
+            .filter(|(_, result, _)| should_cache(result))
+            .map(|(token, result, error_count)| {
+                (
+                    *token,
+                    CachedResult::new(
+                        result.clone(),
+                        now,
+                        now,
+                        *error_count,
+                        KeepPriceUpdated::Yes,
+                    ),
+                )
+            });
+        self.insert_batch(to_insert);
+
+        results.len()
     }
 }
 
@@ -539,9 +590,7 @@ impl CacheMaintenanceTask {
             .set(i64::try_from(cache.len()).unwrap_or(i64::MAX));
 
         let max_age = cache.max_age().saturating_sub(self.prefetch_time);
-        let high_priority = cache.high_priority.lock().unwrap().clone();
-        let mut outdated_entries =
-            cache.prioritized_tokens_to_update(max_age, Instant::now(), &high_priority);
+        let mut outdated_entries = cache.prioritized_tokens_to_update(max_age, Instant::now());
 
         tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated auction prices to fetch");
 
@@ -557,14 +606,14 @@ impl CacheMaintenanceTask {
             return;
         }
 
-        let stream = cache.estimate_prices_and_update_cache_for_maintenance(
-            &outdated_entries,
-            &self.estimator,
-            self.concurrent_requests,
-            self.quote_timeout,
-        );
-
-        let updates_count = stream.count().await as u64;
+        let updates_count = cache
+            .estimate_prices_and_update_cache_for_maintenance(
+                &outdated_entries,
+                &self.estimator,
+                self.concurrent_requests,
+                self.quote_timeout,
+            )
+            .await as u64;
         metrics
             .native_price_cache_background_updates
             .inc_by(updates_count);
@@ -1436,17 +1485,13 @@ mod tests {
 
         let now = now + Duration::from_secs(1);
 
-        let high_priority: IndexSet<Address> = std::iter::once(t0).collect();
-        cache.replace_high_priority(high_priority.clone());
-        let tokens =
-            cache.prioritized_tokens_to_update(Duration::from_secs(0), now, &high_priority);
+        cache.replace_high_priority(std::iter::once(t0).collect());
+        let tokens = cache.prioritized_tokens_to_update(Duration::from_secs(0), now);
         assert_eq!(tokens[0], t0);
         assert_eq!(tokens[1], t1);
 
-        let high_priority: IndexSet<Address> = std::iter::once(t1).collect();
-        cache.replace_high_priority(high_priority.clone());
-        let tokens =
-            cache.prioritized_tokens_to_update(Duration::from_secs(0), now, &high_priority);
+        cache.replace_high_priority(std::iter::once(t1).collect());
+        let tokens = cache.prioritized_tokens_to_update(Duration::from_secs(0), now);
         assert_eq!(tokens[0], t1);
         assert_eq!(tokens[1], t0);
     }
