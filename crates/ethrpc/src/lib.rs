@@ -29,14 +29,7 @@ impl Web3 {
     }
 
     pub fn new_from_url(url: &str) -> Self {
-        let (alloy, wallet) = crate::alloy::provider(
-            url,
-            Config {
-                ethrpc_batch_delay: Duration::ZERO,
-                ..Default::default()
-            },
-            None,
-        );
+        let (alloy, wallet) = crate::alloy::provider(url, Default::default(), None);
         Self { alloy, wallet }
     }
 }
@@ -61,7 +54,7 @@ impl Default for Config {
         Self {
             ethrpc_max_batch_size: 20,
             ethrpc_max_concurrent_requests: 10,
-            ethrpc_batch_delay: Duration::from_millis(5),
+            ethrpc_batch_delay: Duration::ZERO,
         }
     }
 }
@@ -72,14 +65,8 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
         args.ethrpc_max_batch_size,
         args.ethrpc_max_concurrent_requests,
     ) {
-        (0 | 1, 0) => {
-            let (alloy, wallet) = alloy::unbuffered_provider(url.as_str(), label);
-            (alloy, wallet)
-        }
-        _ => {
-            let (alloy, wallet) = alloy::provider(url.as_str(), args, label);
-            (alloy, wallet)
-        }
+        (0 | 1, 0) => alloy::unbuffered_provider(url.as_str(), label),
+        _ => alloy::provider(url.as_str(), args, label),
     };
 
     Web3 { alloy, wallet }
