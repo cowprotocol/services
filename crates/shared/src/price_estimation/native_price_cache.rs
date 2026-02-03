@@ -77,7 +77,7 @@ impl Metrics {
 /// Configuration for the background maintenance task that keeps the cache warm.
 pub struct MaintenanceConfig {
     /// Estimator used for maintenance updates.
-    /// Maintenance only refreshes Auction-sourced entries.
+    /// Maintenance only refreshes entries marked with `KeepPriceUpdated::Yes`.
     pub estimator: Arc<dyn NativePriceEstimating>,
     /// How often to run the maintenance task.
     pub update_interval: Duration,
@@ -277,7 +277,8 @@ impl CacheStorage {
     /// (hits/misses).
     ///
     /// The `require_updating_price` parameter controls whether to mark tokens
-    /// for active price maintenance (upgrading from Quote to Auction source).
+    /// for active price maintenance (upgrading `KeepPriceUpdated::No` to
+    /// `Yes`).
     ///
     /// Note: This method does NOT create placeholder entries for missing
     /// tokens. Use `lookup_cached_price` directly if you need that behavior
@@ -463,7 +464,7 @@ impl CacheStorage {
 
     /// Estimates prices for the given tokens and updates the cache.
     /// Used by the background maintenance task. All tokens are processed using
-    /// the provided estimator and marked as Auction source.
+    /// the provided estimator and marked with `KeepPriceUpdated::Yes`.
     fn estimate_prices_and_update_cache_for_maintenance<'a>(
         &'a self,
         tokens: &'a [Address],
@@ -503,8 +504,8 @@ fn spawn_maintenance_task(cache: &Arc<CacheStorage>, config: MaintenanceConfig) 
 }
 
 /// Background task that keeps the cache warm by periodically refreshing prices.
-/// Only refreshes Auction-sourced entries; Quote-sourced entries are cached
-/// but not maintained.
+/// Only refreshes entries with `KeepPriceUpdated::Yes`; entries with
+/// `KeepPriceUpdated::No` are cached but not maintained.
 struct CacheMaintenanceTask {
     cache: Weak<CacheStorage>,
     /// Estimator used for maintenance updates.
@@ -530,7 +531,7 @@ impl CacheMaintenanceTask {
     }
 
     /// Single run of the background updating process.
-    /// Only updates Auction-sourced entries; Quote-sourced entries are skipped.
+    /// Only updates entries with `KeepPriceUpdated::Yes`.
     async fn single_update(&self, cache: &Arc<CacheStorage>) {
         let metrics = Metrics::get();
         metrics
@@ -670,9 +671,8 @@ impl CachingNativePriceEstimator {
     /// prices on-demand for cache misses. Background maintenance (keeping the
     /// cache warm) is handled by the cache itself, not by this estimator.
     ///
-    /// The `source` parameter identifies which estimator type this is, so that
-    /// the maintenance task knows which estimator to use when refreshing
-    /// entries fetched by this estimator.
+    /// The `require_updating_prices` parameter controls whether entries fetched
+    /// by this estimator should be actively maintained by the background task.
     pub fn new(
         estimator: Arc<dyn NativePriceEstimating>,
         cache: NativePriceCache,
@@ -689,10 +689,10 @@ impl CachingNativePriceEstimator {
 
     /// Only returns prices that are currently cached. Missing prices will get
     /// prioritized to get fetched during the next cycles of the maintenance
-    /// background task (only for Auction source).
+    /// background task (only if `require_updating_prices == Yes`).
     ///
-    /// If this estimator has Auction source and a cached entry has Quote
-    /// source, the entry is upgraded to Auction source.
+    /// If `require_updating_prices == Yes` and a cached entry has
+    /// `KeepPriceUpdated::No`, it is upgraded to `KeepPriceUpdated::Yes`.
     fn get_cached_prices(
         &self,
         tokens: &[Address],
@@ -702,7 +702,7 @@ impl CachingNativePriceEstimator {
             self.cache
                 .get_ready_to_use_cached_prices(tokens, now, self.require_updating_prices);
 
-        // For Auction source, mark missing tokens for background maintenance
+        // Mark missing tokens for background maintenance
         if self.require_updating_prices == RequiresUpdatingPrices::Yes {
             let missing_tokens: Vec<_> = tokens
                 .iter()
@@ -760,8 +760,8 @@ impl CachingNativePriceEstimator {
     /// request because they can take a long time and some other task might
     /// have fetched some requested price in the meantime.
     ///
-    /// If this estimator has Auction source and the cached entry has Quote
-    /// source, the entry is upgraded to Auction source.
+    /// If `require_updating_prices == Yes` and a cached entry has
+    /// `KeepPriceUpdated::No`, it is upgraded to `KeepPriceUpdated::Yes`.
     fn estimate_prices_and_update_cache<'a>(
         &'a self,
         tokens: &'a [Address],
@@ -829,20 +829,20 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     }
 }
 
-/// Wrapper around `CachingNativePriceEstimator` that marks all requests as
-/// Quote source. Used for the autopilot API endpoints where prices should be
-/// cached but not actively maintained by the background task.
+/// Wrapper around `CachingNativePriceEstimator` that marks all entries with
+/// `KeepPriceUpdated::No`. Used for the autopilot API endpoints where prices
+/// should be cached but not actively maintained by the background task.
 #[derive(Clone)]
 pub struct QuoteCompetitionEstimator(Arc<CachingNativePriceEstimator>);
 
 impl QuoteCompetitionEstimator {
-    /// Creates a new QuoteSourceEstimator wrapping the given estimator.
+    /// Creates a new `QuoteCompetitionEstimator` wrapping the given estimator.
     ///
-    /// Prices fetched through this wrapper will be cached with Quote source,
-    /// meaning they won't be actively refreshed by the background maintenance
-    /// task. However, if the same token is later requested for auction
-    /// purposes, the entry will be upgraded to Auction source and become
-    /// actively maintained.
+    /// Prices fetched through this wrapper will be cached with
+    /// `KeepPriceUpdated::No`, meaning they won't be actively refreshed by the
+    /// background maintenance task. However, if the same token is later
+    /// requested with `RequiresUpdatingPrices::Yes`, the entry will be upgraded
+    /// to `KeepPriceUpdated::Yes` and become actively maintained.
     pub fn new(estimator: Arc<CachingNativePriceEstimator>) -> Self {
         Self(estimator)
     }
@@ -856,7 +856,7 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let now = Instant::now();
-            // Quote source doesn't upgrade or create entries, just read
+            // Don't upgrade or create entries, just read from cache
             if let Some(cached) = self
                 .0
                 .cache
@@ -866,7 +866,7 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
                 return cached.result;
             }
 
-            // Quote source: cache the result but don't mark for active maintenance
+            // Cache the result but don't mark for active maintenance
             self.0
                 .cache
                 .estimate_with_cache_update(
@@ -1418,8 +1418,8 @@ mod tests {
         let t1 = Address::with_last_byte(1);
         let now = Instant::now();
 
-        // Create a cache and populate it directly with Auction-sourced entries
-        // (since maintenance only updates Auction entries)
+        // Create a cache and populate it directly with `KeepPriceUpdated::Yes`
+        // entries (since maintenance only updates those)
         let cache = CacheStorage::new_without_maintenance(
             Duration::from_secs(10),
             Default::default(),

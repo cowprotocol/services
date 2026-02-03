@@ -365,10 +365,11 @@ impl<'a> PriceEstimatorFactory<'a> {
     /// Creates a native price estimator with a shared cache and background
     /// maintenance task.
     ///
-    /// The estimator is configured with Auction source, meaning entries are
-    /// actively maintained by the background task. For the quote competition
-    /// use, wrap the returned estimator with `QuoteSourceEstimator` to mark
-    /// prices as Quote source (cached but not actively maintained).
+    /// The estimator is configured with `RequiresUpdatingPrices::Yes`, meaning
+    /// entries are actively maintained by the background task. For quote
+    /// competition use, wrap the returned estimator with
+    /// `QuoteCompetitionEstimator` to mark prices with `KeepPriceUpdated::No`
+    /// (cached but not actively maintained).
     ///
     /// The `initial_prices` are used to seed the cache before the estimator
     /// starts.
@@ -398,7 +399,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .collect();
 
         // Create cache with background maintenance, which only refreshes
-        // Auction-sourced entries
+        // entries marked with `KeepPriceUpdated::Yes`
         let cache = CacheStorage::new_with_maintenance(
             self.args.native_price_cache_max_age,
             initial_prices,
@@ -413,12 +414,12 @@ impl<'a> PriceEstimatorFactory<'a> {
             },
         );
 
-        // Wrap with caching layer using Auction source
+        // Wrap with caching layer
         Ok(self.wrap_with_cache(estimator, cache))
     }
 
     /// Wraps a native price estimator with caching functionality.
-    /// Uses Auction source so entries are actively maintained.
+    /// Uses `RequiresUpdatingPrices::Yes` so entries are actively maintained.
     fn wrap_with_cache(
         &self,
         estimator: Arc<dyn NativePriceEstimating>,
