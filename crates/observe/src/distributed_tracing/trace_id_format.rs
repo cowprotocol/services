@@ -2,7 +2,7 @@ use {
     chrono::Utc,
     opentelemetry::trace::{TraceContextExt, TraceId},
     serde::ser::{SerializeMap, Serializer as _},
-    std::{collections::HashMap, fmt, io},
+    std::{fmt, io},
     tracing::{Event, Span, Subscriber},
     tracing_opentelemetry::OpenTelemetrySpanExt,
     tracing_serde::{AsSerde, fields::AsMap},
@@ -11,10 +11,11 @@ use {
             FmtContext,
             FormatEvent,
             FormatFields,
+            FormattedFields,
             format::{Format, Full, Writer},
             time::FormatTime,
         },
-        registry::LookupSpan,
+        registry::{Extensions, LookupSpan},
     },
 };
 
@@ -84,21 +85,17 @@ where
                 let mut spans = Vec::new();
 
                 for span in scope.from_root() {
-                    let mut span_json = HashMap::<String, String>::new();
-                    span_json.insert("name".to_string(), span.name().to_string());
+                    let mut json = serde_json::json!({
+                        "name": span.name(),
+                    });
 
-                    let extensions = span.extensions();
-                    if let Some(fields) =
-                        extensions.get::<tracing_subscriber::fmt::FormattedFields<N>>()
-                    {
-                        for tuple in fields.split(' ') {
-                            if let Some((field, arg)) = tuple.split_once('=') {
-                                span_json.insert(field.to_string(), arg.to_string());
-                            }
-                        }
+                    if let Some(fields) = parse_fields_as_json::<N>(span.extensions()) {
+                        json.as_object_mut()
+                            .expect("was created with object literal")
+                            .insert("fields".into(), fields);
                     }
 
-                    spans.push(span_json);
+                    spans.push(json);
                 }
 
                 if !spans.is_empty() {
@@ -112,6 +109,14 @@ where
         visit().map_err(|_| std::fmt::Error)?;
         writeln!(writer)
     }
+}
+
+fn parse_fields_as_json<N>(extensions: Extensions) -> Option<serde_json::Value>
+where
+    N: for<'writer> FormatFields<'writer> + 'static,
+{
+    let fields = extensions.get::<FormattedFields<N>>()?;
+    serde_json::from_str(fields.as_str()).ok()
 }
 
 struct WriteAdapter<'a>(pub(crate) &'a mut dyn std::fmt::Write);
