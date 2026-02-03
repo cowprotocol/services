@@ -10,7 +10,6 @@ use {
     },
     ethrpc::Web3,
     std::collections::HashMap,
-    thiserror::Error,
 };
 
 #[derive(Debug, Clone)]
@@ -163,10 +162,4 @@ impl Contracts {
     ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
         &self.cow_amm_helper_by_factory
     }
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("method error: {0:?}")]
-    Rpc(#[from] alloy::contract::Error),
 }
