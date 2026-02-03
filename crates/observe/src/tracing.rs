@@ -79,6 +79,7 @@ fn set_tracing_subscriber(config: &Config) {
             if config.use_json_format {
                 // structured logging
                 tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
                     .event_format(TraceIdJsonFormat)
                     .with_writer(writer)
                     .with_filter($env_filter)

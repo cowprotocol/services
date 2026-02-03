@@ -2,7 +2,7 @@ use {
     chrono::Utc,
     opentelemetry::trace::{TraceContextExt, TraceId},
     serde::ser::{SerializeMap, Serializer as _},
-    std::{fmt, io},
+    std::{collections::HashMap, fmt, io},
     tracing::{Event, Span, Subscriber},
     tracing_opentelemetry::OpenTelemetrySpanExt,
     tracing_serde::{AsSerde, fields::AsMap},
@@ -52,7 +52,7 @@ where
 {
     fn format_event(
         &self,
-        _ctx: &FmtContext<'_, S, N>,
+        ctx: &FmtContext<'_, S, N>,
         mut writer: Writer<'_>,
         event: &Event<'_>,
     ) -> std::fmt::Result
@@ -77,6 +77,33 @@ where
             let trace_id = span_context.trace_id();
             if trace_id != TraceId::INVALID {
                 serializer.serialize_entry("trace_id", &trace_id.to_string())?;
+            }
+
+            // serialize entire parent span hierarchy and their fields
+            if let Some(scope) = ctx.event_scope() {
+                let mut spans = Vec::new();
+
+                for span in scope.from_root() {
+                    let mut span_json = HashMap::<String, String>::new();
+                    span_json.insert("name".to_string(), span.name().to_string());
+
+                    let extensions = span.extensions();
+                    if let Some(fields) =
+                        extensions.get::<tracing_subscriber::fmt::FormattedFields<N>>()
+                    {
+                        for tuple in fields.split(' ') {
+                            if let Some((field, arg)) = tuple.split_once('=') {
+                                span_json.insert(field.to_string(), arg.to_string());
+                            }
+                        }
+                    }
+
+                    spans.push(span_json);
+                }
+
+                if !spans.is_empty() {
+                    serializer.serialize_entry("spans", &spans)?;
+                }
             }
 
             serializer.end()
