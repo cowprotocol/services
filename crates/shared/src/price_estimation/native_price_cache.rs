@@ -20,8 +20,6 @@ use {
     tracing::{Instrument, instrument},
 };
 
-// This could be a bool but lets keep it as an enum for clarity.
-// Arguably this should not implement Default for the same argument...
 /// Determines whether the background maintenance task should
 /// keep the token price up to date automatically.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -31,7 +29,6 @@ pub enum KeepPriceUpdated {
     No,
 }
 
-// This could be a bool but lets keep it as an enum for clarity.
 /// Determines whether we need the price of the token to be
 /// actively kept up to date by the maintenance task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
