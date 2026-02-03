@@ -253,10 +253,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_balance_filter: bool,
 
-    /// Configures whether flashloan hints for EIP-1271 orders enable bypassing
-    /// the signature/balance filters.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_flashloan_hint_filter_bypass: bool,
+    /// List of appCode values in appData that enable bypassing
+    /// signature/balance filters. Orders with matching appCode will skip
+    /// pre-validation checks.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub filter_bypass_app_data_sources: Vec<String>,
 
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
@@ -317,7 +318,7 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             disable_order_balance_filter,
-            disable_flashloan_hint_filter_bypass,
+            filter_bypass_app_data_sources,
             enable_leader_lock,
             max_maintenance_timeout,
         } = self;
@@ -393,7 +394,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "disable_flashloan_hint_filter_bypass: {disable_flashloan_hint_filter_bypass}"
+            "filter_bypass_app_data_sources: {filter_bypass_app_data_sources:?}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;

@@ -6,6 +6,7 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
+    app_data::AppDataHash,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
@@ -35,7 +36,7 @@ use {
         time::{Duration, Instant},
     },
     strum::VariantNames,
-    tokio::sync::Mutex,
+    tokio::sync::{Mutex, RwLock},
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -76,6 +77,13 @@ pub struct Metrics {
 
     /// Auction filtered market orders due to missing native token price.
     auction_market_order_missing_price: IntGauge,
+
+    /// Time taken to build filter bypass orders set.
+    #[metric(buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0))]
+    filter_bypass_orders_time: Histogram,
+
+    /// App code parsing failures (invalid JSON).
+    app_code_parse_failures: IntCounter,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -101,7 +109,7 @@ pub struct SolvableOrdersCache {
     native_price_timeout: Duration,
     settlement_contract: Address,
     disable_order_balance_filter: bool,
-    disable_flashloan_hint_filter_bypass: bool,
+    app_code_bypass: AppCodeBypass,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -128,8 +136,9 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
-        disable_flashloan_hint_filter_bypass: bool,
+        filter_bypass_app_data_sources: HashSet<String>,
     ) -> Arc<Self> {
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         Arc::new(Self {
             min_order_validity_period,
             persistence,
@@ -139,7 +148,7 @@ impl SolvableOrdersCache {
             cache: Mutex::new(None),
             native_price_estimator,
             signature_validator,
-            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
+            metrics,
             weth,
             limit_order_price_factor,
             protocol_fees,
@@ -147,7 +156,7 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
-            disable_flashloan_hint_filter_bypass,
+            app_code_bypass: AppCodeBypass::new(filter_bypass_app_data_sources, metrics),
         })
     }
 
@@ -184,11 +193,19 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
+        // Build set of orders that should bypass filtering based on appCode
+        let filter_bypass_orders = self.app_code_bypass.build_bypass_set(&orders).await;
+
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries),
-                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
+                self.filter_invalid_orders(
+                    orders,
+                    &mut counter,
+                    &mut invalid_order_uids,
+                    &filter_bypass_orders,
+                ),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
@@ -200,7 +217,7 @@ impl SolvableOrdersCache {
                 orders,
                 &balances,
                 self.settlement_contract,
-                self.disable_flashloan_hint_filter_bypass,
+                &filter_bypass_orders,
             );
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
@@ -395,11 +412,12 @@ impl SolvableOrdersCache {
         mut orders: Vec<Order>,
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
+        filter_bypass_orders: &HashSet<OrderUid>,
     ) -> Vec<Order> {
         let filter_invalid_signatures = find_invalid_signature_orders(
             &orders,
             self.signature_validator.as_ref(),
-            self.disable_flashloan_hint_filter_bypass,
+            filter_bypass_orders,
         );
 
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
@@ -486,12 +504,17 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
-    disable_flashloan_hint_filter_bypass: bool,
+    filter_bypass_orders: &HashSet<OrderUid>,
 ) -> Vec<OrderUid> {
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
     for order in orders {
+        // Skip signature validation for orders that should bypass filtering
+        if filter_bypass_orders.contains(&order.metadata.uid) {
+            continue;
+        }
+
         if matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
@@ -501,10 +524,6 @@ async fn find_invalid_signature_orders(
         }
 
         if let Signature::Eip1271(signature) = &order.signature {
-            if !disable_flashloan_hint_filter_bypass && has_flashloan_hint(order) {
-                continue;
-            }
-
             signature_check_futures.push(async {
                 let (hash, signer, _) = order.metadata.uid.parts();
                 match signature_validator
@@ -541,15 +560,13 @@ fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
     settlement_contract: Address,
-    disable_flashloan_hint_filter_bypass: bool,
+    filter_bypass_orders: &HashSet<OrderUid>,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        if matches!(order.signature, Signature::Eip1271(_))
-            && !disable_flashloan_hint_filter_bypass
-            && has_flashloan_hint(order)
-        {
+        // Skip balance check for orders that should bypass filtering
+        if filter_bypass_orders.contains(&order.metadata.uid) {
             return true;
         }
 
@@ -578,24 +595,6 @@ fn orders_with_balance(
         balance >= needed_balance
     });
     orders
-}
-
-fn has_flashloan_hint(order: &Order) -> bool {
-    let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
-        return false;
-    };
-
-    match app_data::parse(full_app_data.as_bytes()) {
-        Ok(app_data) => app_data.flashloan.is_some(),
-        Err(err) => {
-            tracing::debug!(
-                order_uid = %order.metadata.uid,
-                ?err,
-                "failed to parse app data while checking for flashloan hint"
-            );
-            false
-        }
-    }
 }
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
@@ -909,6 +908,85 @@ impl OrderFilterCounter {
         }
 
         removed
+    }
+}
+
+/// Determines which orders should bypass signature/balance validation based on
+/// their appCode. Caches parsed appCode values to avoid re-parsing JSON.
+struct AppCodeBypass {
+    sources: HashSet<String>,
+    cache: RwLock<HashMap<AppDataHash, Option<String>>>,
+    metrics: &'static Metrics,
+}
+
+impl AppCodeBypass {
+    fn new(sources: HashSet<String>, metrics: &'static Metrics) -> Self {
+        Self {
+            sources,
+            cache: RwLock::new(HashMap::new()),
+            metrics,
+        }
+    }
+
+    /// Returns the set of order UIDs that should bypass filtering.
+    async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
+        let start = Instant::now();
+
+        if self.sources.is_empty() {
+            return HashSet::new();
+        }
+
+        // First pass: check cache for all orders
+        let (mut result, uncached) = {
+            let cache = self.cache.read().await;
+            let mut result = HashSet::new();
+            let mut uncached = Vec::new();
+
+            for order in orders {
+                let app_data_hash = order.data.app_data;
+                if let Some(cached_app_code) = cache.get(&app_data_hash) {
+                    if let Some(app_code) = cached_app_code
+                        && self.sources.contains(app_code)
+                    {
+                        result.insert(order.metadata.uid);
+                    }
+                } else {
+                    uncached.push(order);
+                }
+            }
+            (result, uncached)
+        };
+
+        // Second pass: parse uncached orders and update cache
+        if !uncached.is_empty() {
+            let mut cache = self.cache.write().await;
+            for order in uncached {
+                let app_code = match order.metadata.full_app_data.as_ref() {
+                    Some(full_app_data) => {
+                        match serde_json::from_slice::<app_data::Root>(full_app_data.as_bytes()) {
+                            Ok(root) => root.app_code().map(|s| s.to_owned()),
+                            Err(_) => {
+                                self.metrics.app_code_parse_failures.inc();
+                                None
+                            }
+                        }
+                    }
+                    None => None,
+                };
+
+                if let Some(ref code) = app_code
+                    && self.sources.contains(code)
+                {
+                    result.insert(order.metadata.uid);
+                }
+                cache.insert(order.data.app_data, app_code);
+            }
+        }
+
+        self.metrics
+            .filter_bypass_orders_time
+            .observe(start.elapsed().as_secs_f64());
+        result
     }
 }
 
@@ -1238,6 +1316,7 @@ mod tests {
 
     #[tokio::test]
     async fn filters_invalidated_eip1271_signatures() {
+        let order5_uid = OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5);
         let orders = vec![
             Order {
                 metadata: OrderMetadata {
@@ -1295,8 +1374,7 @@ mod tests {
             },
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5),
-                    full_app_data: Some(sample_flashloan_app_data()),
+                    uid: order5_uid,
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
@@ -1304,6 +1382,7 @@ mod tests {
             },
         ];
 
+        // Test case 1: order 5 is in bypass set, so it skips validation
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature()
@@ -1329,21 +1408,11 @@ mod tests {
                 balance_override: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(55),
-                hash: [5; 32],
-                signature: vec![5, 5, 5, 5, 5],
-                interactions: vec![],
-                balance_override: None,
-            }))
-            // never even called, because this order has a flashloan hint
-            .times(0);
+        // Order 5 is never validated because it's in the bypass set
 
+        let bypass_orders = HashSet::from([order5_uid]);
         let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator, false).await;
-        // no flashloan hint -> order is considered invalid
+            find_invalid_signature_orders(&orders, &signature_validator, &bypass_orders).await;
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(
@@ -1353,6 +1422,7 @@ mod tests {
             )]
         );
 
+        // Test case 2: empty bypass set, all orders validated
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature()
@@ -1389,11 +1459,11 @@ mod tests {
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
 
+        let empty_bypass: HashSet<OrderUid> = HashSet::new();
         let mut invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator, true).await;
+            find_invalid_signature_orders(&orders, &signature_validator, &empty_bypass).await;
         invalid_signature_orders.sort();
-        // flashloan bypass disabled means even the order with a flashloan hint with
-        // invalid signature shows up as invalid
+        // No bypass -> both orders with invalid signatures show up
         assert_eq!(
             invalid_signature_orders,
             vec![
@@ -1563,7 +1633,9 @@ mod tests {
         .collect();
         let expected = &[0, 2, 4];
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, false);
+        let no_bypass: HashSet<OrderUid> = HashSet::new();
+        let filtered =
+            orders_with_balance(orders.clone(), &balances, settlement_contract, &no_bypass);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);
@@ -1572,9 +1644,11 @@ mod tests {
     }
 
     #[test]
-    fn eip1271_orders_with_flashloan_hint_skip_balance_filtering() {
+    fn orders_in_bypass_set_skip_balance_filtering() {
         let settlement_contract = Address::repeat_byte(1);
-        let flashloan_order = Order {
+        let bypass_order_uid =
+            OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6);
+        let bypass_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
                 sell_amount: alloy::primitives::U256::from(10),
@@ -1584,8 +1658,7 @@ mod tests {
             },
             signature: Signature::Eip1271(vec![1, 2, 3]),
             metadata: OrderMetadata {
-                uid: OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6),
-                full_app_data: Some(sample_flashloan_app_data()),
+                uid: bypass_order_uid,
                 ..Default::default()
             },
             ..Default::default()
@@ -1606,31 +1679,90 @@ mod tests {
             ..Default::default()
         };
 
-        let orders = vec![regular_order.clone(), flashloan_order.clone()];
+        let orders = vec![regular_order.clone(), bypass_order.clone()];
         let balances: Balances = Default::default();
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, false);
+        // With bypass order in the set, it should be retained even without balance
+        let bypass_set = HashSet::from([bypass_order_uid]);
+        let filtered =
+            orders_with_balance(orders.clone(), &balances, settlement_contract, &bypass_set);
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].metadata.uid, flashloan_order.metadata.uid);
+        assert_eq!(filtered[0].metadata.uid, bypass_order.metadata.uid);
 
-        let filtered_ignoring_hints =
-            orders_with_balance(orders, &balances, settlement_contract, true);
-        assert!(filtered_ignoring_hints.is_empty());
+        // Without bypass, both orders are filtered out (no balance)
+        let empty_bypass: HashSet<OrderUid> = HashSet::new();
+        let filtered_no_bypass =
+            orders_with_balance(orders, &balances, settlement_contract, &empty_bypass);
+        assert!(filtered_no_bypass.is_empty());
     }
 
-    fn sample_flashloan_app_data() -> String {
-        r#"{
-            "metadata": {
-                "flashloan": {
-                    "liquidityProvider": "0x1111111111111111111111111111111111111111",
-                    "protocolAdapter": "0x2222222222222222222222222222222222222222",
-                    "receiver": "0x3333333333333333333333333333333333333333",
-                    "token": "0x0100000000000000000000000000000000000000",
-                    "amount": "10"
-                }
-            }
-        }"#
-        .to_string()
+    #[tokio::test]
+    async fn app_code_bypass_matches_app_code() {
+        let order1_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
+        let order2_uid = OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2);
+        let order3_uid = OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3);
+
+        let orders = vec![
+            Order {
+                metadata: OrderMetadata {
+                    uid: order1_uid,
+                    full_app_data: Some(r#"{"appCode": "Barter"}"#.to_string()),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    app_data: AppDataHash([1; 32]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                metadata: OrderMetadata {
+                    uid: order2_uid,
+                    full_app_data: Some(r#"{"appCode": "CoW Swap"}"#.to_string()),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    app_data: AppDataHash([2; 32]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                metadata: OrderMetadata {
+                    uid: order3_uid,
+                    full_app_data: None, // No app data
+                    ..Default::default()
+                },
+                data: OrderData {
+                    app_data: AppDataHash([3; 32]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ];
+
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+
+        // Empty sources -> no bypass
+        let bypass = AppCodeBypass::new(HashSet::new(), metrics);
+        let result = bypass.build_bypass_set(&orders).await;
+        assert!(result.is_empty());
+
+        // Match "Barter" -> only order1
+        let bypass = AppCodeBypass::new(HashSet::from(["Barter".to_string()]), metrics);
+        let result = bypass.build_bypass_set(&orders).await;
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&order1_uid));
+
+        // Match multiple sources
+        let bypass = AppCodeBypass::new(
+            HashSet::from(["Barter".to_string(), "CoW Swap".to_string()]),
+            metrics,
+        );
+        let result = bypass.build_bypass_set(&orders).await;
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&order1_uid));
+        assert!(result.contains(&order2_uid));
     }
 
     #[test]
