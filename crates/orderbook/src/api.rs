@@ -50,60 +50,41 @@ pub struct AppState {
     pub quote_timeout: Duration,
 }
 
-/// List of all metric labels used in the API for Prometheus metrics
-/// initialization
-const METRIC_LABELS: &[&str] = &[
-    "v1/create_order",
-    "v1/get_order",
-    "v1/get_order_status",
-    "v1/cancel_order",
-    "v1/cancel_orders",
-    "v1/get_user_orders",
-    "v1/get_orders_by_tx",
-    "v1/get_trades",
-    "v1/post_quote",
-    "v1/auction",
-    "v1/solver_competition",
-    "v1/version",
-    "v1/get_native_price",
-    "v1/get_app_data",
-    "v1/put_app_data",
-    "v1/get_total_surplus",
-    "v1/get_token_metadata",
-    "v2/get_trades",
-    "v2/solver_competition",
-];
 
-/// Helper to inject a metric label into a request
-/// Returns a middleware function that can be applied to individual routes
-fn with_labelled_metric(
-    label: &'static str,
-) -> impl Fn(
-    Request<axum::body::Body>,
-    Next<axum::body::Body>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
-+ Clone {
+/// Middleware that automatically tracks metrics using Axum's MatchedPath
+async fn with_matched_path_metric(
+    req: Request<axum::body::Body>,
+    next: Next<axum::body::Body>,
+) -> Response {
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-    move |req: Request<axum::body::Body>, next: Next<axum::body::Body>| {
-        Box::pin(async move {
-            let timer = Instant::now();
-            let response = next.run(req).await;
 
-            let status = response.status();
+    // Extract matched path and HTTP method
+    let method = req.method().to_string();
+    let matched_path = req
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|path| path.as_str())
+        .unwrap_or("unknown");
 
-            // Track completed requests
-            metrics.on_request_completed(label, status, timer);
+    // Create label in format "METHOD /path"
+    let label = format!("{} {}", method, matched_path);
 
-            // Track rejected requests (4xx and 5xx status codes)
-            if status.is_client_error() || status.is_server_error() {
-                metrics
-                    .requests_rejected
-                    .with_label_values(&[status.as_str()])
-                    .inc();
-            }
-            response
-        })
+    let timer = Instant::now();
+    let response = next.run(req).await;
+    let status = response.status();
+
+    // Track completed requests
+    metrics.on_request_completed(&label, status, timer);
+
+    // Track rejected requests (4xx and 5xx status codes)
+    if status.is_client_error() || status.is_server_error() {
+        metrics
+            .requests_rejected
+            .with_label_values(&[status.as_str()])
+            .inc();
     }
+
+    response
 }
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
@@ -130,139 +111,112 @@ pub fn handle_all_routes(
         quote_timeout,
     });
 
-    // Initialize metrics with zero values for all known method/status combinations
+    // Initialize metrics
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     metrics.reset_requests_rejected();
-
-    for label in METRIC_LABELS {
-        metrics.reset_requests_complete(label);
-    }
 
     let api_router = Router::new()
         // V1 routes
         .route(
             "/v1/account/:owner/orders",
             axum::routing::get(get_user_orders::get_user_orders_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_user_orders"))),
         )
         .route(
             "/v1/app_data",
             axum::routing::put(put_app_data::put_app_data_without_hash)
                 .layer(DefaultBodyLimit::max(app_data_size_limit))
-                .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data"))),
         )
         .route(
             "/v1/app_data/:hash",
             axum::routing::get(get_app_data::get_app_data_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_app_data")))
                 .merge(
                     axum::routing::put(put_app_data::put_app_data_with_hash)
                         .layer(DefaultBodyLimit::max(app_data_size_limit))
-                        .layer(middleware::from_fn(with_labelled_metric("v1/put_app_data"))),
                 ),
         )
         .route(
             "/v1/auction",
             axum::routing::get(get_auction::get_auction_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/auction"))),
         )
         .route(
             "/v1/orders",
             axum::routing::post(post_order::post_order_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/create_order")))
                 .merge(
                     axum::routing::delete(cancel_orders::cancel_orders_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/cancel_orders"))),
                 ),
         )
         .route(
             "/v1/orders/:uid",
             axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_order")))
                 .merge(
                     axum::routing::delete(cancel_order::cancel_order_handler)
-                        .layer(middleware::from_fn(with_labelled_metric("v1/cancel_order"))),
                 ),
         )
         .route(
             "/v1/orders/:uid/status",
             axum::routing::get(get_order_status::get_status_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_order_status"))),
         )
         .route(
             "/v1/quote",
             axum::routing::post(post_quote::post_quote_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/post_quote"))),
         )
         // /solver_competition routes (specific before parameterized)
         .route(
             "/v1/solver_competition/latest",
             axum::routing::get(get_solver_competition::get_solver_competition_latest_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
         )
         .route(
             "/v1/solver_competition/by_tx_hash/:tx_hash",
             axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
         )
         .route(
             "/v1/solver_competition/:auction_id",
             axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/solver_competition"))),
         )
         .route(
             "/v1/token/:token/metadata",
             axum::routing::get(get_token_metadata::get_token_metadata_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_token_metadata"))),
         )
         .route(
             "/v1/token/:token/native_price",
             axum::routing::get(get_native_price::get_native_price_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_native_price"))),
         )
         .route(
             "/v1/trades",
             axum::routing::get(get_trades::get_trades_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_trades"))),
         )
         .route(
             "/v1/transactions/:hash/orders",
             axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_orders_by_tx"))),
         )
         .route(
             "/v1/users/:user/total_surplus",
             axum::routing::get(get_total_surplus::get_total_surplus_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/get_total_surplus"))),
         )
         .route(
             "/v1/version",
             axum::routing::get(version::version_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v1/version"))),
         )
         // V2 routes
         // /solver_competition routes (specific before parameterized)
         .route(
             "/v2/solver_competition/latest",
             axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
         )
         .route(
             "/v2/solver_competition/by_tx_hash/:tx_hash",
             axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
         )
         .route(
             "/v2/solver_competition/:auction_id",
             axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v2/solver_competition"))),
         )
         .route(
             "/v2/trades",
             axum::routing::get(get_trades_v2::get_trades_handler)
-                .layer(middleware::from_fn(with_labelled_metric("v2/get_trades"))),
         )
-        .with_state(state);
+        .with_state(state)
+        .layer(middleware::from_fn(with_matched_path_metric));
 
     finalize_router(api_router)
 }
@@ -301,14 +255,6 @@ impl ApiMetrics {
         for status in Self::INITIAL_STATUSES {
             self.requests_rejected
                 .with_label_values(&[status.as_str()])
-                .reset();
-        }
-    }
-
-    fn reset_requests_complete(&self, method: &str) {
-        for status in Self::INITIAL_STATUSES {
-            self.requests_complete
-                .with_label_values(&[method, status.as_str()])
                 .reset();
         }
     }
