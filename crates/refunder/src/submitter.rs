@@ -1,14 +1,12 @@
-// This submitter has the following logic:
-// It tries to submit a tx - as EIP1559 - with a small tx tip,
-// but a quite high max_fee_per_gas such that it's likely being mined quickly
-//
-// Then it waits for 5 blocks. If the tx is not mined, it will return an error
-// and it needs to be called again. If the last submission was not successful,
-// this submitter stores the last gas_price in order to submit the new tx with
-// a higher gas price, in order to avoid: ErrReplaceUnderpriced erros
-// In the re-newed attempt for submission the same nonce is used as before.
+//! Refund transaction submitter.
+//!
+//! Submits EIP-1559 transactions with a small tip but high `max_fee_per_gas`
+//! to get mined quickly. Waits 5 blocks for confirmation; on timeout, the next
+//! call bumps gas price (using the same nonce) to avoid
+//! `ErrReplaceUnderpriced`.
 
 use {
+    crate::traits::ChainWrite,
     alloy::{eips::eip1559::Eip1559Estimation, primitives::Address, providers::Provider},
     anyhow::{Context, Result},
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
@@ -30,6 +28,8 @@ const GAS_PRICE_BUFFER_PCT: u64 = 30;
 // max_fee_per_gas needs to be increased by at least 10 percent.
 const GAS_PRICE_BUMP_PERMIL: u64 = 125;
 
+const TIMEOUT_5_BLOCKS: Duration = Duration::from_secs(60);
+
 pub struct Submitter {
     pub web3: Web3,
     pub signer_address: Address,
@@ -38,6 +38,55 @@ pub struct Submitter {
     pub nonce_of_last_submission: Option<u64>,
     pub max_gas_price: u64,
     pub start_priority_fee_tip: u64,
+}
+
+impl ChainWrite for Submitter {
+    async fn submit_batch(
+        &mut self,
+        uids: &[OrderUid],
+        encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
+        ethflow_contract: Address,
+    ) -> Result<()> {
+        {
+            let gas_price_estimation = self.gas_estimator.estimate().await?;
+            let nonce = self.get_submission_nonce().await?;
+            let gas_price = calculate_submission_gas_price(
+                self.gas_parameters_of_last_tx,
+                gas_price_estimation,
+                nonce,
+                self.nonce_of_last_submission,
+                self.max_gas_price,
+                self.start_priority_fee_tip,
+            )?;
+
+            self.gas_parameters_of_last_tx = Some(gas_price);
+            self.nonce_of_last_submission = Some(nonce);
+
+            let ethflow_contract =
+                CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
+            let tx_result = ethflow_contract
+            .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
+            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
+            .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
+            .max_fee_per_gas(gas_price.max_fee_per_gas)
+            .from(self.signer_address)
+            .nonce(nonce)
+            .send()
+            .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
+
+            match tx_result {
+                Ok(receipt) => {
+                    tracing::debug!(
+                        "Tx to refund the orderuids {:?} yielded following result {:?}",
+                        uids,
+                        receipt
+                    );
+                }
+                Err(err) => tracing::debug!("transaction failed with: {err}"),
+            }
+            Ok(())
+        }
+    }
 }
 
 impl Submitter {
@@ -54,53 +103,6 @@ impl Submitter {
                     self.signer_address
                 )
             })
-    }
-
-    pub async fn submit(
-        &mut self,
-        uids: Vec<OrderUid>,
-        encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
-        ethflow_contract: Address,
-    ) -> Result<()> {
-        const TIMEOUT_5_BLOCKS: Duration = Duration::from_secs(60);
-
-        let gas_price_estimation = self.gas_estimator.estimate().await?;
-        let nonce = self.get_submission_nonce().await?;
-        let gas_price = calculate_submission_gas_price(
-            self.gas_parameters_of_last_tx,
-            gas_price_estimation,
-            nonce,
-            self.nonce_of_last_submission,
-            self.max_gas_price,
-            self.start_priority_fee_tip,
-        )?;
-
-        self.gas_parameters_of_last_tx = Some(gas_price);
-        self.nonce_of_last_submission = Some(nonce);
-
-        let ethflow_contract =
-            CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
-        let tx_result = ethflow_contract
-            .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
-            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
-            .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
-            .max_fee_per_gas(gas_price.max_fee_per_gas)
-            .from(self.signer_address)
-            .nonce(nonce)
-            .send()
-            .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
-
-        match tx_result {
-            Ok(receipt) => {
-                tracing::debug!(
-                    "Tx to refund the orderuids {:?} yielded following result {:?}",
-                    uids,
-                    receipt
-                );
-            }
-            Err(err) => tracing::debug!("transaction failed with: {err}"),
-        }
-        Ok(())
     }
 }
 
