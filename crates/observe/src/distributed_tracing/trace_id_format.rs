@@ -125,9 +125,7 @@ where
                     }
                 }
 
-                if !parent_spans.is_empty() {
-                    serializer.serialize_entry("spans", &parent_spans)?;
-                }
+                serializer.serialize_entry("spans", &parent_spans)?;
             }
 
             serializer.end()
