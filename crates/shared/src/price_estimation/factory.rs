@@ -390,12 +390,9 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .await?,
         );
 
-        let approximation_tokens = self
-            .args
-            .native_price_approximation_tokens
-            .iter()
-            .copied()
-            .collect();
+        let approximation_tokens = self.validated_approximation_tokens().await.context(
+            "failed to validate native price approximation tokens have matching decimals",
+        )?;
 
         // Create cache with background maintenance, which only refreshes
         // Auction-sourced entries
@@ -453,6 +450,50 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required),
         )
+    }
+
+    /// Validates that all native price approximation token pairs have matching
+    /// decimals. This is critical because if decimals differ, the
+    /// approximated price will be incorrect by orders of magnitude.
+    async fn validated_approximation_tokens(&self) -> Result<HashMap<Address, Address>> {
+        let pairs = &self.args.native_price_approximation_tokens;
+        if pairs.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let all_addresses: Vec<Address> = pairs
+            .iter()
+            .flat_map(|(from, to)| [*from, *to])
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let token_infos = self.components.tokens.get_token_infos(&all_addresses).await;
+        for (from_token, to_token) in pairs {
+            let from_decimals = token_infos
+                .get(from_token)
+                .and_then(|info| info.decimals)
+                .with_context(|| {
+                    format!(
+                        "could not fetch decimals for approximation source token {from_token:?}"
+                    )
+                })?;
+
+            let to_decimals = token_infos
+                .get(to_token)
+                .and_then(|info| info.decimals)
+                .with_context(|| {
+                    format!("could not fetch decimals for approximation target token {to_token:?}")
+                })?;
+
+            anyhow::ensure!(
+                from_decimals == to_decimals,
+                "native price approximation token pair has mismatched decimals: {from_token:?} \
+                 has {from_decimals} decimals, {to_token:?} has {to_decimals} decimals"
+            );
+        }
+
+        Ok(pairs.iter().copied().collect())
     }
 }
 
