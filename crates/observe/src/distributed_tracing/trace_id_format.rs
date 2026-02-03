@@ -2,7 +2,11 @@ use {
     chrono::Utc,
     opentelemetry::trace::{TraceContextExt, TraceId},
     serde::ser::{SerializeMap, Serializer as _},
-    std::{fmt, io},
+    std::{
+        collections::{HashMap, hash_map::Entry},
+        fmt,
+        io,
+    },
     tracing::{Event, Span, Subscriber},
     tracing_opentelemetry::OpenTelemetrySpanExt,
     tracing_serde::{AsSerde, fields::AsMap},
@@ -15,7 +19,7 @@ use {
             format::{Format, Full, Writer},
             time::FormatTime,
         },
-        registry::{Extensions, LookupSpan},
+        registry::LookupSpan,
     },
 };
 
@@ -42,12 +46,12 @@ use {
 ///   },
 ///   "target": "warp::filters::trace",
 ///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
-///   "spans": [{
-///       "name": "http_request",
-///       "fields": {
-///           "request_id": 1234
-///       }
-///   }]
+///   "spans": {
+///     "spanName1": {
+///       "field1": 123,
+///       "field2": "abc"
+///     }
+///   }
 /// }
 /// ```
 pub struct TraceIdJsonFormat;
@@ -86,26 +90,43 @@ where
                 serializer.serialize_entry("trace_id", &trace_id.to_string())?;
             }
 
-            // serialize entire parent span hierarchy and their fields
+            // serialize all parent span names and their fields
             if let Some(scope) = ctx.event_scope() {
-                let mut spans = Vec::new();
+                let mut parent_spans = HashMap::<String, serde_json::Value>::new();
 
                 for span in scope.from_root() {
-                    let mut json = serde_json::json!({
-                        "name": span.name(),
-                    });
+                    let current_span_fields: serde_json::Map<String, serde_json::Value> = span
+                        .extensions()
+                        .get::<FormattedFields<N>>()
+                        .and_then(|fields| serde_json::from_str(fields.as_str()).ok())
+                        .unwrap_or_default();
 
-                    if let Some(fields) = parse_fields_as_json::<N>(span.extensions()) {
-                        json.as_object_mut()
-                            .expect("was created with object literal")
-                            .insert("fields".into(), fields);
+                    match parent_spans.entry(span.name().to_string()) {
+                        Entry::Vacant(entry) => {
+                            entry.insert(serde_json::Value::Object(current_span_fields));
+                        }
+                        Entry::Occupied(mut entry) => {
+                            // the desired format does not preserve the hierarchy of spans
+                            // so theoretically there could be nested spans with the same
+                            // name so we merge the fields of all spans with the same name
+                            //
+                            // if there are duplicated fields the value of the span closest
+                            // to the processed event wins
+                            //
+                            // also theoretically we could detect fields getting overwritten
+                            // but we couldn't log that without causing a stack overflow so we
+                            // don't
+                            entry
+                                .get_mut()
+                                .as_object_mut()
+                                .expect("fields get initialized with an object")
+                                .extend(current_span_fields.into_iter())
+                        }
                     }
-
-                    spans.push(json);
                 }
 
-                if !spans.is_empty() {
-                    serializer.serialize_entry("spans", &spans)?;
+                if !parent_spans.is_empty() {
+                    serializer.serialize_entry("spans", &parent_spans)?;
                 }
             }
 
@@ -115,14 +136,6 @@ where
         visit().map_err(|_| std::fmt::Error)?;
         writeln!(writer)
     }
-}
-
-fn parse_fields_as_json<N>(extensions: Extensions) -> Option<serde_json::Value>
-where
-    N: for<'writer> FormatFields<'writer> + 'static,
-{
-    let fields = extensions.get::<FormattedFields<N>>()?;
-    serde_json::from_str(fields.as_str()).ok()
 }
 
 struct WriteAdapter<'a>(pub(crate) &'a mut dyn std::fmt::Write);
