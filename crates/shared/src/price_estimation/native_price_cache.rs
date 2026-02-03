@@ -277,13 +277,11 @@ impl CacheStorage {
     /// (hits/misses).
     ///
     /// The `require_updating_price` parameter controls whether to mark tokens
-    /// for active price maintenance (upgrading `KeepPriceUpdated::No` to
-    /// `Yes`).
-    ///
-    /// Note: This method does NOT create placeholder entries for missing
-    /// tokens. Use `lookup_cached_price` directly if you need that behavior
-    /// (e.g., in `estimate_with_cache_update` where the fetch immediately
-    /// follows).
+    /// for active price maintenance:
+    /// - `DontCare`: Don't modify the token's maintenance flag
+    /// - `Yes`: Mark the token to require active price updates. For existing
+    ///   entries, upgrades `KeepPriceUpdated::No` to `Yes`. For missing tokens,
+    ///   creates placeholder entries so the maintenance task will fetch them.
     fn get_ready_to_use_cached_prices(
         &self,
         tokens: &[Address],
@@ -291,31 +289,48 @@ impl CacheStorage {
         require_updating_price: RequiresUpdatingPrices,
     ) -> HashMap<Address, CachedResult> {
         let max_age = self.max_age;
+        let outdated_timestamp = now.checked_sub(max_age).unwrap_or(now);
         let mut results = HashMap::new();
         let mut hits = 0u64;
         let mut misses = 0u64;
 
         let mut cache = self.cache.lock().unwrap();
         for &token in tokens {
-            let cached = cache.get_mut(&token).and_then(|cached| {
-                cached.requested_at = now;
+            match cache.entry(token) {
+                Entry::Occupied(mut entry) => {
+                    let cached = entry.get_mut();
+                    cached.requested_at = now;
 
-                if cached.update_price_continuously == KeepPriceUpdated::No
-                    && require_updating_price == RequiresUpdatingPrices::Yes
-                {
-                    tracing::trace!(?token, "marking token for needing active maintenance");
-                    cached.update_price_continuously = KeepPriceUpdated::Yes;
+                    if cached.update_price_continuously == KeepPriceUpdated::No
+                        && require_updating_price == RequiresUpdatingPrices::Yes
+                    {
+                        tracing::trace!(?token, "marking token for needing active maintenance");
+                        cached.update_price_continuously = KeepPriceUpdated::Yes;
+                    }
+
+                    let is_recent = now.saturating_duration_since(cached.updated_at) < max_age;
+                    if is_recent && cached.is_ready() {
+                        results.insert(token, cached.clone());
+                        hits += 1;
+                    } else {
+                        misses += 1;
+                    }
                 }
-
-                let is_recent = now.saturating_duration_since(cached.updated_at) < max_age;
-                (is_recent && cached.is_ready()).then_some(cached.clone())
-            });
-
-            if let Some(cached) = cached {
-                results.insert(token, cached);
-                hits += 1;
-            } else {
-                misses += 1;
+                Entry::Vacant(entry) => {
+                    if require_updating_price == RequiresUpdatingPrices::Yes {
+                        // Create an outdated cache entry so the background task keeping the
+                        // cache warm will fetch the price during the next maintenance cycle.
+                        tracing::trace!(?token, "create outdated price entry for maintenance");
+                        entry.insert(CachedResult::new(
+                            Ok(0.),
+                            outdated_timestamp,
+                            now,
+                            Default::default(),
+                            KeepPriceUpdated::Yes,
+                        ));
+                    }
+                    misses += 1;
+                }
             }
         }
 
@@ -368,32 +383,6 @@ impl CacheStorage {
                 (token, count)
             })
             .collect()
-    }
-
-    /// Creates placeholder entries for tokens that are not in the cache.
-    /// These entries are immediately outdated so the maintenance task will
-    /// fetch them in the next cycle.
-    fn mark_tokens_for_maintenance(&self, tokens: &[Address]) {
-        if tokens.is_empty() {
-            return;
-        }
-
-        let now = Instant::now();
-        let outdated_timestamp = now.checked_sub(self.max_age).unwrap_or(now);
-        let mut cache = self.cache.lock().unwrap();
-
-        for &token in tokens {
-            if let Entry::Vacant(entry) = cache.entry(token) {
-                tracing::trace!(?token, "create outdated price entry for maintenance");
-                entry.insert(CachedResult::new(
-                    Ok(0.),
-                    outdated_timestamp,
-                    now,
-                    Default::default(),
-                    KeepPriceUpdated::Yes,
-                ));
-            }
-        }
     }
 
     /// Fetches all tokens that need to be updated sorted by priority.
@@ -750,16 +739,6 @@ impl CachingNativePriceEstimator {
         let cached =
             self.cache
                 .get_ready_to_use_cached_prices(tokens, now, self.require_updating_prices);
-
-        // Mark missing tokens for background maintenance
-        if self.require_updating_prices == RequiresUpdatingPrices::Yes {
-            let missing_tokens: Vec<_> = tokens
-                .iter()
-                .filter(|t| !cached.contains_key(*t))
-                .copied()
-                .collect();
-            self.cache.mark_tokens_for_maintenance(&missing_tokens);
-        }
 
         cached
             .into_iter()
