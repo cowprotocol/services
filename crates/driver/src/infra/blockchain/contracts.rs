@@ -51,7 +51,7 @@ impl Contracts {
         web3: &Web3,
         chain: Chain,
         addresses: Addresses,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, alloy::contract::Error> {
         let settlement = GPv2Settlement::Instance::new(
             addresses
                 .settlement
@@ -167,8 +167,6 @@ impl Contracts {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
     #[error("method error: {0:?}")]
     Rpc(#[from] alloy::contract::Error),
 }

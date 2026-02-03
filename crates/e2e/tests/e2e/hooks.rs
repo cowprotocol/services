@@ -13,7 +13,7 @@ use {
         safe::Safe,
         wait_for_condition,
     },
-    ethrpc::alloy::{CallBuilderExt, conversions::IntoLegacy},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -357,13 +357,8 @@ async fn signature(web3: Web3) {
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
 
-    let balance = token
-        .balanceOf(safe.address())
-        .call()
-        .await
-        .unwrap()
-        .into_legacy();
-    assert_eq!(balance, 5u64.eth().into_legacy());
+    let balance = token.balanceOf(safe.address()).call().await.unwrap();
+    assert_eq!(balance, 5u64.eth());
 
     // Check that the Safe really hasn't been deployed yet.
     let code = web3.alloy.get_code_at(safe.address()).await.unwrap();
