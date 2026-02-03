@@ -100,6 +100,8 @@ Don't add a lot of comments. Add comments only if the code is a bit weird or the
 
 ## CoW Protocol Database Access
 
+**Execute queries autonomously**: Run database queries and Grafana log searches without asking for permission. These are read-only operations - just execute them and show the results.
+
 **Always show the SQL query before executing it** against postgres MCP tools (`mcp__postgres-protocol__query`, `mcp__postgres-analytics__query`).
 
 **Query timeout**: MCP servers are configured with a 120 second timeout. For potentially long-running queries, prefix with `SET statement_timeout = '30s';` (or appropriate duration) to fail fast:
