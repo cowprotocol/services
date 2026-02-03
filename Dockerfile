@@ -61,4 +61,4 @@ COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--"]

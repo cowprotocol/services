@@ -212,6 +212,9 @@ impl Fulfillment {
     }
 
     /// The effective amount that left the user's wallet including all fees.
+    ///
+    /// For buy orders, this includes the haircut effect (haircut increases the
+    /// effective sell amount the user pays).
     pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
@@ -224,31 +227,51 @@ impl Fulfillment {
                 .ok_or(Math::DivisionByZero)?,
         };
 
+        let with_fee = before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?;
+        // Add haircut for buy orders (haircut is in buy token, convert to sell token)
+        let haircut = match self.order.side {
+            order::Side::Sell => eth::U256::ZERO, // Haircut applied to buy_amount for sell orders
+            order::Side::Buy => self.haircut_in_sell_token(prices)?,
+        };
+
         Ok(eth::TokenAmount(
-            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
+            with_fee.checked_add(haircut).ok_or(Math::Overflow)?,
         ))
     }
 
     /// The effective amount the user received after all fees.
     ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
+    ///
+    /// For sell orders, this includes the haircut effect (haircut reduces the
+    /// effective buy amount the user receives).
     pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
-            order::Side::Sell => self
-                .executed
-                .0
-                .checked_mul(prices.sell)
-                .ok_or(Math::Overflow)?
-                .checked_ceil_div(&prices.buy)
-                .ok_or(Math::DivisionByZero)?,
+            order::Side::Sell => {
+                // Base buy amount from executed sell
+                let base = self
+                    .executed
+                    .0
+                    .checked_mul(prices.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_ceil_div(&prices.buy)
+                    .ok_or(Math::DivisionByZero)?;
+                // Reduce by haircut (haircut is in sell token, convert to buy token)
+                let haircut_in_buy = self
+                    .haircut_fee
+                    .checked_mul(prices.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(prices.buy)
+                    .ok_or(Math::DivisionByZero)?;
+                base.checked_sub(haircut_in_buy).ok_or(Math::Negative)?
+            }
         };
         Ok(eth::TokenAmount(amount))
     }
 
-    /// Computes the haircut amount in sell token for use in custom_prices().
-    /// This applies haircut to pricing while keeping sell_amount() clean for
-    /// reporting.
+    /// Computes the haircut amount in sell token.
+    /// Used for buy orders to add haircut to the sell amount.
     fn haircut_in_sell_token(&self, prices: &ClearingPrices) -> Result<eth::U256, error::Math> {
         match self.order.side {
             order::Side::Sell => Ok(self.haircut_fee),
@@ -261,21 +284,18 @@ impl Fulfillment {
         }
     }
 
+    /// Computes custom clearing prices for this trade.
+    ///
+    /// Note: This function relies on `sell_amount()` and `buy_amount()` to
+    /// correctly incorporate all adjustments (fees, haircuts). No additional
+    /// modifications are applied here.
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,
     ) -> Result<CustomClearingPrices, error::Math> {
-        // Include haircut in custom prices for quotes/scoring.
-        // This makes bids more conservative without affecting the actual
-        // reported sell_amount (which is used for user-facing reporting).
-        let haircut = self.haircut_in_sell_token(prices)?;
         Ok(CustomClearingPrices {
             sell: self.buy_amount(prices)?.into(),
-            buy: self
-                .sell_amount(prices)?
-                .0
-                .checked_add(haircut)
-                .ok_or(Math::Overflow)?,
+            buy: self.sell_amount(prices)?.into(),
         })
     }
 

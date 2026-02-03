@@ -59,11 +59,11 @@ sqlx = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["trace"] }
 tracing = { workspace = true }
 url = { workspace = true }
-web3 = { workspace = true }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
