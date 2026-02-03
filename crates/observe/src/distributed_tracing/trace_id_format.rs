@@ -41,7 +41,13 @@ use {
 ///     "status": 200
 ///   },
 ///   "target": "warp::filters::trace",
-///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+///   "spans": [{
+///       "name": "http_request",
+///       "fields": {
+///           "request_id": 1234
+///       }
+///   }]
 /// }
 /// ```
 pub struct TraceIdJsonFormat;
