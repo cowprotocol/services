@@ -14,7 +14,7 @@ pub struct Erc20 {
 impl Erc20 {
     pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
         Self {
-            token: contracts::alloy::ERC20::Instance::new(address.0.0, eth.web3.alloy.clone()),
+            token: contracts::alloy::ERC20::Instance::new(address.0.0, eth.web3.provider.clone()),
         }
     }
 

@@ -63,7 +63,7 @@ impl ChainWrite for Submitter {
             self.nonce_of_last_submission = Some(nonce);
 
             let ethflow_contract =
-                CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
+                CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.provider.clone());
             let tx_result = ethflow_contract
             .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
             // Gas conversions are lossy but technically the should not have decimal points even though they're floats
@@ -94,7 +94,7 @@ impl Submitter {
         // this command returns the tx count ever mined at the latest block
         // Mempool tx are not considered.
         self.web3
-            .alloy
+            .provider
             .get_transaction_count(self.signer_address)
             .await
             .with_context(|| {

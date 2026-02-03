@@ -156,8 +156,8 @@ pub trait ProviderLabelingExt {
 
 impl ProviderLabelingExt for Web3 {
     fn labeled<S: ToString>(&self, label: S) -> Self {
-        let is_local = self.alloy.client().is_local();
-        let transport = self.alloy.client().transport().clone();
+        let is_local = self.provider.client().is_local();
+        let transport = self.provider.client().transport().clone();
         let transport_with_label = LabelingLayer {
             label: label.to_string(),
         }
@@ -171,7 +171,7 @@ impl ProviderLabelingExt for Web3 {
             .erased();
 
         Self {
-            alloy,
+            provider: alloy,
             wallet: self.wallet.clone(),
         }
     }

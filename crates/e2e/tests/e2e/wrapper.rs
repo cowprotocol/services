@@ -50,11 +50,11 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     let token_weth = onchain.contracts().weth.clone();
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Authorize the empty wrapper as a solver
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             onchain
                 .contracts()
@@ -214,7 +214,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     tracing::info!("Settlement transaction hash: {:?}", solve_tx_hash);
 
     let solve_tx = web3
-        .alloy
+        .provider
         .get_transaction_by_hash(solve_tx_hash)
         .await
         .unwrap()
@@ -245,7 +245,7 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     };
 
     let trace = web3
-        .alloy
+        .provider
         .debug_trace_transaction(solve_tx_hash, tracing_options)
         .await
         .unwrap();

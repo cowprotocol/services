@@ -526,7 +526,7 @@ mod tests {
 
         let alloy_provider = Web3::new_from_env();
         let ws_node = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
-        let receiver = current_block_ws_stream(alloy_provider.alloy, ws_node)
+        let receiver = current_block_ws_stream(alloy_provider.provider, ws_node)
             .await
             .unwrap();
         let mut stream = into_stream(receiver);
@@ -543,13 +543,13 @@ mod tests {
 
         // single block
         let range = RangeInclusive::try_new(5, 5).unwrap();
-        let blocks = web3.alloy.blocks(range).await.unwrap();
+        let blocks = web3.provider.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks.last().unwrap().0, 5);
 
         // multiple blocks
         let range = RangeInclusive::try_new(5, 8).unwrap();
-        let blocks = web3.alloy.blocks(range).await.unwrap();
+        let blocks = web3.provider.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 4);
         assert_eq!(blocks.last().unwrap().0, 8);
         assert_eq!(blocks.first().unwrap().0, 5);
@@ -562,7 +562,7 @@ mod tests {
             current_block_number,
         )
         .unwrap();
-        let blocks = web3.alloy.blocks(range).await.unwrap();
+        let blocks = web3.provider.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);

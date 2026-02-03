@@ -255,7 +255,7 @@ mod tests {
     fn dummy_contracts() -> (Address, BalancerV2Vault::Instance) {
         (
             Address::from_slice(&[0xc0; 20]),
-            BalancerV2Vault::Instance::new([0xc1; 20].into(), ethrpc::mock::web3().alloy),
+            BalancerV2Vault::Instance::new([0xc1; 20].into(), ethrpc::mock::web3().provider),
         )
     }
 

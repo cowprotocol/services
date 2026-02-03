@@ -393,9 +393,11 @@ async fn get_block_numbers_of_events(
     let futures = event_block_numbers
         .into_iter()
         .map(|block_number| async move {
-            let timestamp =
-                timestamp_of_block_in_seconds(&web3.alloy, BlockNumberOrTag::Number(block_number))
-                    .await?;
+            let timestamp = timestamp_of_block_in_seconds(
+                &web3.provider,
+                BlockNumberOrTag::Number(block_number),
+            )
+            .await?;
             Ok((block_number, timestamp))
         });
     let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
@@ -1250,7 +1252,7 @@ mod test {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
                 config: Default::default(),
             },
-            trampoline: HooksTrampoline::Instance::deployed(&web3.alloy)
+            trampoline: HooksTrampoline::Instance::deployed(&web3.provider)
                 .await
                 .unwrap(),
             web3,

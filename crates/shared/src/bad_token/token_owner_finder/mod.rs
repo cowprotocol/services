@@ -425,7 +425,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
         token: Address,
         min_balance: U256,
     ) -> Result<Option<(Address, U256)>> {
-        let instance = ERC20::Instance::new(token, self.web3.alloy.clone());
+        let instance = ERC20::Instance::new(token, self.web3.provider.clone());
 
         // We use a stream with ready_chunks so that we can start with the addresses of
         // fast TokenOwnerFinding implementations first without having to wait

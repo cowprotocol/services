@@ -17,7 +17,7 @@ pub type AlloyProvider = DynProvider;
 /// having to everything at once.
 #[derive(Debug, Clone)]
 pub struct Web3 {
-    pub alloy: AlloyProvider,
+    pub provider: AlloyProvider,
     pub wallet: MutWallet,
 }
 
@@ -30,7 +30,10 @@ impl Web3 {
 
     pub fn new_from_url(url: &str) -> Self {
         let (alloy, wallet) = crate::alloy::provider(url, Default::default(), None);
-        Self { alloy, wallet }
+        Self {
+            provider: alloy,
+            wallet,
+        }
     }
 }
 
@@ -69,5 +72,8 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
         _ => alloy::provider(url.as_str(), args, label),
     };
 
-    Web3 { alloy, wallet }
+    Web3 {
+        provider: alloy,
+        wallet,
+    }
 }

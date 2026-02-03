@@ -329,7 +329,7 @@ async fn create_aggregate_pool_fetcher(
     let registered_pools = pool_initializer.initialize_pools().await?;
     let fetched_block_number = registered_pools.fetched_block_number;
     let fetched_block_hash = web3
-        .alloy
+        .provider
         .get_block_by_number(BlockNumberOrTag::Number(fetched_block_number))
         .await?
         .context("failed to get block by block number")?
