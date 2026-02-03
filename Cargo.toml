@@ -11,7 +11,6 @@ anyhow = "1.0.100"
 async-trait = "0.1.80"
 axum = "0.6"
 bigdecimal = "0.3"
-bytes = "1.11.1"
 cached = { version = "0.49.3", default-features = false }
 chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.6", features = ["derive", "env"] }
