@@ -347,14 +347,6 @@ impl Error {
     }
 }
 
-impl From<contracts::Error> for Error {
-    fn from(err: contracts::Error) -> Self {
-        match err {
-            contracts::Error::Rpc(err) => Self::ContractRpc(err),
-        }
-    }
-}
-
 impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
