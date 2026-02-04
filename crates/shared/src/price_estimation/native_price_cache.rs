@@ -43,8 +43,9 @@ pub enum RequiresUpdatingPrices {
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
-    /// native price cache hits misses
-    #[metric(labels("result"))]
+    /// native price cache hits misses by result and caller type
+    /// Labels: result=hits|misses, caller=auction|quote
+    #[metric(labels("result", "caller"))]
     native_price_cache_access: IntCounterVec,
     /// number of items in cache
     native_price_cache_size: IntGauge,
@@ -52,6 +53,12 @@ struct Metrics {
     native_price_cache_background_updates: IntCounter,
     /// number of items in cache that are outdated
     native_price_cache_outdated_entries: IntGauge,
+    /// number of entries actively maintained by background task
+    /// (KeepPriceUpdated::Yes)
+    native_price_cache_maintained_entries: IntGauge,
+    /// number of entries passively cached but not maintained
+    /// (KeepPriceUpdated::No, i.e. quote-only tokens)
+    native_price_cache_passive_entries: IntGauge,
 }
 
 impl Metrics {
@@ -61,12 +68,14 @@ impl Metrics {
 
     /// Resets counters on startup to ensure clean metrics for this run.
     fn reset(&self) {
-        self.native_price_cache_access
-            .with_label_values(&["hits"])
-            .reset();
-        self.native_price_cache_access
-            .with_label_values(&["misses"])
-            .reset();
+        for caller in &["auction", "quote"] {
+            self.native_price_cache_access
+                .with_label_values(&["hits", caller])
+                .reset();
+            self.native_price_cache_access
+                .with_label_values(&["misses", caller])
+                .reset();
+        }
         self.native_price_cache_background_updates.reset();
     }
 }
@@ -214,6 +223,20 @@ impl CacheStorage {
         self.cache.lock().unwrap().is_empty()
     }
 
+    /// Returns counts of (maintained, passive) entries.
+    /// Maintained entries have `KeepPriceUpdated::Yes` and are actively
+    /// refreshed by the background task. Passive entries have
+    /// `KeepPriceUpdated::No` and are only cached (quote-only tokens).
+    fn count_by_maintenance_flag(&self) -> (usize, usize) {
+        let cache = self.cache.lock().unwrap();
+        let maintained = cache
+            .values()
+            .filter(|c| c.update_price_continuously == KeepPriceUpdated::Yes)
+            .count();
+        let passive = cache.len() - maintained;
+        (maintained, passive)
+    }
+
     /// Get a cached price with optional cache modifications.
     /// Returns None if the price is not cached or is expired.
     ///
@@ -333,17 +356,21 @@ impl CacheStorage {
 
         drop(cache); // Release lock before metrics update
 
+        let caller = match require_updating_price {
+            RequiresUpdatingPrices::Yes => "auction",
+            RequiresUpdatingPrices::DontCare => "quote",
+        };
         let metrics = Metrics::get();
         if hits > 0 {
             metrics
                 .native_price_cache_access
-                .with_label_values(&["hits"])
+                .with_label_values(&["hits", caller])
                 .inc_by(hits);
         }
         if misses > 0 {
             metrics
                 .native_price_cache_access
-                .with_label_values(&["misses"])
+                .with_label_values(&["misses", caller])
                 .inc_by(misses);
         }
 
@@ -594,6 +621,14 @@ impl CacheMaintenanceTask {
         metrics
             .native_price_cache_size
             .set(i64::try_from(cache.len()).unwrap_or(i64::MAX));
+
+        let (maintained, passive) = cache.count_by_maintenance_flag();
+        metrics
+            .native_price_cache_maintained_entries
+            .set(i64::try_from(maintained).unwrap_or_default());
+        metrics
+            .native_price_cache_passive_entries
+            .set(i64::try_from(passive).unwrap_or_default());
 
         let max_age = cache.max_age().saturating_sub(self.prefetch_time);
         let mut outdated_entries = cache.prioritized_tokens_to_update(max_age, Instant::now());
