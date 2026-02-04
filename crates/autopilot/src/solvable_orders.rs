@@ -408,10 +408,8 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let filter_invalid_signatures = find_invalid_signature_orders(
-            &orders,
-            self.signature_validator.as_ref(),
-        );
+        let filter_invalid_signatures =
+            find_invalid_signature_orders(&orders, self.signature_validator.as_ref());
 
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
@@ -559,8 +557,11 @@ fn orders_with_balance(
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        // Skip balance check for orders that should bypass filtering (based on appCode)
-        if filter_bypass_orders.contains(&order.metadata.uid) {
+        // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
+        // to unlock funds) or orders in the appCode bypass set.
+        if matches!(order.signature, Signature::Eip1271(_))
+            || filter_bypass_orders.contains(&order.metadata.uid)
+        {
             return true;
         }
 
@@ -1529,13 +1530,32 @@ mod tests {
     }
 
     #[test]
-    fn orders_in_bypass_set_skip_balance_filtering() {
+    fn eip1271_and_bypass_set_skip_balance_filtering() {
         let settlement_contract = Address::repeat_byte(1);
-        let bypass_order_uid =
-            OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6);
-        let bypass_order = Order {
+
+        // EIP-1271 order (not in bypass set, but should still skip balance check)
+        let eip1271_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
+                sell_amount: alloy::primitives::U256::from(10),
+                fee_amount: alloy::primitives::U256::from(5),
+                partially_fillable: false,
+                ..Default::default()
+            },
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            metadata: OrderMetadata {
+                uid: OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // ECDSA order in bypass set (should skip balance check)
+        let bypass_order_uid =
+            OrderUid::from_parts(B256::repeat_byte(7), Address::repeat_byte(77), 7);
+        let bypass_order = Order {
+            data: OrderData {
+                sell_token: Address::with_last_byte(8),
                 sell_amount: alloy::primitives::U256::from(10),
                 fee_amount: alloy::primitives::U256::from(5),
                 partially_fillable: false,
@@ -1545,38 +1565,58 @@ mod tests {
                 uid: bypass_order_uid,
                 ..Default::default()
             },
+            // Default signature is Eip712 (ECDSA)
             ..Default::default()
         };
+
+        // Regular ECDSA order (not in bypass set, should be filtered)
         let regular_order = Order {
             data: OrderData {
-                sell_token: Address::with_last_byte(8),
+                sell_token: Address::with_last_byte(9),
                 sell_amount: alloy::primitives::U256::from(10),
                 fee_amount: alloy::primitives::U256::from(5),
                 partially_fillable: false,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                uid: OrderUid::from_parts(B256::repeat_byte(7), Address::repeat_byte(77), 7),
+                uid: OrderUid::from_parts(B256::repeat_byte(8), Address::repeat_byte(88), 8),
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        let orders = vec![regular_order.clone(), bypass_order.clone()];
-        let balances: Balances = Default::default();
+        let orders = vec![
+            regular_order.clone(),
+            eip1271_order.clone(),
+            bypass_order.clone(),
+        ];
+        let balances: Balances = Default::default(); // No balances
 
-        // With bypass order in the set, it should be retained even without balance
+        // EIP-1271 order and bypass order should be retained, regular order filtered
         let bypass_set = HashSet::from([bypass_order_uid]);
         let filtered =
             orders_with_balance(orders.clone(), &balances, settlement_contract, &bypass_set);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].metadata.uid, bypass_order.metadata.uid);
+        assert_eq!(filtered.len(), 2);
+        assert!(
+            filtered
+                .iter()
+                .any(|o| o.metadata.uid == eip1271_order.metadata.uid)
+        );
+        assert!(
+            filtered
+                .iter()
+                .any(|o| o.metadata.uid == bypass_order.metadata.uid)
+        );
 
-        // Without bypass, both orders are filtered out (no balance)
+        // Without bypass set, only EIP-1271 order should be retained
         let empty_bypass: HashSet<OrderUid> = HashSet::new();
         let filtered_no_bypass =
             orders_with_balance(orders, &balances, settlement_contract, &empty_bypass);
-        assert!(filtered_no_bypass.is_empty());
+        assert_eq!(filtered_no_bypass.len(), 1);
+        assert_eq!(
+            filtered_no_bypass[0].metadata.uid,
+            eip1271_order.metadata.uid
+        );
     }
 
     #[tokio::test]
