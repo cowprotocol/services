@@ -71,10 +71,11 @@ impl OrderExecutionSimulator {
         order: &Order,
         _domain_separator: &DomainSeparator,
     ) -> Result<EncodedSettlement> {
-        let tokens = if order.data.sell_token < order.data.buy_token {
-            vec![order.data.sell_token, order.data.buy_token]
-        } else {
-            vec![order.data.buy_token, order.data.sell_token]
+        let tokens = {
+            let mut tokens = vec![order.data.sell_token, order.data.buy_token];
+            tokens.sort();
+            tokens.dedup();
+            tokens
         };
 
         let sell_token_index = tokens
@@ -88,9 +89,15 @@ impl OrderExecutionSimulator {
             .unwrap();
 
         // Clearing prices are set such that the order is settled exactly at its limit price.
-        let mut clearing_prices = vec![U256::ZERO; 2];
-        clearing_prices[sell_token_index] = order.data.buy_amount;
-        clearing_prices[buy_token_index] = order.data.sell_amount;
+        // For same-token trades, the price is 1:1.
+        let clearing_prices = if tokens.len() == 1 {
+            vec![U256::from(1)]
+        } else {
+            let mut prices = vec![U256::ZERO; tokens.len()];
+            prices[sell_token_index] = order.data.buy_amount;
+            prices[buy_token_index] = order.data.sell_amount;
+            prices
+        };
 
         let trade = encode_trade(
             &order.data,

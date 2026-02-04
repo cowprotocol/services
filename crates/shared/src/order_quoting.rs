@@ -522,7 +522,7 @@ impl OrderQuoter {
                     buy_amount: quoted_buy_amount,
                     valid_to: u32::MAX, // Simulation doesn't care about time
                     app_data: AppDataHash::default(),
-                    fee_amount: U256::from(trade_estimate.gas),
+                    fee_amount: fee_parameters.fee(),
                     kind: trade_query.kind,
                     partially_fillable: false,
                     sell_token_balance: parameters.verification.sell_token_source,

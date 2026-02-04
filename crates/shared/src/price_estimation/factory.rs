@@ -98,8 +98,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             let tenderly = self
                 .shared_args
                 .tenderly
-                .get_api_instance(&self.components.http_factory, "order_simulation".to_owned())
-                .unwrap()
+                .get_api_instance(&self.components.http_factory, "order_simulation".to_owned())?
                 .map(|t| Arc::new(TenderlyCodeSimulator::new(t, self.network.chain.id())));
             let balance_overrides = self.args.balance_overrides.init(web3.clone());
             let settlement = contracts::alloy::GPv2Settlement::Instance::new(
