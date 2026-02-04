@@ -20,15 +20,19 @@ use {
 };
 
 /// A quote describing the expected outcome of an order.
-#[derive(Debug)]
+#[derive(derive_more::Debug)]
 pub struct Quote {
     pub clearing_prices: HashMap<eth::Address, eth::U256>,
+    #[debug(ignore)]
     pub pre_interactions: Vec<eth::Interaction>,
+    #[debug(ignore)]
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
+    #[debug(ignore)]
     pub tx_origin: Option<eth::Address>,
+    #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
 }
 
@@ -64,10 +68,8 @@ impl Quote {
     /// Compute clearing prices for the quote.
     ///
     /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. This uses the same approach as settlement encoding:
-    /// `custom_prices()` which internally uses `sell_amount()` and
-    /// `buy_amount()` to include the haircut in the effective trade
-    /// amounts.
+    /// when enabled. Uses `custom_prices()` which includes haircut effects
+    /// to make quotes conservative for users.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {

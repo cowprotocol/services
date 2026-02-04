@@ -19,6 +19,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub logging: LoggingArguments,
 
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
+
     /// Minimum time in seconds an order must have been valid for
     /// to be eligible for refunding
     #[clap(
@@ -94,6 +97,7 @@ impl std::fmt::Display for Arguments {
             ethflow_contracts,
             metrics_port,
             logging,
+            database_pool,
             db_url,
             refunder_pk,
             max_gas_price,
@@ -104,6 +108,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{http_client}")?;
         write!(f, "{ethrpc}")?;
         write!(f, "{logging}")?;
+        write!(f, "{database_pool}")?;
         writeln!(f, "min_validity_duration: {min_validity_duration:?}")?;
         writeln!(f, "min_price_deviation_bps: {min_price_deviation_bps}")?;
         let _intentionally_ignored = db_url;

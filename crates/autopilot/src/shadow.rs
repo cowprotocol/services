@@ -77,12 +77,12 @@ impl RunLoop {
         loop {
             // We use this as a synchronization mechanism to sync the run loop starts with
             // the next mined block
-            let _ = ethrpc::block_stream::next_block(&self.current_block).await;
+            let start_block = ethrpc::block_stream::next_block(&self.current_block).await;
             let Some(auction) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
-            observe::log_auction_delta(&previous, &auction);
+            observe::log_auction_delta(&previous, &auction, &start_block);
             self.liveness.auction();
 
             self.single_run(&auction)

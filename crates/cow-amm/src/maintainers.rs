@@ -28,7 +28,7 @@ impl EmptyPoolRemoval {
             .traded_tokens()
             .iter()
             .map(move |token| async move {
-                ERC20::Instance::new(*token, self.web3.alloy.clone())
+                ERC20::Instance::new(*token, self.web3.provider.clone())
                     .balanceOf(*amm_address)
                     .call()
                     .await

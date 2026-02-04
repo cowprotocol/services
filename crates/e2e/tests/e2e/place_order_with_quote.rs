@@ -57,7 +57,7 @@ async fn place_order_with_quote(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
@@ -140,7 +140,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");

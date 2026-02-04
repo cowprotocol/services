@@ -33,7 +33,7 @@ use {
     anyhow::{Context, Result},
     chain::Chain,
     contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
-    ethrpc::alloy::errors::ContractErrorExt,
+    ethrpc::alloy::{ProviderLabelingExt, errors::ContractErrorExt},
     futures::{Stream, StreamExt as _},
     rate_limit::Strategy,
     reqwest::Url,
@@ -294,7 +294,7 @@ pub async fn init(
     base_tokens: &BaseTokens,
     settlement_contract: Address,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
-    let web3 = ethrpc::instrumented::instrument_with_label(&web3, "tokenOwners".into());
+    let web3 = web3.labeled("tokenOwners");
     let finders = args
         .token_owner_finders
         .as_deref()
@@ -425,7 +425,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
         token: Address,
         min_balance: U256,
     ) -> Result<Option<(Address, U256)>> {
-        let instance = ERC20::Instance::new(token, self.web3.alloy.clone());
+        let instance = ERC20::Instance::new(token, self.web3.provider.clone());
 
         // We use a stream with ready_chunks so that we can start with the addresses of
         // fast TokenOwnerFinding implementations first without having to wait

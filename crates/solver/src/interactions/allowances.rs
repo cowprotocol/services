@@ -12,7 +12,6 @@ use {
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::alloy::ERC20,
     ethrpc::Web3,
-    maplit::hashmap,
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -153,9 +152,9 @@ impl AllowanceManaging for AllowanceManager {
         spender: Address,
     ) -> Result<Allowances> {
         Ok(fetch_allowances(
-            self.web3.alloy.clone(),
+            self.web3.provider.clone(),
             self.owner,
-            hashmap! { spender => tokens },
+            HashMap::from([(spender, tokens)]),
         )
         .await?
         .remove(&spender)
@@ -172,7 +171,7 @@ impl AllowanceManaging for AllowanceManager {
         }
 
         let allowances =
-            fetch_allowances(self.web3.alloy.clone(), self.owner, spender_tokens).await?;
+            fetch_allowances(self.web3.provider.clone(), self.owner, spender_tokens).await?;
         let mut result = Vec::new();
         for request in requests {
             let allowance = allowances

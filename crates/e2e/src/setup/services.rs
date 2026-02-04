@@ -204,8 +204,6 @@ impl<'a> Services<'a> {
 
         let args = [
             "autopilot".to_string(),
-            "--non-settling-solvers-blacklisting-enabled=false".to_string(),
-            "--low-settling-solvers-blacklisting-enabled=false".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contracts={ethflow_contracts}"),
@@ -926,7 +924,7 @@ impl<'a> Services<'a> {
 
     async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3.alloy.evm_mine(None).await.unwrap();
+        self.web3.provider.evm_mine(None).await.unwrap();
     }
 }
 

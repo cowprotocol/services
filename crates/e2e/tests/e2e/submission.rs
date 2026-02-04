@@ -15,7 +15,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::{nonzero::NonZeroU256, units::EthUnit},
+    number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
     shared::ethrpc::Web3,
     std::time::Duration,
 };
@@ -71,7 +71,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
@@ -98,7 +98,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
 
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
-        .alloy
+        .provider
         .watch_blocks()
         .await
         .expect("must be able to create blocks filter")
@@ -112,11 +112,11 @@ async fn test_cancel_on_expiry(web3: Web3) {
     .unwrap();
 
     // Restart mining, but with blocks that are too small to fit the settlement
-    web3.alloy
+    web3.provider
         .evm_set_block_gas_limit(100_000)
         .await
         .expect("Must be able to set block gas limit");
-    web3.alloy
+    web3.provider
         .evm_set_interval_mining(1)
         .await
         .expect("Must be able to set mining interval");
@@ -167,7 +167,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         .await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
@@ -196,7 +196,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     services.create_order(&order).await.unwrap();
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
-        .alloy
+        .provider
         .watch_blocks()
         .await
         .expect("must be able to create blocks filter")
@@ -213,7 +213,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     .unwrap();
 
     // Continue mining to confirm the settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(true)
         .await
         .expect("Must be able to enable automine");
@@ -278,7 +278,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         .await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(false)
         .await
         .expect("Must be able to disable automine");
@@ -301,6 +301,34 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     assert!(quote_response.id.is_some());
     assert!(quote_response.verified);
     assert!(quote_response.quote.buy_amount < quote_sell_amount);
+
+    {
+        // check that a different receiver does not affect the quoted amount
+        let quote_request_different_receiver = OrderQuoteRequest {
+            receiver: Some(Address::repeat_byte(0x01)),
+            ..quote_request
+        };
+        let quote_response_different_receiver = services
+            .submit_quote(&quote_request_different_receiver)
+            .await
+            .unwrap();
+
+        tracing::info!(?quote_response_different_receiver);
+        assert!(quote_response_different_receiver.id.is_some());
+        assert!(quote_response_different_receiver.verified);
+        assert!(
+            quote_response_different_receiver
+                .quote
+                .buy_amount
+                .is_approx_eq(&quote_response.quote.buy_amount, Some(0.0001))
+        );
+        assert!(
+            quote_response_different_receiver
+                .quote
+                .sell_amount
+                .is_approx_eq(&quote_response.quote.sell_amount, Some(0.0001))
+        );
+    }
 
     let quote_metadata =
         crate::database::quote_metadata(services.db(), quote_response.id.unwrap()).await;
@@ -330,7 +358,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
-        .alloy
+        .provider
         .watch_blocks()
         .await
         .expect("must be able to create blocks filter")
@@ -347,7 +375,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     .unwrap();
 
     // Continue mining to confirm the settlement
-    web3.alloy
+    web3.provider
         .evm_set_automine(true)
         .await
         .expect("Must be able to enable automine");
@@ -383,7 +411,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
 async fn get_pending_tx(account: Address, web3: &Web3) -> Option<Transaction> {
     let txpool = web3
-        .alloy
+        .provider
         .txpool_content()
         .await
         .expect("must be able to inspect mempool");
@@ -400,7 +428,7 @@ async fn get_confirmed_transaction(
         let block_hashes = block_hash_stream.next().await.unwrap();
         for block_hash in block_hashes {
             let transaction_senders = web3
-                .alloy
+                .provider
                 .get_block_receipts(block_hash.into())
                 .await
                 .unwrap()

@@ -262,7 +262,7 @@ async fn find_indexing_start_block(
 
     if last_indexed_block > 0 {
         return block_number_to_block_number_hash(
-            &web3.alloy,
+            &web3.provider,
             BlockNumberOrTag::Number(last_indexed_block),
         )
         .await
@@ -271,7 +271,7 @@ async fn find_indexing_start_block(
     }
     if let Some(start_block) = fallback_start_block {
         return block_number_to_block_number_hash(
-            &web3.alloy,
+            &web3.provider,
             BlockNumberOrTag::Number(start_block),
         )
         .await
@@ -279,7 +279,7 @@ async fn find_indexing_start_block(
         .context("failed to fetch fallback indexing start block");
     }
     if let Some(chain_id) = settlement_fallback_chain_id {
-        return settlement_deployment_block_number_hash(&web3.alloy, chain_id)
+        return settlement_deployment_block_number_hash(&web3.provider, chain_id)
             .await
             .map(Some)
             .context("failed to fetch settlement deployment block");

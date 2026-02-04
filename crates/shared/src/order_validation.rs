@@ -23,7 +23,6 @@ use {
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::alloy::{HooksTrampoline, WETH9},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -608,10 +607,9 @@ impl OrderValidating for OrderValidator {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
-        let app_data_signer = app_data.inner.protocol.signer.map(IntoLegacy::into_legacy);
+        let app_data_signer = app_data.inner.protocol.signer;
 
-        let owner =
-            order.verify_owner(domain_separator, app_data_signer.map(IntoAlloy::into_alloy))?;
+        let owner = order.verify_owner(domain_separator, app_data_signer)?;
         tracing::debug!(?owner, "recovered owner from order and signature");
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
@@ -755,6 +753,7 @@ impl OrderValidating for OrderValidator {
                             },
                             data.kind,
                         ) {
+                            tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                             self.check_max_limit_orders(owner).await?;
                         }
                         (class, Some(quote))
@@ -786,6 +785,7 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
+                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                     self.check_max_limit_orders(owner).await?;
                 }
                 (OrderClass::Limit, None)
@@ -1002,14 +1002,7 @@ pub fn is_order_outside_market_price(
         }
     };
 
-    check().unwrap_or_else(|| {
-        tracing::warn!(
-            ?order,
-            ?quote,
-            "failed to check if order is outside market price"
-        );
-        true
-    })
+    check().unwrap_or(true)
 }
 
 pub struct InvalidSigningScheme;
@@ -1063,7 +1056,7 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_err() {
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1210,7 +1203,7 @@ mod tests {
     #[tokio::test]
     async fn pre_validate_ok() {
         let native_token =
-            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().alloy);
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1301,7 +1294,7 @@ mod tests {
     #[tokio::test]
     async fn pre_validate_same_tokens_allow_sell() {
         let native_token =
-            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().alloy);
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1409,7 +1402,7 @@ mod tests {
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1621,7 +1614,7 @@ mod tests {
             .expect_count()
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1702,7 +1695,7 @@ mod tests {
         limit_order_counter
             .expect_count()
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1767,7 +1760,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1825,7 +1818,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1888,7 +1881,7 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
 
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1953,7 +1946,7 @@ mod tests {
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2017,7 +2010,7 @@ mod tests {
             .returning(|_| Err(SignatureValidationError::Invalid));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2087,7 +2080,8 @@ mod tests {
                 .returning(move |_, _| Err(create_error()));
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
-            let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+            let native_token =
+                WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
             let validator = OrderValidator::new(
                 native_token,
                 Arc::new(order_validation::banned::Users::none()),
@@ -2182,7 +2176,7 @@ mod tests {
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2593,7 +2587,7 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Ok(default_verification_gas_limit()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             native_token,

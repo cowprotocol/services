@@ -8,11 +8,10 @@ use {
         Query,
         QuoteVerificationMode,
     },
+    alloy::primitives::{Address, U256},
     anyhow::Context,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
-    primitive_types::{H160, U256},
     std::{cmp::Ordering, sync::Arc, time::Duration},
     tracing::instrument,
 };
@@ -27,9 +26,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
             };
-            let get_context = self
-                .ranking
-                .provide_context(out_token.into_legacy(), query.timeout);
+            let get_context = self.ranking.provide_context(out_token, query.timeout);
 
             // Filter out obviously wrong estimates:
             // - 0 gas cost would lead to us paying huge subsidies
@@ -100,7 +97,7 @@ fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingCon
 impl PriceRanking {
     async fn provide_context(
         &self,
-        token: H160,
+        token: Address,
         timeout: Duration,
     ) -> Result<RankingContext, PriceEstimationError> {
         match self {
@@ -112,17 +109,14 @@ impl PriceRanking {
                 let gas = gas.clone();
                 let native = native.clone();
                 let gas = gas
-                    .estimate()
-                    .map_ok(|gas| gas.effective_gas_price())
+                    .effective_gas_price()
                     .map_err(PriceEstimationError::ProtocolInternal);
-                let (native_price, gas_price) = futures::try_join!(
-                    native.estimate_native_price(token.into_alloy(), timeout),
-                    gas
-                )?;
+                let (native_price, gas_price) =
+                    futures::try_join!(native.estimate_native_price(token, timeout), gas)?;
 
                 Ok(RankingContext {
                     native_price,
-                    gas_price,
+                    gas_price: gas_price as f64,
                 })
             }
         }
@@ -149,8 +143,16 @@ impl RankingContext {
             // High fees mean paying more `sell_token` for your buy order.
             OrderKind::Buy => eth_out + fees,
         };
-        // converts `NaN` and `(-∞, 0]` to `0`
-        U256::from_f64_lossy(effective_eth_out)
+        match effective_eth_out {
+            // converts `NaN` and `(-∞, 0]` to `0`
+            v if v.is_sign_negative() || v.is_nan() => U256::ZERO,
+            // Previous case already covered negative infinity
+            v if v.is_infinite() => U256::MAX,
+            // Note on truncation: previously we used primitive_types::U256::from_f64_lossy which
+            // truncated the floating point, while alloy is slightly more faithful to the original
+            // value and rounds to closest integer: [0, 0.5) => 0, [0.5, 1] => 1
+            v => U256::from(v.trunc()),
+        }
     }
 }
 
@@ -159,14 +161,14 @@ mod tests {
     use {
         super::*,
         crate::{
-            gas_price_estimation::{FakeGasPriceEstimator, price::GasPrice1559},
+            gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
                 MockPriceEstimating,
                 QuoteVerificationMode,
                 native::MockNativePriceEstimating,
             },
         },
-        alloy::primitives::U256,
+        alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         model::order::OrderKind,
     };
 
@@ -193,10 +195,9 @@ mod tests {
         native
             .expect_estimate_native_price()
             .returning(move |_, _| async { Ok(0.5) }.boxed());
-        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 2.0,
-            max_fee_per_gas: 2.0,
-            max_priority_fee_per_gas: 2.0,
+        let gas = Arc::new(FakeGasPriceEstimator::new(Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 2,
         }));
         PriceRanking::BestBangForBuck {
             native: Arc::new(native),

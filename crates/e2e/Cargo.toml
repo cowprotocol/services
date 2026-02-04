@@ -9,24 +9,25 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local", "signer-mnemonic", "provider-anvil-api", "provider-debug-api", "sol-types"] }
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "provider-txpool-api", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local", "signer-mnemonic", "provider-anvil-api", "provider-debug-api", "sol-types"] }
 alloy-signer = {workspace = true, default-features = false, features = ["eip712"]}
-app-data = { workspace = true }
 anyhow = { workspace = true }
+app-data = { workspace = true }
 autopilot = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 cow-amm = { workspace = true }
 database = { workspace = true }
 driver = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
-const-hex = { workspace = true }
 hex-literal = { workspace = true }
 hyper = { workspace = true }
+itertools = { workspace = true }
 model = { workspace = true, features = ["e2e"] }
 number = { workspace = true }
 observe = { workspace = true }

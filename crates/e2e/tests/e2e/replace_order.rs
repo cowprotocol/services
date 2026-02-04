@@ -153,7 +153,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         .unwrap();
 
     // disable auto mining to prevent order being immediately executed
-    web3.alloy.evm_set_automine(false).await.unwrap();
+    web3.provider.evm_set_automine(false).await.unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -224,7 +224,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     );
 
     // Continue automining so our order can be executed
-    web3.alloy
+    web3.provider
         .evm_set_automine(true)
         .await
         .expect("Must be able to disable auto-mining");

@@ -98,7 +98,7 @@ impl TradeVerifier {
         tokens_without_verification: HashSet<Address>,
     ) -> Result<Self> {
         let settlement_contract =
-            GPv2Settlement::GPv2Settlement::new(settlement, web3.alloy.clone());
+            GPv2Settlement::GPv2Settlement::new(settlement, web3.provider.clone());
         let domain_separator =
             DomainSeparator(settlement_contract.domainSeparator().call().await?.0);
         Ok(Self {
@@ -168,7 +168,7 @@ impl TradeVerifier {
         let settle_call = legacy_settlement_to_alloy(settlement).abi_encode();
         let block = *self.block_stream.borrow();
 
-        let solver = Solver::Instance::new(solver_address, self.web3.alloy.clone());
+        let solver = Solver::Instance::new(solver_address, self.web3.provider.clone());
         let swap_simulation = solver.swap(
                 *self.settlement.address(),
                 tokens.clone(),
@@ -223,9 +223,9 @@ impl TradeVerifier {
                     solver: trade.solver(),
                     verified: true,
                     execution: QuoteExecution {
-                        interactions: map_interactions_data(&trade.interactions()),
-                        pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                        jit_orders: trade.jit_orders(),
+                        interactions: map_interactions_data(trade.interactions()),
+                        pre_interactions: map_interactions_data(trade.pre_interactions()),
+                        jit_orders: trade.jit_orders().cloned().collect(),
                     },
                 };
                 tracing::warn!(
@@ -267,12 +267,15 @@ impl TradeVerifier {
             }
 
             // The swap simulation computes the out_amount like this:
-            // sell order => trader_balance_before - trader_balance_after
-            // buy_order => trader_balance_after - trader_balance_before
+            // sell order => receiver_buy_balance_before - receiver_buy_balance_after
+            // buy_order => trader_sell_balance_after - trader_sell_balance_before
             //
-            // In case of sell=buy, the balance is only ever getting smaller, as the trader
-            // will always get less tokens out, which causes the above calculations to be
-            // wrong, and result in a negative number for sell order
+            // The trade verification assumes that the sell tokens don't flow back into
+            // the same account.
+            // However, in case of sell=buy where the receiver is also the owner, this
+            // assumption is broken. The balance is only ever getting smaller, as the
+            // trader will always get less tokens out, which causes the above calculations
+            // to result in 0 or (more likely) negative values.
             //
             // Example sell order:
             // Trader having 1 ETH in their account, selling 0.3 ETH, with tx hooks cost of
@@ -296,11 +299,13 @@ impl TradeVerifier {
             // Meaning they can buy 1 wei for 0.1ETH + 1 wei, considering the costs
             //
             // The general formula being: correct_out_amount = query.input + out_amount
-            if query.sell_token == query.buy_token {
+            let owner_is_receiver =
+                verification.receiver.is_zero() || verification.receiver == verification.from;
+            if query.sell_token == query.buy_token && owner_is_receiver {
                 summary.out_amount = I512::from(query.in_amount.get()) + summary.out_amount;
             } else if summary.out_amount < I512::ZERO {
                 tracing::debug!("Trade out amount is negative");
-                return Err(Error::TooInaccurate);
+                return Err(Error::BuffersPayForOrder);
             }
         }
 
@@ -512,9 +517,9 @@ impl TradeVerifying for TradeVerifier {
                 solver: trade.solver(),
                 verified: false,
                 execution: QuoteExecution {
-                    interactions: map_interactions_data(&trade.interactions()),
-                    pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                    jit_orders: trade.jit_orders(),
+                    interactions: map_interactions_data(trade.interactions()),
+                    pre_interactions: map_interactions_data(trade.pre_interactions()),
+                    jit_orders: trade.jit_orders().cloned().collect(),
                 },
             })
             .context("solver provided no gas estimate");
@@ -532,20 +537,42 @@ impl TradeVerifying for TradeVerifier {
             .await
         {
             Ok(verified) => Ok(verified),
-            Err(Error::SimulationFailed(err)) => {
-                tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
-                unverified_result
-            }
-            Err(err @ Error::TooInaccurate) => {
-                tracing::debug!("discarding quote because it's too inaccurate");
-                Err(err.into())
+            Err(err) => {
+                // For some tokens it's not possible to provide verifiable calldata in the
+                // quote (e.g. when they require the use of proprietary APIs which don't give
+                // out calldata willy nilly).
+                //
+                // Since you can't magically make up calldata that makes your quote verifiable
+                // solvers don't provide any call data in those cases.
+                // This has 2 possible outcomes:
+                // 1. the settlement contract has enough buy_tokens to pay for the order =>
+                //    Error::BuffersPayForOrder
+                // 2. not enough buy tokens in buffer => error::SimulationFailure
+                //
+                // To make handling of these quotes more predictable we'll only discard
+                // `Error::BufferPayForOrder` errors if the solver actually tried to provide a
+                // an execution plan but it's just not correct. In all other cases we just flag
+                // the solution as unverified but let it pass.
+                let has_execution_plan = trade.has_execution_plan();
+                if has_execution_plan && matches!(err, Error::BuffersPayForOrder) {
+                    tracing::debug!(
+                        has_execution_plan,
+                        "discarding quote because buffers pay for order"
+                    );
+                    Err(err.into())
+                } else {
+                    tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
+                    unverified_result
+                }
             }
         }
     }
 }
 
-fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> {
-    interactions.iter().map(|i| i.encode()).collect()
+fn encode_interactions<'a>(
+    interactions: impl IntoIterator<Item = &'a Interaction>,
+) -> Vec<EncodedInteraction> {
+    interactions.into_iter().map(|i| i.encode()).collect()
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -560,7 +587,7 @@ fn encode_settlement(
     domain_separator: &DomainSeparator,
     settlement: Address,
 ) -> Result<EncodedSettlement> {
-    let mut trade_interactions = encode_interactions(&trade.interactions());
+    let mut trade_interactions = encode_interactions(trade.interactions());
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
         // does not have to emit unwraps to pay out `ETH` in a trade.
@@ -619,7 +646,7 @@ fn encode_settlement(
 
     let user_interactions = verification.pre_interactions.iter().cloned();
     let pre_interactions: Vec<_> = user_interactions
-        .chain(trade.pre_interactions())
+        .chain(trade.pre_interactions().cloned())
         .chain([trade_setup_interaction])
         .collect();
 
@@ -894,7 +921,7 @@ fn ensure_quote_accuracy(
         .context("summary buy token is missing")?;
 
     if (*sell_token_lost >= sell_token_lost_limit) || (*buy_token_lost >= buy_token_lost_limit) {
-        return Err(Error::TooInaccurate);
+        return Err(Error::BuffersPayForOrder);
     }
 
     Ok(Estimate {
@@ -903,9 +930,9 @@ fn ensure_quote_accuracy(
         solver: trade.solver(),
         verified: true,
         execution: QuoteExecution {
-            interactions: map_interactions_data(&trade.interactions()),
-            pre_interactions: map_interactions_data(&trade.pre_interactions()),
-            jit_orders: trade.jit_orders(),
+            interactions: map_interactions_data(trade.interactions()),
+            pre_interactions: map_interactions_data(trade.pre_interactions()),
+            jit_orders: trade.jit_orders().cloned().collect(),
         },
     })
 }
@@ -922,9 +949,10 @@ pub struct PriceQuery {
 #[derive(thiserror::Error, Debug)]
 enum Error {
     /// Verification logic ran successfully but the quote was deemed too
-    /// inaccurate to be usable.
-    #[error("too inaccurate")]
-    TooInaccurate,
+    /// inaccurate because too many buy tokens came from the settlement
+    /// contract's buffers.
+    #[error("buffers pay for order")]
+    BuffersPayForOrder,
     /// Some error caused the simulation to not finish successfully.
     #[error("quote could not be simulated")]
     SimulationFailed(#[from] anyhow::Error),
@@ -1005,7 +1033,7 @@ mod tests {
 
         let estimate =
             ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
-        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+        assert!(matches!(estimate, Err(Error::BuffersPayForOrder)));
 
         // passes with slightly higher tolerance
         let estimate =
@@ -1025,7 +1053,7 @@ mod tests {
 
         let estimate =
             ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
-        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+        assert!(matches!(estimate, Err(Error::BuffersPayForOrder)));
 
         // passes with slightly higher tolerance
         let estimate =

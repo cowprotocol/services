@@ -684,7 +684,8 @@ mod tests {
                 ))
             });
 
-        let database = crate::database::Postgres::try_new("postgresql://").unwrap();
+        let database =
+            crate::database::Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order).await.unwrap();
 

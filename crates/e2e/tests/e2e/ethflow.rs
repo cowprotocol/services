@@ -152,7 +152,7 @@ async fn eth_flow_tx(web3: Web3) {
     let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3.alloy)
+        + timestamp_of_current_block_in_seconds(&web3.provider)
             .await
             .unwrap()
         + 3600;
@@ -260,7 +260,7 @@ async fn eth_flow_without_quote(web3: Web3) {
     services.start_protocol(solver).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3.alloy)
+        + timestamp_of_current_block_in_seconds(&web3.provider)
             .await
             .unwrap()
         + 3600;
@@ -311,7 +311,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.
-    let valid_to = timestamp_of_current_block_in_seconds(&web3.alloy)
+    let valid_to = timestamp_of_current_block_in_seconds(&web3.provider)
         .await
         .unwrap()
         + 60;
@@ -348,7 +348,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let receiver = Address::repeat_byte(0x42);
     let sell_amount = 1u64.eth();
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3.alloy)
+        + timestamp_of_current_block_in_seconds(&web3.provider)
             .await
             .unwrap()
         + 60;
@@ -498,7 +498,7 @@ async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, onchain: &
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
         let buy_token =
-            ERC20Mintable::Instance::new(ethflow_order.0.buyToken, onchain.web3().alloy.clone());
+            ERC20Mintable::Instance::new(ethflow_order.0.buyToken, onchain.web3().provider.clone());
         let receiver_buy_token_balance = buy_token
             .balanceOf(ethflow_order.0.receiver)
             .call()
@@ -836,7 +836,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
     let place_order = async |trader: TestAccount, buy_amount: u64| {
         let valid_to = chrono::offset::Utc::now().timestamp() as u32
-            + timestamp_of_current_block_in_seconds(&web3.alloy)
+            + timestamp_of_current_block_in_seconds(&web3.provider)
                 .await
                 .unwrap()
             + 3600;

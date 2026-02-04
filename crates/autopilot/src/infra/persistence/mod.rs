@@ -21,7 +21,7 @@ use {
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
-        solver_competition_v2::{Order, Solution},
+        solver_competition_v2::{self, Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -946,63 +946,6 @@ impl Persistence {
         Ok(())
     }
 
-    /// Finds solvers that won `last_auctions_count` consecutive auctions but
-    /// never settled any of them. The current block is used to prevent
-    /// selecting auctions with deadline after the current block since they
-    /// still can be settled.
-    pub async fn find_non_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_non_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition_v2::find_non_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-        )
-        .await
-        .context("failed to fetch non-settling solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
-    /// Finds solvers that have a failure settling rate above the given
-    /// ratio. The current block is used to prevent selecting auctions with
-    /// deadline after the current block since they still can be settled.
-    pub async fn find_low_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-        max_failure_rate: f64,
-        min_wins_threshold: u32,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_low_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition_v2::find_low_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-            max_failure_rate,
-            min_wins_threshold,
-        )
-        .await
-        .context("solver_competition::find_low_settling_solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
     pub async fn get_solver_winning_solutions(
         &self,
         auction_id: domain::auction::Id,
@@ -1023,6 +966,27 @@ impl Persistence {
             .await
             .context("solver_competition::fetch_solver_winning_solutions")?,
         )
+    }
+
+    /// Fetches orders which are currently inflight. Those orders should
+    /// be omitted from the current auction to avoid onchain reverts.
+    pub async fn fetch_in_flight_orders(
+        &self,
+        current_block: u64,
+    ) -> anyhow::Result<HashSet<crate::domain::OrderUid>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["inflight_orders"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let orders =
+            solver_competition_v2::fetch_in_flight_orders(&mut ex, current_block.cast_signed())
+                .await?;
+        Ok(orders
+            .into_iter()
+            .map(|o| crate::domain::OrderUid(o.0))
+            .collect())
     }
 }
 
