@@ -1,4 +1,5 @@
 pub mod balance_overrides;
+pub mod order_simulation;
 
 use {
     self::balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
