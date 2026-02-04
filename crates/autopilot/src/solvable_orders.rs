@@ -27,7 +27,6 @@ use {
             native_price_cache::CachingNativePriceEstimator,
         },
         remaining_amounts,
-        signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
         collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
@@ -100,7 +99,6 @@ pub struct SolvableOrdersCache {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<CachingNativePriceEstimator>,
-    signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     weth: Address,
     limit_order_price_factor: BigDecimal,
@@ -128,7 +126,6 @@ impl SolvableOrdersCache {
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
-        signature_validator: Arc<dyn SignatureValidating>,
         weth: Address,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
@@ -147,7 +144,6 @@ impl SolvableOrdersCache {
             bad_token_detector,
             cache: Mutex::new(None),
             native_price_estimator,
-            signature_validator,
             metrics,
             weth,
             limit_order_price_factor,
@@ -408,15 +404,13 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let filter_invalid_signatures =
-            find_invalid_signature_orders(&orders, self.signature_validator.as_ref());
+        let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
-        let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
+        let (banned_user_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
                 "banned_user_filtering",
                 find_banned_user_orders(&orders, &self.banned_users)
             ),
-            self.timed_future("invalid_signature_filtering", filter_invalid_signatures),
             self.timed_future(
                 "unsupported_token_filtering",
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())
@@ -425,10 +419,10 @@ impl SolvableOrdersCache {
         tracing::trace!("filtered invalid orders");
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
-        counter.checkpoint_by_invalid_orders("invalid_signature", &invalid_signature_orders);
+        counter.checkpoint_by_invalid_orders("presignature_pending", &presignature_pending_orders);
         counter.checkpoint_by_invalid_orders("unsupported_token", &unsupported_token_orders);
         invalid_order_uids.extend(banned_user_orders);
-        invalid_order_uids.extend(invalid_signature_orders);
+        invalid_order_uids.extend(presignature_pending_orders);
         invalid_order_uids.extend(unsupported_token_orders);
 
         orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
@@ -492,58 +486,19 @@ async fn get_native_prices(
 
 /// Finds unsigned PreSign and EIP-1271 orders whose signatures are no longer
 /// validating.
-async fn find_invalid_signature_orders(
-    orders: &[Order],
-    signature_validator: &dyn SignatureValidating,
-) -> Vec<OrderUid> {
-    let mut invalid_orders = vec![];
-    let mut signature_check_futures = FuturesUnordered::new();
-
-    for order in orders {
-        // Skip signature validation for all EIP-1271 orders. These orders rely on
-        // pre-interactions to set up their signature validation, which we cannot
-        // simulate. The driver will validate signatures before settlement.
-        if matches!(order.signature, Signature::Eip1271(_)) {
-            continue;
-        }
-
-        if matches!(
-            order.metadata.status,
-            model::order::OrderStatus::PresignaturePending
-        ) {
-            invalid_orders.push(order.metadata.uid);
-            continue;
-        }
-
-        if let Signature::Eip1271(signature) = &order.signature {
-            signature_check_futures.push(async {
-                let (hash, signer, _) = order.metadata.uid.parts();
-                match signature_validator
-                    .validate_signature(SignatureCheck {
-                        signer,
-                        hash: hash.0,
-                        signature: signature.clone(),
-                        interactions: order.interactions.pre.clone(),
-                        // TODO delete balance and signature logic in the autopilot
-                        // altogether
-                        balance_override: None,
-                    })
-                    .await
-                {
-                    Ok(_) => None,
-                    Err(_) => Some(order.metadata.uid),
-                }
-            });
-        }
-    }
-
-    while let Some(res) = signature_check_futures.next().await {
-        if let Some(invalid_order_uid) = res {
-            invalid_orders.push(invalid_order_uid);
-        }
-    }
-
-    invalid_orders
+/// Finds orders with pending presignatures. EIP-1271 signature validation is
+/// skipped entirely - the driver validates signatures before settlement.
+fn find_presignature_pending_orders(orders: &[Order]) -> Vec<OrderUid> {
+    orders
+        .iter()
+        .filter(|order| {
+            matches!(
+                order.metadata.status,
+                model::order::OrderStatus::PresignaturePending
+            )
+        })
+        .map(|order| order.metadata.uid)
+        .collect()
 }
 
 /// Removes orders that can't possibly be settled because there isn't enough
@@ -1001,7 +956,6 @@ mod tests {
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
             },
-            signature_validator::MockSignatureValidating,
         },
     };
 
@@ -1302,13 +1256,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn skips_all_eip1271_signature_validation() {
-        // All EIP-1271 orders should skip signature validation entirely.
-        // Only PresignaturePending orders should be marked invalid.
+    #[test]
+    fn finds_presignature_pending_orders() {
         let presign_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
         let orders = vec![
-            // PresignaturePending order - should be marked invalid
+            // PresignaturePending order - should be found
             Order {
                 metadata: OrderMetadata {
                     uid: presign_uid,
@@ -1317,7 +1269,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // EIP-1271 order - should be skipped (no validation)
+            // EIP-1271 order - not PresignaturePending
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2),
@@ -1326,33 +1278,18 @@ mod tests {
                 signature: Signature::Eip1271(vec![2, 2]),
                 ..Default::default()
             },
-            // Another EIP-1271 order - should be skipped (no validation)
+            // Regular order - not PresignaturePending
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3),
-                    ..Default::default()
-                },
-                signature: Signature::Eip1271(vec![3, 3, 3]),
-                ..Default::default()
-            },
-            // Regular ECDSA order - not validated (not EIP-1271)
-            Order {
-                metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
                     ..Default::default()
                 },
                 ..Default::default()
             },
         ];
 
-        // No signature validations should be called since all EIP-1271 are skipped
-        let signature_validator = MockSignatureValidating::new();
-
-        let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator).await;
-
-        // Only the PresignaturePending order should be invalid
-        assert_eq!(invalid_signature_orders, vec![presign_uid]);
+        let pending_orders = find_presignature_pending_orders(&orders);
+        assert_eq!(pending_orders, vec![presign_uid]);
     }
 
     #[test]
