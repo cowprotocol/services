@@ -70,7 +70,9 @@ trade_surplus AS (
     SELECT
         uid,
         CASE kind
+            -- amounts refer to tokens bought; more is better
             WHEN 'sell' THEN (trade_amount - limit_amount) * surplus_token_native_price
+            -- amounts refer to tokens sold; less is better
             WHEN 'buy' THEN (limit_amount - trade_amount) * surplus_token_native_price
         END / POWER(10, 18) AS surplus_in_wei
     FROM trade_components
