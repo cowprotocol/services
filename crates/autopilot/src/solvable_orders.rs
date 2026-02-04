@@ -193,19 +193,14 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        // Build set of orders that should bypass filtering based on appCode
+        // Build set of orders that should bypass balance filtering based on appCode
         let filter_bypass_orders = self.app_code_bypass.build_bypass_set(&orders).await;
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries),
-                self.filter_invalid_orders(
-                    orders,
-                    &mut counter,
-                    &mut invalid_order_uids,
-                    &filter_bypass_orders,
-                ),
+                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
@@ -412,12 +407,10 @@ impl SolvableOrdersCache {
         mut orders: Vec<Order>,
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
-        filter_bypass_orders: &HashSet<OrderUid>,
     ) -> Vec<Order> {
         let filter_invalid_signatures = find_invalid_signature_orders(
             &orders,
             self.signature_validator.as_ref(),
-            filter_bypass_orders,
         );
 
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
@@ -504,17 +497,15 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
-    filter_bypass_orders: &HashSet<OrderUid>,
 ) -> Vec<OrderUid> {
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
     for order in orders {
-        // Skip signature validation for EIP-1271 orders that should bypass filtering.
-        // ECDSA orders must always be validated as they don't rely on pre-interactions.
-        if filter_bypass_orders.contains(&order.metadata.uid)
-            && matches!(order.signature, Signature::Eip1271(_))
-        {
+        // Skip signature validation for all EIP-1271 orders. These orders rely on
+        // pre-interactions to set up their signature validation, which we cannot
+        // simulate. The driver will validate signatures before settlement.
+        if matches!(order.signature, Signature::Eip1271(_)) {
             continue;
         }
 
@@ -568,7 +559,7 @@ fn orders_with_balance(
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        // Skip balance check for orders that should bypass filtering
+        // Skip balance check for orders that should bypass filtering (based on appCode)
         if filter_bypass_orders.contains(&order.metadata.uid) {
             return true;
         }
@@ -914,8 +905,8 @@ impl OrderFilterCounter {
     }
 }
 
-/// Determines which orders should bypass certain validation checks based on
-/// their appCode. Caches parsed appCode values to avoid re-parsing JSON.
+/// Determines which orders should bypass balance checks based on their appCode.
+/// Caches parsed appCode values to avoid re-parsing JSON.
 struct AppCodeBypass {
     sources: HashSet<String>,
     cache: RwLock<HashMap<AppDataHash, Option<String>>>,
@@ -931,9 +922,8 @@ impl AppCodeBypass {
         }
     }
 
-    /// Returns the set of order UIDs that should bypass filtering based on
-    /// appCode. Note: signature validation has additional restrictions (only
-    /// EIP-1271 orders can bypass), but that's handled upstream.
+    /// Returns the set of order UIDs that should bypass balance filtering based
+    /// on appCode.
     async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
         let start = Instant::now();
 
@@ -1002,11 +992,7 @@ mod tests {
         alloy::primitives::{Address, B256},
         futures::FutureExt,
         maplit::{btreemap, hashset},
-        mockall::predicate::eq,
-        model::{
-            interaction::InteractionData,
-            order::{Interactions, OrderBuilder, OrderData, OrderMetadata, OrderUid},
-        },
+        model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
         shared::{
             bad_token::list_based::ListBasedDetector,
             price_estimation::{
@@ -1014,7 +1000,7 @@ mod tests {
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
             },
-            signature_validator::{MockSignatureValidating, SignatureValidationError},
+            signature_validator::MockSignatureValidating,
         },
     };
 
@@ -1316,162 +1302,56 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn filters_invalidated_eip1271_signatures() {
-        let order5_uid = OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5);
+    async fn skips_all_eip1271_signature_validation() {
+        // All EIP-1271 orders should skip signature validation entirely.
+        // Only PresignaturePending orders should be marked invalid.
+        let presign_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
         let orders = vec![
+            // PresignaturePending order - should be marked invalid
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1),
+                    uid: presign_uid,
+                    status: model::order::OrderStatus::PresignaturePending,
                     ..Default::default()
-                },
-                interactions: Interactions {
-                    pre: vec![InteractionData {
-                        target: Address::from_slice(&[0xe1; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![1, 2],
-                    }],
-                    post: vec![InteractionData {
-                        target: Address::from_slice(&[0xe2; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![3, 4],
-                    }],
                 },
                 ..Default::default()
             },
+            // EIP-1271 order - should be skipped (no validation)
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![2, 2]),
-                interactions: Interactions {
-                    pre: vec![InteractionData {
-                        target: Address::from_slice(&[0xe3; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![5, 6],
-                    }],
-                    post: vec![InteractionData {
-                        target: Address::from_slice(&[0xe4; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![7, 9],
-                    }],
-                },
                 ..Default::default()
             },
+            // Another EIP-1271 order - should be skipped (no validation)
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3),
                     ..Default::default()
                 },
+                signature: Signature::Eip1271(vec![3, 3, 3]),
                 ..Default::default()
             },
+            // Regular ECDSA order - not validated (not EIP-1271)
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
                     ..Default::default()
                 },
-                signature: Signature::Eip1271(vec![4, 4, 4, 4]),
-                ..Default::default()
-            },
-            Order {
-                metadata: OrderMetadata {
-                    uid: order5_uid,
-                    ..Default::default()
-                },
-                signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
                 ..Default::default()
             },
         ];
 
-        // Test case 1: order 5 is in bypass set, so it skips validation
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(22),
-                hash: [2; 32],
-                signature: vec![2, 2],
-                interactions: vec![InteractionData {
-                    target: Address::from_slice(&[0xe3; 20]),
-                    value: alloy::primitives::U256::ZERO,
-                    call_data: vec![5, 6],
-                }],
-                balance_override: None,
-            }))
-            .returning(|_| Ok(()));
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(44),
-                hash: [4; 32],
-                signature: vec![4, 4, 4, 4],
-                interactions: vec![],
-                balance_override: None,
-            }))
-            .returning(|_| Err(SignatureValidationError::Invalid));
+        // No signature validations should be called since all EIP-1271 are skipped
+        let signature_validator = MockSignatureValidating::new();
 
-        let bypass_orders = HashSet::from([order5_uid]);
         let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator, &bypass_orders).await;
-        // Order 5 is never validated because it's in the bypass set
-        assert_eq!(
-            invalid_signature_orders,
-            vec![OrderUid::from_parts(
-                B256::repeat_byte(4),
-                Address::repeat_byte(44),
-                4
-            )]
-        );
+            find_invalid_signature_orders(&orders, &signature_validator).await;
 
-        // Test case 2: empty bypass set, all orders validated
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(22),
-                hash: [2; 32],
-                signature: vec![2, 2],
-                interactions: vec![InteractionData {
-                    target: Address::from_slice(&[0xe3; 20]),
-                    value: alloy::primitives::U256::ZERO,
-                    call_data: vec![5, 6],
-                }],
-                balance_override: None,
-            }))
-            .returning(|_| Ok(()));
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(44),
-                hash: [4; 32],
-                signature: vec![4, 4, 4, 4],
-                interactions: vec![],
-                balance_override: None,
-            }))
-            .returning(|_| Err(SignatureValidationError::Invalid));
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(55),
-                hash: [5; 32],
-                signature: vec![5, 5, 5, 5, 5],
-                interactions: vec![],
-                balance_override: None,
-            }))
-            .returning(|_| Err(SignatureValidationError::Invalid));
-
-        let empty_bypass: HashSet<OrderUid> = HashSet::new();
-        let mut invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator, &empty_bypass).await;
-        invalid_signature_orders.sort();
-        // No bypass -> both orders with invalid signatures show up
-        assert_eq!(
-            invalid_signature_orders,
-            vec![
-                OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
-                OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5)
-            ]
-        );
+        // Only the PresignaturePending order should be invalid
+        assert_eq!(invalid_signature_orders, vec![presign_uid]);
     }
 
     #[test]
@@ -1657,7 +1537,6 @@ mod tests {
                 partially_fillable: false,
                 ..Default::default()
             },
-            signature: Signature::Eip1271(vec![1, 2, 3]),
             metadata: OrderMetadata {
                 uid: bypass_order_uid,
                 ..Default::default()
@@ -1676,7 +1555,6 @@ mod tests {
                 uid: OrderUid::from_parts(B256::repeat_byte(7), Address::repeat_byte(77), 7),
                 ..Default::default()
             },
-            signature: Signature::Eip1271(vec![4, 5, 6]),
             ..Default::default()
         };
 
@@ -1714,7 +1592,6 @@ mod tests {
                     app_data: AppDataHash([1; 32]),
                     ..Default::default()
                 },
-                signature: Signature::Eip1271(vec![1]),
                 ..Default::default()
             },
             Order {
@@ -1727,7 +1604,6 @@ mod tests {
                     app_data: AppDataHash([2; 32]),
                     ..Default::default()
                 },
-                signature: Signature::Eip1271(vec![2]),
                 ..Default::default()
             },
             Order {
@@ -1740,7 +1616,6 @@ mod tests {
                     app_data: AppDataHash([3; 32]),
                     ..Default::default()
                 },
-                signature: Signature::Eip1271(vec![3]),
                 ..Default::default()
             },
         ];
@@ -1767,56 +1642,6 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains(&order1_uid));
         assert!(result.contains(&order2_uid));
-    }
-
-    #[tokio::test]
-    async fn app_code_bypass_includes_all_matching_orders() {
-        // The bypass set includes all orders with matching appCode, regardless of
-        // signature type. The EIP-1271 restriction is enforced at the usage site
-        // (signature validation), not in the bypass set itself.
-        let eip1271_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
-        let ecdsa_uid = OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2);
-
-        let orders = vec![
-            // EIP-1271 order with matching appCode
-            Order {
-                metadata: OrderMetadata {
-                    uid: eip1271_uid,
-                    full_app_data: Some(r#"{"appCode": "Barter"}"#.to_string()),
-                    ..Default::default()
-                },
-                data: OrderData {
-                    app_data: AppDataHash([1; 32]),
-                    ..Default::default()
-                },
-                signature: Signature::Eip1271(vec![1]),
-                ..Default::default()
-            },
-            // ECDSA order with matching appCode
-            Order {
-                metadata: OrderMetadata {
-                    uid: ecdsa_uid,
-                    full_app_data: Some(r#"{"appCode": "Barter"}"#.to_string()),
-                    ..Default::default()
-                },
-                data: OrderData {
-                    app_data: AppDataHash([2; 32]),
-                    ..Default::default()
-                },
-                // Default signature is Eip712 (ECDSA)
-                ..Default::default()
-            },
-        ];
-
-        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
-        let bypass = AppCodeBypass::new(HashSet::from(["Barter".to_string()]), metrics);
-        let result = bypass.build_bypass_set(&orders).await;
-
-        // Both orders should be in the bypass set (signature type check is at usage
-        // site)
-        assert_eq!(result.len(), 2);
-        assert!(result.contains(&eip1271_uid));
-        assert!(result.contains(&ecdsa_uid));
     }
 
     #[test]
