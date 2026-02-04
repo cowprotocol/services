@@ -933,7 +933,7 @@ impl AppCodeBypass {
 
     /// Returns the set of order UIDs that should bypass filtering based on
     /// appCode. Note: signature validation has additional restrictions (only
-    /// EIP-1271 orders can bypass).
+    /// EIP-1271 orders can bypass), but that's handled upstream.
     async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
         let start = Instant::now();
 
