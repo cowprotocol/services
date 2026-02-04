@@ -507,7 +507,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         native_price_estimator.clone(),
-        signature_validator.clone(),
         *eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
