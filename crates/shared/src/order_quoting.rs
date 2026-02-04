@@ -11,11 +11,17 @@ use {
         fee::FeeParameters,
         gas_price_estimation::GasPriceEstimating,
         order_validation::PreOrderData,
-        price_estimation::{Estimate, QuoteVerificationMode, Verification},
+        price_estimation::{
+            trade_verifier::order_simulation::OrderExecutionSimulating,
+            Estimate,
+            QuoteVerificationMode,
+            Verification,
+        },
         trade_finding::external::dto,
     },
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
+    app_data::AppDataHash,
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::TryFutureExt,
@@ -391,13 +397,13 @@ impl Now for DateTime<Utc> {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Validity {
     pub eip1271_onchain_quote: Duration,
     pub presign_onchain_quote: Duration,
     pub standard_quote: Duration,
 }
 
-#[cfg(test)]
 impl Default for Validity {
     fn default() -> Self {
         Self {
@@ -418,6 +424,7 @@ pub struct OrderQuoter {
     validity: Validity,
     balance_fetcher: Arc<dyn BalanceFetching>,
     quote_verification: QuoteVerificationMode,
+    order_execution_simulator: Arc<dyn OrderExecutionSimulating>,
     default_quote_timeout: std::time::Duration,
 }
 
@@ -431,6 +438,7 @@ impl OrderQuoter {
         validity: Validity,
         balance_fetcher: Arc<dyn BalanceFetching>,
         quote_verification: QuoteVerificationMode,
+        order_execution_simulator: Arc<dyn OrderExecutionSimulating>,
         default_quote_timeout: std::time::Duration,
     ) -> Self {
         Self {
@@ -442,6 +450,7 @@ impl OrderQuoter {
             validity,
             balance_fetcher,
             quote_verification,
+            order_execution_simulator,
             default_quote_timeout,
         }
     }
@@ -502,6 +511,39 @@ impl OrderQuoter {
 
         self.verify_quote(&trade_estimate, parameters, quoted_sell_amount)
             .await?;
+
+        if parameters.verification.is_verified() {
+            let order = model::order::Order {
+                data: model::order::OrderData {
+                    sell_token: parameters.sell_token,
+                    buy_token: parameters.buy_token,
+                    receiver: Some(parameters.verification.receiver),
+                    sell_amount: quoted_sell_amount,
+                    buy_amount: quoted_buy_amount,
+                    valid_to: u32::MAX, // Simulation doesn't care about time
+                    app_data: AppDataHash::default(),
+                    fee_amount: U256::from(trade_estimate.gas),
+                    kind: trade_query.kind,
+                    partially_fillable: false,
+                    sell_token_balance: parameters.verification.sell_token_source,
+                    buy_token_balance: parameters.verification.buy_token_destination,
+                },
+                signature: model::signature::Signature::default_with(
+                    parameters.signing_scheme.into(),
+                ),
+                metadata: model::order::OrderMetadata {
+                    owner: parameters.verification.from,
+                    ..Default::default()
+                },
+                interactions: Default::default(),
+            };
+            let domain_separator = model::DomainSeparator([0u8; 32]); // Dummy domain separator
+
+            self.order_execution_simulator
+                .simulate_order_execution(&order, &domain_separator)
+                .await
+                .map_err(CalculateQuoteError::Other)?;
+        }
 
         let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
@@ -793,6 +835,7 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
+        ::app_data::AppDataHash,
         Address,
         U256 as AlloyU256,
         alloy::eips::eip1559::Eip1559Estimation,
@@ -802,6 +845,18 @@ mod tests {
         model::time,
         number::nonzero::NonZeroU256,
     };
+
+    struct FakeOrderExecutionSimulator;
+    #[async_trait::async_trait]
+    impl OrderExecutionSimulating for FakeOrderExecutionSimulator {
+        async fn simulate_order_execution(
+            &self,
+            _: &model::order::Order,
+            _: &model::DomainSeparator,
+        ) -> Result<()> {
+            Ok(())
+        }
+    }
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
@@ -938,6 +993,7 @@ mod tests {
             validity: super::Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1078,6 +1134,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1213,6 +1270,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1311,6 +1369,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1384,6 +1443,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1445,6 +1505,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1528,6 +1589,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1613,6 +1675,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1686,6 +1749,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
@@ -1717,6 +1781,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            order_execution_simulator: Arc::new(FakeOrderExecutionSimulator),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 

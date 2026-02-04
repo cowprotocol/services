@@ -535,6 +535,16 @@ pub struct Verification {
     pub buy_token_destination: BuyTokenDestination,
 }
 
+impl Verification {
+    /// Returns true if this verification represents a request for a verified
+    /// quote.
+    pub fn is_verified(&self) -> bool {
+        // We consider a quote to be verified if it comes from an account other
+        // than the zero address.
+        self.from != Address::ZERO
+    }
+}
+
 #[derive(Clone, derive_more::Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
