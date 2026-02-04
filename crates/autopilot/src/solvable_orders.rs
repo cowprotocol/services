@@ -9,7 +9,7 @@ use {
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
+    futures::{FutureExt, future::join_all},
     indexmap::IndexSet,
     itertools::Itertools,
     model::{
