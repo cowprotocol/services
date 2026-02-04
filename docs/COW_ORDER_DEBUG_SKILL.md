@@ -528,7 +528,9 @@ ORDER BY auction_id DESC
 LIMIT 20;
 ```
 
-### Check executed settlements:
+You can also check attempts in `settlement_executions` tables.
+
+### Check successful settlements:
 ```sql
 SELECT
   tx_hash, solver, order_uid, executed_sell_amount, executed_buy_amount
