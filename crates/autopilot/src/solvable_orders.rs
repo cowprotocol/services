@@ -419,7 +419,7 @@ impl SolvableOrdersCache {
         tracing::trace!("filtered invalid orders");
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
-        counter.checkpoint_by_invalid_orders("presignature_pending", &presignature_pending_orders);
+        counter.checkpoint_by_invalid_orders("invalid_signature", &presignature_pending_orders);
         counter.checkpoint_by_invalid_orders("unsupported_token", &unsupported_token_orders);
         invalid_order_uids.extend(banned_user_orders);
         invalid_order_uids.extend(presignature_pending_orders);
