@@ -35,7 +35,7 @@ curl -s "https://barn.api.cow.fi/$NETWORK/api/v1/orders/$ORDER_UID" | jq .
 | `sellAmount` | Amount to sell (wei) | For sell orders, this is exact |
 | `buyAmount` | Min amount to receive | For buy orders, this is exact |
 | `validTo` | Unix timestamp expiry | Check if expired |
-| `appData` | IPFS hash → metadata JSON | Contains hooks, partner fees, flash loan hints |
+| `appData` | Hash of metadata JSON | Contains hooks, partner fees, flash loan hints |
 | `feeAmount` | **Legacy, always 0** | Fee now in limit price |
 | `kind` | "sell" or "buy" | |
 | `partiallyFillable` | bool | Swaps = false (fill-or-kill), limits can be true |
@@ -65,8 +65,10 @@ Orders can fail if signature validation fails. Different schemes have different 
 
 | Scheme | Type | Validation | Common Failures |
 |--------|------|------------|-----------------|
-| `eip712` | EOA | Static, checked once | Sig doesn't match order fields |
+| `eip712` | EOA | Static, checked once | Sig doesn't match order fields, or signed by unexpected user |
 | `ethsign` | EOA (legacy) | Static, checked once | Same as above |
+
+**Note on unexpected signers:** The majority of signature issues are valid signatures but signed by an unexpected user. This causes the settlement contract to attempt transferring tokens from an account that doesn't have the necessary balance.
 | `presign` | Smart contract | On-chain state (`setPreSignature`) | User called `setPreSignature(uid, false)` to cancel |
 | `eip1271` | Smart contract | Calls `isValidSignature()` at settlement time | Contract state changed, Safe signer removed, custom logic rejects |
 
@@ -125,6 +127,9 @@ curl -s "${GRAFANA_URL}/api/ds/query?ds_type=victoriametrics-logs-datasource" \
 
 # Filter by log content on specific network
 "expr": "NOT container:controller network:mainnet order cancelled | sort by (_time) asc"
+
+# Search by request_id to trace quote→bid issues (useful when order was placed with quote from solver X but that solver never bid)
+"expr": "NOT container:controller $REQUEST_ID | sort by (_time) asc"
 ```
 
 **Useful filters:**
@@ -142,6 +147,9 @@ curl -s "${GRAFANA_URL}/api/ds/query?ds_type=victoriametrics-logs-datasource" \
 "expr": "NOT container:controller proposed solution ORDER_UID | sort by (_time) asc"
 "expr": "NOT container:controller settlement failed ORDER_UID | sort by (_time) asc"
 "expr": "NOT container:controller filtered ORDER_UID | sort by (_time) asc"
+
+# Find discarded solutions where order appears in calldata (use regex with order UID bytes without 0x prefix)
+"expr": "discarded .*ORDER_UID_WITHOUT_0X.* | sort by (_time) asc"
 ```
 
 **What to look for:**
@@ -287,7 +295,7 @@ Orderbook rejects orders that have no chance of executing. Checks:
 | Signature valid | Bad sig, wrong signer |
 | Balance sufficient | Fill-or-kill needs full amount, partial needs >0 |
 | Approval set | Need approval on GPV2VaultRelayer (not settlement contract directly) |
-| AppData pre-image exists | Must be able to decode the IPFS hash content |
+| AppData pre-image exists | AppData JSON must be provided in full with order, or pre-image must be added to backend beforehand |
 | Rate limit | Too many orders per trader |
 | Quote attached + valid | If quote ID provided, must exist and match |
 
@@ -542,7 +550,7 @@ If `signed = false`, the user revoked their presignature on-chain.
 
 ## 14. AppData Deep Dive
 
-AppData is an IPFS hash pointing to a JSON document. **Cannot be verified on-chain** (smart contract just sees hash), so all enforcement is off-chain/soft.
+AppData is a hash of a JSON document (the JSON must be provided in full or its pre-image registered beforehand). **Cannot be verified on-chain** (smart contract just sees hash), so all enforcement is off-chain/soft.
 
 ### Common AppData Fields
 

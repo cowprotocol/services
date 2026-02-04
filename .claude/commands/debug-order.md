@@ -11,6 +11,7 @@ Key steps:
 2. Fetch order data from API to get status and details
 3. Check order_events in DB for lifecycle events
 4. Search Victoria Logs for the order UID
+   - For finding discarded solutions where the order UID appears in calldata, use regex: `.*ORDER_UID_WITHOUT_0X.*` plus `discarded`
 5. Identify root cause and report findings with evidence
 6. If you haven't found anything go wild and try all SQL / log searches / codebase searches you can think of
 
