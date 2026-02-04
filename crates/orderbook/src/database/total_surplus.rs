@@ -9,12 +9,29 @@ use {
 /// and **NOT** quoted price) since march 2023.
 async fn fetch_total_surplus(ex: &mut PgConnection, user: &Address) -> Result<f64, sqlx::Error> {
     const TOTAL_SURPLUS_QUERY: &str = r#"
-WITH user_order_uids AS (
-    SELECT uid FROM orders WHERE owner = $1
-    UNION
-    SELECT uid FROM onchain_placed_orders WHERE sender = $1
-),
-trade_components AS (
+WITH trade_components AS (
+    SELECT
+        o.uid,
+        CASE o.kind
+            WHEN 'sell' THEN t.buy_amount
+            WHEN 'buy' THEN t.sell_amount - t.fee_amount
+        END AS trade_amount,
+        CASE o.kind
+            WHEN 'sell' THEN (t.sell_amount - t.fee_amount) * o.buy_amount / o.sell_amount
+            WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
+        END AS limit_amount,
+        o.kind,
+        ap.price AS surplus_token_native_price
+    FROM orders o
+    JOIN trades t ON t.order_uid = o.uid
+    JOIN order_execution oe ON oe.order_uid = t.order_uid
+    LEFT JOIN auction_prices ap
+        ON ap.auction_id = oe.auction_id
+        AND ap.token = CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
+    WHERE o.owner = $1
+
+    UNION ALL
+
     SELECT
         o.uid,
         CASE o.kind
@@ -31,13 +48,14 @@ trade_components AS (
         END AS limit_amount,
         o.kind,
         ap.price AS surplus_token_native_price
-    FROM user_order_uids u
-    JOIN orders o ON o.uid = u.uid
-    JOIN trades t ON o.uid = t.order_uid
-    JOIN order_execution oe ON o.uid = oe.order_uid
+    FROM onchain_placed_orders opo
+    JOIN orders o ON o.uid = opo.uid AND o.owner != $1
+    JOIN trades t ON t.order_uid = o.uid
+    JOIN order_execution oe ON oe.order_uid = t.order_uid
     LEFT JOIN auction_prices ap
         ON ap.auction_id = oe.auction_id
         AND ap.token = CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
+    WHERE opo.sender = $1
 
     UNION ALL
 
@@ -56,30 +74,28 @@ trade_components AS (
         ap.price AS surplus_token_native_price
     FROM jit_orders j
     JOIN trades t ON j.uid = t.order_uid
-    JOIN order_execution oe ON j.uid = oe.order_uid
+    JOIN order_execution oe ON t.order_uid = oe.order_uid
     LEFT JOIN auction_prices ap
         ON ap.auction_id = oe.auction_id
         AND ap.token = CASE j.kind WHEN 'sell' THEN j.buy_token ELSE j.sell_token END
-    WHERE j.owner = $1 AND NOT EXISTS (
+    WHERE j.owner = $1
+      AND NOT EXISTS (
         SELECT 1
         FROM orders o
         WHERE o.uid = j.uid
     )
-),
-trade_surplus AS (
-    SELECT
-        uid,
-        CASE kind
-            -- amounts refer to tokens bought; more is better
-            WHEN 'sell' THEN (trade_amount - limit_amount) * surplus_token_native_price
-            -- amounts refer to tokens sold; less is better
-            WHEN 'buy' THEN (limit_amount - trade_amount) * surplus_token_native_price
-        END / POWER(10, 18) AS surplus_in_wei
-    FROM trade_components
 )
 SELECT
     COALESCE(SUM(surplus_in_wei ORDER BY uid), 0) AS total_surplus_in_wei
-FROM trade_surplus
+FROM (
+    SELECT
+        uid,
+        CASE kind
+            WHEN 'sell' THEN (trade_amount - limit_amount) * surplus_token_native_price
+            WHEN 'buy' THEN (limit_amount - trade_amount) * surplus_token_native_price
+        END / POWER(10, 18) AS surplus_in_wei
+    FROM trade_components
+) ts;
 "#;
 
     sqlx::query_scalar(TOTAL_SURPLUS_QUERY)
