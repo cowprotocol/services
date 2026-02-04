@@ -835,7 +835,6 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
-        ::app_data::AppDataHash,
         Address,
         U256 as AlloyU256,
         alloy::eips::eip1559::Eip1559Estimation,
