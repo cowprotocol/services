@@ -1413,11 +1413,11 @@ mod tests {
                 balance_override: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
-        // Order 5 is never validated because it's in the bypass set
 
         let bypass_orders = HashSet::from([order5_uid]);
         let invalid_signature_orders =
             find_invalid_signature_orders(&orders, &signature_validator, &bypass_orders).await;
+        // Order 5 is never validated because it's in the bypass set
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(
