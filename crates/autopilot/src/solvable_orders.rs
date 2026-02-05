@@ -869,7 +869,6 @@ struct AppCodeBypass {
     metrics: &'static Metrics,
 }
 
-/// Cache size for app code bypass lookups.
 const APP_CODE_BYPASS_CACHE_SIZE: u64 = 10_000;
 
 impl AppCodeBypass {
