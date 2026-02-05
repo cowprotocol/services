@@ -321,7 +321,7 @@ impl OrderStoring for Postgres {
             .start_timer();
         let mut ex = self.pool.acquire().await?;
         let uids = uids
-            .into_iter()
+            .iter()
             .map(|uid| ByteArray(uid.0))
             .collect::<Vec<_>>();
 
@@ -339,7 +339,7 @@ impl OrderStoring for Postgres {
             database::jit_orders::get_many_by_id(&mut ex, uids.as_slice())
                 .await
                 .filter_map(async |order| order.ok())
-                .map(|order| full_order_into_model_order(order))
+                .map(full_order_into_model_order)
                 .collect()
                 .await;
 

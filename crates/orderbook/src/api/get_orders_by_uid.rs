@@ -91,7 +91,7 @@ mod tests {
     #[tokio::test]
     async fn get_orders_by_uid_request_too_many_orders() {
         let mut uids = Vec::new();
-        for _ in 0..5001 {
+        for _ in 0..(MAX_ORDERS_LIMIT + 1) {
             uids.push(OrderUid::default());
         }
         let request = request()
