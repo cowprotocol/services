@@ -315,16 +315,28 @@ pub async fn run(args: Arguments) {
     .await
     .expect("failed to initialize price estimator factory");
 
-    let initial_prices = postgres_write.fetch_latest_prices().await.unwrap();
-    let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
-            args.native_price_estimators.as_slice(),
-            args.fast_price_estimation_results_required,
-            native_token.clone(),
-            initial_prices,
-        )
-        .await
-        .unwrap();
+    let native_price_estimator: Arc<dyn NativePriceEstimating> =
+        if args.price_estimation.skip_native_price_cache {
+            price_estimator_factory
+                .native_price_estimator_uncached(
+                    args.native_price_estimators.as_slice(),
+                    args.fast_price_estimation_results_required,
+                    &native_token,
+                )
+                .await
+                .unwrap()
+        } else {
+            let initial_prices = postgres_write.fetch_latest_prices().await.unwrap();
+            price_estimator_factory
+                .native_price_estimator(
+                    args.native_price_estimators.as_slice(),
+                    args.fast_price_estimation_results_required,
+                    native_token.clone(),
+                    initial_prices,
+                )
+                .await
+                .unwrap()
+        };
 
     let price_estimator = price_estimator_factory
         .price_estimator(

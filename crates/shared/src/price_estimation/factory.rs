@@ -433,6 +433,21 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
+    /// Creates a native price estimator WITHOUT caching.
+    /// Use this when caching is handled elsewhere (e.g., when using Forwarder
+    /// to autopilot).
+    pub async fn native_price_estimator_uncached(
+        &mut self,
+        estimators: &[Vec<NativePriceEstimatorSource>],
+        results_required: NonZeroUsize,
+        weth: &WETH9::Instance,
+    ) -> Result<Arc<dyn NativePriceEstimating>> {
+        Ok(Arc::new(
+            self.create_competition_native_estimator(estimators, results_required, weth)
+                .await?,
+        ))
+    }
+
     /// Helper to create a CompetitionEstimator for native price estimation.
     async fn create_competition_native_estimator(
         &mut self,

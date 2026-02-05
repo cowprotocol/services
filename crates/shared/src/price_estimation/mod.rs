@@ -277,6 +277,11 @@ pub struct Arguments {
     /// (e.g. private liquidity that exists but can't be verified).
     #[clap(long, env, value_delimiter = ',')]
     pub tokens_without_verification: Vec<Address>,
+
+    /// Skip the native price cache and call estimators directly.
+    /// Useful when using Forwarder pattern where autopilot already caches.
+    #[clap(long, env, default_value = "false")]
+    pub skip_native_price_cache: bool,
 }
 
 /// Custom Clap parser for tuple pair
@@ -373,6 +378,7 @@ impl Display for Arguments {
             balance_overrides,
             native_price_approximation_tokens,
             tokens_without_verification,
+            skip_native_price_cache,
         } = self;
 
         display_option(
@@ -446,6 +452,7 @@ impl Display for Arguments {
             f,
             "tokens_without_verification: {tokens_without_verification:?}"
         )?;
+        writeln!(f, "skip_native_price_cache: {skip_native_price_cache}")?;
 
         Ok(())
     }
