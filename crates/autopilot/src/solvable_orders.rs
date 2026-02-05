@@ -17,6 +17,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
+    moka::future::Cache,
     number::conversions::u256_to_big_decimal,
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
@@ -35,7 +36,7 @@ use {
         time::{Duration, Instant},
     },
     strum::VariantNames,
-    tokio::sync::{Mutex, RwLock},
+    tokio::sync::Mutex,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -865,15 +866,18 @@ impl OrderFilterCounter {
 /// Caches parsed appCode values to avoid re-parsing JSON.
 struct AppCodeBypass {
     sources: HashSet<String>,
-    cache: RwLock<HashMap<AppDataHash, Option<String>>>,
+    cache: Cache<AppDataHash, Option<String>>,
     metrics: &'static Metrics,
 }
+
+/// Cache size for app code bypass lookups.
+const APP_CODE_BYPASS_CACHE_SIZE: u64 = 10_000;
 
 impl AppCodeBypass {
     fn new(sources: HashSet<String>, metrics: &'static Metrics) -> Self {
         Self {
             sources,
-            cache: RwLock::new(HashMap::new()),
+            cache: Cache::new(APP_CODE_BYPASS_CACHE_SIZE),
             metrics,
         }
     }
@@ -881,62 +885,48 @@ impl AppCodeBypass {
     /// Returns the set of order UIDs that should bypass balance filtering based
     /// on appCode.
     async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
-        let start = Instant::now();
+        let _timer = self.metrics
+            .filter_bypass_orders_time
+            .start_timer();
 
         if self.sources.is_empty() {
             return HashSet::new();
         }
 
-        // First pass: check cache for all orders
-        let (mut result, uncached) = {
-            let cache = self.cache.read().await;
-            let mut result = HashSet::new();
-            let mut uncached = Vec::new();
-
-            for order in orders {
-                let app_data_hash = order.data.app_data;
-                if let Some(cached_app_code) = cache.get(&app_data_hash) {
-                    if let Some(app_code) = cached_app_code
-                        && self.sources.contains(app_code)
-                    {
-                        result.insert(order.metadata.uid);
-                    }
-                } else {
-                    uncached.push(order);
-                }
-            }
-            (result, uncached)
-        };
-
-        // Second pass: parse uncached orders and update cache
-        if !uncached.is_empty() {
-            let mut cache = self.cache.write().await;
-            for order in uncached {
-                let app_code = match order.metadata.full_app_data.as_ref() {
-                    Some(full_app_data) => {
-                        match serde_json::from_slice::<app_data::Root>(full_app_data.as_bytes()) {
-                            Ok(root) => root.app_code().map(|s| s.to_owned()),
-                            Err(_) => {
-                                self.metrics.app_code_parse_failures.inc();
-                                None
-                            }
-                        }
-                    }
-                    None => None,
-                };
-
-                if let Some(ref code) = app_code
-                    && self.sources.contains(code)
+        let mut result = HashSet::new();
+        for order in orders {
+            let app_data_hash = order.data.app_data;
+            if let Some(cached_app_code) = self.cache.get(&app_data_hash).await {
+                if let Some(app_code) = cached_app_code
+                    && self.sources.contains(&app_code)
                 {
                     result.insert(order.metadata.uid);
                 }
-                cache.insert(order.data.app_data, app_code);
+                continue;
             }
+
+            // Parse and cache the app code
+            let app_code = match order.metadata.full_app_data.as_ref() {
+                Some(full_app_data) => {
+                    match serde_json::from_slice::<app_data::Root>(full_app_data.as_bytes()) {
+                        Ok(root) => root.app_code().map(|s| s.to_owned()),
+                        Err(_) => {
+                            self.metrics.app_code_parse_failures.inc();
+                            None
+                        }
+                    }
+                }
+                None => None,
+            };
+
+            if let Some(ref code) = app_code
+                && self.sources.contains(code)
+            {
+                result.insert(order.metadata.uid);
+            }
+            self.cache.insert(app_data_hash, app_code).await;
         }
 
-        self.metrics
-            .filter_bypass_orders_time
-            .observe(start.elapsed().as_secs_f64());
         result
     }
 }
