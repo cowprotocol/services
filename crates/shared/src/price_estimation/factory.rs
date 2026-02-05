@@ -455,6 +455,43 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .with_early_return(results_required),
         )
     }
+
+    /// Creates a native price estimator without CoinGecko.
+    ///
+    /// This is useful for API endpoints that should not use CoinGecko to avoid
+    /// unnecessary API usage for quote-related tokens. The estimator still uses
+    /// the same sources (drivers, OneInch, etc.) but excludes CoinGecko.
+    pub async fn native_price_estimator_without_coingecko(
+        &mut self,
+        estimators: &[Vec<NativePriceEstimatorSource>],
+        results_required: NonZeroUsize,
+        weth: &WETH9::Instance,
+    ) -> Result<Arc<dyn NativePriceEstimating>> {
+        // Filter out CoinGecko sources
+        let filtered: Vec<Vec<_>> = estimators
+            .iter()
+            .map(|stage| {
+                stage
+                    .iter()
+                    .filter(|source| !matches!(source, NativePriceEstimatorSource::CoinGecko))
+                    .cloned()
+                    .collect()
+            })
+            .filter(|stage: &Vec<_>| !stage.is_empty())
+            .collect();
+
+        if filtered.is_empty() {
+            anyhow::bail!(
+                "No native price estimators available after excluding CoinGecko. At least one \
+                 non-CoinGecko estimator is required for API quote competition."
+            );
+        }
+
+        Ok(Arc::new(
+            self.create_competition_native_estimator(&filtered, results_required, weth)
+                .await?,
+        ))
+    }
 }
 
 /// Trait for modelling the initialization of a Price estimator and its verified

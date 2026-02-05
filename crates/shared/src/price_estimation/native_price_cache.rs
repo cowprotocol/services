@@ -909,22 +909,45 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     }
 }
 
-/// Wrapper around `CachingNativePriceEstimator` that marks all entries with
-/// `KeepPriceUpdated::No`. Used for the autopilot API endpoints where prices
-/// should be cached but not actively maintained by the background task.
+/// Wrapper that shares the cache with `CachingNativePriceEstimator` but uses
+/// a separate estimator (without CoinGecko) for fetching. Used for the
+/// autopilot API endpoints where prices should be cached but not actively
+/// maintained by the background task, and where CoinGecko API calls should be
+/// avoided.
 #[derive(Clone)]
-pub struct QuoteCompetitionEstimator(Arc<CachingNativePriceEstimator>);
+pub struct QuoteCompetitionEstimator {
+    /// Shared cache from CachingNativePriceEstimator
+    cache: NativePriceCache,
+    /// Separate estimator WITHOUT CoinGecko for fetching
+    estimator: Arc<dyn NativePriceEstimating>,
+    /// Number of concurrent price fetch requests
+    concurrent_requests: usize,
+}
 
 impl QuoteCompetitionEstimator {
-    /// Creates a new `QuoteCompetitionEstimator` wrapping the given estimator.
+    /// Creates a new `QuoteCompetitionEstimator` with a separate estimator for
+    /// fetching.
+    ///
+    /// The `cache` should be the shared cache from
+    /// `CachingNativePriceEstimator`. The `estimator` should be a native
+    /// price estimator WITHOUT CoinGecko, to avoid unnecessary CoinGecko
+    /// API usage for quote-related tokens.
     ///
     /// Prices fetched through this wrapper will be cached with
     /// `KeepPriceUpdated::No`, meaning they won't be actively refreshed by the
     /// background maintenance task. However, if the same token is later
     /// requested with `RequiresUpdatingPrices::Yes`, the entry will be upgraded
     /// to `KeepPriceUpdated::Yes` and become actively maintained.
-    pub fn new(estimator: Arc<CachingNativePriceEstimator>) -> Self {
-        Self(estimator)
+    pub fn new(
+        cache: NativePriceCache,
+        estimator: Arc<dyn NativePriceEstimating>,
+        concurrent_requests: usize,
+    ) -> Self {
+        Self {
+            cache,
+            estimator,
+            concurrent_requests,
+        }
     }
 }
 
@@ -938,7 +961,6 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
             let now = Instant::now();
             // Don't upgrade or create entries, just read from cache
             if let Some(cached) = self
-                .0
                 .cache
                 .get_ready_to_use_cached_prices(&[token], now, RequiresUpdatingPrices::DontCare)
                 .remove(&token)
@@ -946,18 +968,87 @@ impl NativePriceEstimating for QuoteCompetitionEstimator {
                 return cached.result;
             }
 
-            // Cache the result but don't mark for active maintenance
-            self.0
+            // Fetch using our separate estimator (without CoinGecko)
+            // and cache the result without marking for active maintenance
+            let token_to_fetch = *self
                 .cache
+                .approximation_tokens()
+                .get(&token)
+                .unwrap_or(&token);
+            let estimator = self.estimator.clone();
+            self.cache
                 .estimate_with_cache_update(
                     token,
                     RequiresUpdatingPrices::DontCare,
                     KeepPriceUpdated::No,
-                    |_| self.0.fetch_price(token, timeout),
+                    |_| async move {
+                        estimator
+                            .estimate_native_price(token_to_fetch, timeout)
+                            .await
+                    },
                 )
                 .await
         }
         .boxed()
+    }
+}
+
+impl QuoteCompetitionEstimator {
+    /// Estimates prices for multiple tokens with a timeout.
+    /// Returns prices from cache where available, fetches missing ones.
+    pub async fn estimate_native_prices_with_timeout<'a>(
+        &'a self,
+        tokens: &'a [Address],
+        timeout: Duration,
+    ) -> HashMap<Address, NativePriceEstimateResult> {
+        let mut prices = self.get_cached_prices(tokens);
+        if timeout.is_zero() {
+            return prices;
+        }
+
+        let uncached_tokens: Vec<_> = tokens
+            .iter()
+            .filter(|t| !prices.contains_key(*t))
+            .copied()
+            .collect();
+
+        let estimates = uncached_tokens
+            .iter()
+            .cloned()
+            .map(move |token| async move {
+                let result = self.estimate_native_price(token, timeout).await;
+                (token, result)
+            });
+        let mut price_stream = futures::stream::iter(estimates)
+            .buffered(self.concurrent_requests)
+            .boxed();
+
+        let _ = time::timeout(timeout, async {
+            while let Some((token, result)) = price_stream.next().await {
+                prices.insert(token, result);
+            }
+        })
+        .await;
+
+        prices
+    }
+
+    /// Returns cached prices for the given tokens.
+    fn get_cached_prices(
+        &self,
+        tokens: &[Address],
+    ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
+        let now = Instant::now();
+        let cached = self.cache.get_ready_to_use_cached_prices(
+            tokens,
+            now,
+            RequiresUpdatingPrices::DontCare,
+        );
+
+        cached
+            .into_iter()
+            .map(|(token, cached)| (token, cached.result))
+            .collect()
     }
 }
 
@@ -1533,14 +1624,18 @@ mod tests {
         // that was previously marked with KeepPriceUpdated::Yes, the flag is preserved
         // even after the cache entry expires and needs to be re-fetched.
 
-        let mut inner = MockNativePriceEstimating::new();
+        let mut auction_inner = MockNativePriceEstimating::new();
         // First call: auction-related estimator fetches the price
-        inner
+        auction_inner
             .expect_estimate_native_price()
             .times(1)
             .returning(|_, _| async { Ok(1.0) }.boxed());
+
+        // Separate mock for QuoteCompetitionEstimator's estimator (simulates
+        // non-CoinGecko)
+        let mut quote_inner = MockNativePriceEstimating::new();
         // Second call: QuoteCompetitionEstimator re-fetches after expiration
-        inner
+        quote_inner
             .expect_estimate_native_price()
             .times(1)
             .returning(|_, _| async { Ok(2.0) }.boxed());
@@ -1553,20 +1648,21 @@ mod tests {
 
         // Create auction-related estimator (marks entries with KeepPriceUpdated::Yes)
         let auction_estimator = CachingNativePriceEstimator::new(
-            Arc::new(inner),
+            Arc::new(auction_inner),
             cache.clone(),
             1,
             RequiresUpdatingPrices::Yes,
         );
 
-        // Create QuoteCompetitionEstimator (uses KeepPriceUpdated::No)
-        let quote_estimator = QuoteCompetitionEstimator::new(Arc::new(auction_estimator));
+        // Create QuoteCompetitionEstimator with its own estimator (simulates
+        // non-CoinGecko)
+        let quote_estimator =
+            QuoteCompetitionEstimator::new(cache.clone(), Arc::new(quote_inner), 1);
 
         let t0 = token(0);
 
         // Step 1: Auction estimator fetches the price, marking it with Yes
-        let result = quote_estimator
-            .0
+        let result = auction_estimator
             .estimate_native_price(t0, HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(result.unwrap().to_i64().unwrap(), 1);

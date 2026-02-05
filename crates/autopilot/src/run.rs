@@ -399,9 +399,23 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
+    // Create estimator without CoinGecko for API calls to avoid unnecessary
+    // CoinGecko API usage for quote-related tokens
+    let api_estimator = price_estimator_factory
+        .native_price_estimator_without_coingecko(
+            args.native_price_estimators.as_slice(),
+            args.native_price_estimation_results_required,
+            eth.contracts().weth(),
+        )
+        .instrument(info_span!("api_native_price_estimator"))
+        .await
+        .unwrap();
+
     let api_native_price_estimator = Arc::new(
         shared::price_estimation::native_price_cache::QuoteCompetitionEstimator::new(
-            native_price_estimator.clone(),
+            native_price_estimator.cache().clone(), // Share the cache
+            api_estimator,                          // Use non-CoinGecko estimator
+            args.price_estimation.native_price_cache_concurrent_requests,
         ),
     );
 
