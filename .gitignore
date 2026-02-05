@@ -5,3 +5,4 @@
 /.idea
 **/testing.*.toml
 /playground/.env
+.env.claude
