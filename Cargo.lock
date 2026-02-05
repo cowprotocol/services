@@ -1184,6 +1184,7 @@ dependencies = [
  "mimalloc",
  "mockall",
  "model",
+ "moka",
  "num",
  "number",
  "observe",
