@@ -884,9 +884,7 @@ impl AppCodeBypass {
     /// Returns the set of order UIDs that should bypass balance filtering based
     /// on appCode.
     async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
-        let _timer = self.metrics
-            .filter_bypass_orders_time
-            .start_timer();
+        let _timer = self.metrics.filter_bypass_orders_time.start_timer();
 
         if self.sources.is_empty() {
             return HashSet::new();
