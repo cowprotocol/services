@@ -8,6 +8,8 @@ Some tables only store data emitted via smart contract events. Because we only h
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.
 
+> For lessons learned on migrations, refer to the respective [Notion page](https://www.notion.so/cownation/Database-migration-learnings-2fb8da5f04ca8076bf05c433e461a139?utm_content=2fb8da5f-04ca-8076-bf05-c433e461a139&utm_campaign=T035UKY5NUB&pvs=6)
+
 ### app\_data
 
 Associates the 32 bytes contract app data with the corresponding full app data.
