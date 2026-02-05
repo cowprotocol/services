@@ -840,7 +840,7 @@ mod tests {
     #[ignore]
     async fn past_events_by_block_hashes_test() {
         let web3 = Web3::new_from_env();
-        let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let contract = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
         let storage = EventStorage { events: vec![] };
@@ -865,7 +865,7 @@ mod tests {
             ),
         ];
         let event_handler =
-            EventHandler::new(Arc::new(web3.alloy.clone()), contract, storage, None);
+            EventHandler::new(Arc::new(web3.provider.clone()), contract, storage, None);
         let (replacement_blocks, _) = event_handler.past_events_by_block_hashes(&blocks).await;
         assert_eq!(replacement_blocks, blocks[..2]);
     }
@@ -874,24 +874,28 @@ mod tests {
     #[ignore]
     async fn update_events_test() {
         let web3 = Web3::new_from_env();
-        let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let contract = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
         let storage = EventStorage { events: vec![] };
-        let current_block = web3.alloy.get_block_number().await.unwrap();
+        let current_block = web3.provider.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
         //get block in history (current_block - NUMBER_OF_BLOCKS)
         let block = web3
-            .alloy
+            .provider
             .get_block_by_number(current_block.saturating_sub(NUMBER_OF_BLOCKS).into())
             .await
             .unwrap()
             .unwrap();
         let block = (block.number(), block.hash());
-        let mut event_handler =
-            EventHandler::new(Arc::new(web3.alloy.clone()), contract, storage, Some(block));
+        let mut event_handler = EventHandler::new(
+            Arc::new(web3.provider.clone()),
+            contract,
+            storage,
+            Some(block),
+        );
         let _result = event_handler.update_events().await;
         // add logs to event handler and observe
     }
@@ -901,25 +905,29 @@ mod tests {
     async fn multiple_new_blocks_but_no_reorg_test() {
         tracing_subscriber::fmt::init();
         let web3 = Web3::new_from_env();
-        let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let contract = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
         let storage: EventStorage<GPv2Settlement::GPv2Settlement::GPv2SettlementEvents> =
             EventStorage { events: vec![] };
-        let current_block = web3.alloy.get_block_number().await.unwrap();
+        let current_block = web3.provider.get_block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
 
         //get block in history (current_block - NUMBER_OF_BLOCKS)
         let block = web3
-            .alloy
+            .provider
             .get_block_by_number(current_block.saturating_sub(NUMBER_OF_BLOCKS).into())
             .await
             .unwrap()
             .unwrap();
         let block = (block.number(), block.hash());
-        let mut event_handler =
-            EventHandler::new(Arc::new(web3.alloy.clone()), contract, storage, Some(block));
+        let mut event_handler = EventHandler::new(
+            Arc::new(web3.provider.clone()),
+            contract,
+            storage,
+            Some(block),
+        );
         let _result = event_handler.update_events().await;
         tracing::info!("wait for at least 2 blocks to see if we hit the new code path");
         tokio::time::sleep(tokio::time::Duration::from_millis(26_000)).await;
@@ -930,11 +938,11 @@ mod tests {
     #[ignore]
     async fn optional_block_skipping() {
         let web3 = Web3::new_from_env();
-        let contract = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let contract = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
 
-        let current_block = web3.alloy.get_block_number().await.unwrap();
+        let current_block = web3.provider.get_block_number().await.unwrap();
         // In this test we query for events multiple times. Newer events might be
         // included each time we query again for the same events, but we want to
         // disregard them.
@@ -956,13 +964,13 @@ mod tests {
 
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
-            &web3.alloy,
+            &web3.provider,
             BlockNumberOrTag::Number(current_block - RANGE_SIZE),
         )
         .await
         .unwrap();
         let mut base_event_handler = EventHandler::new(
-            Arc::new(web3.alloy.clone()),
+            Arc::new(web3.provider.clone()),
             contract.clone(),
             storage_empty,
             Some(event_start),
@@ -978,13 +986,13 @@ mod tests {
         // date but using `new_skip_blocks_before` if there are no events
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
-            &web3.alloy,
+            &web3.provider,
             BlockNumberOrTag::Number(current_block - RANGE_SIZE),
         )
         .await
         .unwrap();
         let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.alloy.clone()),
+            Arc::new(web3.provider.clone()),
             contract.clone(),
             storage_empty,
             event_start,
@@ -1022,7 +1030,7 @@ mod tests {
             events: vec![last_event.clone()],
         };
         let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
-            Arc::new(web3.alloy.clone()),
+            Arc::new(web3.provider.clone()),
             contract,
             storage_nonempty,
             // Same event start as for the two previous event handlers. The test checks that this

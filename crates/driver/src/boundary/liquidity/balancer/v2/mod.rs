@@ -104,7 +104,7 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::Instance::new(config.vault.0, web3.alloy.clone()),
+        vault: BalancerV2Vault::Instance::new(config.vault.0, web3.provider.clone()),
         factories: [
             config
                 .weighted
@@ -112,7 +112,7 @@ async fn init_liquidity(
                 .map(|&factory| {
                     BalancerFactoryInstance::Weighted(BalancerV2WeightedPoolFactory::Instance::new(
                         factory,
-                        web3.alloy.clone(),
+                        web3.provider.clone(),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -121,7 +121,10 @@ async fn init_liquidity(
                 .iter()
                 .map(|&factory| {
                     BalancerFactoryInstance::WeightedV3(
-                        BalancerV2WeightedPoolFactoryV3::Instance::new(factory, web3.alloy.clone()),
+                        BalancerV2WeightedPoolFactoryV3::Instance::new(
+                            factory,
+                            web3.provider.clone(),
+                        ),
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -131,7 +134,7 @@ async fn init_liquidity(
                 .map(|&factory| {
                     BalancerFactoryInstance::StableV2(BalancerV2StablePoolFactoryV2::Instance::new(
                         factory,
-                        web3.alloy.clone(),
+                        web3.provider.clone(),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -142,7 +145,7 @@ async fn init_liquidity(
                     BalancerFactoryInstance::LiquidityBootstrapping(
                         BalancerV2LiquidityBootstrappingPoolFactory::Instance::new(
                             factory,
-                            web3.alloy.clone(),
+                            web3.provider.clone(),
                         ),
                     )
                 })
@@ -154,7 +157,7 @@ async fn init_liquidity(
                     BalancerFactoryInstance::ComposableStable(
                         BalancerV2ComposableStablePoolFactory::Instance::new(
                             factory,
-                            web3.alloy.clone(),
+                            web3.provider.clone(),
                         ),
                     )
                 })

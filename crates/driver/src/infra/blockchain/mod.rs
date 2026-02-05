@@ -12,8 +12,7 @@ use {
     },
     anyhow::anyhow,
     chain::Chain,
-    ethcontract::errors::ExecutionError,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
         gas_price_estimation::Eip1559EstimationExt,
@@ -55,7 +54,7 @@ impl Rpc {
             args.max_batch_size,
             args.max_concurrent_requests,
         );
-        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)?;
+        let chain = Chain::try_from(web3.provider.get_chain_id().await?)?;
 
         Ok(Self { web3, chain, args })
     }
@@ -73,8 +72,6 @@ impl Rpc {
 
 #[derive(Debug, Error)]
 pub enum RpcError {
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
     #[error("alloy transport error: {0:?}")]
     Alloy(#[from] alloy::transports::TransportError),
     #[error("unsupported chain")]
@@ -115,7 +112,7 @@ impl Ethereum {
         let Rpc { web3, chain, args } = rpc;
 
         let current_block_stream = current_block_args
-            .stream(args.url.clone(), web3.alloy.clone())
+            .stream(args.url.clone(), web3.provider.clone())
             .await
             .expect("couldn't initialize current block stream");
 
@@ -161,7 +158,7 @@ impl Ethereum {
     /// the provided label.
     pub fn with_metric_label(&self, label: String) -> Self {
         Self {
-            web3: ethrpc::instrumented::instrument_with_label(&self.web3, label),
+            web3: self.web3.labeled(label),
             ..self.clone()
         }
     }
@@ -173,7 +170,7 @@ impl Ethereum {
 
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
-        let code = self.web3.alloy.get_code_at(address).await?;
+        let code = self.web3.provider.get_code_at(address).await?;
         Ok(!code.is_empty())
     }
 
@@ -200,7 +197,7 @@ impl Ethereum {
             _ => tx,
         };
 
-        let access_list = self.web3.alloy.create_access_list(&tx).pending().await?;
+        let access_list = self.web3.provider.create_access_list(&tx).pending().await?;
 
         Ok(access_list
             .ensure_ok()
@@ -225,7 +222,7 @@ impl Ethereum {
 
         let estimated_gas = self
             .web3
-            .alloy
+            .provider
             .estimate_gas(tx)
             .pending()
             .await
@@ -249,7 +246,7 @@ impl Ethereum {
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
-            .alloy
+            .provider
             .get_balance(address)
             .await
             .map(Into::into)
@@ -264,7 +261,7 @@ impl Ethereum {
     /// Returns the transaction's on-chain inclusion status.
     pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
-            .alloy
+            .provider
             .get_transaction_receipt(tx_hash.0)
             .await
             .map(|result| {
@@ -326,10 +323,6 @@ pub enum Error {
     ContractRpc(#[from] alloy::contract::Error),
     #[error("alloy rpc error: {0:?}")]
     Rpc(#[from] alloy::transports::RpcError<TransportErrorKind>),
-    #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
     #[error("gas price estimation error: {0}")]
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
@@ -342,11 +335,6 @@ impl Error {
     pub fn is_revert(&self) -> bool {
         // This behavior is node dependent
         match self {
-            Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
-            Error::Web3(inner) => {
-                let error = ExecutionError::from(inner.clone());
-                matches!(error, ExecutionError::Revert(_))
-            }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
             Error::ContractRpc(_) => true,
@@ -359,20 +347,10 @@ impl Error {
     }
 }
 
-impl From<contracts::Error> for Error {
-    fn from(err: contracts::Error) -> Self {
-        match err {
-            contracts::Error::Method(err) => Self::Method(err),
-            contracts::Error::Rpc(err) => Self::ContractRpc(err),
-        }
-    }
-}
-
 impl From<SimulationError> for Error {
     fn from(err: SimulationError) -> Self {
         match err {
             SimulationError::Method(err) => Self::ContractRpc(err),
-            SimulationError::Web3(err) => Self::Web3(err),
         }
     }
 }

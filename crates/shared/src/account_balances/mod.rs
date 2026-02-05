@@ -191,7 +191,7 @@ impl BalanceSimulator {
             )>::abi_decode(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
-                web3::error::Error::Decoder("failed to decode balance response".to_string())
+                alloy::contract::Error::AbiError(alloy::dyn_abi::Error::SolTypes(err))
             })?;
 
         let simulation = Simulation {
@@ -226,6 +226,4 @@ pub struct Simulation {
 pub enum SimulationError {
     #[error("method error: {0:?}")]
     Method(#[from] alloy::contract::Error),
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
 }

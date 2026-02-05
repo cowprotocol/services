@@ -32,7 +32,7 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain = Chain::try_from(web3.alloy.get_chain_id().await?)
+        let chain = Chain::try_from(web3.provider.get_chain_id().await?)
             .map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
@@ -87,7 +87,7 @@ impl Ethereum {
 
         Self {
             current_block: current_block_args
-                .stream(url, unbuffered_web3.alloy.clone())
+                .stream(url, unbuffered_web3.provider.clone())
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
@@ -113,10 +113,10 @@ impl Ethereum {
 
     pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
         let (receipt, traces): (Option<TransactionReceipt>, GethTrace) = tokio::try_join!(
-            self.web3.alloy.get_transaction_receipt(hash.0),
+            self.web3.provider.get_transaction_receipt(hash.0),
             // Use unbuffered transport for the Debug API since not all providers support
             // batched debug calls.
-            self.unbuffered_web3.alloy.debug_trace_transaction(
+            self.unbuffered_web3.provider.debug_trace_transaction(
                 hash.0,
                 GethDebugTracingOptions::new_tracer(GethDebugBuiltInTracerType::CallTracer),
             )
@@ -131,7 +131,7 @@ impl Ethereum {
                 )))?;
         let block = self
             .web3
-            .alloy
+            .provider
             .get_block_by_hash(block_hash)
             .await?
             .ok_or(Error::TransactionNotFound)?;
@@ -178,8 +178,6 @@ impl From<alloy::rpc::types::trace::geth::CallFrame> for eth::CallFrame {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
     #[error("alloy transport error: {0:?}")]
     Alloy(#[from] alloy::transports::TransportError),
     #[error("missing field {0}, node client bug?")]

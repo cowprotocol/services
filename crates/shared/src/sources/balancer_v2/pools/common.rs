@@ -872,7 +872,7 @@ mod tests {
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::Instance::new(
                 Address::repeat_byte(0xba),
-                ethrpc::mock::web3().alloy,
+                ethrpc::mock::web3().provider,
             ),
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
@@ -898,7 +898,7 @@ mod tests {
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::Instance::new(
                 Address::repeat_byte(0xba),
-                ethrpc::mock::web3().alloy,
+                ethrpc::mock::web3().provider,
             ),
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),

@@ -550,7 +550,7 @@ mod tests {
         // observe::tracing::initialize("orderbook::bad_token=debug,
         // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let web3 = Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
 
         let base_tokens = &[
             testlib::tokens::WETH,
@@ -723,7 +723,7 @@ mod tests {
         //   the callback that I didn't follow in the SC code.
         // - 0x4f9254c83eb525f9fcf346490bbb3ed28a81c667 Not sure why deny listed.
 
-        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let settlement = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
         let finder = Arc::new(TokenOwnerFinder {
@@ -755,13 +755,13 @@ mod tests {
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(BalancerVaultFinder(
-                    BalancerV2Vault::Instance::deployed(&web3.alloy)
+                    BalancerV2Vault::Instance::deployed(&web3.provider)
                         .await
                         .unwrap(),
                 )),
                 Arc::new(
                     UniswapV3Finder::new(
-                        IUniswapV3Factory::Instance::deployed(&web3.alloy)
+                        IUniswapV3Factory::Instance::deployed(&web3.provider)
                             .await
                             .unwrap(),
                         base_tokens.to_vec(),
@@ -800,10 +800,10 @@ mod tests {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
         let web3 = Web3::new_from_env();
         let base_tokens = vec![testlib::tokens::WETH];
-        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let settlement = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
-        let factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+        let factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
             .await
             .unwrap();
         let univ3 = Arc::new(
@@ -931,7 +931,7 @@ mod tests {
 
         let web3 = Web3::new_from_env();
 
-        let settlement = GPv2Settlement::Instance::deployed(&web3.alloy)
+        let settlement = GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .unwrap();
         let finder = Arc::new(TokenOwnerFinder {

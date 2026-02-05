@@ -54,21 +54,21 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     web3.wallet.register_signer(solver.signer.clone());
-    let zeroex = IZeroex::Instance::deployed(&web3.alloy).await.unwrap();
+    let zeroex = IZeroex::Instance::deployed(&web3.provider).await.unwrap();
 
     let amount = 500u64.matom();
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), amount)
@@ -87,7 +87,7 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Give 0x maker a bit more USDT
     // With a lower amount 0x contract shows much lower fillable amount
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdt
                 .transfer(
@@ -107,7 +107,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .await
         .unwrap();
     // Required for the remaining fillable taker amount
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(solver.address(), amount)
@@ -159,7 +159,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         &trader.signer,
     );
 
-    let chain_id = web3.alloy.get_chain_id().await.unwrap();
+    let chain_id = web3.provider.get_chain_id().await.unwrap();
     let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
         order.clone(),
         zeroex_maker.clone(),

@@ -2,7 +2,11 @@ use {
     chrono::Utc,
     opentelemetry::trace::{TraceContextExt, TraceId},
     serde::ser::{SerializeMap, Serializer as _},
-    std::{fmt, io},
+    std::{
+        collections::{HashMap, hash_map::Entry},
+        fmt,
+        io,
+    },
     tracing::{Event, Span, Subscriber},
     tracing_opentelemetry::OpenTelemetrySpanExt,
     tracing_serde::{AsSerde, fields::AsMap},
@@ -11,6 +15,7 @@ use {
             FmtContext,
             FormatEvent,
             FormatFields,
+            FormattedFields,
             format::{Format, Full, Writer},
             time::FormatTime,
         },
@@ -40,7 +45,13 @@ use {
 ///     "status": 200
 ///   },
 ///   "target": "warp::filters::trace",
-///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+///   "spans": {
+///     "spanName1": {
+///       "field1": 123,
+///       "field2": "abc"
+///     }
+///   }
 /// }
 /// ```
 pub struct TraceIdJsonFormat;
@@ -52,7 +63,7 @@ where
 {
     fn format_event(
         &self,
-        _ctx: &FmtContext<'_, S, N>,
+        ctx: &FmtContext<'_, S, N>,
         mut writer: Writer<'_>,
         event: &Event<'_>,
     ) -> std::fmt::Result
@@ -77,6 +88,44 @@ where
             let trace_id = span_context.trace_id();
             if trace_id != TraceId::INVALID {
                 serializer.serialize_entry("trace_id", &trace_id.to_string())?;
+            }
+
+            // serialize all parent span names and their fields
+            if let Some(scope) = ctx.event_scope() {
+                let mut parent_spans = HashMap::<String, serde_json::Value>::new();
+
+                for span in scope.from_root() {
+                    let current_span_fields: serde_json::Map<String, serde_json::Value> = span
+                        .extensions()
+                        .get::<FormattedFields<N>>()
+                        .and_then(|fields| serde_json::from_str(fields.as_str()).ok())
+                        .unwrap_or_default();
+
+                    match parent_spans.entry(span.name().to_string()) {
+                        Entry::Vacant(entry) => {
+                            entry.insert(serde_json::Value::Object(current_span_fields));
+                        }
+                        Entry::Occupied(mut entry) => {
+                            // the desired format does not preserve the hierarchy of spans
+                            // so theoretically there could be nested spans with the same
+                            // name so we merge the fields of all spans with the same name
+                            //
+                            // if there are duplicated fields the value of the span closest
+                            // to the processed event wins
+                            //
+                            // also theoretically we could detect fields getting overwritten
+                            // but we couldn't log that without causing a stack overflow so we
+                            // don't
+                            entry
+                                .get_mut()
+                                .as_object_mut()
+                                .expect("fields get initialized with an object")
+                                .extend(current_span_fields.into_iter())
+                        }
+                    }
+                }
+
+                serializer.serialize_entry("spans", &parent_spans)?;
             }
 
             serializer.end()

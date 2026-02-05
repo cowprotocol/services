@@ -118,7 +118,7 @@ async fn submits_huge_solution() {
     // half of the block gas limit, we want it to be submitted/settled as long as it
     // fits in the block.
     test.web3()
-        .alloy
+        .provider
         .raw_request::<_, bool>("evm_setBlockGasLimit".into(), (9_000_000,))
         .await
         .unwrap();

@@ -26,7 +26,8 @@ impl PoolReading for SwaprPoolReader {
         let fetch_pool = self.0.read_state(pair, block);
 
         async move {
-            let pair_contract = ISwaprPair::Instance::new(pair_address, self.0.web3.alloy.clone());
+            let pair_contract =
+                ISwaprPair::Instance::new(pair_address, self.0.web3.provider.clone());
             let fetch_fee = pair_contract.swapFee().block(block);
 
             let (pool, fee) = futures::join!(fetch_pool, fetch_fee.call().into_future());
@@ -111,7 +112,7 @@ mod tests {
     #[ignore]
     async fn fetch_swapr_pool() {
         let web3 = Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         let pool_fetcher = uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
             BaselineSource::Swapr,
             &version,

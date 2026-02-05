@@ -30,7 +30,7 @@ impl AlloyEventRetrieving for EthFlowRefundRetriever {
     type Event = CoWSwapEthFlow::CoWSwapEthFlowEvents;
 
     fn provider(&self) -> &alloy::providers::DynProvider {
-        &self.web3.alloy
+        &self.web3.provider
     }
 
     fn filter(&self) -> alloy::rpc::types::Filter {

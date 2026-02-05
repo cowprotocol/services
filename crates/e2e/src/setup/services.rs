@@ -924,7 +924,7 @@ impl<'a> Services<'a> {
 
     async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3.alloy.evm_mine(None).await.unwrap();
+        self.web3.provider.evm_mine(None).await.unwrap();
     }
 }
 

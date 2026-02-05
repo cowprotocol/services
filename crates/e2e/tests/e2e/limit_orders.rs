@@ -57,19 +57,21 @@ async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
 
-/// Test that sell orders with haircut configured still execute on-chain.
-/// The haircut reduces the reported surplus but the order should still be
-/// fillable and execute successfully.
+/// Test that sell orders with haircut configured execute on-chain with
+/// haircutted amounts. The haircut reduces both the reported buy_amount and
+/// the on-chain buy_amount (they should match). User receives less than
+/// without haircut, with the difference going to the settlement contract.
 #[tokio::test]
 #[ignore]
 async fn local_node_limit_order_with_haircut() {
     run_test(sell_order_with_haircut_test).await;
 }
 
-/// Test that buy orders with haircut configured still execute on-chain.
-/// For buy orders, verifies that:
-/// - executedBuy >= signedBuyAmount (user gets at least what they signed for)
-/// - executedSell <= sellLimit (don't take more than user's maximum)
+/// Test that buy orders with haircut configured execute on-chain with
+/// haircutted amounts. The haircut increases both the reported sell_amount and
+/// the on-chain sell_amount (they should match). Verifies that:
+/// - executedBuy == signedBuyAmount (user gets exactly what they signed for)
+/// - executedSell includes haircut (but still <= sellLimit)
 #[tokio::test]
 #[ignore]
 async fn local_node_buy_order_with_haircut() {
@@ -861,16 +863,16 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), 1000u64.matom())
@@ -961,16 +963,16 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("ddafbb505ad214d7b80b1f830fccc89b60fb7a83"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_wxdai = ERC20::Instance::new(
         address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), 1000u64.matom())
@@ -1182,9 +1184,10 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
 }
 
-/// Test that a limit order with haircut configured still executes on-chain.
-/// The haircut adjusts clearing prices to report lower surplus, but the order
-/// should still be fillable since the limit price allows for enough slack.
+/// Test that a limit order with haircut configured executes on-chain with
+/// haircutted amounts. The haircut reduces the buy_amount the user receives,
+/// both in reported amounts and on-chain execution (they should match).
+/// The haircut difference goes to the settlement contract.
 async fn sell_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -1299,9 +1302,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     .await
     .unwrap();
 
-    // Verify that haircut (positive slippage) remains in the settlement contract.
-    // The haircut is 500 bps (5%) of the executed sell amount (10 ETH).
-    // At 1:1 pool ratio, this is approximately 0.5 ETH worth of token_b.
+    // Verify that haircut DOES affect on-chain execution.
+    // The haircut reduces the buy_amount the user receives, with the difference
+    // going to the settlement contract.
     let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let settlement_balance_after = token_b
         .balanceOf(*onchain.contracts().gp_settlement.address())
@@ -1316,20 +1319,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .checked_sub(settlement_balance_before)
         .unwrap();
 
-    // Expected haircut: 5% of 10 ETH sell amount = 0.5 ETH (in buy token terms at
-    // ~1:1 ratio). Allow some tolerance for fees and rounding.
+    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should receive
+    // ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
     assert!(
         settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
-        "Settlement contract should have received haircut (positive slippage) between 0.4 and 0.6 \
-         ETH, but got {}",
+        "Settlement contract should have received haircut (~0.49 ETH), but got {}",
         settlement_received
     );
 
-    // Expected trader amount: output (~9.87 ETH at 1:1 ratio with 0.3% fee)
-    // minus haircut (~0.5 ETH) = ~9.37 ETH. Allow tolerance for rounding.
+    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38 ETH).
+    // Haircut reduces what trader receives on-chain.
     assert!(
         trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
-        "Trader should have received between 9 and 9.5 ETH (AMM output minus haircut), but got {}",
+        "Trader should have received AMM output minus haircut (~9.38 ETH), but got {}",
         trader_received
     );
 
@@ -1379,7 +1381,8 @@ async fn sell_order_with_haircut_test(web3: Web3) {
 /// Test that a buy order with haircut configured executes correctly.
 /// For buy orders, the user signs for a specific buy_amount they want to
 /// receive, and sell_amount is the maximum they're willing to pay.
-/// Verifies that reported amounts respect these constraints.
+/// Haircut increases the sell_amount on-chain (user pays more).
+/// Verifies that reported amounts match on-chain execution.
 async fn buy_order_with_haircut_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -1543,15 +1546,15 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         sell_limit_u256
     );
 
-    // 3. Reported sell_amount should be close to what's actually needed (~5.04 ETH
-    //    for buying 5 ETH at 1:1 with 0.3% fee).
-    // We check that sell_amount is less than 5.2 ETH (5.0 ETH + 5% haircut = 5.25
-    // ETH).
-    let reasonable_max_sell = U256::from(5_200_000_000_000_000_000u128); // 5.2 ETH
+    // 3. For buy orders, haircut INCREASES sell_amount (user pays more). Base
+    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH. So
+    //    sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5 ETH to
+    //    account for variance.
+    let reasonable_max_sell = 5.5.eth();
     assert!(
         reported_sell_amount <= reasonable_max_sell,
-        "Driver reported sell_amount {} exceeds expected max {} (actual needed is ~5.04 ETH). \
-         Haircut should reduce surplus/score, not inflate the reported sell amount!",
+        "Driver reported sell_amount {} exceeds expected max {} (actual needed + haircut is ~5.29 \
+         ETH)",
         reported_sell_amount,
         reasonable_max_sell
     );

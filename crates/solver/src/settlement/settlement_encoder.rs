@@ -627,7 +627,7 @@ pub mod tests {
 
     #[test]
     fn settlement_merges_unwraps_for_same_token() {
-        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().provider);
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
@@ -757,11 +757,11 @@ pub mod tests {
     fn settlement_encoder_appends_unwraps_for_different_tokens() {
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         });
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::from(2),
         });
 
@@ -786,7 +786,7 @@ pub mod tests {
             alloy::primitives::Bytes::default(),
         );
         let unwrap = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         };
 
@@ -966,7 +966,7 @@ pub mod tests {
             .add_trade(order_1_3, U256::from(11), U256::ZERO)
             .unwrap();
 
-        let weth = WETH9::Instance::new(Address::with_last_byte(2), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new(Address::with_last_byte(2), ethrpc::mock::web3().provider);
         encoder.add_unwrap(UnwrapWethInteraction {
             weth,
             amount: U256::from(12),

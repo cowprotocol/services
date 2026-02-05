@@ -37,12 +37,12 @@ impl GasPriceEstimator {
         mempools: &[mempool::Config],
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
-            GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(web3.alloy.clone())),
+            GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(web3.provider.clone())),
             GasEstimatorType::Alloy {
                 past_blocks,
                 reward_percentile,
             } => Arc::new(ConfigurableGasPriceEstimator::new(
-                web3.alloy.clone(),
+                web3.provider.clone(),
                 EstimatorConfig {
                     past_blocks: *past_blocks,
                     reward_percentile: *reward_percentile,
