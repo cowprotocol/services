@@ -320,10 +320,7 @@ impl OrderStoring for Postgres {
             .with_label_values(&["many_orders"])
             .start_timer();
         let mut ex = self.pool.acquire().await?;
-        let uids = uids
-            .iter()
-            .map(|uid| ByteArray(uid.0))
-            .collect::<Vec<_>>();
+        let uids = uids.iter().map(|uid| ByteArray(uid.0)).collect::<Vec<_>>();
 
         let orders: Vec<Result<Order>> =
             orders::many_full_orders_with_quotes(&mut ex, uids.as_slice())
