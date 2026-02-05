@@ -190,8 +190,7 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        // Build set of orders that should bypass balance filtering based on appCode
-        let filter_bypass_orders = self.app_code_bypass.build_bypass_set(&orders).await;
+        let balance_filter_exempt_orders = self.app_code_bypass.build_bypass_set(&orders).await;
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
@@ -209,7 +208,7 @@ impl SolvableOrdersCache {
                 orders,
                 &balances,
                 self.settlement_contract,
-                &filter_bypass_orders,
+                &balance_filter_exempt_orders,
             );
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
