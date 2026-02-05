@@ -8,7 +8,6 @@ Some tables only store data emitted via smart contract events. Because we only h
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.
 
-> For lessons learned on migrations, refer to the respective [Notion page](https://www.notion.so/cownation/Database-migration-learnings-2fb8da5f04ca8076bf05c433e461a139?utm_content=2fb8da5f-04ca-8076-bf05-c433e461a139&utm_campaign=T035UKY5NUB&pvs=6)
 
 ### app\_data
 
@@ -628,3 +627,13 @@ We support different expiration times for orders with different signing schemes.
  market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
  liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
+
+## Notes on Migrations
+
+Migrations that require a long running process *must* be done manually, this is due to the limitations the weekly release process imposes:
+* The deployment must complete under 5 minutes
+* The pod has a `processDeadlineSeconds` defaulting to 600 seconds
+
+To avoid extending the process, we resort to manually applying complicated migrations.
+
+The above also comes into play when dealing with indexes, as their construction with flyway may lock up rows, degrading SLI.
