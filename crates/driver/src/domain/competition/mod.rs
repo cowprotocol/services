@@ -263,7 +263,7 @@ impl Competition {
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
                         observe::encoding_failed(self.solver.name(), &id, &err, has_haircut);
-                        // don't report on errors for solutions with haircut
+                        // don't notify on errors for solutions with haircut
                         if !has_haircut {
                             notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         }
