@@ -54,6 +54,11 @@ impl ApproximationToken {
             normalization_factor: 10f64.powi(decimals_diff),
         }
     }
+
+    /// Applies the normalization factor to a price.
+    pub fn normalize_price(&self, price: f64) -> f64 {
+        price * self.normalization_factor
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -227,17 +232,17 @@ impl Inner {
                 }
             };
 
-            let (token_to_fetch, normalization_factor) = self
+            let approximation = self
                 .approximation_tokens
                 .get(token)
-                .map(|a| (a.address, a.normalization_factor))
-                .unwrap_or((*token, 1.0));
+                .copied()
+                .unwrap_or(ApproximationToken::same_decimals(*token));
 
             let result = self
                 .estimator
-                .estimate_native_price(token_to_fetch, request_timeout)
+                .estimate_native_price(approximation.address, request_timeout)
                 .await
-                .map(|price| price * normalization_factor);
+                .map(|price| approximation.normalize_price(price));
 
             // update price in cache
             if should_cache(&result) {
