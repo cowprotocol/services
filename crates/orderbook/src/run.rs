@@ -57,6 +57,7 @@ use {
     tokio::task::{self, JoinHandle},
     warp::Filter,
 };
+use ethrpc::alloy::ProviderLabelingExt;
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
@@ -358,6 +359,27 @@ pub async fn run(args: Arguments) {
         max_limit: args.max_limit_order_validity_period,
     };
 
+    let order_execution_simulator = {
+        let web3 = web3.labeled("order_simulation");
+        let tenderly = args
+            .shared
+            .tenderly
+            .get_api_instance(&http_factory, "order_simulation".to_owned())
+            .unwrap()
+            .map(|t| Arc::new(shared::tenderly_api::TenderlyCodeSimulator::new(t, chain_id)));
+        let balance_overrides = args.price_estimation.balance_overrides.init(web3.clone());
+        let settlement = GPv2Settlement::Instance::new(
+            *settlement_contract.address(),
+            web3.provider.clone(),
+        );
+        Arc::new(shared::price_estimation::trade_verifier::order_simulation::OrderExecutionSimulator::new(
+            web3,
+            settlement,
+            balance_overrides,
+            tenderly,
+        ))
+    };
+
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
                          verification: QuoteVerificationMode| {
         Arc::new(OrderQuoter::new(
@@ -381,6 +403,7 @@ pub async fn run(args: Arguments) {
             },
             balance_fetcher.clone(),
             verification,
+            order_execution_simulator.clone(),
             args.price_estimation.quote_timeout,
         ))
     };

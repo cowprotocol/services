@@ -21,7 +21,6 @@ use {
     },
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
-    app_data::AppDataHash,
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::TryFutureExt,
@@ -424,6 +423,7 @@ pub struct OrderQuoter {
     validity: Validity,
     balance_fetcher: Arc<dyn BalanceFetching>,
     quote_verification: QuoteVerificationMode,
+    #[allow(dead_code)]
     order_execution_simulator: Arc<dyn OrderExecutionSimulating>,
     default_quote_timeout: std::time::Duration,
 }
@@ -511,39 +511,6 @@ impl OrderQuoter {
 
         self.verify_quote(&trade_estimate, parameters, quoted_sell_amount)
             .await?;
-
-        if parameters.verification.is_verified() {
-            let order = model::order::Order {
-                data: model::order::OrderData {
-                    sell_token: parameters.sell_token,
-                    buy_token: parameters.buy_token,
-                    receiver: Some(parameters.verification.receiver),
-                    sell_amount: quoted_sell_amount,
-                    buy_amount: quoted_buy_amount,
-                    valid_to: u32::MAX, // Simulation doesn't care about time
-                    app_data: AppDataHash::default(),
-                    fee_amount: fee_parameters.fee(),
-                    kind: trade_query.kind,
-                    partially_fillable: false,
-                    sell_token_balance: parameters.verification.sell_token_source,
-                    buy_token_balance: parameters.verification.buy_token_destination,
-                },
-                signature: model::signature::Signature::default_with(
-                    parameters.signing_scheme.into(),
-                ),
-                metadata: model::order::OrderMetadata {
-                    owner: parameters.verification.from,
-                    ..Default::default()
-                },
-                interactions: Default::default(),
-            };
-            let domain_separator = model::DomainSeparator([0u8; 32]); // Dummy domain separator
-
-            self.order_execution_simulator
-                .simulate_order_execution(&order, &domain_separator)
-                .await
-                .map_err(CalculateQuoteError::Other)?;
-        }
 
         let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
