@@ -190,7 +190,7 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let balance_filter_exempt_orders = self.app_code_bypass.build_bypass_set(&orders).await;
+        let balance_filter_exempt_orders = self.app_code_bypass.balance_check_exempt_orders(&orders).await;
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
@@ -882,7 +882,7 @@ impl AppCodeBypass {
 
     /// Returns the set of order UIDs that should bypass balance filtering based
     /// on appCode.
-    async fn build_bypass_set(&self, orders: &[Order]) -> HashSet<OrderUid> {
+    async fn balance_check_exempt_orders(&self, orders: &[Order]) -> HashSet<OrderUid> {
         let _timer = self.metrics.filter_bypass_orders_time.start_timer();
 
         if self.sources.is_empty() {
@@ -1591,12 +1591,12 @@ mod tests {
 
         // Empty sources -> no bypass
         let bypass = AppCodeBypass::new(HashSet::new(), metrics);
-        let result = bypass.build_bypass_set(&orders).await;
+        let result = bypass.balance_check_exempt_orders(&orders).await;
         assert!(result.is_empty());
 
         // Match "Barter" -> only order1
         let bypass = AppCodeBypass::new(HashSet::from(["Barter".to_string()]), metrics);
-        let result = bypass.build_bypass_set(&orders).await;
+        let result = bypass.balance_check_exempt_orders(&orders).await;
         assert_eq!(result.len(), 1);
         assert!(result.contains(&order1_uid));
 
@@ -1605,7 +1605,7 @@ mod tests {
             HashSet::from(["Barter".to_string(), "CoW Swap".to_string()]),
             metrics,
         );
-        let result = bypass.build_bypass_set(&orders).await;
+        let result = bypass.balance_check_exempt_orders(&orders).await;
         assert_eq!(result.len(), 2);
         assert!(result.contains(&order1_uid));
         assert!(result.contains(&order2_uid));
