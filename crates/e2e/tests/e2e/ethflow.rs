@@ -6,7 +6,7 @@ use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     contracts::alloy::{CoWSwapEthFlow, ERC20Mintable, WETH9},
-    database::order_events::OrderEventLabel,
+    database::{byte_array::ByteArray, order_events::OrderEventLabel},
     e2e::setup::{
         ACCOUNT_ENDPOINT,
         API_HOST,
@@ -49,6 +49,7 @@ use {
     refunder::RefundStatus,
     reqwest::Client,
     shared::signature_validator::check_erc1271_result,
+    std::ops::DerefMut,
 };
 
 const DAI_PER_ETH: u64 = 1_000;
@@ -243,6 +244,18 @@ async fn eth_flow_tx(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(allowance, alloy::primitives::U256::ZERO);
+
+    // Check that true_valid_to is not equal to u32::MAX for the ethflow order
+    let uid = ethflow_order
+        .uid(onchain.contracts(), ethflow_contract)
+        .await;
+    let mut db = services.db().acquire().await.unwrap();
+    let true_valid_to: (i64,) = sqlx::query_as("SELECT true_valid_to FROM orders WHERE uid = $1")
+        .bind(ByteArray(uid.0))
+        .fetch_one(db.deref_mut())
+        .await
+        .unwrap();
+    assert_ne!(true_valid_to.0, u32::MAX as i64);
 }
 
 async fn eth_flow_without_quote(web3: Web3) {
