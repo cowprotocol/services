@@ -260,9 +260,6 @@ pub struct Arguments {
     /// "<token1>|<approx_token1>,<token2>|<approx_token2>"
     /// - token1 is a token address for which we get the native token price
     /// - approx_token1 is a token address used for the price approximation
-    ///
-    /// It is very important that both tokens in the pair have the same number
-    /// of decimals.
     #[clap(
         long,
         env,

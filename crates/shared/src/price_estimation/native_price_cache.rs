@@ -20,6 +20,39 @@ use {
     tracing::{Instrument, instrument},
 };
 
+/// Represents a token used for price approximation, including the normalization
+/// factor needed to convert between tokens with potentially different decimals.
+#[derive(Debug, Clone, Copy)]
+pub struct ApproximationToken {
+    /// The address of the token to use for price approximation.
+    pub address: Address,
+    /// The factor to multiply the approximated price by to normalize for
+    /// decimal differences. Computed as 10^(to_decimals - from_decimals).
+    pub normalization_factor: f64,
+}
+
+impl ApproximationToken {
+    /// Creates an approximation token with no decimal normalization needed
+    /// (both tokens have the same decimals).
+    pub fn same_decimals(address: Address) -> Self {
+        Self {
+            address,
+            normalization_factor: 1.0,
+        }
+    }
+
+    /// Creates an approximation token with the specified normalization factor.
+    /// The normalization factor converts prices from the approximation token's
+    /// decimal basis to the source token's decimal basis.
+    pub fn with_normalization(address: Address, from_decimals: u8, to_decimals: u8) -> Self {
+        let decimals_diff = i32::from(to_decimals) - i32::from(from_decimals);
+        Self {
+            address,
+            normalization_factor: 10f64.powi(decimals_diff),
+        }
+    }
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// native price cache hits misses
@@ -61,9 +94,9 @@ struct Inner {
     /// This can be useful for tokens that are hard to route but are pegged to
     /// the same underlying asset so approximating their native prices is deemed
     /// safe (e.g. csUSDL => Dai).
-    /// It's very important that the 2 tokens have the same number of decimals.
+    /// The normalization factor handles decimal differences between tokens.
     /// After startup this is a read only value.
-    approximation_tokens: HashMap<Address, Address>,
+    approximation_tokens: HashMap<Address, ApproximationToken>,
     quote_timeout: Duration,
 }
 
@@ -191,12 +224,17 @@ impl Inner {
                 }
             };
 
-            let token_to_fetch = *self.approximation_tokens.get(token).unwrap_or(token);
+            let (token_to_fetch, normalization_factor) = self
+                .approximation_tokens
+                .get(token)
+                .map(|a| (a.address, a.normalization_factor))
+                .unwrap_or((*token, 1.0));
 
             let result = self
                 .estimator
                 .estimate_native_price(token_to_fetch, request_timeout)
-                .await;
+                .await
+                .map(|price| price * normalization_factor);
 
             // update price in cache
             if should_cache(&result) {
@@ -341,7 +379,7 @@ impl CachingNativePriceEstimator {
         update_size: Option<usize>,
         prefetch_time: Duration,
         concurrent_requests: usize,
-        approximation_tokens: HashMap<Address, Address>,
+        approximation_tokens: HashMap<Address, ApproximationToken>,
         quote_timeout: Duration,
     ) -> Self {
         let inner = Arc::new(Inner {
@@ -582,10 +620,16 @@ mod tests {
             None,
             Default::default(),
             1,
-            // set token approximations for tokens 1 and 2
+            // set token approximations for tokens 1 and 2 (same decimals)
             HashMap::from([
-                (Address::with_last_byte(1), Address::with_last_byte(100)),
-                (Address::with_last_byte(2), Address::with_last_byte(200)),
+                (
+                    Address::with_last_byte(1),
+                    ApproximationToken::same_decimals(Address::with_last_byte(100)),
+                ),
+                (
+                    Address::with_last_byte(2),
+                    ApproximationToken::same_decimals(Address::with_last_byte(200)),
+                ),
             ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
@@ -620,6 +664,80 @@ mod tests {
                 .unwrap(),
             200
         );
+    }
+
+    #[tokio::test]
+    async fn approximation_normalizes_when_target_has_more_decimals() {
+        // Scenario: Token 1 is USDC-like (6 decimals), approximated by DAI-like token
+        // 100 (18 decimals) Both worth $1, so they're pegged 1:1 in value
+        let mut inner = MockNativePriceEstimating::new();
+        // DAI-like token returns price of 5e-22 ETH per wei (smallest unit)
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |t, _| *t == token(100))
+            .returning(|_, _| async { Ok(5e-22) }.boxed());
+
+        // from_decimals=6 (USDC), to_decimals=18 (DAI)
+        // Normalization factor = 10^(18-6) = 10^12
+        // Price should be 5e-22 * 10^12 = 5e-10 ETH per USDC microunit
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+            HashMap::from([(
+                Address::with_last_byte(1),
+                ApproximationToken::with_normalization(Address::with_last_byte(100), 6, 18),
+            )]),
+            HEALTHY_PRICE_ESTIMATION_TIME,
+        );
+
+        let price = estimator
+            .estimate_native_price(Address::with_last_byte(1), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
+        // 5e-22 * 10^12 = 5e-10
+        assert!((price - 5e-10).abs() < 1e-18);
+    }
+
+    #[tokio::test]
+    async fn approximation_normalizes_when_target_has_fewer_decimals() {
+        // Scenario: Token 1 is DAI-like (18 decimals), approximated by USDC-like token
+        // 100 (6 decimals) Both worth $1, so they're pegged 1:1 in value
+        let mut inner = MockNativePriceEstimating::new();
+        // USDC-like token returns price of 5e-10 ETH per microunit (smallest unit)
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |t, _| *t == token(100))
+            .returning(|_, _| async { Ok(5e-10) }.boxed());
+
+        // from_decimals=18 (DAI), to_decimals=6 (USDC)
+        // Normalization factor = 10^(6-18) = 10^-12
+        // Price should be 5e-10 * 10^-12 = 5e-22 ETH per DAI wei
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+            HashMap::from([(
+                Address::with_last_byte(1),
+                ApproximationToken::with_normalization(Address::with_last_byte(100), 18, 6),
+            )]),
+            HEALTHY_PRICE_ESTIMATION_TIME,
+        );
+
+        let price = estimator
+            .estimate_native_price(Address::with_last_byte(1), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
+        // 5e-10 * 10^-12 = 5e-22
+        assert!((price - 5e-22).abs() < 1e-30);
     }
 
     #[tokio::test]
