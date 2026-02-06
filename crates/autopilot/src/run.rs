@@ -476,10 +476,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let order_execution_simulator = {
         let web3 = web3.labeled("order_simulation");
         let tenderly = args
-            .shared
-            .tenderly
-            .get_api_instance(&http_factory, "order_simulation".to_owned())
-            .unwrap()
+            .shared.tenderly.
+            get_api_instance(&http_factory, "order_simulation".to_owned())
+            .unwrap_or_else(|err| {
+                tracing::warn!(?err, "failed to initialize tenderly api");
+                None
+            })
             .map(|t| Arc::new(shared::tenderly_api::TenderlyCodeSimulator::new(t, chain.id())));
         let balance_overrides = args.price_estimation.balance_overrides.init(web3.clone());
         let settlement = GPv2Settlement::Instance::new(
