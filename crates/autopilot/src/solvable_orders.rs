@@ -363,21 +363,24 @@ impl SolvableOrdersCache {
             + u32::try_from(self.min_order_validity_period.as_secs())
                 .context("min_order_validity_period is not u32")?;
 
-        // only build future while holding the lock but execute outside of lock
-        let lock = self.cache.lock().await;
-        let fetch_orders = match &*lock {
+        let mut lock = self.cache.lock().await;
+        let fetch_orders = match &mut *lock {
             // Only use incremental query after cache already got initialized
             // because it's not optimized for very long durations.
-            Some(cache) => self
+            Some(cache) => {
+                let orders = std::mem::take(&mut cache.solvable_orders.orders);
+                let quotes = std::mem::take(&mut cache.solvable_orders.quotes);
+                self
                 .persistence
                 .solvable_orders_after(
-                    cache.solvable_orders.orders.clone(),
-                    cache.solvable_orders.quotes.clone(),
+                    orders,
+                    quotes,
                     cache.solvable_orders.fetched_from_db,
                     cache.solvable_orders.latest_settlement_block,
                     min_valid_to,
                 )
-                .boxed(),
+                .boxed()
+            },
             None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
         };
 
