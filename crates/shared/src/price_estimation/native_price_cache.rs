@@ -708,7 +708,12 @@ mod tests {
             .await
             .unwrap();
         // 5e-22 * 10^12 = 5e-10
-        assert!((price - 5e-10).abs() < 1e-18);
+        // Note: small floating point error due to 10^12 not being exactly representable
+        let expected = 5e-10;
+        assert!(
+            (price - expected).abs() / expected < f64::EPSILON,
+            "price {price} not within relative epsilon of {expected}"
+        );
     }
 
     #[tokio::test]
@@ -745,7 +750,13 @@ mod tests {
             .await
             .unwrap();
         // 5e-10 * 10^-12 = 5e-22
-        assert!((price - 5e-22).abs() < 1e-30);
+        // Note: small floating point error due to 10^-12 not being exactly
+        // representable
+        let expected = 5e-22;
+        assert!(
+            (price - expected).abs() / expected < f64::EPSILON,
+            "price {price} not within relative epsilon of {expected}"
+        );
     }
 
     #[tokio::test]
