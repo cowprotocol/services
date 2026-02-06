@@ -148,7 +148,14 @@ INSERT INTO orders (
     class,
     true_valid_to
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
+    -- If there exists an Ethflow order with the same valid_to, then take smaller of two values
+    COALESCE(
+        (SELECT LEAST($21, valid_to) FROM ethflow_orders WHERE uid = $1),
+        $21
+    )
+)
     "#;
 
 #[instrument(skip_all)]

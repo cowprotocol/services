@@ -6,7 +6,7 @@ use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     contracts::alloy::{CoWSwapEthFlow, ERC20Mintable, WETH9},
-    database::order_events::OrderEventLabel,
+    database::{byte_array::ByteArray, order_events::OrderEventLabel},
     e2e::setup::{
         ACCOUNT_ENDPOINT,
         API_HOST,
