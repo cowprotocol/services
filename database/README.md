@@ -276,6 +276,8 @@ Indexes:
 - user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - version_idx: btree(`settlement_contract`)
 - orders\_true\_valid\_to: btree(`true_valid_to`)
+- orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
+- orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
 
 ### fee_policies
 
@@ -480,6 +482,7 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
+- trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
 
 ### surplus\_capturing\_jit\_order\_owners
 
