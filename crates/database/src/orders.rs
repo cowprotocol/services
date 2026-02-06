@@ -964,6 +964,7 @@ pub async fn user_orders_with_quote(
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
+            AND NOT EXISTS (SELECT 1 FROM ethflow_refunds r WHERE r.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
