@@ -150,7 +150,7 @@ INSERT INTO orders (
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
-    -- If there exists an Ethflow order with the same valid_to, then take smaller of two values
+    -- If there exists an Ethflow order with the same uid, then take smaller of the two valid_to values
     COALESCE(
         (SELECT LEAST($21, valid_to) FROM ethflow_orders WHERE uid = $1),
         $21
