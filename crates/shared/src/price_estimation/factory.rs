@@ -439,7 +439,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
             approximation_tokens.insert(
                 *from_token,
-                ApproximationToken::with_normalization(*to_token, from_decimals, to_decimals),
+                ApproximationToken::with_normalization((*to_token, to_decimals), from_decimals),
             );
         }
 

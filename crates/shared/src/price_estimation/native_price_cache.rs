@@ -44,10 +44,13 @@ impl ApproximationToken {
     /// Creates an approximation token with the specified normalization factor.
     /// The normalization factor converts prices from the approximation token's
     /// decimal basis to the source token's decimal basis.
-    pub fn with_normalization(address: Address, from_decimals: u8, to_decimals: u8) -> Self {
-        let decimals_diff = i32::from(to_decimals) - i32::from(from_decimals);
+    pub fn with_normalization(
+        (peg_token, peg_token_decimals): (Address, u8),
+        token_decimals: u8,
+    ) -> Self {
+        let decimals_diff = i32::from(peg_token_decimals) - i32::from(token_decimals);
         Self {
-            address,
+            address: peg_token,
             normalization_factor: 10f64.powi(decimals_diff),
         }
     }
@@ -690,7 +693,7 @@ mod tests {
             1,
             HashMap::from([(
                 Address::with_last_byte(1),
-                ApproximationToken::with_normalization(Address::with_last_byte(100), 6, 18),
+                ApproximationToken::with_normalization((Address::with_last_byte(100), 18), 6),
             )]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
@@ -727,7 +730,7 @@ mod tests {
             1,
             HashMap::from([(
                 Address::with_last_byte(1),
-                ApproximationToken::with_normalization(Address::with_last_byte(100), 18, 6),
+                ApproximationToken::with_normalization((Address::with_last_byte(100), 6), 18),
             )]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
