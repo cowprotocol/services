@@ -188,7 +188,10 @@ impl SolvableOrdersCache {
         let mut filtered_order_events = Vec::new();
 
         let (balances, orders, cow_amms) = {
-            let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
+            let queries = orders
+                .iter()
+                .map(|o| Query::from_order(o))
+                .collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
@@ -300,9 +303,12 @@ impl SolvableOrdersCache {
                     let quote = db_solvable_orders
                         .quotes
                         .get(&order.metadata.uid.into())
-                        .cloned();
-                    self.protocol_fees
-                        .apply(order, quote, &surplus_capturing_jit_order_owners)
+                        .map(|quote| quote.as_ref().clone());
+                    self.protocol_fees.apply(
+                        order.as_ref().clone(),
+                        quote,
+                        &surplus_capturing_jit_order_owners,
+                    )
                 })
                 .collect(),
             prices: prices
@@ -370,17 +376,16 @@ impl SolvableOrdersCache {
             Some(cache) => {
                 let orders = std::mem::take(&mut cache.solvable_orders.orders);
                 let quotes = std::mem::take(&mut cache.solvable_orders.quotes);
-                self
-                .persistence
-                .solvable_orders_after(
-                    orders,
-                    quotes,
-                    cache.solvable_orders.fetched_from_db,
-                    cache.solvable_orders.latest_settlement_block,
-                    min_valid_to,
-                )
-                .boxed()
-            },
+                self.persistence
+                    .solvable_orders_after(
+                        orders,
+                        quotes,
+                        cache.solvable_orders.fetched_from_db,
+                        cache.solvable_orders.latest_settlement_block,
+                        min_valid_to,
+                    )
+                    .boxed()
+            }
             None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
         };
 
@@ -398,10 +403,10 @@ impl SolvableOrdersCache {
     /// Executed orders filtering in parallel.
     async fn filter_invalid_orders(
         &self,
-        mut orders: Vec<Order>,
+        mut orders: Vec<Arc<Order>>,
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
-    ) -> Vec<Order> {
+    ) -> Vec<Arc<Order>> {
         let filter_invalid_signatures = find_invalid_signature_orders(
             &orders,
             self.signature_validator.as_ref(),
@@ -452,7 +457,10 @@ impl SolvableOrdersCache {
 
 /// Finds all orders whose owners or receivers are in the set of "banned"
 /// users.
-async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
+async fn find_banned_user_orders(
+    orders: &[Arc<Order>],
+    banned_users: &banned::Users,
+) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(
             orders
@@ -490,7 +498,7 @@ async fn get_native_prices(
 /// Finds unsigned PreSign and EIP-1271 orders whose signatures are no longer
 /// validating.
 async fn find_invalid_signature_orders(
-    orders: &[Order],
+    orders: &[Arc<Order>],
     signature_validator: &dyn SignatureValidating,
     disable_1271_order_sig_filter: bool,
 ) -> Vec<OrderUid> {
@@ -545,11 +553,11 @@ async fn find_invalid_signature_orders(
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
 fn orders_with_balance(
-    mut orders: Vec<Order>,
+    mut orders: Vec<Arc<Order>>,
     balances: &Balances,
     settlement_contract: Address,
     disable_1271_order_balance_filter: bool,
-) -> Vec<Order> {
+) -> Vec<Arc<Order>> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
@@ -586,7 +594,7 @@ fn orders_with_balance(
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
-fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+fn filter_dust_orders(mut orders: Vec<Arc<Order>>, balances: &Balances) -> Vec<Arc<Order>> {
     orders.retain(|order| {
         if !order.data.partially_fillable {
             return true;
@@ -598,9 +606,10 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
             return false;
         };
 
-        let Ok(remaining) =
-            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
-        else {
+        let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(
+            &shared::remaining_amounts::Order::from(order.as_ref()),
+            balance,
+        ) else {
             return false;
         };
 
@@ -617,12 +626,12 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
 }
 
 async fn get_orders_with_native_prices(
-    orders: Vec<Order>,
+    orders: Vec<Arc<Order>>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
     additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
-) -> (Vec<Order>, BTreeMap<Address, alloy::primitives::U256>) {
+) -> (Vec<Arc<Order>>, BTreeMap<Address, alloy::primitives::U256>) {
     let traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
@@ -666,7 +675,7 @@ async fn get_orders_with_native_prices(
 /// For the remaining orders we prioritize token prices that are needed the most
 /// often. That way we have the chance to make a majority of orders solvable
 /// with very few fetch requests.
-fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<Address> {
+fn prioritize_missing_prices(mut orders: Vec<Arc<Order>>) -> IndexSet<Address> {
     /// How old an order can be at most to be considered a market order.
     const MARKET_ORDER_AGE: chrono::Duration = chrono::Duration::minutes(30);
     let now = chrono::Utc::now();
@@ -702,7 +711,7 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<Address> {
 }
 
 async fn find_unsupported_tokens(
-    orders: &[Order],
+    orders: &[Arc<Order>],
     bad_token: Arc<dyn BadTokenDetecting>,
 ) -> Vec<OrderUid> {
     let bad_tokens = join_all(
@@ -749,10 +758,10 @@ async fn find_unsupported_tokens(
 /// Filter out limit orders which are far enough outside the estimated native
 /// token price.
 fn filter_mispriced_limit_orders(
-    mut orders: Vec<Order>,
+    mut orders: Vec<Arc<Order>>,
     prices: &BTreeMap<Address, alloy::primitives::U256>,
     price_factor: &BigDecimal,
-) -> Vec<Order> {
+) -> Vec<Arc<Order>> {
     orders.retain(|order| {
         if !order.is_limit_order() {
             return true;
@@ -799,7 +808,7 @@ struct OrderFilterCounter {
 type Reason = &'static str;
 
 impl OrderFilterCounter {
-    fn new(metrics: &'static Metrics, orders: &[Order]) -> Self {
+    fn new(metrics: &'static Metrics, orders: &[Arc<Order>]) -> Self {
         // Eagerly store the candidate orders. This ensures that that gauge is
         // always up to date even if there are errors in the auction building
         // process.
@@ -825,7 +834,7 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint from the current remaining orders.
-    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
+    fn checkpoint(&mut self, reason: Reason, orders: &[Arc<Order>]) -> Vec<OrderUid> {
         let mut filtered_orders = vec![];
 
         for order in orders {
@@ -871,7 +880,7 @@ impl OrderFilterCounter {
     /// If there are orders that have been filtered out since the last
     /// checkpoint these orders will get recorded with the readon "other".
     /// Returns these catch-all orders.
-    fn record(mut self, orders: &[Order]) -> Vec<OrderUid> {
+    fn record(mut self, orders: &[Arc<Order>]) -> Vec<OrderUid> {
         let removed = self.checkpoint("other", orders);
 
         self.metrics.auction_creations.inc();
@@ -926,18 +935,22 @@ mod tests {
         let token3 = Address::repeat_byte(3);
 
         let orders = vec![
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token3)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token2)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token3)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
         ];
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
@@ -995,30 +1008,38 @@ mod tests {
         let token5 = Address::repeat_byte(5);
 
         let orders = vec![
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token2)
-                .with_buy_token(token3)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token3)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token2)
-                .with_buy_token(token4)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token2)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token2)
+                    .with_buy_token(token3)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token3)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token2)
+                    .with_buy_token(token4)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
         ];
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
@@ -1107,24 +1128,30 @@ mod tests {
         let token_approx2 = Address::repeat_byte(5);
 
         let orders = vec![
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token3)
-                .with_buy_amount(alloy::primitives::U256::ONE)
-                .with_sell_amount(alloy::primitives::U256::ONE)
-                .build(),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token2)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token2)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token3)
+                    .with_buy_amount(alloy::primitives::U256::ONE)
+                    .with_sell_amount(alloy::primitives::U256::ONE)
+                    .build(),
+            ),
         ];
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
@@ -1190,18 +1217,20 @@ mod tests {
         ]
         .into_iter()
         .enumerate()
-        .map(|(i, owner)| Order {
-            metadata: OrderMetadata {
-                owner,
-                uid: OrderUid([i as u8; 56]),
+        .map(|(i, owner)| {
+            Arc::new(Order {
+                metadata: OrderMetadata {
+                    owner,
+                    uid: OrderUid([i as u8; 56]),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    buy_amount: alloy::primitives::U256::ONE,
+                    sell_amount: alloy::primitives::U256::ONE,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            data: OrderData {
-                buy_amount: alloy::primitives::U256::ONE,
-                sell_amount: alloy::primitives::U256::ONE,
-                ..Default::default()
-            },
-            ..Default::default()
+            })
         })
         .collect::<Vec<_>>();
 
@@ -1219,7 +1248,7 @@ mod tests {
     #[tokio::test]
     async fn filters_invalidated_eip1271_signatures() {
         let orders = vec![
-            Order {
+            Arc::new(Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1),
                     ..Default::default()
@@ -1237,8 +1266,8 @@ mod tests {
                     }],
                 },
                 ..Default::default()
-            },
-            Order {
+            }),
+            Arc::new(Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2),
                     ..Default::default()
@@ -1257,30 +1286,30 @@ mod tests {
                     }],
                 },
                 ..Default::default()
-            },
-            Order {
+            }),
+            Arc::new(Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3),
                     ..Default::default()
                 },
                 ..Default::default()
-            },
-            Order {
+            }),
+            Arc::new(Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![4, 4, 4, 4]),
                 ..Default::default()
-            },
-            Order {
+            }),
+            Arc::new(Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
                 ..Default::default()
-            },
+            }),
         ];
 
         let mut signature_validator = MockSignatureValidating::new();
@@ -1343,18 +1372,24 @@ mod tests {
         let token2 = Address::with_last_byte(2);
         let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0]));
         let orders = vec![
-            OrderBuilder::default()
-                .with_sell_token(token0)
-                .with_buy_token(token1)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token0)
-                .with_buy_token(token2)
-                .build(),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token0)
+                    .with_buy_token(token1)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token1)
+                    .with_buy_token(token2)
+                    .build(),
+            ),
+            Arc::new(
+                OrderBuilder::default()
+                    .with_sell_token(token0)
+                    .with_buy_token(token2)
+                    .build(),
+            ),
         ];
         let unsupported_tokens_orders = find_unsupported_tokens(&orders, bad_token)
             .now_or_never()
@@ -1378,19 +1413,21 @@ mod tests {
         };
         let price_factor = "0.95".parse().unwrap();
 
-        let order = |sell_amount: u8, buy_amount: u8| Order {
-            data: OrderData {
-                sell_token,
-                sell_amount: alloy::primitives::U256::from(sell_amount),
-                buy_token,
-                buy_amount: alloy::primitives::U256::from(buy_amount),
+        let order = |sell_amount: u8, buy_amount: u8| {
+            Arc::new(Order {
+                data: OrderData {
+                    sell_token,
+                    sell_amount: alloy::primitives::U256::from(sell_amount),
+                    buy_token,
+                    buy_amount: alloy::primitives::U256::from(buy_amount),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Limit,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            metadata: OrderMetadata {
-                class: OrderClass::Limit,
-                ..Default::default()
-            },
-            ..Default::default()
+            })
         };
 
         let valid_orders = vec![
@@ -1416,7 +1453,7 @@ mod tests {
         );
 
         let mut order = order(10, 21);
-        order.data.partially_fillable = true;
+        Arc::get_mut(&mut order).unwrap().data.partially_fillable = true;
         let orders = vec![order];
         assert_eq!(
             filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
@@ -1429,7 +1466,7 @@ mod tests {
         let settlement_contract = Address::repeat_byte(1);
         let orders = vec![
             // enough balance for sell and fee
-            Order {
+            Arc::new(Order {
                 data: OrderData {
                     sell_token: Address::with_last_byte(2),
                     sell_amount: alloy::primitives::U256::ONE,
@@ -1438,9 +1475,9 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
-            },
+            }),
             // missing fee balance
-            Order {
+            Arc::new(Order {
                 data: OrderData {
                     sell_token: Address::with_last_byte(3),
                     sell_amount: alloy::primitives::U256::ONE,
@@ -1449,9 +1486,9 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
-            },
+            }),
             // at least 1 partially fillable balance
-            Order {
+            Arc::new(Order {
                 data: OrderData {
                     sell_token: Address::with_last_byte(4),
                     sell_amount: alloy::primitives::U256::from(2),
@@ -1460,9 +1497,9 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
-            },
+            }),
             // 0 partially fillable balance
-            Order {
+            Arc::new(Order {
                 data: OrderData {
                     sell_token: Address::with_last_byte(5),
                     sell_amount: alloy::primitives::U256::from(2),
@@ -1471,9 +1508,9 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
-            },
+            }),
             // considered flashloan order because of special receiver
-            Order {
+            Arc::new(Order {
                 data: OrderData {
                     sell_token: Address::with_last_byte(6),
                     sell_amount: alloy::primitives::U256::from(200),
@@ -1483,7 +1520,7 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
-            },
+            }),
         ];
         let balances = [
             (Query::from_order(&orders[0]), U256::from(2)),
@@ -1507,7 +1544,7 @@ mod tests {
     #[test]
     fn eip1271_orders_can_skip_balance_filtering() {
         let settlement_contract = Address::repeat_byte(1);
-        let eip1271_order = Order {
+        let eip1271_order = Arc::new(Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
                 sell_amount: alloy::primitives::U256::from(10),
@@ -1517,8 +1554,8 @@ mod tests {
             },
             signature: Signature::Eip1271(vec![1, 2, 3]),
             ..Default::default()
-        };
-        let regular_order = Order {
+        });
+        let regular_order = Arc::new(Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(8),
                 sell_amount: alloy::primitives::U256::from(10),
@@ -1527,7 +1564,7 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        });
 
         let orders = vec![regular_order.clone(), eip1271_order.clone()];
         let balances: Balances = Default::default();
@@ -1546,17 +1583,19 @@ mod tests {
     fn prioritizes_missing_prices() {
         let now = chrono::Utc::now();
 
-        let order = |sell_token, buy_token, age| Order {
-            metadata: OrderMetadata {
-                creation_date: now - chrono::Duration::minutes(age),
+        let order = |sell_token, buy_token, age| {
+            Arc::new(Order {
+                metadata: OrderMetadata {
+                    creation_date: now - chrono::Duration::minutes(age),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    sell_token,
+                    buy_token,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            data: OrderData {
-                sell_token,
-                buy_token,
-                ..Default::default()
-            },
-            ..Default::default()
+            })
         };
 
         let orders = vec![

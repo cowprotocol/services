@@ -8,7 +8,7 @@ use {
     database::byte_array::ByteArray,
     shared::maintenance::Maintaining,
     sqlx::types::chrono::{DateTime, Utc},
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
 };
 
 impl Postgres {
@@ -29,7 +29,7 @@ impl Postgres {
     pub async fn read_quotes(
         &self,
         orders: impl Iterator<Item = &domain::OrderUid>,
-    ) -> Result<HashMap<domain::OrderUid, domain::Quote>, sqlx::Error> {
+    ) -> Result<HashMap<domain::OrderUid, Arc<domain::Quote>>, sqlx::Error> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["read_quotes"])
@@ -47,7 +47,7 @@ impl Postgres {
                         tracing::warn!(?order_uid, ?err, "failed to convert quote from db")
                     })
                     .ok()
-                    .map(|quote| (order_uid, quote))
+                    .map(|quote| (order_uid, Arc::new(quote)))
             })
             .collect();
 
