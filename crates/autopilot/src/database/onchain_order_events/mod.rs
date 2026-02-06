@@ -314,7 +314,6 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         events: Vec<(ContractEvent, Log)>,
         transaction: &mut sqlx::Transaction<'static, sqlx::Postgres>,
     ) -> Result<()> {
-        tracing::error!("ETHFLOW EVENTS");
         let order_placement_events = events
             .clone()
             .into_iter()
