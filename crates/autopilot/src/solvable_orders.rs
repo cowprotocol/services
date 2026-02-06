@@ -190,7 +190,10 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let balance_filter_exempt_orders = self.app_code_bypass.balance_check_exempt_orders(&orders).await;
+        let balance_filter_exempt_orders = self
+            .app_code_bypass
+            .balance_check_exempt_orders(&orders)
+            .await;
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
@@ -902,18 +905,16 @@ impl AppCodeBypass {
             }
 
             // Parse and cache the app code
-            let app_code = match order.metadata.full_app_data.as_ref() {
-                Some(full_app_data) => {
-                    match serde_json::from_slice::<app_data::Root>(full_app_data.as_bytes()) {
-                        Ok(root) => root.app_code().map(|s| s.to_owned()),
-                        Err(_) => {
-                            self.metrics.app_code_parse_failures.inc();
-                            None
-                        }
-                    }
-                }
-                None => None,
-            };
+            let app_code = order
+                .metadata
+                .full_app_data
+                .as_deref()
+                .and_then(|data| {
+                    serde_json::from_slice::<app_data::Root>(data.as_bytes())
+                        .map_err(|_| self.metrics.app_code_parse_failures.inc())
+                        .ok()
+                })
+                .and_then(|root| root.app_code().map(str::to_owned));
 
             if let Some(ref code) = app_code
                 && self.sources.contains(code)
