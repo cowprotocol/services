@@ -823,25 +823,23 @@ impl OrderFilterCounter {
 
     /// Creates a new checkpoint from the current remaining orders.
     fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
-        let filtered_orders = orders
-            .iter()
-            .fold(self.orders.clone(), |mut order_uids, order| {
-                order_uids.remove(&order.metadata.uid);
-                order_uids
-            });
+        let mut filtered_orders = vec![];
 
-        *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for order_uid in filtered_orders.keys() {
-            self.orders.remove(order_uid).unwrap();
+        for order in orders {
+            if self.orders.remove(&order.metadata.uid).is_some() {
+                filtered_orders.push(order.metadata.uid);
+            }
         }
+
         if !filtered_orders.is_empty() {
+            *self.counts.entry(reason).or_default() += filtered_orders.len();
             tracing::debug!(
                 %reason,
                 count = filtered_orders.len(),
                 orders = ?filtered_orders, "filtered orders"
             );
         }
-        filtered_orders.into_keys().collect()
+        filtered_orders
     }
 
     /// Creates a new checkpoint based on the found invalid orders.
