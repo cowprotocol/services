@@ -92,7 +92,7 @@ solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
 testlib = { path = "crates/testlib" }
 winner-selection = { path = "crates/winner-selection" }
-time = "0.3.37"
+time = "0.3.47"
 tiny-keccak = "2.0.2"
 tower = "0.4"
 tower-http = "0.4"
