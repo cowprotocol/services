@@ -104,6 +104,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         "--api-address=0.0.0.0:12089".to_string(),
+        "--metrics-address=0.0.0.0:9591".to_string(),
         "--enable-leader-lock=true".to_string(),
     ]).await;
 
@@ -166,11 +167,21 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             .is_ok()
     );
 
-    // Ensure all the locks are released and follower has time to step up
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    onchain.mint_block().await;
-    // Ensure the follower has stepped up as leader
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Wait for the follower to step up as leader by checking its metrics endpoint
+    let is_follower_leader = || async {
+        onchain.mint_block().await;
+        let Ok(response) = reqwest::get("http://0.0.0.0:9591/metrics").await else {
+            return false;
+        };
+        let Ok(body) = response.text().await else {
+            return false;
+        };
+        body.lines()
+            .any(|line| line.trim().contains("leader_lock_tracker_is_leader 1"))
+    };
+    wait_for_condition(TIMEOUT, is_follower_leader)
+        .await
+        .unwrap();
 
     // Run 10 txs, autopilot-backup is in charge
     // - only test_solver2 should participate and settle
