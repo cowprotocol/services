@@ -391,13 +391,6 @@ impl IntoResponse for PriceEstimationErrorWrapper {
     }
 }
 
-// Implement From to allow easy conversion
-impl From<PriceEstimationError> for PriceEstimationErrorWrapper {
-    fn from(err: PriceEstimationError) -> Self {
-        Self(err)
-    }
-}
-
 impl IntoResponse for LoadSolverCompetitionError {
     fn into_response(self) -> Response {
         match self {
