@@ -48,7 +48,10 @@ use {
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
-        price_estimation::factory::{self, PriceEstimatorFactory},
+        price_estimation::{
+            factory::{self, PriceEstimatorFactory},
+            native::NativePriceEstimating,
+        },
         signature_validator,
         sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -462,19 +465,21 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .api_native_price_estimators
         .as_ref()
         .unwrap_or(&args.native_price_estimators);
-    let api_native_price_estimator = api_native_price_estimator(
-        &mut price_estimator_factory,
-        api_sources,
-        args.native_price_estimation_results_required,
-        &weth,
-        shared_cache.clone(),
-        approximation_tokens.clone(),
-        &args.price_estimation,
-    )
-    .instrument(info_span!("api_native_price_estimator"))
-    .await;
+    let api_native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
+        api_native_price_estimator(
+            &mut price_estimator_factory,
+            api_sources,
+            args.native_price_estimation_results_required,
+            &weth,
+            shared_cache.clone(),
+            approximation_tokens.clone(),
+            &args.price_estimation,
+        )
+        .instrument(info_span!("api_native_price_estimator"))
+        .await,
+    );
 
-    let native_price_updater = competition_native_price_updater(
+    let competition_native_price_updater = competition_native_price_updater(
         &mut price_estimator_factory,
         &args.native_price_estimators,
         args.native_price_estimation_results_required,
@@ -494,7 +499,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 .iter()
                 .map(|price_estimator_driver| price_estimator_driver.clone().into())
                 .collect::<Vec<_>>(),
-            Arc::new(api_native_price_estimator.clone()),
+            api_native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
         .unwrap();
@@ -561,7 +566,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
-        Arc::new(api_native_price_estimator.clone()),
+        api_native_price_estimator.clone(),
         gas_price_estimator,
         Arc::new(db_write.clone()),
         order_quoting::Validity {
@@ -593,7 +598,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        native_price_updater.clone(),
+        competition_native_price_updater.clone(),
         signature_validator.clone(),
         *eth.contracts().weth().address(),
         args.limit_order_price_factor
@@ -618,7 +623,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let api_task = tokio::spawn(infra::api::serve(
         args.api_address,
-        Arc::new(api_native_price_estimator),
+        api_native_price_estimator,
         args.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
