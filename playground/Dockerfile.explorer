@@ -10,25 +10,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
 RUN git clone https://github.com/cowprotocol/cowswap . && \
     git submodule update --init --recursive
 
-# Enable Corepack for automatic package manager version management
-RUN corepack enable
-
-# Install npm dependencies (auto-detect yarn vs pnpm from package.json)
-RUN PKG_MANAGER=$(node -p "require('./package.json').packageManager?.split('@')[0] || 'yarn'") && \
-    echo "Detected package manager: $PKG_MANAGER" && \
-    if [ "$PKG_MANAGER" = "pnpm" ]; then \
-        pnpm install --frozen-lockfile; \
-    else \
-        yarn install --frozen-lockfile --no-cache; \
-    fi
+# Install npm dependencies
+RUN yarn install --frozen-lockfile --no-cache
 
 # Build environment variables
 ENV REACT_APP_ORDER_BOOK_URLS='{"1":"http://localhost:8080"}'
 ENV REACT_APP_BLOCK_EXPLORER_URL=http://localhost:8003
 
-# Build the frontend (auto-detect package manager)
-RUN PKG_MANAGER=$(node -p "require('./package.json').packageManager?.split('@')[0] || 'yarn'") && \
-    APP_ID=1 REACT_APP_BLOCK_EXPLORER_URL=$REACT_APP_BLOCK_EXPLORER_URL $PKG_MANAGER build:explorer
+# Build the frontend
+RUN APP_ID=1 REACT_APP_BLOCK_EXPLORER_URL=$REACT_APP_BLOCK_EXPLORER_URL yarn build:explorer
 
 # Stage 2: Copy the frontend to the nginx container
 FROM docker.io/nginx:1.21-alpine AS frontend
