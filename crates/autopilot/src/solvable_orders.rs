@@ -920,6 +920,7 @@ mod tests {
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
+                native_price_cache::ApproximationToken,
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
@@ -1176,7 +1177,10 @@ mod tests {
             Default::default(),
             3,
             // Set to use native price approximations for the following tokens
-            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            HashMap::from([
+                (token1, ApproximationToken::same_decimals(token_approx1)),
+                (token2, ApproximationToken::same_decimals(token_approx2)),
+            ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();

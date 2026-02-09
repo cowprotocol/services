@@ -959,7 +959,7 @@ pub async fn user_orders_with_quote(
 ) -> Result<Vec<OrderWithQuote>, sqlx::Error> {
     // Optimized version following the same pattern as OPEN_ORDERS
     const QUERY: &str = r#"
-    WITH live_orders AS MATERIALIZED (
+    WITH live_orders AS (
         SELECT o.*
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
