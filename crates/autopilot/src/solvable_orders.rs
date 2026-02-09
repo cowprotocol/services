@@ -833,15 +833,14 @@ impl OrderFilterCounter {
     /// Creates a new checkpoint from the still alive orders and returns all
     /// orders that have been filtered out since the last checkpoint.
     fn checkpoint(&mut self, reason: Reason, still_alive_orders: &[Arc<Order>]) -> Vec<OrderUid> {
-        let filtered_orders: Vec<_> =
-            still_alive_orders
-                .iter()
-                .fold(self.orders.clone(), |mut order_uids, order| {
-                    order_uids.remove(&order.metadata.uid);
-                    order_uids
-                })
-                .into_keys()
-                .collect();
+        let filtered_orders: Vec<_> = still_alive_orders
+            .iter()
+            .fold(self.orders.clone(), |mut order_uids, order| {
+                order_uids.remove(&order.metadata.uid);
+                order_uids
+            })
+            .into_keys()
+            .collect();
 
         for order_uid in &filtered_orders {
             self.orders.remove(order_uid).unwrap();
