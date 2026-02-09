@@ -505,6 +505,13 @@ impl NativePriceUpdater {
         update_interval: Duration,
         prefetch_time: Duration,
     ) -> Arc<Self> {
+        assert!(
+            estimator.cache().max_age() > prefetch_time,
+            "price cache prefetch time ({:?}) must be less than max age ({:?})",
+            prefetch_time,
+            estimator.cache().max_age(),
+        );
+
         let updater = Arc::new(Self {
             estimator,
             tokens_to_update: Default::default(),
