@@ -78,6 +78,7 @@ User signs order → Orderbook validates → Autopilot includes in auction
 - **Protocol Documentation**: https://docs.cow.fi/
   - Technical Reference: API specs and SDK docs
   - Concepts: Protocol fundamentals and architecture
+- **Alloy (Web3 library)**: Fetch https://alloy.rs/introduction/prompting for an AI-optimized guide covering providers, transactions, contracts, and migration from ethers-rs
 
 ## Development Commands
 
@@ -92,8 +93,10 @@ User signs order → Orderbook validates → Autopilot includes in auction
 - E2E tests available in `crates/e2e`
 
 ### Testing Requirements
-- PostgreSQL tests require local database: Run `docker-compose up` first
+- PostgreSQL tests require local database: Run `docker compose up -d` first
 - Forked network tests require `anvil` (from Foundry) and RPC URLs
+  - Anvil binary: configurable via `ANVIL_COMMAND` env var (defaults to `"anvil"`, must be in PATH)
+  - Required env vars: `FORK_URL_MAINNET` and `FORK_URL_GNOSIS` (RPC endpoints for forking)
 - Use `--test-threads 1` for database and E2E tests to avoid conflicts
 - CI runs doc-tests, unit tests, DB tests, E2E tests (local and forked), and driver tests
 
@@ -104,10 +107,10 @@ User signs order → Orderbook validates → Autopilot includes in auction
 - Check format: `cargo +nightly fmt --all -- --check`
 
 ### Local Development Environment
-- Start local PostgreSQL: `docker-compose up`
+- Start local PostgreSQL: `docker compose up -d`
 - Full playground environment: `docker compose -f playground/docker-compose.fork.yml up -d`
-- For forked network tests, set environment variables: `FORK_MAINNET_URL` and `FORK_GNOSIS_URL`
-- Reset playground: `docker-compose -f playground/docker-compose.fork.yml down --remove-orphans --volumes`
+- For forked network tests, set environment variables: `FORK_URL_MAINNET` and `FORK_URL_GNOSIS`
+- Reset playground: `docker compose -f playground/docker-compose.fork.yml down --remove-orphans --volumes`
 
 ## Directory Structure
 
@@ -129,12 +132,13 @@ configs/        # Configuration files
 
 ## Playground Environment
 
+- Runs in **Fork** mode: anvil forks a real network via `ETH_RPC_URL` (set in `playground/.env`). A clean local network mode is planned but not yet implemented.
 - Access full local development stack with CoW Swap UI at http://localhost:8000
 - CoW Explorer available at http://localhost:8001
 - Orderbook API at http://localhost:8080
 - Database admin (Adminer) at http://localhost:8082
 - Uses test mnemonic: "test test test test test test test test test test test junk"
-- First 10 accounts have 10000 ETH balance by default
+- First 10 accounts have 10000 ETH balance by default, set by anvil
 
 ## Development Notes
 
