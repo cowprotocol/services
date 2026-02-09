@@ -11,6 +11,7 @@ use {
     serde::{Deserialize, Serialize},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
+        borrow::Cow,
         fmt::Debug,
         sync::Arc,
         time::{Duration, Instant},
@@ -50,7 +51,6 @@ pub struct AppState {
     pub quote_timeout: Duration,
 }
 
-
 /// Middleware that automatically tracks metrics using Axum's MatchedPath
 async fn with_matched_path_metric(
     req: Request<axum::body::Body>,
@@ -59,7 +59,7 @@ async fn with_matched_path_metric(
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
     // Extract matched path and HTTP method
-    let method = req.method().to_string();
+    let method = req.method().as_str();
     let matched_path = req
         .extensions()
         .get::<axum::extract::MatchedPath>()
@@ -272,23 +272,23 @@ impl ApiMetrics {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Error {
-    pub error_type: String,
-    pub description: String,
+    pub error_type: Cow<'static, str>,
+    pub description: Cow<'static, str>,
     /// Additional arbitrary data that can be attached to an API error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
 
-pub fn error(error_type: &str, description: impl AsRef<str>) -> Json<Error> {
+pub fn error(error_type: &'static str, description: impl AsRef<str>) -> Json<Error> {
     Json(Error {
-        error_type: error_type.to_string(),
-        description: description.as_ref().to_string(),
+        error_type: error_type.into(),
+        description: Cow::Owned(description.as_ref().to_owned()),
         data: None,
     })
 }
 
 pub fn rich_error(
-    error_type: &str,
+    error_type: &'static str,
     description: impl AsRef<str>,
     data: impl Serialize,
 ) -> Json<Error> {
@@ -301,8 +301,8 @@ pub fn rich_error(
     };
 
     Json(Error {
-        error_type: error_type.to_string(),
-        description: description.as_ref().to_string(),
+        error_type: error_type.into(),
+        description: Cow::Owned(description.as_ref().to_owned()),
         data,
     })
 }
@@ -416,8 +416,8 @@ mod tests {
     fn rich_errors_skip_unset_data_field() {
         assert_eq!(
             serde_json::to_value(&Error {
-                error_type: "foo".to_string(),
-                description: "bar".to_string(),
+                error_type: "foo".into(),
+                description: "bar".into(),
                 data: None,
             })
             .unwrap(),
@@ -428,8 +428,8 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(Error {
-                error_type: "foo".to_string(),
-                description: "bar".to_string(),
+                error_type: "foo".into(),
+                description: "bar".into(),
                 data: Some(json!(42)),
             })
             .unwrap(),

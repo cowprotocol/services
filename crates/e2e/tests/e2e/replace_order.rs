@@ -23,7 +23,7 @@ fn parse_order_replacement_error(status: StatusCode, body: &str) -> Option<Order
     let error: ApiError = serde_json::from_str(body).ok()?;
 
     match status {
-        StatusCode::BAD_REQUEST => match error.error_type.as_str() {
+        StatusCode::BAD_REQUEST => match error.error_type.as_ref() {
             "InvalidSignature" => Some(OrderReplacementError::InvalidSignature),
             "OldOrderActivelyBidOn" => Some(OrderReplacementError::OldOrderActivelyBidOn),
             _ => None,
@@ -46,7 +46,7 @@ fn parse_order_cancellation_error(
     let error: ApiError = serde_json::from_str(body).ok()?;
 
     match status {
-        StatusCode::BAD_REQUEST => match error.error_type.as_str() {
+        StatusCode::BAD_REQUEST => match error.error_type.as_ref() {
             "InvalidSignature" => Some(OrderCancellationError::InvalidSignature),
             "AlreadyCancelled" => Some(OrderCancellationError::AlreadyCancelled),
             "OrderFullyExecuted" => Some(OrderCancellationError::OrderFullyExecuted),
