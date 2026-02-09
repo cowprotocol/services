@@ -124,7 +124,7 @@ async fn http_validation(web3: Web3) {
     // deserialization
     for (id, description, expected_status) in [
         ("not-a-number", "non-numeric", StatusCode::BAD_REQUEST),
-        ("-1", "negative number", StatusCode::NOT_FOUND),
+        ("-1", "negative number", StatusCode::BAD_REQUEST),
         (
             "99999999999999999999999",
             "u64 overflow",

@@ -14,11 +14,19 @@ use {
 
 pub async fn get_solver_competition_by_id_handler(
     State(state): State<Arc<AppState>>,
-    Path(auction_id): Path<AuctionId>,
+    Path(auction_id): Path<u64>,
 ) -> Result<Json<SolverCompetitionAPI>, crate::solver_competition::LoadSolverCompetitionError> {
+    // We use u64 to ensure that negative numbers are returned as BAD_REQUEST
+    // however, there's a gap between u64::MAX and i64::MAX, numbers beyond i64::MAX
+    // will be marked as NOT_FOUND as they're positive (and as such, valid) but
+    // they are not covered by our system
+    if auction_id >= AuctionId::MAX.cast_unsigned() {
+        return Err(crate::solver_competition::LoadSolverCompetitionError::NotFound);
+    }
+
     let handler: &dyn SolverCompetitionStoring = &state.database_read;
     handler
-        .load_competition(Identifier::Id(auction_id))
+        .load_competition(Identifier::Id(auction_id.cast_signed()))
         .await
         .map(Json)
 }
