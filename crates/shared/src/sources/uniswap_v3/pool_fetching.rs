@@ -302,7 +302,7 @@ impl UniswapV3PoolFetcher {
 
         let events = tokio::sync::Mutex::new(EventHandler::new(
             block_retriever,
-            UniswapV3PoolEventFetcher(web3.alloy),
+            UniswapV3PoolEventFetcher(web3.provider),
             RecentEventsCache::default(),
             Some(init_block),
         ));

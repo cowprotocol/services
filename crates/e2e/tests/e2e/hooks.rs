@@ -251,12 +251,12 @@ async fn allowance(web3: Web3) {
 async fn signature(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let chain_id = U256::from(web3.alloy.get_chain_id().await.unwrap());
+    let chain_id = U256::from(web3.provider.get_chain_id().await.unwrap());
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
 
-    let safe_infra = onchain_components::safe::Infrastructure::new(web3.alloy.clone()).await;
+    let safe_infra = onchain_components::safe::Infrastructure::new(web3.provider.clone()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
@@ -287,7 +287,7 @@ async fn signature(web3: Web3) {
     let safe_address = safe_creation_builder.clone().call().await.unwrap();
     let safe = Safe::deployed(
         chain_id,
-        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
+        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.provider.clone()),
         trader.clone(),
     );
 
@@ -361,7 +361,7 @@ async fn signature(web3: Web3) {
     assert_eq!(balance, 5u64.eth());
 
     // Check that the Safe really hasn't been deployed yet.
-    let code = web3.alloy.get_code_at(safe.address()).await.unwrap();
+    let code = web3.provider.get_code_at(safe.address()).await.unwrap();
     assert_eq!(code.0.len(), 0);
 
     tracing::info!("Waiting for trade.");
@@ -387,7 +387,7 @@ async fn signature(web3: Web3) {
     assert!(balance >= order.buy_amount);
 
     // Check Safe was deployed
-    let code = web3.alloy.get_code_at(safe.address()).await.unwrap();
+    let code = web3.provider.get_code_at(safe.address()).await.unwrap();
     assert_ne!(code.0.len(), 0);
 
     tracing::info!("Waiting for auction to be cleared.");
@@ -401,7 +401,7 @@ async fn partial_fills(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(3u64.eth()).await;
 
-    let counter = contracts::alloy::test::Counter::Instance::deploy(web3.alloy.clone())
+    let counter = contracts::alloy::test::Counter::Instance::deploy(web3.provider.clone())
         .await
         .unwrap();
 
@@ -523,12 +523,12 @@ async fn partial_fills(web3: Web3) {
 async fn quote_verification(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let chain_id = U256::from(web3.alloy.get_chain_id().await.unwrap());
+    let chain_id = U256::from(web3.provider.get_chain_id().await.unwrap());
 
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
 
-    let safe_infra = onchain_components::safe::Infrastructure::new(web3.alloy.clone()).await;
+    let safe_infra = onchain_components::safe::Infrastructure::new(web3.provider.clone()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
@@ -554,7 +554,7 @@ async fn quote_verification(web3: Web3) {
 
     let safe = Safe::deployed(
         chain_id,
-        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
+        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.provider.clone()),
         trader.clone(),
     );
 

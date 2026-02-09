@@ -62,7 +62,9 @@ pub struct Solution {
     interactions: Vec<Interaction>,
     #[debug(ignore)]
     post_interactions: Vec<eth::Interaction>,
+    #[debug("{}", solver.name())]
     solver: Solver,
+    #[debug(ignore)]
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
@@ -516,6 +518,16 @@ impl Solution {
                     order::signature::Scheme::Eip1271
                 )
             })
+    }
+
+    /// Returns true if any trade in this solution has a non-zero haircut fee.
+    /// Used to determine if simulation failures should suppress solver
+    /// notifications.
+    pub fn has_haircut(&self) -> bool {
+        self.trades.iter().any(|trade| match trade {
+            Trade::Fulfillment(fulfillment) => !fulfillment.haircut_fee().is_zero(),
+            Trade::Jit(_) => false, // JIT orders don't have haircut
+        })
     }
 }
 

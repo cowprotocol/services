@@ -54,7 +54,7 @@ impl TestAccount {
     }
 
     pub async fn nonce(&self, web3: &Web3) -> u64 {
-        web3.alloy
+        web3.provider
             .get_transaction_count(self.address())
             .await
             .unwrap()
@@ -293,7 +293,7 @@ impl OnchainComponents {
 
         for solver in &solvers {
             self.web3
-                .alloy
+                .provider
                 .anvil_send_impersonated_transaction_with_config(
                     gpv2_auth
                         .addSolver(solver.address())
@@ -313,7 +313,7 @@ impl OnchainComponents {
 
         if let Some(router) = &self.contracts.flashloan_router {
             self.web3
-                .alloy
+                .provider
                 .anvil_send_impersonated_transaction_with_config(
                     gpv2_auth
                         .addSolver(*router.address())
@@ -339,13 +339,14 @@ impl OnchainComponents {
         let mut res = Vec::with_capacity(N);
 
         for _ in 0..N {
-            let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
+            let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.provider.clone())
                 // We can't escape the .from here because we need to ensure Minter permissions later on
                 .from(minter)
                 .deploy()
                 .await
                 .expect("ERC20Mintable deployment failed");
-            let contract = ERC20Mintable::Instance::new(contract_address, self.web3.alloy.clone());
+            let contract =
+                ERC20Mintable::Instance::new(contract_address, self.web3.provider.clone());
 
             res.push(MintableToken { contract, minter });
         }
@@ -361,7 +362,7 @@ impl OnchainComponents {
     ) -> [MintableToken; N] {
         let minter = self
             .web3
-            .alloy
+            .provider
             .get_accounts()
             .await
             .expect("getting accounts failed")[0];
@@ -497,7 +498,7 @@ impl OnchainComponents {
                 .call()
                 .await
                 .expect("failed to get Uniswap V2 pair"),
-            self.web3.alloy.clone(),
+            self.web3.provider.clone(),
         );
         assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
 
@@ -524,7 +525,7 @@ impl OnchainComponents {
     pub async fn deploy_cow_token(&self, supply: U256) -> CowToken {
         let holder = NetworkWallet::<Ethereum>::default_signer_address(&self.web3().wallet);
         let contract = CowProtocolToken::CowProtocolToken::deploy(
-            self.web3.alloy.clone(),
+            self.web3.provider.clone(),
             holder,
             holder,
             supply,
@@ -591,9 +592,9 @@ impl OnchainComponents {
     }
 
     pub async fn send_wei(&self, to: Address, amount: U256) {
-        let balance_before = self.web3.alloy.get_balance(to).await.unwrap();
+        let balance_before = self.web3.provider.get_balance(to).await.unwrap();
         self.web3
-            .alloy
+            .provider
             .send_transaction(TransactionRequest::default().with_to(to).with_value(amount))
             .await
             .unwrap()
@@ -606,13 +607,13 @@ impl OnchainComponents {
         // supposedly succeeds but the balances still don't get changed.
         // If you hit this assert try using a different block number for your
         // forked test.
-        let balance_after = self.web3.alloy.get_balance(to).await.unwrap();
+        let balance_after = self.web3.provider.get_balance(to).await.unwrap();
         assert_eq!(balance_after, balance_before + amount);
     }
 
     pub async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3.alloy.evm_mine(None).await.unwrap();
+        self.web3.provider.evm_mine(None).await.unwrap();
     }
 
     pub fn contracts(&self) -> &Contracts {

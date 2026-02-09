@@ -98,7 +98,7 @@ impl TradeVerifier {
         tokens_without_verification: HashSet<Address>,
     ) -> Result<Self> {
         let settlement_contract =
-            GPv2Settlement::GPv2Settlement::new(settlement, web3.alloy.clone());
+            GPv2Settlement::GPv2Settlement::new(settlement, web3.provider.clone());
         let domain_separator =
             DomainSeparator(settlement_contract.domainSeparator().call().await?.0);
         Ok(Self {
@@ -168,7 +168,7 @@ impl TradeVerifier {
         let settle_call = legacy_settlement_to_alloy(settlement).abi_encode();
         let block = *self.block_stream.borrow();
 
-        let solver = Solver::Instance::new(solver_address, self.web3.alloy.clone());
+        let solver = Solver::Instance::new(solver_address, self.web3.provider.clone());
         let swap_simulation = solver.swap(
                 *self.settlement.address(),
                 tokens.clone(),

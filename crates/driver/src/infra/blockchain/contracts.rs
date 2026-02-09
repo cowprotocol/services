@@ -10,7 +10,6 @@ use {
     },
     ethrpc::Web3,
     std::collections::HashMap,
-    thiserror::Error,
 };
 
 #[derive(Debug, Clone)]
@@ -58,18 +57,18 @@ impl Contracts {
                 .map(Into::into)
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
         let vault_relayer = settlement.vaultRelayer().call().await?;
         let vault =
-            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.alloy.clone());
+            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.provider.clone());
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
                 .map(Into::into)
                 .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
         let signatures = contracts::alloy::support::Signatures::Instance::new(
             addresses
@@ -77,7 +76,7 @@ impl Contracts {
                 .map(Into::into)
                 .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let weth = WETH9::Instance::new(
@@ -86,7 +85,7 @@ impl Contracts {
                 .map(Into::into)
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let settlement_domain_separator = eth::DomainSeparator(
@@ -102,7 +101,7 @@ impl Contracts {
         let flashloan_router = addresses
             .flashloan_router
             .or_else(|| FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress))
-            .map(|address| FlashLoanRouter::Instance::new(address.0, web3.alloy.clone()));
+            .map(|address| FlashLoanRouter::Instance::new(address.0, web3.provider.clone()));
 
         Ok(Self {
             settlement,
@@ -163,10 +162,4 @@ impl Contracts {
     ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
         &self.cow_amm_helper_by_factory
     }
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("method error: {0:?}")]
-    Rpc(#[from] alloy::contract::Error),
 }

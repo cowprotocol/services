@@ -1131,7 +1131,8 @@ impl Test {
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
         let submission_deadline_latest_block: u64 =
-            self.web3().alloy.get_block_number().await.unwrap() + self.settle_submission_deadline;
+            self.web3().provider.get_block_number().await.unwrap()
+                + self.settle_submission_deadline;
         let old_balances = self.balances().await;
         let res = self
             .client
@@ -1185,7 +1186,7 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .alloy
+                .provider
                 .get_balance(self.trader_address)
                 .await
                 .unwrap(),

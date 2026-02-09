@@ -247,7 +247,7 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
         let database = Postgres::new(db, lookback_time);
 
         // Chain reader
-        let chain = AlloyChain::new(web3.alloy.clone(), ethflow_addresses);
+        let chain = AlloyChain::new(web3.provider.clone(), ethflow_addresses);
 
         // Signer/wallet configuration
         let signer_address = signer.address();
@@ -255,7 +255,9 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
 
         // Transaction submitter
         let gas_estimator = Box::new(
-            shared::gas_price_estimation::eth_node::NodeGasPriceEstimator::new(web3.alloy.clone()),
+            shared::gas_price_estimation::eth_node::NodeGasPriceEstimator::new(
+                web3.provider.clone(),
+            ),
         );
         let submitter = Submitter {
             web3,
