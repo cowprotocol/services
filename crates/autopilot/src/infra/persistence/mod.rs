@@ -573,7 +573,7 @@ impl Persistence {
 
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
-        let next_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
+        let new_or_updated_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["open_orders_after"])
@@ -598,20 +598,9 @@ impl Persistence {
             .to_u64()
             .context("latest_settlement_block is not u64")?;
 
-        // Blindly insert all new orders into the cache.
-        for (uid, order) in next_orders {
-            current_orders.insert(uid, order);
-        }
-
-        // Filter out all the invalid orders.
-        current_orders.retain(|_uid, order| {
-            let expired = order.data.valid_to < min_valid_to
-                || order
-                    .metadata
-                    .ethflow_data
-                    .as_ref()
-                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
-
+        // Remove invalidated orders and their quotes as well as insert new or
+        // updated existing valid orders.
+        for (uid, order) in new_or_updated_orders {
             let invalidated = order.metadata.invalidated;
             let onchain_error = order
                 .metadata
@@ -631,10 +620,29 @@ impl Persistence {
                 }
             };
 
-            !expired && !invalidated && !onchain_error && !fulfilled
-        });
+            if invalidated || onchain_error || fulfilled {
+                current_orders.remove(&uid);
+                current_quotes.remove(&uid);
+            } else {
+                current_orders.insert(uid, order);
+            }
+        }
 
-        current_quotes.retain(|uid, _| current_orders.contains_key(uid));
+        // Filter out all the expired orders.
+        current_orders.retain(|uid, order| {
+            let expired = order.data.valid_to < min_valid_to
+                || order
+                    .metadata
+                    .ethflow_data
+                    .as_ref()
+                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
+
+            if expired {
+                current_quotes.remove(uid);
+            }
+
+            !expired
+        });
 
         {
             let _timer = Metrics::get()
