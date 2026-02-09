@@ -492,8 +492,6 @@ async fn get_native_prices(
         .collect()
 }
 
-/// Finds unsigned PreSign and EIP-1271 orders whose signatures are no longer
-/// validating.
 /// Finds orders with pending presignatures. EIP-1271 signature validation is
 /// skipped entirely - the driver validates signatures before settlement.
 fn find_presignature_pending_orders(orders: &[Order]) -> Vec<OrderUid> {
