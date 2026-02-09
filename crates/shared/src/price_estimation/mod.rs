@@ -183,8 +183,7 @@ pub struct Arguments {
     pub native_price_cache_max_age: Duration,
 
     /// How long before expiry the native price cache should try to update the
-    /// price in the background. This is useful to make sure that prices are
-    /// usable at all times. This value has to be smaller than
+    /// price in the background. This value has to be smaller than
     /// `--native-price-cache-max-age`.
     #[clap(
         long,
@@ -193,11 +192,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub native_price_prefetch_time: Duration,
-
-    /// How many cached native token prices can be updated at most in one
-    /// maintenance cycle.
-    #[clap(long, env, default_value = "3")]
-    pub native_price_cache_max_update_size: usize,
 
     /// How many price estimation requests can be executed concurrently in the
     /// maintenance task.
@@ -357,7 +351,6 @@ impl Display for Arguments {
             native_price_cache_refresh,
             native_price_cache_max_age,
             native_price_prefetch_time,
-            native_price_cache_max_update_size,
             native_price_cache_concurrent_requests,
             amount_to_estimate_prices_with,
             balancer_sor_url,
@@ -388,10 +381,6 @@ impl Display for Arguments {
         writeln!(
             f,
             "native_price_prefetch_time: {native_price_prefetch_time:?}"
-        )?;
-        writeln!(
-            f,
-            "native_price_cache_max_update_size: {native_price_cache_max_update_size}"
         )?;
         writeln!(
             f,

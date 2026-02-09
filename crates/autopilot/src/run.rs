@@ -89,6 +89,65 @@ impl Liveness {
     }
 }
 
+/// Creates an on-demand `CachingNativePriceEstimator` (no background updater)
+/// that shares the given cache. Used for the API-facing native price endpoint.
+async fn api_native_price_estimator(
+    factory: &mut PriceEstimatorFactory<'_>,
+    sources: &shared::price_estimation::NativePriceEstimators,
+    results_required: std::num::NonZeroUsize,
+    weth: &WETH9::Instance,
+    cache: shared::price_estimation::native_price_cache::Cache,
+    approximation_tokens: std::collections::HashMap<
+        Address,
+        shared::price_estimation::native_price_cache::ApproximationToken,
+    >,
+    args: &shared::price_estimation::Arguments,
+) -> shared::price_estimation::native_price_cache::CachingNativePriceEstimator {
+    let inner = factory
+        .native_price_estimator(sources.as_slice(), results_required, weth)
+        .await
+        .expect("failed to build API native price estimator");
+    shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
+        inner,
+        cache,
+        args.native_price_cache_concurrent_requests,
+        approximation_tokens,
+        args.quote_timeout,
+    )
+}
+
+/// Creates a `CachingNativePriceEstimator` wrapped in a `NativePriceUpdater`
+/// that proactively refreshes prices for tokens in the current auction.
+async fn competition_native_price_updater(
+    factory: &mut PriceEstimatorFactory<'_>,
+    sources: &shared::price_estimation::NativePriceEstimators,
+    results_required: std::num::NonZeroUsize,
+    weth: &WETH9::Instance,
+    cache: shared::price_estimation::native_price_cache::Cache,
+    approximation_tokens: std::collections::HashMap<
+        Address,
+        shared::price_estimation::native_price_cache::ApproximationToken,
+    >,
+    args: &shared::price_estimation::Arguments,
+) -> Arc<shared::price_estimation::native_price_cache::NativePriceUpdater> {
+    let inner = factory
+        .native_price_estimator(sources.as_slice(), results_required, weth)
+        .await
+        .expect("failed to build competition native price estimator");
+    let caching = shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
+        inner,
+        cache,
+        args.native_price_cache_concurrent_requests,
+        approximation_tokens,
+        args.quote_timeout,
+    );
+    shared::price_estimation::native_price_cache::NativePriceUpdater::new(
+        caching,
+        args.native_price_cache_refresh,
+        args.native_price_prefetch_time,
+    )
+}
+
 /// Creates Web3 transport based on the given config.
 #[instrument(skip_all)]
 async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
@@ -399,53 +458,33 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .expect("failed to build native price approximation tokens");
 
-    // API native price estimator w/o a maintenance task
     let api_sources = args
         .api_native_price_estimators
         .as_ref()
         .unwrap_or(&args.native_price_estimators);
-    let api_inner_estimator = price_estimator_factory
-        .build_competition_native_estimator(
-            api_sources.as_slice(),
-            args.native_price_estimation_results_required,
-            &weth,
-        )
-        .instrument(info_span!("api_native_price_estimator"))
-        .await
-        .unwrap();
-    let api_native_price_estimator =
-        shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
-            api_inner_estimator,
-            shared_cache.clone(),
-            args.price_estimation.native_price_cache_concurrent_requests,
-            approximation_tokens.clone(),
-            args.price_estimation.quote_timeout,
-        );
+    let api_native_price_estimator = api_native_price_estimator(
+        &mut price_estimator_factory,
+        api_sources,
+        args.native_price_estimation_results_required,
+        &weth,
+        shared_cache.clone(),
+        approximation_tokens.clone(),
+        &args.price_estimation,
+    )
+    .instrument(info_span!("api_native_price_estimator"))
+    .await;
 
-    // Competition native price estimator w/ a maintenance task
-    let competition_inner_estimator = price_estimator_factory
-        .build_competition_native_estimator(
-            args.native_price_estimators.as_slice(),
-            args.native_price_estimation_results_required,
-            &weth,
-        )
-        .instrument(info_span!("updater_native_price_estimator"))
-        .await
-        .unwrap();
-    let competition_caching_estimator =
-        shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
-            competition_inner_estimator,
-            shared_cache.clone(),
-            args.price_estimation.native_price_cache_concurrent_requests,
-            approximation_tokens,
-            args.price_estimation.quote_timeout,
-        );
-    let native_price_updater =
-        shared::price_estimation::native_price_cache::NativePriceUpdater::new(
-            competition_caching_estimator,
-            args.price_estimation.native_price_cache_refresh,
-            args.price_estimation.native_price_prefetch_time,
-        );
+    let native_price_updater = competition_native_price_updater(
+        &mut price_estimator_factory,
+        &args.native_price_estimators,
+        args.native_price_estimation_results_required,
+        &weth,
+        shared_cache.clone(),
+        approximation_tokens,
+        &args.price_estimation,
+    )
+    .instrument(info_span!("competition_native_price_updater"))
+    .await;
 
     let price_estimator = price_estimator_factory
         .price_estimator(

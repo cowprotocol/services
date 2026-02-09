@@ -7,7 +7,7 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimating, NativePriceEstimator},
-        native_price_cache::{self, ApproximationToken, CachingNativePriceEstimator},
+        native_price_cache::ApproximationToken,
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -29,7 +29,6 @@ use {
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
-    bigdecimal::BigDecimal,
     contracts::alloy::WETH9,
     ethrpc::{alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     number::nonzero::NonZeroU256,
@@ -360,9 +359,8 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    /// Creates a competition estimator from the given native price estimator
-    /// sources.
-    pub async fn build_competition_native_estimator(
+    /// Creates a native price estimator from the given sources.
+    pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
@@ -382,39 +380,6 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
         Ok(Box::new(competition_estimator))
-    }
-
-    /// Creates a `CachingNativePriceEstimator` with its own `Cache`.
-    /// Convenience method for the orderbook which doesn't need a shared cache.
-    pub async fn native_price_estimator(
-        &mut self,
-        native: &[Vec<NativePriceEstimatorSource>],
-        results_required: NonZeroUsize,
-        weth: WETH9::Instance,
-        initial_prices: HashMap<Address, BigDecimal>,
-    ) -> Result<Arc<CachingNativePriceEstimator>> {
-        anyhow::ensure!(
-            self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
-            "price cache prefetch time needs to be less than price cache max age"
-        );
-
-        let estimator = self
-            .build_competition_native_estimator(native, results_required, &weth)
-            .await?;
-        let approximation_tokens = self.build_approximation_tokens().await.context(
-            "failed to build native price approximation tokens with normalization factors",
-        )?;
-
-        let cache =
-            native_price_cache::Cache::new(self.args.native_price_cache_max_age, initial_prices);
-        let native_estimator = Arc::new(CachingNativePriceEstimator::new(
-            estimator,
-            cache,
-            self.args.native_price_cache_concurrent_requests,
-            approximation_tokens,
-            self.args.quote_timeout,
-        ));
-        Ok(native_estimator)
     }
 
     /// Builds the approximation tokens mapping with normalization factors based
