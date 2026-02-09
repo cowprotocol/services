@@ -15,10 +15,10 @@ pub async fn get_status_handler(
 ) -> Response {
     let status = state.orderbook.get_order_status(&uid).await;
     match status {
-        Ok(status) => (StatusCode::OK, Json(status)).into_response(),
-        Err(OrderStatusError::NotFound) => (
+        Ok(status) => Json(status).into_response(),
+        Err(err @ OrderStatusError::NotFound) => (
             StatusCode::NOT_FOUND,
-            super::error("NotFound", "Order status was not found"),
+            super::error("NotFound", err.to_string()),
         )
             .into_response(),
         Err(err) => {

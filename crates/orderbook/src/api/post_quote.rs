@@ -9,33 +9,27 @@ use {
         extract::State,
         response::{IntoResponse, Response},
     },
-    model::quote::OrderQuoteRequest,
+    model::quote::{OrderQuoteRequest, OrderQuoteResponse},
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
     std::sync::Arc,
-    thiserror::Error,
 };
 
 pub async fn post_quote_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<OrderQuoteRequest>,
-) -> Response {
-    let result = state.quotes.calculate_quote(&request).await;
-    match result {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
-        Err(err) => {
-            tracing::warn!(%err, ?request, "post_quote error");
-            OrderQuoteErrorWrapper(err).into_response()
-        }
-    }
+) -> Result<Json<OrderQuoteResponse>, OrderQuoteError> {
+    state
+        .quotes
+        .calculate_quote(&request)
+        .await
+        .map(Json)
+        .inspect_err(|err| tracing::warn!(%err, ?request, "post_quote error"))
 }
 
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub struct OrderQuoteErrorWrapper(pub OrderQuoteError);
-impl IntoResponse for OrderQuoteErrorWrapper {
+impl IntoResponse for OrderQuoteError {
     fn into_response(self) -> Response {
-        match self.0 {
+        match self {
             OrderQuoteError::AppData(err) => AppDataValidationErrorWrapper(err).into_response(),
             OrderQuoteError::Order(err) => PartialValidationErrorWrapper(err).into_response(),
             OrderQuoteError::CalculateQuote(err) => CalculateQuoteErrorWrapper(err).into_response(),
@@ -300,10 +294,9 @@ mod tests {
 
     #[tokio::test]
     async fn post_quote_response_err() {
-        let response = OrderQuoteErrorWrapper(OrderQuoteError::CalculateQuote(
-            CalculateQuoteError::Other(anyhow!("Uh oh - error")),
-        ))
-        .into_response();
+        let response =
+            OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(anyhow!("Uh oh - error")))
+                .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();

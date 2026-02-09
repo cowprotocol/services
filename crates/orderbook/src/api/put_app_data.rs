@@ -1,6 +1,5 @@
 use {
     crate::api::{AppState, internal_error_reply},
-    anyhow::Result,
     app_data::{AppDataDocument, AppDataHash},
     axum::{
         extract::{Path, State},
@@ -13,38 +12,31 @@ use {
 pub async fn put_app_data_without_hash(
     State(state): State<Arc<AppState>>,
     Json(document): Json<AppDataDocument>,
-) -> Response {
-    let result = state
+) -> Result<crate::app_data::Register, crate::app_data::RegisterError> {
+    state
         .app_data
         .register(None, document.full_app_data.as_bytes())
-        .await;
-    response(result)
+        .await
 }
 
 pub async fn put_app_data_with_hash(
     State(state): State<Arc<AppState>>,
     Path(hash): Path<AppDataHash>,
     Json(document): Json<AppDataDocument>,
-) -> Response {
-    let result = state
+) -> Result<crate::app_data::Register, crate::app_data::RegisterError> {
+    state
         .app_data
         .register(Some(hash), document.full_app_data.as_bytes())
-        .await;
-    response(result)
+        .await
 }
 
-fn response(
-    result: Result<(crate::app_data::Registered, AppDataHash), crate::app_data::RegisterError>,
-) -> Response {
-    match result {
-        Ok((registered, hash)) => {
-            let status = match registered {
-                crate::app_data::Registered::New => StatusCode::CREATED,
-                crate::app_data::Registered::AlreadyExisted => StatusCode::OK,
-            };
-            (status, Json(hash)).into_response()
-        }
-        Err(err) => err.into_response(),
+impl IntoResponse for crate::app_data::Register {
+    fn into_response(self) -> Response {
+        let status = match self.status {
+            crate::app_data::RegistrationStatus::New => StatusCode::CREATED,
+            crate::app_data::RegistrationStatus::AlreadyExisted => StatusCode::OK,
+        };
+        (status, Json(self.hash)).into_response()
     }
 }
 

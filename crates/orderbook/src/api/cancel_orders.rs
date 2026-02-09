@@ -1,11 +1,6 @@
 use {
-    crate::api::AppState,
-    axum::{
-        Json,
-        extract::State,
-        http::StatusCode,
-        response::{IntoResponse, Response},
-    },
+    crate::{api::AppState, orderbook::OrderCancellationError},
+    axum::{Json, extract::State},
     model::order::SignedOrderCancellations,
     std::sync::Arc,
 };
@@ -13,9 +8,10 @@ use {
 pub async fn cancel_orders_handler(
     State(state): State<Arc<AppState>>,
     Json(cancellations): Json<SignedOrderCancellations>,
-) -> Response {
-    match state.orderbook.cancel_orders(cancellations).await {
-        Ok(_) => (StatusCode::OK, Json("Cancelled")).into_response(),
-        Err(err) => err.into_response(),
-    }
+) -> Result<Json<&'static str>, OrderCancellationError> {
+    state
+        .orderbook
+        .cancel_orders(cancellations)
+        .await
+        .map(|_| Json("Cancelled"))
 }

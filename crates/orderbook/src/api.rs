@@ -1,5 +1,11 @@
 use {
-    crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
+    crate::{
+        app_data,
+        database::Postgres,
+        orderbook::Orderbook,
+        quoter::QuoteHandler,
+        solver_competition::LoadSolverCompetitionError,
+    },
     axum::{
         Router,
         extract::DefaultBodyLimit,
@@ -389,6 +395,20 @@ impl IntoResponse for PriceEstimationErrorWrapper {
 impl From<PriceEstimationError> for PriceEstimationErrorWrapper {
     fn from(err: PriceEstimationError) -> Self {
         Self(err)
+    }
+}
+
+impl IntoResponse for LoadSolverCompetitionError {
+    fn into_response(self) -> Response {
+        match self {
+            err @ LoadSolverCompetitionError::NotFound => {
+                (StatusCode::NOT_FOUND, error("NotFound", err.to_string())).into_response()
+            }
+            LoadSolverCompetitionError::Other(err) => {
+                tracing::error!(?err, "failed to load solver competition");
+                internal_error_reply()
+            }
+        }
     }
 }
 

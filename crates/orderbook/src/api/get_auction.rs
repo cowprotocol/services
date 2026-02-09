@@ -11,7 +11,7 @@ use {
 pub async fn get_auction_handler(State(state): State<Arc<AppState>>) -> Response {
     let result = state.orderbook.get_auction().await;
     match result {
-        Ok(Some(auction)) => (StatusCode::OK, Json(auction)).into_response(),
+        Ok(Some(auction)) => Json(auction).into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
             super::error("NotFound", "There is no active auction"),

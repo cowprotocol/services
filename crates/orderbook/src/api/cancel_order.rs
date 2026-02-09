@@ -15,14 +15,17 @@ pub async fn cancel_order_handler(
     State(state): State<Arc<AppState>>,
     Path(uid): Path<OrderUid>,
     Json(payload): Json<CancellationPayload>,
-) -> Response {
+) -> Result<Json<&'static str>, OrderCancellationError> {
     let order_cancellation = OrderCancellation {
         order_uid: uid,
         signature: payload.signature,
         signing_scheme: payload.signing_scheme,
     };
-    let result = state.orderbook.cancel_order(order_cancellation).await;
-    cancel_order_response(result)
+    state
+        .orderbook
+        .cancel_order(order_cancellation)
+        .await
+        .map(|_| Json("Cancelled"))
 }
 
 impl IntoResponse for OrderCancellationError {
@@ -74,13 +77,6 @@ impl IntoResponse for OrderCancellationError {
     }
 }
 
-pub fn cancel_order_response(result: Result<(), OrderCancellationError>) -> Response {
-    match result {
-        Ok(_) => (axum::http::StatusCode::OK, axum::Json("Cancelled")).into_response(),
-        Err(err) => err.into_response(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -89,6 +85,8 @@ mod tests {
         model::signature::{EcdsaSignature, EcdsaSigningScheme},
         serde_json::json,
     };
+
+    type Result = std::result::Result<Json<&'static str>, OrderCancellationError>;
 
     #[test]
     fn cancellation_payload_deserialization() {
@@ -114,33 +112,34 @@ mod tests {
 
     #[test]
     fn cancel_order_response_ok() {
-        let response = cancel_order_response(Ok(()));
+        let response = (Result::Ok(Json("Cancelled"))).into_response();
         assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[test]
     fn cancel_order_response_err() {
-        let response = cancel_order_response(Err(OrderCancellationError::InvalidSignature));
+        let response = Result::Err(OrderCancellationError::InvalidSignature).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        let response = cancel_order_response(Err(OrderCancellationError::OrderFullyExecuted));
+        let response = Result::Err(OrderCancellationError::OrderFullyExecuted).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        let response = cancel_order_response(Err(OrderCancellationError::AlreadyCancelled));
+        let response = Result::Err(OrderCancellationError::AlreadyCancelled).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        let response = cancel_order_response(Err(OrderCancellationError::OrderExpired));
+        let response = Result::Err(OrderCancellationError::OrderExpired).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        let response = cancel_order_response(Err(OrderCancellationError::WrongOwner));
+        let response = Result::Err(OrderCancellationError::WrongOwner).into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-        let response = cancel_order_response(Err(OrderCancellationError::OrderNotFound));
+        let response = Result::Err(OrderCancellationError::OrderNotFound).into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-        let response = cancel_order_response(Err(OrderCancellationError::Other(
-            anyhow::Error::msg("test error"),
-        )));
+        let response = Result::Err(OrderCancellationError::Other(anyhow::Error::msg(
+            "test error",
+        )))
+        .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

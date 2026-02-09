@@ -1,10 +1,9 @@
 use {
-    crate::api::AppState,
+    crate::api::{AppState, PriceEstimationErrorWrapper},
     alloy::primitives::Address,
     axum::{
         extract::{Path, State},
-        http::StatusCode,
-        response::{IntoResponse, Json, Response},
+        response::Json,
     },
     model::quote::NativeTokenPrice,
     std::sync::Arc,
@@ -13,13 +12,11 @@ use {
 pub async fn get_native_price_handler(
     State(state): State<Arc<AppState>>,
     Path(token): Path<Address>,
-) -> Response {
-    let result = state
+) -> Result<Json<NativeTokenPrice>, PriceEstimationErrorWrapper> {
+    state
         .native_price_estimator
         .estimate_native_price(token, state.quote_timeout)
-        .await;
-    match result {
-        Ok(price) => (StatusCode::OK, Json(NativeTokenPrice { price })).into_response(),
-        Err(err) => super::PriceEstimationErrorWrapper(err).into_response(),
-    }
+        .await
+        .map(|price| Json(NativeTokenPrice { price }))
+        .map_err(PriceEstimationErrorWrapper)
 }

@@ -63,7 +63,7 @@ pub async fn get_trades_handler(
         .await
         .context("get_trades");
     match result {
-        Ok(reply) => (StatusCode::OK, Json(reply)).into_response(),
+        Ok(reply) => Json(reply).into_response(),
         Err(err) => {
             tracing::error!(?err, "get_trades");
             crate::api::internal_error_reply()

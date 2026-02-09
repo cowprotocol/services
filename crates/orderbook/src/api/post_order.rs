@@ -12,7 +12,6 @@ use {
     },
     model::{
         order::{AppdataFromMismatch, OrderCreation, OrderUid},
-        quote::QuoteId,
         signature,
     },
     shared::order_validation::{
@@ -23,6 +22,25 @@ use {
     },
     std::sync::Arc,
 };
+
+pub async fn post_order_handler(
+    State(state): State<Arc<AppState>>,
+    Json(order): Json<OrderCreation>,
+) -> Result<(StatusCode, Json<OrderUid>), AddOrderError> {
+    state
+        .orderbook
+        .add_order(order.clone())
+        .await
+        .map(|(order_uid, quote_metadata)| {
+            let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
+            let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
+            tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
+            (StatusCode::CREATED, Json(order_uid))
+        })
+        .inspect_err(|err| {
+            tracing::debug!(?order, ?err, "error creating order");
+        })
+}
 
 pub struct PartialValidationErrorWrapper(pub PartialValidationError);
 impl IntoResponse for PartialValidationErrorWrapper {
@@ -320,44 +338,16 @@ impl IntoResponse for OrderReplacementError {
     }
 }
 
-pub fn create_order_response(
-    result: Result<(OrderUid, Option<QuoteId>), AddOrderError>,
-) -> Response {
-    match result {
-        Ok((uid, _)) => (StatusCode::CREATED, Json(uid)).into_response(),
-        Err(err) => err.into_response(),
-    }
-}
-
-pub async fn post_order_handler(
-    State(state): State<Arc<AppState>>,
-    Json(order): Json<OrderCreation>,
-) -> Response {
-    let result = state
-        .orderbook
-        .add_order(order.clone())
-        .await
-        .map(|(order_uid, quote_metadata)| {
-            let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
-            let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
-            tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
-            (order_uid, quote_metadata.and_then(|quote| quote.id))
-        })
-        .inspect_err(|err| {
-            tracing::debug!(?order, ?err, "error creating order");
-        });
-
-    create_order_response(result)
-}
-
 #[cfg(test)]
 mod tests {
     use {super::*, crate::api::response_body, model::order::OrderUid, serde_json::json};
 
+    type Result = std::result::Result<(StatusCode, Json<OrderUid>), AddOrderError>;
+
     #[tokio::test]
     async fn create_order_response_created() {
         let uid = OrderUid([1u8; 56]);
-        let response = create_order_response(Ok((uid, Some(42))));
+        let response = Result::Ok((StatusCode::CREATED, Json(uid))).into_response();
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
@@ -369,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_order_response_duplicate() {
-        let response = create_order_response(Err(AddOrderError::DuplicatedOrder));
+        let response = Result::Err(AddOrderError::DuplicatedOrder).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
