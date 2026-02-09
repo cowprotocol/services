@@ -160,12 +160,17 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     // Stop autopilot-leader, follower should take over
     manual_shutdown.shutdown();
-    onchain.mint_block().await;
     assert!(
         tokio::time::timeout(Duration::from_secs(15), autopilot_leader)
             .await
             .is_ok()
     );
+
+    // Ensure all the locks are released and follower has time to step up
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    onchain.mint_block().await;
+    // Ensure the follower has stepped up as leader
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Run 10 txs, autopilot-backup is in charge
     // - only test_solver2 should participate and settle
