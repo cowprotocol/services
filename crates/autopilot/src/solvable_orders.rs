@@ -162,12 +162,7 @@ impl SolvableOrdersCache {
             .map(|inner| inner.auction.clone())
     }
 
-    /// Manually update solvable orders. Usually called by the background
-    /// updating task.
-    ///
-    /// Usually this method is called from update_task. If it isn't, which is
-    /// the case in unit tests, then concurrent calls might overwrite each
-    /// other's results.
+    /// Updates set of solvable orders using all of the latest available state.
     pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
@@ -373,16 +368,19 @@ impl SolvableOrdersCache {
         let fetch_orders = match &mut *lock {
             // Only use incremental query after cache already got initialized
             // because it's not optimized for very long durations.
-            Some(cache) => self
-                .persistence
-                .solvable_orders_after(
-                    cache.solvable_orders.orders.clone(),
-                    cache.solvable_orders.quotes.clone(),
-                    cache.solvable_orders.fetched_from_db,
-                    cache.solvable_orders.latest_settlement_block,
-                    min_valid_to,
-                )
-                .boxed(),
+            Some(cache) => {
+                let orders = std::mem::take(&mut cache.solvable_orders.orders);
+                let quotes = std::mem::take(&mut cache.solvable_orders.quotes);
+                self.persistence
+                    .solvable_orders_after(
+                        orders,
+                        quotes,
+                        cache.solvable_orders.fetched_from_db,
+                        cache.solvable_orders.latest_settlement_block,
+                        min_valid_to,
+                    )
+                    .boxed()
+            }
             None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
         };
 
