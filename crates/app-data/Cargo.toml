@@ -10,6 +10,7 @@ alloy = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
 bytes-hex = { workspace = true }
 const-hex = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 number = { path = "../number" }
 serde = { workspace = true }
 serde_json = { workspace = true }

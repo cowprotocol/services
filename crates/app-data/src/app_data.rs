@@ -3,10 +3,12 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, anyhow},
     bytes_hex::BytesHex,
+    moka::sync::Cache,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
     std::{
+        collections::HashSet,
         fmt::{self, Display},
         slice::Iter,
     },
@@ -349,6 +351,71 @@ impl Root {
 
     pub fn app_code(&self) -> Option<&str> {
         self.app_code.as_deref()
+    }
+}
+
+const APP_CODE_BYPASS_CACHE_SIZE: u64 = 20_000;
+
+/// Determines which orders should bypass balance checks based on their
+/// `appCode`. Caches parsed appCode values to avoid re-parsing JSON.
+pub struct AppCodeBypass {
+    sources: HashSet<String>,
+    cache: Cache<AppDataHash, Option<String>>,
+}
+
+impl Clone for AppCodeBypass {
+    fn clone(&self) -> Self {
+        Self {
+            sources: self.sources.clone(),
+            cache: self.cache.clone(),
+        }
+    }
+}
+
+impl fmt::Debug for AppCodeBypass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppCodeBypass")
+            .field("sources", &self.sources)
+            .finish_non_exhaustive()
+    }
+}
+
+impl AppCodeBypass {
+    pub fn new(sources: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            sources: sources.into_iter().collect(),
+            cache: Cache::new(APP_CODE_BYPASS_CACHE_SIZE),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty()
+    }
+
+    /// Returns `true` if the document's `appCode` matches one of the
+    /// configured bypass sources. Caches the parsed appCode by hash.
+    pub fn matches(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
+        if self.sources.is_empty() {
+            return false;
+        }
+
+        if let Some(cached) = self.cache.get(hash) {
+            return cached
+                .as_ref()
+                .is_some_and(|code| self.sources.contains(code));
+        }
+
+        let app_code = document.and_then(|doc| {
+            serde_json::from_str::<Root>(doc)
+                .ok()
+                .and_then(|root| root.app_code().map(str::to_owned))
+        });
+
+        let result = app_code
+            .as_ref()
+            .is_some_and(|code| self.sources.contains(code));
+        self.cache.insert(*hash, app_code);
+        result
     }
 }
 
@@ -777,6 +844,32 @@ mod tests {
             "#,
             ProtocolAppData::default(),
         );
+    }
+
+    #[test]
+    fn app_code_bypass_matches_app_code() {
+        let hash1 = AppDataHash([1; 32]);
+        let hash2 = AppDataHash([2; 32]);
+        let hash3 = AppDataHash([3; 32]);
+
+        let doc1 = r#"{"appCode": "Barter"}"#;
+        let doc2 = r#"{"appCode": "CoW Swap"}"#;
+
+        // Empty sources -> no bypass
+        let bypass = AppCodeBypass::new(Vec::<String>::new());
+        assert!(!bypass.matches(&hash1, Some(doc1)));
+
+        // Match "Barter" -> only hash1
+        let bypass = AppCodeBypass::new(["Barter".to_string()]);
+        assert!(bypass.matches(&hash1, Some(doc1)));
+        assert!(!bypass.matches(&hash2, Some(doc2)));
+        assert!(!bypass.matches(&hash3, None));
+
+        // Match multiple sources
+        let bypass = AppCodeBypass::new(["Barter".to_string(), "CoW Swap".to_string()]);
+        assert!(bypass.matches(&hash1, Some(doc1)));
+        assert!(bypass.matches(&hash2, Some(doc2)));
+        assert!(!bypass.matches(&hash3, None));
     }
 
     #[test]

@@ -317,6 +317,12 @@ pub struct Arguments {
     /// By default, volume fees are NOT applied to same-token trades.
     #[clap(long, env)]
     pub enable_sell_equals_buy_volume_fee: bool,
+
+    /// List of appCode values in appData that enable bypassing balance
+    /// filters. Orders with matching appCode will skip balance checks in both
+    /// the autopilot and the driver.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub filter_bypass_app_data_sources: Vec<String>,
 }
 
 pub fn display_secret_option<T>(
@@ -419,6 +425,7 @@ impl Display for Arguments {
             tracing,
             volume_fee_bucket_overrides,
             enable_sell_equals_buy_volume_fee,
+            filter_bypass_app_data_sources,
         } = self;
 
         write!(f, "{ethrpc}")?;
@@ -514,6 +521,10 @@ impl Display for Arguments {
         writeln!(
             f,
             "enable_sell_equals_buy_volume_fee: {enable_sell_equals_buy_volume_fee}"
+        )?;
+        writeln!(
+            f,
+            "filter_bypass_app_data_sources: {filter_bypass_app_data_sources:?}"
         )?;
         Ok(())
     }
