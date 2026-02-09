@@ -29,21 +29,9 @@ ignore = [
     # Needs upgrade to 0.3.20+ (minimal risk in current usage)
     "RUSTSEC-2025-0055",
 
-    # atty - Unmaintained (RUSTSEC-2024-0375)
-    # Migrate to std::io::IsTerminal (tracked in #3338)
-    "RUSTSEC-2024-0375",
-
-    # atty - Unsound potential unaligned read (RUSTSEC-2021-0145)
-    # Will be removed when migrating to std::io::IsTerminal
-    "RUSTSEC-2021-0145",
-
     # derivative - Unmaintained (RUSTSEC-2024-0388)
     # Evaluate alternatives (tracked in #3338)
     "RUSTSEC-2024-0388",
-
-    # adler - Unmaintained (RUSTSEC-2025-0056)
-    # Use adler2 instead (tracked in #3338)
-    "RUSTSEC-2025-0056",
 
     # instant - Unmaintained (RUSTSEC-2024-0384)
     # Use web-time instead (tracked in #3338)

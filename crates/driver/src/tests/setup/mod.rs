@@ -1131,7 +1131,7 @@ impl Test {
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
         let submission_deadline_latest_block: u64 =
-            u64::try_from(self.web3().eth().block_number().await.unwrap()).unwrap()
+            self.web3().provider.get_block_number().await.unwrap()
                 + self.settle_submission_deadline;
         let old_balances = self.balances().await;
         let res = self
@@ -1186,7 +1186,7 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .alloy
+                .provider
                 .get_balance(self.trader_address)
                 .await
                 .unwrap(),
@@ -1266,7 +1266,7 @@ impl SolveOk<'_> {
     /// Extracts the first solution from the response. This is expected to be
     /// always valid if there is a valid solution, as we expect from driver to
     /// not send multiple solutions (yet).
-    fn solution(&self) -> serde_json::Value {
+    pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();

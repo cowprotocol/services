@@ -79,8 +79,8 @@ impl Solver {
     pub async fn new(config: Config) -> Self {
         let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
-                let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
-                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.alloy)
+                let web3 = ethrpc::web3(Default::default(), &url, Some("baseline"));
+                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.provider)
                     .await
                     .map(Arc::new)
                     .inspect_err(|err| {

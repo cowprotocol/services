@@ -260,9 +260,6 @@ pub struct Arguments {
     /// "<token1>|<approx_token1>,<token2>|<approx_token2>"
     /// - token1 is a token address for which we get the native token price
     /// - approx_token1 is a token address used for the price approximation
-    ///
-    /// It is very important that both tokens in the pair have the same number
-    /// of decimals.
     #[clap(
         long,
         env,
@@ -535,7 +532,7 @@ pub struct Verification {
     pub buy_token_destination: BuyTokenDestination,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, derive_more::Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
@@ -545,6 +542,7 @@ pub struct Estimate {
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
     /// Data associated with this estimation.
+    #[debug(ignore)]
     pub execution: QuoteExecution,
 }
 

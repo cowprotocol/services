@@ -18,11 +18,6 @@ pub use {
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "domain")]
 pub struct Metrics {
-    /// How many times the solver marked as non-settling based on the database
-    /// statistics.
-    #[metric(labels("solver", "reason"))]
-    pub banned_solver: prometheus::IntCounterVec,
-
     /// Tracks settlements that couldn't be matched to the database solutions.
     #[metric(labels("solver_address"))]
     pub inconsistent_settlements: prometheus::IntCounterVec,

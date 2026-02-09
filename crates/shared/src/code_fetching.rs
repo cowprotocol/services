@@ -27,7 +27,7 @@ pub trait CodeFetching: Send + Sync + 'static {
 impl CodeFetching for Web3 {
     #[instrument(skip_all)]
     async fn code(&self, address: Address) -> Result<Bytes> {
-        Ok(self.alloy.get_code_at(address).await?)
+        Ok(self.provider.get_code_at(address).await?)
     }
 
     #[instrument(skip_all)]

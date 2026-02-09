@@ -22,6 +22,7 @@ use {
         util::{Bytes, math},
     },
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
+    hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
     std::{
         cmp::Reverse,
@@ -112,7 +113,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, auction: RequestBytes) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
@@ -238,6 +239,7 @@ impl Competition {
                     .user_trades()
                     .map(|trade| trade.order().uid)
                     .collect();
+                let has_haircut = solution.has_haircut();
                 observe::encoding(&id);
                 let settlement = solution
                     .encode(
@@ -247,10 +249,10 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, orders, settlement)
+                (id, orders, has_haircut, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, orders, result)| async move {
+            .filter_map(|(id, orders, has_haircut, result)| async move {
                 match result {
                     Ok(solution) => {
                         self.risk_detector.encoding_succeeded(&orders);
@@ -260,8 +262,11 @@ impl Competition {
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
-                        observe::encoding_failed(self.solver.name(), &id, &err);
-                        notify::encoding_failed(&self.solver, auction.id(), &id, &err);
+                        observe::encoding_failed(self.solver.name(), &id, &err, has_haircut);
+                        // don't notify on errors for solutions with haircut
+                        if !has_haircut {
+                            notify::encoding_failed(&self.solver, auction.id(), &id, &err);
+                        }
                         None
                     }
                 }
@@ -361,6 +366,7 @@ impl Competition {
         // gets picked by the procotol.
         if let Ok(remaining) = deadline.remaining() {
             let score_ref = &mut score;
+            let has_haircut = settlement.has_haircut();
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
@@ -368,19 +374,22 @@ impl Competition {
                     if let Err(infra::simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await
                     {
-                        observe::winner_voided(block, &err);
+                        observe::winner_voided(self.solver.name(), block, &err, has_haircut);
                         *score_ref = None;
                         self.settlements
                             .lock()
                             .unwrap()
                             .retain(|s| s.solution().get() != solution_id);
-                        notify::simulation_failed(
-                            &self.solver,
-                            auction.id(),
-                            settlement.solution(),
-                            &infra::simulator::Error::Revert(err),
-                            true,
-                        );
+                        // Only notify solver if solution doesn't have haircut
+                        if !has_haircut {
+                            notify::simulation_failed(
+                                &self.solver,
+                                auction.id(),
+                                settlement.solution(),
+                                &infra::simulator::Error::Revert(err),
+                                true,
+                            );
+                        }
                         return;
                     }
                 }
@@ -633,19 +642,20 @@ impl Competition {
                     // disconnected). This is a fallback to recover from issues
                     // like a stuck driver (e.g., stalled block stream).
                     Either::Left((_closed, settle_fut)) => {
-                        // Add a grace period to give driver the last chance to fetch the settlement
-                        // tx.
+                        tracing::debug!("autopilot terminated settle call");
+                        // Add a grace period to give driver the last chance to cancel the
+                        // tx if needed.
                         tokio::time::timeout(Duration::from_secs(1), settle_fut)
                             .await
-                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
+                            .unwrap_or_else(|_| {
+                                tracing::error!("didn't finish tx submission within grace period");
+                                Err(DeadlineExceeded.into())
+                            })
                     }
                     Either::Right((res, _)) => res,
                 };
                 observe::settled(self.solver.name(), &result);
-
-                if let Err(err) = response_sender.send(result) {
-                    tracing::error!(?err, "Failed to send /settle response");
-                }
+                let _ = response_sender.send(result);
             }
             .instrument(tracing_span)
             .await
@@ -766,14 +776,9 @@ fn merge(
     for solution in solutions.take(MAX_SOLUTIONS_TO_MERGE) {
         let mut extension = vec![];
         for already_merged in merged.iter() {
-            match solution.merge(already_merged, max_orders_per_merged_solution) {
-                Ok(merged) => {
-                    observe::merged(&solution, already_merged, &merged);
-                    extension.push(merged);
-                }
-                Err(err) => {
-                    observe::not_merged(&solution, already_merged, err);
-                }
+            if let Ok(merged) = solution.merge(already_merged, max_orders_per_merged_solution) {
+                observe::merged(&solution, already_merged, &merged);
+                extension.push(merged);
             }
         }
 

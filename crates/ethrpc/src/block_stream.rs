@@ -1,5 +1,5 @@
 use {
-    crate::{AlloyProvider, alloy::ProviderLabelingExt},
+    crate::AlloyProvider,
     alloy::{
         eips::{BlockId, BlockNumberOrTag},
         primitives::{B256, U256},
@@ -56,6 +56,7 @@ pub struct BlockInfo {
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
+    pub base_fee: u64,
     /// When the system noticed the new block.
     pub observed_at: Instant,
 }
@@ -69,6 +70,7 @@ impl Default for BlockInfo {
             timestamp: Default::default(),
             gas_limit: Default::default(),
             gas_price: Default::default(),
+            base_fee: Default::default(),
             observed_at: Instant::now(),
         }
     }
@@ -89,19 +91,7 @@ impl TryFrom<Block> for BlockInfo {
     type Error = anyhow::Error;
 
     fn try_from(value: Block) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            number: value.header.number,
-            hash: value.header.hash,
-            parent_hash: value.header.parent_hash,
-            timestamp: value.header.timestamp,
-            gas_limit: U256::from(value.header.gas_limit),
-            gas_price: value
-                .header
-                .base_fee_per_gas
-                .map(U256::from)
-                .context("no gas price")?,
-            observed_at: Instant::now(),
-        })
+        value.header.try_into()
     }
 }
 
@@ -119,6 +109,9 @@ impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
                 .base_fee_per_gas
                 .map(U256::from)
                 .context("no gas price")?,
+            base_fee: value
+                .base_fee_per_gas
+                .ok_or_else(|| anyhow!("no base fee available"))?,
             observed_at: Instant::now(),
         })
     }
@@ -242,8 +235,8 @@ pub async fn current_block_stream(
 ) -> Result<CurrentBlockWatcher> {
     // Build an alloy transport specifically for the current block stream to avoid
     // batching requests together on chains with a very high block frequency.
-    let (provider, _) = crate::alloy::unbuffered_provider(url.as_str());
-    let provider = provider.labeled("base_currentBlockStream".into());
+    let (provider, _) =
+        crate::alloy::unbuffered_provider(url.as_str(), Some("base_currentBlockStream"));
 
     let first_block = provider.current_block().await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
@@ -533,7 +526,7 @@ mod tests {
 
         let alloy_provider = Web3::new_from_env();
         let ws_node = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
-        let receiver = current_block_ws_stream(alloy_provider.alloy, ws_node)
+        let receiver = current_block_ws_stream(alloy_provider.provider, ws_node)
             .await
             .unwrap();
         let mut stream = into_stream(receiver);
@@ -550,13 +543,13 @@ mod tests {
 
         // single block
         let range = RangeInclusive::try_new(5, 5).unwrap();
-        let blocks = web3.alloy.blocks(range).await.unwrap();
+        let blocks = web3.provider.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks.last().unwrap().0, 5);
 
         // multiple blocks
         let range = RangeInclusive::try_new(5, 8).unwrap();
-        let blocks = web3.alloy.blocks(range).await.unwrap();
+        let blocks = web3.provider.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 4);
         assert_eq!(blocks.last().unwrap().0, 8);
         assert_eq!(blocks.first().unwrap().0, 5);
@@ -569,7 +562,7 @@ mod tests {
             current_block_number,
         )
         .unwrap();
-        let blocks = web3.alloy.blocks(range).await.unwrap();
+        let blocks = web3.provider.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);

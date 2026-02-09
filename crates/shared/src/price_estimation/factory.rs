@@ -7,7 +7,7 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
-        native_price_cache::CachingNativePriceEstimator,
+        native_price_cache::{ApproximationToken, CachingNativePriceEstimator},
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -31,7 +31,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
@@ -99,7 +99,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         let Some(web3) = network.simulation_web3.clone() else {
             return Ok(None);
         };
-        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
+        let web3 = web3.labeled("simulator");
 
         let tenderly = shared_args
             .tenderly
@@ -384,6 +384,10 @@ impl<'a> PriceEstimatorFactory<'a> {
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
+        let approximation_tokens = self.build_approximation_tokens().await.context(
+            "failed to build native price approximation tokens with normalization factors",
+        )?;
+
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
             self.args.native_price_cache_max_age,
@@ -391,14 +395,55 @@ impl<'a> PriceEstimatorFactory<'a> {
             Some(self.args.native_price_cache_max_update_size),
             self.args.native_price_prefetch_time,
             self.args.native_price_cache_concurrent_requests,
-            self.args
-                .native_price_approximation_tokens
-                .iter()
-                .copied()
-                .collect(),
+            approximation_tokens,
             self.args.quote_timeout,
         ));
         Ok(native_estimator)
+    }
+
+    /// Builds the approximation tokens mapping with normalization factors based
+    /// on decimal differences between token pairs.
+    async fn build_approximation_tokens(&self) -> Result<HashMap<Address, ApproximationToken>> {
+        let pairs = &self.args.native_price_approximation_tokens;
+        if pairs.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Collect all unique addresses to fetch their decimals
+        let all_addresses: Vec<Address> = pairs
+            .iter()
+            .flat_map(|(from, to)| [*from, *to])
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let token_infos = self.components.tokens.get_token_infos(&all_addresses).await;
+
+        let mut approximation_tokens = HashMap::new();
+        for (from_token, to_token) in pairs {
+            let from_decimals = token_infos
+                .get(from_token)
+                .and_then(|info| info.decimals)
+                .with_context(|| {
+                    format!(
+                        "could not fetch decimals for approximation source token {from_token:?}"
+                    )
+                })?;
+
+            let to_decimals = token_infos
+                .get(to_token)
+                .and_then(|info| info.decimals)
+                .with_context(|| {
+                    format!("could not fetch decimals for approximation target token {to_token:?}")
+                })?;
+
+            approximation_tokens.insert(
+                *from_token,
+                ApproximationToken::with_normalization((*to_token, to_decimals), from_decimals),
+            );
+        }
+
+        Ok(approximation_tokens)
     }
 }
 

@@ -122,22 +122,32 @@ pub fn encoding(id: &solution::Id) {
 }
 
 /// Observe that settlement encoding failed.
-pub fn encoding_failed(solver: &solver::Name, id: &solution::Id, err: &solution::Error) {
-    tracing::info!(?id, ?err, "discarded solution: settlement encoding");
+pub fn encoding_failed(
+    solver: &solver::Name,
+    id: &solution::Id,
+    err: &solution::Error,
+    has_haircut: bool,
+) {
+    tracing::info!(
+        ?id,
+        ?err,
+        has_haircut,
+        "discarded solution: settlement encoding"
+    );
+    let reason = if has_haircut {
+        "SettlementEncodingHaircut"
+    } else {
+        "SettlementEncoding"
+    };
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
+        .with_label_values(&[solver.as_str(), reason])
         .inc();
 }
 
 /// Observe that two solutions were merged.
 pub fn merged(first: &Solution, other: &Solution, result: &Solution) {
-    tracing::debug!(?first, ?other, ?result, "merged solutions");
-}
-
-/// Observe that it was not possible to merge two solutions.
-pub fn not_merged(first: &Solution, other: &Solution, err: solution::error::Merge) {
-    tracing::debug!(?err, ?first, ?other, "solutions can't be merged");
+    tracing::trace!(?first, ?other, ?result, "merged solutions");
 }
 
 /// Observe that scoring is about to start.
@@ -169,8 +179,27 @@ pub fn score(settlement: &Settlement, score: &eth::Ether) {
 
 // Observe that the winning settlement started failing upon arrival of a new
 // block
-pub fn winner_voided(block: BlockInfo, err: &simulator::RevertError) {
-    tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+pub fn winner_voided(
+    solver: &solver::Name,
+    block: BlockInfo,
+    err: &simulator::RevertError,
+    has_haircut: bool,
+) {
+    tracing::warn!(
+        block = block.number,
+        ?err,
+        has_haircut,
+        "solution reverts on new block"
+    );
+    let reason = if has_haircut {
+        "SimulationRevertHaircut"
+    } else {
+        "SimulationRevert"
+    };
+    metrics::get()
+        .dropped_solutions
+        .with_label_values(&[solver.as_str(), reason])
+        .inc();
 }
 
 pub fn revealing() {
@@ -222,27 +251,27 @@ pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, comp
 }
 
 /// Observe the result of solving an auction.
-pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition::Error>) {
+pub fn solved(solver: &str, result: &Result<Option<Solved>, competition::Error>) {
     match result {
         Ok(Some(solved)) => {
             tracing::info!(?solved, "solved auction");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), "Success"])
+                .with_label_values(&[solver, "Success"])
                 .inc();
         }
         Ok(None) => {
             tracing::debug!("no solution found");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), "SolutionNotFound"])
+                .with_label_values(&[solver, "SolutionNotFound"])
                 .inc();
         }
         Err(err) => {
             tracing::warn!(?err, "failed to solve auction");
             metrics::get()
                 .solutions
-                .with_label_values(&[solver.as_str(), competition_error(err)])
+                .with_label_values(&[solver, competition_error(err)])
                 .inc();
         }
     }

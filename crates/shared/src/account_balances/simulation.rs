@@ -8,7 +8,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
-    ethrpc::Web3,
+    ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::future,
     model::order::SellTokenSource,
     tracing::instrument,
@@ -28,7 +28,7 @@ impl Balances {
         // contracts exist at addresses that get called. This allows us to
         // properly check if the `source` is not supported for the deployment
         // work without additional code paths :tada:!
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
+        let web3 = web3.labeled("balanceFetching");
 
         Self {
             web3,
@@ -79,7 +79,7 @@ impl Balances {
                 std::cmp::min(balance, allowance)
             }
             SellTokenSource::External => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.alloy);
+                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
                 let balance = token.balanceOf(query.owner);
                 let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
                 let allowance = token.allowance(query.owner, self.vault());
@@ -94,7 +94,7 @@ impl Balances {
                 }
             }
             SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.alloy);
+                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
                 let balance = vault.getInternalBalance(query.owner, vec![query.token]);
                 let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
                 let (balance, approved) = futures::try_join!(
@@ -120,7 +120,7 @@ impl BalanceFetching for Balances {
             .iter()
             .map(|query| async {
                 if query.interactions.is_empty() {
-                    let token = ERC20::Instance::new(query.token, self.web3.alloy.clone());
+                    let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
                     self.tradable_balance_simple(query, &token).await
                 } else {
                     self.tradable_balance_simulated(query).await
@@ -181,11 +181,11 @@ mod tests {
         let web3 = Web3::new_from_env();
         let settlement = GPv2Settlement::GPv2Settlement::new(
             alloy::primitives::address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
         let balances = contracts::alloy::support::Balances::Instance::new(
             address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
         let balances = Balances::new(
             &web3,

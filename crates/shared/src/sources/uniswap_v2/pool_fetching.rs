@@ -274,15 +274,15 @@ impl PoolReading for DefaultPoolReader {
         let pair_address = self.pair_provider.pair_address(&pair);
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
-        let token0 = ERC20::Instance::new(pair.get().0, self.web3.alloy.clone());
-        let token1 = ERC20::Instance::new(pair.get().1, self.web3.alloy.clone());
+        let token0 = ERC20::Instance::new(pair.get().0, self.web3.provider.clone());
+        let token1 = ERC20::Instance::new(pair.get().1, self.web3.provider.clone());
 
         async move {
             let fetch_token0_balance = token0.balanceOf(pair_address).block(block);
             let fetch_token1_balance = token1.balanceOf(pair_address).block(block);
 
             let pair_contract =
-                IUniswapLikePair::Instance::new(pair_address, self.web3.alloy.clone());
+                IUniswapLikePair::Instance::new(pair_address, self.web3.provider.clone());
             let fetch_reserves = pair_contract.getReserves().block(block);
 
             let (reserves, token0_balance, token1_balance) = futures::join!(

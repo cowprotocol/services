@@ -17,7 +17,6 @@ clap = { version = "4.5.6", features = ["derive", "env"] }
 dashmap = "6.1.0"
 derivative = "2.2.0"
 derive_more = { version = "1.0.0", features = ["full"] }
-ethcontract = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8e112a88988040cde6110379ee6d1be768a13244", default-features = false, features = ["aws-kms"] }
 mimalloc = "0.1.43"
 tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms", "profiling"] }
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
@@ -25,6 +24,7 @@ flate2 = "1.0.30"
 futures = "0.3.30"
 const-hex = "1.17.0"
 hex-literal = "0.4.1"
+http-body = "0.4.6"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
 hyper = "0.14.29"
@@ -33,7 +33,6 @@ itertools = "0.14"
 maplit = "1.0.2"
 mockall = "0.12.1"
 num = "0.4.3"
-primitive-types = "0.12"
 prometheus = "0.13.4"
 prometheus-metric-storage = "0.5.0"
 rand = "0.8.5"
@@ -55,11 +54,9 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = "2.5.0"
 warp = { git = 'https://github.com/cowprotocol/warp.git', rev = "586244e", default-features = false }
-web3 = { version = "0.19.0", default-features = false }
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
 async-stream = "0.3.5"
-atty = "0.2"
 autopilot = { path = "crates/autopilot" }
 aws-config = "1.5.1"
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
@@ -95,7 +92,7 @@ solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
 testlib = { path = "crates/testlib" }
 winner-selection = { path = "crates/winner-selection" }
-time = "0.3.37"
+time = "0.3.47"
 tiny-keccak = "2.0.2"
 tower = "0.4"
 tower-http = "0.4"

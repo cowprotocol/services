@@ -52,7 +52,7 @@ impl TokenInfoFetcher {
             });
         }
 
-        let erc20 = ERC20::Instance::new(address, self.web3.alloy.clone());
+        let erc20 = ERC20::Instance::new(address, self.web3.provider.clone());
         let (decimals, symbol) = {
             let decimals = erc20.decimals();
             let symbol = erc20.symbol();

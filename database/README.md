@@ -8,6 +8,7 @@ Some tables only store data emitted via smart contract events. Because we only h
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.
 
+
 ### app\_data
 
 Associates the 32 bytes contract app data with the corresponding full app data.
@@ -64,6 +65,7 @@ Contains all auctions for which a valid solver competition exists.
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
+- competition_auction_deadline: btree(`deadline`)
 
 ### ethflow\_orders
 
@@ -175,6 +177,7 @@ Indexes:
 - PRIMARY KEY: btree(`uid`)
 - event\_index: btree(`block_number`, `index`)
 - order\_sender: hash(sender)
+- okay\_onchain\_orders: btree(`uid`) WHERE placement\_error IS NOT NULL
 
 ### order\_events
 
@@ -272,6 +275,9 @@ Indexes:
 - order_sell_buy_tokens: btree(`sell_token`, `buy_token`)
 - user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - version_idx: btree(`settlement_contract`)
+- orders\_true\_valid\_to: btree(`true_valid_to`)
+- orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
+- orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
 
 ### fee_policies
 
@@ -476,6 +482,7 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
+- trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
 
 ### surplus\_capturing\_jit\_order\_owners
 
@@ -623,3 +630,13 @@ We support different expiration times for orders with different signing schemes.
  market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
  liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
+
+## Notes on Migrations
+
+Migrations that require a long running process *must* be done manually, this is due to the limitations the weekly release process imposes:
+* The deployment must complete under 5 minutes
+* The pod has a `processDeadlineSeconds` defaulting to 600 seconds
+
+To avoid extending the process, we resort to manually applying complicated migrations.
+
+The above also comes into play when dealing with indexes, as their construction with flyway may lock up rows, degrading SLI.

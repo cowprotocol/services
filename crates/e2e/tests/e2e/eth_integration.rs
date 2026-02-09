@@ -46,7 +46,7 @@ async fn eth_integration(web3: Web3) {
         .await
         .unwrap();
 
-    let trader_a_eth_balance_before = web3.alloy.get_balance(trader_a.address()).await.unwrap();
+    let trader_a_eth_balance_before = web3.provider.get_balance(trader_a.address()).await.unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -109,8 +109,8 @@ async fn eth_integration(web3: Web3) {
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     let trade_happened = || async {
-        let balance_a = web3.alloy.get_balance(trader_a.address()).await.unwrap();
-        let balance_b = web3.alloy.get_balance(trader_b.address()).await.unwrap();
+        let balance_a = web3.provider.get_balance(trader_a.address()).await.unwrap();
+        let balance_b = web3.provider.get_balance(trader_b.address()).await.unwrap();
 
         let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == 49u64.eth();
         let trader_b_eth_increased = balance_b >= 49u64.eth();

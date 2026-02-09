@@ -15,7 +15,7 @@ use {
                 event_retriever::CoWSwapOnchainOrdersContract,
             },
         },
-        domain::{self, competition::SolverParticipationGuard},
+        domain,
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -163,27 +163,30 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
-        .await
-        .unwrap();
+    let db_write = Postgres::new(
+        args.db_write_url.as_str(),
+        crate::database::Config {
+            insert_batch_size: args.insert_batch_size,
+            max_pool_size: args.database_pool.db_max_connections,
+        },
+    )
+    .await
+    .unwrap();
 
     // If the DB is in read-only mode, running ANALYZE is not possible and will
     // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(
-        &args.shared.ethrpc,
-        &http_factory,
-        &args.shared.node_url,
-        "base",
-    );
-    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
+    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let simulation_web3 = args
+        .shared
+        .simulation_node_url
+        .as_ref()
+        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
-        .alloy
+        .provider
         .get_chain_id()
         .instrument(info_span!("chain_id"))
         .await
@@ -237,9 +240,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         addr
     });
     let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.alloy.clone()));
+        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
 
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.alloy)
+    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
         .instrument(info_span!("uniswapv3_deployed"))
         .await
         .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
@@ -328,12 +331,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         CachingDetector::new(
             Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(
-                    &args.shared.ethrpc,
-                    &http_factory,
-                    tracing_node_url,
-                    "trace",
-                ),
+                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
                 *eth.contracts().settlement().address(),
                 finder,
             )),
@@ -355,7 +353,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = Arc::new(web3.alloy.clone());
+    let block_retriever = Arc::new(web3.provider.clone());
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
@@ -416,16 +414,13 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let skip_event_sync_start = if args.skip_event_sync {
         Some(
-            block_number_to_block_number_hash(&web3.alloy, BlockNumberOrTag::Latest)
+            block_number_to_block_number_hash(&web3.provider, BlockNumberOrTag::Latest)
                 .await
                 .expect("Failed to fetch latest block"),
         )
     } else {
         None
     };
-
-    let (competition_updates_sender, competition_updates_receiver) =
-        tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
@@ -449,7 +444,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
-            web3.alloy.clone(),
+            web3.provider.clone(),
             *eth.contracts().settlement().address(),
         ),
         boundary::events::settlement::Indexer::new(
@@ -574,12 +569,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(
-        settlement_event_indexer,
-        db_write.clone(),
-        args.max_maintenance_timeout,
-    );
-    maintenance.with_cow_amms(&cow_amm_registry);
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
+    maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
@@ -635,7 +626,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
 
-        maintenance.spawn_ethflow_indexer(onchain_order_indexer);
+        maintenance.add_ethflow_indexer(onchain_order_indexer);
         // refunds are not critical for correctness and can therefore be indexed
         // sporadically in a background task
         let service_maintainer = ServiceMaintenance::new(vec![Arc::new(refund_event_handler)]);
@@ -663,7 +654,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
-                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
@@ -677,28 +667,21 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .into_iter()
         .collect();
 
-    let solver_participation_guard = SolverParticipationGuard::new(
-        eth.clone(),
-        persistence.clone(),
-        competition_updates_receiver,
-        args.db_based_solver_participation_guard,
-        drivers.iter().cloned(),
-    );
+    let awaiter = maintenance
+        .spawn_maintenance_task(eth.current_block().clone(), args.max_maintenance_timeout);
 
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
         drivers,
-        solver_participation_guard,
         solvable_orders_cache,
         trusted_tokens,
         run_loop::Probes {
             liveness: liveness.clone(),
             startup,
         },
-        Arc::new(maintenance),
-        competition_updates_sender,
+        awaiter,
     );
     run.run_forever(shutdown_controller).await;
 
@@ -731,7 +714,6 @@ async fn shadow_mode(args: Arguments) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
@@ -744,19 +726,14 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::ethrpc::web3(
-        &args.shared.ethrpc,
-        &http_factory,
-        &args.shared.node_url,
-        "base",
-    );
-    let weth = WETH9::Instance::deployed(&web3.alloy)
+    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");
 
     let trusted_tokens = {
         let chain_id = web3
-            .alloy
+            .provider
             .get_chain_id()
             .await
             .expect("Could not get chainId");
@@ -788,7 +765,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     let current_block = args
         .shared
         .current_block
-        .stream(args.shared.node_url, web3.alloy.clone())
+        .stream(args.shared.node_url, web3.provider.clone())
         .await
         .expect("couldn't initialize current block stream");
 
