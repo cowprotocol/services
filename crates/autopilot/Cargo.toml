@@ -41,7 +41,6 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
-moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
