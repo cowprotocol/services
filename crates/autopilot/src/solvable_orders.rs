@@ -9,7 +9,6 @@ use {
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
-    indexmap::IndexSet,
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -23,7 +22,7 @@ use {
         bad_token::BadTokenDetecting,
         price_estimation::{
             native::{NativePriceEstimating, to_normalized_price},
-            native_price_cache::CachingNativePriceEstimator,
+            native_price_cache::NativePriceUpdater,
         },
         remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},
@@ -91,7 +90,7 @@ pub struct SolvableOrdersCache {
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Option<Inner>>,
-    native_price_estimator: Arc<CachingNativePriceEstimator>,
+    native_price_estimator: Arc<NativePriceUpdater>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     weth: Address,
@@ -120,7 +119,7 @@ impl SolvableOrdersCache {
         banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        native_price_estimator: Arc<CachingNativePriceEstimator>,
+        native_price_estimator: Arc<NativePriceUpdater>,
         signature_validator: Arc<dyn SignatureValidating>,
         weth: Address,
         limit_order_price_factor: BigDecimal,
@@ -470,11 +469,11 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
 
 async fn get_native_prices(
     tokens: &[Address],
-    native_price_estimator: &CachingNativePriceEstimator,
+    native_price_estimator: &NativePriceUpdater,
     timeout: Duration,
 ) -> BTreeMap<Address, alloy::primitives::U256> {
     native_price_estimator
-        .estimate_native_prices_with_timeout(tokens, timeout)
+        .fetch_prices(tokens, timeout)
         .await
         .into_iter()
         .flat_map(|(token, result)| {
@@ -615,7 +614,7 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
 
 async fn get_orders_with_native_prices(
     orders: Vec<Order>,
-    native_price_estimator: &CachingNativePriceEstimator,
+    native_price_estimator: &NativePriceUpdater,
     metrics: &Metrics,
     additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
@@ -626,6 +625,9 @@ async fn get_orders_with_native_prices(
         .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
+    // Tell the updater about all traded tokens so it maintains them.
+    native_price_estimator.set_tokens_to_update(traded_tokens.clone());
+
     let prices = get_native_prices(
         &traded_tokens.into_iter().collect::<Vec<_>>(),
         native_price_estimator,
@@ -635,7 +637,8 @@ async fn get_orders_with_native_prices(
 
     // Filter orders so that we only return orders that have prices
     let mut filtered_market_orders = 0_i64;
-    let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+    let mut orders = orders;
+    orders.retain(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(_), Some(_)) => true,
@@ -645,57 +648,12 @@ async fn get_orders_with_native_prices(
             }
         }
     });
-    let tokens_by_priority = prioritize_missing_prices(filtered);
-    native_price_estimator.replace_high_priority(tokens_by_priority);
 
-    // Record separate metrics just for missing native token prices for market
-    // orders, as they should be prioritized.
     metrics
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (usable, prices)
-}
-
-/// Computes which missing native prices are the most urgent to fetch.
-/// Prices for recent orders have the highest priority because those are most
-/// likely market orders which users expect to get settled ASAP.
-/// For the remaining orders we prioritize token prices that are needed the most
-/// often. That way we have the chance to make a majority of orders solvable
-/// with very few fetch requests.
-fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<Address> {
-    /// How old an order can be at most to be considered a market order.
-    const MARKET_ORDER_AGE: chrono::Duration = chrono::Duration::minutes(30);
-    let now = chrono::Utc::now();
-
-    // newer orders at the start
-    orders.sort_by_key(|o| std::cmp::Reverse(o.metadata.creation_date));
-
-    let mut high_priority_tokens = IndexSet::new();
-    let mut most_used_tokens = HashMap::<Address, usize>::new();
-    for order in orders {
-        let sell_token = order.data.sell_token;
-        let buy_token = order.data.buy_token;
-        let is_market = now.signed_duration_since(order.metadata.creation_date) <= MARKET_ORDER_AGE;
-
-        if is_market {
-            // already correct priority because orders were sorted by creation_date
-            high_priority_tokens.extend([sell_token, buy_token]);
-        } else {
-            // count how often tokens are used to prioritize popular tokens
-            *most_used_tokens.entry(sell_token).or_default() += 1;
-            *most_used_tokens.entry(buy_token).or_default() += 1;
-        }
-    }
-
-    // popular tokens at the start
-    let most_used_tokens = most_used_tokens
-        .into_iter()
-        .sorted_by_key(|entry| std::cmp::Reverse(entry.1))
-        .map(|(token, _)| token);
-
-    high_priority_tokens.extend(most_used_tokens);
-    high_priority_tokens
+    (orders, prices)
 }
 
 async fn find_unsupported_tokens(
@@ -913,7 +871,12 @@ mod tests {
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
                 native::MockNativePriceEstimating,
-                native_price_cache::ApproximationToken,
+                native_price_cache::{
+                    ApproximationToken,
+                    Cache,
+                    CachingNativePriceEstimator,
+                    NativePriceUpdater,
+                },
             },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
@@ -956,16 +919,16 @@ mod tests {
             .withf(move |token, _| *token == token3)
             .returning(|_, _| async { Ok(0.25) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new(
+        let cache = Cache::new(Duration::from_secs(10), Default::default());
+        let caching_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
-            Duration::from_secs(10),
-            Duration::MAX,
-            None,
-            Default::default(),
+            cache,
             3,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
+        let native_price_estimator =
+            NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
         let (filtered_orders, prices) = get_orders_with_native_prices(
@@ -1047,21 +1010,23 @@ mod tests {
             .withf(move |token, _| *token == token5)
             .returning(|_, _| async { Ok(5.) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new(
+        let cache = Cache::new(Duration::from_secs(10), Default::default());
+        let caching_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
-            Duration::from_secs(10),
-            Duration::MAX,
-            None,
-            Default::default(),
+            cache,
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
+        let native_price_estimator = NativePriceUpdater::new(
+            caching_estimator,
+            Duration::from_millis(5),
+            Default::default(),
+        );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-        // We'll have no native prices in this call. But this call will cause a
-        // background task to fetch the missing prices so we'll have them in the
-        // next call.
+        // We'll have no native prices in this call. But set_tokens_to_update
+        // will cause the background task to fetch them in the next cycle.
         let (filtered_orders, prices) = get_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
@@ -1073,8 +1038,8 @@ mod tests {
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
-        // Wait for native prices to get fetched.
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        // Wait for native prices to get fetched by the background task.
+        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
 
         // Now we have all the native prices we want.
         let (filtered_orders, prices) = get_orders_with_native_prices(
@@ -1144,12 +1109,10 @@ mod tests {
             .withf(move |token, _| *token == token_approx2)
             .returning(|_, _| async { Ok(50.) }.boxed());
 
-        let native_price_estimator = CachingNativePriceEstimator::new(
+        let cache = Cache::new(Duration::from_secs(10), Default::default());
+        let caching_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
-            Duration::from_secs(10),
-            Duration::MAX,
-            None,
-            Default::default(),
+            cache,
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([
@@ -1158,6 +1121,8 @@ mod tests {
             ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
+        let native_price_estimator =
+            NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
         let (filtered_orders, prices) = get_orders_with_native_prices(
@@ -1543,42 +1508,5 @@ mod tests {
         let filtered_without_override =
             orders_with_balance(orders, &balances, settlement_contract, false);
         assert!(filtered_without_override.is_empty());
-    }
-
-    #[test]
-    fn prioritizes_missing_prices() {
-        let now = chrono::Utc::now();
-
-        let order = |sell_token, buy_token, age| Order {
-            metadata: OrderMetadata {
-                creation_date: now - chrono::Duration::minutes(age),
-                ..Default::default()
-            },
-            data: OrderData {
-                sell_token,
-                buy_token,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let orders = vec![
-            order(Address::with_last_byte(4), Address::with_last_byte(6), 31),
-            order(Address::with_last_byte(4), Address::with_last_byte(6), 31),
-            // older market order
-            order(Address::with_last_byte(1), Address::with_last_byte(2), 29),
-            order(Address::with_last_byte(5), Address::with_last_byte(6), 31),
-            // youngest market order
-            order(Address::with_last_byte(1), Address::with_last_byte(3), 1),
-        ];
-        let result = prioritize_missing_prices(orders);
-        assert!(result.into_iter().eq([
-            Address::with_last_byte(1), // coming from youngest market order
-            Address::with_last_byte(3), // coming from youngest market order
-            Address::with_last_byte(2), // coming from older market order
-            Address::with_last_byte(6), // coming from limit order (part of 3 orders)
-            Address::with_last_byte(4), // coming from limit order (part of 2 orders)
-            Address::with_last_byte(5), // coming from limit order (part of 1 orders)
-        ]));
     }
 }

@@ -387,17 +387,65 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     .await
     .expect("failed to initialize price estimator factory");
 
-    let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
-            args.native_price_estimators.as_slice(),
+    let weth = eth.contracts().weth().clone();
+    let prices = db_write.fetch_latest_prices().await.unwrap();
+    let shared_cache = shared::price_estimation::native_price_cache::Cache::new(
+        args.price_estimation.native_price_cache_max_age,
+        prices,
+    );
+    let approximation_tokens = price_estimator_factory
+        .build_approximation_tokens()
+        .instrument(info_span!("build_approximation_tokens"))
+        .await
+        .expect("failed to build native price approximation tokens");
+
+    // API native price estimator w/o a maintenance task
+    let api_sources = args
+        .api_native_price_estimators
+        .as_ref()
+        .unwrap_or(&args.native_price_estimators);
+    let api_inner_estimator = price_estimator_factory
+        .build_competition_native_estimator(
+            api_sources.as_slice(),
             args.native_price_estimation_results_required,
-            eth.contracts().weth().clone(),
+            &weth,
         )
-        .instrument(info_span!("native_price_estimator"))
+        .instrument(info_span!("api_native_price_estimator"))
         .await
         .unwrap();
-    let prices = db_write.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices);
+    let api_native_price_estimator =
+        shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
+            api_inner_estimator,
+            shared_cache.clone(),
+            args.price_estimation.native_price_cache_concurrent_requests,
+            approximation_tokens.clone(),
+            args.price_estimation.quote_timeout,
+        );
+
+    // Competition native price estimator w/ a maintenance task
+    let competition_inner_estimator = price_estimator_factory
+        .build_competition_native_estimator(
+            args.native_price_estimators.as_slice(),
+            args.native_price_estimation_results_required,
+            &weth,
+        )
+        .instrument(info_span!("updater_native_price_estimator"))
+        .await
+        .unwrap();
+    let competition_caching_estimator =
+        shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
+            competition_inner_estimator,
+            shared_cache.clone(),
+            args.price_estimation.native_price_cache_concurrent_requests,
+            approximation_tokens,
+            args.price_estimation.quote_timeout,
+        );
+    let native_price_updater =
+        shared::price_estimation::native_price_cache::NativePriceUpdater::new(
+            competition_caching_estimator,
+            args.price_estimation.native_price_cache_refresh,
+            args.price_estimation.native_price_prefetch_time,
+        );
 
     let price_estimator = price_estimator_factory
         .price_estimator(
@@ -407,7 +455,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 .iter()
                 .map(|price_estimator_driver| price_estimator_driver.clone().into())
                 .collect::<Vec<_>>(),
-            native_price_estimator.clone(),
+            Arc::new(api_native_price_estimator.clone()),
             gas_price_estimator.clone(),
         )
         .unwrap();
@@ -474,7 +522,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
-        native_price_estimator.clone(),
+        Arc::new(api_native_price_estimator.clone()),
         gas_price_estimator,
         Arc::new(db_write.clone()),
         order_quoting::Validity {
@@ -506,7 +554,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        native_price_estimator.clone(),
+        native_price_updater.clone(),
         signature_validator.clone(),
         *eth.contracts().weth().address(),
         args.limit_order_price_factor
@@ -531,7 +579,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let api_task = tokio::spawn(infra::api::serve(
         args.api_address,
-        native_price_estimator.clone(),
+        Arc::new(api_native_price_estimator),
         args.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
