@@ -1,7 +1,10 @@
 use {
     alloy::{
-        primitives::{Address, address},
-        providers::ext::{AnvilApi, ImpersonateConfig},
+        primitives::{Address, B256, address},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
     },
     chrono::{NaiveDateTime, Utc},
     contracts::alloy::{ERC20, IZeroex},
@@ -14,27 +17,16 @@ use {
             TIMEOUT,
             TestAccount,
             colocation,
-            eth,
             run_forked_test_with_block_number,
-            to_wei_with_exp,
             wait_for_condition,
         },
     },
-    ethcontract::{Account, H256},
-    ethrpc::{
-        Web3,
-        alloy::{
-            CallBuilderExt,
-            ProviderSignerExt,
-            conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-        },
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    secp256k1::SecretKey,
-    web3::signing::SecretKeyRef,
+    number::units::EthUnit,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -57,29 +49,26 @@ async fn forked_node_zero_ex_liquidity_mainnet() {
 async fn zero_ex_liquidity(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
-    let [trader, zeroex_maker] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
+    let [trader, zeroex_maker] = onchain.make_accounts(1u64.eth()).await;
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
-    let zeroex_provider = {
-        let signer = solver.account().clone().try_into_alloy().await.unwrap();
-        web3.alloy.with_signer(signer)
-    };
-    let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
+    web3.wallet.register_signer(solver.signer.clone());
+    let zeroex = IZeroex::Instance::deployed(&web3.provider).await.unwrap();
 
-    let amount = to_wei_with_exp(5, 8).into_alloy();
+    let amount = 500u64.matom();
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), amount)
@@ -98,7 +87,7 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Give 0x maker a bit more USDT
     // With a lower amount 0x contract shows much lower fillable amount
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdt
                 .transfer(
@@ -118,7 +107,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .await
         .unwrap();
     // Required for the remaining fillable taker amount
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(solver.address(), amount)
@@ -136,7 +125,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), amount)
+        .approve(onchain.contracts().allowance, amount)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -156,10 +145,10 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     let order = OrderCreation {
-        sell_token: token_usdc.address().into_legacy(),
-        sell_amount: amount.into_legacy(),
-        buy_token: token_usdt.address().into_legacy(),
-        buy_amount: amount.into_legacy(),
+        sell_token: *token_usdc.address(),
+        sell_amount: amount,
+        buy_token: *token_usdt.address(),
+        buy_amount: amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -167,10 +156,10 @@ async fn zero_ex_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
-    let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+    let chain_id = web3.provider.get_chain_id().await.unwrap();
     let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
         order.clone(),
         zeroex_maker.clone(),
@@ -281,7 +270,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         salt: alloy::primitives::U256::from(Utc::now().timestamp()),
     }
     .to_order_record(chain_id, *zeroex.address(), zeroex_maker);
-    fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.account().clone())
+    fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.address())
         .await
         .unwrap();
     let zeroex_order_amounts = get_zeroex_order_amounts(&zeroex, &zeroex_order)
@@ -305,14 +294,18 @@ fn create_zeroex_liquidity_orders(
     weth_address: Address,
 ) -> [shared::zeroex_api::OrderRecord; 3] {
     let typed_order = Eip712TypedZeroExOrder {
-        maker_token: order_creation.buy_token.into_alloy(),
-        taker_token: order_creation.sell_token.into_alloy(),
+        maker_token: order_creation.buy_token,
+        taker_token: order_creation.sell_token,
         // fully covers execution costs
-        maker_amount: order_creation.buy_amount.as_u128() * 3,
-        taker_amount: order_creation.sell_amount.as_u128() * 2,
+        maker_amount: u128::try_from(order_creation.buy_amount).unwrap() * 3,
+        taker_amount: u128::try_from(order_creation.sell_amount).unwrap() * 2,
         // makes 0x order partially filled, but the amount is higher than the cowswap order to
         // make sure the 0x order is not overfilled in the end of the e2e test
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
+        remaining_fillable_taker_amount: (order_creation.sell_amount
+            * alloy::primitives::U256::from(3)
+            / alloy::primitives::U256::from(2))
+        .try_into()
+        .unwrap(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         // Makes it possible for anyone to fill the order
@@ -325,12 +318,12 @@ fn create_zeroex_liquidity_orders(
     };
     let usdt_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
-        taker_token: order_creation.buy_token.into_alloy(),
+        taker_token: order_creation.buy_token,
         // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: order_creation.sell_amount.as_u128(),
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
+        taker_amount: order_creation.sell_amount.try_into().unwrap(),
+        remaining_fillable_taker_amount: order_creation.sell_amount.try_into().unwrap(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),
@@ -342,12 +335,12 @@ fn create_zeroex_liquidity_orders(
     };
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
-        taker_token: order_creation.sell_token.into_alloy(),
+        taker_token: order_creation.sell_token,
         // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: order_creation.sell_amount.as_u128(),
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
+        taker_amount: order_creation.sell_amount.try_into().unwrap(),
+        remaining_fillable_taker_amount: order_creation.sell_amount.try_into().unwrap(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),
@@ -385,7 +378,7 @@ async fn get_zeroex_order_amounts(
                 feeRecipient: zeroex_order.order().fee_recipient,
                 pool: zeroex_order.order().pool,
                 expiry: zeroex_order.order().expiry,
-                salt: zeroex_order.order().salt.into_alloy(),
+                salt: zeroex_order.order().salt,
             },
             IZeroex::LibSignature::Signature {
                 signatureType: zeroex_order.order().signature.signature_type,
@@ -405,8 +398,8 @@ async fn get_zeroex_order_amounts(
 async fn fill_or_kill_zeroex_limit_order(
     zeroex: &IZeroex::Instance,
     zeroex_order: &shared::zeroex_api::OrderRecord,
-    from_account: Account,
-) -> anyhow::Result<H256> {
+    from: Address,
+) -> anyhow::Result<B256> {
     let order = zeroex_order.order();
     let tx_hash = zeroex
         .fillOrKillLimitOrder(
@@ -422,7 +415,7 @@ async fn fill_or_kill_zeroex_limit_order(
                 feeRecipient: order.fee_recipient,
                 pool: order.pool,
                 expiry: order.expiry,
-                salt: order.salt.into_alloy(),
+                salt: order.salt,
             },
             IZeroex::LibSignature::Signature {
                 signatureType: order.signature.signature_type,
@@ -432,11 +425,11 @@ async fn fill_or_kill_zeroex_limit_order(
             },
             zeroex_order.order().taker_amount,
         )
-        .from(from_account.address().into_alloy())
+        .from(from)
         .send()
         .await?
         .watch()
         .await?;
 
-    Ok(tx_hash.into_legacy())
+    Ok(tx_hash)
 }

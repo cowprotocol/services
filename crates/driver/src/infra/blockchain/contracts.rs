@@ -8,12 +8,8 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::Web3,
     std::collections::HashMap,
-    thiserror::Error,
 };
 
 #[derive(Debug, Clone)]
@@ -54,42 +50,42 @@ impl Contracts {
         web3: &Web3,
         chain: Chain,
         addresses: Addresses,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, alloy::contract::Error> {
         let settlement = GPv2Settlement::Instance::new(
             addresses
                 .settlement
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
         let vault_relayer = settlement.vaultRelayer().call().await?;
         let vault =
-            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.alloy.clone());
+            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.provider.clone());
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
         let signatures = contracts::alloy::support::Signatures::Instance::new(
             addresses
                 .signatures
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let weth = WETH9::Instance::new(
             addresses
                 .weth
-                .map(|addr| addr.0.into_alloy())
+                .map(Into::into)
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let settlement_domain_separator = eth::DomainSeparator(
@@ -104,18 +100,12 @@ impl Contracts {
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
-            .or_else(|| {
-                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
-                    eth::ContractAddress(deployment_address.into_legacy())
-                })
-            })
-            .map(|address| {
-                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
-            });
+            .or_else(|| FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress))
+            .map(|address| FlashLoanRouter::Instance::new(address.0, web3.provider.clone()));
 
         Ok(Self {
             settlement,
-            vault_relayer: vault_relayer.into_legacy().into(),
+            vault_relayer: vault_relayer.into(),
             vault,
             signatures,
             weth,
@@ -148,7 +138,7 @@ impl Contracts {
     }
 
     pub fn weth_address(&self) -> eth::WethAddress {
-        self.weth.address().into_legacy().into()
+        (*self.weth.address()).into()
     }
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
@@ -172,27 +162,4 @@ impl Contracts {
     ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
         &self.cow_amm_helper_by_factory
     }
-}
-
-/// Returns the address of a contract for the specified network, or `None` if
-/// there is no known deployment for the contract on that network.
-pub fn deployment_address(
-    contract: &ethcontract::Contract,
-    chain: Chain,
-) -> Option<eth::ContractAddress> {
-    Some(
-        contract
-            .networks
-            .get(&chain.id().to_string())?
-            .address
-            .into(),
-    )
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
-    #[error("method error: {0:?}")]
-    Rpc(#[from] alloy::contract::Error),
 }

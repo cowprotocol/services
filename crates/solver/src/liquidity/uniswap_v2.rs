@@ -11,7 +11,6 @@ use {
     },
     alloy::primitives::Address,
     anyhow::Result,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
     shared::{
         ethrpc::Web3,
@@ -138,10 +137,10 @@ impl Inner {
             UniswapInteraction {
                 router: self.router,
                 settlement: self.gpv2_settlement,
-                amount_out: token_amount_out.amount.into_legacy(),
-                amount_in_max: token_amount_in_max.amount.into_legacy(),
-                token_in: token_amount_in_max.token.into_legacy(),
-                token_out: token_amount_out.token.into_legacy(),
+                amount_out: token_amount_out.amount,
+                amount_in_max: token_amount_in_max.amount,
+                token_in: token_amount_in_max.token,
+                token_out: token_amount_out.token,
             },
         )
     }

@@ -4,11 +4,10 @@ use {
         domain::{self, eth},
         infra::persistence::dto::{self, order::Order},
     },
+    alloy::primitives::{Address, U256},
     chrono::{DateTime, Utc},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::{
@@ -34,7 +33,7 @@ impl Request {
 impl Request {
     pub fn new(
         auction: &domain::Auction,
-        trusted_tokens: &HashSet<H160>,
+        trusted_tokens: &HashSet<Address>,
         time_limit: Duration,
     ) -> Self {
         let _timer =
@@ -51,8 +50,8 @@ impl Request {
                 .prices
                 .iter()
                 .map(|(address, price)| Token {
-                    address: address.to_owned().into(),
-                    price: Some(price.get().into()),
+                    address: address.to_owned().0,
+                    price: Some(price.get().0),
                     trusted: trusted_tokens.contains(&(address.0)),
                 })
                 .chain(trusted_tokens.iter().map(|&address| Token {
@@ -63,12 +62,7 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            surplus_capturing_jit_order_owners: auction
-                .surplus_capturing_jit_order_owners
-                .iter()
-                .copied()
-                .map(IntoLegacy::into_legacy)
-                .collect::<Vec<_>>(),
+            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
         Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
             "only fails with non-string keys which we do not have",
@@ -96,14 +90,14 @@ struct RequestHelper {
     pub tokens: Vec<Token>,
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
-    pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
-    pub address: H160,
+    pub address: Address,
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub price: Option<U256>,
     pub trusted: bool,
@@ -115,8 +109,7 @@ impl Solution {
     ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
         Ok(domain::competition::Solution::new(
             self.solution_id,
-            self.submission_address.into_alloy(),
-            domain::competition::Score::try_new(self.score.into())?,
+            self.submission_address,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
@@ -140,13 +133,13 @@ impl Solution {
 #[serde(rename_all = "camelCase")]
 pub struct TradedOrder {
     side: Side,
-    sell_token: H160,
-    buy_token: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
+    sell_token: Address,
+    buy_token: Address,
     /// Sell limit order amount.
-    limit_sell: U256,
     #[serde_as(as = "HexOrDecimalU256")]
+    limit_sell: U256,
     /// Buy limit order amount.
+    #[serde_as(as = "HexOrDecimalU256")]
     limit_buy: U256,
     /// The effective amount that left the user's wallet including all fees.
     #[serde_as(as = "HexOrDecimalU256")]
@@ -192,13 +185,11 @@ pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
     /// it in subsequent requests (reveal, settle).
     pub solution_id: u64,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub score: U256,
     /// Address used by the driver to submit the settlement onchain.
-    pub submission_address: H160,
+    pub submission_address: Address,
     pub orders: HashMap<boundary::OrderUid, TradedOrder>,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-    pub clearing_prices: HashMap<H160, U256>,
+    pub clearing_prices: HashMap<Address, U256>,
     pub gas: Option<u64>,
 }
 

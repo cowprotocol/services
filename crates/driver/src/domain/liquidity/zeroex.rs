@@ -1,10 +1,8 @@
 use {
     crate::domain::{eth, liquidity},
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, U256},
     anyhow::anyhow,
     contracts::alloy::IZeroex,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    primitive_types::U256,
     std::sync::Arc,
 };
 
@@ -63,7 +61,7 @@ impl LimitOrder {
                 feeRecipient: self.order.fee_recipient,
                 pool: self.order.pool,
                 expiry: self.order.expiry,
-                salt: self.order.salt.into_alloy(),
+                salt: self.order.salt,
             },
             IZeroex::LibSignature::Signature {
                 signatureType: self.order.signature.signature_type,
@@ -81,7 +79,7 @@ impl LimitOrder {
         let calldata = method.calldata();
 
         Ok(eth::Interaction {
-            target: self.zeroex.address().into_legacy().into(),
+            target: *self.zeroex.address(),
             value: 0.into(),
             call_data: calldata.to_vec().into(),
         })

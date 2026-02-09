@@ -9,16 +9,18 @@ pub async fn find_settlement_transaction(
     ex: &mut PgConnection,
     auction_id: i64,
     solver: Address,
+    solution_uid: i64,
 ) -> Result<Option<TransactionHash>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT tx_hash
 FROM settlements
 WHERE
-    auction_id = $1 AND solver = $2
+    auction_id = $1 AND solver = $2 AND solution_uid = $3
     "#;
     sqlx::query_as(QUERY)
         .bind(auction_id)
         .bind(solver)
+        .bind(solution_uid)
         .fetch_optional(ex)
         .await
 }

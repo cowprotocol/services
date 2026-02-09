@@ -2,7 +2,6 @@
 
 use {
     crate::{domain::eth, util::serialize},
-    itertools::Itertools,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -11,8 +10,8 @@ use {
 #[derive(Debug, Serialize)]
 pub struct Request {
     pub network_id: String,
-    pub from: eth::H160,
-    pub to: eth::H160,
+    pub from: eth::Address,
+    pub to: eth::Address,
     #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
     pub value: eth::U256,
@@ -45,19 +44,19 @@ pub struct AccessList(Vec<AccessListItem>);
 
 #[derive(Debug, Deserialize, Serialize)]
 struct AccessListItem {
-    address: eth::H160,
+    address: eth::Address,
     #[serde(default)]
-    storage_keys: Vec<eth::H256>,
+    storage_keys: Vec<eth::B256>,
 }
 
 impl From<eth::AccessList> for AccessList {
     fn from(value: eth::AccessList) -> Self {
         Self(
-            web3::types::AccessList::from(value)
+            value
                 .into_iter()
-                .map(|item| AccessListItem {
-                    address: item.address,
-                    storage_keys: item.storage_keys,
+                .map(|(address, storage_keys)| AccessListItem {
+                    address,
+                    storage_keys: storage_keys.into_iter().map(|k| k.0).collect(),
                 })
                 .collect(),
         )
@@ -66,15 +65,12 @@ impl From<eth::AccessList> for AccessList {
 
 impl From<AccessList> for eth::AccessList {
     fn from(value: AccessList) -> Self {
-        value
-            .0
-            .into_iter()
-            .map(|item| web3::types::AccessListItem {
-                address: item.address,
-                storage_keys: item.storage_keys,
-            })
-            .collect_vec()
-            .into()
+        Self::from_iter(
+            value
+                .0
+                .into_iter()
+                .map(|item| (item.address, item.storage_keys)),
+        )
     }
 }
 

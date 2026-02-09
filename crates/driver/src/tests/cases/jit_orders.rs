@@ -5,7 +5,7 @@ use crate::{
     },
     tests::{
         self,
-        cases::{EtherExt, is_approximately_equal},
+        cases::EtherExt,
         setup::{
             self,
             ExpectedOrderAmounts,
@@ -55,6 +55,8 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
+    use number::testing::ApproxEq;
+
     let test_name = format!("JIT Order: {:?}", test_case.solution.jit_order.order.side);
     // Adjust liquidity pools so that the order is executable at the amounts
     // expected from the solver.
@@ -62,7 +64,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.execution.solver.sell)
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
-    let solver_fee = test_case.execution.driver.sell / 100;
+    let solver_fee = test_case.execution.driver.sell / eth::U256::from(100);
     // Amounts expected to be returned by the driver after fee processing
     let jit_order_expected_amounts = if test_case.is_surplus_capturing_jit_order {
         ExpectedOrderAmounts {
@@ -93,7 +95,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .buy_amount(test_case.order.buy_amount)
         .solver_fee(Some(solver_fee))
         .side(test_case.order.side)
-        .partial(0.into())
+        .partial(eth::U256::ZERO)
         .no_surplus();
 
     let solver = test_solver();
@@ -114,10 +116,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(is_approximately_equal(
-        result.score(),
-        test_case.solution.expected_score,
-    ));
+    assert!(
+        result
+            .score()
+            .is_approx_eq(&test_case.solution.expected_score, None),
+    );
     result.jit_orders(&[jit_order]);
 }
 

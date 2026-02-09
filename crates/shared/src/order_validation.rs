@@ -13,13 +13,11 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::alloy::{HooksTrampoline, WETH9},
-    ethcontract::{H160, H256, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -84,7 +82,7 @@ pub trait OrderValidating: Send + Sync {
         &self,
         order: OrderCreation,
         domain_separator: &DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError>;
 }
@@ -140,7 +138,7 @@ pub enum ValidationError {
     WrongOwner(signature::Recovered),
     /// An invalid EIP-1271 signature, where the on-chain validation check
     /// reverted or did not return the expected value.
-    InvalidEip1271Signature(H256),
+    InvalidEip1271Signature(B256),
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
@@ -199,6 +197,36 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum SameTokensPolicy {
+    Disallow,
+    AllowSell,
+    // Allow, TODO: Allow sell and buy orders with the same tokens (https://github.com/cowprotocol/services/issues/3963)
+}
+
+impl SameTokensPolicy {
+    fn validate_same_sell_and_buy_token(
+        &self,
+        order: &PreOrderData,
+        native_token: &Address,
+    ) -> Result<(), PartialValidationError> {
+        // Check for orders selling wrapped native token for native token.
+        if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
+            return Err(PartialValidationError::SameBuyAndSellToken);
+        }
+
+        if order.sell_token != order.buy_token {
+            return Ok(());
+        }
+
+        match (self, order.kind) {
+            // (Self::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
+            (Self::AllowSell, OrderKind::Sell) => Ok(()),
+            _ => Err(PartialValidationError::SameBuyAndSellToken),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
@@ -218,6 +246,7 @@ pub struct OrderValidator {
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
     max_gas_per_order: u64,
+    same_tokens_policy: SameTokensPolicy,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -232,6 +261,7 @@ pub struct PreOrderData {
     pub sell_token_balance: SellTokenSource,
     pub signing_scheme: SigningScheme,
     pub class: OrderClass,
+    pub kind: OrderKind,
 }
 
 fn actual_receiver(owner: Address, order: &OrderData) -> Address {
@@ -259,6 +289,7 @@ impl PreOrderData {
                 true => OrderClass::Limit,
                 false => OrderClass::Market,
             },
+            kind: order.kind,
         }
     }
 }
@@ -285,6 +316,7 @@ impl OrderValidator {
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: Validator,
         max_gas_per_order: u64,
+        same_tokens_policy: SameTokensPolicy,
     ) -> Self {
         Self {
             native_token,
@@ -301,6 +333,7 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             max_gas_per_order,
+            same_tokens_policy,
         }
     }
 
@@ -360,7 +393,7 @@ impl OrderValidator {
     async fn ensure_token_is_transferable(
         &self,
         order: &OrderCreation,
-        owner: H160,
+        owner: Address,
         app_data: &OrderAppData,
     ) -> Result<(), ValidationError> {
         let mut res = Ok(());
@@ -379,14 +412,14 @@ impl OrderValidator {
                 .can_transfer(
                     &account_balances::Query {
                         token: order.data().sell_token,
-                        owner: owner.into_alloy(),
+                        owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
-                                amount: loan.amount.into_legacy(),
+                                token: loan.token,
+                                holder: loan.receiver,
+                                amount: loan.amount,
                             }
                         }),
                     },
@@ -469,10 +502,9 @@ impl OrderValidating for OrderValidator {
         }
 
         self.validity_configuration.validate_period(&order)?;
+        self.same_tokens_policy
+            .validate_same_sell_and_buy_token(&order, self.native_token.address())?;
 
-        if has_same_buy_and_sell_token(&order, self.native_token.address()) {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
@@ -558,13 +590,13 @@ impl OrderValidating for OrderValidator {
         &self,
         order: OrderCreation,
         domain_separator: &DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
-        let app_data_signer = app_data.inner.protocol.signer.map(IntoLegacy::into_legacy);
+        let app_data_signer = app_data.inner.protocol.signer;
 
         let owner = order.verify_owner(domain_separator, app_data_signer)?;
         tracing::debug!(?owner, "recovered owner from order and signature");
@@ -573,7 +605,7 @@ impl OrderValidating for OrderValidator {
             app_data: app_data.inner.hash,
             ..order.data()
         };
-        let uid = data.uid(domain_separator, &owner);
+        let uid = data.uid(domain_separator, owner);
 
         let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
             if self.eip1271_skip_creation_validation {
@@ -585,21 +617,21 @@ impl OrderValidating for OrderValidator {
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
-                        hash,
+                        hash: hash.0,
                         signature: signature.to_owned(),
                         interactions: app_data.interactions.pre.clone(),
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
-                                amount: loan.amount.into_legacy(),
+                                token: loan.token,
+                                holder: loan.receiver,
+                                amount: loan.amount,
                             }
                         }),
                     })
                     .await
                     .map_err(|err| match err {
                         SignatureValidationError::Invalid => {
-                            ValidationError::InvalidEip1271Signature(H256(hash))
+                            ValidationError::InvalidEip1271Signature(hash)
                         }
                         SignatureValidationError::Other(err) => ValidationError::Other(err),
                     })?
@@ -613,16 +645,15 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let pre_order =
-            PreOrderData::from_order_creation(owner.into_alloy(), &data, signing_scheme);
+        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
             .map_err(ValidationError::Partial)?;
 
         let verification = Verification {
-            from: owner.into_alloy(),
-            receiver: order.receiver.unwrap_or(owner).into_alloy(),
+            from: owner,
+            receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
             pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
@@ -659,7 +690,7 @@ impl OrderValidating for OrderValidator {
                     &*self.quoter,
                     &quote_parameters,
                     order.quote_id,
-                    Some(data.fee_amount.into_legacy()),
+                    Some(data.fee_amount),
                 )
                 .await?;
                 tracing::debug!(
@@ -711,7 +742,8 @@ impl OrderValidating for OrderValidator {
                             },
                             data.kind,
                         ) {
-                            self.check_max_limit_orders(owner.into_alloy()).await?;
+                            tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
+                            self.check_max_limit_orders(owner).await?;
                         }
                         (class, Some(quote))
                     }
@@ -742,7 +774,8 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
-                    self.check_max_limit_orders(owner.into_alloy()).await?;
+                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
+                    self.check_max_limit_orders(owner).await?;
                 }
                 (OrderClass::Limit, None)
             }
@@ -758,10 +791,10 @@ impl OrderValidating for OrderValidator {
 
         let order = Order {
             metadata: OrderMetadata {
-                owner: owner.into_alloy(),
+                owner,
                 creation_date: chrono::offset::Utc::now(),
                 uid,
-                settlement_contract: settlement_contract.into_alloy(),
+                settlement_contract,
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
@@ -838,14 +871,6 @@ pub enum OrderValidToError {
     Excessive,
 }
 
-/// Returns true if the orders have same buy and sell tokens.
-///
-/// This also checks for orders selling wrapped native token for native token.
-fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &Address) -> bool {
-    order.sell_token == order.buy_token
-        || (order.sell_token == *native_token && order.buy_token == BUY_ETH_ADDRESS)
-}
-
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
 ///
@@ -893,7 +918,6 @@ async fn get_or_create_quote(
                     OrderKind::Buy => OrderQuoteSide::Buy {
                         buy_amount_after_fee: quote_search_parameters
                             .buy_amount
-                            .into_legacy()
                             .try_into()
                             .map_err(|_| ValidationError::ZeroAmount)?,
                     },
@@ -901,7 +925,6 @@ async fn get_or_create_quote(
                         sell_amount: SellAmount::AfterFee {
                             value: quote_search_parameters
                                 .sell_amount
-                                .into_legacy()
                                 .try_into()
                                 .map_err(|_| ValidationError::ZeroAmount)?,
                         },
@@ -968,14 +991,7 @@ pub fn is_order_outside_market_price(
         }
     };
 
-    check().unwrap_or_else(|| {
-        tracing::warn!(
-            ?order,
-            ?quote,
-            "failed to check if order is outside market price"
-        );
-        true
-    })
+    check().unwrap_or(true)
 }
 
 pub struct InvalidSigningScheme;
@@ -1012,10 +1028,10 @@ mod tests {
             signature_validator::MockSignatureValidating,
         },
         alloy::{
-            primitives::{Address, U160, address},
+            primitives::{Address, U160, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
+            signers::local::PrivateKeySigner,
         },
-        ethcontract::web3::signing::SecretKeyRef,
         futures::FutureExt,
         maplit::hashset,
         mockall::predicate::{always, eq},
@@ -1023,54 +1039,13 @@ mod tests {
             quote::default_verification_gas_limit,
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
         serde_json::json,
-        std::str::FromStr,
     };
-
-    #[test]
-    fn detects_orders_with_same_buy_and_sell_token() {
-        let native_token = Address::repeat_byte(0xef);
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: Address::repeat_byte(0x01),
-                buy_token: Address::repeat_byte(0x01),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: native_token,
-                buy_token: BUY_ETH_ADDRESS,
-                ..Default::default()
-            },
-            &native_token,
-        ));
-
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: Address::repeat_byte(0x01),
-                buy_token: Address::repeat_byte(0x02),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        // Sell token set to 0xeee...eee has no special meaning, so it isn't
-        // considered buying and selling the same token.
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: BUY_ETH_ADDRESS,
-                buy_token: native_token,
-                ..Default::default()
-            },
-            &native_token,
-        ));
-    }
 
     #[tokio::test]
     async fn pre_validate_err() {
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1101,6 +1076,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1215,6 +1191,8 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_ok() {
+        let native_token =
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1233,7 +1211,6 @@ mod tests {
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1254,6 +1231,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1303,6 +1281,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pre_validate_same_tokens_allow_sell() {
+        let native_token =
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
+        let validity_configuration = OrderValidPeriodConfiguration {
+            min: Duration::from_secs(1),
+            max_market: Duration::from_secs(100),
+            max_limit: Duration::from_secs(200),
+        };
+
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        bad_token_detector
+            .expect_detect()
+            .with(eq(Address::with_last_byte(1)))
+            .returning(|_| Ok(TokenQuality::Good));
+        bad_token_detector
+            .expect_detect()
+            .with(eq(Address::with_last_byte(2)))
+            .returning(|_| Ok(TokenQuality::Good));
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let validator = OrderValidator::new(
+            native_token.clone(),
+            Arc::new(order_validation::banned::Users::none()),
+            validity_configuration,
+            false,
+            Arc::new(bad_token_detector),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::AllowSell,
+        );
+
+        let order = || PreOrderData {
+            buy_token: Address::with_last_byte(2),
+            sell_token: Address::with_last_byte(2),
+            valid_to: time::now_in_epoch_seconds()
+                + validity_configuration.min.as_secs() as u32
+                + 2,
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            dbg!(
+                validator
+                    .partial_validate(PreOrderData {
+                        kind: OrderKind::Buy,
+                        ..order()
+                    })
+                    .await
+            ),
+            Err(PartialValidationError::SameBuyAndSellToken)
+        ));
+
+        assert!(
+            dbg!(
+                validator
+                    .partial_validate(PreOrderData {
+                        kind: OrderKind::Sell,
+                        ..order()
+                    })
+                    .await
+            )
+            .is_ok()
+        );
+    }
+
+    #[tokio::test]
     async fn post_validate_ok() {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
@@ -1334,7 +1391,7 @@ mod tests {
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1354,15 +1411,16 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(0),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1381,7 +1439,7 @@ mod tests {
 
         let domain_separator = DomainSeparator::default();
         let creation = OrderCreation {
-            from: Some(H160([1; 20])),
+            from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: json!({
@@ -1430,7 +1488,7 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
-                hash: order_hash,
+                hash: order_hash.0,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
                 balance_override: None,
@@ -1459,7 +1517,7 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
-                hash: order_hash,
+                hash: order_hash.0,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
                 balance_override: None,
@@ -1485,7 +1543,7 @@ mod tests {
         );
 
         let creation_ = OrderCreation {
-            fee_amount: U256::zero(),
+            fee_amount: alloy::primitives::U256::ZERO,
             ..creation.clone()
         };
         let (order, _) = validator
@@ -1496,7 +1554,7 @@ mod tests {
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
-            fee_amount: U256::zero(),
+            fee_amount: alloy::primitives::U256::ZERO,
             partially_fillable: true,
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1545,7 +1603,7 @@ mod tests {
             .expect_count()
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1570,14 +1628,15 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(10),
-            sell_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(10),
+            sell_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1625,8 +1684,7 @@ mod tests {
         limit_order_counter
             .expect_count()
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
-
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1647,14 +1705,15 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1690,7 +1749,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1711,14 +1770,15 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(0),
-            sell_amount: U256::from(0),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(0),
+            sell_amount: alloy::primitives::U256::from(0),
+            fee_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1747,7 +1807,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1768,14 +1828,16 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
+
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
             from: Some(Default::default()),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
@@ -1807,7 +1869,8 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1828,14 +1891,16 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
+
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1870,7 +1935,7 @@ mod tests {
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1891,14 +1956,16 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
+
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1932,7 +1999,7 @@ mod tests {
             .returning(|_| Err(SignatureValidationError::Invalid));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -1953,16 +2020,17 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            from: Some(H160([1; 20])),
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(1),
+            from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -2001,7 +2069,8 @@ mod tests {
                 .returning(move |_, _| Err(create_error()));
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
-            let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+            let native_token =
+                WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
             let validator = OrderValidator::new(
                 native_token,
                 Arc::new(order_validation::banned::Users::none()),
@@ -2022,14 +2091,15 @@ mod tests {
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
                 u64::MAX,
+                SameTokensPolicy::Disallow,
             );
 
             let order = OrderCreation {
                 valid_to: u32::MAX,
-                sell_token: H160::from_low_u64_be(1),
-                sell_amount: 1.into(),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: 1.into(),
+                sell_token: Address::with_last_byte(1),
+                sell_amount: alloy::primitives::U256::from(1),
+                buy_token: Address::with_last_byte(2),
+                buy_amount: alloy::primitives::U256::from(1),
                 app_data: OrderCreationAppData::Full {
                     full: "{}".to_string(),
                 },
@@ -2042,7 +2112,10 @@ mod tests {
                         order.clone().sign(
                             signing_scheme,
                             &Default::default(),
-                            SecretKeyRef::new(&secp256k1::SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap()),
+                            &PrivateKeySigner::from_bytes(&b256!(
+                                "0000000000000000000000000000000000000000000000000000000000000001"
+                            ))
+                            .unwrap(),
                         ),
                         &Default::default(),
                         Default::default(),
@@ -2092,7 +2165,7 @@ mod tests {
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2113,15 +2186,16 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
 
         // Test with flashloan hint that covers the sell amount
         let order_with_sufficient_flashloan = OrderCreation {
             valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            sell_amount: 100.into(),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: 1.into(),
+            sell_token: Address::with_last_byte(1),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
             app_data: OrderCreationAppData::Full {
                 full: r#"{
                     "metadata": {
@@ -2156,10 +2230,10 @@ mod tests {
         // Test with flashloan hint that doesn't cover the sell amount
         let order_with_insufficient_flashloan = OrderCreation {
             valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            sell_amount: 100.into(),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: 1.into(),
+            sell_token: Address::with_last_byte(1),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
             app_data: OrderCreationAppData::Full {
                 full: r#"{
                     "metadata": {
@@ -2193,10 +2267,10 @@ mod tests {
         // Test with flashloan hint for different token
         let order_with_wrong_token_flashloan = OrderCreation {
             valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            sell_amount: 100.into(),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: 1.into(),
+            sell_token: Address::with_last_byte(1),
+            sell_amount: alloy::primitives::U256::from(100),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
             app_data: OrderCreationAppData::Full {
                 full: r#"{
                     "metadata": {
@@ -2252,7 +2326,7 @@ mod tests {
             fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
-        let fee_amount = 0.into();
+        let fee_amount = U256::ZERO;
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
@@ -2301,7 +2375,7 @@ mod tests {
             fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
-        let fee_amount = 0.into();
+        let fee_amount = U256::ZERO;
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
@@ -2309,10 +2383,7 @@ mod tests {
                 buy_token: quote_search_parameters.buy_token,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(
-                            quote_search_parameters.sell_amount.into_legacy(),
-                        )
-                        .unwrap(),
+                        value: NonZeroU256::new(quote_search_parameters.sell_amount).unwrap(),
                     },
                 },
                 verification,
@@ -2505,8 +2576,8 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Ok(default_verification_gas_limit()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().alloy);
         let validator = OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2531,21 +2602,22 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
+            SameTokensPolicy::Disallow,
         );
 
         let creation = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 10,
-            sell_token: H160([1; 20]),
-            buy_token: H160([2; 20]),
-            buy_amount: U256::from(4),
-            sell_amount: U256::from(3),
-            fee_amount: U256::from(0),
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            buy_amount: alloy::primitives::U256::from(4),
+            sell_amount: alloy::primitives::U256::from(3),
+            fee_amount: alloy::primitives::U256::from(0),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
             },
-            from: Some(H160([0xf0; 20])),
-            receiver: Some(H160([0xf0; 20])),
+            from: Some(Address::repeat_byte(0xf0)),
+            receiver: Some(Address::repeat_byte(0xf0)),
             quote_id,
             ..Default::default()
         };

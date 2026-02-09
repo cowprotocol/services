@@ -3,7 +3,7 @@ mod config;
 mod solver;
 
 use {
-    chain::Chain, clap::Parser, ethereum_types::H160, ethrpc::alloy::conversions::IntoAlloy,
+    alloy::primitives::{Address, address}, chain::Chain, clap::Parser,
     std::net::SocketAddr,
 };
 
@@ -29,15 +29,15 @@ struct Args {
 
     /// WETH token address (overrides chain-id lookup)
     #[arg(long, env)]
-    weth: Option<H160>,
+    weth: Option<Address>,
 
     /// Uniswap V2 router address (defaults to mainnet address if not provided)
     #[arg(long, env)]
-    uniswap_v2_router: Option<H160>,
+    uniswap_v2_router: Option<Address>,
 
     /// Settlement contract address (overrides chain-id lookup)
     #[arg(long, env)]
-    settlement_contract_address: Option<H160>,
+    settlement_contract_address: Option<Address>,
 
     /// The log filter
     #[arg(long, env, default_value = "info,euler_solver=debug")]
@@ -47,10 +47,6 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-
-    // Initialize tracing/logging
-    let obs_config = observe::Config::new(&args.log, tracing::Level::ERROR.into(), false, None);
-    observe::tracing::initialize_reentrant(&obs_config);
 
     tracing::info!("Starting Euler solver");
 
@@ -72,9 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Determine Uniswap V2 router address
     let uniswap_v2_router = args.uniswap_v2_router.unwrap_or_else(|| {
-        let addr: H160 = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-            .parse()
-            .expect("valid router address");
+        let addr = address!("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D");
         tracing::info!("Using default Uniswap V2 router address: {:?}", addr);
         addr
     });
@@ -113,13 +107,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Create RPC provider
     let web3 = ethrpc::Web3::new_from_url(&config.rpc_url);
-    let provider = web3.alloy;
+    let provider = web3.provider;
 
     // Create solver
     let solver = solver::EulerSolver::new(
         provider,
-        settlement.into_alloy(),
-        uniswap_v2_router.into_alloy(),
+        Address::from(settlement.0),
+        Address::from(uniswap_v2_router.0),
     );
 
     // Create API server

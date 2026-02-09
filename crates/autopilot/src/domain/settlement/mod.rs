@@ -242,8 +242,8 @@ fn order_to_key(order: &database::solver_competition_v2::Order) -> OrderMatchKey
     OrderMatchKey {
         uid: OrderUid(order.uid.0),
         token: match order.side {
-            OrderKind::Sell => eth::H160(order.sell_token.0).into(),
-            OrderKind::Buy => eth::H160(order.buy_token.0).into(),
+            OrderKind::Sell => eth::Address::new(order.sell_token.0).into(),
+            OrderKind::Buy => eth::Address::new(order.buy_token.0).into(),
         },
         executed: match order.side {
             OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
@@ -354,10 +354,11 @@ mod tests {
             eth,
             settlement::{OrderMatchKey, trade_to_key},
         },
-        alloy::primitives::address,
-        ethcontract::BlockId,
+        alloy::{eips::BlockId, primitives::address},
         hex_literal::hex,
+        number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
+        winner_selection::{self as ws, state::RankedItem},
     };
 
     #[derive(Clone)]
@@ -371,6 +372,119 @@ mod tests {
             _block: BlockId,
         ) -> Result<bool, super::transaction::Error> {
             return Ok(true);
+        }
+    }
+
+    fn score_trade_with_winner_selection(
+        trade: &super::trade::Trade,
+        auction: &super::Auction,
+    ) -> eth::U256 {
+        let order = ws_order_from_trade(trade);
+        let prices = ws_prices_from_auction(auction);
+        let context = ws::AuctionContext {
+            fee_policies: auction
+                .orders
+                .iter()
+                .map(|(uid, policies)| {
+                    let policies = policies.iter().copied().map(to_ws_fee_policy).collect();
+                    (ws::OrderUid(uid.0), policies)
+                })
+                .collect(),
+            surplus_capturing_jit_order_owners: auction
+                .surplus_capturing_jit_order_owners
+                .iter()
+                .copied()
+                .collect(),
+            native_prices: prices.clone(),
+        };
+        let solution = ws::Solution::new(0, ws::Address::ZERO, vec![order], prices);
+        let arbitrator = ws::Arbitrator {
+            max_winners: 1,
+            weth: ws::Address::ZERO,
+        };
+        let ranking = arbitrator.arbitrate(vec![solution], &context);
+
+        ranking
+            .ranked
+            .first()
+            .map(|solution| solution.score())
+            .unwrap_or_default()
+    }
+
+    fn ws_order_from_trade(trade: &super::trade::Trade) -> ws::Order {
+        let trade = super::trade::math::Trade::from(trade);
+        let (executed_sell, executed_buy) = ws_executed_amounts(&trade);
+
+        ws::Order {
+            uid: ws::OrderUid(trade.uid.0),
+            sell_token: trade.sell.token.0,
+            buy_token: trade.buy.token.0,
+            sell_amount: trade.sell.amount.0,
+            buy_amount: trade.buy.amount.0,
+            executed_sell,
+            executed_buy,
+            side: match trade.side {
+                auction::order::Side::Buy => ws::Side::Buy,
+                auction::order::Side::Sell => ws::Side::Sell,
+            },
+        }
+    }
+
+    fn ws_executed_amounts(trade: &super::trade::math::Trade) -> (eth::U256, eth::U256) {
+        match trade.side {
+            auction::order::Side::Sell => {
+                let executed_sell = trade.executed.0;
+                let executed_buy = executed_sell
+                    .checked_mul(trade.prices.custom.sell)
+                    .and_then(|value| value.checked_ceil_div(&trade.prices.custom.buy))
+                    .expect("invalid sell trade executed amounts");
+                (executed_sell, executed_buy)
+            }
+            auction::order::Side::Buy => {
+                let executed_buy = trade.executed.0;
+                let executed_sell = executed_buy
+                    .checked_mul(trade.prices.custom.buy)
+                    .and_then(|value| value.checked_div(trade.prices.custom.sell))
+                    .expect("invalid buy trade executed amounts");
+                (executed_sell, executed_buy)
+            }
+        }
+    }
+
+    fn ws_prices_from_auction(auction: &super::Auction) -> HashMap<ws::Address, ws::U256> {
+        auction
+            .prices
+            .iter()
+            .map(|(token, price)| (token.0, price.get().0))
+            .collect()
+    }
+
+    fn to_ws_fee_policy(policy: domain::fee::Policy) -> ws::primitives::FeePolicy {
+        match policy {
+            domain::fee::Policy::Surplus {
+                factor,
+                max_volume_factor,
+            } => ws::primitives::FeePolicy::Surplus {
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
+            },
+            domain::fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => ws::primitives::FeePolicy::PriceImprovement {
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
+                quote: ws::primitives::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: quote.solver,
+                },
+            },
+            domain::fee::Policy::Volume { factor } => ws::primitives::FeePolicy::Volume {
+                factor: factor.get(),
+            },
         }
     }
 
@@ -717,16 +831,12 @@ mod tests {
             // prices read from https://solver-instances.s3.eu-central-1.amazonaws.com/prod/mainnet/legacy/8655372.json
             prices: auction::Prices::from([
                 (
-                    eth::TokenAddress(eth::H160::from_slice(&hex!(
-                        "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                    ))),
+                    eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                     auction::Price::try_new(eth::U256::from(1000000000000000000u128).into())
                         .unwrap(),
                 ),
                 (
-                    eth::TokenAddress(eth::H160::from_slice(&hex!(
-                        "c52fafdc900cb92ae01e6e4f8979af7f436e2eb2"
-                    ))),
+                    eth::TokenAddress(address!("c52fafdc900cb92ae01e6e4f8979af7f436e2eb2")),
                     auction::Price::try_new(eth::U256::from(537359915436704u128).into()).unwrap(),
                 ),
             ]),
@@ -856,16 +966,12 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "dac17f958d2ee523a2206206994597c13d831ec7"
-                ))),
+                eth::TokenAddress(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
                 auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
                     .unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "056fd409e1d7a124bd7017459dfea2f387b6d5cd"
-                ))),
+                eth::TokenAddress(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
                 auction::Price::try_new(
                     eth::U256::from(3177764302250520038326415654912u128).into(),
                 )
@@ -895,7 +1001,7 @@ mod tests {
         );
 
         assert_eq!(
-            trade.score(&auction).unwrap().0,
+            score_trade_with_winner_selection(&trade, &auction),
             eth::U256::from(769018961144625u128) // 2 x surplus
         );
     }
@@ -1033,16 +1139,12 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-                ))),
+                eth::TokenAddress(address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")),
                 auction::Price::try_new(eth::U256::from(374263465721452989998170112u128).into())
                     .unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                ))),
+                eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                 auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
@@ -1215,21 +1317,15 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee"
-                ))),
+                eth::TokenAddress(address!("812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee")),
                 auction::Price::try_new(eth::U256::from(400373909534592401408u128).into()).unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "a21Af1050F7B26e0cfF45ee51548254C41ED6b5c"
-                ))),
+                eth::TokenAddress(address!("a21Af1050F7B26e0cfF45ee51548254C41ED6b5c")),
                 auction::Price::try_new(eth::U256::from(127910593u128).into()).unwrap(),
             ),
             (
-                eth::TokenAddress(eth::H160::from_slice(&hex!(
-                    "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                ))),
+                eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                 auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
@@ -1248,11 +1344,17 @@ mod tests {
             )]),
         };
         let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
-        assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
-        assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
+        assert_eq!(
+            jit_trade.fee_in_ether(&auction.prices).unwrap().0,
+            eth::U256::ZERO
+        );
+        assert_eq!(
+            score_trade_with_winner_selection(&jit_trade, &auction),
+            eth::U256::ZERO
+        );
         assert_eq!(
             jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
-            0.into()
+            eth::U256::ZERO
         );
         assert!(
             jit_trade

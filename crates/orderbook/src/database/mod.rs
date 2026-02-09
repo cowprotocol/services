@@ -14,26 +14,45 @@ use {
     anyhow::Result,
     database::byte_array::ByteArray,
     model::order::Order,
-    sqlx::{PgConnection, PgPool},
+    shared::arguments::DB_MAX_CONNECTIONS_DEFAULT,
+    sqlx::{PgConnection, PgPool, postgres::PgPoolOptions},
 };
 
 // TODO: There is remaining optimization potential by implementing sqlx encoding
 // and decoding for U256 directly instead of going through BigDecimal. This is
 // not very important as this is fast enough anyway.
 
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub max_pool_size: u32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            // Match SQLx default pool size
+            max_pool_size: DB_MAX_CONNECTIONS_DEFAULT.get(),
+        }
+    }
+}
+
 // The pool uses an Arc internally.
 #[derive(Clone)]
 pub struct Postgres {
     pub pool: PgPool,
+    pub config: Config,
 }
 
 // The implementation is split up into several modules which contain more public
 // methods.
 
 impl Postgres {
-    pub fn try_new(uri: &str) -> Result<Self> {
+    pub fn try_new(uri: &str, config: Config) -> Result<Self> {
         Ok(Self {
-            pool: PgPool::connect_lazy(uri)?,
+            pool: PgPoolOptions::new()
+                .max_connections(config.max_pool_size)
+                .connect_lazy(uri)?,
+            config,
         })
     }
 

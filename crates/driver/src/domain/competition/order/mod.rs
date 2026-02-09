@@ -5,7 +5,6 @@ use {
         util::{self, Bytes},
     },
     derive_more::{From, Into},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::order::{BuyTokenDestination, SellTokenSource},
 };
 pub use {fees::FeePolicy, signature::Signature};
@@ -150,23 +149,14 @@ impl Order {
         };
         let target = self.target();
 
-        amounts.sell.amount = util::math::mul_ratio(
-            amounts.sell.amount.0.into_alloy(),
-            available.0.into_alloy(),
-            target.0.into_alloy(),
-        )
-        .unwrap_or_default()
-        .into_legacy()
-        .into();
+        amounts.sell.amount = util::math::mul_ratio(amounts.sell.amount.0, available.0, target.0)
+            .unwrap_or_default()
+            .into();
 
-        amounts.buy.amount = util::math::mul_ratio_ceil(
-            amounts.buy.amount.0.into_alloy(),
-            available.0.into_alloy(),
-            target.0.into_alloy(),
-        )
-        .unwrap_or_default()
-        .into_legacy()
-        .into();
+        amounts.buy.amount =
+            util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
+                .unwrap_or_default()
+                .into();
 
         amounts
     }
@@ -218,16 +208,32 @@ impl From<&solvers_dto::solution::OrderUid> for Uid {
 }
 
 impl Uid {
+    pub fn from_parts(order_hash: eth::B256, owner: eth::Address, valid_to: u32) -> Self {
+        let mut bytes = [0; UID_LEN];
+        bytes[0..32].copy_from_slice(order_hash.as_slice());
+        bytes[32..52].copy_from_slice(owner.as_slice());
+        bytes[52..56].copy_from_slice(&valid_to.to_be_bytes());
+        Self(Bytes(bytes))
+    }
+
+    /// Address that authorized the order. Sell tokens will be taken
+    /// from that address.
     pub fn owner(&self) -> eth::Address {
-        self.parts().1.into()
+        self.parts().1
+    }
+
+    /// Returns a UNIX timestamp after which the settlement
+    /// contract will not allow the order to be settled anymore.
+    pub fn valid_to(&self) -> u32 {
+        self.parts().2
     }
 
     /// Splits an order UID into its parts.
-    fn parts(&self) -> (eth::H256, eth::H160, u32) {
+    fn parts(&self) -> (eth::B256, eth::Address, u32) {
         (
-            eth::H256::from_slice(&self.0.0[0..32]),
-            eth::H160::from_slice(&self.0.0[32..52]),
-            u32::from_le_bytes(self.0.0[52..].try_into().unwrap()),
+            eth::B256::from_slice(&self.0.0[0..32]),
+            eth::Address::from_slice(&self.0.0[32..52]),
+            u32::from_be_bytes(self.0.0[52..].try_into().unwrap()),
         )
     }
 }
@@ -323,13 +329,13 @@ impl From<SellTokenSource> for SellTokenBalance {
 
 impl SellTokenBalance {
     /// Returns the hash value for the specified source.
-    pub fn hash(&self) -> eth::H256 {
+    pub fn hash(&self) -> eth::B256 {
         let name = match self {
             Self::Erc20 => "erc20",
             Self::Internal => "internal",
             Self::External => "external",
         };
-        eth::H256(web3::signing::keccak256(name.as_bytes()))
+        alloy::primitives::keccak256(name.as_bytes())
     }
 }
 
@@ -417,11 +423,11 @@ mod tests {
     #[test]
     fn order_scaling() {
         let sell = |amount: u64| eth::Asset {
-            token: eth::H160::from_low_u64_be(0x5e11).into(),
+            token: eth::Address::left_padding_from(0x5e11_u64.to_be_bytes().as_slice()).into(),
             amount: eth::U256::from(amount).into(),
         };
         let buy = |amount: u64| eth::Asset {
-            token: eth::H160::from_low_u64_be(0xbbbb).into(),
+            token: eth::Address::left_padding_from(0xbbbb_u64.to_be_bytes().as_slice()).into(),
             amount: eth::U256::from(amount).into(),
         };
 

@@ -6,7 +6,6 @@ use {
             liquidity::{self, balancer},
         },
     },
-    ethrpc::alloy::conversions::IntoLegacy,
     solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 
@@ -27,7 +26,7 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                     .map(|(token, reserve)| {
                         Ok(balancer::v2::stable::Reserve {
                             asset: eth::Asset {
-                                token: token.into_legacy().into(),
+                                token: token.into(),
                                 amount: reserve.balance.into(),
                             },
                             scale: balancer::v2::ScalingFactor::from_raw(
@@ -47,13 +46,13 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
 }
 
 fn vault(pool: &StablePoolOrder) -> eth::ContractAddress {
-    pool.settlement_handling
+    (*pool
+        .settlement_handling
         .as_any()
         .downcast_ref::<balancer_v2::SettlementHandler>()
         .expect("downcast balancer settlement handler")
-        .vault()
-        .into_legacy()
-        .into()
+        .vault())
+    .into()
 }
 
 fn pool_id(pool: &StablePoolOrder) -> balancer::v2::Id {

@@ -31,8 +31,7 @@ The `autopilot` connects to the same PostgreSQL database as the `orderbook` and 
 
 There are additional crates that live in the cargo workspace.
 
-- `alerter` provides a custom alerter binary that looks at the current orderbook and counts metrics for orders that should be solved but aren't
-- `contracts` provides _[ethcontract-rs](https://github.com/gnosis/ethcontract-rs)_ based smart contract bindings
+- `contracts` provides Alloy-based smart contract bindings
 - `database` provides the shared database and storage layer logic shared between the `autopilot` and `orderbook`
 - `driver` an in-development binary that intends to replace the `solver`; it has a slightly different design that allows co-location with external solvers
 - `e2e` end-to-end tests
@@ -113,28 +112,22 @@ tokio-console
 
 ## Heap Profiling
 
-All binaries support opt-in heap profiling using jemalloc's profiling capabilities. This allows you to analyze memory usage in production environments without restarting services.
+All binaries use jemalloc as the default memory allocator with built-in heap profiling support. Profiling is enabled at runtime via the `MALLOC_CONF` environment variable, allowing you to analyze memory usage in production environments without recompiling or restarting services.
 
-### Building with Heap Profiling
+**Note:** You can optionally use mimalloc instead of jemalloc by building with `--features mimalloc-allocator`, but this disables heap profiling capability.
 
-Build with the `jemalloc-profiling` feature:
+### Enabling Heap Profiling
+
+To enable heap profiling, run services with the `MALLOC_CONF` environment variable set:
 ```bash
-cargo build --release --features jemalloc-profiling
+MALLOC_CONF="prof:true,prof_active:true,lg_prof_sample:22"
 ```
 
-Or with Docker:
-```bash
-docker build --build-arg CARGO_BUILD_FEATURES="--features jemalloc-profiling" .
-```
+When profiling is enabled, each binary opens a UNIX socket at `/tmp/heap_dump_<binary_name>.sock`.
 
 ### Generating Heap Dumps
 
-When running with the profiling feature enabled, each binary opens a UNIX socket at `/tmp/heap_dump_<binary_name>.sock`. To generate a heap dump, connect to the socket and send the "dump" command:
-
-**Note:** Services must be run with the `MALLOC_CONF` environment variable set:
-```bash
-MALLOC_CONF="prof:true,prof_active:true,lg_prof_sample:19"
-```
+Connect to the socket and send the "dump" command:
 
 ```bash
 # From Kubernetes
@@ -167,4 +160,3 @@ Each process opens a UNIX socket at `/tmp/log_filter_override_<program_name>_<pi
 You can also reset the log filter to the filter the program was initially started with by entering `reset`.
 
 See [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for documentation on the supported log filter format.
-

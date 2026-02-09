@@ -15,7 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types"] }
+alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "rand", "provider-anvil-api", "json-rpc", "rpc-types"] }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
@@ -26,18 +26,17 @@ chrono = { workspace = true, features = ["clock"], default-features = false }
 cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
-ethereum-types = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
+http-body = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
-mimalloc = { workspace = true }
-tikv-jemallocator = { workspace = true, optional = true }
-jemalloc_pprof = { workspace = true, optional = true }
+mimalloc = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
@@ -46,7 +45,7 @@ prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 s3 = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
@@ -56,22 +55,17 @@ toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
-web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
-primitive-types = { workspace = true }
-secp256k1 = { workspace = true }
 
 # TODO These either need to be removed or changed to be direct
 # dependencies rather than workspace dependencies
 anyhow = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
-ethcontract = { workspace = true }
-gas-estimation = { workspace = true }
 model = { workspace = true }
-observe = { workspace = true, features = ["axum-tracing"] }
+observe = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
@@ -93,4 +87,5 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 workspace = true
 
 [features]
-jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]
+mimalloc-allocator = ["dep:mimalloc"]
+tokio-console = ["observe/tokio-console"]

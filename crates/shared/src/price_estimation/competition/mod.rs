@@ -1,11 +1,10 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    crate::{gas_price_estimation::GasPriceEstimating, price_estimation::PriceEstimationError},
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{FuturesUnordered, StreamExt},
     },
-    gas_estimation::GasPriceEstimating,
     model::order::OrderKind,
     std::{
         cmp::Ordering,
@@ -252,7 +251,7 @@ mod tests {
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
         std::time::Duration,
         tokio::time::sleep,
     };

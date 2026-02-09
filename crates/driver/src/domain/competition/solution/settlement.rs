@@ -12,6 +12,7 @@ use {
         },
         infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
+    alloy::primitives::U256,
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
@@ -37,20 +38,22 @@ use {
 /// for the solver (earning reduced rewards). Enforcing these rules ensures that
 /// the settlement can be broadcast safely with high confidence that it will not
 /// be reverted and that it will not result in slashing for the solver.
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct Settlement {
     pub auction_id: auction::Id,
     /// The prepared on-chain transaction for this settlement
     transaction: SettlementTx,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
+    #[debug(ignore)]
     solution: Solution,
 }
 
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 struct SettlementTx {
     /// Transaction with all internalizable interactions omitted
     internalized: eth::Tx,
+    #[debug(ignore)]
     /// Full Transaction without internalizing any interactions
     uninternalized: eth::Tx,
     /// Whether this settlement has interactions that could make it revert
@@ -169,13 +172,17 @@ impl Settlement {
             simulator,
         )
         .await?;
-        let price = eth.gas_price(None).await?;
-        let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
+        let price = eth.gas_price().await?;
+        let gas = Gas::new(gas, eth.block_gas_limit())?;
 
-        // Ensure that the solver has sufficient balance for the settlement to be mined.
-        if eth.balance(solution.solver().address()).await? < gas.required_balance() {
+        // Ensure that the solver has sufficient balance for the settlement to be mined
+        // even if the gas price keeps climbing during the tx submission.
+        let required_eth_balance =
+            // Converting to U256 first avoids possible overflow
+            gas.required_balance(U256::from(price.max_fee_per_gas).saturating_mul(U256::from(2)));
+        if eth.balance(solution.solver().address()).await? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
-                gas.required_balance(),
+                required_eth_balance,
             ));
         }
 
@@ -332,6 +339,11 @@ impl Settlement {
             .map(|(token, amount)| (token, amount.into()))
             .collect()
     }
+
+    /// Returns true if this settlement's solution has any trades with haircut.
+    pub fn has_haircut(&self) -> bool {
+        self.solution.has_haircut()
+    }
 }
 
 /// Should the interactions be internalized?
@@ -358,18 +370,12 @@ pub struct Gas {
     /// computed by adding a buffer to the gas estimate to allow for small
     /// variations in the actual gas that gets used.
     pub limit: eth::Gas,
-    /// The gas price (EIP1559) for a settlement transaction.
-    pub price: eth::GasPrice,
 }
 
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
-    pub fn new(
-        estimate: eth::Gas,
-        block_limit: eth::Gas,
-        price: eth::GasPrice,
-    ) -> Result<Self, solution::Error> {
+    pub fn new(estimate: eth::Gas, block_limit: eth::Gas) -> Result<Self, solution::Error> {
         // We don't allow for solutions to take up more than half of the block's gas
         // limit. This is to ensure that block producers attempt to include the
         // settlement transaction in the next block as long as it is reasonably
@@ -380,7 +386,7 @@ impl Gas {
         // will not exceed the remaining space in the block next and ignore transactions
         // whose gas limit exceed the remaining space (without simulating the actual
         // gas required).
-        let max_gas = eth::Gas(block_limit.0 / 2);
+        let max_gas = eth::Gas(block_limit.0 / eth::U256::from(2));
         if estimate > max_gas {
             return Err(solution::Error::GasLimitExceeded(estimate, max_gas));
         }
@@ -392,20 +398,17 @@ impl Gas {
         // the end of execution, so we want to increase gas limit enough so
         // those solutions don't revert with out of gas error.
         const GAS_LIMIT_FACTOR: f64 = 2.0;
-        let estimate_with_buffer =
-            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
-                .into();
+        let estimate_with_buffer = eth::U256::from(f64::from(estimate.0) * GAS_LIMIT_FACTOR).into();
 
         Ok(Self {
             estimate,
             limit: std::cmp::min(max_gas, estimate_with_buffer),
-            price,
         })
     }
 
     /// The balance required to ensure settlement execution with the given gas
     /// parameters.
-    pub fn required_balance(&self) -> eth::Ether {
-        self.limit * self.price.max()
+    pub fn required_balance(&self, max_fee_per_gas: U256) -> eth::Ether {
+        self.limit * max_fee_per_gas.into()
     }
 }

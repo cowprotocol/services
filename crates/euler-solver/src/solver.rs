@@ -6,7 +6,6 @@ use {
     },
     anyhow::Result,
     contracts::alloy::IUniswapLikeRouter::{self, IUniswapLikeRouter::IUniswapLikeRouterInstance},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     solvers_dto::{
         auction::{Auction, Class, Kind, Order},
         solution::{Asset, Fulfillment, Interaction, OrderUid, Solution, Trade},
@@ -108,10 +107,10 @@ impl EulerSolver {
 
         // Step 1: Discover underlying tokens
         let sell_underlying_tokens = self
-            .discover_underlying_tokens(order.sell_token.into_alloy())
+            .discover_underlying_tokens(order.sell_token)
             .await;
         let buy_underlying_tokens = self
-            .discover_underlying_tokens(order.buy_token.into_alloy())
+            .discover_underlying_tokens(order.buy_token)
             .await;
 
         tracing::debug!(
@@ -124,7 +123,7 @@ impl EulerSolver {
         let mut interactions = Vec::new();
 
         // Add unwrap interaction if sell token is a vault
-        let mut orig_sell_amount = order.sell_amount.into_alloy();
+        let mut orig_sell_amount = order.sell_amount;
         if orig_sell_amount == uint!(22300745198530623141535718272648361505980416_U256) {
             orig_sell_amount = uint!(100000000000000000_U256);
         }
@@ -151,17 +150,17 @@ impl EulerSolver {
             interactions.push(Interaction::Custom(
                 solvers_dto::solution::CustomInteraction {
                     internalize: false,
-                    target: token.into_legacy(),
-                    value: U256::from(0).into_legacy(),
+                    target: *token,
+                    value: U256::from(0),
                     calldata: withdraw_calldata,
                     allowances: vec![],
                     inputs: vec![Asset {
-                        token: token.into_legacy(),
-                        amount: sell_amount.into_legacy(),
+                        token: *token,
+                        amount: sell_amount,
                     }],
                     outputs: vec![Asset {
-                        token: sell_underlying_tokens[index + 1].into_legacy(),
-                        amount: new_sell_amount.into_legacy(),
+                        token: sell_underlying_tokens[index + 1],
+                        amount: new_sell_amount,
                     }],
                 },
             ));
@@ -210,21 +209,21 @@ impl EulerSolver {
                 interactions.push(Interaction::Custom(
                     solvers_dto::solution::CustomInteraction {
                         internalize: false,
-                        target: self.uniswap_v2_router.address().into_legacy(),
-                        value: U256::from(0).into_legacy(),
+                        target: *self.uniswap_v2_router.address(),
+                        value: U256::from(0),
                         calldata: swap_calldata,
                         allowances: vec![solvers_dto::solution::Allowance {
-                            token: sell_underlying_tokens.last().unwrap().into_legacy(),
-                            spender: self.uniswap_v2_router.address().into_legacy(),
-                            amount: sell_amount.into_legacy(),
+                            token: *sell_underlying_tokens.last().unwrap(),
+                            spender: *self.uniswap_v2_router.address(),
+                            amount: sell_amount,
                         }],
                         inputs: vec![Asset {
-                            token: sell_underlying_tokens.last().unwrap().into_legacy(),
-                            amount: sell_amount.into_legacy(),
+                            token: *sell_underlying_tokens.last().unwrap(),
+                            amount: sell_amount,
                         }],
                         outputs: vec![Asset {
-                            token: buy_underlying_tokens.last().unwrap().into_legacy(),
-                            amount: output_amount.into_legacy(),
+                            token: *buy_underlying_tokens.last().unwrap(),
+                            amount: *output_amount,
                         }],
                     },
                 ));
@@ -256,21 +255,21 @@ impl EulerSolver {
             interactions.push(Interaction::Custom(
                 solvers_dto::solution::CustomInteraction {
                     internalize: false,
-                    target: buy_underlying.into_legacy(),
-                    value: U256::from(0).into_legacy(),
+                    target: *buy_underlying,
+                    value: U256::from(0),
                     calldata: deposit_calldata,
                     allowances: vec![solvers_dto::solution::Allowance {
-                        token: buy_underlying_tokens[index + 1].into_legacy(),
-                        spender: buy_underlying.into_legacy(),
-                        amount: buy_amount.into_legacy(),
+                        token: buy_underlying_tokens[index + 1],
+                        spender: *buy_underlying,
+                        amount: buy_amount,
                     }],
                     inputs: vec![Asset {
-                        token: buy_underlying_tokens[index + 1].into_legacy(),
-                        amount: buy_amount.into_legacy(),
+                        token: buy_underlying_tokens[index + 1],
+                        amount: buy_amount,
                     }],
                     outputs: vec![Asset {
-                        token: buy_underlying.into_legacy(),
-                        amount: new_amount.into_legacy(), // Assuming 1:1 for simplicity
+                        token: *buy_underlying,
+                        amount: new_amount, // Assuming 1:1 for simplicity
                     }],
                 },
             ));
@@ -286,11 +285,11 @@ impl EulerSolver {
         // Set price for sell token (in buy token terms)
         prices.insert(
             order.sell_token,
-            uint!(1000000000000000000_U256).into_legacy(),
+            uint!(1000000000000000000_U256),
         );
         prices.insert(
             order.buy_token,
-            (orig_sell_amount * uint!(1010000000000000000_U256) / buy_amount).into_legacy(),
+            orig_sell_amount * uint!(1010000000000000000_U256) / buy_amount,
         );
 
         // Step 6: Collect wrappers from order
@@ -314,9 +313,9 @@ impl EulerSolver {
             prices,
             trades: vec![Trade::Fulfillment(Fulfillment {
                 order: OrderUid(order.uid),
-                executed_amount: orig_sell_amount.into_legacy(),
+                executed_amount: orig_sell_amount,
                 fee: if matches!(order.class, Class::Limit) {
-                    Some(uint!(0_U256).into_legacy())
+                    Some(uint!(0_U256))
                 } else {
                     None
                 },
@@ -324,7 +323,7 @@ impl EulerSolver {
             pre_interactions: vec![],
             interactions,
             post_interactions: vec![],
-            gas: Some(200_000 + 50_000 + 50_000), // Rough estimate (uniswap + wrap + unwrap)the
+            gas: Some(200_000 + 50_000 + 50_000), // Rough estimate (uniswap + wrap + unwrap)
             // TODO: include the cost of executing wrapper.
             flashloans: None,
             wrappers,
@@ -344,10 +343,10 @@ impl EulerSolver {
 
         // Step 1: Discover underlying tokens
         let sell_underlying_tokens = self
-            .discover_underlying_tokens(order.sell_token.into_alloy())
+            .discover_underlying_tokens(order.sell_token)
             .await;
         let buy_underlying_tokens = self
-            .discover_underlying_tokens(order.buy_token.into_alloy())
+            .discover_underlying_tokens(order.buy_token)
             .await;
 
         tracing::debug!(
@@ -357,7 +356,7 @@ impl EulerSolver {
         );
 
         // Step 2: Work backwards from desired buy_amount
-        let mut desired_buy_amount = order.buy_amount.into_alloy();
+        let mut desired_buy_amount = order.buy_amount;
 
         // Handle magic number for unlimited amounts
         if desired_buy_amount == uint!(22300745198530623141535718272648361505980416_U256) {
@@ -497,17 +496,17 @@ impl EulerSolver {
             interactions.push(Interaction::Custom(
                 solvers_dto::solution::CustomInteraction {
                     internalize: false,
-                    target: token.into_legacy(),
-                    value: U256::from(0).into_legacy(),
+                    target: *token,
+                    value: U256::from(0),
                     calldata: withdraw_calldata,
                     allowances: vec![],
                     inputs: vec![Asset {
-                        token: token.into_legacy(),
-                        amount: shares_in.into_legacy(),
+                        token: *token,
+                        amount: shares_in,
                     }],
                     outputs: vec![Asset {
-                        token: sell_underlying_tokens[index + 1].into_legacy(),
-                        amount: assets_out.into_legacy(),
+                        token: sell_underlying_tokens[index + 1],
+                        amount: assets_out,
                     }],
                 },
             ));
@@ -551,21 +550,21 @@ impl EulerSolver {
             interactions.push(Interaction::Custom(
                 solvers_dto::solution::CustomInteraction {
                     internalize: false,
-                    target: self.uniswap_v2_router.address().into_legacy(),
-                    value: U256::from(0).into_legacy(),
+                    target: *self.uniswap_v2_router.address(),
+                    value: U256::from(0),
                     calldata: swap_calldata,
                     allowances: vec![solvers_dto::solution::Allowance {
-                        token: sell_underlying_tokens.last().unwrap().into_legacy(),
-                        spender: self.uniswap_v2_router.address().into_legacy(),
-                        amount: required_sell_underlying.into_legacy(),
+                        token: *sell_underlying_tokens.last().unwrap(),
+                        spender: *self.uniswap_v2_router.address(),
+                        amount: required_sell_underlying,
                     }],
                     inputs: vec![Asset {
-                        token: sell_underlying_tokens.last().unwrap().into_legacy(),
-                        amount: required_sell_underlying.into_legacy(),
+                        token: *sell_underlying_tokens.last().unwrap(),
+                        amount: required_sell_underlying,
                     }],
                     outputs: vec![Asset {
-                        token: buy_underlying_tokens.last().unwrap().into_legacy(),
-                        amount: output_amount.into_legacy(),
+                        token: *buy_underlying_tokens.last().unwrap(),
+                        amount: *output_amount,
                     }],
                 },
             ));
@@ -595,21 +594,21 @@ impl EulerSolver {
             interactions.push(Interaction::Custom(
                 solvers_dto::solution::CustomInteraction {
                     internalize: false,
-                    target: buy_token.into_legacy(),
-                    value: U256::from(0).into_legacy(),
+                    target: buy_token,
+                    value: U256::from(0),
                     calldata: mint_calldata,
                     allowances: vec![solvers_dto::solution::Allowance {
-                        token: buy_underlying_tokens[i + 1].into_legacy(),
-                        spender: buy_token.into_legacy(),
-                        amount: assets_in.into_legacy(),
+                        token: buy_underlying_tokens[i + 1],
+                        spender: buy_token,
+                        amount: assets_in,
                     }],
                     inputs: vec![Asset {
-                        token: buy_underlying_tokens[i + 1].into_legacy(),
-                        amount: assets_in.into_legacy(),
+                        token: buy_underlying_tokens[i + 1],
+                        amount: assets_in,
                     }],
                     outputs: vec![Asset {
-                        token: buy_token.into_legacy(),
-                        amount: shares_out.into_legacy(),
+                        token: buy_token,
+                        amount: shares_out,
                     }],
                 },
             ));
@@ -626,12 +625,11 @@ impl EulerSolver {
 
         prices.insert(
             order.sell_token,
-            uint!(1000000000000000000_U256).into_legacy(),
+            uint!(1000000000000000000_U256),
         );
         prices.insert(
             order.buy_token,
-            (required_sell_amount * uint!(1010000000000000000_U256) / desired_buy_amount)
-                .into_legacy(),
+            required_sell_amount * uint!(1010000000000000000_U256) / desired_buy_amount,
         );
 
         // Step 8: Collect wrappers from order
@@ -656,9 +654,9 @@ impl EulerSolver {
             prices,
             trades: vec![Trade::Fulfillment(Fulfillment {
                 order: OrderUid(order.uid),
-                executed_amount: desired_buy_amount.into_legacy(),
+                executed_amount: desired_buy_amount,
                 fee: if matches!(order.class, Class::Limit) {
-                    Some(uint!(0_U256).into_legacy())
+                    Some(uint!(0_U256))
                 } else {
                     None
                 },

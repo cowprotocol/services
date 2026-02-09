@@ -4,7 +4,7 @@
 pub mod config;
 pub mod distributed_tracing;
 pub mod future;
-#[cfg(all(unix, feature = "jemalloc-profiling"))]
+#[cfg(unix)]
 pub mod heap_dump_handler;
 pub mod metrics;
 pub mod panic_hook;

@@ -29,7 +29,6 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
                 EtherExt,
-                is_approximately_equal,
             },
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
@@ -37,16 +36,17 @@ use {
             },
         },
     },
-    alloy::primitives::Address,
+    alloy::{
+        primitives::{Address, U256, address, b256},
+        providers::Provider,
+        signers::local::PrivateKeySigner,
+    },
     bigdecimal::{BigDecimal, FromPrimitive},
-    ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::Web3,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
-    number::serialization::HexOrDecimalU256,
-    primitive_types::H160,
-    secp256k1::SecretKey,
+    number::{serialization::HexOrDecimalU256, testing::ApproxEq},
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
@@ -142,8 +142,8 @@ pub struct Order {
     /// order? True by default.
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
-    pub owner: H160,
-    pub receiver: Option<H160>,
+    pub owner: eth::Address,
+    pub receiver: Option<eth::Address>,
     pub fee_amount: eth::U256,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
@@ -178,7 +178,7 @@ impl Order {
     /// has a negative score.
     pub fn no_surplus(self) -> Self {
         Self {
-            surplus_factor: 1.into(),
+            surplus_factor: U256::ONE,
             ..self
         }
     }
@@ -297,11 +297,11 @@ impl Order {
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
-            _ => 0.into(),
+            _ => eth::U256::ZERO,
         }
     }
 
-    pub fn receiver(self, receiver: Option<H160>) -> Self {
+    pub fn receiver(self, receiver: Option<eth::Address>) -> Self {
         Self { receiver, ..self }
     }
 }
@@ -330,7 +330,7 @@ impl Default for Order {
                 factor: 0.0,
                 max_volume_factor: 0.06,
             }],
-            owner: eth::H160::from_str(TRADER_ADDRESS).unwrap(),
+            owner: TRADER_ADDRESS,
             receiver: Default::default(),
             fee_amount: Default::default(),
             sell_token_source: Default::default(),
@@ -349,7 +349,7 @@ pub struct Solver {
     /// How much ETH balance should the solver be funded with? 1 ETH by default.
     balance: eth::U256,
     /// The private key for this solver.
-    private_key: ethcontract::PrivateKey,
+    signer: PrivateKeySigner,
     /// The slippage for this solver.
     slippage: Slippage,
     /// The fraction of time used for solving
@@ -359,6 +359,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+    /// Haircut in basis points (0-10000) for conservative bidding.
+    haircut_bps: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -370,11 +372,10 @@ struct Slippage {
 pub fn test_solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
-        balance: eth::U256::exp10(18),
-        private_key: ethcontract::PrivateKey::from_slice(
-            const_hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
-                .unwrap(),
-        )
+        balance: eth::U256::from(10).pow(eth::U256::from(18)),
+        signer: PrivateKeySigner::from_bytes(&b256!(
+            "a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326"
+        ))
         .unwrap(),
         slippage: Slippage {
             relative: BigDecimal::from_f64(0.3).unwrap(),
@@ -386,12 +387,13 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
+        haircut_bps: 0,
     }
 }
 
 impl Solver {
-    pub fn address(&self) -> eth::H160 {
-        self.private_key.public_address()
+    pub fn address(&self) -> eth::Address {
+        self.signer.address()
     }
 
     pub fn name(self, name: &str) -> Self {
@@ -423,6 +425,13 @@ impl Solver {
     pub fn merge_solutions(mut self) -> Self {
         self.merge_solutions = true;
         self
+    }
+
+    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
+        Self {
+            haircut_bps,
+            ..self
+        }
     }
 }
 
@@ -472,10 +481,12 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
 
 #[derive(Debug)]
 pub enum Mempool {
-    Public,
+    /// Uses the driver's main RPC URL
+    Default,
     Private {
         /// Uses ethrpc node if None
         url: Option<String>,
+        mines_reverting_txs: bool,
     },
 }
 
@@ -484,7 +495,7 @@ pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Public],
+        mempools: vec![Mempool::Default],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -509,19 +520,20 @@ pub struct Setup {
     /// Should simulation be enabled? True by default.
     enable_simulation: bool,
     /// Ensure the settlement contract is deployed on a specific address?
-    settlement_address: Option<eth::H160>,
+    settlement_address: Option<eth::Address>,
     /// Ensure the Balances contract is deployed on a specific address?
-    balances_address: Option<eth::H160>,
+    balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
-    signatures_address: Option<eth::H160>,
-    /// Via which mempool the solutions should be submitted
+    signatures_address: Option<eth::Address>,
+    /// Mempools that should be used for solution submission in addition
+    /// to the main RPC URL.
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
     /// List of jit orders returned by the solver
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
-    surplus_capturing_jit_order_owners: Vec<H160>,
+    surplus_capturing_jit_order_owners: Vec<eth::Address>,
     /// In case your test requires multiple `/solve` requests
     allow_multiple_solve_requests: bool,
     /// Auction ID used during tests
@@ -750,7 +762,7 @@ pub fn eth_solution() -> Solution {
 }
 
 // Hardcoded trader account. Don't use this account for anything else!!!
-pub const TRADER_ADDRESS: &str = "d2525C68A663295BBE347B65C87c8e17De936a0a";
+pub const TRADER_ADDRESS: Address = address!("d2525C68A663295BBE347B65C87c8e17De936a0a");
 
 impl Setup {
     /// Set an explicit name for this test. If a name is set, it will be logged
@@ -815,20 +827,20 @@ impl Setup {
     }
 
     /// Ensure that the settlement contract is deployed to a specific address.
-    pub fn settlement_address(mut self, address: &H160) -> Self {
-        self.settlement_address = Some(*address);
+    pub fn settlement_address(mut self, address: Address) -> Self {
+        self.settlement_address = Some(address);
         self
     }
 
     /// Ensure that the Balances contract is deployed to a specific address
-    pub fn balances_address(mut self, address: &H160) -> Self {
-        self.balances_address = Some(*address);
+    pub fn balances_address(mut self, address: Address) -> Self {
+        self.balances_address = Some(address);
         self
     }
 
     /// Ensure that the Signatures contract is deployed to a specific address.
-    pub fn signatures_address(mut self, address: &H160) -> Self {
-        self.signatures_address = Some(*address);
+    pub fn signatures_address(mut self, address: Address) -> Self {
+        self.signatures_address = Some(address);
         self
     }
 
@@ -844,7 +856,7 @@ impl Setup {
 
     pub fn surplus_capturing_jit_order_owners(
         mut self,
-        surplus_capturing_jit_order_owners: Vec<H160>,
+        surplus_capturing_jit_order_owners: Vec<Address>,
     ) -> Self {
         self.surplus_capturing_jit_order_owners
             .extend(surplus_capturing_jit_order_owners);
@@ -891,18 +903,14 @@ impl Setup {
             ..
         } = self;
 
-        // Hardcoded trader account. Don't use this account for anything else!!!
-        let trader_address = eth::H160::from_str(TRADER_ADDRESS).unwrap();
-        let trader_secret_key = SecretKey::from_slice(
-            &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
-                .unwrap(),
-        )
-        .unwrap();
-
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            main_trader_secret_key: trader_secret_key,
+            // This PK is publicly known - don't send any funds to its account onchain!!!
+            main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
+                "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
+            ))
+            .unwrap(),
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
             balances_address: self.balances_address,
@@ -960,7 +968,7 @@ impl Setup {
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
-                private_key: solver.private_key.clone(),
+                private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
@@ -970,6 +978,7 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
+
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -987,7 +996,7 @@ impl Setup {
             blockchain,
             driver,
             client: Default::default(),
-            trader_address,
+            trader_address: TRADER_ADDRESS,
             trades: solutions.into_iter().flat_map(|s| s.trades).collect(),
             trusted,
             deadline,
@@ -1028,7 +1037,7 @@ pub struct Test {
     blockchain: Blockchain,
     driver: Driver,
     client: reqwest::Client,
-    trader_address: eth::H160,
+    trader_address: eth::Address,
     trades: Vec<Trade>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
@@ -1036,7 +1045,7 @@ pub struct Test {
     /// Is this testing the /quote endpoint?
     quote: bool,
     /// List of surplus capturing JIT-order owners
-    surplus_capturing_jit_order_owners: Vec<H160>,
+    surplus_capturing_jit_order_owners: Vec<eth::Address>,
     auction_id: i64,
 }
 
@@ -1122,7 +1131,7 @@ impl Test {
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
         let submission_deadline_latest_block: u64 =
-            u64::try_from(self.web3().eth().block_number().await.unwrap()).unwrap()
+            self.web3().provider.get_block_number().await.unwrap()
                 + self.settle_submission_deadline;
         let old_balances = self.balances().await;
         let res = self
@@ -1158,36 +1167,34 @@ impl Test {
         let mut balances = HashMap::new();
         for (token, contract) in self.blockchain.tokens.iter() {
             let balance = contract
-                .balanceOf(self.trader_address.into_alloy())
+                .balanceOf(self.trader_address)
                 .call()
                 .await
-                .unwrap()
-                .into_legacy();
+                .unwrap();
             balances.insert(*token, balance);
         }
         balances.insert(
             "WETH",
             self.blockchain
                 .weth
-                .balanceOf(self.trader_address.into_alloy())
+                .balanceOf(self.trader_address)
                 .call()
                 .await
-                .unwrap()
-                .into_legacy(),
+                .unwrap(),
         );
         balances.insert(
             "ETH",
             self.blockchain
                 .web3
-                .eth()
-                .balance(self.trader_address, None)
+                .provider
+                .get_balance(self.trader_address)
                 .await
                 .unwrap(),
         );
         balances
     }
 
-    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+    pub fn web3(&self) -> &Web3 {
         &self.blockchain.web3
     }
 
@@ -1259,7 +1266,7 @@ impl SolveOk<'_> {
     /// Extracts the first solution from the response. This is expected to be
     /// always valid if there is a valid solution, as we expect from driver to
     /// not send multiple solutions (yet).
-    fn solution(&self) -> serde_json::Value {
+    pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
@@ -1275,7 +1282,7 @@ impl SolveOk<'_> {
         let solution = self.solution();
         assert!(solution.get("score").is_some());
         let score = solution.get("score").unwrap().as_str().unwrap();
-        eth::U256::from_dec_str(score).unwrap()
+        eth::U256::from_str_radix(score, 10).unwrap()
     }
 
     /// Ensures that `/solve` returns no solutions.
@@ -1306,8 +1313,9 @@ impl SolveOk<'_> {
     /// Find for a JIT order, given specific token pair and buy/sell amount,
     /// return true if the JIT order was found
     fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
-        let u256 =
-            |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
+        let u256 = |value: &serde_json::Value| {
+            eth::U256::from_str_radix(value.as_str().unwrap(), 10).unwrap()
+        };
         let sell_token =
             Address::deserialize(trade.get("sellToken").unwrap().into_deserializer()).unwrap();
         let buy_token =
@@ -1352,21 +1360,15 @@ impl SolveOk<'_> {
                 .get(&uid.to_string())
                 .expect("Didn't find expected trade in solution");
             let u256 = |value: &serde_json::Value| {
-                eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
+                eth::U256::from_str_radix(value.as_str().unwrap(), 10).unwrap()
             };
 
             let (expected_sell, expected_buy) = match &expected.expected_amounts {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(is_approximately_equal(
-                u256(trade.get("executedSell").unwrap()),
-                expected_sell
-            ));
-            assert!(is_approximately_equal(
-                u256(trade.get("executedBuy").unwrap()),
-                expected_buy
-            ));
+            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(&expected_sell, None));
+            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(&expected_buy, None));
         }
         self
     }
@@ -1490,6 +1492,11 @@ pub struct QuoteOk<'a> {
 }
 
 impl QuoteOk<'_> {
+    /// Get the JSON response body.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {
@@ -1514,12 +1521,12 @@ impl QuoteOk<'_> {
             .as_object()
             .unwrap()
             .into_iter()
-            .map(|(token, price)| (H160::from_str(token).unwrap(), price.as_str().unwrap()))
+            .map(|(token, price)| (Address::from_str(token).unwrap(), price.as_str().unwrap()))
             .collect::<HashMap<_, _>>();
 
         let amount = match quoted_order.order.side {
-            order::Side::Buy => clearing_prices.get(&buy_token.into_legacy()).unwrap(),
-            order::Side::Sell => clearing_prices.get(&sell_token.into_legacy()).unwrap(),
+            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
         };
 
         let expected = match quoted_order.order.side {
@@ -1622,11 +1629,11 @@ pub struct OrderQuote {
     pub buy_amount: eth::U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: eth::U256,
-    pub solver: eth::H160,
+    pub solver: eth::Address,
 }
 
 impl OrderQuote {
-    pub fn solver(self, solver: eth::H160) -> Self {
+    pub fn solver(self, solver: eth::Address) -> Self {
         Self { solver, ..self }
     }
 }

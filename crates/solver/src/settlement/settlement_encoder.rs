@@ -1,17 +1,15 @@
 use {
     super::{Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Context as _, Result, ensure},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::Either,
     model::{
         interaction::InteractionData,
         order::{Order, OrderClass, OrderKind},
     },
-    primitive_types::U256,
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext,
         encoded_settlement::EncodedSettlement,
         http_solver::model::InternalizationStrategy,
         interaction::Interaction,
@@ -218,13 +216,7 @@ impl SettlementEncoder {
             OrderClass::Market => self.add_market_trade(order, executed_amount, fee)?,
             OrderClass::Liquidity => {
                 let (sell_price, buy_price) = (order.data.buy_amount, order.data.sell_amount);
-                self.add_custom_price_trade(
-                    order,
-                    executed_amount,
-                    fee,
-                    sell_price.into_legacy(),
-                    buy_price.into_legacy(),
-                )?
+                self.add_custom_price_trade(order, executed_amount, fee, sell_price, buy_price)?
             }
             OrderClass::Limit => {
                 let surplus_fee = fee;
@@ -272,9 +264,8 @@ impl SettlementEncoder {
             OrderKind::Sell => order.data.sell_amount,
         };
         anyhow::ensure!(
-            (order.data.partially_fillable && executed_amount <= target_amount.into_legacy())
-                || (!order.data.partially_fillable
-                    && executed_amount == target_amount.into_legacy()),
+            (order.data.partially_fillable && executed_amount <= target_amount)
+                || (!order.data.partially_fillable && executed_amount == target_amount),
             "this function should only be called with valid executed amounts"
         );
 
@@ -481,10 +472,10 @@ impl SettlementEncoder {
             .tokens
             .iter()
             .map(|token| {
-                self.clearing_prices
+                *self
+                    .clearing_prices
                     .get(token)
                     .expect("missing clearing price for token")
-                    .into_alloy()
             })
             .collect();
 
@@ -499,14 +490,8 @@ impl SettlementEncoder {
                         sell_token_price,
                         buy_token_price,
                     } => Some(vec![
-                        (
-                            trade.data.order.data.sell_token,
-                            sell_token_price.into_alloy(),
-                        ),
-                        (
-                            trade.data.order.data.buy_token,
-                            buy_token_price.into_alloy(),
-                        ),
+                        (trade.data.order.data.sell_token, sell_token_price),
+                        (trade.data.order.data.buy_token, buy_token_price),
                     ]),
                     _ => None,
                 })
@@ -586,18 +571,10 @@ impl PricedTrade<'_> {
 pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
     let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
-        (true, OrderKind::Sell) => {
-            executed <= remaining.remaining(order.data.sell_amount.into_legacy())?
-        }
-        (true, OrderKind::Buy) => {
-            executed <= remaining.remaining(order.data.buy_amount.into_legacy())?
-        }
-        (false, OrderKind::Sell) => {
-            executed == remaining.remaining(order.data.sell_amount.into_legacy())?
-        }
-        (false, OrderKind::Buy) => {
-            executed == remaining.remaining(order.data.buy_amount.into_legacy())?
-        }
+        (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
+        (true, OrderKind::Buy) => executed <= remaining.remaining(order.data.buy_amount)?,
+        (false, OrderKind::Sell) => executed == remaining.remaining(order.data.sell_amount)?,
+        (false, OrderKind::Buy) => executed == remaining.remaining(order.data.buy_amount)?,
     };
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())
@@ -621,9 +598,9 @@ pub mod tests {
         let order0 = Order {
             data: OrderData {
                 sell_token: token0,
-                sell_amount: alloy::primitives::U256::ONE,
+                sell_amount: U256::ONE,
                 buy_token: token1,
-                buy_amount: alloy::primitives::U256::ONE,
+                buy_amount: U256::ONE,
                 ..Default::default()
             },
             ..Default::default()
@@ -631,35 +608,35 @@ pub mod tests {
         let order1 = Order {
             data: OrderData {
                 sell_token: token1,
-                sell_amount: alloy::primitives::U256::ONE,
+                sell_amount: U256::ONE,
                 buy_token: token0,
-                buy_amount: alloy::primitives::U256::ONE,
+                buy_amount: U256::ONE,
                 ..Default::default()
             },
             ..Default::default()
         };
 
         let mut settlement = SettlementEncoder::new(maplit::hashmap! {
-            token0 => 1.into(),
-            token1 => 1.into(),
+            token0 => U256::ONE,
+            token1 => U256::ONE,
         });
 
-        assert!(settlement.add_trade(order0, 1.into(), 1.into()).is_ok());
-        assert!(settlement.add_trade(order1, 1.into(), 0.into()).is_ok());
+        settlement.add_trade(order0, U256::ONE, U256::ONE).unwrap();
+        settlement.add_trade(order1, U256::ONE, U256::ZERO).unwrap();
     }
 
     #[test]
     fn settlement_merges_unwraps_for_same_token() {
-        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().provider);
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
-            amount: alloy::primitives::U256::ONE,
+            amount: U256::ONE,
         });
         encoder.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
-            amount: alloy::primitives::U256::from(2),
+            amount: U256::from(2),
         });
 
         assert_eq!(
@@ -668,7 +645,7 @@ pub mod tests {
                 .interactions[1],
             [UnwrapWethInteraction {
                 weth,
-                amount: alloy::primitives::U256::from(3),
+                amount: U256::from(3),
             }
             .encode()],
         );
@@ -677,27 +654,31 @@ pub mod tests {
     #[test]
     fn settlement_reflects_different_price_for_normal_and_liquidity_order() {
         let mut settlement = SettlementEncoder::new(maplit::hashmap! {
-            Address::with_last_byte(0) => 3.into(),
-            Address::with_last_byte(1) => 10.into(),
+            Address::with_last_byte(0) => U256::from(3),
+            Address::with_last_byte(1) => U256::from(10),
         });
 
         let order01 = OrderBuilder::default()
             .with_sell_token(Address::with_last_byte(0))
-            .with_sell_amount(alloy::primitives::U256::from(30))
+            .with_sell_amount(U256::from(30))
             .with_buy_token(Address::with_last_byte(1))
-            .with_buy_amount(alloy::primitives::U256::from(10))
+            .with_buy_amount(U256::from(10))
             .build();
 
         let order10 = OrderBuilder::default()
             .with_sell_token(Address::with_last_byte(1))
-            .with_sell_amount(alloy::primitives::U256::from(10))
+            .with_sell_amount(U256::from(10))
             .with_buy_token(Address::with_last_byte(0))
-            .with_buy_amount(alloy::primitives::U256::from(20))
+            .with_buy_amount(U256::from(20))
             .with_class(OrderClass::Liquidity)
             .build();
 
-        assert!(settlement.add_trade(order01, 10.into(), 0.into()).is_ok());
-        assert!(settlement.add_trade(order10, 20.into(), 0.into()).is_ok());
+        settlement
+            .add_trade(order01, U256::from(10), U256::from(0))
+            .unwrap();
+        settlement
+            .add_trade(order10, U256::from(20), U256::from(0))
+            .unwrap();
         let finished_settlement =
             settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         assert_eq!(
@@ -712,37 +693,37 @@ pub mod tests {
         assert_eq!(
             finished_settlement.clearing_prices,
             vec![
-                alloy::primitives::U256::from(3),
-                alloy::primitives::U256::from(10),
-                alloy::primitives::U256::from(20),
-                alloy::primitives::U256::from(10)
+                U256::from(3),
+                U256::from(10),
+                U256::from(20),
+                U256::from(10)
             ]
         );
         assert_eq!(
             finished_settlement.trades[1].1, // <-- is the buy token index of liquidity order
-            3.into()
+            U256::from(3)
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of normal order
-            1.into()
+            U256::ONE
         );
     }
 
     #[test]
     fn settlement_inserts_sell_price_for_new_liquidity_order_if_price_did_not_exist() {
         let mut settlement = SettlementEncoder::new(maplit::hashmap! {
-            Address::with_last_byte(1) => 9.into(),
+            Address::with_last_byte(1) => U256::from(9),
         });
         let order01 = OrderBuilder::default()
             .with_sell_token(Address::with_last_byte(0))
-            .with_sell_amount(alloy::primitives::U256::from(30))
+            .with_sell_amount(U256::from(30))
             .with_buy_token(Address::with_last_byte(1))
-            .with_buy_amount(alloy::primitives::U256::from(10))
+            .with_buy_amount(U256::from(10))
             .with_class(OrderClass::Liquidity)
             .build();
         assert!(
             settlement
-                .add_trade(order01.clone(), 10.into(), 0.into())
+                .add_trade(order01.clone(), U256::from(10), U256::ZERO)
                 .is_ok()
         );
         // ensures that the output of add_liquidity_order is not changed after adding
@@ -764,11 +745,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
-            0.into()
+            U256::ZERO
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of liquidity order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -776,12 +757,12 @@ pub mod tests {
     fn settlement_encoder_appends_unwraps_for_different_tokens() {
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
-            amount: alloy::primitives::U256::ONE,
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
+            amount: U256::ONE,
         });
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().alloy),
-            amount: alloy::primitives::U256::from(2),
+            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().provider),
+            amount: U256::from(2),
         });
 
         assert_eq!(
@@ -791,8 +772,8 @@ pub mod tests {
                 .map(|unwrap| (*unwrap.weth.address(), unwrap.amount))
                 .collect::<Vec<_>>(),
             vec![
-                ([0x01; 20].into(), alloy::primitives::U256::ONE),
-                ([0x02; 20].into(), alloy::primitives::U256::from(2))
+                ([0x01; 20].into(), U256::ONE),
+                ([0x02; 20].into(), U256::from(2))
             ],
         );
     }
@@ -801,12 +782,12 @@ pub mod tests {
     fn settlement_unwraps_after_execution_plan() {
         let interaction: EncodedInteraction = (
             Address::new([0x01; 20]),
-            alloy::primitives::U256::ZERO,
+            U256::ZERO,
             alloy::primitives::Bytes::default(),
         );
         let unwrap = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
-            amount: alloy::primitives::U256::ONE,
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
+            amount: U256::ONE,
         };
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
@@ -826,23 +807,23 @@ pub mod tests {
         let token_a = Address::repeat_byte(0x00);
         let token_b = Address::repeat_byte(0xff);
         let mut encoder = SettlementEncoder::new(hashmap! {
-            token_a => 1.into(),
-            token_b => 2.into(),
+            token_a => U256::ONE,
+            token_b => U256::from(2),
         });
         encoder
             .add_trade(
                 Order {
                     data: OrderData {
                         sell_token: token_a,
-                        sell_amount: alloy::primitives::U256::from(6),
+                        sell_amount: U256::from(6),
                         buy_token: token_b,
-                        buy_amount: alloy::primitives::U256::from(3),
+                        buy_amount: U256::from(3),
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                3.into(),
-                0.into(),
+                U256::from(3),
+                U256::ZERO,
             )
             .unwrap();
 
@@ -887,24 +868,24 @@ pub mod tests {
         let token_a = Address::repeat_byte(1);
         let token_b = Address::repeat_byte(2);
         let mut encoder = SettlementEncoder::new(hashmap! {
-            token_a => 1.into(),
-            token_b => 2.into(),
+            token_a => U256::ONE,
+            token_b => U256::from(2),
         });
         assert!(encoder.add_token_equivalency(token_a, token_b).is_err());
     }
 
     #[test]
     fn trades_add_interactions_to_the_encoded_and_later_get_encoded() {
-        let prices = hashmap! { Address::with_last_byte(1) => 1.into(), Address::with_last_byte(3) => 3.into() };
+        let prices = hashmap! { Address::with_last_byte(1) => U256::ONE, Address::with_last_byte(3) => U256::from(3) };
         let mut encoder = SettlementEncoder::new(prices);
         let i1 = InteractionData {
             target: Address::from_slice(&[12; 20]),
-            value: alloy::primitives::U256::from(321),
+            value: U256::from(321),
             call_data: vec![1, 2, 3, 4],
         };
         let i2 = InteractionData {
             target: Address::from_slice(&[42; 20]),
-            value: alloy::primitives::U256::from(1212),
+            value: U256::from(1212),
             call_data: vec![4, 3, 2, 1],
         };
         encoder
@@ -912,9 +893,9 @@ pub mod tests {
                 Order {
                     data: OrderData {
                         sell_token: Address::with_last_byte(1),
-                        sell_amount: alloy::primitives::U256::from(33),
+                        sell_amount: U256::from(33),
                         buy_token: Address::with_last_byte(3),
-                        buy_amount: alloy::primitives::U256::from(11),
+                        buy_amount: U256::from(11),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -924,8 +905,8 @@ pub mod tests {
                     },
                     ..Default::default()
                 },
-                33.into(),
-                5.into(),
+                U256::from(33),
+                U256::from(5),
             )
             .unwrap();
 
@@ -935,9 +916,9 @@ pub mod tests {
                 Order {
                     data: OrderData {
                         sell_token: Address::with_last_byte(1),
-                        sell_amount: alloy::primitives::U256::from(66),
+                        sell_amount: U256::from(66),
                         buy_token: Address::with_last_byte(3),
-                        buy_amount: alloy::primitives::U256::from(22),
+                        buy_amount: U256::from(22),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -947,8 +928,8 @@ pub mod tests {
                     },
                     ..Default::default()
                 },
-                66.into(),
-                5.into(),
+                U256::from(66),
+                U256::from(5),
             )
             .unwrap();
 
@@ -967,26 +948,28 @@ pub mod tests {
     #[test]
     fn encoding_strips_unnecessary_tokens_and_prices() {
         let prices = hashmap! {
-            Address::with_last_byte(1) => 7.into(),
-            Address::with_last_byte(2) => 2.into(),
-            Address::with_last_byte(3) => 9.into(),
-            Address::with_last_byte(4) => 44.into()
+            Address::with_last_byte(1) => U256::from(7),
+            Address::with_last_byte(2) => U256::from(2),
+            Address::with_last_byte(3) => U256::from(9),
+            Address::with_last_byte(4) => U256::from(44),
         };
 
         let mut encoder = SettlementEncoder::new(prices);
 
         let order_1_3 = OrderBuilder::default()
             .with_sell_token(Address::with_last_byte(1))
-            .with_sell_amount(alloy::primitives::U256::from(33))
+            .with_sell_amount(U256::from(33))
             .with_buy_token(Address::with_last_byte(3))
-            .with_buy_amount(alloy::primitives::U256::from(11))
+            .with_buy_amount(U256::from(11))
             .build();
-        encoder.add_trade(order_1_3, 11.into(), 0.into()).unwrap();
+        encoder
+            .add_trade(order_1_3, U256::from(11), U256::ZERO)
+            .unwrap();
 
-        let weth = WETH9::Instance::new(Address::with_last_byte(2), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new(Address::with_last_byte(2), ethrpc::mock::web3().provider);
         encoder.add_unwrap(UnwrapWethInteraction {
             weth,
-            amount: alloy::primitives::U256::from(12),
+            amount: U256::from(12),
         });
 
         let encoded = encoder.finish(InternalizationStrategy::SkipInternalizableInteraction);
@@ -996,21 +979,18 @@ pub mod tests {
         assert_eq!(expected_tokens, encoded.tokens);
 
         // only the prices for token 1 and 2 remain and they are in the correct order
-        let expected_prices: Vec<_> = [7, 9]
-            .into_iter()
-            .map(alloy::primitives::U256::from)
-            .collect();
+        let expected_prices: Vec<_> = [7, 9].into_iter().map(U256::from).collect();
         assert_eq!(expected_prices, encoded.clearing_prices);
 
         let encoded_trade = &encoded.trades[0];
 
         // dropping unnecessary tokens did not change the sell_token_index
         let updated_sell_token_index = encoded_trade.0;
-        assert_eq!(updated_sell_token_index, 0.into());
+        assert_eq!(updated_sell_token_index, U256::ZERO);
 
         // dropping unnecessary tokens decreased the buy_token_index by one
         let updated_buy_token_index = encoded_trade.1;
-        assert_eq!(updated_buy_token_index, 1.into());
+        assert_eq!(updated_buy_token_index, U256::ONE);
     }
 
     #[derive(Debug)]
@@ -1019,7 +999,7 @@ pub mod tests {
         fn encode(&self) -> EncodedInteraction {
             (
                 Address::ZERO,
-                alloy::primitives::U256::ZERO,
+                U256::ZERO,
                 alloy::primitives::Bytes::default(),
             )
         }
@@ -1027,7 +1007,7 @@ pub mod tests {
 
     #[test]
     fn optionally_encodes_internalizable_transactions() {
-        let prices = hashmap! {Address::with_last_byte(1) => 7.into() };
+        let prices = hashmap! {Address::with_last_byte(1) => U256::from(7) };
 
         let mut encoder = SettlementEncoder::new(prices);
         encoder.append_to_execution_plan_internalizable(Arc::new(TestInteraction), true);
@@ -1048,8 +1028,8 @@ pub mod tests {
         let usdc = Address::with_last_byte(2);
         let prices = hashmap! {
             // assumption 1 WETH == 1_000 USDC (all prices multiplied by 10^18)
-            weth => U256::exp10(18),
-            usdc => U256::exp10(27) // 1 ETH buys 1_000 * 10^6 units of USDC
+            weth => U256::from(10).pow(U256::from(18)),
+            usdc => U256::from(10).pow(U256::from(27)) // 1 ETH buys 1_000 * 10^6 units of USDC
         };
 
         let mut encoder = SettlementEncoder::new(prices);
@@ -1057,23 +1037,27 @@ pub mod tests {
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit)
             .with_sell_token(weth)
-            .with_sell_amount(alloy::primitives::U256::from(1_010_000_000_000_000_000u128)) // 1.01 WETH
+            .with_sell_amount(U256::from(1_010_000_000_000_000_000u128)) // 1.01 WETH
             .with_buy_token(usdc)
-            .with_buy_amount(alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(9))) // 1_000 USDC
-            .with_fee_amount(alloy::primitives::U256::ZERO)
+            .with_buy_amount(U256::from(10).pow(U256::from(9))) // 1_000 USDC
+            .with_fee_amount(U256::ZERO)
             .with_kind(OrderKind::Sell)
             .build();
 
         let execution = encoder
-            .add_trade(order.clone(), U256::exp10(18), U256::exp10(16))
+            .add_trade(
+                order.clone(),
+                U256::from(10).pow(U256::from(18)),
+                U256::from(10).pow(U256::from(16)),
+            )
             .unwrap();
         assert_eq!(
             TradeExecution {
                 sell_token: weth,
                 buy_token: usdc,
-                sell_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
-                buy_amount: U256::exp10(9),                        // 1_000 USDC
-                fee_amount: 0.into(),
+                sell_amount: U256::from(1_010_000_000_000_000_000u128), // 1.01 WETH
+                buy_amount: U256::from(10).pow(U256::from(9)),          // 1_000 USDC
+                fee_amount: U256::ZERO,
             },
             execution
         );
@@ -1081,15 +1065,16 @@ pub mod tests {
             EncoderTrade {
                 data: Trade {
                     order,
-                    executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
-                    fee: U256::exp10(16)                                   // 0.01 WETH (10 USDC)
+                    executed_amount: U256::from(1_010_000_000_000_000_000u128), // 1.01 WETH
+                    fee: U256::from(10).pow(U256::from(16)),                    /* 0.01 WETH (10
+                                                                                 * USDC) */
                 },
                 tokens: TokenReference::CustomPrice {
-                    sell_token_price: U256::exp10(9),
+                    sell_token_price: U256::from(10).pow(U256::from(9)),
                     // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had
                     // to sell 1.01 WETH (to pocket the fee). This caused the
                     // USDC price to increase by 1%.
-                    buy_token_price: 1_010_000_000_000_000_000u128.into()
+                    buy_token_price: U256::from(1_010_000_000_000_000_000u128)
                 },
             },
             encoder.trades[0]
@@ -1102,8 +1087,8 @@ pub mod tests {
         let usdc = Address::with_last_byte(2);
         // assuming 1 WETH == 1_000 USDC
         let prices = hashmap! {
-            weth => U256::exp10(18),
-            usdc => U256::exp10(27) // 1 ETH buys 1_000 * 10^6 units of USDC
+            weth => U256::from(10).pow(U256::from(18)),
+            usdc => U256::from(10).pow(U256::from(27)) // 1 ETH buys 1_000 * 10^6 units of USDC
         };
 
         let mut encoder = SettlementEncoder::new(prices);
@@ -1111,15 +1096,19 @@ pub mod tests {
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit)
             .with_buy_token(weth)
-            .with_buy_amount(alloy::primitives::U256::from(10).pow(alloy::primitives::U256::from(18))) // 1 WETH
+            .with_buy_amount(U256::from(10).pow(U256::from(18))) // 1 WETH
             .with_sell_token(usdc)
-            .with_sell_amount(alloy::primitives::U256::from(1_010_000_000u128)) // 1_010 USDC
-            .with_fee_amount(alloy::primitives::U256::ZERO)
+            .with_sell_amount(U256::from(1_010_000_000u128)) // 1_010 USDC
+            .with_fee_amount(U256::ZERO)
             .with_kind(OrderKind::Buy)
             .build();
 
         let execution = encoder
-            .add_trade(order.clone(), U256::exp10(18), U256::exp10(7))
+            .add_trade(
+                order.clone(),
+                U256::from(10).pow(U256::from(18)),
+                U256::from(10).pow(U256::from(7)),
+            )
             .unwrap();
         assert_eq!(
             TradeExecution {
@@ -1127,9 +1116,9 @@ pub mod tests {
                 buy_token: weth,
                 // With the original price selling 1_000 USDC would have been enough.
                 // With the adjusted price we actually have to sell all 1_010 USDC.
-                sell_amount: 1_010_000_000u128.into(), // 1_010 USDC
-                buy_amount: U256::exp10(18),           // 1 WETH
-                fee_amount: 0.into(),
+                sell_amount: U256::from(1_010_000_000u128), // 1_010 USDC
+                buy_amount: U256::from(10).pow(U256::from(18)), // 1 WETH
+                fee_amount: U256::ZERO,
             },
             execution
         );
@@ -1137,15 +1126,15 @@ pub mod tests {
             EncoderTrade {
                 data: Trade {
                     order,
-                    executed_amount: U256::exp10(18), // 1 WETH
-                    fee: U256::exp10(7)               // 10 USDC
+                    executed_amount: U256::from(10).pow(U256::from(18)), // 1 WETH
+                    fee: U256::from(10).pow(U256::from(7))               // 10 USDC
                 },
                 tokens: TokenReference::CustomPrice {
-                    sell_token_price: U256::exp10(18),
+                    sell_token_price: U256::from(10).pow(U256::from(18)),
                     // Instead of the (solver) anticipated 1_000 USDC required to buy 1 WETH we had
                     // to sell 1_010 USDC (to pocket the fee). This caused the
                     // WETH price to increase by 1%.
-                    buy_token_price: 1_010_000_000u128.into()
+                    buy_token_price: U256::from(1_010_000_000u128)
                 }
             },
             encoder.trades[0]

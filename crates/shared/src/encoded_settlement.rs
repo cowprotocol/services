@@ -1,50 +1,47 @@
 use {
     crate::interaction::EncodedInteraction,
-    alloy::primitives::Address,
-    ethcontract::Bytes,
-    ethrpc::alloy::conversions::IntoLegacy,
+    alloy::primitives::{Address, B256, Bytes, U256},
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, SigningScheme},
     },
-    primitive_types::{H160, U256},
 };
 
 pub type EncodedTrade = (
-    U256,            // sellTokenIndex
-    U256,            // buyTokenIndex
-    H160,            // receiver
-    U256,            // sellAmount
-    U256,            // buyAmount
-    u32,             // validTo
-    Bytes<[u8; 32]>, // appData
-    U256,            // feeAmount
-    U256,            // flags
-    U256,            // executedAmount
-    Bytes<Vec<u8>>,  // signature
+    U256,    // sellTokenIndex
+    U256,    // buyTokenIndex
+    Address, // receiver
+    U256,    // sellAmount
+    U256,    // buyAmount
+    u32,     // validTo
+    B256,    // appData
+    U256,    // feeAmount
+    U256,    // flags
+    U256,    // executedAmount
+    Bytes,   // signature
 );
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
 pub fn encode_trade(
     order: &OrderData,
     signature: &Signature,
-    owner: H160,
+    owner: Address,
     sell_token_index: usize,
     buy_token_index: usize,
-    executed_amount: &U256,
+    executed_amount: U256,
 ) -> EncodedTrade {
     (
-        sell_token_index.into(),
-        buy_token_index.into(),
-        order.receiver.unwrap_or(Address::ZERO).into_legacy(),
-        order.sell_amount.into_legacy(),
-        order.buy_amount.into_legacy(),
+        U256::from(sell_token_index),
+        U256::from(buy_token_index),
+        order.receiver.unwrap_or(Address::ZERO),
+        order.sell_amount,
+        order.buy_amount,
         order.valid_to,
-        Bytes(order.app_data.0),
-        order.fee_amount.into_legacy(),
+        B256::new(order.app_data.0),
+        order.fee_amount,
         order_flags(order, signature),
-        *executed_amount,
-        Bytes(signature.encode_for_settlement(owner).to_vec()),
+        executed_amount,
+        Bytes::from(signature.encode_for_settlement(owner)),
     )
 }
 
@@ -75,7 +72,7 @@ fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
         SigningScheme::Eip1271 => 0b10,
         SigningScheme::PreSign => 0b11,
     } << 5;
-    result.into()
+    U256::from(result)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -88,7 +85,7 @@ pub struct EncodedSettlement {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::H256, hex_literal::hex, model::signature::EcdsaSignature};
+    use {super::*, alloy::primitives::B256, hex_literal::hex, model::signature::EcdsaSignature};
 
     #[test]
     fn order_flag_permutations() {
@@ -183,13 +180,16 @@ mod tests {
 
     #[test]
     fn trade_signature_encoding() {
-        let owner = H160([1; 20]);
+        let owner = Address::repeat_byte(1);
+        // Default EcdsaSignature has v = 27 (normalized for Solidity ecrecover)
+        let mut default_ecdsa_bytes = vec![0; 65];
+        default_ecdsa_bytes[64] = 27;
         for (signature, bytes) in [
-            (Signature::Eip712(Default::default()), vec![0; 65]),
+            (Signature::Eip712(Default::default()), default_ecdsa_bytes),
             (
                 Signature::EthSign(EcdsaSignature {
-                    r: H256([1; 32]),
-                    s: H256([1; 32]),
+                    r: B256::repeat_byte(1),
+                    s: B256::repeat_byte(1),
                     v: 1,
                 }),
                 vec![1; 65],
@@ -210,7 +210,7 @@ mod tests {
                 owner,
                 Default::default(),
                 Default::default(),
-                &Default::default(),
+                Default::default(),
             );
             assert_eq!(encoded_signature.0, bytes);
         }

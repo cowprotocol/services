@@ -4,19 +4,16 @@
 use {
     crate::{
         gas_price_estimation::GasEstimatorType,
-        sources::{
-            BaselineSource,
-            balancer_v2::BalancerFactoryKind,
-            uniswap_v2::UniV2BaselineSourceParameters,
-        },
+        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         tenderly_api,
     },
     alloy::primitives::Address,
-    anyhow::{Result, ensure},
+    anyhow::{Context, Result, ensure},
     observe::TracingConfig,
     std::{
+        collections::HashSet,
         fmt::{self, Display, Formatter},
-        num::NonZeroU64,
+        num::{NonZeroU32, NonZeroU64},
         str::FromStr,
         time::Duration,
     },
@@ -129,6 +126,23 @@ pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<T
     ))
 }
 
+// Matches SQLx default connection pool size.
+// SAFETY: 10 > 0
+pub const DB_MAX_CONNECTIONS_DEFAULT: NonZeroU32 = NonZeroU32::new(10).unwrap();
+
+#[derive(Debug, Clone, clap::Parser)]
+pub struct DatabasePoolConfig {
+    /// Maximum number of connections in the database connection pool.
+    #[clap(long, env, default_value_t = DB_MAX_CONNECTIONS_DEFAULT)]
+    pub db_max_connections: NonZeroU32,
+}
+
+impl Display for DatabasePoolConfig {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "db_max_connections: {}", self.db_max_connections)
+    }
+}
+
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
@@ -217,12 +231,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_internal_buffers: bool,
 
-    /// The Balancer V2 factories to consider for indexing liquidity. Allows
-    /// specific pool kinds to be disabled via configuration. Will use all
-    /// supported Balancer V2 factory kinds if not specified.
-    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
-    pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
-
     /// Value of the authorization header for the solver competition post api.
     #[clap(long, env)]
     pub solver_competition_auth: Option<String>,
@@ -295,6 +303,20 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub token_quality_cache_prefetch_time: Duration,
+
+    /// Custom volume fees for token buckets.
+    /// Format: "factor:token1;token2;..." (e.g.,
+    /// "0:0xA0b86...;0x6B175...;0xdAC17...") Orders where BOTH tokens are
+    /// in the bucket will use the custom fee. Useful for
+    /// stablecoin-to-stablecoin trades or specific token pairs (2-token
+    /// buckets). Multiple buckets can be separated by commas.
+    #[clap(long, env, value_delimiter = ',')]
+    pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+
+    /// Enable volume fees for trades where sell token equals buy token.
+    /// By default, volume fees are NOT applied to same-token trades.
+    #[clap(long, env)]
+    pub enable_sell_equals_buy_volume_fee: bool,
 }
 
 pub fn display_secret_option<T>(
@@ -381,7 +403,6 @@ impl Display for Arguments {
             pool_cache_maximum_retries,
             pool_cache_delay_between_retries,
             use_internal_buffers,
-            balancer_factories,
             solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
@@ -396,6 +417,8 @@ impl Display for Arguments {
             token_quality_cache_expiry,
             token_quality_cache_prefetch_time,
             tracing,
+            volume_fee_bucket_overrides,
+            enable_sell_equals_buy_volume_fee,
         } = self;
 
         write!(f, "{ethrpc}")?;
@@ -422,7 +445,6 @@ impl Display for Arguments {
             "pool_cache_delay_between_retries: {pool_cache_delay_between_retries:?}"
         )?;
         writeln!(f, "use_internal_buffers: {use_internal_buffers}")?;
-        writeln!(f, "balancer_factories: {balancer_factories:?}")?;
         display_secret_option(
             f,
             "solver_competition_auth",
@@ -485,7 +507,14 @@ impl Display for Arguments {
             "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
         write!(f, "{tracing:?}")?;
-
+        writeln!(
+            f,
+            "volume_fee_bucket_overrides: {volume_fee_bucket_overrides:?}"
+        )?;
+        writeln!(
+            f,
+            "enable_sell_equals_buy_volume_fee: {enable_sell_equals_buy_volume_fee}"
+        )?;
         Ok(())
     }
 }
@@ -515,9 +544,108 @@ impl FromStr for ExternalSolver {
     }
 }
 
+/// Fee factor representing a percentage in range [0, 1)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeeFactor(f64);
+
+impl FeeFactor {
+    /// High precision scale factor (1 million) for sub-basis-point precision.
+    /// Allows representing factors like 0.00003 (0.3 BPS) without rounding to
+    /// 0. Also used for converting to BPS string with 2 decimal precision
+    /// (1_000_000 / 100 = 10_000 BPS scale).
+    pub const HIGH_PRECISION_SCALE: u64 = 1_000_000;
+
+    pub fn new(factor: f64) -> Self {
+        Self(factor)
+    }
+
+    /// Converts the fee factor to basis points (BPS).
+    /// Supports fractional BPS values (e.g., 0.00003 -> "0.3")
+    /// Rounds to 2 decimal places to avoid floating point representation
+    /// issues.
+    pub fn to_bps_str(&self) -> String {
+        let bps = (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() / 100.0;
+        format!("{bps}")
+    }
+
+    /// Converts the fee factor to a high precision scaled integer.
+    /// For example, 0.00003 -> 30 (with scale of 1_000_000)
+    /// This allows sub-basis-point precision in calculations.
+    pub fn to_high_precision(&self) -> u64 {
+        (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() as u64
+    }
+
+    /// Get the inner value
+    pub fn get(&self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for FeeFactor {
+    type Error = anyhow::Error;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        ensure!(
+            (0.0..1.0).contains(&value),
+            "Factor must be in the range [0, 1)"
+        );
+        Ok(FeeFactor(value))
+    }
+}
+
+impl FromStr for FeeFactor {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value: f64 = s.parse().context("failed to parse fee factor as f64")?;
+        value.try_into()
+    }
+}
+
+/// Helper type for parsing token bucket fee overrides from strings
+#[derive(Debug, Clone)]
+pub struct TokenBucketFeeOverride {
+    pub tokens: HashSet<Address>,
+    pub factor: FeeFactor,
+}
+
+impl FromStr for TokenBucketFeeOverride {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (factor_str, tokens_str) = s.split_once(':').with_context(|| {
+            format!(
+                "invalid bucket override format: expected 'factor:token1;token2;...', got '{}'",
+                s
+            )
+        })?;
+        let factor = factor_str
+            .parse::<f64>()
+            .context("failed to parse fee factor")?
+            .try_into()
+            .context("fee factor out of range")?;
+        let tokens: HashSet<Address> = tokens_str
+            .split(';')
+            .map(|token| {
+                token
+                    .parse::<Address>()
+                    .with_context(|| format!("failed to parse token address '{}'", token))
+            })
+            .collect::<Result<HashSet<Address>>>()?;
+
+        ensure!(
+            tokens.len() >= 2,
+            "bucket override must contain at least 2 tokens, got {}",
+            tokens.len()
+        );
+
+        Ok(TokenBucketFeeOverride { tokens, factor })
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use super::*;
+    use {super::*, alloy::primitives::address};
 
     #[test]
     fn parse_drivers_wrong_arguments() {
@@ -532,5 +660,96 @@ mod test {
         assert!(
             ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
         );
+    }
+
+    #[test]
+    fn parse_token_bucket_fee_override() {
+        // Valid inputs with 2 tokens (minimum required)
+        let valid_two_tokens = "0.5:0x0000000000000000000000000000000000000001;\
+                                0x0000000000000000000000000000000000000002";
+        let result = TokenBucketFeeOverride::from_str(valid_two_tokens).unwrap();
+        assert_eq!(result.factor.get(), 0.5);
+        assert_eq!(result.tokens.len(), 2);
+        assert!(
+            result
+                .tokens
+                .contains(&address!("0000000000000000000000000000000000000001"))
+        );
+        assert!(
+            result
+                .tokens
+                .contains(&address!("0000000000000000000000000000000000000002"))
+        );
+
+        // Valid inputs with 3 tokens
+        let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001;\
+                                  0x0000000000000000000000000000000000000002;\
+                                  0x0000000000000000000000000000000000000003";
+        let result = TokenBucketFeeOverride::from_str(valid_three_tokens).unwrap();
+        assert_eq!(result.factor.get(), 0.123);
+        assert_eq!(result.tokens.len(), 3);
+        // Invalid: only 1 token (need at least 2)
+        assert!(
+            TokenBucketFeeOverride::from_str("0.5:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: wrong format (no colon)
+        assert!(
+            TokenBucketFeeOverride::from_str("0.5,0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: too many parts
+        assert!(
+            TokenBucketFeeOverride::from_str(
+                "0.5:0x0000000000000000000000000000000000000001:extra"
+            )
+            .is_err()
+        );
+        // Invalid: fee factor out of range
+        assert!(
+            TokenBucketFeeOverride::from_str("1.5:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        assert!(
+            TokenBucketFeeOverride::from_str("-0.1:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: not a number for fee factor
+        assert!(
+            TokenBucketFeeOverride::from_str("abc:0x0000000000000000000000000000000000000001")
+                .is_err()
+        );
+        // Invalid: bad token address
+        assert!(
+            TokenBucketFeeOverride::from_str(
+                "0.5:notanaddress,0x0000000000000000000000000000000000000002"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn fee_factor_to_bps() {
+        assert_eq!(FeeFactor::new(0.0001).to_bps_str(), "1");
+        assert_eq!(FeeFactor::new(0.001).to_bps_str(), "10");
+
+        // Fractional BPS values (sub-basis-point precision)
+        assert_eq!(FeeFactor::new(0.00003).to_bps_str(), "0.3");
+        assert_eq!(FeeFactor::new(0.00005).to_bps_str(), "0.5");
+        assert_eq!(FeeFactor::new(0.000025).to_bps_str(), "0.25");
+        assert_eq!(FeeFactor::new(0.000075).to_bps_str(), "0.75");
+        assert_eq!(FeeFactor::new(0.00015).to_bps_str(), "1.5");
+
+        assert_eq!(FeeFactor::new(0.0).to_bps_str(), "0");
+    }
+
+    #[test]
+    fn fee_factor_to_high_precision() {
+        // Verify high precision scaling
+        assert_eq!(FeeFactor::new(0.00003).to_high_precision(), 30);
+        assert_eq!(FeeFactor::new(0.0001).to_high_precision(), 100);
+        assert_eq!(FeeFactor::new(0.001).to_high_precision(), 1000);
+        assert_eq!(FeeFactor::new(0.01).to_high_precision(), 10_000);
+        assert_eq!(FeeFactor::new(0.1).to_high_precision(), 100_000);
     }
 }

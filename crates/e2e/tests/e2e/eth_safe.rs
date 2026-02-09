@@ -1,23 +1,12 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
-    e2e::setup::{
-        OnchainComponents,
-        Services,
-        TIMEOUT,
-        eth,
-        run_test,
-        safe::Safe,
-        to_wei,
-        wait_for_condition,
-    },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, safe::Safe, wait_for_condition},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
     },
+    number::units::EthUnit,
     shared::ethrpc::Web3,
 };
 
@@ -31,24 +20,24 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(10)).await;
-    let safe = Safe::deploy(trader.clone(), web3.alloy.clone()).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let safe = Safe::deploy(trader.clone(), web3.provider.clone()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(1000u64.eth(), 1000u64.eth())
         .await;
 
-    token.mint(trader.address(), eth(4)).await;
+    token.mint(trader.address(), 4u64.eth()).await;
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), eth(4))
+            .approve(onchain.contracts().allowance, 4u64.eth())
             .into_transaction_request(),
     )
     .await;
-    token.mint(safe.address(), eth(4)).await;
+    token.mint(safe.address(), 4u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(4))
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -68,15 +57,15 @@ async fn test(web3: Web3) {
         .unwrap();
     assert_eq!(balance, ::alloy::primitives::U256::ZERO);
     let mut order = OrderCreation {
-        from: Some(safe.address().into_legacy()),
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(4),
-        buy_token: BUY_ETH_ADDRESS.into_legacy(),
-        buy_amount: to_wei(3),
+        from: Some(safe.address()),
+        sell_token: *token.address(),
+        sell_amount: 4u64.eth(),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,
-        receiver: Some(safe.address().into_legacy()),
+        receiver: Some(safe.address()),
         ..Default::default()
     };
     order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(
@@ -88,7 +77,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        let safe_balance = web3.alloy.get_balance(safe.address()).await.unwrap();
+        let safe_balance = web3.provider.get_balance(safe.address()).await.unwrap();
         // the balance is slightly less because of the fee
         U256::from(3_899_000_000_000_000_000_u128) <= safe_balance
             && safe_balance <= U256::from(4_000_000_000_000_000_000_u128)

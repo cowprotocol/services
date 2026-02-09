@@ -10,11 +10,7 @@ use {
     alloy::primitives::Address,
     async_trait::async_trait,
     contracts::alloy::IUniswapLikeRouter,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         http_solver::model::TokenAmount,
         sources::uniswap_v2::{
@@ -61,7 +57,7 @@ pub fn router(pool: &ConstantProductOrder) -> eth::ContractAddress {
         .downcast_ref::<uniswap_v2::Inner>()
         .expect("downcast uniswap settlement handler")
         .router();
-    eth::ContractAddress::from(address.into_legacy())
+    eth::ContractAddress::from(address)
 }
 
 pub(in crate::boundary::liquidity) fn to_domain_pool(
@@ -76,15 +72,15 @@ pub(in crate::boundary::liquidity) fn to_domain_pool(
     );
 
     Ok(liquidity::uniswap::v2::Pool {
-        address: pool.address.into_legacy().into(),
+        address: pool.address,
         router: router(&pool),
         reserves: liquidity::uniswap::v2::Reserves::try_new(
             eth::Asset {
-                token: pool.tokens.get().0.into_legacy().into(),
+                token: pool.tokens.get().0.into(),
                 amount: pool.reserves.0.into(),
             },
             eth::Asset {
-                token: pool.tokens.get().1.into_legacy().into(),
+                token: pool.tokens.get().1.into(),
                 amount: pool.reserves.1.into(),
             },
         )
@@ -99,27 +95,21 @@ pub fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
-        pool.router.0.into_alloy(),
-        receiver.0.into_alloy(),
-        Mutex::new(Allowances::empty(receiver.0.into_alloy())),
+        pool.router.0,
+        *receiver,
+        Mutex::new(Allowances::empty(*receiver)),
     );
 
     let (_, interaction) = handler.settle(
-        TokenAmount::new(
-            input.0.token.0.0.into_alloy(),
-            input.0.amount.0.into_alloy(),
-        ),
-        TokenAmount::new(
-            output.0.token.0.0.into_alloy(),
-            output.0.amount.0.into_alloy(),
-        ),
+        TokenAmount::new(input.0.token.into(), input.0.amount),
+        TokenAmount::new(output.0.token.into(), output.0.amount),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
 
     eth::Interaction {
-        target: target.into_legacy().into(),
-        value: value.into_legacy().into(),
+        target,
+        value: value.into(),
         call_data: call_data.0.to_vec().into(),
     }
 }
@@ -143,8 +133,7 @@ where
     R: PoolReading + Send + Sync + 'static,
     F: FnOnce(Web3, PairProvider) -> R,
 {
-    let router =
-        IUniswapLikeRouter::Instance::new(config.router.0.into_alloy(), eth.web3().alloy.clone());
+    let router = IUniswapLikeRouter::Instance::new(config.router.0, eth.web3().provider.clone());
     let settlement = eth.contracts().settlement().clone();
     let pool_fetcher = {
         let factory = router.factory().call().await?;

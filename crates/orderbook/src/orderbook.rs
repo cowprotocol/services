@@ -13,7 +13,6 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         order::{
@@ -83,8 +82,8 @@ impl Metrics {
                     fee: order.data.fee_amount,
                 },
                 &Amounts {
-                    sell: quote.sell_amount.into_alloy(),
-                    buy: quote.buy_amount.into_alloy(),
+                    sell: quote.sell_amount,
+                    buy: quote.buy_amount,
                     fee: FeeParameters {
                         // safe to unwrap as these values were converted from f64 previously
                         gas_amount: quote.gas_amount.to_f64().unwrap(),
@@ -286,7 +285,7 @@ impl Orderbook {
             .validate_and_construct_order(
                 payload,
                 &self.domain_separator,
-                self.settlement_contract.into_legacy(),
+                self.settlement_contract,
                 full_app_data_override,
             )
             .await?;
@@ -348,10 +347,7 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if orders
-            .iter()
-            .any(|order| signer != order.metadata.owner.into_legacy())
-        {
+        if orders.iter().any(|order| signer != order.metadata.owner) {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -381,7 +377,7 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if signer != order.metadata.owner.into_legacy() {
+        if signer != order.metadata.owner {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -634,8 +630,6 @@ mod tests {
     use {
         super::*,
         crate::database::orders::MockOrderStoring,
-        ethcontract::H160,
-        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         mockall::predicate::eq,
         model::{
             order::{OrderData, OrderMetadata},
@@ -678,7 +672,7 @@ mod tests {
                 Ok((
                     Order {
                         metadata: OrderMetadata {
-                            owner: creation.from.unwrap().into_alloy(),
+                            owner: creation.from.unwrap(),
                             uid: new_order_uid,
                             ..Default::default()
                         },
@@ -690,7 +684,8 @@ mod tests {
                 ))
             });
 
-        let database = crate::database::Postgres::try_new("postgresql://").unwrap();
+        let database =
+            crate::database::Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order).await.unwrap();
 
@@ -714,7 +709,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(H160([2; 20])),
+                    from: Some(Address::repeat_byte(2)),
                     signature: Signature::Eip712(Default::default()),
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -734,7 +729,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(H160([2; 20])),
+                    from: Some(Address::repeat_byte(2)),
                     signature: Signature::Eip712(Default::default()),
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -754,7 +749,7 @@ mod tests {
         assert!(matches!(
             orderbook
                 .add_order(OrderCreation {
-                    from: Some(old_order.metadata.owner.into_legacy()),
+                    from: Some(old_order.metadata.owner),
                     signature: Signature::PreSign,
                     app_data: OrderCreationAppData::Full {
                         full: format!(
@@ -773,7 +768,7 @@ mod tests {
         // Stars align...
         let (order_id, _) = orderbook
             .add_order(OrderCreation {
-                from: Some(old_order.metadata.owner.into_legacy()),
+                from: Some(old_order.metadata.owner),
                 signature: Signature::Eip712(Default::default()),
                 app_data: OrderCreationAppData::Full {
                     full: format!(

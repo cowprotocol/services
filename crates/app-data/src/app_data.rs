@@ -332,6 +332,10 @@ pub struct Root {
     /// However, in order to not break existing integrations, we allow using the
     /// `backend` field for specifying hooks.
     backend: Option<BackendAppData>,
+    /// The application code identifying the source of the order (e.g., "CoW
+    /// Swap", "Barter").
+    #[serde(rename = "appCode")]
+    app_code: Option<String>,
 }
 
 impl Root {
@@ -339,7 +343,12 @@ impl Root {
         Self {
             metadata,
             backend: None,
+            app_code: None,
         }
+    }
+
+    pub fn app_code(&self) -> Option<&str> {
+        self.app_code.as_deref()
     }
 }
 

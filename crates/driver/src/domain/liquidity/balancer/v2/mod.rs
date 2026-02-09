@@ -13,12 +13,12 @@ pub mod weighted;
 /// * 20..22: the pool specialization
 /// * 22..32: the pool nonce
 #[derive(Clone, Copy, Debug, Eq, PartialEq, From, Into)]
-pub struct Id(pub eth::H256);
+pub struct Id(pub eth::B256);
 
 impl Id {
     /// Extracts the pool address configured in the ID.
     pub fn address(&self) -> eth::ContractAddress {
-        eth::H160::from_slice(&self.0[..20]).into()
+        eth::Address::from_slice(&self.0[..20]).into()
     }
 }
 

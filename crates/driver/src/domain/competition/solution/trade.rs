@@ -1,5 +1,5 @@
-use crate::{
-    domain::{
+use {
+    crate::domain::{
         competition::{
             self,
             order::{self, FeePolicy, SellAmount, Side, TargetAmount, Uid},
@@ -7,7 +7,7 @@ use crate::{
         },
         eth::{self, Asset},
     },
-    util::conv::u256::U256Ext,
+    number::u256_ext::U256Ext,
 };
 
 /// A trade which executes an order as part of this solution.
@@ -73,19 +73,10 @@ impl Trade {
         &self,
         prices: &ClearingPrices,
     ) -> Result<eth::TokenAmount, error::Math> {
-        let before_fee = match self.side() {
-            order::Side::Sell => self.executed().0,
-            order::Side::Buy => self
-                .executed()
-                .0
-                .checked_mul(prices.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Math::DivisionByZero)?,
-        };
-        Ok(eth::TokenAmount(
-            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
-        ))
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.sell_amount(prices),
+            Trade::Jit(jit) => jit.sell_amount(prices),
+        }
     }
 
     /// The effective amount the user received after all fees.
@@ -95,27 +86,20 @@ impl Trade {
         &self,
         prices: &ClearingPrices,
     ) -> Result<eth::TokenAmount, error::Math> {
-        let amount = match self.side() {
-            order::Side::Buy => self.executed().0,
-            order::Side::Sell => self
-                .executed()
-                .0
-                .checked_mul(prices.sell)
-                .ok_or(Math::Overflow)?
-                .checked_ceil_div(&prices.buy)
-                .ok_or(Math::DivisionByZero)?,
-        };
-        Ok(eth::TokenAmount(amount))
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.buy_amount(prices),
+            Trade::Jit(jit) => jit.buy_amount(prices),
+        }
     }
 
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,
     ) -> Result<CustomClearingPrices, error::Math> {
-        Ok(CustomClearingPrices {
-            sell: self.buy_amount(prices)?.into(),
-            buy: self.sell_amount(prices)?.into(),
-        })
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.custom_prices(prices),
+            Trade::Jit(jit) => jit.custom_prices(prices),
+        }
     }
 
     pub fn receiver(&self) -> eth::Address {
@@ -135,6 +119,11 @@ pub struct Fulfillment {
     /// order.
     executed: order::TargetAmount,
     fee: Fee,
+    /// Additional fee for conservative bidding (haircut). Applied on top of
+    /// the regular fee to reduce reported surplus without affecting executed
+    /// amounts. Expressed in the order's target token (sell token for sell
+    /// orders, buy token for buy orders).
+    haircut_fee: eth::U256,
 }
 
 impl Fulfillment {
@@ -142,6 +131,7 @@ impl Fulfillment {
         order: competition::Order,
         executed: order::TargetAmount,
         fee: Fee,
+        haircut_fee: eth::U256,
     ) -> Result<Self, error::Trade> {
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
@@ -189,6 +179,7 @@ impl Fulfillment {
                 order,
                 executed,
                 fee,
+                haircut_fee,
             })
         } else {
             Err(error::Trade::InvalidExecutedAmount)
@@ -211,7 +202,7 @@ impl Fulfillment {
                 // Orders with static fees are no longer used, except for quoting purposes, when
                 // the static fee is set to 0. This is expected to be resolved with https://github.com/cowprotocol/services/issues/2543
                 // Once resolved, this code will be simplified as part of https://github.com/cowprotocol/services/issues/2507
-                order::SellAmount(0.into())
+                order::SellAmount(eth::U256::ZERO)
             }
             Fee::Dynamic(fee) => fee,
         }
@@ -225,7 +216,15 @@ impl Fulfillment {
         }
     }
 
+    /// Returns the haircut fee for conservative bidding.
+    pub fn haircut_fee(&self) -> eth::U256 {
+        self.haircut_fee
+    }
+
     /// The effective amount that left the user's wallet including all fees.
+    ///
+    /// For buy orders, this includes the haircut effect (haircut increases the
+    /// effective sell amount the user pays).
     pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
@@ -237,28 +236,69 @@ impl Fulfillment {
                 .checked_div(prices.sell)
                 .ok_or(Math::DivisionByZero)?,
         };
+
+        let with_fee = before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?;
+        // Add haircut for buy orders (haircut is in buy token, convert to sell token)
+        let haircut = match self.order.side {
+            order::Side::Sell => eth::U256::ZERO, // Haircut applied to buy_amount for sell orders
+            order::Side::Buy => self.haircut_in_sell_token(prices)?,
+        };
+
         Ok(eth::TokenAmount(
-            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
+            with_fee.checked_add(haircut).ok_or(Math::Overflow)?,
         ))
     }
 
     /// The effective amount the user received after all fees.
     ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
+    ///
+    /// For sell orders, this includes the haircut effect (haircut reduces the
+    /// effective buy amount the user receives).
     pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
-            order::Side::Sell => self
-                .executed
-                .0
-                .checked_mul(prices.sell)
-                .ok_or(Math::Overflow)?
-                .checked_ceil_div(&prices.buy)
-                .ok_or(Math::DivisionByZero)?,
+            order::Side::Sell => {
+                // Base buy amount from executed sell
+                let base = self
+                    .executed
+                    .0
+                    .checked_mul(prices.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_ceil_div(&prices.buy)
+                    .ok_or(Math::DivisionByZero)?;
+                // Reduce by haircut (haircut is in sell token, convert to buy token)
+                let haircut_in_buy = self
+                    .haircut_fee
+                    .checked_mul(prices.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(prices.buy)
+                    .ok_or(Math::DivisionByZero)?;
+                base.checked_sub(haircut_in_buy).ok_or(Math::Negative)?
+            }
         };
         Ok(eth::TokenAmount(amount))
     }
 
+    /// Computes the haircut amount in sell token.
+    /// Used for buy orders to add haircut to the sell amount.
+    fn haircut_in_sell_token(&self, prices: &ClearingPrices) -> Result<eth::U256, error::Math> {
+        match self.order.side {
+            order::Side::Sell => Ok(self.haircut_fee),
+            order::Side::Buy => self
+                .haircut_fee
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero),
+        }
+    }
+
+    /// Computes custom clearing prices for this trade.
+    ///
+    /// Note: This function relies on `sell_amount()` and `buy_amount()` to
+    /// correctly incorporate all adjustments (fees, haircuts). No additional
+    /// modifications are applied here.
     pub fn custom_prices(
         &self,
         prices: &ClearingPrices,
@@ -313,7 +353,7 @@ impl Fulfillment {
                 // be caught by simulation
                 limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
-                    .unwrap_or(eth::U256::zero())
+                    .unwrap_or(eth::U256::ZERO)
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
@@ -338,7 +378,7 @@ impl Fulfillment {
                 // be caught by simulation
                 executed_buy_amount
                     .checked_sub(limit_buy_amount)
-                    .unwrap_or(eth::U256::zero())
+                    .unwrap_or(eth::U256::ZERO)
             }
         };
         Ok(surplus.into())
@@ -472,6 +512,50 @@ impl Jit {
 
     pub fn fee(&self) -> order::SellAmount {
         self.fee
+    }
+
+    /// The effective amount that left the user's wallet including all fees.
+    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Math> {
+        let before_fee = match self.order.side {
+            Side::Sell => self.executed.0,
+            Side::Buy => self
+                .executed
+                .0
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(
+            before_fee.checked_add(self.fee.0).ok_or(Math::Overflow)?,
+        ))
+    }
+
+    /// The effective amount the user received after all fees.
+    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Math> {
+        let amount = match self.order.side {
+            Side::Buy => self.executed.0,
+            Side::Sell => self
+                .executed
+                .0
+                .checked_mul(prices.sell)
+                .ok_or(Math::Overflow)?
+                .checked_ceil_div(&prices.buy)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(amount))
+    }
+
+    pub fn custom_prices(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<CustomClearingPrices, error::Math> {
+        // JIT orders don't have haircut, so custom prices are simply derived
+        // from sell_amount and buy_amount.
+        Ok(CustomClearingPrices {
+            sell: self.buy_amount(prices)?.into(),
+            buy: self.sell_amount(prices)?.into(),
+        })
     }
 }
 

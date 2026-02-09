@@ -7,8 +7,9 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::bail,
     app_data::AppDataHash,
+    bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
-    number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
+    number::{nonzero::NonZeroU256, serialization::HexOrDecimalU256},
     serde::{
         Deserialize,
         Deserializer,
@@ -17,7 +18,7 @@ use {
         de,
         ser::{self, SerializeStruct as _},
     },
-    serde_with::serde_as,
+    serde_with::{DisplayFromStr, serde_as},
     std::time::Duration,
 };
 
@@ -162,7 +163,7 @@ pub enum OrderQuoteSide {
 impl Default for OrderQuoteSide {
     fn default() -> Self {
         Self::Buy {
-            buy_amount_after_fee: NonZeroU256::one(),
+            buy_amount_after_fee: NonZeroU256::ONE,
         }
     }
 }
@@ -300,7 +301,7 @@ pub enum SellAmount {
 
 /// The quoted order by the service.
 #[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
     pub sell_token: Address,
@@ -315,6 +316,15 @@ pub struct OrderQuote {
     pub app_data: OrderCreationAppData,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
+    /// The estimated gas units required to execute the quoted trade.
+    #[serde_as(as = "DisplayFromStr")]
+    pub gas_amount: BigDecimal,
+    /// The estimated gas price at the time of quoting (in Wei).
+    #[serde_as(as = "DisplayFromStr")]
+    pub gas_price: BigDecimal,
+    /// The price of the sell token in native token (ETH/xDAI).
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_token_price: BigDecimal,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenSource,
@@ -325,7 +335,7 @@ pub struct OrderQuote {
 pub type QuoteId = i64;
 
 #[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,

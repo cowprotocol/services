@@ -4,6 +4,21 @@ on:
     branches: [main]
     tags: [v*]
   workflow_dispatch:
+    inputs:
+      predefined_feature:
+        description: 'Select a predefined feature'
+        type: choice
+        options:
+          - 'None'
+          - 'mimalloc-allocator'
+          - 'tokio-console'
+        default: 'None'
+        required: false
+      custom_features:
+        description: 'Additional custom features (space-separated, e.g., "feature1 feature2")'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   deploy:
@@ -25,6 +40,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare build features
+        id: features
+        run: |
+          FEATURES=""
+
+          if [ "${{ github.event.inputs.predefined_feature }}" != "None" ]; then
+            FEATURES="${{ github.event.inputs.predefined_feature }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.custom_features }}" ]; then
+            FEATURES="${FEATURES:+$FEATURES }${{ github.event.inputs.custom_features }}"
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            CARGO_FEATURES="--features $FEATURES"
+          fi
+
+          if echo "$FEATURES" | grep -q "tokio-console"; then
+            RUSTFLAGS="--cfg tokio_unstable"
+          fi
+
+          echo "cargo_features=$CARGO_FEATURES" >> $GITHUB_OUTPUT
+          echo "rustflags=$RUSTFLAGS" >> $GITHUB_OUTPUT
+          echo "Combined features: $FEATURES"
+          echo "Cargo features arg: $CARGO_FEATURES"
+          echo "RUSTFLAGS: $RUSTFLAGS"
+
       - name: Services image metadata
         id: meta_services
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
@@ -40,6 +82,9 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
+          build-args: |
+            CARGO_BUILD_FEATURES=${{ steps.features.outputs.cargo_features }}
+            RUSTFLAGS=${{ steps.features.outputs.rustflags }}
 
       - name: Migration image metadata
         id: meta_migration

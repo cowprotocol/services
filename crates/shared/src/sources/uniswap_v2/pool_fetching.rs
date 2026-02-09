@@ -1,18 +1,17 @@
 use {
     super::pair_provider::PairProvider,
     crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
-    alloy::primitives::Address,
+    alloy::{
+        eips::BlockId,
+        primitives::{Address, U256},
+    },
     anyhow::Result,
     cached::{Cached, TimedCache},
-    contracts::{
-        alloy::{
-            ERC20,
-            IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
-        },
-        errors::EthcontractErrorType,
+    contracts::alloy::{
+        ERC20,
+        IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
     },
-    ethcontract::{BlockId, U256, errors::MethodError},
-    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
+    ethrpc::alloy::errors::ignore_non_node_error,
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
@@ -145,7 +144,7 @@ impl Pool {
         let denominator = reserve_out
             .checked_sub(amount_out)?
             .checked_mul(U256::from(self.fee.denom().checked_sub(*self.fee.numer())?))?;
-        let amount_in = numerator.checked_div(denominator)?.checked_add(1.into())?;
+        let amount_in = numerator.checked_div(denominator)?.checked_add(U256::ONE)?;
 
         check_final_reserves(amount_in, amount_out, reserve_in, reserve_out)?;
         Some(amount_in)
@@ -226,10 +225,9 @@ where
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             token_pairs.retain(|pair| non_existent_pools.cache_get(pair).is_none());
         }
-        let block = BlockId::Number(at_block.into());
         let futures = token_pairs
             .iter()
-            .map(|pair| self.pool_reader.read_state(*pair, block))
+            .map(|pair| self.pool_reader.read_state(*pair, at_block.into()))
             .collect::<Vec<_>>();
 
         let results = future::try_join_all(futures).await?;
@@ -276,16 +274,16 @@ impl PoolReading for DefaultPoolReader {
         let pair_address = self.pair_provider.pair_address(&pair);
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
-        let token0 = ERC20::Instance::new(pair.get().0, self.web3.alloy.clone());
-        let token1 = ERC20::Instance::new(pair.get().1, self.web3.alloy.clone());
+        let token0 = ERC20::Instance::new(pair.get().0, self.web3.provider.clone());
+        let token1 = ERC20::Instance::new(pair.get().1, self.web3.provider.clone());
 
         async move {
-            let fetch_token0_balance = token0.balanceOf(pair_address).block(block.into_alloy());
-            let fetch_token1_balance = token1.balanceOf(pair_address).block(block.into_alloy());
+            let fetch_token0_balance = token0.balanceOf(pair_address).block(block);
+            let fetch_token1_balance = token1.balanceOf(pair_address).block(block);
 
             let pair_contract =
-                IUniswapLikePair::Instance::new(pair_address, self.web3.alloy.clone());
-            let fetch_reserves = pair_contract.getReserves().block(block.into_alloy());
+                IUniswapLikePair::Instance::new(pair_address, self.web3.provider.clone());
+            let fetch_reserves = pair_contract.getReserves().block(block);
 
             let (reserves, token0_balance, token1_balance) = futures::join!(
                 fetch_reserves.call().into_future(),
@@ -310,20 +308,8 @@ impl PoolReading for DefaultPoolReader {
 struct FetchedPool {
     pair: TokenPair,
     reserves: Result<getReservesReturn, alloy::contract::Error>,
-    token0_balance: Result<alloy::primitives::U256, alloy::contract::Error>,
-    token1_balance: Result<alloy::primitives::U256, alloy::contract::Error>,
-}
-
-// Node errors should be bubbled up but contract errors should lead to the pool
-// being skipped.
-pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option<T>> {
-    match result {
-        Ok(t) => Ok(Some(t)),
-        Err(err) => match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Node => Err(err.into()),
-            EthcontractErrorType::Contract => Ok(None),
-        },
-    }
+    token0_balance: Result<U256, alloy::contract::Error>,
+    token1_balance: Result<U256, alloy::contract::Error>,
 }
 
 fn handle_results(fetched_pool: FetchedPool, address: Address) -> Result<Option<Pool>> {
@@ -347,9 +333,7 @@ fn handle_results(fetched_pool: FetchedPool, address: Address) -> Result<Option<
         // benefit by withdrawing the excess from the pool without selling anything).
         // We therefore exclude all pools where the pool's token balance of either token
         // in the pair is less than the cached reserve.
-        if alloy::primitives::U256::from(r0) > token0_balance?
-            || alloy::primitives::U256::from(r1) > token1_balance?
-        {
+        if U256::from(r0) > token0_balance? || U256::from(r1) > token1_balance? {
             return None;
         }
         // Errors here should never happen because reserves are uint<112, 2>
@@ -403,16 +387,16 @@ mod tests {
             (100, 100),
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 10.into()),
-            Some((9.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(10)),
+            Some((U256::from(9), buy_token))
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 100.into()),
-            Some((49.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(100)),
+            Some((U256::from(49), buy_token))
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 1000.into()),
-            Some((90.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(1000)),
+            Some((U256::from(90), buy_token))
         );
 
         //Uneven Pool
@@ -422,16 +406,16 @@ mod tests {
             (200, 50),
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 10.into()),
-            Some((2.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(10)),
+            Some((U256::from(2), buy_token))
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 100.into()),
-            Some((16.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(100)),
+            Some((U256::from(16), buy_token))
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 1000.into()),
-            Some((41.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(1000)),
+            Some((U256::from(41), buy_token))
         );
 
         // Large Numbers
@@ -441,12 +425,12 @@ mod tests {
             (1u128 << 90, 1u128 << 90),
         );
         assert_eq!(
-            pool.get_amount_out(sell_token, 10u128.pow(20).into()),
-            Some((99_699_991_970_459_889_807u128.into(), buy_token))
+            pool.get_amount_out(sell_token, U256::from(10u128.pow(20))),
+            Some((U256::from(99_699_991_970_459_889_807u128), buy_token))
         );
 
         // Overflow
-        assert_eq!(pool.get_amount_out(sell_token, U256::max_value()), None);
+        assert_eq!(pool.get_amount_out(sell_token, U256::MAX), None);
     }
 
     #[test]
@@ -461,17 +445,17 @@ mod tests {
             (100, 100),
         );
         assert_eq!(
-            pool.get_amount_in(buy_token, 10.into()),
-            Some((12.into(), sell_token))
+            pool.get_amount_in(buy_token, U256::from(10)),
+            Some((U256::from(12), sell_token))
         );
         assert_eq!(
-            pool.get_amount_in(buy_token, 99.into()),
-            Some((9930.into(), sell_token))
+            pool.get_amount_in(buy_token, U256::from(99)),
+            Some((U256::from(9930), sell_token))
         );
 
         // Buying more than possible
-        assert_eq!(pool.get_amount_in(buy_token, 100.into()), None);
-        assert_eq!(pool.get_amount_in(buy_token, 1000.into()), None);
+        assert_eq!(pool.get_amount_in(buy_token, U256::from(100)), None);
+        assert_eq!(pool.get_amount_in(buy_token, U256::from(1000)), None);
 
         //Uneven Pool
         let pool = Pool::uniswap(
@@ -480,12 +464,12 @@ mod tests {
             (200, 50),
         );
         assert_eq!(
-            pool.get_amount_in(buy_token, 10.into()),
-            Some((51.into(), sell_token))
+            pool.get_amount_in(buy_token, U256::from(10)),
+            Some((U256::from(51), sell_token))
         );
         assert_eq!(
-            pool.get_amount_in(buy_token, 49.into()),
-            Some((9830.into(), sell_token))
+            pool.get_amount_in(buy_token, U256::from(49)),
+            Some((U256::from(9830), sell_token))
         );
 
         // Large Numbers
@@ -495,27 +479,41 @@ mod tests {
             (1u128 << 90, 1u128 << 90),
         );
         assert_eq!(
-            pool.get_amount_in(buy_token, 10u128.pow(20).into()),
-            Some((100_300_910_810_367_424_267u128.into(), sell_token)),
+            pool.get_amount_in(buy_token, U256::from(10u128.pow(20))),
+            Some((U256::from(100_300_910_810_367_424_267u128), sell_token)),
         );
     }
 
     #[test]
     fn computes_final_reserves() {
         assert_eq!(
-            check_final_reserves(1.into(), 2.into(), 1_000_000.into(), 2_000_000.into(),).unwrap(),
-            (1_000_001.into(), 1_999_998.into()),
+            check_final_reserves(
+                U256::ONE,
+                U256::from(2),
+                U256::from(1_000_000),
+                U256::from(2_000_000),
+            )
+            .unwrap(),
+            (U256::from(1_000_001), U256::from(1_999_998)),
         );
     }
 
     #[test]
     fn check_final_reserve_limits() {
         // final out reserve too low
-        assert!(check_final_reserves(0.into(), 1.into(), 1_000_000.into(), 0.into()).is_none());
+        assert!(
+            check_final_reserves(U256::ZERO, U256::ONE, U256::from(1_000_000), U256::ZERO)
+                .is_none()
+        );
         // final in reserve too high
         assert!(
-            check_final_reserves(1.into(), 0.into(), *POOL_MAX_RESERVES, 1_000_000.into())
-                .is_none()
+            check_final_reserves(
+                U256::ONE,
+                U256::ZERO,
+                *POOL_MAX_RESERVES,
+                U256::from(1_000_000)
+            )
+            .is_none()
         );
     }
 
@@ -524,8 +522,8 @@ mod tests {
         let fetched_pool = FetchedPool {
             reserves: Err(testing_alloy_node_error()),
             pair: Default::default(),
-            token0_balance: Ok(alloy::primitives::U256::from(1)),
-            token1_balance: Ok(alloy::primitives::U256::from(1)),
+            token0_balance: Ok(U256::ONE),
+            token1_balance: Ok(U256::ONE),
         };
         let pool_address = Default::default();
         assert!(handle_results(fetched_pool, pool_address).is_err());
@@ -536,8 +534,8 @@ mod tests {
         let fetched_pool = FetchedPool {
             reserves: Err(testing_alloy_contract_error()),
             pair: Default::default(),
-            token0_balance: Ok(alloy::primitives::U256::from(1)),
-            token1_balance: Ok(alloy::primitives::U256::from(1)),
+            token0_balance: Ok(U256::ONE),
+            token1_balance: Ok(U256::ONE),
         };
         let pool_address = Default::default();
         assert!(

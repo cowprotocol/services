@@ -4,17 +4,16 @@ use {
         BalanceOverriding,
     },
     alloy::{
-        primitives::Address,
+        primitives::{Address, U256},
+        rpc::types::state::StateOverride,
         sol_types::{SolCall, SolType, sol_data},
     },
     contracts::alloy::{GPv2Settlement, support::Balances},
-    ethcontract::state_overrides::StateOverrides,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
-    primitive_types::{H160, U256},
     std::sync::Arc,
     thiserror::Error,
 };
@@ -99,8 +98,8 @@ pub fn cached(
 pub struct BalanceSimulator {
     settlement: GPv2Settlement::Instance,
     balances: Balances::Instance,
-    vault_relayer: H160,
-    vault: H160,
+    vault_relayer: Address,
+    vault: Address,
     balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
@@ -108,8 +107,8 @@ impl BalanceSimulator {
     pub fn new(
         settlement: GPv2Settlement::Instance,
         balances: Balances::Instance,
-        vault_relayer: H160,
-        vault: Option<H160>,
+        vault_relayer: Address,
+        vault: Option<Address>,
         balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         Self {
@@ -121,24 +120,24 @@ impl BalanceSimulator {
         }
     }
 
-    pub fn vault_relayer(&self) -> H160 {
+    pub fn vault_relayer(&self) -> Address {
         self.vault_relayer
     }
 
-    pub fn vault(&self) -> H160 {
+    pub fn vault(&self) -> Address {
         self.vault
     }
 
     pub async fn simulate(
         &self,
-        owner: H160,
-        token: H160,
+        owner: Address,
+        token: Address,
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
         balance_override: Option<BalanceOverrideRequest>,
     ) -> Result<Simulation, SimulationError> {
-        let overrides: StateOverrides = match balance_override {
+        let overrides: StateOverride = match balance_override {
             Some(overrides) => self
                 .balance_overrider
                 .state_override(overrides)
@@ -157,12 +156,12 @@ impl BalanceSimulator {
         let balance_call = Balances::Balances::balanceCall {
             contracts: Balances::Balances::Contracts {
                 settlement: *self.settlement.address(),
-                vaultRelayer: self.vault_relayer.into_alloy(),
-                vault: self.vault.into_alloy(),
+                vaultRelayer: self.vault_relayer,
+                vault: self.vault,
             },
-            trader: owner.into_alloy(),
-            token: token.into_alloy(),
-            amount: amount.unwrap_or_default().into_alloy(),
+            trader: owner,
+            token,
+            amount: amount.unwrap_or_default(),
             source: source.as_bytes().into(),
             interactions: interactions
                 .iter()
@@ -178,8 +177,8 @@ impl BalanceSimulator {
             .settlement
             .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
             .with_cloned_provider()
-            .state(overrides.into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.clone().address().into_alloy())
+            .state(overrides)
+            .from(*crate::SIMULATION_ACCOUNT)
             .call()
             .await?;
 
@@ -192,13 +191,13 @@ impl BalanceSimulator {
             )>::abi_decode(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
-                web3::error::Error::Decoder("failed to decode balance response".to_string())
+                alloy::contract::Error::AbiError(alloy::dyn_abi::Error::SolTypes(err))
             })?;
 
         let simulation = Simulation {
-            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
-            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
+            token_balance: U256::from_le_slice(&token_balance.as_le_bytes()),
+            allowance: U256::from_le_slice(&allowance.as_le_bytes()),
+            effective_balance: U256::from_le_slice(&effective_balance.as_le_bytes()),
             can_transfer,
         };
 
@@ -227,6 +226,4 @@ pub struct Simulation {
 pub enum SimulationError {
     #[error("method error: {0:?}")]
     Method(#[from] alloy::contract::Error),
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] web3::error::Error),
 }

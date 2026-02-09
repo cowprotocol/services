@@ -1,12 +1,12 @@
 use {
-    crate::{
-        nodes::forked_node::ForkedNodeApi,
-        setup::{DeployedContracts, deploy::Contracts},
-    },
+    crate::setup::{DeployedContracts, deploy::Contracts},
     ::alloy::{
         network::{Ethereum, NetworkWallet, TransactionBuilder},
-        primitives::Address,
-        providers::Provider,
+        primitives::{Address, U256, keccak256},
+        providers::{
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
         rpc::types::TransactionRequest,
         signers::local::PrivateKeySigner,
     },
@@ -16,96 +16,28 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
-    ethcontract::{Account, H160, PrivateKey, U256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
     hex_literal::hex,
     model::{
         DomainSeparator,
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
-    secp256k1::SecretKey,
+    number::units::EthUnit,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
-    web3::{
-        Transport,
-        signing::{self, SecretKeyRef},
-    },
 };
 
 pub mod alloy;
 pub mod safe;
 
-#[macro_export]
-macro_rules! tx_value {
-    ($acc:expr_2021, $value:expr_2021, $call:expr_2021) => {{
-        const NAME: &str = stringify!($call);
-        $call
-            .from($acc.clone())
-            .value($value)
-            .send()
-            .await
-            .expect(&format!("{} failed", NAME))
-    }};
-}
-
-#[macro_export]
-macro_rules! tx {
-    ($acc:expr_2021, $call:expr_2021) => {
-        $crate::tx_value!($acc, ethcontract::U256::zero(), $call)
-    };
-}
-
-#[macro_export]
-macro_rules! deploy {
-    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
-        deploy!($web3, $contract ($($param),*) as stringify!($contract))
-    };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
-        let name = $name;
-        $contract::builder(&$web3 $(, $param)*)
-            .deploy()
-            .await
-            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
-    }};
-}
-
-pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
-    U256::from(base) * U256::exp10(exp)
-}
-
-pub fn to_wei(base: u32) -> U256 {
-    to_wei_with_exp(base, 18)
-}
-
-/// Returns the provided Eth amount in wei.
-///
-/// Equivalent to `amount * 10^18`.
-pub fn eth(amount: u32) -> ::alloy::primitives::U256 {
-    ::alloy::primitives::U256::from(amount) * ::alloy::primitives::utils::Unit::ETHER.wei()
-}
-
 #[derive(Clone, Debug)]
 pub struct TestAccount {
-    account: Account,
-    private_key: [u8; 32],
+    pub signer: PrivateKeySigner,
 }
 
 impl TestAccount {
-    pub fn account(&self) -> &Account {
-        &self.account
-    }
-
     pub fn address(&self) -> Address {
-        self.account.address().into_alloy()
-    }
-
-    pub fn private_key(&self) -> &[u8; 32] {
-        &self.private_key
+        self.signer.address()
     }
 
     pub fn sign_typed_data(
@@ -117,12 +49,12 @@ impl TestAccount {
             EcdsaSigningScheme::Eip712,
             domain_separator,
             struct_hash,
-            SecretKeyRef::from(&SecretKey::from_slice(self.private_key()).unwrap()),
+            &PrivateKeySigner::from_bytes(&self.signer.to_bytes()).unwrap(),
         )
     }
 
     pub async fn nonce(&self, web3: &Web3) -> u64 {
-        web3.alloy
+        web3.provider
             .get_transaction_count(self.address())
             .await
             .unwrap()
@@ -152,14 +84,11 @@ impl Iterator for AccountGenerator {
             self.id = self.id.checked_add(1)?;
 
             buffer[24..].copy_from_slice(&self.id.to_be_bytes());
-            let Ok(pk) = PrivateKey::from_raw(buffer) else {
+            let Some(signer) = PrivateKeySigner::from_slice(&buffer).ok() else {
                 continue;
             };
 
-            break Some(TestAccount {
-                account: Account::Offline(pk, None),
-                private_key: buffer,
-            });
+            break Some(TestAccount { signer });
         }
     }
 }
@@ -167,14 +96,14 @@ impl Iterator for AccountGenerator {
 #[derive(Debug)]
 pub struct MintableToken {
     contract: ERC20Mintable::Instance,
-    minter: Account,
+    minter: Address,
 }
 
 impl MintableToken {
-    pub async fn mint(&self, to: Address, amount: ::alloy::primitives::U256) {
+    pub async fn mint(&self, to: Address, amount: U256) {
         self.contract
             .mint(to, amount)
-            .from(self.minter.address().into_alloy())
+            .from(self.minter)
             .send_and_watch()
             .await
             .unwrap();
@@ -192,29 +121,23 @@ impl Deref for MintableToken {
 #[derive(Debug)]
 pub struct CowToken {
     contract: CowProtocolToken::Instance,
-    holder: Account,
+    holder: Address,
 }
 
 impl CowToken {
-    pub async fn fund(&self, to: Address, amount: ::alloy::primitives::U256) {
+    pub async fn fund(&self, to: Address, amount: U256) {
         self.contract
             .transfer(to, amount)
-            .from(self.holder.address().into_alloy())
+            .from(self.holder)
             .send_and_watch()
             .await
             .unwrap();
     }
 
-    pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
+    pub async fn permit(&self, owner: &TestAccount, spender: Address, value: U256) -> Hook {
         let domain = self.contract.DOMAIN_SEPARATOR().call().await.unwrap();
-        let nonce = self
-            .contract
-            .nonces(owner.address())
-            .call()
-            .await
-            .unwrap()
-            .into_legacy();
-        let deadline = U256::max_value();
+        let nonce = self.contract.nonces(owner.address()).call().await.unwrap();
+        let deadline = U256::MAX;
 
         let struct_hash = {
             let mut buffer = [0_u8; 192];
@@ -222,21 +145,21 @@ impl CowToken {
                 "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9"
             ));
             buffer[44..64].copy_from_slice(owner.address().as_slice());
-            buffer[76..96].copy_from_slice(spender.as_bytes());
-            value.to_big_endian(&mut buffer[96..128]);
-            nonce.to_big_endian(&mut buffer[128..160]);
-            deadline.to_big_endian(&mut buffer[160..192]);
+            buffer[76..96].copy_from_slice(spender.as_slice());
+            buffer[96..128].copy_from_slice(value.to_be_bytes::<32>().as_slice());
+            buffer[128..160].copy_from_slice(nonce.to_be_bytes::<32>().as_slice());
+            buffer[160..192].copy_from_slice(deadline.to_be_bytes::<32>().as_slice());
 
-            signing::keccak256(&buffer)
+            keccak256(buffer)
         };
 
         let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);
 
         let permit = self.contract.permit(
             owner.address(),
-            spender.into_alloy(),
-            value.into_alloy(),
-            deadline.into_alloy(),
+            spender,
+            value,
+            deadline,
             signature.v,
             signature.r.0.into(),
             signature.s.0.into(),
@@ -299,17 +222,12 @@ impl OnchainComponents {
     }
 
     /// Generate next `N` accounts with the given initial balance.
-    pub async fn make_accounts<const N: usize>(
-        &mut self,
-        with_wei: ::alloy::primitives::U256,
-    ) -> [TestAccount; N] {
+    pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
         assert_eq!(res.len(), N);
 
         for account in &res {
-            let signer = PrivateKeySigner::from_slice(account.private_key()).unwrap();
-            self.web3.wallet.register_signer(signer);
-
+            self.web3.wallet.register_signer(account.signer.clone());
             self.send_wei(account.address(), with_wei).await;
         }
 
@@ -318,16 +236,11 @@ impl OnchainComponents {
 
     /// Generate next `N` accounts with the given initial balance and
     /// authenticate them as solvers.
-    pub async fn make_solvers<const N: usize>(
-        &mut self,
-        with_wei: ::alloy::primitives::U256,
-    ) -> [TestAccount; N] {
+    pub async fn make_solvers<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            self.web3
-                .wallet
-                .register_signer(PrivateKeySigner::from_slice(solver.private_key()).unwrap());
+            self.web3.wallet.register_signer(solver.signer.clone());
 
             self.contracts
                 .gp_authenticator
@@ -362,25 +275,12 @@ impl OnchainComponents {
     /// authenticate them as solvers on a forked network.
     pub async fn make_solvers_forked<const N: usize>(
         &mut self,
-        with_wei: ::alloy::primitives::U256,
+        with_wei: U256,
     ) -> [TestAccount; N] {
         let authenticator = &self.contracts.gp_authenticator;
+        let auth_manager = authenticator.manager().call().await.unwrap();
 
-        let auth_manager = authenticator.manager().call().await.unwrap().into_legacy();
-
-        let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
-
-        forked_node_api
-            .set_balance(&auth_manager, to_wei(100))
-            .await
-            .expect("could not set auth_manager balance");
-
-        let impersonated_authenticator = {
-            forked_node_api
-                .impersonate(&auth_manager)
-                .await
-                .expect("could not impersonate auth_manager");
-
+        let gpv2_auth = {
             // we create a new provider without a wallet so that
             // alloy does not try to sign the tx with it and instead
             // forwards the tx to the node for signing. This will
@@ -392,43 +292,63 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            impersonated_authenticator
-                .addSolver(solver.address())
-                .from(auth_manager.into_alloy())
-                .send_and_watch()
+            self.web3
+                .provider
+                .anvil_send_impersonated_transaction_with_config(
+                    gpv2_auth
+                        .addSolver(solver.address())
+                        .from(auth_manager)
+                        .into_transaction_request(),
+                    ImpersonateConfig {
+                        fund_amount: Some(100u64.eth()),
+                        stop_impersonate: true,
+                    },
+                )
                 .await
-                .expect("failed to add solver");
+                .unwrap()
+                .watch()
+                .await
+                .unwrap();
         }
 
         if let Some(router) = &self.contracts.flashloan_router {
-            impersonated_authenticator
-                .addSolver(*router.address())
-                .from(auth_manager.into_alloy())
-                .send_and_watch()
+            self.web3
+                .provider
+                .anvil_send_impersonated_transaction_with_config(
+                    gpv2_auth
+                        .addSolver(*router.address())
+                        .from(auth_manager)
+                        .into_transaction_request(),
+                    ImpersonateConfig {
+                        fund_amount: Some(100u64.eth()),
+                        stop_impersonate: true,
+                    },
+                )
                 .await
-                .expect("failed to add flashloan wrapper");
+                .unwrap()
+                .watch()
+                .await
+                .unwrap();
         }
 
         solvers
     }
 
     /// Deploy `N` tokens without any onchain liquidity
-    pub async fn deploy_tokens<const N: usize>(&self, minter: &Account) -> [MintableToken; N] {
+    pub async fn deploy_tokens<const N: usize>(&self, minter: Address) -> [MintableToken; N] {
         let mut res = Vec::with_capacity(N);
 
         for _ in 0..N {
-            let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
+            let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.provider.clone())
                 // We can't escape the .from here because we need to ensure Minter permissions later on
-                .from(minter.address().into_alloy())
+                .from(minter)
                 .deploy()
                 .await
                 .expect("ERC20Mintable deployment failed");
-            let contract = ERC20Mintable::Instance::new(contract_address, self.web3.alloy.clone());
+            let contract =
+                ERC20Mintable::Instance::new(contract_address, self.web3.provider.clone());
 
-            res.push(MintableToken {
-                contract,
-                minter: minter.clone(),
-            });
+            res.push(MintableToken { contract, minter });
         }
 
         res.try_into().unwrap()
@@ -440,15 +360,13 @@ impl OnchainComponents {
         token_amount: U256,
         weth_amount: U256,
     ) -> [MintableToken; N] {
-        let minter = Account::Local(
-            self.web3
-                .eth()
-                .accounts()
-                .await
-                .expect("getting accounts failed")[0],
-            None,
-        );
-        let tokens = self.deploy_tokens::<N>(&minter).await;
+        let minter = self
+            .web3
+            .provider
+            .get_accounts()
+            .await
+            .expect("getting accounts failed")[0];
+        let tokens = self.deploy_tokens::<N>(minter).await;
         self.seed_weth_uni_v2_pools(tokens.iter(), token_amount, weth_amount)
             .await;
         tokens
@@ -462,8 +380,8 @@ impl OnchainComponents {
     ) {
         for MintableToken { contract, minter } in tokens {
             contract
-                .mint(minter.address().into_alloy(), token_amount.into_alloy())
-                .from(minter.address().into_alloy())
+                .mint(*minter, token_amount)
+                .from(*minter)
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -471,8 +389,8 @@ impl OnchainComponents {
             self.contracts
                 .weth
                 .deposit()
-                .value(weth_amount.into_alloy())
-                .from(minter.address().into_alloy())
+                .value(weth_amount)
+                .from(*minter)
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -480,28 +398,22 @@ impl OnchainComponents {
             self.contracts
                 .uniswap_v2_factory
                 .createPair(*contract.address(), *self.contracts.weth.address())
-                .from(minter.address().into_alloy())
+                .from(*minter)
                 .send_and_watch()
                 .await
                 .unwrap();
 
             contract
-                .approve(
-                    *self.contracts.uniswap_v2_router.address(),
-                    token_amount.into_alloy(),
-                )
-                .from(minter.address().into_alloy())
+                .approve(*self.contracts.uniswap_v2_router.address(), token_amount)
+                .from(*minter)
                 .send_and_watch()
                 .await
                 .unwrap();
 
             self.contracts
                 .weth
-                .approve(
-                    *self.contracts.uniswap_v2_router.address(),
-                    weth_amount.into_alloy(),
-                )
-                .from(minter.address().into_alloy())
+                .approve(*self.contracts.uniswap_v2_router.address(), weth_amount)
+                .from(*minter)
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -511,14 +423,14 @@ impl OnchainComponents {
                 .addLiquidity(
                     *contract.address(),
                     *self.contracts.weth.address(),
-                    token_amount.into_alloy(),
-                    weth_amount.into_alloy(),
-                    ::alloy::primitives::U256::ZERO,
-                    ::alloy::primitives::U256::ZERO,
-                    minter.address().into_alloy(),
-                    ::alloy::primitives::U256::MAX,
+                    token_amount,
+                    weth_amount,
+                    U256::ZERO,
+                    U256::ZERO,
+                    *minter,
+                    U256::MAX,
                 )
-                .from(minter.address().into_alloy())
+                .from(*minter)
                 .send_and_watch()
                 .await
                 .unwrap();
@@ -527,17 +439,17 @@ impl OnchainComponents {
 
     pub async fn seed_uni_v2_pool(
         &self,
-        asset_a: (&MintableToken, ::alloy::primitives::U256),
-        asset_b: (&MintableToken, ::alloy::primitives::U256),
+        asset_a: (&MintableToken, U256),
+        asset_b: (&MintableToken, U256),
     ) {
-        let lp = &asset_a.0.minter;
-        asset_a.0.mint(lp.address().into_alloy(), asset_a.1).await;
-        asset_b.0.mint(lp.address().into_alloy(), asset_b.1).await;
+        let lp = asset_a.0.minter;
+        asset_a.0.mint(lp, asset_a.1).await;
+        asset_b.0.mint(lp, asset_b.1).await;
 
         self.contracts
             .uniswap_v2_factory
             .createPair(*asset_a.0.address(), *asset_b.0.address())
-            .from(lp.address().into_alloy())
+            .from(lp)
             .send_and_watch()
             .await
             .unwrap();
@@ -545,7 +457,7 @@ impl OnchainComponents {
         asset_a
             .0
             .approve(*self.contracts.uniswap_v2_router.address(), asset_a.1)
-            .from(lp.address().into_alloy())
+            .from(lp)
             .send_and_watch()
             .await
             .unwrap();
@@ -553,7 +465,7 @@ impl OnchainComponents {
         asset_b
             .0
             .approve(*self.contracts.uniswap_v2_router.address(), asset_b.1)
-            .from(lp.address().into_alloy())
+            .from(lp)
             .send_and_watch()
             .await
             .unwrap();
@@ -564,12 +476,12 @@ impl OnchainComponents {
                 *asset_b.0.address(),
                 asset_a.1,
                 asset_b.1,
-                ::alloy::primitives::U256::ZERO,
-                ::alloy::primitives::U256::ZERO,
-                lp.address().into_alloy(),
-                ::alloy::primitives::U256::MAX,
+                U256::ZERO,
+                U256::ZERO,
+                lp,
+                U256::MAX,
             )
-            .from(lp.address().into_alloy())
+            .from(lp)
             .send_and_watch()
             .await
             .unwrap();
@@ -578,11 +490,7 @@ impl OnchainComponents {
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
     ///
     /// This can be used to modify the pool reserves during a test.
-    pub async fn mint_token_to_weth_uni_v2_pool(
-        &self,
-        token: &MintableToken,
-        amount: ::alloy::primitives::U256,
-    ) {
+    pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
         let pair = contracts::alloy::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
@@ -590,27 +498,25 @@ impl OnchainComponents {
                 .call()
                 .await
                 .expect("failed to get Uniswap V2 pair"),
-            self.web3.alloy.clone(),
+            self.web3.provider.clone(),
         );
         assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
 
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
-        token
-            .mint(*pair.address(), amount + ::alloy::primitives::U256::ONE)
-            .await;
+        token.mint(*pair.address(), amount + U256::ONE).await;
         let (out0, out1) = if self.contracts.weth.address() < token.address() {
             (1, 0)
         } else {
             (0, 1)
         };
         pair.swap(
-            ::alloy::primitives::U256::from(out0),
-            ::alloy::primitives::U256::from(out1),
-            token.minter.address().into_alloy(),
+            U256::from(out0),
+            U256::from(out1),
+            token.minter,
             Default::default(),
         )
-        .from(token.minter.address().into_alloy())
+        .from(token.minter)
         .send_and_watch()
         .await
         .expect("Uniswap V2 pair couldn't mint");
@@ -618,12 +524,11 @@ impl OnchainComponents {
 
     pub async fn deploy_cow_token(&self, supply: U256) -> CowToken {
         let holder = NetworkWallet::<Ethereum>::default_signer_address(&self.web3().wallet);
-        let holder = Account::Local(holder.into_legacy(), None);
         let contract = CowProtocolToken::CowProtocolToken::deploy(
-            self.web3.alloy.clone(),
-            holder.address().into_alloy(),
-            holder.address().into_alloy(),
-            supply.into_alloy(),
+            self.web3.provider.clone(),
+            holder,
+            holder,
+            supply,
         )
         .await
         .expect("CowProtocolToken deployment failed");
@@ -641,8 +546,8 @@ impl OnchainComponents {
         self.contracts
             .weth
             .deposit()
-            .value(weth_amount.into_alloy())
-            .from(cow.holder.address().into_alloy())
+            .value(weth_amount)
+            .from(cow.holder)
             .send_and_watch()
             .await
             .unwrap();
@@ -650,25 +555,19 @@ impl OnchainComponents {
         self.contracts
             .uniswap_v2_factory
             .createPair(*cow.address(), *self.contracts.weth.address())
-            .from(cow.holder.address().into_alloy())
+            .from(cow.holder)
             .send_and_watch()
             .await
             .unwrap();
-        cow.approve(
-            *self.contracts.uniswap_v2_router.address(),
-            cow_amount.into_alloy(),
-        )
-        .from(cow.holder.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        cow.approve(*self.contracts.uniswap_v2_router.address(), cow_amount)
+            .from(cow.holder)
+            .send_and_watch()
+            .await
+            .unwrap();
         self.contracts
             .weth
-            .approve(
-                *self.contracts.uniswap_v2_router.address(),
-                weth_amount.into_alloy(),
-            )
-            .from(cow.holder.address().into_alloy())
+            .approve(*self.contracts.uniswap_v2_router.address(), weth_amount)
+            .from(cow.holder)
             .send_and_watch()
             .await
             .unwrap();
@@ -677,14 +576,14 @@ impl OnchainComponents {
             .addLiquidity(
                 *cow.address(),
                 *self.contracts.weth.address(),
-                cow_amount.into_alloy(),
-                weth_amount.into_alloy(),
-                ::alloy::primitives::U256::ZERO,
-                ::alloy::primitives::U256::ZERO,
-                cow.holder.address().into_alloy(),
-                ::alloy::primitives::U256::MAX,
+                cow_amount,
+                weth_amount,
+                U256::ZERO,
+                U256::ZERO,
+                cow.holder,
+                U256::MAX,
             )
-            .from(cow.holder.address().into_alloy())
+            .from(cow.holder)
             .send_and_watch()
             .await
             .unwrap();
@@ -692,10 +591,10 @@ impl OnchainComponents {
         cow
     }
 
-    pub async fn send_wei(&self, to: Address, amount: ::alloy::primitives::U256) {
-        let balance_before = self.web3.alloy.get_balance(to).await.unwrap();
+    pub async fn send_wei(&self, to: Address, amount: U256) {
+        let balance_before = self.web3.provider.get_balance(to).await.unwrap();
         self.web3
-            .alloy
+            .provider
             .send_transaction(TransactionRequest::default().with_to(to).with_value(amount))
             .await
             .unwrap()
@@ -708,17 +607,13 @@ impl OnchainComponents {
         // supposedly succeeds but the balances still don't get changed.
         // If you hit this assert try using a different block number for your
         // forked test.
-        let balance_after = self.web3.alloy.get_balance(to).await.unwrap();
+        let balance_after = self.web3.provider.get_balance(to).await.unwrap();
         assert_eq!(balance_after, balance_before + amount);
     }
 
     pub async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3
-            .transport()
-            .execute("evm_mine", vec![])
-            .await
-            .unwrap();
+        self.web3.provider.evm_mine(None).await.unwrap();
     }
 
     pub fn contracts(&self) -> &Contracts {

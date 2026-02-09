@@ -18,9 +18,13 @@ impl Quote {
             clearing_prices: quote.clearing_prices,
             pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
             interactions: quote.interactions.into_iter().map(Into::into).collect(),
-            solver: quote.solver.0,
-            gas: quote.gas.map(|gas| gas.0.as_u64()),
-            tx_origin: quote.tx_origin.map(|addr| addr.0),
+            solver: quote.solver,
+            gas: quote.gas.map(|gas| {
+                gas.0
+                    .try_into()
+                    .expect("value should be lower than u64::MAX")
+            }),
+            tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
         }
     }
@@ -31,14 +35,14 @@ impl Quote {
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    clearing_prices: HashMap<eth::H160, eth::U256>,
+    clearing_prices: HashMap<eth::Address, eth::U256>,
     pre_interactions: Vec<Interaction>,
     interactions: Vec<Interaction>,
-    solver: eth::H160,
+    solver: eth::Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tx_origin: Option<eth::H160>,
+    tx_origin: Option<eth::Address>,
     jit_orders: Vec<JitOrder>,
 }
 
@@ -46,7 +50,7 @@ pub struct Quote {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
-    target: eth::H160,
+    target: eth::Address,
     #[serde_as(as = "serialize::U256")]
     value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
@@ -56,7 +60,7 @@ struct Interaction {
 impl From<eth::Interaction> for Interaction {
     fn from(interaction: eth::Interaction) -> Self {
         Self {
-            target: interaction.target.into(),
+            target: interaction.target,
             value: interaction.value.into(),
             call_data: interaction.call_data.into(),
         }
@@ -67,15 +71,15 @@ impl From<eth::Interaction> for Interaction {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct JitOrder {
-    buy_token: eth::H160,
-    sell_token: eth::H160,
+    buy_token: eth::Address,
+    sell_token: eth::Address,
     #[serde_as(as = "serialize::U256")]
     sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
-    receiver: eth::H160,
+    receiver: eth::Address,
     partially_fillable: bool,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
@@ -96,7 +100,7 @@ impl From<domain::competition::solution::trade::Jit> for JitOrder {
             sell_amount: jit.order().sell.amount.into(),
             buy_amount: jit.order().buy.amount.into(),
             executed_amount: jit.executed().into(),
-            receiver: jit.order().receiver.into(),
+            receiver: jit.order().receiver,
             partially_fillable: jit.order().partially_fillable,
             valid_to: jit.order().valid_to.into(),
             app_data: jit.order().app_data.into(),

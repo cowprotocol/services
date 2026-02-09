@@ -6,7 +6,6 @@ use {
             liquidity::{self, balancer},
         },
     },
-    ethrpc::alloy::conversions::IntoLegacy,
     shared::sources::balancer_v2::pool_fetching::WeightedPoolVersion,
     solver::liquidity::{WeightedProductOrder, balancer_v2},
 };
@@ -28,7 +27,7 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
                     .map(|(token, reserve)| {
                         Ok(balancer::v2::weighted::Reserve {
                             asset: eth::Asset {
-                                token: token.into_legacy().into(),
+                                token: token.into(),
                                 amount: reserve.common.balance.into(),
                             },
                             weight: balancer::v2::weighted::Weight::from_raw(
@@ -51,13 +50,13 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
 }
 
 fn vault(pool: &WeightedProductOrder) -> eth::ContractAddress {
-    pool.settlement_handling
+    (*pool
+        .settlement_handling
         .as_any()
         .downcast_ref::<balancer_v2::SettlementHandler>()
         .expect("downcast balancer settlement handler")
-        .vault()
-        .into_legacy()
-        .into()
+        .vault())
+    .into()
 }
 
 fn pool_id(pool: &WeightedProductOrder) -> balancer::v2::Id {

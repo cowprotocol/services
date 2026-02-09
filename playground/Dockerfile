@@ -1,6 +1,6 @@
 FROM debian:bookworm AS chef
 WORKDIR /src/
-RUN apt-get update && apt-get install -y curl git clang mold libssl-dev pkg-config git && apt-get clean
+RUN apt-get update && apt-get install -y curl git clang mold libssl-dev pkg-config git make && apt-get clean
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="$PATH:/root/.cargo/bin"
 RUN rustup component add clippy rustfmt
@@ -31,7 +31,7 @@ CMD ["migrate"]
 FROM chef AS builder
 COPY --from=planner /src/recipe.json recipe.json
 COPY --from=chef /.cargo /.cargo
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --features tokio-console --recipe-path recipe.json
 
 # Copy only the library crates for now
 COPY --from=chef /.cargo /.cargo
@@ -48,9 +48,9 @@ COPY ./crates/chain/ ./crates/chain
 COPY ./crates/ethrpc/ ./crates/ethrpc
 COPY ./crates/observe/ ./crates/observe
 COPY ./crates/order-validation/ ./crates/order-validation
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package shared
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package shared
 COPY ./crates/solver/ ./crates/solver
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solver
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package solver
 
 # Create an base image for all the binaries
 FROM docker.io/debian:bookworm-slim AS base
@@ -58,17 +58,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
 
-FROM builder AS alerter-build
-COPY --from=chef /.cargo /.cargo
-COPY ./crates/alerter/ ./crates/alerter
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package alerter
-
-FROM base AS alerter
-COPY --from=alerter-build /src/target/release/alerter /usr/local/bin/alerter
-ENTRYPOINT [ "alerter" ]
-
 FROM builder AS autopilot-build
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package autopilot
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package autopilot
 
 FROM base AS autopilot
 COPY --from=chef /.cargo /.cargo
@@ -78,7 +69,7 @@ ENTRYPOINT [ "autopilot" ]
 
 FROM builder AS driver-build
 COPY ./crates/driver/ ./crates/driver
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package driver
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package driver
 
 FROM base AS driver
 COPY --from=driver-build /src/target/release/driver /usr/local/bin/driver
@@ -87,7 +78,7 @@ ENTRYPOINT [ "driver" ]
 FROM builder AS orderbook-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/orderbook/ ./crates/orderbook
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package orderbook
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package orderbook
 
 FROM base AS orderbook
 COPY --from=orderbook-build /src/target/release/orderbook /usr/local/bin/orderbook
@@ -96,7 +87,7 @@ ENTRYPOINT [ "orderbook" ]
 FROM builder AS refunder-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/refunder/ ./crates/refunder
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package refunder
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package refunder
 
 FROM base AS refunder
 COPY --from=refunder-build /src/target/release/refunder /usr/local/bin/refunder
@@ -105,7 +96,7 @@ ENTRYPOINT [ "refunder" ]
 FROM builder AS solvers-build
 COPY --from=chef /.cargo /.cargo
 COPY ./crates/solvers/ ./crates/solvers
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solvers
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --features tokio-console --package solvers
 
 FROM base AS solvers
 COPY --from=solvers-build /src/target/release/solvers /usr/local/bin/solvers
@@ -113,22 +104,11 @@ ENTRYPOINT [ "solvers" ]
 
 # Extract Binary
 FROM base
-RUN apt-get update && \
-    apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev git
-RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
-    mkdir /heaptrack/build && cd /heaptrack/build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. && \
-    make -j$(nproc) && \
-    make install && \
-    cd / && rm -rf /heaptrack
-COPY --from=alerter-build /src/target/release/alerter /usr/local/bin/alerter
+RUN apt-get update && apt-get install -y netcat-openbsd
 COPY --from=autopilot-build /src/target/release/autopilot /usr/local/bin/autopilot
 COPY --from=driver-build /src/target/release/driver /usr/local/bin/driver
 COPY --from=orderbook-build /src/target/release/orderbook /usr/local/bin/orderbook
 COPY --from=refunder-build /src/target/release/refunder /usr/local/bin/refunder
 COPY --from=solvers-build /src/target/release/solvers /usr/local/bin/solvers
-COPY ./entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/entrypoint.sh"]

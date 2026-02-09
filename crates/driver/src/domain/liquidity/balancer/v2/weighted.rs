@@ -123,7 +123,7 @@ impl Weight {
     }
 
     fn base() -> eth::U256 {
-        eth::U256::exp10(18)
+        eth::U256::from(10).pow(eth::U256::from(18))
     }
 }
 

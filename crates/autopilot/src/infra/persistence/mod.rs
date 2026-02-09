@@ -5,8 +5,10 @@ use {
         domain::{self, eth, settlement::transaction::EncodedTrade},
         infra::persistence::dto::{AuctionId, RawAuctionData},
     },
+    ::winner_selection::state::RankedItem,
+    alloy::primitives::B256,
     anyhow::Context,
-    bigdecimal::ToPrimitive,
+    bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
     database::{
@@ -19,7 +21,7 @@ use {
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
-        solver_competition_v2::{Order, Solution},
+        solver_competition_v2::{self, Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -27,8 +29,7 @@ use {
         SigningScheme as DomainSigningScheme,
     },
     futures::{StreamExt, TryStreamExt},
-    number::conversions::{alloy::u256_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::H256,
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::full_order_into_model_order,
     std::{
         collections::{HashMap, HashSet},
@@ -93,6 +94,46 @@ impl Persistence {
 
     pub async fn leader(&self, key: String) -> LeaderLock {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
+    }
+
+    /// Spawns a background task that listens for new order notifications from
+    /// PostgreSQL and notifies via the provided Notify.
+    pub fn spawn_order_listener(&self, notify: Arc<tokio::sync::Notify>) {
+        let pool = self.postgres.pool.clone();
+        tokio::spawn(async move {
+            loop {
+                let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
+                    Ok(listener) => listener,
+                    Err(err) => {
+                        tracing::error!(?err, "failed to create PostgreSQL listener");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+
+                tracing::info!("connected to PostgreSQL for order notifications");
+
+                if let Err(err) = listener.listen("new_order").await {
+                    tracing::error!(?err, "failed to listen on 'new_order' channel");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+
+                loop {
+                    match listener.recv().await {
+                        Ok(notification) => {
+                            let order_uid = notification.payload();
+                            tracing::debug!(order_uid, "received order notification from postgres");
+                            notify.notify_one();
+                        }
+                        Err(err) => {
+                            tracing::error!(?err, "error receiving notification from postgres");
+                            break;
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /// Fetches the ID that should be used for the next auction.
@@ -166,7 +207,7 @@ impl Persistence {
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
-        solutions: impl Iterator<Item = &domain::competition::Participant>,
+        solutions: impl Iterator<Item = &domain::competition::Bid>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -180,22 +221,22 @@ impl Persistence {
             auction_id,
             &solutions
                 .enumerate()
-                .map(|(uid, participant)| {
+                .map(|(uid, bid)| {
                     let solution = Solution {
                         uid: uid.try_into().context("uid overflow")?,
-                        id: u256_to_big_decimal(&participant.solution().id().into()),
-                        solver: ByteArray(participant.solution().solver().0.0),
-                        is_winner: participant.is_winner(),
-                        filtered_out: participant.filtered_out(),
-                        score: u256_to_big_decimal(&participant.solution().score().get().0),
-                        orders: participant
+                        id: BigDecimal::from(bid.solution().id()),
+                        solver: ByteArray(bid.solution().solver().0.0),
+                        is_winner: bid.is_winner(),
+                        filtered_out: bid.is_filtered_out(),
+                        score: u256_to_big_decimal(&bid.score().get().0),
+                        orders: bid
                             .solution()
                             .orders()
                             .iter()
                             .map(|(order_uid, order)| Order {
                                 uid: ByteArray(order_uid.0),
-                                sell_token: ByteArray(order.sell.token.0.0),
-                                buy_token: ByteArray(order.buy.token.0.0),
+                                sell_token: ByteArray(order.sell.token.0.0.0),
+                                buy_token: ByteArray(order.buy.token.0.0.0),
                                 limit_sell: u256_to_big_decimal(&order.sell.amount.0),
                                 limit_buy: u256_to_big_decimal(&order.buy.amount.0),
                                 executed_sell: u256_to_big_decimal(&order.executed_sell.0),
@@ -203,13 +244,13 @@ impl Persistence {
                                 side: order.side.into(),
                             })
                             .collect(),
-                        price_tokens: participant
+                        price_tokens: bid
                             .solution()
                             .prices()
                             .keys()
-                            .map(|token| ByteArray(token.0.0))
+                            .map(|token| ByteArray(token.0.0.0))
                             .collect(),
-                        price_values: participant
+                        price_values: bid
                             .solution()
                             .prices()
                             .values()
@@ -285,12 +326,13 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// For a given auction and solver, tries to find the settlement
-    /// transaction.
+    /// Tries to find the transaction executing a given solution proposed
+    /// by the solver.
     pub async fn find_settlement_transaction(
         &self,
         auction_id: i64,
         solver: eth::Address,
+        solution_uid: usize,
     ) -> Result<Option<eth::TxId>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -302,9 +344,12 @@ impl Persistence {
             &mut ex,
             auction_id,
             ByteArray(solver.0.0),
+            solution_uid
+                .try_into()
+                .context("could not convert solution id to i64")?,
         )
         .await?
-        .map(|hash| H256(hash.0).into()))
+        .map(|hash| B256::new(hash.0).into()))
     }
 
     /// Save auction related data to the database.
@@ -318,7 +363,7 @@ impl Persistence {
             .with_label_values(&["save_auction"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await?;
+        let mut ex = self.postgres.pool.acquire().await?;
 
         database::auction::save(
             &mut ex,
@@ -334,7 +379,7 @@ impl Persistence {
                 price_tokens: auction
                     .prices
                     .keys()
-                    .map(|token| ByteArray(token.0.0))
+                    .map(|token| ByteArray(token.0.0.0))
                     .collect(),
                 price_values: auction
                     .prices
@@ -350,7 +395,7 @@ impl Persistence {
         )
         .await?;
 
-        Ok(ex.commit().await?)
+        Ok(())
     }
 
     /// Get auction data to post-process the given trades.
@@ -385,7 +430,7 @@ impl Persistence {
             .map_err(error::Auction::DatabaseError)?
             .into_iter()
             .map(|price| {
-                let token = eth::H160(price.token.0).into();
+                let token = eth::Address::new(price.token.0).into();
                 let price = big_decimal_to_u256(&price.price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::try_new(p.into()))
@@ -638,7 +683,7 @@ impl Persistence {
                         .context("negative block")?
                         .into(),
                     log_index: u64::try_from(event.log_index).context("negative log index")?,
-                    transaction: eth::TxId(H256(event.tx_hash.0)),
+                    transaction: eth::TxId(B256::new(event.tx_hash.0)),
                 };
                 Ok::<_, DatabaseError>(event)
             })
@@ -750,14 +795,14 @@ impl Persistence {
                     auction_id,
                     block_number,
                     Asset {
-                        token: ByteArray(order_fee.total.token.0.0),
+                        token: ByteArray(order_fee.total.token.0.0.0),
                         amount: u256_to_big_decimal(&order_fee.total.amount.0),
                     },
                     &order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
-                            token: ByteArray(executed.fee.token.0.0),
+                            token: ByteArray(executed.fee.token.0.0.0),
                             amount: u256_to_big_decimal(&executed.fee.amount.0),
                         })
                         .collect::<Vec<_>>(),
@@ -790,8 +835,8 @@ impl Persistence {
                                         0,
                                     )
                                         .unwrap_or_default(),
-                                    sell_token: ByteArray(jit_order.sell.token.0.0),
-                                    buy_token: ByteArray(jit_order.buy.token.0.0),
+                                    sell_token: ByteArray(jit_order.sell.token.0.0.0),
+                                    buy_token: ByteArray(jit_order.buy.token.0.0.0),
                                     sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
                                     buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
                                     valid_to: i64::from(jit_order.valid_to),
@@ -901,63 +946,6 @@ impl Persistence {
         Ok(())
     }
 
-    /// Finds solvers that won `last_auctions_count` consecutive auctions but
-    /// never settled any of them. The current block is used to prevent
-    /// selecting auctions with deadline after the current block since they
-    /// still can be settled.
-    pub async fn find_non_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_non_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition_v2::find_non_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-        )
-        .await
-        .context("failed to fetch non-settling solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
-    /// Finds solvers that have a failure settling rate above the given
-    /// ratio. The current block is used to prevent selecting auctions with
-    /// deadline after the current block since they still can be settled.
-    pub async fn find_low_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-        max_failure_rate: f64,
-        min_wins_threshold: u32,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_low_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition_v2::find_low_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-            max_failure_rate,
-            min_wins_threshold,
-        )
-        .await
-        .context("solver_competition::find_low_settling_solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
     pub async fn get_solver_winning_solutions(
         &self,
         auction_id: domain::auction::Id,
@@ -978,6 +966,27 @@ impl Persistence {
             .await
             .context("solver_competition::fetch_solver_winning_solutions")?,
         )
+    }
+
+    /// Fetches orders which are currently inflight. Those orders should
+    /// be omitted from the current auction to avoid onchain reverts.
+    pub async fn fetch_in_flight_orders(
+        &self,
+        current_block: u64,
+    ) -> anyhow::Result<HashSet<crate::domain::OrderUid>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["inflight_orders"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let orders =
+            solver_competition_v2::fetch_in_flight_orders(&mut ex, current_block.cast_signed())
+                .await?;
+        Ok(orders
+            .into_iter()
+            .map(|o| crate::domain::OrderUid(o.0))
+            .collect())
     }
 }
 

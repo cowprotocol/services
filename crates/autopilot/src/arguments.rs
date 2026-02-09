@@ -1,12 +1,11 @@
 use {
-    crate::{domain::fee::FeeFactor, infra},
-    alloy::primitives::Address,
+    crate::{database::INSERT_BATCH_SIZE_DEFAULT, infra},
+    alloy::primitives::{Address, U256},
     anyhow::{Context, anyhow, ensure},
     chrono::{DateTime, Utc},
     clap::ValueEnum,
-    primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option, display_secret_option},
+        arguments::{FeeFactor, display_list, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
@@ -38,6 +37,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
+
     /// Address of the ethflow contracts. If not specified, eth-flow orders are
     /// disabled.
     /// In general, one contract is sufficient for the service to function.
@@ -60,18 +62,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
+    /// Address to bind the HTTP API server
+    #[clap(long, env, default_value = "0.0.0.0:12088")]
+    pub api_address: SocketAddr,
+
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_write_url: Url,
 
-    /// Url of the Postgres database replica. By default it's the same as
-    /// db_write_url
-    #[clap(long, env)]
-    pub db_read_url: Option<Url>,
-
     /// The number of order events to insert in a single batch.
-    #[clap(long, env, default_value = "500")]
+    #[clap(long, env, default_value_t = INSERT_BATCH_SIZE_DEFAULT)]
     pub insert_batch_size: NonZeroUsize,
 
     /// Skip syncing past events (useful for local deployments)
@@ -247,114 +248,29 @@ pub struct Arguments {
     #[clap(long, env)]
     pub archive_node_url: Option<Url>,
 
-    /// Configuration for the solver participation guard.
-    #[clap(flatten)]
-    pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
-
     /// Configures whether the autopilot filters out orders with insufficient
     /// balances.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_balance_filter: bool,
 
-    // Configures whether the autopilot filters out EIP-1271 orders even if their signatures are
-    // invalid. This is useful as a workaround to let flashloan orders go through as they rely
-    // on preHooks behing executed to make the signatures valid.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_sig_filter: bool,
-
-    /// Configures whether the autopilot skips balance checks for EIP-1271
-    /// orders.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_balance_filter: bool,
+    /// List of appCode values in appData that enable bypassing
+    /// signature/balance filters. Orders with matching appCode will skip
+    /// pre-validation checks.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub filter_bypass_app_data_sources: Vec<String>,
 
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
     /// and not cut any auctions.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub enable_leader_lock: bool,
-}
 
-#[derive(Debug, clap::Parser)]
-pub struct DbBasedSolverParticipationGuardConfig {
-    /// Enables or disables the solver participation guard
-    #[clap(
-        id = "db_enabled",
-        long = "db-based-solver-participation-guard-enabled",
-        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
-        default_value = "true"
-    )]
-    pub enabled: bool,
-
-    /// Sets the duration for which the solver remains blacklisted.
-    /// Technically, the time-to-live for the solver participation blacklist
-    /// cache.
-    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
-    pub solver_blacklist_cache_ttl: Duration,
-
-    #[clap(flatten)]
-    pub non_settling_solvers_finder_config: NonSettlingSolversFinderConfig,
-
-    #[clap(flatten)]
-    pub low_settling_solvers_finder_config: LowSettlingSolversFinderConfig,
-}
-
-#[derive(Debug, clap::Parser)]
-pub struct NonSettlingSolversFinderConfig {
-    /// Enables search of non-settling solvers.
-    #[clap(
-        id = "non_settling_solvers_blacklisting_enabled",
-        long = "non-settling-solvers-blacklisting-enabled",
-        env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true",
-        action = clap::ArgAction::Set,
-    )]
-    pub enabled: bool,
-
-    /// The number of last auctions to check solver participation eligibility.
-    #[clap(
-        id = "non_settling_last_auctions_participation_count",
-        long = "non-settling-last-auctions-participation-count",
-        env = "NON_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
-        default_value = "3"
-    )]
-    pub last_auctions_participation_count: u32,
-}
-
-#[derive(Debug, clap::Parser)]
-pub struct LowSettlingSolversFinderConfig {
-    /// Enables search of non-settling solvers.
-    #[clap(
-        id = "low_settling_solvers_blacklisting_enabled",
-        long = "low-settling-solvers-blacklisting-enabled",
-        env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true",
-        action = clap::ArgAction::Set,
-    )]
-    pub enabled: bool,
-
-    /// The number of last auctions to check solver participation eligibility.
-    #[clap(
-        id = "low_settling_last_auctions_participation_count",
-        long = "low-settling-last-auctions-participation-count",
-        env = "LOW_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
-        default_value = "100"
-    )]
-    pub last_auctions_participation_count: u32,
-
-    /// The minimum number of winning solutions to start considering the solver.
-    #[clap(
-        id = "low_settling_min_wins_threshold",
-        long = "low-settling-min-wins-threshold",
-        env = "LOW_SETTLING_MIN_WINS_THRESHOLD",
-        default_value = "3"
-    )]
-    pub min_wins_threshold: u32,
-
-    /// A max failure rate for a solver to remain eligible for
-    /// participation in the competition. Otherwise, the solver will be
-    /// banned.
-    #[clap(long, env, default_value = "0.9")]
-    pub solver_max_settlement_failure_rate: f64,
+    /// Limits the amount of time the autopilot may spend running the
+    /// maintenance logic between 2 auctions. When this times out we prefer
+    /// running a not fully updated auction over stalling the protocol any
+    /// further.
+    #[clap(long, env, default_value = "5s", value_parser = humantime::parse_duration)]
+    pub max_maintenance_timeout: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -365,10 +281,12 @@ impl std::fmt::Display for Arguments {
             http_client,
             token_owner_finder,
             price_estimation,
+            database_pool,
             tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
+            api_address,
             skip_event_sync,
             allowed_tokens,
             unsupported_tokens,
@@ -389,7 +307,6 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_write_url,
-            db_read_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
@@ -400,11 +317,10 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
-            db_based_solver_participation_guard,
             disable_order_balance_filter,
-            disable_1271_order_balance_filter,
-            disable_1271_order_sig_filter,
+            filter_bypass_app_data_sources,
             enable_leader_lock,
+            max_maintenance_timeout,
         } = self;
 
         write!(f, "{shared}")?;
@@ -412,12 +328,13 @@ impl std::fmt::Display for Arguments {
         write!(f, "{http_client}")?;
         write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
+        write!(f, "{database_pool}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
+        writeln!(f, "api_address: {api_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
-        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
@@ -473,21 +390,14 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "max_solutions_per_solver: {max_solutions_per_solver:?}")?;
         writeln!(
             f,
-            "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
-        )?;
-        writeln!(
-            f,
             "disable_order_balance_filter: {disable_order_balance_filter}"
         )?;
         writeln!(
             f,
-            "disable_1271_order_balance_filter: {disable_1271_order_balance_filter}"
-        )?;
-        writeln!(
-            f,
-            "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
+            "filter_bypass_app_data_sources: {filter_bypass_app_data_sources:?}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
+        writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
         Ok(())
     }
 }
@@ -499,7 +409,6 @@ pub struct Solver {
     pub url: Url,
     pub submission_account: Account,
     pub fairness_threshold: Option<U256>,
-    pub requested_timeout_on_problems: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -507,7 +416,7 @@ pub enum Account {
     /// AWS KMS is used to retrieve the solver public key
     Kms(Arn),
     /// Solver public key
-    Address(H160),
+    Address(Address),
 }
 
 // Wrapper type for AWS ARN identifiers
@@ -544,34 +453,20 @@ impl FromStr for Solver {
         let url: Url = url.parse()?;
         let submission_account = match Arn::from_str(parts[2]) {
             Ok(value) => Account::Kms(value),
-            _ => Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?),
-        };
-
-        let mut fairness_threshold: Option<U256> = Default::default();
-        let mut requested_timeout_on_problems = false;
-
-        if let Some(value) = parts.get(3) {
-            match U256::from_dec_str(value) {
-                Ok(parsed_fairness_threshold) => {
-                    fairness_threshold = Some(parsed_fairness_threshold);
-                }
-                Err(_) => {
-                    requested_timeout_on_problems =
-                        value.to_lowercase() == "requested-timeout-on-problems";
-                }
+            _ => {
+                Account::Address(Address::from_str(parts[2]).context("failed to parse submission")?)
             }
         };
 
-        if let Some(value) = parts.get(4) {
-            requested_timeout_on_problems = value.to_lowercase() == "requested-timeout-on-problems";
-        }
+        let fairness_threshold = parts
+            .get(3)
+            .and_then(|value| U256::from_str_radix(value, 10).ok());
 
         Ok(Self {
             name: name.to_owned(),
             url,
             fairness_threshold,
             submission_account,
-            requested_timeout_on_problems,
         })
     }
 }
@@ -742,12 +637,12 @@ impl FromStr for CowAmmConfig {
             .next()
             .context("config is missing factory")?
             .parse()
-            .context("could not parse factory as H160")?;
+            .context("could not parse factory as Address")?;
         let helper = parts
             .next()
             .context("config is missing helper")?
             .parse()
-            .context("could not parse helper as H160")?;
+            .context("could not parse helper as Address")?;
         let index_start = parts
             .next()
             .context("config is missing index_start")?
@@ -768,7 +663,7 @@ impl FromStr for CowAmmConfig {
 
 #[cfg(test)]
 mod test {
-    use {super::*, hex_literal::hex};
+    use {super::*, alloy::primitives::address};
 
     #[test]
     fn test_fee_factor_limits() {
@@ -804,10 +699,9 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
-            requested_timeout_on_problems: false,
-            submission_account: Account::Address(H160::from_slice(&hex!(
+            submission_account: Account::Address(address!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
+            )),
         };
         assert_eq!(driver, expected);
     }
@@ -820,7 +714,6 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
-            requested_timeout_on_problems: false,
             submission_account: Account::Kms(
                 Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
             ),
@@ -835,44 +728,10 @@ mod test {
         let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
+            submission_account: Account::Address(address!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
-            fairness_threshold: Some(U256::exp10(18)),
-            requested_timeout_on_problems: false,
-        };
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_with_accepts_unsettled_blocking_flag() {
-        let argument =
-            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested-timeout-on-problems";
-        let driver = Solver::from_str(argument).unwrap();
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
-            fairness_threshold: None,
-            requested_timeout_on_problems: true,
-        };
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_with_threshold_and_accepts_unsettled_blocking_flag() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|requested-timeout-on-problems";
-        let driver = Solver::from_str(argument).unwrap();
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
-            fairness_threshold: Some(U256::exp10(18)),
-            requested_timeout_on_problems: true,
+            )),
+            fairness_threshold: Some(U256::from(10).pow(U256::from(18))),
         };
         assert_eq!(driver, expected);
     }

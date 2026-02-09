@@ -1,19 +1,14 @@
 use {
-    e2e::setup::{eth, *},
-    ethcontract::prelude::Address,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ::alloy::{primitives::Address, providers::Provider},
+    e2e::setup::*,
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::nonzero::U256 as NonZeroU256,
-    secp256k1::SecretKey,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -25,37 +20,33 @@ async fn local_node_eth_integration() {
 async fn eth_integration(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
-    token.mint(trader_a.address(), eth(51)).await;
-    token.mint(trader_b.address(), eth(51)).await;
+    token.mint(trader_a.address(), 51u64.eth()).await;
+    token.mint(trader_b.address(), 51u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(51))
+        .approve(onchain.contracts().allowance, 51u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(51))
+        .approve(onchain.contracts().allowance, 51u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    let trader_a_eth_balance_before = web3
-        .eth()
-        .balance(trader_a.address().into_legacy(), None)
-        .await
-        .unwrap();
+    let trader_a_eth_balance_before = web3.provider.get_balance(trader_a.address()).await.unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -66,10 +57,10 @@ async fn eth_integration(web3: Web3) {
             let request = OrderQuoteRequest {
                 sell_token,
                 buy_token,
-                from: Address::default().into_alloy(),
+                from: Address::default(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: NonZeroU256::try_from(to_wei(43)).unwrap(),
+                        value: NonZeroU256::try_from(43u64.eth()).unwrap(),
                     },
                 },
                 ..Default::default()
@@ -86,51 +77,43 @@ async fn eth_integration(web3: Web3) {
     assert_ne!(*onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(50),
-        buy_token: BUY_ETH_ADDRESS.into_legacy(),
-        buy_amount: to_wei(49),
+        sell_token: *token.address(),
+        sell_amount: 50u64.eth(),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: 49u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address().into_legacy(),
-        sell_amount: to_wei(50),
-        buy_token: BUY_ETH_ADDRESS.into_legacy(),
-        buy_amount: to_wei(49),
+        sell_token: *token.address(),
+        sell_amount: 50u64.eth(),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: 49u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     let trade_happened = || async {
-        let balance_a = web3
-            .eth()
-            .balance(trader_a.address().into_legacy(), None)
-            .await
-            .unwrap();
-        let balance_b = web3
-            .eth()
-            .balance(trader_b.address().into_legacy(), None)
-            .await
-            .unwrap();
+        let balance_a = web3.provider.get_balance(trader_a.address()).await.unwrap();
+        let balance_b = web3.provider.get_balance(trader_b.address()).await.unwrap();
 
-        let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == to_wei(49);
-        let trader_b_eth_increased = balance_b >= to_wei(49);
+        let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == 49u64.eth();
+        let trader_b_eth_increased = balance_b >= 49u64.eth();
         trader_a_eth_decreased && trader_b_eth_increased
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

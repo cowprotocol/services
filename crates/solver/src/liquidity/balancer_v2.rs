@@ -16,9 +16,8 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256},
     anyhow::Result,
-    ethcontract::H256,
     model::TokenPair,
     shared::{
         ethrpc::Web3,
@@ -128,7 +127,7 @@ impl LiquidityCollecting for BalancerV2Liquidity {
 }
 
 pub struct SettlementHandler {
-    pool_id: H256,
+    pool_id: B256,
     inner: Arc<Inner>,
 }
 
@@ -139,7 +138,7 @@ struct Inner {
 }
 
 impl SettlementHandler {
-    pub fn new(pool_id: H256, settlement: Address, vault: Address, allowances: Allowances) -> Self {
+    pub fn new(pool_id: B256, settlement: Address, vault: Address, allowances: Allowances) -> Self {
         SettlementHandler {
             pool_id,
             inner: Arc::new(Inner {
@@ -154,7 +153,7 @@ impl SettlementHandler {
         &self.inner.vault
     }
 
-    pub fn pool_id(&self) -> H256 {
+    pub fn pool_id(&self) -> B256 {
         self.pool_id
     }
 
@@ -256,7 +255,7 @@ mod tests {
     fn dummy_contracts() -> (Address, BalancerV2Vault::Instance) {
         (
             Address::from_slice(&[0xc0; 20]),
-            BalancerV2Vault::Instance::new([0xc1; 20].into(), ethrpc::mock::web3().alloy),
+            BalancerV2Vault::Instance::new([0xc1; 20].into(), ethrpc::mock::web3().provider),
         )
     }
 
@@ -276,7 +275,7 @@ mod tests {
         let weighted_pools = vec![
             WeightedPool {
                 common: CommonPoolState {
-                    id: H256([0x90; 32]),
+                    id: B256::repeat_byte(0x90),
                     address: Address::repeat_byte(0x90),
                     swap_fee: "0.002".parse().unwrap(),
                     paused: true,
@@ -284,21 +283,21 @@ mod tests {
                 reserves: btreemap! {
                     Address::repeat_byte(0x70) => WeightedTokenState {
                         common: TokenState {
-                            balance: 100.into(),
+                            balance: U256::from(100),
                             scaling_factor: Bfp::exp10(16),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     Address::repeat_byte(0x71) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000.into(),
+                            balance: U256::from(1_000_000),
                             scaling_factor: Bfp::exp10(12),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     Address::repeat_byte(0xb0) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
@@ -308,7 +307,7 @@ mod tests {
             },
             WeightedPool {
                 common: CommonPoolState {
-                    id: H256([0x91; 32]),
+                    id: B256::repeat_byte(0x91),
                     address: Address::repeat_byte(0x91),
                     swap_fee: "0.001".parse().unwrap(),
                     paused: true,
@@ -316,14 +315,14 @@ mod tests {
                 reserves: btreemap! {
                     Address::repeat_byte(0x73) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     Address::repeat_byte(0xb0) => WeightedTokenState {
                         common: TokenState {
-                            balance: 1_000_000_000_000_000_000u128.into(),
+                            balance: U256::from(1_000_000_000_000_000_000u128),
                             scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
@@ -335,19 +334,19 @@ mod tests {
 
         let stable_pools = vec![StablePool {
             common: CommonPoolState {
-                id: H256([0x92; 32]),
+                id: B256::repeat_byte(0x92),
                 address: Address::repeat_byte(0x92),
                 swap_fee: "0.002".parse().unwrap(),
                 paused: true,
             },
-            amplification_parameter: AmplificationParameter::try_new(1.into(), 1.into()).unwrap(),
+            amplification_parameter: AmplificationParameter::try_new(U256::ONE, U256::ONE).unwrap(),
             reserves: btreemap! {
                 Address::repeat_byte(0x73) => TokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                        balance: U256::from(1_000_000_000_000_000_000u128),
                         scaling_factor: Bfp::exp10(0),
                     },
                 Address::repeat_byte(0xb0) => TokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                        balance: U256::from(1_000_000_000_000_000_000u128),
                         scaling_factor: Bfp::exp10(0),
                     }
             },
@@ -473,7 +472,7 @@ mod tests {
             ),
         });
         let handler = SettlementHandler {
-            pool_id: H256([0x90; 32]),
+            pool_id: B256::repeat_byte(0x90),
             inner,
         };
 
@@ -513,7 +512,7 @@ mod tests {
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault: *vault.address(),
-                    pool_id: H256([0x90; 32]),
+                    pool_id: B256::repeat_byte(0x90),
                     asset_in_max: TokenAmount::new(Address::repeat_byte(0x70), U256::from(10)),
                     asset_out: TokenAmount::new(Address::repeat_byte(0x71), U256::from(11)),
                     user_data: Default::default(),
@@ -522,7 +521,7 @@ mod tests {
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault: *vault.address(),
-                    pool_id: H256([0x90; 32]),
+                    pool_id: B256::repeat_byte(0x90),
                     asset_in_max: TokenAmount::new(Address::repeat_byte(0x71), U256::from(12)),
                     asset_out: TokenAmount::new(Address::repeat_byte(0x72), U256::from(13)),
                     user_data: Default::default(),

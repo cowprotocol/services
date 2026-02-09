@@ -2,10 +2,10 @@
 
 use {
     crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
+    alloy::eips::BlockId,
     anyhow::Result,
     contracts::alloy::ISwaprPair,
-    ethcontract::BlockId,
-    ethrpc::alloy::{conversions::IntoAlloy, errors::ignore_non_node_error},
+    ethrpc::alloy::errors::ignore_non_node_error,
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -26,8 +26,9 @@ impl PoolReading for SwaprPoolReader {
         let fetch_pool = self.0.read_state(pair, block);
 
         async move {
-            let pair_contract = ISwaprPair::Instance::new(pair_address, self.0.web3.alloy.clone());
-            let fetch_fee = pair_contract.swapFee().block(block.into_alloy());
+            let pair_contract =
+                ISwaprPair::Instance::new(pair_address, self.0.web3.provider.clone());
+            let fetch_fee = pair_contract.swapFee().block(block);
 
             let (pool, fee) = futures::join!(fetch_pool, fetch_fee.call().into_future());
             handle_results(pool, fee)
@@ -58,7 +59,10 @@ mod tests {
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
         },
-        alloy::primitives::{Address, address},
+        alloy::{
+            primitives::{Address, address},
+            providers::Provider,
+        },
         ethrpc::alloy::errors::testing_alloy_contract_error,
         maplit::hashset,
     };
@@ -108,7 +112,7 @@ mod tests {
     #[ignore]
     async fn fetch_swapr_pool() {
         let web3 = Web3::new_from_env();
-        let version = web3.eth().chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         let pool_fetcher = uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
             BaselineSource::Swapr,
             &version,

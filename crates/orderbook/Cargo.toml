@@ -27,23 +27,20 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
-mimalloc = { workspace = true }
-tikv-jemallocator = { workspace = true, optional = true }
-jemalloc_pprof = { workspace = true, optional = true }
+mimalloc = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true }
 model = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
 observe = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
@@ -73,4 +70,5 @@ workspace = true
 
 [features]
 e2e = []
-jemalloc-profiling = ["dep:tikv-jemallocator", "dep:jemalloc_pprof", "observe/jemalloc-profiling"]
+mimalloc-allocator = ["dep:mimalloc"]
+tokio-console = ["observe/tokio-console"]

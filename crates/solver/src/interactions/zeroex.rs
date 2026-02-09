@@ -1,6 +1,5 @@
 use {
     contracts::alloy::IZeroex,
-    ethrpc::alloy::conversions::IntoAlloy,
     shared::{
         interaction::{EncodedInteraction, Interaction},
         zeroex_api::Order,
@@ -31,7 +30,7 @@ impl Interaction for ZeroExInteraction {
                 feeRecipient: self.order.fee_recipient,
                 pool: self.order.pool,
                 expiry: self.order.expiry,
-                salt: self.order.salt.into_alloy(),
+                salt: self.order.salt,
             },
             IZeroex::LibSignature::Signature {
                 signatureType: self.order.signature.signature_type,

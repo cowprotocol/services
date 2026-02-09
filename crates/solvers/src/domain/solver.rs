@@ -13,12 +13,12 @@ use {
             auction,
             eth,
             liquidity,
-            order::{self, Order},
+            order::{self, Order, Side},
             solution,
         },
         infra::metrics,
     },
-    ethereum_types::U256,
+    alloy::primitives::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
     tracing::Instrument,
@@ -79,8 +79,8 @@ impl Solver {
     pub async fn new(config: Config) -> Self {
         let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
-                let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
-                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.alloy)
+                let web3 = ethrpc::web3(Default::default(), &url, Some("baseline"));
+                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.provider)
                     .await
                     .map(Arc::new)
                     .inspect_err(|err| {
@@ -161,7 +161,7 @@ impl Inner {
                 Some(price) => price,
                 None if sell_token == self.weth.0.into() => {
                     // Early return if the sell token is native token
-                    auction::Price(eth::Ether(eth::U256::exp10(18)))
+                    auction::Price(eth::Ether(eth::U256::from(10).pow(eth::U256::from(18))))
                 }
                 None => {
                     // Estimate the price of the sell token in the native token
@@ -173,8 +173,8 @@ impl Inner {
                         Some(route) => {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
-                            let price = self.native_token_price_estimation_amount.to_f64_lossy()
-                                / route.input().amount.to_f64_lossy();
+                            let price = f64::from(self.native_token_price_estimation_amount)
+                                / f64::from(route.input().amount);
                             let Some(price) = to_normalized_price(price) else {
                                 continue;
                             };
@@ -192,38 +192,53 @@ impl Inner {
 
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrappers = request.wrappers.clone();
-                let route = boundary_solver.route(request, self.max_hops).await?;
-                let interactions = route
-                    .segments
-                    .iter()
-                    .map(|segment| {
-                        solution::Interaction::Liquidity(Box::new(solution::LiquidityInteraction {
-                            liquidity: segment.liquidity.clone(),
-                            input: segment.input,
-                            output: segment.output,
-                            // TODO does the baseline solver know about this optimization?
-                            internalize: false,
-                        }))
-                    })
-                    .collect();
+                let solution = if order.sell.token == order.buy.token {
+                    // When sell and buy tokens are the same, the solution does not require routing
+                    // and incurs no additional gas since the liquidity comes from the user
+                    let (input, mut output) = match order.side {
+                        Side::Sell => (order.sell, order.buy),
+                        Side::Buy => (order.buy, order.sell),
+                    };
+                    output.amount = input.amount;
+                    solution::Single {
+                        order: order.clone(),
+                        input,
+                        output,
+                        interactions: Vec::default(),
+                        gas: eth::Gas(U256::ZERO) + self.solution_gas_offset,
+                        wrappers,
+                    }
+                } else {
+                    let route = boundary_solver.route(request, self.max_hops).await?;
+                    let interactions = route
+                        .segments
+                        .iter()
+                        .map(|segment| {
+                            solution::Interaction::Liquidity(Box::new(
+                                solution::LiquidityInteraction {
+                                    liquidity: segment.liquidity.clone(),
+                                    input: segment.input,
+                                    output: segment.output,
+                                    // NOTE(m-sz): does the baseline solver know about this
+                                    // optimization?
+                                    internalize: false,
+                                },
+                            ))
+                        })
+                        .collect();
+                    let gas = route.gas() + self.solution_gas_offset;
+                    let mut output = route.output();
 
-                // The baseline solver generates a path with swapping
-                // for exact output token amounts. This leads to
-                // potential rounding errors for buy orders, where we
-                // can buy slightly more than intended. Fix this by
-                // capping the output amount to the order's buy amount
-                // for buy orders.
-                let mut output = route.output();
-                if let order::Side::Buy = order.side {
-                    output.amount = cmp::min(output.amount, order.buy.amount);
-                }
+                    // The baseline solver generates a path with swapping
+                    // for exact output token amounts. This leads to
+                    // potential rounding errors for buy orders, where we
+                    // can buy slightly more than intended. Fix this by
+                    // capping the output amount to the order's buy amount
+                    // for buy orders.
+                    if let order::Side::Buy = order.side {
+                        output.amount = cmp::min(output.amount, order.buy.amount);
+                    }
 
-                let gas = route.gas() + self.solution_gas_offset;
-                let fee = sell_token_price
-                    .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0.0)?))?
-                    .into();
-
-                Some(
                     solution::Single {
                         order: order.clone(),
                         input: route.input(),
@@ -232,9 +247,19 @@ impl Inner {
                         gas,
                         wrappers,
                     }
-                    .into_solution(fee)?
-                    .with_id(solution::Id(i as u64))
-                    .with_buffers_internalizations(&auction.tokens),
+                };
+
+                let fee = sell_token_price
+                    .ether_value(eth::Ether(
+                        solution.gas.0.checked_mul(auction.gas_price.0.0)?,
+                    ))?
+                    .into();
+
+                Some(
+                    solution
+                        .into_solution(fee)?
+                        .with_id(solution::Id(i as u64))
+                        .with_buffers_internalizations(&auction.tokens),
                 )
             };
 
@@ -267,7 +292,7 @@ impl Inner {
 
         (0..n)
             .map(move |i| {
-                let divisor = U256::one() << i;
+                let divisor = U256::ONE << i;
                 Request {
                     sell: eth::Asset {
                         token: sell.token,
@@ -296,7 +321,7 @@ impl Inner {
             // `type(uint112).max` without overflowing a `uint256` on the smart
             // contract level. Requiring to trade more than `type(uint112).max`
             // is unlikely and would not work with Uniswap V2 anyway.
-            amount: eth::U256::one() << 144,
+            amount: eth::U256::ONE << 144,
         };
 
         let buy = eth::Asset {
@@ -318,7 +343,7 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 
     let price_in_eth = 1e18 * price;
     if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
+        Some(U256::from(price_in_eth))
     } else {
         None
     }
@@ -374,8 +399,10 @@ impl<'a> Route<'a> {
     }
 
     fn gas(&self) -> eth::Gas {
-        eth::Gas(self.segments.iter().fold(U256::zero(), |acc, segment| {
-            acc.saturating_add(segment.gas.0)
-        }))
+        eth::Gas(
+            self.segments
+                .iter()
+                .fold(U256::ZERO, |acc, segment| acc.saturating_add(segment.gas.0)),
+        )
     }
 }

@@ -1,19 +1,15 @@
 use {
     ::alloy::primitives::U256,
-    e2e::setup::{colocation::SolverEngine, eth, mock::Mock, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    e2e::setup::{colocation::SolverEngine, mock::Mock, *},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    secp256k1::SecretKey,
+    number::units::EthUnit,
     shared::ethrpc::Web3,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -37,20 +33,20 @@ async fn local_node_store_filtered_solutions() {
 async fn solver_competition(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader, settlement accounts, and pool creation
-    token_a.mint(trader.address(), eth(10)).await;
-    token_a.mint(solver.address(), eth(1000)).await;
+    token_a.mint(trader.address(), 10u64.eth()).await;
+    token_a.mint(solver.address(), 1000u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -98,10 +94,10 @@ async fn solver_competition(web3: Web3) {
 
     // Place Order
     let order = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: 10u64.eth(),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -109,7 +105,7 @@ async fn solver_competition(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -129,7 +125,7 @@ async fn solver_competition(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok(),
             None => false,
@@ -139,7 +135,7 @@ async fn solver_competition(web3: Web3) {
 
     let trades = services.get_trades(&uid).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
 
@@ -156,40 +152,40 @@ async fn solver_competition(web3: Web3) {
 async fn wrong_solution_submission_address(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund traders
-    token_a.mint(trader_a.address(), eth(10)).await;
-    token_b.mint(trader_b.address(), eth(10)).await;
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
+    token_b.mint(trader_b.address(), 10u64.eth()).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
     // (base_b). base_a has more liquidity then base_b, leading to the solver that
     // knows about base_a to win
     let [base_a, base_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
+        .deploy_tokens_with_weth_uni_v2_pools(10_000u64.eth(), 10_000u64.eth())
         .await;
     onchain
-        .seed_uni_v2_pool((&token_a, eth(100_000)), (&base_a, eth(100_000)))
+        .seed_uni_v2_pool((&token_a, 100_000u64.eth()), (&base_a, 100_000u64.eth()))
         .await;
     onchain
-        .seed_uni_v2_pool((&token_b, eth(10_000)), (&base_b, eth(10_000)))
+        .seed_uni_v2_pool((&token_b, 10_000u64.eth()), (&base_b, 10_000u64.eth()))
         .await;
 
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -204,7 +200,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
                 "test_solver".into(),
                 solver.clone(),
                 *onchain.contracts().weth.address(),
-                vec![base_a.address().into_legacy()],
+                vec![*base_a.address()],
                 1,
                 true,
             )
@@ -213,7 +209,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
                 "solver2".into(),
                 solver.clone(),
                 *onchain.contracts().weth.address(),
-                vec![base_b.address().into_legacy()],
+                vec![*base_b.address()],
                 1,
                 true,
             )
@@ -240,10 +236,10 @@ async fn wrong_solution_submission_address(web3: Web3) {
 
     // Place Orders
     let order_a = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_a.address(),
+        sell_amount: 10u64.eth(),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -251,17 +247,17 @@ async fn wrong_solution_submission_address(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
     onchain.mint_block().await;
 
     let order_b = OrderCreation {
-        sell_token: token_b.address().into_legacy(),
-        sell_amount: to_wei(10),
-        buy_token: onchain.contracts().weth.address().into_legacy(),
-        buy_amount: to_wei(5),
+        sell_token: *token_b.address(),
+        sell_amount: 10u64.eth(),
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: 5u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -269,7 +265,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     services.create_order(&order_b).await.unwrap();
 
@@ -278,7 +274,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         onchain.mint_block().await;
         match services.get_trades(&uid_a).await.unwrap().first() {
             Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok(),
             None => false,
@@ -289,7 +285,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // Verify that test_solver was excluded due to wrong driver address
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
@@ -303,26 +299,26 @@ async fn wrong_solution_submission_address(web3: Web3) {
 async fn store_filtered_solutions(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let [good_solver_account, bad_solver_account] = onchain.make_solvers(eth(100)).await;
-    let [trader] = onchain.make_accounts(eth(100)).await;
+    let [good_solver_account, bad_solver_account] = onchain.make_solvers(100u64.eth()).await;
+    let [trader] = onchain.make_accounts(100u64.eth()).await;
     let [token_a, token_b, token_c] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
         .await;
 
     // give the settlement contract a ton of the traded tokens so that the mocked
     // solver solutions can simply give money away to make the trade execute
     token_b
-        .mint(*onchain.contracts().gp_settlement.address(), eth(50))
+        .mint(*onchain.contracts().gp_settlement.address(), 50u64.eth())
         .await;
     token_c
-        .mint(*onchain.contracts().gp_settlement.address(), eth(50))
+        .mint(*onchain.contracts().gp_settlement.address(), 50u64.eth())
         .await;
 
     // set up trader for their order
-    token_a.mint(trader.address(), eth(2)).await;
+    token_a.mint(trader.address(), 2u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(2))
+        .approve(onchain.contracts().allowance, 2u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -334,11 +330,7 @@ async fn store_filtered_solutions(web3: Web3) {
     let bad_solver = Mock::default();
 
     // Start system
-    let base_tokens = vec![
-        token_a.address().into_legacy(),
-        token_b.address().into_legacy(),
-        token_c.address().into_legacy(),
-    ];
+    let base_tokens = vec![*token_a.address(), *token_b.address(), *token_c.address()];
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -357,6 +349,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 endpoint: good_solver.url.clone(),
                 base_tokens: base_tokens.clone(),
                 merge_solutions: true,
+                haircut_bps: 0,
             },
             SolverEngine {
                 name: "bad_solver".into(),
@@ -364,6 +357,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 endpoint: bad_solver.url.clone(),
                 base_tokens,
                 merge_solutions: true,
+                haircut_bps: 0,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -395,10 +389,10 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // Place order
     let order_ab = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_token: token_b.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: 1u64.eth(),
+        buy_token: *token_b.address(),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -406,14 +400,14 @@ async fn store_filtered_solutions(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let order_ac = OrderCreation {
-        sell_token: token_a.address().into_legacy(),
-        sell_amount: to_wei(1),
-        buy_token: token_c.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *token_a.address(),
+        sell_amount: 1u64.eth(),
+        buy_token: *token_c.address(),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -421,7 +415,7 @@ async fn store_filtered_solutions(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let order_ab_id = services.create_order(&order_ab).await.unwrap();
@@ -440,13 +434,13 @@ async fn store_filtered_solutions(web3: Web3) {
     good_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token_a.address().into_legacy(), to_wei(3)),
-            (token_b.address().into_legacy(), to_wei(1)),
+            (*token_a.address(), 3u64.eth()),
+            (*token_b.address(), 1u64.eth()),
         ]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: order_ab.sell_amount,
-                fee: Some(0.into()),
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             },
         )],
@@ -464,19 +458,19 @@ async fn store_filtered_solutions(web3: Web3) {
     bad_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
-            (token_a.address().into_legacy(), to_wei(2)),
-            (token_b.address().into_legacy(), to_wei(1)),
-            (token_c.address().into_legacy(), to_wei(1)),
+            (*token_a.address(), 2u64.eth()),
+            (*token_b.address(), 1u64.eth()),
+            (*token_c.address(), 1u64.eth()),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_ab.sell_amount,
-                fee: Some(0.into()),
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_ac.sell_amount,
-                fee: Some(0.into()),
+                fee: Some(::alloy::primitives::U256::ZERO),
                 order: solvers_dto::solution::OrderUid(order_ac_id.0),
             }),
         ],
@@ -495,7 +489,7 @@ async fn store_filtered_solutions(web3: Web3) {
         let trade = services.get_trades(&order_ab_id).await.unwrap().pop()?;
         Some(
             services
-                .get_solver_competition(trade.tx_hash?.into_legacy())
+                .get_solver_competition(trade.tx_hash?)
                 .await
                 .is_ok(),
         )
@@ -511,7 +505,7 @@ async fn store_filtered_solutions(web3: Web3) {
         .unwrap();
 
     let competition = services
-        .get_solver_competition(trade.tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trade.tx_hash.unwrap())
         .await
         .unwrap();
 

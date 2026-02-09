@@ -6,18 +6,16 @@ use {
         account_balances::{BalanceFetching, Query},
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
+        gas_price_estimation::GasPriceEstimating,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
     },
-    alloy::primitives::{Address, U512, ruint::UintTryFrom},
+    alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
-    ethcontract::U256,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::TryFutureExt,
-    gas_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
         order::{OrderClass, OrderKind},
@@ -91,16 +89,16 @@ pub struct Quote {
     /// Note that this is different than the `QuoteData::quoted_sell_amount` for
     /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
     /// `quoted_sell_amount - fee_amount` in those cases).
-    pub sell_amount: alloy::primitives::U256,
+    pub sell_amount: U256,
     /// The final computed buy amount for the quote.
     ///
     /// Note that this is different than the `QuoteData::quoted_buy_amount` for
     /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
     /// scaled down to account for the computed `fee_amount`).
-    pub buy_amount: alloy::primitives::U256,
+    pub buy_amount: U256,
     /// The fee amount for any order created for this quote. The fee is
     /// denoted in the sell token.
-    pub fee_amount: alloy::primitives::U256,
+    pub fee_amount: U256,
 }
 
 impl Quote {
@@ -138,18 +136,18 @@ impl Quote {
     /// it assumes that the final buy amount will never overflow a `U256` and
     /// _will saturate_ to `U256::MAX` if this is used to scale up past the
     /// maximum value.
-    pub fn with_scaled_sell_amount(mut self, sell_amount: alloy::primitives::U256) -> Self {
+    pub fn with_scaled_sell_amount(mut self, sell_amount: U256) -> Self {
         self.sell_amount = sell_amount;
         // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
         // errors computing the initial product.
 
-        self.buy_amount = alloy::primitives::U256::uint_try_from(
+        self.buy_amount = U256::uint_try_from(
             self.data
                 .quoted_buy_amount
                 .widening_mul::<_, _, 512, 8>(sell_amount)
                 / U512::from(self.data.quoted_sell_amount),
         )
-        .unwrap_or(alloy::primitives::U256::MAX);
+        .unwrap_or(U256::MAX);
 
         self
     }
@@ -165,9 +163,10 @@ impl Quote {
                 self.data.fee_parameters.sell_token_price,
             )
             .context("sell token price is not a valid BigDecimal")?,
-            sell_amount: self.sell_amount.into_legacy(),
-            buy_amount: self.buy_amount.into_legacy(),
-            solver: self.data.solver.into_legacy(),
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
+            fee_amount: self.fee_amount,
+            solver: self.data.solver,
             verified: self.data.verified,
             metadata: serde_json::to_value(&self.data.metadata)?,
         })
@@ -186,7 +185,7 @@ pub struct QuoteData {
     /// will be the total `sell_amount + fee_amount`. For sell orders of the
     /// `SellAmount::AfterFee` variant, this will be the fixed sell amount of
     /// the order used for price estimates.
-    pub quoted_sell_amount: alloy::primitives::U256,
+    pub quoted_sell_amount: U256,
     /// The buy amount used when computing the exchange rate for this quote.
     ///
     /// For buy orders, this will be the fixed buy amount. For sell order of the
@@ -194,7 +193,7 @@ pub struct QuoteData {
     /// `sell_amount + fee_amount` were traded. For sell orders of the
     /// `SellAmount::AfterFee` variant, this will be the expected sell amount if
     /// exactly `sell_amount` were traded.
-    pub quoted_buy_amount: alloy::primitives::U256,
+    pub quoted_buy_amount: U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
@@ -217,11 +216,9 @@ impl TryFrom<QuoteRow> for QuoteData {
             sell_token: Address::from_slice(&row.sell_token.0),
             buy_token: Address::from_slice(&row.buy_token.0),
             quoted_sell_amount: big_decimal_to_u256(&row.sell_amount)
-                .context("quoted sell amount is not a valid U256")?
-                .into_alloy(),
+                .context("quoted sell amount is not a valid U256")?,
             quoted_buy_amount: big_decimal_to_u256(&row.buy_amount)
-                .context("quoted buy amount is not a valid U256")?
-                .into_alloy(),
+                .context("quoted buy amount is not a valid U256")?,
             fee_parameters: FeeParameters {
                 gas_amount: row.gas_amount,
                 gas_price: row.gas_price,
@@ -260,7 +257,7 @@ pub trait OrderQuoting: Send + Sync {
 
 #[derive(Error, Debug)]
 pub enum CalculateQuoteError {
-    #[error("sell amount does not cover fee")]
+    #[error("sell amount does not cover fee {fee_amount:?}")]
     SellAmountDoesNotCoverFee { fee_amount: U256 },
 
     #[error("{estimator_kind:?} estimator failed: {source}")]
@@ -317,9 +314,9 @@ pub enum FindQuoteError {
 pub struct QuoteSearchParameters {
     pub sell_token: Address,
     pub buy_token: Address,
-    pub sell_amount: alloy::primitives::U256,
-    pub buy_amount: alloy::primitives::U256,
-    pub fee_amount: alloy::primitives::U256,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee_amount: U256,
     pub kind: OrderKind,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
@@ -462,9 +459,9 @@ impl OrderQuoter {
         };
 
         let trade_query = Arc::new(parameters.to_price_query(self.default_quote_timeout));
-        let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
+        let (effective_gas_price, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
-                .estimate()
+                .effective_gas_price()
                 .map_err(|err| CalculateQuoteError::from((
                     EstimatorKind::Gas,
                     PriceEstimationError::ProtocolInternal(err)
@@ -489,14 +486,14 @@ impl OrderQuoter {
             }
             | OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: sell_amount },
-            } => (sell_amount.get().into_alloy(), trade_estimate.out_amount),
+            } => (sell_amount.get(), trade_estimate.out_amount),
             OrderQuoteSide::Buy {
                 buy_amount_after_fee: buy_amount,
-            } => (trade_estimate.out_amount, buy_amount.get().into_alloy()),
+            } => (trade_estimate.out_amount, buy_amount.get()),
         };
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as _,
-            gas_price: gas_estimate.effective_gas_price(),
+            gas_price: effective_gas_price as f64,
             sell_token_price,
         };
 
@@ -513,7 +510,7 @@ impl OrderQuoter {
             kind: trade_query.kind,
             expiration,
             quote_kind,
-            solver: trade_estimate.solver.into_alloy(),
+            solver: trade_estimate.solver,
             verified: trade_estimate.verified,
             metadata: QuoteMetadataV1 {
                 interactions: trade_estimate.execution.interactions,
@@ -531,7 +528,7 @@ impl OrderQuoter {
         &self,
         estimate: &Estimate,
         parameters: &QuoteParameters,
-        sell_amount: alloy::primitives::U256,
+        sell_amount: U256,
     ) -> Result<(), CalculateQuoteError> {
         if estimate.verified
             || !matches!(
@@ -563,11 +560,7 @@ impl OrderQuoter {
         Ok(())
     }
 
-    async fn get_balance(
-        &self,
-        verification: &Verification,
-        token: Address,
-    ) -> Result<alloy::primitives::U256> {
+    async fn get_balance(&self, verification: &Verification, token: Address) -> Result<U256> {
         let query = Query {
             owner: verification.from,
             token,
@@ -585,10 +578,7 @@ impl OrderQuoter {
             balance_override: None,
         };
         let mut balances = self.balance_fetcher.get_balances(&[query]).await;
-        balances
-            .pop()
-            .map(|head| head.map(IntoAlloy::into_alloy))
-            .context("missing balance result")?
+        balances.pop().context("missing balance result")?
     }
 }
 
@@ -614,12 +604,11 @@ impl OrderQuoting for OrderQuoter {
         {
             let sell_amount = sell_amount_before_fee
                 .get()
-                .into_alloy()
                 .saturating_sub(quote.fee_amount);
             if sell_amount.is_zero() {
                 // We want a sell_amount of at least 1!
                 return Err(CalculateQuoteError::SellAmountDoesNotCoverFee {
-                    fee_amount: quote.fee_amount.into_legacy(),
+                    fee_amount: quote.fee_amount,
                 });
             }
 
@@ -705,6 +694,10 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
             class: OrderClass::Market,
+            kind: match quote_request.side {
+                OrderQuoteSide::Buy { .. } => OrderKind::Buy,
+                OrderQuoteSide::Sell { .. } => OrderKind::Sell,
+            },
         }
     }
 }
@@ -796,14 +789,14 @@ mod tests {
                 native::MockNativePriceEstimating,
             },
         },
-        alloy::primitives::{Address, U256 as AlloyU256},
+        Address,
+        U256 as AlloyU256,
+        alloy::eips::eip1559::Eip1559Estimation,
         chrono::Utc,
-        ethcontract::H160,
         futures::FutureExt,
-        gas_estimation::GasPrice1559,
         mockall::{Sequence, predicate::eq},
         model::time,
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
     };
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
@@ -857,10 +850,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.5,
-            max_fee_per_gas: 3.0,
-            max_priority_fee_per_gas: 0.5,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -885,7 +877,7 @@ mod tests {
                     Ok(price_estimation::Estimate {
                         out_amount: AlloyU256::from(42),
                         gas: 3,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         execution: Default::default(),
                     })
@@ -917,8 +909,8 @@ mod tests {
             .with(eq(QuoteData {
                 sell_token: Address::repeat_byte(1),
                 buy_token: Address::repeat_byte(2),
-                quoted_sell_amount: alloy::primitives::U256::from(100),
-                quoted_buy_amount: alloy::primitives::U256::from(42),
+                quoted_sell_amount: U256::from(100),
+                quoted_buy_amount: U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -955,8 +947,8 @@ mod tests {
                 data: QuoteData {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
-                    quoted_sell_amount: alloy::primitives::U256::from(100),
-                    quoted_buy_amount: alloy::primitives::U256::from(42),
+                    quoted_sell_amount: U256::from(100),
+                    quoted_buy_amount: U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -969,9 +961,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: alloy::primitives::U256::from(70),
-                buy_amount: alloy::primitives::U256::from(29),
-                fee_amount: alloy::primitives::U256::from(30),
+                sell_amount: U256::from(70),
+                buy_amount: U256::from(29),
+                fee_amount: U256::from(30),
             }
         );
     }
@@ -998,10 +990,9 @@ mod tests {
             additional_gas: 2,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.5,
-            max_fee_per_gas: 3.0,
-            max_priority_fee_per_gas: 0.5,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1026,7 +1017,7 @@ mod tests {
                     Ok(price_estimation::Estimate {
                         out_amount: AlloyU256::from(42),
                         gas: 3,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         execution: Default::default(),
                     })
@@ -1058,8 +1049,8 @@ mod tests {
             .with(eq(QuoteData {
                 sell_token: Address::repeat_byte(1),
                 buy_token: Address::repeat_byte(2),
-                quoted_sell_amount: alloy::primitives::U256::from(100),
-                quoted_buy_amount: alloy::primitives::U256::from(42),
+                quoted_sell_amount: U256::from(100),
+                quoted_buy_amount: U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1096,8 +1087,8 @@ mod tests {
                 data: QuoteData {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
-                    quoted_sell_amount: alloy::primitives::U256::from(100),
-                    quoted_buy_amount: alloy::primitives::U256::from(42),
+                    quoted_sell_amount: U256::from(100),
+                    quoted_buy_amount: U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1110,9 +1101,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: alloy::primitives::U256::from(100),
-                buy_amount: alloy::primitives::U256::from(42),
-                fee_amount: alloy::primitives::U256::from(60),
+                sell_amount: U256::from(100),
+                buy_amount: U256::from(42),
+                fee_amount: U256::from(60),
             }
         );
     }
@@ -1134,10 +1125,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.5,
-            max_fee_per_gas: 3.0,
-            max_priority_fee_per_gas: 0.5,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1162,7 +1152,7 @@ mod tests {
                     Ok(price_estimation::Estimate {
                         out_amount: AlloyU256::from(100),
                         gas: 3,
-                        solver: H160([1; 20]),
+                        solver: Address::repeat_byte(1),
                         verified: false,
                         execution: Default::default(),
                     })
@@ -1194,8 +1184,8 @@ mod tests {
             .with(eq(QuoteData {
                 sell_token: Address::repeat_byte(1),
                 buy_token: Address::repeat_byte(2),
-                quoted_sell_amount: alloy::primitives::U256::from(100),
-                quoted_buy_amount: alloy::primitives::U256::from(42),
+                quoted_sell_amount: U256::from(100),
+                quoted_buy_amount: U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1232,8 +1222,8 @@ mod tests {
                 data: QuoteData {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
-                    quoted_sell_amount: alloy::primitives::U256::from(100),
-                    quoted_buy_amount: alloy::primitives::U256::from(42),
+                    quoted_sell_amount: U256::from(100),
+                    quoted_buy_amount: U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1246,9 +1236,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: alloy::primitives::U256::from(100),
-                buy_amount: alloy::primitives::U256::from(42),
-                fee_amount: alloy::primitives::U256::from(30),
+                sell_amount: U256::from(100),
+                buy_amount: U256::from(42),
+                fee_amount: U256::from(30),
             }
         );
     }
@@ -1271,10 +1261,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.,
-            max_fee_per_gas: 2.,
-            max_priority_fee_per_gas: 0.,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1283,7 +1272,7 @@ mod tests {
                 Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(100),
                     gas: 200,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })
@@ -1345,10 +1334,9 @@ mod tests {
             additional_gas: 0,
             timeout: None,
         };
-        let gas_price = GasPrice1559 {
-            base_fee_per_gas: 1.,
-            max_fee_per_gas: 2.,
-            max_priority_fee_per_gas: 0.,
+        let gas_price = Eip1559Estimation {
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 0,
         };
 
         let mut price_estimator = MockPriceEstimating::new();
@@ -1357,7 +1345,7 @@ mod tests {
                 Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(100),
                     gas: 200,
-                    solver: H160([1; 20]),
+                    solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
                 })
@@ -1411,9 +1399,9 @@ mod tests {
         let parameters = QuoteSearchParameters {
             sell_token: Address::repeat_byte(1),
             buy_token: Address::repeat_byte(2),
-            sell_amount: alloy::primitives::U256::from(85),
-            buy_amount: alloy::primitives::U256::from(40),
-            fee_amount: alloy::primitives::U256::from(15),
+            sell_amount: U256::from(85),
+            buy_amount: U256::from(40),
+            fee_amount: U256::from(15),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1428,8 +1416,8 @@ mod tests {
             Ok(Some(QuoteData {
                 sell_token: Address::repeat_byte(1),
                 buy_token: Address::repeat_byte(2),
-                quoted_sell_amount: alloy::primitives::U256::from(100),
-                quoted_buy_amount: alloy::primitives::U256::from(42),
+                quoted_sell_amount: U256::from(100),
+                quoted_buy_amount: U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1463,8 +1451,8 @@ mod tests {
                 data: QuoteData {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
-                    quoted_sell_amount: alloy::primitives::U256::from(100),
-                    quoted_buy_amount: alloy::primitives::U256::from(42),
+                    quoted_sell_amount: U256::from(100),
+                    quoted_buy_amount: U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1477,12 +1465,12 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: alloy::primitives::U256::from(85),
+                sell_amount: U256::from(85),
                 // Allows for "out-of-price" buy amounts. This means that order
                 // be used for providing liquidity at a premium over current
                 // market price.
-                buy_amount: alloy::primitives::U256::from(35),
-                fee_amount: alloy::primitives::U256::from(30),
+                buy_amount: U256::from(35),
+                fee_amount: U256::from(30),
             }
         );
     }
@@ -1494,9 +1482,9 @@ mod tests {
         let parameters = QuoteSearchParameters {
             sell_token: Address::repeat_byte(1),
             buy_token: Address::repeat_byte(2),
-            sell_amount: alloy::primitives::U256::from(100),
-            buy_amount: alloy::primitives::U256::from(40),
-            fee_amount: alloy::primitives::U256::from(30),
+            sell_amount: U256::from(100),
+            buy_amount: U256::from(40),
+            fee_amount: U256::from(30),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1511,8 +1499,8 @@ mod tests {
             Ok(Some(QuoteData {
                 sell_token: Address::repeat_byte(1),
                 buy_token: Address::repeat_byte(2),
-                quoted_sell_amount: alloy::primitives::U256::from(100),
-                quoted_buy_amount: alloy::primitives::U256::from(42),
+                quoted_sell_amount: U256::from(100),
+                quoted_buy_amount: U256::from(42),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1546,8 +1534,8 @@ mod tests {
                 data: QuoteData {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
-                    quoted_sell_amount: alloy::primitives::U256::from(100),
-                    quoted_buy_amount: alloy::primitives::U256::from(42),
+                    quoted_sell_amount: U256::from(100),
+                    quoted_buy_amount: U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1560,9 +1548,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: alloy::primitives::U256::from(100),
-                buy_amount: alloy::primitives::U256::from(42),
-                fee_amount: alloy::primitives::U256::from(30),
+                sell_amount: U256::from(100),
+                buy_amount: U256::from(42),
+                fee_amount: U256::from(30),
             }
         );
     }
@@ -1573,9 +1561,9 @@ mod tests {
         let parameters = QuoteSearchParameters {
             sell_token: Address::repeat_byte(1),
             buy_token: Address::repeat_byte(2),
-            sell_amount: alloy::primitives::U256::from(110),
-            buy_amount: alloy::primitives::U256::from(42),
-            fee_amount: alloy::primitives::U256::from(30),
+            sell_amount: U256::from(110),
+            buy_amount: U256::from(42),
+            fee_amount: U256::from(30),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
@@ -1595,8 +1583,8 @@ mod tests {
                     QuoteData {
                         sell_token: Address::repeat_byte(1),
                         buy_token: Address::repeat_byte(2),
-                        quoted_sell_amount: alloy::primitives::U256::from(100),
-                        quoted_buy_amount: alloy::primitives::U256::from(42),
+                        quoted_sell_amount: U256::from(100),
+                        quoted_buy_amount: U256::from(42),
                         fee_parameters: FeeParameters {
                             gas_amount: 3.,
                             gas_price: 2.,
@@ -1631,8 +1619,8 @@ mod tests {
                 data: QuoteData {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
-                    quoted_sell_amount: alloy::primitives::U256::from(100),
-                    quoted_buy_amount: alloy::primitives::U256::from(42),
+                    quoted_sell_amount: U256::from(100),
+                    quoted_buy_amount: U256::from(42),
                     fee_parameters: FeeParameters {
                         gas_amount: 3.,
                         gas_price: 2.,
@@ -1645,9 +1633,9 @@ mod tests {
                     verified: false,
                     metadata: Default::default(),
                 },
-                sell_amount: alloy::primitives::U256::from(100),
-                buy_amount: alloy::primitives::U256::from(42),
-                fee_amount: alloy::primitives::U256::from(30),
+                sell_amount: U256::from(100),
+                buy_amount: U256::from(42),
+                fee_amount: U256::from(30),
             }
         );
     }
@@ -1750,34 +1738,34 @@ mod tests {
             interactions: vec![
                 InteractionData {
                     target: Address::from_slice(&[1; 20]),
-                    value: alloy::primitives::U256::ONE,
+                    value: U256::ONE,
                     call_data: vec![1],
                 },
                 InteractionData {
                     target: Address::from_slice(&[2; 20]),
-                    value: alloy::primitives::U256::from(2),
+                    value: U256::from(2),
                     call_data: vec![2],
                 },
             ],
             pre_interactions: vec![
                 InteractionData {
                     target: Address::from_slice(&[3; 20]),
-                    value: alloy::primitives::U256::from(3),
+                    value: U256::from(3),
                     call_data: vec![3],
                 },
                 InteractionData {
                     target: Address::from_slice(&[4; 20]),
-                    value: alloy::primitives::U256::from(4),
+                    value: U256::from(4),
                     call_data: vec![4],
                 },
             ],
             jit_orders: vec![dto::JitOrder {
-                buy_token: H160([4; 20]),
-                sell_token: H160([5; 20]),
+                buy_token: Address::repeat_byte(4),
+                sell_token: Address::repeat_byte(5),
                 sell_amount: U256::from(10),
                 buy_amount: U256::from(20),
                 executed_amount: U256::from(11),
-                receiver: H160([6; 20]),
+                receiver: Address::repeat_byte(6),
                 valid_to: 1734084318,
                 app_data: Default::default(),
                 side: dto::Side::Sell,

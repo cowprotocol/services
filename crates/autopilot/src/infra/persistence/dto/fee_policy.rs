@@ -2,7 +2,6 @@ use {
     crate::{boundary, domain},
     anyhow::Context,
     database::fee_policies::{FeePolicy, FeePolicyKind},
-    ethrpc::alloy::conversions::IntoAlloy,
 };
 
 pub fn from_domain(
@@ -18,8 +17,8 @@ pub fn from_domain(
             auction_id,
             order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
             kind: FeePolicyKind::Surplus,
-            surplus_factor: Some(factor.into()),
-            surplus_max_volume_factor: Some(max_volume_factor.into()),
+            surplus_factor: Some(factor.get()),
+            surplus_max_volume_factor: Some(max_volume_factor.get()),
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
@@ -30,7 +29,7 @@ pub fn from_domain(
             kind: FeePolicyKind::Volume,
             surplus_factor: None,
             surplus_max_volume_factor: None,
-            volume_factor: Some(factor.into()),
+            volume_factor: Some(factor.get()),
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
         },
@@ -45,8 +44,8 @@ pub fn from_domain(
             surplus_factor: None,
             surplus_max_volume_factor: None,
             volume_factor: None,
-            price_improvement_factor: Some(factor.into()),
-            price_improvement_max_volume_factor: Some(max_volume_factor.into()),
+            price_improvement_factor: Some(factor.get()),
+            price_improvement_max_volume_factor: Some(max_volume_factor.get()),
         },
     }
 }
@@ -84,9 +83,9 @@ pub fn try_into_domain(
             quote: {
                 let quote = quote.ok_or(Error::MissingQuote)?;
                 domain::fee::Quote {
-                    sell_amount: quote.sell_amount.0.into_alloy(),
-                    buy_amount: quote.buy_amount.0.into_alloy(),
-                    fee: quote.fee.0.into_alloy(),
+                    sell_amount: quote.sell_amount.0,
+                    buy_amount: quote.buy_amount.0,
+                    fee: quote.fee.0,
                     solver: quote.solver,
                 }
             },

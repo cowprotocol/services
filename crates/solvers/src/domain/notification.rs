@@ -9,7 +9,7 @@ use {
 
 type RequiredEther = Ether;
 type TokensUsed = BTreeSet<TokenAddress>;
-type TransactionHash = eth::H256;
+type TransactionHash = eth::B256;
 type Transaction = eth::Tx;
 type BlockNo = u64;
 pub type SimulationSucceededAtLeastOnce = bool;

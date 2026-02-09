@@ -1,5 +1,6 @@
 use {
     super::{Order, eth},
+    alloy::primitives::{Address, U256},
     std::collections::HashMap,
 };
 
@@ -15,7 +16,7 @@ pub struct RawAuctionData {
     pub block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
-    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
 
 pub type Id = i64;
@@ -26,7 +27,7 @@ pub struct Auction {
     pub block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
-    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
 
 impl PartialEq for Auction {
@@ -69,14 +70,20 @@ impl Price {
     /// ```
     /// use autopilot::domain::{auction::Price, eth};
     ///
-    /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
+    /// let amount = eth::TokenAmount::from(eth::U256::from(10).pow(eth::U256::from(18)));
+    /// let price = Price::try_new(eth::Ether::from(
+    ///     eth::U256::from(10).pow(eth::U256::from(15)), // 0.001 ETH
+    /// ))
+    /// .unwrap();
     ///
     /// let eth = price.in_eth(amount);
-    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
+    /// assert_eq!(
+    ///     eth,
+    ///     eth::Ether::from(eth::U256::from(10).pow(eth::U256::from(15)))
+    /// );
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0.0 / Self::BASE).into()
+        (amount.0 * self.0.0 / U256::from(Self::BASE)).into()
     }
 }
 

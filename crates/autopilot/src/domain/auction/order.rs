@@ -1,6 +1,6 @@
 use {
     crate::domain::{self, eth, fee},
-    primitive_types::{H160, H256, U256},
+    alloy::primitives::{Address, B256, U256},
     std::fmt::{self, Debug, Display, Formatter},
 };
 
@@ -38,10 +38,10 @@ impl OrderUid {
     }
 
     /// Splits an order UID into its parts.
-    fn parts(&self) -> (H256, H160, u32) {
+    fn parts(&self) -> (B256, Address, u32) {
         (
-            H256::from_slice(&self.0[0..32]),
-            H160::from_slice(&self.0[32..52]),
+            B256::from_slice(&self.0[0..32]),
+            Address::from_slice(&self.0[32..52]),
             u32::from_le_bytes(self.0[52..].try_into().unwrap()),
         )
     }
@@ -73,7 +73,7 @@ pub enum Side {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Interaction {
-    pub target: H160,
+    pub target: Address,
     pub value: U256,
     pub call_data: Vec<u8>,
 }
@@ -175,8 +175,8 @@ pub enum SigningScheme {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct EcdsaSignature {
-    pub r: H256,
-    pub s: H256,
+    pub r: B256,
+    pub s: B256,
     pub v: u8,
 }
 
@@ -184,8 +184,8 @@ impl EcdsaSignature {
     /// r + s + v
     pub fn to_bytes(self) -> [u8; 65] {
         let mut bytes = [0u8; 65];
-        bytes[..32].copy_from_slice(self.r.as_bytes());
-        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[..32].copy_from_slice(self.r.as_slice());
+        bytes[32..64].copy_from_slice(self.s.as_slice());
         bytes[64] = self.v;
         bytes
     }

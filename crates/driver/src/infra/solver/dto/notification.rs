@@ -18,10 +18,10 @@ pub fn new(
                 solvers_dto::notification::Kind::SimulationFailed {
                     block: block.0,
                     tx: solvers_dto::notification::Tx {
-                        from: tx.from.into(),
-                        to: tx.to.into(),
+                        from: tx.from,
+                        to: tx.to,
                         input: tx.input.into(),
-                        value: tx.value.into(),
+                        value: tx.value.0,
                         access_list: tx.access_list.into(),
                     },
                     succeeded_once,
@@ -58,17 +58,6 @@ pub fn new(
             notify::Kind::PostprocessingTimedOut => {
                 solvers_dto::notification::Kind::PostprocessingTimedOut
             }
-            notify::Kind::Banned { reason, until } => solvers_dto::notification::Kind::Banned {
-                reason: match reason {
-                    notify::BanReason::UnsettledConsecutiveAuctions => {
-                        solvers_dto::notification::BanReason::UnsettledConsecutiveAuctions
-                    }
-                    notify::BanReason::HighSettleFailureRate => {
-                        solvers_dto::notification::BanReason::HighSettleFailureRate
-                    }
-                },
-                until,
-            },
             notify::Kind::DeserializationError(reason) => {
                 solvers_dto::notification::Kind::DeserializationError { reason }
             }
@@ -94,7 +83,7 @@ impl From<notify::ScoreKind> for solvers_dto::notification::Kind {
             }
             notify::ScoreKind::MissingPrice(token_address) => {
                 solvers_dto::notification::Kind::MissingPrice {
-                    token_address: token_address.into(),
+                    token_address: token_address.0.0,
                 }
             }
         }

@@ -10,7 +10,7 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::{Web3, alloy::conversions::IntoLegacy},
+    ethrpc::Web3,
 };
 
 #[derive(Debug, Clone)]
@@ -45,7 +45,7 @@ impl Contracts {
                 .settlement
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let signatures = contracts::alloy::support::Signatures::Instance::new(
@@ -53,7 +53,7 @@ impl Contracts {
                 .signatures
                 .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let weth = WETH9::Instance::new(
@@ -61,7 +61,7 @@ impl Contracts {
                 .weth
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let balances = Balances::Instance::new(
@@ -69,7 +69,7 @@ impl Contracts {
                 .balances
                 .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         let trampoline = HooksTrampoline::Instance::new(
@@ -77,10 +77,10 @@ impl Contracts {
                 .trampoline
                 .or_else(|| HooksTrampoline::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
-        let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
+        let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
             .await
             .ok();
 
@@ -99,7 +99,7 @@ impl Contracts {
                 .call()
                 .await
                 .expect("authenticator address"),
-            web3.alloy.clone(),
+            web3.provider.clone(),
         );
 
         Self {
@@ -145,7 +145,7 @@ impl Contracts {
     /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
     /// Gnosis Chain)
     pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
-        self.weth.address().into_legacy().into()
+        (*self.weth.address()).into()
     }
 
     pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {

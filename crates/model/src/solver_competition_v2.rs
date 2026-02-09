@@ -13,6 +13,7 @@ use {
 pub struct Response {
     pub auction_id: AuctionId,
     pub auction_start_block: i64,
+    pub auction_deadline_block: i64,
     pub transaction_hashes: Vec<B256>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub reference_scores: BTreeMap<Address, U256>,
@@ -73,6 +74,7 @@ mod tests {
         let correct = serde_json::json!({
             "auctionId": 0,
             "auctionStartBlock": 13u64,
+            "auctionDeadlineBlock": 100,
             "transactionHashes": ["0x3333333333333333333333333333333333333333333333333333333333333333"],
             "referenceScores": {
                 "0x2222222222222222222222222222222222222222": "0",
@@ -118,6 +120,7 @@ mod tests {
         let orig = Response {
             auction_id: 0,
             auction_start_block: 13,
+            auction_deadline_block: 100,
             transaction_hashes: vec![tx],
             reference_scores: btreemap! {
                 solver => U256::ZERO

@@ -19,63 +19,125 @@ use {
         IntCounterVec,
         core::{AtomicU64, GenericGauge},
     },
-    shared::{event_handling::AlloyEventRetriever, maintenance::Maintaining},
-    std::{future::Future, sync::Arc, time::Instant},
-    tokio::sync::Mutex,
+    shared::maintenance::Maintaining,
+    std::{
+        future::Future,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    tokio::sync::watch,
+    tokio_stream::wrappers::WatchStream,
 };
+
+/// Component to sync with the maintenance logic that runs in a background task.
+/// This allows us to run the maintenance logic ASAP but still wait for it to
+/// finish in a convenient manner.
+#[derive(Clone)]
+pub struct MaintenanceSync {
+    /// How long the autopilot wants to wait at most.
+    timeout: Duration,
+    last_processed_block: watch::Receiver<u64>,
+}
+
+impl MaintenanceSync {
+    pub async fn wait_until_block_processed(&self, block: u64) {
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "wait_for_maintenance");
+
+        if let Err(_timeout) = tokio::time::timeout(self.timeout, self.wait_inner(block)).await {
+            tracing::debug!("timed out waiting for maintenance");
+        }
+    }
+
+    async fn wait_inner(&self, target_block: u64) {
+        if *self.last_processed_block.borrow() >= target_block {
+            return;
+        }
+
+        let mut stream = WatchStream::new(self.last_processed_block.clone());
+        loop {
+            let processed_block = stream.next().await.unwrap();
+            if processed_block >= target_block {
+                return;
+            }
+        }
+    }
+}
 
 /// Coordinates all the updates that need to run a new block
 /// to ensure a consistent view of the system.
 pub struct Maintenance {
     /// Indexes and persists all events emited by the settlement contract.
-    settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
+    settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
     /// Used for periodic cleanup tasks to not have the DB overflow with old
     /// data.
     db_cleanup: Postgres,
     /// All indexing tasks to keep cow amms up to date.
     cow_amm_indexer: Vec<Arc<dyn Maintaining>>,
-    /// On which block we last ran an update successfully.
-    last_processed: Mutex<BlockInfo>,
+    /// Tasks to index ethflow orders that were submitted onchain.
+    ethflow_indexer: Vec<EthflowIndexer>,
 }
 
 impl Maintenance {
     pub fn new(
-        settlement_indexer: EventUpdater<Indexer, AlloyEventRetriever<GPv2SettlementContract>>,
+        settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
         db_cleanup: Postgres,
     ) -> Self {
         Self {
             settlement_indexer,
             db_cleanup,
             cow_amm_indexer: Default::default(),
-            last_processed: Default::default(),
+            ethflow_indexer: Default::default(),
         }
     }
 
-    /// Runs all update tasks in a coordinated manner to ensure the system
-    /// has a consistent state.
-    pub async fn update(&self, new_block: &BlockInfo) {
-        let mut last_block = self.last_processed.lock().await;
-        metrics().last_seen_block.set(new_block.number);
-        if last_block.number > new_block.number || last_block.hash == new_block.hash {
-            // `new_block` is neither newer than `last_block` nor a reorg
-            return;
-        }
+    /// Spawns a background task continously processing the latest block.
+    /// Returns a `[MaintenanceSync]` that handles waiting for a specific
+    /// block to be processed.
+    pub fn spawn_maintenance_task(
+        self,
+        blocks: CurrentBlockWatcher,
+        timeout: Duration,
+    ) -> MaintenanceSync {
+        let (sender, receiver) = watch::channel(blocks.borrow().number);
 
+        tokio::task::spawn(async move {
+            let mut stream = into_stream(blocks);
+            loop {
+                let block = stream
+                    .next()
+                    .await
+                    .expect("block stream terminated unexpectedly");
+                self.index_until_block(block, &sender).await;
+            }
+        });
+
+        MaintenanceSync {
+            last_processed_block: receiver,
+            timeout,
+        }
+    }
+
+    async fn index_until_block(&self, block: BlockInfo, last_processed_block: &watch::Sender<u64>) {
+        metrics().last_seen_block.set(block.number);
         let start = Instant::now();
+
         if let Err(err) = self.update_inner().await {
-            tracing::warn!(?err, block = new_block.number, "failed to run maintenance");
+            tracing::warn!(?err, block = block.number, "failed to run maintenance");
             metrics().updates.with_label_values(&["error"]).inc();
             return;
         }
+
         tracing::info!(
-            block = new_block.number,
+            block = block.number,
             time = ?start.elapsed(),
             "successfully ran maintenance task"
         );
-
+        metrics().last_updated_block.set(block.number);
         metrics().updates.with_label_values(&["success"]).inc();
-        metrics().last_updated_block.set(new_block.number);
-        *last_block = *new_block;
+        if let Err(err) = last_processed_block.send(block.number) {
+            tracing::warn!(?err, "nobody listening for processed blocks anymore");
+        }
     }
 
     async fn update_inner(&self) -> Result<()> {
@@ -87,6 +149,22 @@ impl Maintenance {
                 self.settlement_indexer.run_maintenance()
             ),
             Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
+            Self::timed_future(
+                "cow_amm_indexer",
+                futures::future::try_join_all(
+                    self.cow_amm_indexer
+                        .iter()
+                        .map(|indexer| indexer.run_maintenance()),
+                ),
+            ),
+            Self::timed_future(
+                "ethflow_indexer",
+                futures::future::try_join_all(
+                    self.ethflow_indexer
+                        .iter()
+                        .map(|indexer| indexer.run_maintenance()),
+                ),
+            ),
         )?;
 
         Ok(())
@@ -94,18 +172,15 @@ impl Maintenance {
 
     /// Registers all maintenance tasks that are necessary to correctly support
     /// ethflow orders.
-    pub fn spawn_ethflow_indexer(&mut self, ethflow_indexer: EthflowIndexer) {
-        tokio::task::spawn(async move {
-            loop {
-                let _ =
-                    Self::timed_future("ethflow_indexer", ethflow_indexer.run_maintenance()).await;
-                tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
-            }
-        });
+    pub fn add_ethflow_indexer(&mut self, ethflow_indexer: EthflowIndexer) {
+        self.ethflow_indexer.push(ethflow_indexer);
     }
 
-    pub fn with_cow_amms(&mut self, registry: &cow_amm::Registry) {
-        self.cow_amm_indexer = registry.maintenance_tasks().clone();
+    /// Registers all maintenance tasks that are necessary to correctly support
+    /// CoW AMMs.
+    pub fn add_cow_amm_indexer(&mut self, registry: &cow_amm::Registry) {
+        self.cow_amm_indexer
+            .extend(registry.maintenance_tasks().clone());
     }
 
     /// Runs the future and collects runtime metrics.
@@ -117,43 +192,10 @@ impl Maintenance {
         let _timer2 = observe::metrics::metrics().on_auction_overhead_start("autopilot", label);
         fut.await
     }
-
-    /// Spawns a background task that runs on every new block but also
-    /// at least after every `update_interval`.
-    pub fn spawn_cow_amm_indexing_task(self_: Arc<Self>, current_block: CurrentBlockWatcher) {
-        tokio::task::spawn(async move {
-            let mut stream = into_stream(current_block);
-            loop {
-                let _ = match stream.next().await {
-                    Some(block) => {
-                        metrics().last_seen_block.set(block.number);
-                        block
-                    }
-                    None => panic!("block stream terminated unexpectedly"),
-                };
-
-                // TODO: move this back into `Self::update_inner()` once we
-                // store cow amms in the DB to avoid incredibly slow restarts.
-                let _ = Self::timed_future(
-                    "cow_amm_indexer",
-                    futures::future::try_join_all(
-                        self_
-                            .cow_amm_indexer
-                            .iter()
-                            .cloned()
-                            .map(|indexer| async move { indexer.run_maintenance().await }),
-                    ),
-                )
-                .await;
-            }
-        });
-    }
 }
 
-type EthflowIndexer = EventUpdater<
-    OnchainOrderParser<EthFlowData, EthFlowDataForDb>,
-    AlloyEventRetriever<CoWSwapOnchainOrdersContract>,
->;
+type EthflowIndexer =
+    EventUpdater<OnchainOrderParser<EthFlowData, EthFlowDataForDb>, CoWSwapOnchainOrdersContract>;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "autopilot_maintenance")]

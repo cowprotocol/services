@@ -11,7 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{Participant, Score, Unranked, winner_selection},
+            competition::{Bid, Score, Unscored, winner_selection},
             eth::WrappedNativeToken,
         },
         infra::{
@@ -22,8 +22,9 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
+    ::winner_selection::state::RankedItem,
     anyhow::Context,
-    ethrpc::{alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
+    ethrpc::block_stream::CurrentBlockWatcher,
     itertools::Itertools,
     num::{CheckedSub, Saturating},
     shared::token_list::AutoUpdatingTokenList,
@@ -56,10 +57,10 @@ impl RunLoop {
         weth: WrappedNativeToken,
     ) -> Self {
         Self {
-            winner_selection: winner_selection::Arbitrator {
-                max_winners: max_winners_per_auction.get(),
+            winner_selection: winner_selection::Arbitrator::new(
+                max_winners_per_auction.get(),
                 weth,
-            },
+            ),
             orderbook,
             drivers,
             trusted_tokens,
@@ -76,12 +77,12 @@ impl RunLoop {
         loop {
             // We use this as a synchronization mechanism to sync the run loop starts with
             // the next mined block
-            let _ = ethrpc::block_stream::next_block(&self.current_block).await;
+            let start_block = ethrpc::block_stream::next_block(&self.current_block).await;
             let Some(auction) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
-            observe::log_auction_delta(&previous, &auction);
+            observe::log_auction_delta(&previous, &auction, &start_block);
             self.liveness.auction();
 
             self.single_run(&auction)
@@ -131,18 +132,18 @@ impl RunLoop {
 
         let solutions = self.competition(auction).await;
         let ranking = self.winner_selection.arbitrate(solutions, auction);
-        let scores = self.winner_selection.compute_reference_scores(&ranking);
+        let scores = ranking.reference_scores();
 
         let total_score = ranking
             .winners()
-            .map(|p| p.solution().score())
+            .map(|b| b.score())
             .reduce(Score::saturating_add)
             .unwrap_or_default();
 
-        for participant in ranking.ranked() {
-            let is_winner = participant.is_winner();
-            let reference_score = scores.get(&participant.driver().submission_address);
-            let driver = participant.driver();
+        for bid in ranking.ranked() {
+            let is_winner = bid.is_winner();
+            let reference_score = scores.get(&bid.driver().submission_address);
+            let driver = bid.driver();
             let reward = reference_score
                 .map(|reference| {
                     total_score.checked_sub(reference).unwrap_or_else(|| {
@@ -167,7 +168,7 @@ impl RunLoop {
             Metrics::get()
                 .performance_rewards
                 .with_label_values(&[&driver.name])
-                .inc_by(reward.get().0.to_f64_lossy());
+                .inc_by(f64::from(reward.get().0));
             Metrics::get()
                 .wins
                 .with_label_values(&[&driver.name])
@@ -177,17 +178,8 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
-        let request = solve::Request::new(
-            auction,
-            &self
-                .trusted_tokens
-                .all()
-                .into_iter()
-                .map(IntoLegacy::into_legacy)
-                .collect(),
-            self.solve_deadline,
-        );
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Bid<Unscored>> {
+        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
 
         futures::future::join_all(
             self.drivers
@@ -207,7 +199,7 @@ impl RunLoop {
         driver: Arc<infra::Driver>,
         request: solve::Request,
         auction_id: i64,
-    ) -> Vec<Participant<Unranked>> {
+    ) -> Vec<Bid<Unscored>> {
         let solutions = match self.fetch_solutions(&driver, request).await {
             Ok(response) => {
                 Metrics::get()
@@ -258,7 +250,7 @@ impl RunLoop {
 
         solutions
             .into_iter()
-            .map(|s| Participant::new(s, Arc::clone(&driver)))
+            .map(|s| Bid::new(s, Arc::clone(&driver)))
             .collect()
     }
 

@@ -4,7 +4,6 @@ use {
     chain::Chain,
     contracts::alloy::BalancerV2Vault,
     derive_more::Debug,
-    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
     shared::sources::uniswap_v2::{
@@ -63,9 +62,9 @@ impl UniswapV2 {
     #[expect(clippy::self_named_constructors)]
     pub fn uniswap_v2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::UniswapV2Router02::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            router: ContractAddress::from(contracts::alloy::UniswapV2Router02::deployment_address(
+                &chain.id(),
+            )?),
             pool_code: UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -74,9 +73,9 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for SushiSwap.
     pub fn sushi_swap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::SushiSwapRouter::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            router: ContractAddress::from(contracts::alloy::SushiSwapRouter::deployment_address(
+                &chain.id(),
+            )?),
             pool_code: SUSHISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -85,9 +84,9 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Honeyswap.
     pub fn honeyswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            router: ContractAddress::from(contracts::alloy::BaoswapRouter::deployment_address(
+                &chain.id(),
+            )?),
             pool_code: HONEYSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -96,9 +95,9 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Baoswap.
     pub fn baoswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            router: ContractAddress::from(contracts::alloy::BaoswapRouter::deployment_address(
+                &chain.id(),
+            )?),
             pool_code: BAOSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -112,9 +111,9 @@ impl UniswapV2 {
         }
         .into();
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::PancakeRouter::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            router: ContractAddress::from(contracts::alloy::PancakeRouter::deployment_address(
+                &chain.id(),
+            )?),
             pool_code,
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -125,8 +124,7 @@ impl UniswapV2 {
     pub fn testnet_uniswapv2(chain: Chain) -> Option<Self> {
         Some(Self {
             router: ContractAddress::from(
-                contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain.id())?
-                    .into_legacy(),
+                contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain.id())?,
             ),
             pool_code: TESTNET_UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
@@ -152,9 +150,9 @@ impl Swapr {
     #[expect(clippy::self_named_constructors)]
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::SwaprRouter::deployment_address(&chain.id())?.into_legacy(),
-            ),
+            router: ContractAddress::from(contracts::alloy::SwaprRouter::deployment_address(
+                &chain.id(),
+            )?),
             pool_code: SWAPR_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -193,7 +191,6 @@ impl UniswapV3 {
     ) -> Option<Self> {
         Some(Self {
             router: contracts::alloy::UniswapV3SwapRouterV2::deployment_address(&chain.id())?
-                .into_legacy()
                 .into(),
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
@@ -229,7 +226,7 @@ pub struct BalancerV2 {
     /// Since pools allow for custom controllers and logic, it is possible for
     /// pools to get "bricked". This configuration allows those pools to be
     /// ignored.
-    pub pool_deny_list: Vec<eth::H256>,
+    pub pool_deny_list: Vec<eth::B256>,
 
     /// The base URL used to connect to balancer v2 subgraph client.
     pub graph_url: Url,
@@ -255,7 +252,7 @@ impl BalancerV2 {
         }
 
         Some(Self {
-            vault: ContractAddress(BalancerV2Vault::deployment_address(&chain.id())?.into_legacy()),
+            vault: ContractAddress(BalancerV2Vault::deployment_address(&chain.id())?),
             weighted: address_for!(
                 chain,
                 [

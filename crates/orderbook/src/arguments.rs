@@ -3,12 +3,12 @@ use {
     chrono::{DateTime, Utc},
     reqwest::Url,
     shared::{
-        arguments::{display_option, display_secret_option},
+        arguments::{FeeFactor, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
+    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
 
 #[derive(clap::Parser)]
@@ -27,6 +27,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
+
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
 
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
@@ -145,6 +148,11 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub volume_fee_config: Option<VolumeFeeConfig>,
+
+    /// Controls if same sell and buy token orders are allowed.
+    /// Disallowed by default.
+    #[clap(long, env, default_value = "disallow")]
+    pub same_tokens_policy: shared::order_validation::SameTokensPolicy,
 }
 
 /// Volume-based protocol fee factor to be applied to quotes.
@@ -168,42 +176,6 @@ pub struct VolumeFeeConfig {
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeeFactor(f64);
-
-impl FeeFactor {
-    /// Number of basis points that make up 100%.
-    pub const MAX_BPS: u32 = 10_000;
-
-    /// Converts the fee factor to basis points (BPS).
-    /// For example, 0.0002 -> 2 BPS
-    pub fn to_bps(&self) -> u64 {
-        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
-    }
-}
-
-/// TryFrom implementation for the cases we want to enforce the constraint [0,
-/// 1)
-impl TryFrom<f64> for FeeFactor {
-    type Error = anyhow::Error;
-
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        anyhow::ensure!(
-            (0.0..1.0).contains(&value),
-            "Factor must be in the range [0, 1)"
-        );
-        Ok(FeeFactor(value))
-    }
-}
-
-impl FromStr for FeeFactor {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(FeeFactor::try_from)?
-    }
-}
-
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let Arguments {
@@ -212,6 +184,7 @@ impl std::fmt::Display for Arguments {
             http_client,
             token_owner_finder,
             price_estimation,
+            database_pool,
             tracing_node_url,
             bind_address,
             min_order_validity_period,
@@ -234,6 +207,7 @@ impl std::fmt::Display for Arguments {
             max_gas_per_order,
             active_order_competition_threshold,
             volume_fee_config,
+            same_tokens_policy,
         } = self;
 
         write!(f, "{shared}")?;
@@ -241,6 +215,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{http_client}")?;
         write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
+        write!(f, "{database_pool}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;
@@ -288,6 +263,7 @@ impl std::fmt::Display for Arguments {
             "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
         writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
+        writeln!(f, "same_tokens_policy: {same_tokens_policy:?}")?;
 
         Ok(())
     }

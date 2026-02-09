@@ -29,15 +29,11 @@ use {
         http_client::HttpClientFactory,
         sources::uniswap_v2::pair_provider::PairProvider,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     chain::Chain,
     contracts::alloy::{BalancerV2Vault, ERC20, IUniswapV3Factory},
-    ethcontract::U256,
-    ethrpc::alloy::{
-        conversions::{IntoAlloy, IntoLegacy},
-        errors::ContractErrorExt,
-    },
+    ethrpc::alloy::{ProviderLabelingExt, errors::ContractErrorExt},
     futures::{Stream, StreamExt as _},
     rate_limit::Strategy,
     reqwest::Url,
@@ -212,6 +208,7 @@ impl TokenOwnerFindingStrategy {
             | Chain::Polygon
             | Chain::Linea
             | Chain::Plasma
+            | Chain::Ink
             | Chain::Lens => &[Self::Liquidity],
             Chain::Hardhat => panic!("unsupported chain for token owner finding"),
         }
@@ -297,7 +294,7 @@ pub async fn init(
     base_tokens: &BaseTokens,
     settlement_contract: Address,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
-    let web3 = ethrpc::instrumented::instrument_with_label(&web3, "tokenOwners".into());
+    let web3 = web3.labeled("tokenOwners");
     let finders = args
         .token_owner_finders
         .as_deref()
@@ -428,7 +425,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
         token: Address,
         min_balance: U256,
     ) -> Result<Option<(Address, U256)>> {
-        let instance = ERC20::Instance::new(token, self.web3.alloy.clone());
+        let instance = ERC20::Instance::new(token, self.web3.provider.clone());
 
         // We use a stream with ready_chunks so that we can start with the addresses of
         // fast TokenOwnerFinding implementations first without having to wait
@@ -458,9 +455,9 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
             if let Some((addr, balance)) = balances
                 .into_iter()
-                .find(|(_, balance)| *balance >= min_balance.into_alloy())
+                .find(|(_, balance)| *balance >= min_balance)
             {
-                return Ok(Some((addr, balance.into_legacy())));
+                return Ok(Some((addr, balance)));
             }
         }
 

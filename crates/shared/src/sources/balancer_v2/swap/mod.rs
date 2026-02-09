@@ -1,7 +1,6 @@
 use {
     crate::{
         baseline_solver::BaselineSolvable,
-        conversions::U256Ext,
         sources::balancer_v2::pool_fetching::{
             AmplificationParameter,
             StablePool,
@@ -11,10 +10,10 @@ use {
             WeightedTokenState,
         },
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     error::Error,
-    ethcontract::U256,
     fixed_point::Bfp,
+    number::u256_ext::U256Ext,
     std::collections::BTreeMap,
 };
 
@@ -114,16 +113,16 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
     async fn get_amount_out(
         &self,
         out_token: Address,
-        (in_amount, in_token): (U256, Address),
-    ) -> Option<U256> {
+        (in_amount, in_token): (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         self.get_amount_out_inner(out_token, in_amount, in_token)
     }
 
     async fn get_amount_in(
         &self,
         in_token: Address,
-        (out_amount, out_token): (U256, Address),
-    ) -> Option<U256> {
+        (out_amount, out_token): (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
@@ -278,7 +277,7 @@ impl<'a> StablePoolRef<'a> {
 
     /// Comes from `_swapWithBpt`:
     // https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L301
-    fn swap_with_bpt(&self) -> Option<U256> {
+    fn swap_with_bpt(&self) -> Option<alloy::primitives::U256> {
         // TODO: We currently do not implement swapping with BPT for composable
         // stable pools.
         None
@@ -289,9 +288,9 @@ impl StablePoolRef<'_> {
     fn get_amount_out_inner(
         &self,
         out_token: Address,
-        in_amount: U256,
+        in_amount: alloy::primitives::U256,
         in_token: Address,
-    ) -> Option<U256> {
+    ) -> Option<alloy::primitives::U256> {
         if in_token == self.address || out_token == self.address {
             self.swap_with_bpt()
         } else {
@@ -304,16 +303,16 @@ impl BaselineSolvable for StablePoolRef<'_> {
     async fn get_amount_out(
         &self,
         out_token: Address,
-        (in_amount, in_token): (U256, Address),
-    ) -> Option<U256> {
+        (in_amount, in_token): (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         self.get_amount_out_inner(out_token, in_amount, in_token)
     }
 
     async fn get_amount_in(
         &self,
         in_token: Address,
-        (out_amount, out_token): (U256, Address),
-    ) -> Option<U256> {
+        (out_amount, out_token): (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         if in_token == self.address || out_token == self.address {
             self.swap_with_bpt()
         } else {
@@ -348,8 +347,8 @@ fn converge_in_amount(
     // trading price and multiply the amount to bump by 10 for each iteration.
     let mut bump = (exact_out_amount - out_amount)
         .checked_mul(in_amount)?
-        .ceil_div(&out_amount.max(U256::one()))
-        .max(U256::one());
+        .ceil_div(&out_amount.max(U256::ONE))
+        .max(U256::ONE);
 
     for _ in 0..6 {
         let bumped_in_amount = in_amount.checked_add(bump)?;
@@ -358,7 +357,7 @@ fn converge_in_amount(
             return Some(bumped_in_amount);
         }
 
-        bump *= 10;
+        bump *= U256::from(10);
     }
 
     None
@@ -375,11 +374,19 @@ impl WeightedPool {
 }
 
 impl BaselineSolvable for WeightedPool {
-    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
+    async fn get_amount_out(
+        &self,
+        out_token: Address,
+        input: (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         self.as_pool_ref().get_amount_out(out_token, input).await
     }
 
-    async fn get_amount_in(&self, in_token: Address, output: (U256, Address)) -> Option<U256> {
+    async fn get_amount_in(
+        &self,
+        in_token: Address,
+        output: (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         self.as_pool_ref().get_amount_in(in_token, output).await
     }
 
@@ -405,11 +412,19 @@ impl StablePool {
 }
 
 impl BaselineSolvable for StablePool {
-    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
+    async fn get_amount_out(
+        &self,
+        out_token: Address,
+        input: (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         self.as_pool_ref().get_amount_out(out_token, input).await
     }
 
-    async fn get_amount_in(&self, in_token: Address, output: (U256, Address)) -> Option<U256> {
+    async fn get_amount_in(
+        &self,
+        in_token: Address,
+        output: (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         self.as_pool_ref().get_amount_in(in_token, output).await
     }
 
@@ -496,7 +511,7 @@ mod tests {
             balance: Default::default(),
             scaling_factor: Bfp::exp10(12),
         };
-        let input = Bfp::from_wei(900_546_079_866_630_330_575_i128.into());
+        let input = Bfp::from_wei(U256::from(900_546_079_866_630_330_575_u128));
         assert_eq!(
             token_state.downscale_up(input).unwrap(),
             U256::from(900_546_080_u128)
@@ -511,24 +526,30 @@ mod tests {
     async fn weighted_get_amount_out() {
         // Values obtained from this transaction:
         // https://dashboard.tenderly.co/tx/main/0xa9f571c9bfd4289bd4bd270465d73e1b7e010622ed089d54d81ec63a0365ec22/debugger
-        let crv = ::alloy::primitives::Address::repeat_byte(21);
-        let sdvecrv_dao = ::alloy::primitives::Address::repeat_byte(42);
+        let crv = Address::repeat_byte(21);
+        let sdvecrv_dao = Address::repeat_byte(42);
         let b = create_weighted_pool_with(
             vec![crv, sdvecrv_dao],
             vec![
-                1_850_304_144_768_426_873_445_489_i128.into(),
-                95_671_347_892_391_047_965_654_i128.into(),
+                U256::from(1_850_304_144_768_426_873_445_489_u128),
+                U256::from(95_671_347_892_391_047_965_654_u128),
             ],
             vec![bfp!("0.9"), bfp!("0.1")],
             vec![Bfp::exp10(0), Bfp::exp10(0)],
-            2_000_000_000_000_000_i128.into(),
+            U256::from(2_000_000_000_000_000_u128),
         );
 
         assert_eq!(
-            b.get_amount_out(crv, (227_937_106_828_652_254_870_i128.into(), sdvecrv_dao))
-                .await
-                .unwrap(),
-            488_192_591_864_344_551_330_i128.into()
+            b.get_amount_out(
+                crv,
+                (
+                    alloy::primitives::U256::from(227_937_106_828_652_254_870_u128),
+                    sdvecrv_dao
+                )
+            )
+            .await
+            .unwrap(),
+            alloy::primitives::U256::from(488_192_591_864_344_551_330_u128)
         );
     }
 
@@ -536,34 +557,37 @@ mod tests {
     async fn weighted_get_amount_in() {
         // Values obtained from this transaction:
         // https://dashboard.tenderly.co/tx/main/0xafc3dd6a636a85d9c1976dfa5aee33f78e6ee902f285c9d4cf80a0014aa2a052/debugger
-        let weth = ::alloy::primitives::Address::repeat_byte(21);
-        let tusd = ::alloy::primitives::Address::repeat_byte(42);
+        let weth = Address::repeat_byte(21);
+        let tusd = Address::repeat_byte(42);
         let b = create_weighted_pool_with(
             vec![weth, tusd],
-            vec![60_000_000_000_000_000_i128.into(), 250_000_000_i128.into()],
+            vec![
+                U256::from(60_000_000_000_000_000_u128),
+                U256::from(250_000_000_u128),
+            ],
             vec![bfp!("0.5"), bfp!("0.5")],
             vec![Bfp::exp10(0), Bfp::exp10(12)],
-            1_000_000_000_000_000_i128.into(),
+            U256::from(1_000_000_000_000_000_u128),
         );
 
         assert_eq!(
-            b.get_amount_in(weth, (5_000_000_i128.into(), tusd))
+            b.get_amount_in(weth, (alloy::primitives::U256::from(5_000_000_u128), tusd))
                 .await
                 .unwrap(),
-            1_225_715_511_430_411_i128.into()
+            alloy::primitives::U256::from(1_225_715_511_430_411_u128)
         );
     }
 
     #[test]
     fn construct_balances_and_token_indices() {
         let tokens: Vec<_> = (1..=3).map(Address::with_last_byte).collect();
-        let balances = (1..=3).map(|n| n.into()).collect();
+        let balances = (1..=3).map(U256::from).collect();
         let pool = create_stable_pool_with(
             tokens.clone(),
             balances,
-            AmplificationParameter::try_new(1.into(), 1.into()).unwrap(),
+            AmplificationParameter::try_new(U256::ONE, U256::ONE).unwrap(),
             vec![Bfp::exp10(18), Bfp::exp10(18), Bfp::exp10(18)],
-            1.into(),
+            U256::ONE,
         );
 
         for token_i in tokens.iter() {
@@ -603,13 +627,13 @@ mod tests {
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
-            AmplificationParameter::try_new(570000.into(), 1000.into()).unwrap();
+            AmplificationParameter::try_new(U256::from(570000), U256::from(1000)).unwrap();
         let balances = vec![
-            40_927_687_702_846_622_465_144_342_i128.into(),
-            59_448_574_675_062_i128.into(),
-            55_199_308_926_456_i128.into(),
+            U256::from(40_927_687_702_846_622_465_144_342_u128),
+            U256::from(59_448_574_675_062_u128),
+            U256::from(55_199_308_926_456_u128),
         ];
-        let swap_fee_percentage = 300_000_000_000_000u128.into();
+        let swap_fee_percentage = U256::from(300_000_000_000_000_u128);
         let pool = create_stable_pool_with(
             tokens,
             balances,
@@ -619,10 +643,10 @@ mod tests {
         );
         // Etherscan for amount verification:
         // https://etherscan.io/tx/0x75be93fff064ad46b423b9e20cee09b0ae7f741087f43e4187d4f4cf59f54229
-        let amount_in = 1_886_982_823_746_269_817_650_i128.into();
-        let amount_out = 1_887_770_905_i128;
+        let amount_in = alloy::primitives::U256::from(1_886_982_823_746_269_817_650_u128);
+        let amount_out = U256::from(1_887_770_905_u128);
         let res_out = pool.get_amount_out(usdc, (amount_in, dai)).await;
-        assert_eq!(res_out.unwrap(), amount_out.into());
+        assert_eq!(res_out.unwrap(), amount_out);
     }
 
     #[tokio::test]
@@ -636,13 +660,13 @@ mod tests {
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
-            AmplificationParameter::try_new(570000.into(), 1000.into()).unwrap();
+            AmplificationParameter::try_new(U256::from(570000), U256::from(1000)).unwrap();
         let balances = vec![
-            34_869_494_603_218_073_631_628_580_i128.into(),
-            48_176_005_970_419_i128.into(),
-            44_564_350_355_030_i128.into(),
+            U256::from(34_869_494_603_218_073_631_628_580_u128),
+            U256::from(48_176_005_970_419_u128),
+            U256::from(44_564_350_355_030_u128),
         ];
-        let swap_fee_percentage = 300_000_000_000_000u128.into();
+        let swap_fee_percentage = U256::from(300_000_000_000_000_u128);
         let pool = create_stable_pool_with(
             tokens,
             balances,
@@ -652,9 +676,9 @@ mod tests {
         );
         // Etherscan for amount verification:
         // https://etherscan.io/tx/0x38487122158eef6b63570b5d3754ddc223c63af5c049d7b80acacb9e8ca89a63
-        let amount_in = 900_816_325_i128;
-        let amount_out = 900_000_000_000_000_000_000_u128.into();
+        let amount_in = U256::from(900_816_325_u128);
+        let amount_out = alloy::primitives::U256::from(900_000_000_000_000_000_000_u128);
         let res_out = pool.get_amount_in(usdc, (amount_out, dai)).await;
-        assert_eq!(res_out.unwrap(), amount_in.into());
+        assert_eq!(res_out.unwrap(), amount_in);
     }
 }

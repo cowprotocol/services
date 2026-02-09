@@ -76,8 +76,8 @@ impl Tenderly {
             .post(self.endpoint.clone())
             .json(&dto::Request {
                 network_id: self.eth.chain().id().to_string(),
-                from: tx.from.into(),
-                to: tx.to.into(),
+                from: tx.from,
+                to: tx.to,
                 input: tx.input.clone().into(),
                 value: tx.value.into(),
                 save: self.config.save,
@@ -88,7 +88,10 @@ impl Tenderly {
                 } else {
                     Some(tx.access_list.clone().into())
                 },
-                gas_price: gas_price.unwrap_or_default().as_u64(),
+                gas_price: gas_price
+                    .unwrap_or_default()
+                    .try_into()
+                    .expect("value should be lower than u64::MAX"),
             })
             .send()
             .await?

@@ -6,11 +6,10 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-axum = { workspace = true, optional = true }
-atty = { workspace = true }
+axum = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true, features = ["now"] }
-console-subscriber = { workspace = true }
+console-subscriber = { workspace = true, optional = true }
 futures = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"] }
@@ -26,14 +25,13 @@ tokio = { workspace = true, features = ["fs"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
-warp = { workspace = true }
 tracing-serde = { workspace = true }
-jemalloc_pprof = { workspace = true, optional = true }
+warp = { workspace = true }
+jemalloc_pprof = { workspace = true }
 
 [lints]
 workspace = true
 
 [features]
 default = []
-axum-tracing = ["axum"]
-jemalloc-profiling = ["dep:jemalloc_pprof"]
+tokio-console = ["dep:console-subscriber"]

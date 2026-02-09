@@ -1,61 +1,41 @@
 use {
     crate::ethrpc::Web3,
-    anyhow::{Context, Result},
-    ethcontract::state_overrides::StateOverrides,
-    web3::{
-        Error,
-        Transport,
-        types::{BlockNumber, BlockTrace, CallRequest, TraceType},
+    alloy::{
+        providers::ext::TraceApi,
+        rpc::types::{
+            TransactionRequest,
+            trace::parity::{TraceResults, TraceType},
+        },
+        transports::{RpcError, TransportErrorKind},
     },
+    anyhow::{Context, Result},
 };
 
-// Use the trace_callMany api https://openethereum.github.io/JSONRPC-trace-module#trace_callmany
-// api to simulate these call requests applied together one after another.
-// Err if communication with the node failed.
-pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<BlockTrace>, Error> {
-    trace_many_with_state_overrides(requests, web3, None).await
-}
-
-// Use the trace_callMany api with state overrides support.
-pub async fn trace_many_with_state_overrides(
-    requests: Vec<CallRequest>,
+/// Use the trace_callMany API (<https://openethereum.github.io/JSONRPC-trace-module#trace_callmany>)
+/// to simulate these call requests applied together one after another.
+///
+/// Returns `Err` if communication with the node failed.
+pub async fn trace_many(
     web3: &Web3,
-    state_overrides: Option<StateOverrides>,
-) -> Result<Vec<BlockTrace>, Error> {
-    let transport = web3.transport();
-    let requests = requests
+    requests: Vec<TransactionRequest>,
+) -> Result<Vec<TraceResults>, RpcError<TransportErrorKind>> {
+    let r: Vec<_> = requests
         .into_iter()
-        .map(|request| {
-            Ok(vec![
-                serde_json::to_value(request)?,
-                serde_json::to_value(vec![TraceType::Trace])?,
-            ])
-        })
-        .collect::<Result<Vec<_>>>()
-        .map_err(|e| Error::Decoder(e.to_string()))?;
-    let block = BlockNumber::Latest;
-    let mut params = vec![
-        serde_json::to_value(requests)?,
-        serde_json::to_value(block)?,
-    ];
-    if let Some(overrides) = state_overrides {
-        params.push(serde_json::to_value(overrides)?);
-    }
-    let response = transport.execute("trace_callMany", params).await?;
-    serde_json::from_value(response).map_err(|e| Error::Decoder(e.to_string()))
+        .zip(std::iter::repeat([TraceType::Trace].as_slice()))
+        .collect();
+
+    web3.provider.trace_call_many(r.as_slice()).latest().await
 }
 
-// Check the return value of trace_many for whether all top level transactions
-// succeeded (did not revert).
-// Err if the response is missing trace data.
-// Ok(true) if transactions simulate without reverting
-// Ok(false) if transactions simulate with at least one revert.
-pub fn all_calls_succeeded(traces: &[BlockTrace]) -> Result<bool> {
+/// Check the return value of `trace_many` for whether all top level
+/// transactions succeeded (did not revert).
+///
+/// * `Err` if the response is missing trace data.
+/// * `Ok(true)` if transactions simulate without reverting
+/// * `Ok(false)` if transactions simulate with at least one revert.
+pub fn all_calls_succeeded(traces: &[TraceResults]) -> Result<bool> {
     for trace in traces {
-        let transaction_trace = trace.trace.as_ref().context("trace not set")?;
-        let first = transaction_trace
-            .first()
-            .context("expected at least one trace")?;
+        let first = trace.trace.first().context("expected at least one trace")?;
         if first.error.is_some() {
             return Ok(false);
         }
@@ -69,7 +49,7 @@ mod tests {
 
     #[test]
     fn ok_true() {
-        let response: Vec<BlockTrace> = serde_json::from_value(json!(
+        let response: Vec<TraceResults> = serde_json::from_value(json!(
         [{
             "output": "0x",
             "trace": [{
@@ -93,7 +73,7 @@ mod tests {
 
     #[test]
     fn ok_false() {
-        let response: Vec<BlockTrace> = serde_json::from_value(json!(
+        let response: Vec<TraceResults> = serde_json::from_value(json!(
         [{
             "output": "0x",
             "trace": [{

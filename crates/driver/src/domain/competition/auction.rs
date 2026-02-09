@@ -2,12 +2,13 @@ use {
     crate::{
         domain::{
             competition::{self},
-            eth,
+            eth::{self, GasPrice},
             liquidity,
             time,
         },
         infra::{Ethereum, blockchain, solver::Timeouts},
     },
+    alloy::primitives::U256,
     std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
@@ -56,11 +57,19 @@ impl Auction {
             true
         });
 
+        let gas_est = eth.gas_price().await?;
+        let base_fee = eth.current_block().borrow().base_fee;
+        let gas_price = GasPrice::new(
+            U256::from(gas_est.max_fee_per_gas).into(),
+            U256::from(gas_est.max_priority_fee_per_gas).into(),
+            base_fee,
+        );
+
         Ok(Self {
             id,
             orders,
             tokens,
-            gas_price: eth.gas_price(None).await?,
+            gas_price,
             deadline,
             surplus_capturing_jit_order_owners,
         })
@@ -111,7 +120,7 @@ impl Auction {
             .filter_map(|(address, token)| token.price.map(|price| (*address, price)))
             .chain(std::iter::once((
                 eth::ETH_TOKEN,
-                eth::U256::exp10(18).into(),
+                eth::U256::from(10).pow(eth::U256::from(18)).into(),
             )))
             .collect()
     }
@@ -173,14 +182,20 @@ impl Price {
     /// ```
     /// use driver::domain::{competition::auction::Price, eth};
     ///
-    /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
+    /// let amount = eth::TokenAmount::from(eth::U256::from(10).pow(eth::U256::from(18)));
+    /// let price = Price::try_new(eth::Ether::from(
+    ///     eth::U256::from(10).pow(eth::U256::from(15)),
+    /// ))
+    /// .unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
-    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
+    /// assert_eq!(
+    ///     eth,
+    ///     eth::Ether::from(eth::U256::from(10).pow(eth::U256::from(15)))
+    /// );
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0.0 / Self::BASE).into()
+        (amount.0 * self.0.0 / eth::U256::from(Self::BASE)).into()
     }
 
     /// Convert an amount of ETH into a token amount using this price.
@@ -191,9 +206,15 @@ impl Price {
     /// ```
     /// use driver::domain::{competition::auction::Price, eth};
     ///
-    /// let amount = eth::Ether::from(eth::U256::exp10(18));
-    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(17))).unwrap(); // 0.1ETH
-    /// assert_eq!(price.from_eth(amount), eth::U256::exp10(19).into());
+    /// let amount = eth::Ether::from(eth::U256::from(10).pow(eth::U256::from(18)));
+    /// let price = Price::try_new(eth::Ether::from(
+    ///     eth::U256::from(10).pow(eth::U256::from(17)),
+    /// ))
+    /// .unwrap(); // 0.1ETH
+    /// assert_eq!(
+    ///     price.from_eth(amount),
+    ///     eth::U256::from(10).pow(eth::U256::from(19)).into()
+    /// );
     /// ```
     pub fn from_eth(self, amount: eth::Ether) -> eth::TokenAmount {
         (amount.0 * eth::U256::from(Self::BASE) / self.0.0).into()

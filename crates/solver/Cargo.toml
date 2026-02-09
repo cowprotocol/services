@@ -16,18 +16,15 @@ anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
-maplit = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 serde_json = { workspace = true }
@@ -35,10 +32,10 @@ shared = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
-web3 = { workspace = true }
 
 [dev-dependencies]
 derivative = { workspace = true }
+maplit = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 mockall = { workspace = true }

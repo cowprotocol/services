@@ -1,6 +1,6 @@
 use {
     crate::domain::{auction, eth, liquidity, order},
-    ethereum_types::{Address, U256},
+    eth::{Address, U256},
     std::{collections::HashMap, slice},
 };
 
@@ -193,7 +193,7 @@ impl Single {
             wrappers: wrappers
                 .iter()
                 .map(|w| WrapperCall {
-                    target: eth::Address(w.address),
+                    target: w.address,
                     data: w.data.clone(),
                 })
                 .collect(),

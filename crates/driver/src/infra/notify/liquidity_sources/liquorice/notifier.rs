@@ -90,7 +90,6 @@ mod utils {
         },
         alloy::{primitives::Address, sol_types::SolCall},
         contracts::alloy::LiquoriceSettlement,
-        ethrpc::alloy::conversions::IntoAlloy,
         std::collections::HashSet,
     };
 
@@ -145,7 +144,7 @@ mod utils {
         interaction: &eth::Interaction,
         liquorice_settlement_contract_address: Address,
     ) -> Option<String> {
-        if interaction.target.0.into_alloy() != liquorice_settlement_contract_address {
+        if interaction.target != liquorice_settlement_contract_address {
             return None;
         }
 
@@ -166,22 +165,21 @@ mod utils {
                 infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
                 util::Bytes,
             },
-            ethrpc::alloy::conversions::IntoAlloy,
-            primitive_types::H160,
+            alloy::primitives::Address,
         };
 
         #[test]
         fn test_extract_rfq_id_from_valid_settle_single_call() {
             let calldata = const_hex::decode("9935c868000000000000000000000000b10b9c690a681b6285c2e2df7734f9d729c5c4d500000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000260000000000000000000000000000000000000000000000000000000001dcd65000000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab410000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000001dcd6500000000000000000000000000000000000000000000000000000000001dcd650000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000068a76fd0000000000000000000000000b10b9c690a681b6285c2e2df7734f9d729c5c4d5000000000000000000000000000000000000000000000000000000000000002463393964326533662d373032622d343963392d386262382d343337373537373066326633000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000041d44f6881d24cd3ad94561d1aad5e220929181cf728f89620629e0efbe3daa9833b9f2967bf37381f56b41266327a3804c92204f30a2d660cae8b42cd6f7d9b701c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000041000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap();
 
-            let liquorice_settlement_address = H160::random().into();
+            let liquorice_settlement_address = Address::random();
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: liquorice_settlement_address,
                     call_data: Bytes(calldata),
                     value: 0.into(),
                 },
-                liquorice_settlement_address.0.into_alloy(),
+                liquorice_settlement_address,
             )
             .unwrap();
             assert_eq!(rfq_id, "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string());
@@ -189,14 +187,14 @@ mod utils {
 
         #[test]
         fn test_returns_none_for_arbitrary_call() {
-            let liquorice_settlement_address = H160::random().into();
+            let liquorice_settlement_address = Address::random();
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: liquorice_settlement_address,
                     call_data: Bytes(vec![]),
                     value: 0.into(),
                 },
-                liquorice_settlement_address.0.into_alloy(),
+                liquorice_settlement_address,
             );
 
             assert!(rfq_id.is_none());
@@ -206,11 +204,11 @@ mod utils {
         fn test_returns_none_for_different_target() {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
-                    target: H160::random().into(),
+                    target: Address::random(),
                     call_data: Bytes(vec![]),
                     value: 0.into(),
                 },
-                H160::random().into_alloy(),
+                Address::random(),
             );
 
             assert!(rfq_id.is_none());

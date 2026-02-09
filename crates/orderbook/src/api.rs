@@ -2,7 +2,7 @@ use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
     observe::distributed_tracing::tracing_warp::make_span,
-    serde::{Serialize, de::DeserializeOwned},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
         convert::Infallible,
@@ -33,6 +33,7 @@ mod get_solver_competition_v2;
 mod get_token_metadata;
 mod get_total_surplus;
 mod get_trades;
+mod get_trades_v2;
 mod get_user_orders;
 mod post_order;
 mod post_quote;
@@ -68,6 +69,10 @@ pub fn handle_all_routes(
         (
             "v1/get_trades",
             box_filter(get_trades::get_trades(database_read.clone())),
+        ),
+        (
+            "v2/get_trades",
+            box_filter(get_trades_v2::get_trades(database_read.clone())),
         ),
         (
             "v1/cancel_order",
@@ -213,14 +218,14 @@ impl ApiMetrics {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Error<'a> {
-    error_type: &'a str,
-    description: &'a str,
+pub struct Error<'a> {
+    pub error_type: &'a str,
+    pub description: &'a str,
     /// Additional arbitrary data that can be attached to an API error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<serde_json::Value>,
+    pub data: Option<serde_json::Value>,
 }
 
 pub fn error(error_type: &str, description: impl AsRef<str>) -> Json {
@@ -345,7 +350,9 @@ pub fn finalize_router(
     // Final setup
     let cors = warp::cors()
         .allow_any_origin()
-        .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
+        .allow_methods(vec![
+            "GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH", "HEAD",
+        ])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
 
     warp::path!("api" / ..)

@@ -9,11 +9,10 @@ use {
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
-        util::conv::{rational_to_big_decimal, u256::U256Ext},
     },
     app_data::AppDataHash,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::order::{BuyTokenDestination, SellTokenSource},
+    number::conversions::rational_to_big_decimal,
     std::collections::HashMap,
 };
 
@@ -30,7 +29,7 @@ pub fn new(
     wrappers: &WrapperCalls,
     deadline: chrono::DateTime<chrono::Utc>,
 ) -> solvers_dto::auction::Auction {
-    let mut tokens: HashMap<eth::H160, _> = auction
+    let mut tokens: HashMap<eth::Address, _> = auction
         .tokens()
         .iter()
         .map(|token| {
@@ -59,8 +58,8 @@ pub fn new(
             liquidity::Kind::Swapr(pool) => pool.base.reserves.iter().map(|r| r.token).collect(),
             liquidity::Kind::ZeroEx(limit_order) => {
                 vec![
-                    limit_order.order.maker_token.into_legacy().into(),
-                    limit_order.order.taker_token.into_legacy().into(),
+                    limit_order.order.maker_token.into(),
+                    limit_order.order.taker_token.into(),
                 ]
             }
         })
@@ -113,8 +112,8 @@ pub fn new(
                 }
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
-                    sell_token: available.sell.token.into(),
-                    buy_token: available.buy.token.into(),
+                    sell_token: available.sell.token.0.0,
+                    buy_token: available.buy.token.0.0,
                     sell_amount: available.sell.amount.into(),
                     buy_amount: available.buy.amount.into(),
                     full_sell_amount: order.sell.amount.into(),
@@ -123,8 +122,8 @@ pub fn new(
                         Side::Buy => solvers_dto::auction::Kind::Buy,
                         Side::Sell => solvers_dto::auction::Kind::Sell,
                     },
-                    receiver: order.receiver.map(Into::into),
-                    owner: order.signature.signer.into(),
+                    receiver: order.receiver,
+                    owner: order.signature.signer,
                     partially_fillable: order.is_partial(),
                     class: match order.kind {
                         order::Kind::Market => solvers_dto::auction::Class::Market,
@@ -182,15 +181,15 @@ pub fn new(
                     solvers_dto::auction::Liquidity::ConstantProduct(
                         solvers_dto::auction::ConstantProductPool {
                             id: liquidity.id.0.to_string(),
-                            address: pool.address.into(),
-                            router: pool.router.into(),
+                            address: pool.address,
+                            router: pool.router.0,
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves
                                 .iter()
                                 .map(|asset| {
                                     (
-                                        asset.token.into(),
+                                        asset.token.0.0,
                                         solvers_dto::auction::ConstantProductReserve {
                                             balance: asset.amount.into(),
                                         },
@@ -206,9 +205,9 @@ pub fn new(
                         solvers_dto::auction::ConcentratedLiquidityPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.address.0,
-                            router: pool.router.into(),
+                            router: pool.router.0,
                             gas_estimate: liquidity.gas.0,
-                            tokens: vec![pool.tokens.get().0.into(), pool.tokens.get().1.into()],
+                            tokens: vec![pool.tokens.get().0.0.0, pool.tokens.get().1.0.0],
                             sqrt_price: pool.sqrt_price.0,
                             liquidity: pool.liquidity.0,
                             tick: pool.tick.0,
@@ -225,7 +224,7 @@ pub fn new(
                     solvers_dto::auction::Liquidity::Stable(solvers_dto::auction::StablePool {
                         id: liquidity.id.0.to_string(),
                         address: pool.id.address().into(),
-                        balancer_pool_id: pool.id.into(),
+                        balancer_pool_id: pool.id.0,
                         gas_estimate: liquidity.gas.into(),
                         tokens: pool
                             .reserves
@@ -241,8 +240,8 @@ pub fn new(
                             })
                             .collect(),
                         amplification_parameter: rational_to_big_decimal(&num::BigRational::new(
-                            pool.amplification_parameter.factor().to_big_int(),
-                            pool.amplification_parameter.precision().to_big_int(),
+                            pool.amplification_parameter.factor().into(),
+                            pool.amplification_parameter.precision().into(),
                         )),
                         fee: fee_to_decimal(pool.fee),
                     })
@@ -252,7 +251,7 @@ pub fn new(
                         solvers_dto::auction::WeightedProductPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.id.address().into(),
-                            balancer_pool_id: pool.id.into(),
+                            balancer_pool_id: pool.id.0,
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves
@@ -283,7 +282,7 @@ pub fn new(
                 liquidity::Kind::Swapr(pool) => solvers_dto::auction::Liquidity::ConstantProduct(
                     solvers_dto::auction::ConstantProductPool {
                         id: liquidity.id.0.to_string(),
-                        address: pool.base.address.into(),
+                        address: pool.base.address,
                         router: pool.base.router.into(),
                         gas_estimate: liquidity.gas.into(),
                         tokens: pool
@@ -306,14 +305,16 @@ pub fn new(
                     solvers_dto::auction::Liquidity::LimitOrder(
                         solvers_dto::auction::ForeignLimitOrder {
                             id: liquidity.id.0.to_string(),
-                            address: limit_order.zeroex.address().into_legacy(),
+                            address: *limit_order.zeroex.address(),
                             gas_estimate: liquidity.gas.into(),
                             hash: Default::default(),
-                            maker_token: limit_order.order.maker_token.into_legacy(),
-                            taker_token: limit_order.order.taker_token.into_legacy(),
-                            maker_amount: limit_order.fillable.maker.into(),
-                            taker_amount: limit_order.fillable.taker.into(),
-                            taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
+                            maker_token: limit_order.order.maker_token,
+                            taker_token: limit_order.order.taker_token,
+                            maker_amount: eth::U256::from(limit_order.fillable.maker),
+                            taker_amount: eth::U256::from(limit_order.fillable.taker),
+                            taker_token_fee_amount: eth::U256::from(
+                                limit_order.order.taker_token_fee_amount,
+                            ),
                         },
                     )
                 }
@@ -326,7 +327,6 @@ pub fn new(
             .surplus_capturing_jit_order_owners()
             .iter()
             .cloned()
-            .map(Into::into)
             .collect::<Vec<_>>(),
     }
 }
@@ -359,7 +359,7 @@ fn fee_policy_from_domain(value: fees::FeePolicy) -> solvers_dto::auction::FeePo
 
 fn interaction_from_domain(value: eth::Interaction) -> solvers_dto::auction::InteractionData {
     solvers_dto::auction::InteractionData {
-        target: value.target.0,
+        target: value.target,
         value: value.value.0,
         call_data: value.call_data.0,
     }
@@ -383,15 +383,15 @@ fn buy_token_destination_from_domain(
 }
 
 fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {
-    bigdecimal::BigDecimal::new(fee.as_raw().to_big_int(), 18)
+    bigdecimal::BigDecimal::new(fee.as_raw().into(), 18)
 }
 
 fn weight_to_decimal(weight: liquidity::balancer::v2::weighted::Weight) -> bigdecimal::BigDecimal {
-    bigdecimal::BigDecimal::new(weight.as_raw().to_big_int(), 18)
+    bigdecimal::BigDecimal::new(weight.as_raw().into(), 18)
 }
 
 fn scaling_factor_to_decimal(
     scale: liquidity::balancer::v2::ScalingFactor,
 ) -> bigdecimal::BigDecimal {
-    bigdecimal::BigDecimal::new(scale.as_raw().to_big_int(), 18)
+    bigdecimal::BigDecimal::new(scale.as_raw().into(), 18)
 }

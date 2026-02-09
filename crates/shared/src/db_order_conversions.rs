@@ -15,8 +15,6 @@ use {
             SigningScheme as DbSigningScheme,
         },
     },
-    ethcontract::H160,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         interaction::InteractionData,
         order::{
@@ -38,11 +36,7 @@ use {
         signature::{Signature, SigningScheme},
     },
     num::FromPrimitive,
-    number::conversions::{
-        alloy::big_decimal_to_u256 as alloy_big_decimal_to_u256,
-        big_decimal_to_big_uint,
-        big_decimal_to_u256,
-    },
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
@@ -111,14 +105,11 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         sell_token: Address::new(order.sell_token.0),
         buy_token: Address::new(order.buy_token.0),
         receiver: order.receiver.map(|address| Address::new(address.0)),
-        sell_amount: alloy_big_decimal_to_u256(&order.sell_amount)
-            .context("sell_amount is not U256")?,
-        buy_amount: alloy_big_decimal_to_u256(&order.buy_amount)
-            .context("buy_amount is not U256")?,
+        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount: alloy_big_decimal_to_u256(&order.fee_amount)
-            .context("fee_amount is not U256")?,
+        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
@@ -149,6 +140,13 @@ pub fn order_quote_into_model(
         _ => quote.metadata.clone(),
     };
 
+    let fee_amount = crate::fee::FeeParameters {
+        gas_amount: quote.gas_amount,
+        gas_price: quote.gas_price,
+        sell_token_price: quote.sell_token_price,
+    }
+    .fee();
+
     Ok(OrderQuote {
         gas_amount: BigDecimal::from_f64(quote.gas_amount).context("gas_amount is not U256")?,
         gas_price: BigDecimal::from_f64(quote.gas_price).context("gas_price is not U256")?,
@@ -156,7 +154,8 @@ pub fn order_quote_into_model(
             .context("gas_price is not U256")?,
         sell_amount: big_decimal_to_u256(&quote.sell_amount).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(&quote.buy_amount).context("buy_amount is not U256")?,
-        solver: H160(quote.solver.0),
+        fee_amount,
+        solver: Address::new(quote.solver.0),
         verified: quote.verified,
         metadata,
     })
@@ -176,7 +175,6 @@ pub fn extract_interactions(
             Ok(InteractionData {
                 target: Address::from_slice(&interaction.0.0),
                 value: big_decimal_to_u256(&interaction.1)
-                    .map(IntoAlloy::into_alloy)
                     .context("interaction value is not U256")?,
                 call_data: interaction.2.to_vec(),
             })

@@ -1,19 +1,27 @@
 use {
     super::TestAccount,
-    crate::setup::{
-        Contracts,
-        OnchainComponents,
-        TIMEOUT,
-        colocation::{self, SolverEngine},
-        wait_for_condition,
+    crate::{
+        nodes::NODE_WS_HOST,
+        setup::{
+            Contracts,
+            OnchainComponents,
+            TIMEOUT,
+            colocation::{self, SolverEngine},
+            wait_for_condition,
+        },
+    },
+    alloy::{
+        primitives::{Address, B256, U256},
+        providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::{H160, H256},
     model::{
-        order::{Order, OrderCreation, OrderUid},
+        AuctionId,
+        order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
+        solver_competition,
         solver_competition_v2,
         trade::Trade,
     },
@@ -23,11 +31,11 @@ use {
     std::{
         collections::{HashMap, hash_map::Entry},
         ops::DerefMut,
+        str::FromStr,
         sync::LazyLock,
         time::Duration,
     },
     tokio::task::JoinHandle,
-    web3::Transport,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -50,11 +58,11 @@ fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
 }
 
-fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
+fn orders_for_tx_endpoint(tx_hash: &B256) -> String {
     format!("/api/v1/transactions/{tx_hash:?}/orders")
 }
 
-fn orders_for_owner(owner: &H160, offset: u64, limit: u64) -> String {
+fn orders_for_owner(owner: &Address, offset: u64, limit: u64) -> String {
     format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
 
@@ -124,9 +132,10 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
-            "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
+            format!("--node-ws-url={NODE_WS_HOST}"),
             "--simulation-node-url=http://localhost:8545".to_string(),
             "--native-price-cache-max-age=2s".to_string(),
             "--native-price-prefetch-time=500ms".to_string(),
@@ -134,10 +143,16 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--db-read-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
+    }
+
+    fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
+        self.api_autopilot_arguments().chain([
+            "--quote-timeout=10s".to_string(),
+            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
+                .to_string(),
+        ])
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
@@ -189,17 +204,16 @@ impl<'a> Services<'a> {
 
         let args = [
             "autopilot".to_string(),
-            "--non-settling-solvers-blacklisting-enabled=false".to_string(),
-            "--low-settling-solvers-blacklisting-enabled=false".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contracts={ethflow_contracts}"),
             "--skip-event-sync=true".to_string(),
+            "--api-address=0.0.0.0:12088".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(self.api_autopilot_arguments())
+        .chain(self.autopilot_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -236,6 +250,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -257,16 +273,27 @@ impl<'a> Services<'a> {
     }
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
+        self.start_protocol_with_args_and_haircut(args, solver, 0)
+            .await;
+    }
+
+    pub async fn start_protocol_with_args_and_haircut(
+        &self,
+        args: ExtraServiceArgs,
+        solver: TestAccount,
+        haircut_bps: u32,
+    ) {
         colocation::start_driver(
             self.contracts,
             vec![
-                colocation::start_baseline_solver(
+                colocation::start_baseline_solver_with_haircut(
                     "test_solver".into(),
                     solver.clone(),
                     *self.contracts.weth.address(),
                     vec![],
                     1,
                     true,
+                    haircut_bps,
                 )
                 .await,
             ],
@@ -321,6 +348,7 @@ impl<'a> Services<'a> {
             endpoint: external_solver_endpoint,
             base_tokens: vec![],
             merge_solutions: true,
+            haircut_bps: 0,
         }];
 
         let (autopilot_args, api_args) = if run_baseline {
@@ -341,11 +369,10 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", const_hex::encode(solver.address())),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+                "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
@@ -356,14 +383,12 @@ impl<'a> Services<'a> {
                 ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
+                "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
             (autopilot_args, api_args)
@@ -431,7 +456,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_solver_competition(
         &self,
-        hash: H256,
+        hash: B256,
     ) -> Result<solver_competition_v2::Response, StatusCode> {
         let response = self
             .http
@@ -532,7 +557,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_native_price(
         &self,
-        token: &H160,
+        token: &Address,
     ) -> Result<NativeTokenPrice, (StatusCode, String)> {
         let response = self
             .http
@@ -593,7 +618,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_orders_for_tx(
         &self,
-        tx_hash: &H256,
+        tx_hash: &B256,
     ) -> Result<Vec<Order>, (StatusCode, String)> {
         let response = self
             .http
@@ -613,7 +638,7 @@ impl<'a> Services<'a> {
 
     pub async fn get_orders_for_owner(
         &self,
-        owner: &H160,
+        owner: &Address,
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>, (StatusCode, String)> {
@@ -699,6 +724,194 @@ impl<'a> Services<'a> {
         .await
     }
 
+    /// Get trades with pagination (v2 endpoint)
+    pub async fn get_trades_v2(
+        &self,
+        order_uid: Option<&OrderUid>,
+        owner: Option<&Address>,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<Trade>, (StatusCode, String)> {
+        let mut query_params = vec![("offset", offset.to_string()), ("limit", limit.to_string())];
+        if let Some(uid) = order_uid {
+            query_params.push(("orderUid", uid.to_string()));
+        }
+        if let Some(owner_addr) = owner {
+            query_params.push(("owner", owner_addr.to_string()));
+        }
+
+        let url = Url::from_str(format!("{API_HOST}/api/v2/trades").as_str())
+            .expect("string should be a valid URL");
+
+        let response = self
+            .http
+            .get(url)
+            .query(&query_params)
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get token metadata
+    pub async fn get_token_metadata(
+        &self,
+        token: &Address,
+    ) -> Result<orderbook::dto::TokenMetadata, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/token/{token:?}/metadata"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get API version
+    pub async fn get_api_version(&self) -> Result<String, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{VERSION_ENDPOINT}"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(body),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Cancel a single order (deprecated endpoint)
+    pub async fn cancel_order_single(
+        &self,
+        uid: &OrderUid,
+        payload: &CancellationPayload,
+    ) -> Result<String, (StatusCode, String)> {
+        let response = self
+            .http
+            .delete(format!("{API_HOST}{ORDERS_ENDPOINT}/{uid}"))
+            .json(payload)
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get solver competition by auction ID (v1 - deprecated)
+    pub async fn get_solver_competition_v1(
+        &self,
+        auction_id: AuctionId,
+    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/solver_competition/{auction_id}"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get solver competition by transaction hash (v1 - deprecated)
+    pub async fn get_solver_competition_by_tx_v1(
+        &self,
+        hash: B256,
+    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}/api/v1/solver_competition/by_tx_hash/{hash:?}"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get latest solver competition (v1 - deprecated)
+    pub async fn get_latest_solver_competition_v1(
+        &self,
+    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/solver_competition/latest"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    /// Get total surplus for a user (unstable endpoint)
+    pub async fn get_user_total_surplus(
+        &self,
+        user: &Address,
+    ) -> Result<U256, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/users/{user:?}/total_surplus"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => {
+                // Parse JSON response manually to extract totalSurplus
+                let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+                let total_surplus_str = json["totalSurplus"].as_str().unwrap();
+                Ok(U256::from_str_radix(total_surplus_str, 10).unwrap())
+            }
+            code => Err((code, body)),
+        }
+    }
+
     pub fn client(&self) -> &Client {
         &self.http
     }
@@ -711,11 +924,7 @@ impl<'a> Services<'a> {
 
     async fn mint_block(&self) {
         tracing::info!("mining block");
-        self.web3
-            .transport()
-            .execute("evm_mine", vec![])
-            .await
-            .unwrap();
+        self.web3.provider.evm_mine(None).await.unwrap();
     }
 }
 

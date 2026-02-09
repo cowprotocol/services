@@ -20,10 +20,9 @@ use {
         },
         util::{Bytes, math},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
+    hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
-    num::Zero,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -38,9 +37,9 @@ use {
 };
 
 pub mod auction;
-pub mod bad_tokens;
 pub mod order;
 mod pre_processing;
+pub mod risk_detector;
 pub mod solution;
 pub mod sorting;
 
@@ -66,7 +65,8 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    pub bad_tokens: Arc<bad_tokens::Detector>,
+    /// bad token and orders detector
+    pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
@@ -81,7 +81,7 @@ impl Competition {
         liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
-        bad_tokens: Arc<bad_tokens::Detector>,
+        risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
@@ -96,7 +96,7 @@ impl Competition {
             mempools,
             settlements: Default::default(),
             settle_queue: settle_sender,
-            bad_tokens,
+            risk_detector,
             fetcher,
             order_sorting_strategies,
         });
@@ -112,7 +112,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, auction: RequestBytes) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
@@ -128,15 +128,15 @@ impl Competition {
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
         tracing::debug!("retrieved auction orders count: {}", auction.orders.len());
 
-        let settlement_contract = self.eth.contracts().settlement().address();
-        let solver_address = self.solver.account().address();
+        let settlement_contract = *self.eth.contracts().settlement().address();
+        let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         // Add the CoW AMM orders to the auction
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let settlement = settlement_contract.into_legacy();
+        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
@@ -158,13 +158,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(
-                auction,
-                balances,
-                app_data,
-                cow_amm_orders,
-                &eth::Address(settlement),
-            )
+            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
         })
         .await;
 
@@ -248,7 +242,11 @@ impl Competition {
             .into_iter()
             .map(|solution| async move {
                 let id = solution.id().clone();
-                let token_pairs = solution.token_pairs();
+                let orders: Vec<_> = solution
+                    .user_trades()
+                    .map(|trade| trade.order().uid)
+                    .collect();
+                let has_haircut = solution.has_haircut();
                 observe::encoding(&id);
                 let settlement = solution
                     .encode(
@@ -258,21 +256,24 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, token_pairs, settlement)
+                (id, orders, has_haircut, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, token_pairs, result)| async move {
+            .filter_map(|(id, orders, has_haircut, result)| async move {
                 match result {
                     Ok(solution) => {
-                        self.bad_tokens.encoding_succeeded(&token_pairs);
+                        self.risk_detector.encoding_succeeded(&orders);
                         Some(solution)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
-                        self.bad_tokens.encoding_failed(&token_pairs);
-                        observe::encoding_failed(self.solver.name(), &id, &err);
-                        notify::encoding_failed(&self.solver, auction.id(), &id, &err);
+                        self.risk_detector.encoding_failed(&orders);
+                        observe::encoding_failed(self.solver.name(), &id, &err, has_haircut);
+                        // don't notify on errors for solutions with haircut
+                        if !has_haircut {
+                            notify::encoding_failed(&self.solver, auction.id(), &id, &err);
+                        }
                         None
                     }
                 }
@@ -372,6 +373,7 @@ impl Competition {
         // gets picked by the procotol.
         if let Ok(remaining) = deadline.remaining() {
             let score_ref = &mut score;
+            let has_haircut = settlement.has_haircut();
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
@@ -379,19 +381,22 @@ impl Competition {
                     if let Err(infra::simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await
                     {
-                        observe::winner_voided(block, &err);
+                        observe::winner_voided(self.solver.name(), block, &err, has_haircut);
                         *score_ref = None;
                         self.settlements
                             .lock()
                             .unwrap()
                             .retain(|s| s.solution().get() != solution_id);
-                        notify::simulation_failed(
-                            &self.solver,
-                            auction.id(),
-                            settlement.solution(),
-                            &infra::simulator::Error::Revert(err),
-                            true,
-                        );
+                        // Only notify solver if solution doesn't have haircut
+                        if !has_haircut {
+                            notify::simulation_failed(
+                                &self.solver,
+                                auction.id(),
+                                settlement.solution(),
+                                &infra::simulator::Error::Revert(err),
+                                true,
+                            );
+                        }
                         return;
                     }
                 }
@@ -406,9 +411,9 @@ impl Competition {
     // we allocate balances for the most relevants first.
     fn sort_orders(
         mut auction: Auction,
-        solver: eth::H160,
+        solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        _settlement_contract: eth::H160,
+        _settlement_contract: eth::Address,
     ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
@@ -510,13 +515,8 @@ impl Competition {
             //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(
-                        available.0.into_alloy(),
-                        allocated_balance.0.into_alloy(),
-                        max_sell.0.into_alloy(),
-                    )
-                    .unwrap_or_default()
-                    .into_legacy(),
+                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                        .unwrap_or_default(),
                 );
             }
             if order.available().is_zero() {
@@ -652,19 +652,20 @@ impl Competition {
                     // disconnected). This is a fallback to recover from issues
                     // like a stuck driver (e.g., stalled block stream).
                     Either::Left((_closed, settle_fut)) => {
-                        // Add a grace period to give driver the last chance to fetch the settlement
-                        // tx.
+                        tracing::debug!("autopilot terminated settle call");
+                        // Add a grace period to give driver the last chance to cancel the
+                        // tx if needed.
                         tokio::time::timeout(Duration::from_secs(1), settle_fut)
                             .await
-                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
+                            .unwrap_or_else(|_| {
+                                tracing::error!("didn't finish tx submission within grace period");
+                                Err(DeadlineExceeded.into())
+                            })
                     }
                     Either::Right((res, _)) => res,
                 };
                 observe::settled(self.solver.name(), &result);
-
-                if let Err(err) = response_sender.send(result) {
-                    tracing::error!(?err, "Failed to send /settle response");
-                }
+                let _ = response_sender.send(result);
             }
             .instrument(tracing_span)
             .await
@@ -677,7 +678,7 @@ impl Competition {
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
-        let mut settlement = {
+        let settlement = {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
@@ -703,19 +704,6 @@ impl Competition {
                     }
                 }
             });
-        }
-
-        // When settling, the gas price must be carefully chosen to ensure the
-        // transaction is included in a block before the deadline.
-        let time_limit = submission_time_limit(&self.eth, submission_deadline);
-        // refresh gas price to be up-to-date
-        if let Ok(gas_price) = self.eth.gas_price(time_limit).await {
-            tracing::debug!(
-                ?time_limit,
-                ?gas_price,
-                "time limit used for refreshed gas price"
-            );
-            settlement.gas.price = gas_price;
         }
 
         let executed = self
@@ -777,7 +765,7 @@ impl Competition {
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
         }
-        self.bad_tokens
+        self.risk_detector
             .filter_unsupported_orders_in_auction(auction)
             .await
     }
@@ -798,14 +786,9 @@ fn merge(
     for solution in solutions.take(MAX_SOLUTIONS_TO_MERGE) {
         let mut extension = vec![];
         for already_merged in merged.iter() {
-            match solution.merge(already_merged, max_orders_per_merged_solution) {
-                Ok(merged) => {
-                    observe::merged(&solution, already_merged, &merged);
-                    extension.push(merged);
-                }
-                Err(err) => {
-                    observe::not_merged(&solution, already_merged, err);
-                }
+            if let Ok(merged) = solution.merge(already_merged, max_orders_per_merged_solution) {
+                observe::merged(&solution, already_merged, &merged);
+                extension.push(merged);
             }
         }
 
@@ -829,25 +812,6 @@ fn merge(
     merged
 }
 
-/// Returns the aimed time limit for bringing the solution onchain, based on the
-/// submission deadline.
-fn submission_time_limit(eth: &Ethereum, submission_deadline: BlockNo) -> Option<Duration> {
-    let current_block = eth.current_block().borrow().number;
-    let blocks_until_deadline: u32 = (submission_deadline.checked_sub(current_block))?
-        .try_into()
-        .ok()?;
-    if blocks_until_deadline.is_zero() {
-        return None;
-    }
-    let time_limit = eth
-        .chain()
-        .block_time_in_ms()
-        .checked_mul(blocks_until_deadline)?;
-    // Using the above time limit, solutions are expected to be settled before the
-    // deadline. For safety, let's aim to settle the solution earlier (half that
-    // time):
-    time_limit.checked_div(2)
-}
 struct SettleRequest {
     auction_id: auction::Id,
     solution_id: u64,

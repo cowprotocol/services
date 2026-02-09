@@ -15,11 +15,12 @@ use {
     alloy::primitives::{Address, U256},
     app_data::Validator,
     chrono::{DateTime, Utc},
-    derive_more::Into,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    primitive_types::H160,
     rust_decimal::Decimal,
-    std::{collections::HashSet, str::FromStr},
+    shared::{
+        arguments::{FeeFactor, TokenBucketFeeOverride},
+        fee::VolumeFeePolicy,
+    },
+    std::collections::HashSet,
 };
 
 #[derive(Debug)]
@@ -76,16 +77,26 @@ impl From<arguments::UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
     }
 }
 
-pub type ProtocolFeeExemptAddresses = HashSet<H160>;
+pub type ProtocolFeeExemptAddresses = HashSet<Address>;
 
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
+    volume_fee_policy: VolumeFeePolicy,
 }
 
 impl ProtocolFees {
-    pub fn new(config: &arguments::FeePoliciesConfig) -> Self {
+    pub fn new(
+        config: &arguments::FeePoliciesConfig,
+        volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
+        enable_sell_equals_buy_volume_fee: bool,
+    ) -> Self {
+        let volume_fee_policy = VolumeFeePolicy::new(
+            volume_fee_bucket_overrides,
+            None, // contained within FeePoliciesConfig; vol fee is passed in at callsite
+            enable_sell_equals_buy_volume_fee,
+        );
         Self {
             fee_policies: config
                 .fee_policies
@@ -95,6 +106,7 @@ impl ProtocolFees {
                 .collect(),
             max_partner_fee: config.fee_policy_max_partner_fee,
             upcoming_fee_policies: config.upcoming_fee_policies.clone().into(),
+            volume_fee_policy,
         }
     }
 
@@ -136,7 +148,7 @@ impl ProtocolFees {
             // update the `accumulated` value
             *accumulated += value.min(cap - *accumulated);
 
-            FeeFactor(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
+            FeeFactor::new(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
         }
 
         fn fee_factor_from_bps(bps: u64) -> FeeFactor {
@@ -207,9 +219,9 @@ impl ProtocolFees {
                             factor,
                             max_volume_factor,
                             quote: Quote {
-                                sell_amount: quote.sell_amount.0.into_alloy(),
-                                buy_amount: quote.buy_amount.0.into_alloy(),
-                                fee: quote.fee.0.into_alloy(),
+                                sell_amount: quote.sell_amount.0,
+                                buy_amount: quote.buy_amount.0,
+                                fee: quote.fee.0,
                                 solver: quote.solver,
                             },
                         }
@@ -231,14 +243,14 @@ impl ProtocolFees {
         // being considered out of market price.
         let reference_quote = quote.clone().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
-            sell_amount: order.data.sell_amount.into_legacy().into(),
-            buy_amount: U256::ZERO.into_legacy().into(),
-            fee: order.data.fee_amount.into_legacy().into(),
+            sell_amount: order.data.sell_amount.into(),
+            buy_amount: U256::ZERO.into(),
+            fee: order.data.fee_amount.into(),
             solver: Address::ZERO,
         });
 
         let partner_fee =
-            Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.into());
+            Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.get());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
             return boundary::order::to_domain(order, partner_fee, quote);
@@ -264,7 +276,7 @@ impl ProtocolFees {
         let protocol_fees = fee_policies
             .iter()
             .filter_map(|fee_policy| Self::protocol_fee_into_policy(&order, &quote, fee_policy))
-            .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
+            .flat_map(|policy| self.variant_fee_apply(&order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
 
@@ -272,6 +284,7 @@ impl ProtocolFees {
     }
 
     fn variant_fee_apply(
+        &self,
         order: &boundary::Order,
         quote: &domain::Quote,
         policy: &policy::Policy,
@@ -279,7 +292,7 @@ impl ProtocolFees {
         match policy {
             policy::Policy::Surplus(variant) => variant.apply(order),
             policy::Policy::PriceImprovement(variant) => variant.apply(order, quote),
-            policy::Policy::Volume(variant) => variant.apply(order),
+            policy::Policy::Volume(variant) => variant.apply(order, &self.volume_fee_policy),
         }
     }
 
@@ -334,30 +347,6 @@ pub enum Policy {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Into)]
-pub struct FeeFactor(f64);
-
-/// TryFrom implementation for the cases we want to enforce the constrain [0, 1)
-impl TryFrom<f64> for FeeFactor {
-    type Error = anyhow::Error;
-
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        anyhow::ensure!(
-            (0.0..1.0).contains(&value),
-            "Factor must be in the range [0, 1)"
-        );
-        Ok(FeeFactor(value))
-    }
-}
-
-impl FromStr for FeeFactor {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(FeeFactor::try_from)?
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Quote {
     /// The amount of the sell token.
@@ -372,9 +361,9 @@ pub struct Quote {
 impl Quote {
     fn from_domain(value: &domain::Quote) -> Self {
         Self {
-            sell_amount: value.sell_amount.0.into_alloy(),
-            buy_amount: value.buy_amount.0.into_alloy(),
-            fee: value.fee.0.into_alloy(),
+            sell_amount: value.sell_amount.0,
+            buy_amount: value.buy_amount.0,
+            fee: value.fee.0,
             solver: value.solver,
         }
     }
@@ -425,10 +414,10 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.05),
+                    factor: FeeFactor::try_from(0.05).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.2),
+                    factor: FeeFactor::try_from(0.2).unwrap(),
                 }
             ]
         );
@@ -499,7 +488,7 @@ mod test {
         assert_eq!(
             result,
             vec![Policy::Volume {
-                factor: FeeFactor(0.0),
+                factor: FeeFactor::try_from(0.0).unwrap(),
             }]
         );
     }
@@ -544,10 +533,10 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.0),
+                    factor: FeeFactor::try_from(0.0).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.0),
+                    factor: FeeFactor::try_from(0.0).unwrap(),
                 }
             ]
         );
@@ -588,7 +577,7 @@ mod test {
         assert_eq!(
             result,
             vec![Policy::Volume {
-                factor: FeeFactor(0.3),
+                factor: FeeFactor::try_from(0.3).unwrap(),
             }]
         );
     }
@@ -636,10 +625,10 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.1),
+                    factor: FeeFactor::try_from(0.1).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.18181818181818182),
+                    factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
                 }
             ]
         );
@@ -693,13 +682,13 @@ mod test {
             result,
             vec![
                 Policy::Volume {
-                    factor: FeeFactor(0.1),
+                    factor: FeeFactor::try_from(0.1).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.18181818181818182),
+                    factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
                 },
                 Policy::Volume {
-                    factor: FeeFactor(0.0),
+                    factor: FeeFactor::try_from(0.0).unwrap(),
                 }
             ]
         );

@@ -1,7 +1,8 @@
 use {
     super::{Ether, U256},
+    alloy::eips::eip1559::calc_effective_gas_price,
     derive_more::{Display, From, Into},
-    std::{ops, ops::Add},
+    std::ops::{self, Add},
 };
 
 /// Gas amount in gas units.
@@ -13,7 +14,7 @@ pub struct Gas(pub U256);
 
 impl From<u64> for Gas {
     fn from(value: u64) -> Self {
-        Self(value.into())
+        Self(U256::from(value))
     }
 }
 
@@ -37,15 +38,18 @@ pub struct GasPrice {
     tip: FeePerGas,
     /// The current base gas price that will be charged to all accounts on the
     /// next block.
-    base: FeePerGas,
+    base: u64,
 }
 
 impl GasPrice {
     /// Returns the estimated [`EffectiveGasPrice`] for the gas price estimate.
     pub fn effective(&self) -> EffectiveGasPrice {
-        U256::from(self.max)
-            .min(U256::from(self.base).saturating_add(self.tip.into()))
-            .into()
+        U256::from(calc_effective_gas_price(
+            u128::try_from(self.max.0.0).expect("max fee per gas should fit in a u128"),
+            u128::try_from(self.tip.0.0).expect("max priority fee per gas should fit in a u128"),
+            Some(self.base),
+        ))
+        .into()
     }
 
     pub fn max(&self) -> FeePerGas {
@@ -56,25 +60,12 @@ impl GasPrice {
         self.tip
     }
 
-    pub fn base(&self) -> FeePerGas {
+    pub fn base(&self) -> u64 {
         self.base
     }
 
-    /// Creates a new instance limiting maxFeePerGas to a reasonable multiple of
-    /// the current base fee.
-    pub fn new(max: FeePerGas, tip: FeePerGas, base: FeePerGas) -> Self {
-        // We multiply a fixed factor of the current base fee per
-        // gas, which is chosen to be the maximum possible increase to the base
-        // fee (max 12.5% per block) over 12 blocks, also including the "tip".
-        const MAX_FEE_FACTOR: f64 = 4.2;
-        Self {
-            max: FeePerGas(std::cmp::min(
-                max.0,
-                base.mul_ceil(MAX_FEE_FACTOR).add(tip).0,
-            )),
-            tip,
-            base,
-        }
+    pub fn new(max: FeePerGas, tip: FeePerGas, base: u64) -> Self {
+        Self { max, tip, base }
     }
 }
 
@@ -92,17 +83,6 @@ impl std::ops::Mul<f64> for GasPrice {
     }
 }
 
-impl From<EffectiveGasPrice> for GasPrice {
-    fn from(value: EffectiveGasPrice) -> Self {
-        let value = value.0.0;
-        Self {
-            max: value.into(),
-            tip: value.into(),
-            base: value.into(),
-        }
-    }
-}
-
 /// The amount of ETH to pay as fees for a single unit of gas. This is
 /// `{max,max_priority,base}_fee_per_gas` as defined by EIP-1559.
 ///
@@ -113,7 +93,7 @@ pub struct FeePerGas(pub Ether);
 impl FeePerGas {
     /// Multiplies this fee by the given floating point number, rounding up.
     fn mul_ceil(self, rhs: f64) -> Self {
-        U256::from_f64_lossy((self.0.0.to_f64_lossy() * rhs).ceil()).into()
+        U256::from((f64::from(self.0.0) * rhs).ceil()).into()
     }
 }
 

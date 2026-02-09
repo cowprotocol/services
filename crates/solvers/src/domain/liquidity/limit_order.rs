@@ -1,4 +1,4 @@
-use {crate::domain::eth, ethereum_types::U256};
+use crate::domain::eth;
 
 /// A 0x-like foreign limit order.
 #[derive(Clone, Debug)]
@@ -10,4 +10,4 @@ pub struct LimitOrder {
 
 /// An amount denominated in the taker token of a [`LimitOrder`].
 #[derive(Debug, Clone, Copy)]
-pub struct TakerAmount(pub U256);
+pub struct TakerAmount(pub eth::U256);

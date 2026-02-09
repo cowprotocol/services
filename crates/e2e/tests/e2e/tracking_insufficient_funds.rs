@@ -1,17 +1,13 @@
 use {
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    secp256k1::SecretKey,
+    number::units::EthUnit,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -24,16 +20,16 @@ async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader_a, trader_b] = onchain.make_accounts(eth(10)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader_a, trader_b] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -43,14 +39,14 @@ async fn test(web3: Web3) {
         .weth
         .deposit()
         .from(trader_a.address())
-        .value(eth(3))
+        .value(3u64.eth())
         .send_and_watch()
         .await
         .unwrap();
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), eth(3))
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -60,7 +56,7 @@ async fn test(web3: Web3) {
         .weth
         .deposit()
         .from(trader_b.address())
-        .value(eth(3))
+        .value(3u64.eth())
         .send_and_watch()
         .await
         .unwrap();
@@ -71,10 +67,10 @@ async fn test(web3: Web3) {
 
     tracing::info!("Placing order");
     let order_a = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: 2u64.eth(),
+        buy_token: *token.address(),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -82,13 +78,13 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let order_b = OrderCreation {
-        sell_token: onchain.contracts().weth.address().into_legacy(),
-        sell_amount: to_wei(2),
-        buy_token: token.address().into_legacy(),
-        buy_amount: to_wei(1),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: 2u64.eth(),
+        buy_token: *token.address(),
+        buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -96,7 +92,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
     let uid_b = services.create_order(&order_b).await.unwrap();
@@ -105,7 +101,7 @@ async fn test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .withdraw(eth(3))
+        .withdraw(3u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -113,7 +109,7 @@ async fn test(web3: Web3) {
     onchain
         .contracts()
         .weth
-        .withdraw(eth(3))
+        .withdraw(3u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -140,12 +136,12 @@ async fn test(web3: Web3) {
         .weth
         .deposit()
         .from(trader_a.address())
-        .value(eth(3))
+        .value(3u64.eth())
         .send_and_watch()
         .await
         .unwrap();
-    onchain.mint_block().await;
     let orders_updated = || async {
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         let order_b_correct_events = events_b.into_iter().map(|e| e.label).collect::<Vec<_>>()
@@ -162,12 +158,12 @@ async fn test(web3: Web3) {
         .weth
         .deposit()
         .from(trader_b.address())
-        .value(eth(3))
+        .value(3u64.eth())
         .send_and_watch()
         .await
         .unwrap();
-    onchain.mint_block().await;
     let orders_updated = || async {
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_b).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         events_a.last().map(|o| o.label) == Some(OrderEventLabel::Traded)

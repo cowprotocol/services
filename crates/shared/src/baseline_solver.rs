@@ -2,8 +2,7 @@
 //! onchain liquidity.
 
 use {
-    alloy::primitives::Address,
-    ethcontract::U256,
+    alloy::primitives::{Address, U256},
     model::TokenPair,
     std::collections::{HashMap, HashSet},
 };
@@ -364,9 +363,13 @@ mod tests {
             pools[0].tokens => vec![pools[0]],
         };
 
-        assert!(estimate_buy_amount(1.into(), &path, &pools).await.is_none());
         assert!(
-            estimate_sell_amount(1.into(), &path, &pools)
+            estimate_buy_amount(U256::ONE, &path, &pools)
+                .await
+                .is_none()
+        );
+        assert!(
+            estimate_sell_amount(U256::ONE, &path, &pools)
                 .await
                 .is_none()
         );
@@ -397,19 +400,19 @@ mod tests {
         };
 
         assert_eq!(
-            estimate_buy_amount(10.into(), &path, &pools)
+            estimate_buy_amount(U256::from(10), &path, &pools)
                 .await
                 .unwrap()
                 .value,
-            2.into()
+            U256::from(2)
         );
 
         assert_eq!(
-            estimate_sell_amount(10.into(), &path, &pools)
+            estimate_sell_amount(U256::from(10), &path, &pools)
                 .await
                 .unwrap()
                 .value,
-            105.into()
+            U256::from(105)
         );
     }
 
@@ -438,7 +441,7 @@ mod tests {
         };
 
         assert!(
-            estimate_sell_amount(100.into(), &path, &pools)
+            estimate_sell_amount(U256::from(100), &path, &pools)
                 .await
                 .is_none()
         );
@@ -470,7 +473,7 @@ mod tests {
             second_pair => vec![second_hop_high_slippage, second_hop_low_slippage],
         };
 
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+        let buy_estimate = estimate_buy_amount(U256::from(1000), &path, &pools)
             .await
             .unwrap();
         assert_eq!(
@@ -478,7 +481,7 @@ mod tests {
             [&first_hop_low_price, &second_hop_low_slippage]
         );
 
-        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools)
+        let sell_estimate = estimate_sell_amount(U256::from(1000), &path, &pools)
             .await
             .unwrap();
         assert_eq!(
@@ -489,7 +492,7 @@ mod tests {
         // For the reverse path we now expect to use the higher price for the first hop,
         // but still low slippage for the second
         path.reverse();
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+        let buy_estimate = estimate_buy_amount(U256::from(1000), &path, &pools)
             .await
             .unwrap();
         assert_eq!(
@@ -497,7 +500,7 @@ mod tests {
             [&second_hop_low_slippage, &first_hop_high_price]
         );
 
-        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools)
+        let sell_estimate = estimate_sell_amount(U256::from(1000), &path, &pools)
             .await
             .unwrap();
         assert_eq!(
@@ -519,12 +522,12 @@ mod tests {
             pair => vec![valid_pool, invalid_pool],
         };
 
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+        let buy_estimate = estimate_buy_amount(U256::from(1000), &path, &pools)
             .await
             .unwrap();
         assert_eq!(buy_estimate.path, [&valid_pool]);
 
-        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools)
+        let sell_estimate = estimate_sell_amount(U256::from(1000), &path, &pools)
             .await
             .unwrap();
         assert_eq!(sell_estimate.path, [&valid_pool]);

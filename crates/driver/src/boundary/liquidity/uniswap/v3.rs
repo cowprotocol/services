@@ -11,10 +11,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::BlockRetrieving,
-    },
+    ethrpc::block_stream::BlockRetrieving,
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
@@ -51,14 +48,14 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
         id,
         gas: eth::Gas(pool.pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
-            router: handler.inner.router.into_legacy().into(),
+            router: handler.inner.router.into(),
             address: pool.pool.address.into(),
             tokens: liquidity::TokenPair::try_new(
                 pool.pool.tokens[0].id.into(),
                 pool.pool.tokens[1].id.into(),
             )?,
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
-            liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
+            liquidity: Liquidity(u128::try_from(pool.pool.state.liquidity)?),
             tick: Tick(pool.pool.state.tick.try_into()?),
             liquidity_net: pool
                 .pool
@@ -81,27 +78,21 @@ pub fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = UniswapV3SettlementHandler::new(
-        pool.router.0.into_alloy(),
-        receiver.0.into_alloy(),
-        Mutex::new(Allowances::empty(receiver.0.into_alloy())),
+        pool.router.into(),
+        *receiver,
+        Mutex::new(Allowances::empty(*receiver)),
         pool.fee.0,
     );
 
     let (_, interaction) = handler.settle(
-        TokenAmount::new(
-            input.0.token.0.0.into_alloy(),
-            input.0.amount.0.into_alloy(),
-        ),
-        TokenAmount::new(
-            output.0.token.0.0.into_alloy(),
-            output.0.amount.0.into_alloy(),
-        ),
+        TokenAmount::new(input.0.token.into(), input.0.amount),
+        TokenAmount::new(output.0.token.into(), output.0.amount),
     );
 
     let encoded = interaction.encode();
     eth::Interaction {
-        target: eth::Address(encoded.0.into_legacy()),
-        value: eth::Ether(encoded.1.into_legacy()),
+        target: encoded.0,
+        value: encoded.1.into(),
         call_data: crate::util::Bytes(encoded.2.0.to_vec()),
     }
 }
@@ -154,7 +145,7 @@ async fn init_liquidity(
     tokio::task::spawn(update_task);
 
     Ok(UniswapV3Liquidity::new(
-        config.router.0.into_alloy(),
+        config.router.into(),
         *eth.contracts().settlement().address(),
         web3,
         pool_fetcher,

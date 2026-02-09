@@ -1,8 +1,8 @@
 use {
-    crate::domain::{competition::Score, eth},
+    crate::domain::competition::Score,
+    alloy::primitives::{Address, U256},
     anyhow::Context,
     database::{
-        Address,
         auction::AuctionId,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
@@ -11,19 +11,18 @@ use {
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
-    primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashMap, HashSet},
 };
 
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    pub reference_scores: HashMap<eth::Address, Score>,
+    pub reference_scores: HashMap<Address, Score>,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
-    pub participants: HashSet<H160>,
+    pub participants: HashSet<Address>,
     /// External prices for auction.
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<Address, U256>,
     /// Winner receives performance rewards if a settlement is finalized on
     /// chain before this block height.
     pub block_deadline: u64,
@@ -67,7 +66,7 @@ impl super::Postgres {
                 .into_iter()
                 .map(|(token, price)| AuctionPrice {
                     auction_id: competition.auction_id,
-                    token: ByteArray(token.0),
+                    token: ByteArray(token.0.0),
                     price: u256_to_big_decimal(&price),
                 })
                 .collect::<Vec<_>>()
@@ -91,7 +90,7 @@ impl super::Postgres {
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[Address],
+        surplus_capturing_jit_order_owners: &[database::Address],
     ) -> anyhow::Result<()> {
         let mut ex = self.pool.acquire().await.context("acquire")?;
 

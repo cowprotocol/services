@@ -19,6 +19,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub logging: LoggingArguments,
 
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
+
     /// Minimum time in seconds an order must have been valid for
     /// to be eligible for refunding
     #[clap(
@@ -76,6 +79,10 @@ pub struct Arguments {
     /// Default is 30 Gwei (30_000_000_000 wei)
     #[clap(long, env, default_value = "30000000000")]
     pub start_priority_fee_tip: u64,
+
+    /// Time period in which the service looks for refundable orders.
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "1 week")]
+    pub lookback_time: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -90,15 +97,18 @@ impl std::fmt::Display for Arguments {
             ethflow_contracts,
             metrics_port,
             logging,
+            database_pool,
             db_url,
             refunder_pk,
             max_gas_price,
             start_priority_fee_tip,
+            lookback_time,
         } = self;
 
         write!(f, "{http_client}")?;
         write!(f, "{ethrpc}")?;
         write!(f, "{logging}")?;
+        write!(f, "{database_pool}")?;
         writeln!(f, "min_validity_duration: {min_validity_duration:?}")?;
         writeln!(f, "min_price_deviation_bps: {min_price_deviation_bps}")?;
         let _intentionally_ignored = db_url;
@@ -111,6 +121,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "metrics_port: {metrics_port}")?;
         writeln!(f, "max_gas_price: {max_gas_price}")?;
         writeln!(f, "start_priority_fee_tip: {start_priority_fee_tip}")?;
+        writeln!(f, "lookback_time: {lookback_time:?}")?;
         Ok(())
     }
 }

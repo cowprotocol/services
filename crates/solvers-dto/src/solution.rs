@@ -1,10 +1,10 @@
 use {
     super::serialize,
+    alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
-    web3::types::{H160, U256},
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -19,7 +19,7 @@ pub struct Solutions {
 pub struct Solution {
     pub id: u64,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-    pub prices: HashMap<H160, U256>,
+    pub prices: HashMap<Address, U256>,
     pub trades: Vec<Trade>,
     #[serde(default)]
     pub pre_interactions: Vec<Call>,
@@ -73,9 +73,9 @@ pub struct JitTrade {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JitOrder {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub receiver: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub receiver: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -111,7 +111,7 @@ pub enum Interaction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub struct Call {
-    pub target: H160,
+    pub target: Address,
     pub value: U256,
     #[serde(rename = "callData")]
     #[serde_as(as = "serialize::Hex")]
@@ -124,8 +124,8 @@ pub struct Call {
 pub struct LiquidityInteraction {
     pub internalize: bool,
     pub id: String,
-    pub input_token: H160,
-    pub output_token: H160,
+    pub input_token: Address,
+    pub output_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub input_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -137,7 +137,7 @@ pub struct LiquidityInteraction {
 #[serde(rename_all = "camelCase")]
 pub struct CustomInteraction {
     pub internalize: bool,
-    pub target: H160,
+    pub target: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(rename = "callData")]
@@ -154,7 +154,7 @@ pub struct CustomInteraction {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderInteraction {
-    pub target: H160,
+    pub target: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(rename = "callData")]
@@ -166,7 +166,7 @@ pub struct OrderInteraction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
-    pub token: H160,
+    pub token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
@@ -175,8 +175,8 @@ pub struct Asset {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Allowance {
-    pub token: H160,
-    pub spender: H160,
+    pub token: Address,
+    pub spender: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
@@ -211,10 +211,10 @@ pub enum SigningScheme {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Flashloan {
-    pub liquidity_provider: H160,
-    pub protocol_adapter: H160,
-    pub receiver: H160,
-    pub token: H160,
+    pub liquidity_provider: Address,
+    pub protocol_adapter: Address,
+    pub receiver: Address,
+    pub token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
@@ -223,7 +223,7 @@ pub struct Flashloan {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WrapperCall {
-    pub address: H160,
+    pub address: Address,
     #[serde_as(as = "serialize::Hex")]
     #[serde(default)]
     pub data: Vec<u8>,

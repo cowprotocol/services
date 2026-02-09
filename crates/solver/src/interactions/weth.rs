@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn encode_unwrap_weth() {
-        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().provider);
         let amount = U256::from(13_370_000_000_000_000_000u128);
         let interaction = UnwrapWethInteraction {
             weth: weth.clone(),
@@ -66,11 +66,11 @@ mod tests {
     #[test]
     fn merge_same_native_token() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::from(2),
         };
 
@@ -81,11 +81,11 @@ mod tests {
     #[test]
     fn merge_different_native_token() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::from(2),
         };
 
@@ -97,11 +97,11 @@ mod tests {
     #[should_panic]
     fn merge_u256_overflow() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::MAX,
         };
 

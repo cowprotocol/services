@@ -1,17 +1,13 @@
 use {
     alloy::primitives::Address,
-    e2e::setup::{OnchainComponents, Services, TestAccount, eth, run_test, safe::Safe, to_wei},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe},
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    secp256k1::SecretKey,
+    number::units::EthUnit,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -22,24 +18,24 @@ async fn local_node_order_creation_checks_metadata_signer() {
 
 async fn order_creation_checks_metadata_signer(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-    let [solver] = onchain.make_solvers(eth(1)).await;
-    let [trader, adversary, safe_owner] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader, adversary, safe_owner] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    token_a.mint(trader.address(), eth(10)).await;
+    token_a.mint(trader.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
-    token_a.mint(adversary.address(), eth(10)).await;
+    token_a.mint(adversary.address(), 10u64.eth()).await;
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(adversary.address())
         .send_and_watch()
         .await
@@ -49,10 +45,10 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address().into_legacy(),
-            sell_amount: to_wei(2),
-            buy_token: token_b.address().into_legacy(),
-            buy_amount: to_wei(1),
+            sell_token: *token_a.address(),
+            sell_amount: 2u64.eth(),
+            buy_token: *token_b.address(),
+            buy_amount: 1u64.eth(),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()
@@ -65,7 +61,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         order_creation.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(signer.private_key()).unwrap()),
+            &signer.signer,
         )
     };
 
@@ -98,11 +94,11 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
 
     // EIP-1271
 
-    let safe = Safe::deploy(safe_owner.clone(), web3.alloy.clone()).await;
-    token_a.mint(safe.address(), eth(10)).await;
+    let safe = Safe::deploy(safe_owner.clone(), web3.provider.clone()).await;
+    token_a.mint(safe.address(), 10u64.eth()).await;
     safe.exec_alloy_call(
         token_a
-            .approve(onchain.contracts().allowance.into_alloy(), eth(10))
+            .approve(onchain.contracts().allowance, 10u64.eth())
             .into_transaction_request(),
     )
     .await;
@@ -116,7 +112,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     // Rejected: from and signer are inconsistent.
     let full_app_data = full_app_data_with_signer(adversary.address());
     let mut order5 = create_order(full_app_data);
-    order5.from = Some(safe.address().into_legacy());
+    order5.from = Some(safe.address());
     safe.sign_order(&mut order5, &onchain);
     let err = services.create_order(&order5).await.unwrap_err();
     assert!(err.1.contains("AppdataFromMismatch"));

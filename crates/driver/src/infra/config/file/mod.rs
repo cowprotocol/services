@@ -1,11 +1,15 @@
 pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
-    alloy::primitives::Address,
+    alloy::{eips::BlockNumberOrTag, primitives::Address},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
+    shared::gas_price_estimation::configurable_alloy::{
+        default_past_blocks,
+        default_reward_percentile,
+    },
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
 };
@@ -134,56 +138,40 @@ enum BlockNumber {
     Earliest,
 }
 
-impl From<BlockNumber> for web3::types::BlockNumber {
-    fn from(bn: BlockNumber) -> Self {
-        match bn {
-            BlockNumber::Pending => web3::types::BlockNumber::Pending,
-            BlockNumber::Latest => web3::types::BlockNumber::Latest,
-            BlockNumber::Earliest => web3::types::BlockNumber::Earliest,
+impl From<BlockNumber> for BlockNumberOrTag {
+    fn from(value: BlockNumber) -> Self {
+        match value {
+            BlockNumber::Pending => Self::Pending,
+            BlockNumber::Latest => Self::Latest,
+            BlockNumber::Earliest => Self::Earliest,
         }
     }
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(tag = "mempool")]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Mempool {
-    #[serde(rename_all = "kebab-case")]
-    Public {
-        /// Maximum additional tip in Gwei that we are willing to pay
-        /// above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are willing to
-        /// pay above regular gas price estimation. Expects a
-        /// floating point value between 0 and 1.
-        #[serde(default = "default_additional_tip_percentage")]
-        additional_tip_percentage: f64,
-    },
-    #[serde(rename_all = "kebab-case")]
-    MevBlocker {
-        /// The MEVBlocker URL to use.
-        url: Url,
-        /// Maximum additional tip in Gwei that we are willing to give to
-        /// MEVBlocker above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are giving to
-        /// MEVBlocker above regular gas price estimation. Expects a
-        /// floating point value between 0 and 1.
-        #[serde(default = "default_additional_tip_percentage")]
-        additional_tip_percentage: f64,
-        /// Configures whether the submission logic is allowed to assume the
-        /// submission nodes implement soft cancellations. With soft
-        /// cancellations a cancellation transaction doesn't have to get mined
-        /// to have an effect. On arrival in the node all pending transactions
-        /// with the same sender and nonce will get discarded immediately.
-        #[serde(default = "default_soft_cancellations_flag")]
-        use_soft_cancellations: bool,
-    },
+#[serde(rename_all = "kebab-case")]
+struct Mempool {
+    /// Name for better logging and metrics.
+    name: Option<String>,
+    /// The RPC URL to use.
+    url: Url,
+    /// Maximum additional tip in Gwei that we are willing to give to
+    /// the validator above regular gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serialize::U256")]
+    max_additional_tip: eth::U256,
+    /// Additional tip in percentage of max_fee_per_gas we are giving to
+    /// validator above regular gas price estimation. Expects a
+    /// floating point value between 0 and 1.
+    #[serde(default = "default_additional_tip_percentage")]
+    additional_tip_percentage: f64,
+    /// Informs the submission logic whether a reverting transaction will
+    /// actually be mined or just ignored. This is an advanced feature
+    /// for private mempools so for most configured mempools you have to
+    /// assume reverting transactions will get mined eventually.
+    #[serde(default = "default_mines_reverting_txs")]
+    mines_reverting_txs: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -219,7 +207,7 @@ fn default_additional_tip_percentage() -> f64 {
 
 /// 1000 gwei
 fn default_gas_price_cap() -> eth::U256 {
-    eth::U256::from(1000) * eth::U256::exp10(9)
+    eth::U256::from(1000) * eth::U256::from(10).pow(eth::U256::from(9))
 }
 
 fn default_target_confirm_time() -> Duration {
@@ -232,11 +220,11 @@ fn default_retry_interval() -> Duration {
 
 /// 3 gwei
 fn default_max_additional_tip() -> eth::U256 {
-    eth::U256::from(3) * eth::U256::exp10(9)
+    eth::U256::from(3) * eth::U256::from(10).pow(eth::U256::from(9))
 }
 
-fn default_soft_cancellations_flag() -> bool {
-    false
+fn default_mines_reverting_txs() -> bool {
+    true
 }
 
 pub fn default_http_time_buffer() -> Duration {
@@ -304,20 +292,27 @@ struct SolverConfig {
 
     /// Which `tx.origin` is required to make a quote simulation pass.
     #[serde(default)]
-    quote_tx_origin: Option<eth::H160>,
+    quote_tx_origin: Option<eth::Address>,
 
     /// Maximum HTTP response size the driver will accept in bytes.
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
 
-    /// Configuration for bad token detection.
+    /// Configuration for bad order detection.
     #[serde(default, flatten)]
-    bad_token_detection: BadTokenDetectionConfig,
+    bad_order_detection: BadOrderDetectionConfig,
 
     /// The maximum number of `/settle` requests that can be queued up
     /// before the driver starts dropping new `/solve` requests.
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
+
+    /// Haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make bids more conservative by adjusting clearing prices
+    /// to report lower surplus. Useful for solvers prone to negative slippage.
+    /// Default: 0 (no haircut).
+    #[serde(default)]
+    haircut_bps: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -345,13 +340,13 @@ pub struct S3 {
 enum Account {
     /// A private key is used to sign transactions. Expects a 32-byte hex
     /// encoded string.
-    PrivateKey(eth::H256),
+    PrivateKey(eth::B256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
-    /// An address is used to identify the account for signing, relying on the
-    /// connected node's account management features. This can also be used to
-    /// start the driver in a dry-run mode.
-    Address(eth::H160),
+    /// Used to start the driver in the dry-run mode. This account type is
+    /// *unable* to sign transactions as alloy does not support *implicit*
+    /// node-side signing.
+    Address(eth::Address),
 }
 
 #[serde_as]
@@ -390,16 +385,16 @@ struct Slippage {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
-    gp_v2_settlement: Option<eth::H160>,
+    gp_v2_settlement: Option<eth::Address>,
 
     /// Override the default address of the WETH contract.
-    weth: Option<eth::H160>,
+    weth: Option<eth::Address>,
 
     /// Override the default address of the Balances contract.
-    balances: Option<eth::H160>,
+    balances: Option<eth::Address>,
 
     /// Override the default address of the Signatures contract.
-    signatures: Option<eth::H160>,
+    signatures: Option<eth::Address>,
 
     /// List of all cow amm factories with the corresponding helper contract.
     #[serde(default)]
@@ -407,16 +402,16 @@ struct ContractsConfig {
 
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
-    flashloan_router: Option<eth::H160>,
+    flashloan_router: Option<eth::Address>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CowAmmConfig {
     /// CoW AMM factory address.
-    pub factory: eth::H160,
+    pub factory: eth::Address,
     /// Which helper contract to use for interfacing with CoW AMMs.
-    pub helper: eth::H160,
+    pub helper: eth::Address,
 }
 
 #[derive(Debug, Deserialize)]
@@ -459,7 +454,7 @@ struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
     #[serde(default)]
-    base_tokens: Vec<eth::H160>,
+    base_tokens: Vec<eth::Address>,
 
     /// Liquidity provided by a Uniswap V2 compatible contract.
     #[serde(default)]
@@ -496,10 +491,10 @@ enum UniswapV2Config {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// The address of the Uniswap V2 compatible router contract.
-        router: eth::H160,
+        router: eth::Address,
 
         /// The digest of the pool initialization code.
-        pool_code: eth::H256,
+        pool_code: eth::B256,
 
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
@@ -529,10 +524,10 @@ enum SwaprConfig {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// The address of the Swapr compatible router contract.
-        router: eth::H160,
+        router: eth::Address,
 
         /// The digest of the pool initialization code.
-        pool_code: eth::H256,
+        pool_code: eth::B256,
 
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
@@ -576,7 +571,7 @@ enum UniswapV3Config {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// Addresses of Uniswap V3 compatible router contracts.
-        router: eth::H160,
+        router: eth::Address,
 
         /// How many pools to initialize during start up.
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
@@ -623,7 +618,7 @@ enum BalancerV2Config {
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
-        pool_deny_list: Vec<eth::H256>,
+        pool_deny_list: Vec<eth::B256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
@@ -637,7 +632,7 @@ enum BalancerV2Config {
     #[serde(rename_all = "kebab-case")]
     Manual {
         /// Addresses of Balancer V2 compatible vault contract.
-        vault: eth::H160,
+        vault: eth::Address,
 
         /// The weighted pool factory contract addresses.
         #[serde(default)]
@@ -664,7 +659,7 @@ enum BalancerV2Config {
 
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
-        pool_deny_list: Vec<eth::H256>,
+        pool_deny_list: Vec<eth::B256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
@@ -735,48 +730,31 @@ pub struct LiquoriceConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-#[serde(tag = "estimator")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "estimator")]
 pub enum GasEstimatorType {
-    #[serde(rename_all = "kebab-case")]
-    Native {
-        // Effective reward value to be selected from each individual block
-        // Example: 20 means 20% of the transactions with the lowest gas price will be analyzed
-        #[serde(default = "default_max_reward_percentile")]
-        max_reward_percentile: usize,
-        // Economical priority fee to be selected from sorted individual block reward percentiles
-        // This constitutes the part of priority fee that doesn't depend on the time_limit
-        #[serde(default = "default_min_block_percentile")]
-        min_block_percentile: f64,
-        // Urgent priority fee to be selected from sorted individual block reward percentiles
-        // This constitutes the part of priority fee that depends on the time_limit
-        #[serde(default = "default_max_block_percentile")]
-        max_block_percentile: f64,
-    },
     Web3,
-    Alloy,
+    /// EIP-1559 gas estimator using alloy's algorithm.
+    /// Optionally configure the fee history query parameters.
+    #[serde(rename_all = "kebab-case")]
+    Alloy {
+        /// Number of blocks to look back for fee history (default: 10)
+        #[serde(default = "default_past_blocks")]
+        past_blocks: u64,
+        /// Percentile of rewards to use for priority fee estimation (default:
+        /// 20.0). This is what Metamask uses as medium priority:
+        /// https://github.com/MetaMask/core/blob/0fd4b397e7237f104d1c81579a0c4321624d076b/packages/gas-fee-controller/src/fetchGasEstimatesViaEthFeeHistory/calculateGasFeeEstimatesForPriorityLevels.ts#L14-L45
+        #[serde(default = "default_reward_percentile")]
+        reward_percentile: f64,
+    },
 }
 
 impl Default for GasEstimatorType {
     fn default() -> Self {
-        GasEstimatorType::Native {
-            max_reward_percentile: default_max_reward_percentile(),
-            min_block_percentile: default_min_block_percentile(),
-            max_block_percentile: default_max_block_percentile(),
+        Self::Alloy {
+            past_blocks: default_past_blocks(),
+            reward_percentile: default_reward_percentile(),
         }
     }
-}
-
-fn default_max_reward_percentile() -> usize {
-    20
-}
-
-fn default_min_block_percentile() -> f64 {
-    30.
-}
-
-fn default_max_block_percentile() -> f64 {
-    60.
 }
 
 /// Defines various strategies to prioritize orders.
@@ -835,10 +813,10 @@ fn default_simulation_bad_token_max_age() -> Duration {
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct BadTokenDetectionConfig {
+pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
     #[serde(default)]
-    pub token_supported: HashMap<eth::H160, bool>,
+    pub token_supported: HashMap<eth::Address, bool>,
 
     /// Whether the solver opted into detecting unsupported
     /// tokens with `trace_callMany` based simulation.
@@ -846,46 +824,65 @@ pub struct BadTokenDetectionConfig {
     pub enable_simulation_strategy: bool,
 
     /// Whether the solver opted into detecting unsupported
-    /// tokens with metrics-based detection.
-    #[serde(default, rename = "enable-metrics-bad-token-detection")]
+    /// orders with metrics-based detection. Orders that continue to result
+    /// in reverting solutions will be ignored temporarily.
+    #[serde(default, rename = "enable-metrics-bad-order-detection")]
     pub enable_metrics_strategy: bool,
 
-    /// The ratio of failures to attempts that qualifies a token as unsupported.
+    /// The ratio of failures to attempts that qualifies an order as
+    /// unsupported.
     #[serde(
-        default = "default_metrics_bad_token_detector_failure_ratio",
-        rename = "metrics-bad-token-detection-failure-ratio"
+        default = "default_metrics_bad_order_detector_failure_ratio",
+        rename = "metrics-bad-order-detection-failure-ratio"
     )]
     pub metrics_strategy_failure_ratio: f64,
 
-    /// The minimum number of attempts required before evaluating a token’s
+    /// The minimum number of attempts required before evaluating an order’s
     /// quality.
     #[serde(
-        default = "default_metrics_bad_token_detector_required_measurements",
-        rename = "metrics-bad-token-detection-required-measurements"
+        default = "default_metrics_bad_order_detector_required_measurements",
+        rename = "metrics-bad-order-detection-required-measurements"
     )]
     pub metrics_strategy_required_measurements: u32,
 
     /// Controls whether the metrics based detection strategy should only log
-    /// unsupported tokens or actually filter them out.
+    /// unsupported orders or actually filter them out.
     #[serde(
-        default = "default_metrics_bad_token_detector_log_only",
-        rename = "metrics-bad-token-detection-log-only"
+        default = "default_metrics_bad_order_detector_log_only",
+        rename = "metrics-bad-order-detection-log-only"
     )]
     pub metrics_strategy_log_only: bool,
 
-    /// How long the metrics based bad token detection should flag a token as
+    /// How long the metrics based bad order detection should flag an order as
     /// unsupported before it allows to solve for that token again.
     #[serde(
-        default = "default_metrics_bad_token_detector_freeze_time",
-        rename = "metrics-bad-token-detection-token-freeze-time",
+        default = "default_metrics_bad_order_detector_freeze_time",
+        rename = "metrics-bad-order-detection-order-freeze-time",
         with = "humantime_serde"
     )]
-    pub metrics_strategy_token_freeze_time: Duration,
+    pub metrics_strategy_freeze_time: Duration,
+
+    /// How frequently we try to collect garbage on the metrics cache.
+    #[serde(
+        default = "default_metrics_bad_order_detector_gc_interval",
+        rename = "metrics-bad-order-detection-gc-interval",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_gc_interval: Duration,
+
+    /// How long we must not have seen an order in a solution before
+    /// the associated metrics get evicted from the cache.
+    #[serde(
+        default = "default_metrics_bad_order_detector_gc_max_age",
+        rename = "metrics-bad-order-detection-gc-max-age",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_gc_max_age: Duration,
 }
 
-impl Default for BadTokenDetectionConfig {
+impl Default for BadOrderDetectionConfig {
     fn default() -> Self {
-        serde_json::from_str("{}").expect("MetricsBadTokenDetectorConfig uses default values")
+        serde_json::from_str("{}").expect("MetricsBadOrderDetectorConfig uses default values")
     }
 }
 
@@ -936,11 +933,11 @@ impl<'de> Deserialize<'de> for AppDataFetching {
     }
 }
 
-fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
+fn default_metrics_bad_order_detector_failure_ratio() -> f64 {
     0.9
 }
 
-fn default_metrics_bad_token_detector_required_measurements() -> u32 {
+fn default_metrics_bad_order_detector_required_measurements() -> u32 {
     20
 }
 
@@ -951,12 +948,20 @@ fn default_settle_queue_size() -> usize {
     2
 }
 
-fn default_metrics_bad_token_detector_log_only() -> bool {
+fn default_metrics_bad_order_detector_log_only() -> bool {
     true
 }
 
-fn default_metrics_bad_token_detector_freeze_time() -> Duration {
+fn default_metrics_bad_order_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+fn default_metrics_bad_order_detector_gc_interval() -> Duration {
+    Duration::from_mins(1)
+}
+
+fn default_metrics_bad_order_detector_gc_max_age() -> Duration {
+    Duration::from_hours(1)
 }
 
 /// According to statistics, the average size of the app-data is ~800 bytes.
@@ -974,4 +979,125 @@ enum AtBlock {
     Latest,
     /// Use the latest finalized block.
     Finalized,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gas_estimator_alloy_defaults() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 10);
+                assert_eq!(reward_percentile, 20.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_alloy_custom_past_blocks() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+            past-blocks = 5
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 5);
+                assert_eq!(reward_percentile, 20.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_alloy_custom_percentile() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+            reward-percentile = 50.0
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 10);
+                assert_eq!(reward_percentile, 50.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_alloy_all_custom() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "alloy"
+            past-blocks = 20
+            reward-percentile = 75.0
+        "#,
+        )
+        .unwrap();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 20);
+                assert_eq!(reward_percentile, 75.0);
+            }
+            _ => panic!("expected Alloy variant"),
+        }
+    }
+
+    #[test]
+    fn gas_estimator_web3() {
+        let config: GasEstimatorType = toml::from_str(
+            r#"
+            estimator = "web3"
+        "#,
+        )
+        .unwrap();
+
+        assert!(matches!(config, GasEstimatorType::Web3));
+    }
+
+    #[test]
+    fn gas_estimator_default() {
+        let config = GasEstimatorType::default();
+
+        match config {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => {
+                assert_eq!(past_blocks, 10);
+                assert_eq!(reward_percentile, 20.0);
+            }
+            _ => panic!("expected Alloy variant as default"),
+        }
+    }
 }

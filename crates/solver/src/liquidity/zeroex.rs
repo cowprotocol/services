@@ -9,18 +9,14 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::Result,
     arc_swap::ArcSwap,
     contracts::alloy::IZeroex,
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::{CurrentBlockWatcher, into_stream},
-    },
+    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
-    primitive_types::U256,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
@@ -72,7 +68,7 @@ impl ZeroExLiquidity {
         record: OrderRecord,
         allowances: Arc<Allowances>,
     ) -> Option<Liquidity> {
-        let sell_amount: U256 = record.remaining_maker_amount().ok()?.into();
+        let sell_amount = U256::from(record.remaining_maker_amount().ok()?);
         if sell_amount.is_zero() || record.metadata().remaining_fillable_taker_amount == 0 {
             // filter out orders with 0 amounts to prevent errors in the solver
             return None;
@@ -82,13 +78,13 @@ impl ZeroExLiquidity {
             id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(const_hex::encode(
                 &record.metadata().order_hash,
             ))),
-            sell_token: record.order().maker_token.into_legacy(),
-            buy_token: record.order().taker_token.into_legacy(),
+            sell_token: record.order().maker_token,
+            buy_token: record.order().taker_token,
             sell_amount,
-            buy_amount: record.metadata().remaining_fillable_taker_amount.into(),
+            buy_amount: U256::from(record.metadata().remaining_fillable_taker_amount),
             kind: OrderKind::Buy,
             partially_fillable: true,
-            user_fee: U256::zero(),
+            user_fee: U256::ZERO,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order_record: record,
                 zeroex: self.zeroex.clone(),
@@ -230,18 +226,18 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         execution: LimitOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        if execution.filled > u128::MAX.into() {
+        let Ok(execution_filled) = u128::try_from(execution.filled) else {
             anyhow::bail!("0x only supports executed amounts of size u128");
-        }
+        };
         let approval = self.allowances.approve_token(TokenAmount::new(
             self.order_record.order().taker_token,
-            execution.filled.into_alloy(),
+            execution.filled,
         ))?;
         if let Some(approval) = approval {
             encoder.append_to_execution_plan(Arc::new(approval));
         }
         encoder.append_to_execution_plan(Arc::new(ZeroExInteraction {
-            taker_token_fill_amount: execution.filled.as_u128(),
+            taker_token_fill_amount: execution_filled,
             order: self.order_record.order().clone(),
             zeroex: self.zeroex.clone(),
         }));
@@ -387,12 +383,10 @@ pub mod tests {
         let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             Default::default(),
-            ethrpc::mock::web3().alloy,
+            ethrpc::mock::web3().provider,
         ));
-        let allowances = Allowances::new(
-            *zeroex.address(),
-            hashmap! { sell_token => alloy::primitives::U256::from(99) },
-        );
+        let allowances =
+            Allowances::new(*zeroex.address(), hashmap! { sell_token => U256::from(99) });
         let order_record = OrderRecord::new(
             zeroex_api::Order {
                 taker_amount: 100,
@@ -407,7 +401,7 @@ pub mod tests {
             allowances: Arc::new(allowances),
         };
         let mut encoder = SettlementEncoder::default();
-        let execution = LimitOrderExecution::new(100.into(), 0.into());
+        let execution = LimitOrderExecution::new(U256::from(100), U256::ZERO);
         handler.encode(execution, &mut encoder).unwrap();
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)
@@ -435,11 +429,11 @@ pub mod tests {
         let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             Default::default(),
-            ethrpc::mock::web3().alloy,
+            ethrpc::mock::web3().provider,
         ));
         let allowances = Allowances::new(
             *zeroex.address(),
-            hashmap! { sell_token => alloy::primitives::U256::from(100) },
+            hashmap! { sell_token => U256::from(100) },
         );
         let order_record = OrderRecord::new(
             zeroex_api::Order {
@@ -455,7 +449,7 @@ pub mod tests {
             allowances: Arc::new(allowances),
         };
         let mut encoder = SettlementEncoder::default();
-        let execution = LimitOrderExecution::new(100.into(), 0.into());
+        let execution = LimitOrderExecution::new(U256::from(100), U256::ZERO);
         handler.encode(execution, &mut encoder).unwrap();
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)

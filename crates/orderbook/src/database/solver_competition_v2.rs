@@ -8,7 +8,7 @@ use {
         order::OrderUid,
         solver_competition_v2::{Auction, Order, Response as ApiResponse, Solution},
     },
-    number::conversions::alloy::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -153,6 +153,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
     Ok(ApiResponse {
         auction_id: value.auction.id,
         auction_start_block: value.auction.block,
+        auction_deadline_block: value.auction.deadline,
         transaction_hashes: settlements.values().cloned().collect(),
         reference_scores,
         auction: Auction {

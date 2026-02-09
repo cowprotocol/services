@@ -1,10 +1,7 @@
 use {
     super::{Error, Ethereum},
     crate::domain::eth,
-    ethrpc::alloy::{
-        conversions::{IntoAlloy, IntoLegacy},
-        errors::ContractErrorExt,
-    },
+    ethrpc::alloy::errors::ContractErrorExt,
 };
 
 /// An ERC-20 token.
@@ -17,16 +14,13 @@ pub struct Erc20 {
 impl Erc20 {
     pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
         Self {
-            token: contracts::alloy::ERC20::Instance::new(
-                address.0.0.into_alloy(),
-                eth.web3.alloy.clone(),
-            ),
+            token: contracts::alloy::ERC20::Instance::new(address.0.0, eth.web3.provider.clone()),
         }
     }
 
     /// Returns the [`eth::TokenAddress`] of the ERC20.
     pub fn address(&self) -> eth::TokenAddress {
-        self.token.address().into_legacy().into()
+        (*self.token.address()).into()
     }
 
     /// Fetch the ERC20 allowance for the spender. See the allowance method in
@@ -38,13 +32,9 @@ impl Erc20 {
         owner: eth::Address,
         spender: eth::Address,
     ) -> Result<eth::allowance::Existing, Error> {
-        let amount = self
-            .token
-            .allowance(owner.0.into_alloy(), spender.0.into_alloy())
-            .call()
-            .await?;
+        let amount = self.token.allowance(owner, spender).call().await?;
         Ok(eth::Allowance {
-            token: self.token.address().into_legacy().into(),
+            token: (*self.token.address()).into(),
             spender,
             amount,
         }
@@ -81,10 +71,9 @@ impl Erc20 {
     /// https://eips.ethereum.org/EIPS/eip-20#balanceof
     pub async fn balance(&self, holder: eth::Address) -> Result<eth::TokenAmount, Error> {
         self.token
-            .balanceOf(holder.0.into_alloy())
+            .balanceOf(holder)
             .call()
             .await
-            .map(IntoLegacy::into_legacy)
             .map(Into::into)
             .map_err(Into::into)
     }

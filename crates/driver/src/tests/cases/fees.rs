@@ -1,5 +1,5 @@
 use crate::{
-    domain::competition::order,
+    domain::{competition::order, eth},
     infra::config::file::FeeHandler,
     tests::{
         self,
@@ -14,7 +14,7 @@ async fn solver_fee() {
         let order = ab_order()
             .kind(order::Kind::Limit)
             .side(side)
-            .solver_fee(Some(500.into()));
+            .solver_fee(Some(eth::U256::from(500)));
         let test = tests::setup()
             .name(format!("Solver Fee: {side:?}"))
             .solvers(vec![test_solver().fee_handler(FeeHandler::Driver)])

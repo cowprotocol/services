@@ -16,7 +16,6 @@ chain = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 const-hex = { workspace = true }
 contracts = { workspace = true }
-ethereum-types = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
@@ -25,7 +24,7 @@ solvers-dto = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 tower-http = { workspace = true, features = ["trace"] }
 tracing = { workspace = true }
-observe = { workspace = true, features = ["axum-tracing"] }
+#observe = { workspace = true, features = ["axum-tracing"] }
 chrono = { workspace = true, features = ["serde"] }
 
 [lints]

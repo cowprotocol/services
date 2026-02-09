@@ -12,21 +12,20 @@ use {
         order::{self, Side},
         trade::CustomClearingPrices,
     },
-    crate::{
-        domain::{
-            competition::{
-                PriceLimits,
-                auction,
-                order::FeePolicy,
-                solution::{
-                    error,
-                    fee::{self, adjust_quote_to_order_limits},
-                },
+    crate::domain::{
+        competition::{
+            PriceLimits,
+            auction,
+            order::FeePolicy,
+            solution::{
+                error,
+                fee::{self, adjust_quote_to_order_limits},
             },
-            eth,
         },
-        util::conv::u256::U256Ext,
+        eth,
     },
+    alloy::primitives::ruint::UintTryFrom,
+    number::u256_ext::U256Ext,
 };
 
 pub fn compute_score(
@@ -108,11 +107,11 @@ impl Trade {
                 // to avoid loss of precision because we work with integers we first multiply
                 // and then divide:
                 // buy_amount = surplus * buy_price / sell_price
-                let surplus_in_buy_tokens: eth::U256 = surplus_in_surplus_token
-                    .full_mul(self.signed_buy.amount.0)
-                    .checked_div(self.signed_sell.amount.0.into())
-                    .ok_or(Error::Math(Math::DivisionByZero))?
-                    .try_into()
+                let surplus_in_buy_tokens = surplus_in_surplus_token
+                    .widening_mul(self.signed_buy.amount.0)
+                    .checked_div(alloy::primitives::U512::from(self.signed_sell.amount.0))
+                    .ok_or(Error::Math(Math::DivisionByZero))?;
+                let surplus_in_buy_tokens = eth::U256::uint_try_from(surplus_in_buy_tokens)
                     .map_err(|_| Error::Math(Math::Overflow))?;
 
                 // Afterwards we convert the buy token surplus to the native token.
@@ -296,7 +295,7 @@ impl Trade {
         // negative surplus is not error in this case, as solutions often have no
         // improvement over quote which results in negative surplus
         if let Err(Math::Negative) = surplus {
-            return Ok(eth::SurplusTokenAmount(0.into()));
+            return Ok(eth::SurplusTokenAmount(eth::U256::ZERO));
         }
         Ok(surplus?)
     }
@@ -400,7 +399,12 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, auction::Price, shared::addr, std::collections::HashMap};
+    use {
+        super::*,
+        alloy::primitives::{Address, U256, address},
+        auction::Price,
+        std::collections::HashMap,
+    };
 
     /// Tests that the new score computation limits the score of certain
     /// buy orders to a reasonable amount.
@@ -408,40 +412,40 @@ mod tests {
     /// [auction](https://api.cow.fi/base/api/v1/solver_competition/by_tx_hash/0xe3ef02493255f17c0abd2ff88c34682d35f0de4f4875a4653104e3453473d8d9).
     #[test]
     fn score_problematic_buy_order() {
-        let weth = addr!("4200000000000000000000000000000000000006");
-        let bnkr = addr!("22af33fe49fd1fa80c7149773dde5890d3c76f3b");
+        const WETH: Address = address!("4200000000000000000000000000000000000006");
+        const BNKR: Address = address!("22af33fe49fd1fa80c7149773dde5890d3c76f3b");
 
         // Buy order which results in an unreasonably high score
         // using the original scoring mechanism.
         let trade = Trade {
             signed_sell: eth::Asset {
-                token: weth.into(),
+                token: WETH.into(),
                 amount: 9865986634773384514560000000000000u128.into(),
             },
             signed_buy: eth::Asset {
-                token: bnkr.into(),
+                token: BNKR.into(),
                 amount: 4025333872768468868566822740u128.into(),
             },
             side: Side::Buy,
-            executed: order::TargetAmount(8050667745u128.into()),
+            executed: order::TargetAmount(U256::from(8050667745u128)),
             custom_price: CustomClearingPrices {
-                sell: 874045870u128.into(),
-                buy: 8050667745u128.into(),
+                sell: U256::from(874045870u128),
+                buy: U256::from(8050667745u128),
             },
             policies: vec![],
         };
 
         let native_prices: HashMap<_, _> = [
             (
-                weth.into(),
-                Price(eth::Ether(1000000000000000000u128.into())),
+                WETH.into(),
+                Price(eth::Ether(U256::from(1000000000000000000u128))),
             ),
-            (bnkr.into(), Price(eth::Ether(113181296327u128.into()))),
+            (BNKR.into(), Price(eth::Ether(U256::from(113181296327u128)))),
         ]
         .into_iter()
         .collect();
 
         let score = trade.score(&native_prices).unwrap();
-        assert_eq!(score.0, 911.into());
+        assert_eq!(score.0, U256::from(911));
     }
 }

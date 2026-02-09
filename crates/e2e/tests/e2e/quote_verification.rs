@@ -1,33 +1,32 @@
 use {
-    ::alloy::primitives::{Address, U256, address},
-    bigdecimal::{BigDecimal, Zero},
-    e2e::setup::{eth, *},
-    ethcontract::H160,
-    ethrpc::{
-        Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+    ::alloy::{
+        primitives::{Address, U256, address, map::AddressMap},
+        providers::Provider,
     },
+    bigdecimal::{BigDecimal, Zero},
+    e2e::setup::*,
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
     shared::{
         price_estimation::{
-            Estimate, Verification,
+            Estimate,
+            Verification,
             trade_verifier::{
-                PriceQuery, TradeVerifier, TradeVerifying,
+                PriceQuery,
+                TradeVerifier,
+                TradeVerifying,
                 balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
             },
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 #[tokio::test]
@@ -68,6 +67,12 @@ async fn local_node_verified_quote_with_simulated_balance() {
 
 #[tokio::test]
 #[ignore]
+async fn local_node_trace_based_balance_detection() {
+    run_test(trace_based_balance_detection).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn forked_node_mainnet_usdt_quote() {
     run_forked_test_with_block_number(
         usdt_quote_verification,
@@ -83,16 +88,16 @@ async fn standard_verified_quote(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    token.mint(trader.address(), eth(1)).await;
+    token.mint(trader.address(), 1u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -110,7 +115,7 @@ async fn standard_verified_quote(web3: Web3) {
             buy_token: *onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -138,7 +143,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         "https" => url.set_scheme("wss").unwrap(),
         _ => unreachable!("unexpected scheme"),
     }
-    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.alloy.clone(), url)
+    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), url)
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
@@ -166,7 +171,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         sell_token: address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
                         buy_token: address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         kind: OrderKind::Sell,
-                        in_amount: NonZeroU256::new(12.into()).unwrap(),
+                        in_amount: NonZeroU256::new(U256::from(12)).unwrap(),
                     },
                     &Verification {
                         from: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
@@ -184,8 +189,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                             data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap(),
                             value: U256::ZERO,
                         }],
-                        solver: address!("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
-                            ,
+                        solver: address!("e3067c7c27c1038de4e8ad95a83b927d23dfbd99"),
                         tx_origin,
                     }),
                 )
@@ -196,12 +200,12 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
     let verified_quote = Estimate {
         out_amount: U256::from(16380122291179526144u128),
         gas: 225000,
-        solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99").unwrap(),
+        solver: address!("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99"),
         verified: true,
         execution: QuoteExecution {
             interactions: vec![InteractionData {
                 target: address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-                value: ::alloy::primitives::U256::ZERO,
+                value: U256::ZERO,
                 call_data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap()
             }],
             pre_interactions: vec![],
@@ -231,10 +235,10 @@ async fn verified_quote_eth_balance(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(1)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
     let weth = &onchain.contracts().weth;
 
@@ -252,7 +256,7 @@ async fn verified_quote_eth_balance(web3: Web3) {
             .is_zero()
     );
     assert!(
-        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+        weth.allowance(trader.address(), onchain.contracts().allowance)
             .call()
             .await
             .unwrap()
@@ -265,7 +269,7 @@ async fn verified_quote_eth_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -281,16 +285,16 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(3)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(3u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Send 3 ETH to the settlement contract so we can get verified quotes for
     // selling WETH.
     onchain
-        .send_wei(*onchain.contracts().gp_settlement.address(), eth(3))
+        .send_wei(*onchain.contracts().gp_settlement.address(), 3u64.eth())
         .await;
 
     tracing::info!("Starting services.");
@@ -302,7 +306,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
         buy_token: *token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: to_wei(3).try_into().unwrap(),
+                value: (3u64.eth()).try_into().unwrap(),
             },
         },
         ..Default::default()
@@ -359,10 +363,10 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(eth(10)).await;
-    let [trader] = onchain.make_accounts(eth(0)).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(0u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
     let weth = &onchain.contracts().weth;
 
@@ -390,15 +394,12 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         (
             token.balanceOf(trader.address()).call().await.unwrap(),
             token
-                .allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+                .allowance(trader.address(), onchain.contracts().allowance)
                 .call()
                 .await
                 .unwrap(),
         ),
-        (
-            ::alloy::primitives::U256::ZERO,
-            ::alloy::primitives::U256::ZERO
-        ),
+        (U256::ZERO, U256::ZERO),
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
@@ -407,7 +408,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -420,8 +421,8 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     assert!(
         onchain
             .web3()
-            .eth()
-            .balance(trader.address().into_legacy(), None)
+            .provider
+            .get_balance(trader.address())
             .await
             .unwrap()
             .is_zero()
@@ -434,7 +435,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             .is_zero()
     );
     assert!(
-        weth.allowance(trader.address(), onchain.contracts().allowance.into_alloy())
+        weth.allowance(trader.address(), onchain.contracts().allowance)
             .call()
             .await
             .unwrap()
@@ -447,7 +448,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -465,7 +466,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -483,7 +484,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
             buy_token: *token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
+                    value: (1u64.eth()).try_into().unwrap(),
                 },
             },
             app_data: model::order::OrderCreationAppData::Full {
@@ -514,7 +515,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 async fn usdt_quote_verification(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(eth(1)).await;
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
     let usdc = address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
     let usdt = address!("dac17f958d2ee523a2206206994597c13d831ec7");
@@ -537,7 +538,7 @@ async fn usdt_quote_verification(web3: Web3) {
             buy_token: usdc,
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: to_wei_with_exp(1000, 18).try_into().unwrap(),
+                    value: (1000u64.eth()).try_into().unwrap(),
                 },
             },
             ..Default::default()
@@ -547,70 +548,131 @@ async fn usdt_quote_verification(web3: Web3) {
     assert!(quote.verified);
 }
 
-#[tokio::test]
-#[ignore]
-async fn forked_node_trace_based_balance_detection() {
-    run_forked_test_with_block_number(
-        trace_based_balance_detection,
-        std::env::var("FORK_URL_MAINNET")
-            .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        FORK_BLOCK_MAINNET,
-    )
-    .await;
-}
-
 /// Tests that balance override detection works with debug_traceCall.
-/// This test verifies the trace-based detection strategy that's similar to Foundry's `deal`.
+/// This test verifies the trace-based detection strategy that's similar to
+/// Foundry's `deal`.
 async fn trace_based_balance_detection(web3: Web3) {
     use shared::price_estimation::trade_verifier::balance_overrides::detector::Detector;
 
-    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
 
     // Test with WETH (standard ERC20 with mapping at slot 3)
-    let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-    // Test with USDC (has multiple storage accesses in balanceOf due to upgradeability)
-    let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
-    // Test with Euler vault token (complicated/stress case)
-    let euler_vault = addr!("D8b27CF359b7D15710a5BE299AF6e7Bf904984C2");
+    let weth = *onchain.contracts().weth.address();
+
+    // Deploy the NonStandardERC20Balances token - this has balances stored at an
+    // offset within a struct mapping, making it undetectable by standard slot
+    // calculation methods
+    let struct_offset_token =
+        contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
+            .await
+            .unwrap();
+
+    // Deploy the NonStandardERC20BalancesEntrance token - as if the previous
+    // contract wasnt complicated enough, this contract will selectively
+    // delegate the balance it returns between itself (allowing for testing of
+    // calling another contract to get a balance--or calling another contract to
+    // *not* get a balance)
+    let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
+        web3.provider.clone(),
+        weth,
+        true,
+    )
+    .await
+    .unwrap();
+    let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
+        web3.provider.clone(),
+        weth,
+        false,
+    )
+    .await
+    .unwrap();
+
+    // Mint some tokens to the trader (so the contract has non-zero state)
+    struct_offset_token
+        .mint(trader.address(), 100u64.eth())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    local_storage_token
+        .mint(trader.address(), 123u64.eth())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let detector = Detector::new(web3.clone(), 60);
 
-    let test_account = addr!("0000000000000000000000000000000000000042");
+    let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
 
-    // Test WETH detection - should successfully detect via trace
+    tracing::info!(?weth, "Testing WETH balance detection...");
     let weth_strategy = detector.detect(weth, test_account).await;
-    /*assert!(
-        matches!(weth_strategy, Ok(Strategy::DirectSlot { .. })),
-        "Should detect WETH balance slot"
-    );*/
-    tracing::info!("WETH strategy: {:?}", weth_strategy);
+    tracing::info!("WETH strategy detected: {:?}", weth_strategy);
+    assert!(
+        matches!(weth_strategy, Ok(Strategy::SolidityMapping { .. })),
+        "Should detect WETH balance slot via trace"
+    );
 
-    // Test USDC detection - may have multiple storage accesses, should iteratively test
-    let usdc_strategy = detector.detect(usdc, test_account).await;
-    /*assert!(
-        matches!(usdc_strategy, Ok(Strategy::DirectSlot { .. })),
-        "Should detect USDC balance slot"
-    );*/
-    tracing::info!("USDC strategy: {:?}", usdc_strategy);
+    // Test with NonStandardERC20Balances - this is the key test case
+    // The balance is at offset 2 within the UserData struct (epoch=0, approvals
+    // mapping=1, balance=2)
+    tracing::info!(address = ?struct_offset_token.address(), "Testing NonStandardERC20Balances detection...");
+    let struct_offset_strategy = detector
+        .detect(*struct_offset_token.address(), test_account)
+        .await;
+    assert!(
+        matches!(struct_offset_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect non-standard token balance slot via trace-based detection"
+    );
+    tracing::info!(
+        "✓ NonStandardERC20Balances strategy detected: {:?}",
+        struct_offset_strategy
+    );
 
-    // Test Euler vault detection - should successfully detect via trace
-    let euler_vault_strategy = detector.detect(euler_vault, test_account).await;
-    /*assert!(
-        matches!(euler_vault_strategy, Ok(Strategy::DirectSlot { .. })),
-        "Should detect Euler vault balance slot"
-    );*/
-    tracing::info!("Euler vault strategy: {:?}", euler_vault_strategy);
+    tracing::info!(address = ?delegated_storage_token.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
+    let delegated_storage_strategy = detector
+        .detect(*delegated_storage_token.address(), test_account)
+        .await;
+    assert!(
+        matches!(
+            delegated_storage_strategy,
+            Ok(Strategy::SolidityMapping { .. })
+        ),
+        "Should detect non-standard token balance slot via trace-based detection"
+    );
+    tracing::info!(
+        "✓ RemoteERC20Balances (remote) strategy detected: {:?}",
+        delegated_storage_strategy
+    );
 
-    // Verify that the detected strategies actually work by testing balance overrides
-    use {contracts::alloy::ERC20, ethrpc::alloy::conversions::IntoAlloy};
+    tracing::info!(address = ?local_storage_token.address(), "Testing RemoteERC20Balances (using local contract slot) detection...");
+    let local_storage_strategy = detector
+        .detect(*local_storage_token.address(), test_account)
+        .await;
+    assert!(
+        matches!(local_storage_strategy, Ok(Strategy::DirectSlot { .. })),
+        "Should detect non-standard token balance slot via trace-based detection"
+    );
+    tracing::info!(
+        "✓ RemoteERC20Balances (self) strategy detected: {:?}",
+        local_storage_strategy
+    );
+
+    // Verify that the detected strategies actually work by testing balance
+    // overrides
+    use contracts::alloy::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,
-        token: H160,
+        token: Address,
         strategy: Strategy,
-        test_account: H160,
+        test_account: Address,
         test_balance: U256,
     ) {
         use {
@@ -627,7 +689,7 @@ async fn trace_based_balance_detection(web3: Web3) {
             .state_override(BalanceOverrideRequest {
                 token,
                 holder: test_account,
-                amount: test_balance.into_legacy(),
+                amount: test_balance,
             })
             .await;
 
@@ -635,10 +697,13 @@ async fn trace_based_balance_detection(web3: Web3) {
         let (override_token, state_override) = override_result.unwrap();
 
         // Call balanceOf with the state override to verify it works
-        let token_contract = ERC20::Instance::new(token.into_alloy(), web3.alloy.clone());
+        let token_contract = ERC20::Instance::new(token, web3.provider.clone());
         let balance = token_contract
-            .balanceOf(test_account.into_alloy())
-            .state(HashMap::from([(override_token, state_override)]).into_alloy())
+            .balanceOf(test_account)
+            .state(AddressMap::from_iter([(
+                override_token,
+                state_override.clone(),
+            )]))
             .call()
             .await
             .unwrap();
@@ -650,10 +715,11 @@ async fn trace_based_balance_detection(web3: Web3) {
         );
 
         tracing::info!(
-            "✓ Balance override verified for token {:?}: set {} and got {}",
-            token,
-            test_balance,
-            balance
+            ?token,
+            ?balance,
+            ?override_token,
+            ?state_override,
+            "✓ Balance override verified for token",
         );
     }
 
@@ -668,50 +734,26 @@ async fn trace_based_balance_detection(web3: Web3) {
     .await;
     test_balance_override(
         &web3,
-        usdc,
-        usdc_strategy.unwrap(),
+        *struct_offset_token.address(),
+        struct_offset_strategy.unwrap(),
         test_account,
         test_balance,
     )
     .await;
     test_balance_override(
         &web3,
-        euler_vault,
-        euler_vault_strategy.unwrap(),
+        *delegated_storage_token.address(),
+        delegated_storage_strategy.unwrap(),
         test_account,
         test_balance,
     )
     .await;
-
-    // Now verify that quotes work with the detected strategies
-    let services = Services::new(&onchain).await;
-    services
-        .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
-                ..Default::default()
-            },
-            solver,
-        )
-        .await;
-
-    // Verify quote for WETH->USDC works without actual balance
-    let quote = services
-        .submit_quote(&OrderQuoteRequest {
-            from: H160::zero(),
-            sell_token: weth,
-            buy_token: usdc,
-            side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee {
-                    value: to_wei(1).try_into().unwrap(),
-                },
-            },
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-    assert!(
-        quote.verified,
-        "Quote should be verified using trace-detected balance overrides"
-    );
+    test_balance_override(
+        &web3,
+        *local_storage_token.address(),
+        local_storage_strategy.unwrap(),
+        test_account,
+        test_balance,
+    )
+    .await;
 }

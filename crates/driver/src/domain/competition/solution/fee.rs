@@ -84,7 +84,7 @@ impl Fulfillment {
             ),
         };
 
-        Fulfillment::new(order, executed, fee).map_err(Into::into)
+        Fulfillment::new(order, executed, fee, self.haircut_fee()).map_err(Into::into)
     }
 
     /// Computed protocol fee in surplus token.
@@ -312,19 +312,19 @@ pub enum Error {
 // todo: should be removed once integration tests are implemented
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, number::units::EthUnit};
 
     #[test]
     fn test_adjust_quote_to_out_market_sell_order_limits() {
         let order = Order {
-            sell_amount: to_wei(20),
-            buy_amount: to_wei(19),
+            sell_amount: 20u64.eth(),
+            buy_amount: 19u64.eth(),
             side: Side::Sell,
         };
         let quote = Quote {
-            sell_amount: to_wei(21),
-            buy_amount: to_wei(18),
-            fee_amount: to_wei(1),
+            sell_amount: 21u64.eth(),
+            buy_amount: 18u64.eth(),
+            fee_amount: 1u64.eth(),
         };
         let limit = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
 
@@ -334,7 +334,7 @@ mod tests {
         );
         assert_eq!(
             limit.buy.0,
-            to_wei(19),
+            19u64.eth(),
             "Buy amount should be equal to order buy amount for out of market orders"
         );
     }
@@ -342,14 +342,14 @@ mod tests {
     #[test]
     fn test_adjust_quote_to_out_market_buy_order_limits() {
         let order = Order {
-            sell_amount: to_wei(20),
-            buy_amount: to_wei(19),
+            sell_amount: 20u64.eth(),
+            buy_amount: 19u64.eth(),
             side: Side::Buy,
         };
         let quote = Quote {
-            sell_amount: to_wei(21),
-            buy_amount: to_wei(18),
-            fee_amount: to_wei(1),
+            sell_amount: 21u64.eth(),
+            buy_amount: 18u64.eth(),
+            fee_amount: 1u64.eth(),
         };
 
         let limit = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
@@ -360,7 +360,7 @@ mod tests {
         );
         assert_eq!(
             limit.sell.0,
-            to_wei(20),
+            20u64.eth(),
             "Sell amount should be equal to order sell amount for out of market orders."
         );
     }
@@ -368,14 +368,14 @@ mod tests {
     #[test]
     fn test_adjust_quote_to_in_market_sell_order_limits() {
         let order = Order {
-            sell_amount: to_wei(10),
-            buy_amount: to_wei(10),
+            sell_amount: 10u64.eth(),
+            buy_amount: 10u64.eth(),
             side: Side::Sell,
         };
         let quote = Quote {
-            sell_amount: to_wei(10),
-            buy_amount: to_wei(25),
-            fee_amount: to_wei(2),
+            sell_amount: 10u64.eth(),
+            buy_amount: 25u64.eth(),
+            fee_amount: 2u64.eth(),
         };
 
         let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
@@ -386,7 +386,7 @@ mod tests {
         );
         assert_eq!(
             limit.buy.0,
-            to_wei(20),
+            20u64.eth(),
             "Buy amount should be equal to quoted buy amount but reduced by fee."
         );
     }
@@ -394,30 +394,26 @@ mod tests {
     #[test]
     fn test_adjust_quote_to_in_market_buy_order_limits() {
         let order = Order {
-            sell_amount: to_wei(20),
-            buy_amount: to_wei(10),
+            sell_amount: 20u64.eth(),
+            buy_amount: 10u64.eth(),
             side: Side::Buy,
         };
         let quote = Quote {
-            sell_amount: to_wei(17),
-            buy_amount: to_wei(10),
-            fee_amount: to_wei(1),
+            sell_amount: 17u64.eth(),
+            buy_amount: 10u64.eth(),
+            fee_amount: 1u64.eth(),
         };
 
         let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
             limit.sell.0,
-            to_wei(18),
+            18u64.eth(),
             "Sell amount should match quoted buy amount increased by fee"
         );
         assert_eq!(
             limit.buy.0, order.buy_amount,
             "Buy amount should be taken from the order for buy orders in market price."
         );
-    }
-
-    pub fn to_wei(base: u32) -> eth::U256 {
-        eth::U256::from(base) * eth::U256::exp10(18)
     }
 }

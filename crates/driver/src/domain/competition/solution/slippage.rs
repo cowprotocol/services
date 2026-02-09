@@ -4,10 +4,8 @@ use {
         eth,
         liquidity::{ExactOutput, MaxInput},
     },
-    ethcontract::U256,
     num::{BigRational, CheckedDiv, CheckedMul},
-    number::conversions::big_rational_to_u256,
-    shared::conversions::U256Ext,
+    number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
 };
 
 #[derive(Clone)]
@@ -48,10 +46,9 @@ impl Parameters {
                 big_rational_to_u256(&relative).map_err(|_| super::error::Math::DivisionByZero)?;
 
             // Final slippage considers min/max caps
-            let slippage = num::clamp(
-                relative,
+            let slippage = relative.clamp(
                 self.min.unwrap_or_default(),
-                self.max.unwrap_or(U256::max_value()),
+                self.max.unwrap_or(eth::U256::MAX),
             );
 
             tracing::debug!(
@@ -70,10 +67,9 @@ impl Parameters {
                 big_rational_to_u256(&relative).map_err(|_| super::error::Math::DivisionByZero)?;
 
             // Final slippage considers min/max caps
-            let slippage = num::clamp(
-                relative,
+            let slippage = relative.clamp(
                 self.min.unwrap_or_default(),
-                self.max.unwrap_or(U256::max_value()),
+                self.max.unwrap_or(alloy::primitives::U256::MAX),
             );
 
             tracing::debug!(
@@ -91,7 +87,7 @@ impl Parameters {
                 .checked_div(&interaction.output.amount)
                 .ok_or(super::error::Math::DivisionByZero)?
         } else {
-            tracing::warn!(
+            tracing::trace!(
                 input_token = ?interaction.input.token,
                 output_token = ?interaction.output.token,
                 "unable to compute capped slippage; falling back to relative slippage",
@@ -102,7 +98,7 @@ impl Parameters {
                 .into()
         };
 
-        tracing::debug!(?interaction, ?slippage, "applying slippage to liquidity",);
+        tracing::trace!(?interaction, ?slippage, "applying slippage to liquidity",);
         Ok((
             MaxInput(eth::Asset {
                 amount: interaction.input.amount + slippage,
@@ -115,15 +111,10 @@ impl Parameters {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::eth::Asset, num::rational::Ratio};
+    use {super::*, crate::domain::eth::Asset, alloy::primitives::address, num::rational::Ratio};
 
-    const GNO: eth::H160 = eth::H160(hex_literal::hex!(
-        "6810e776880c02933d47db1b9fc05908e5386b96"
-    ));
-
-    const USDC: eth::H160 = eth::H160(hex_literal::hex!(
-        "A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-    ));
+    const GNO: eth::Address = address!("6810e776880c02933d47db1b9fc05908e5386b96");
+    const USDC: eth::Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 
     #[test]
     fn test_input_price() {
@@ -131,17 +122,17 @@ mod tests {
             input: Asset {
                 token: GNO.into(),
                 // 1GNO
-                amount: eth::U256::exp10(18).into(),
+                amount: eth::U256::from(10).pow(eth::U256::from(18)).into(),
             },
             output: Asset {
                 token: USDC.into(),
                 // 200 USDC
-                amount: (U256::from(200) * eth::U256::exp10(6)).into(),
+                amount: (eth::U256::from(200) * eth::U256::from(10).pow(eth::U256::from(6))).into(),
             },
         };
         let prices = maplit::hashmap! {
             // 0.1 ETH
-            GNO.into() => eth::U256::exp10(17).into(),
+            GNO.into() => eth::U256::from(10).pow(eth::U256::from(17)).into(),
         };
 
         // no cap
@@ -154,33 +145,39 @@ mod tests {
         let (max_input, exact_output) = slippage.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(17)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(17)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
 
         // min cap
         let min_cap = Parameters {
             // 0.1 ETH (1 GNO)
-            min: Some(eth::U256::exp10(17)),
+            min: Some(eth::U256::from(10).pow(eth::U256::from(17))),
             ..slippage.clone()
         };
         let (max_input, _) = min_cap.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(18)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(18)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
 
         // max cap
         let max_cap = Parameters {
             // 0.001 ETH (0.01 GNO)
-            max: Some(eth::U256::exp10(15)),
+            max: Some(eth::U256::from(10).pow(eth::U256::from(15))),
             ..slippage
         };
         let (max_input, _) = max_cap.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(16)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(16)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
     }
@@ -191,17 +188,17 @@ mod tests {
             input: Asset {
                 token: GNO.into(),
                 // 1GNO
-                amount: eth::U256::exp10(18).into(),
+                amount: eth::U256::from(10).pow(eth::U256::from(18)).into(),
             },
             output: Asset {
                 token: USDC.into(),
                 // 200 USDC
-                amount: (U256::from(200) * eth::U256::exp10(6)).into(),
+                amount: (eth::U256::from(200) * eth::U256::from(10).pow(eth::U256::from(6))).into(),
             },
         };
         let prices = maplit::hashmap! {
             // $4000 per ETH (1 USD = 0.0005 ETH), 6 decimals
-            USDC.into() => (U256::from(5) * eth::U256::exp10(26)).into(),
+            USDC.into() => (eth::U256::from(5) * eth::U256::from(10).pow(eth::U256::from(26))).into(),
         };
 
         // no cap
@@ -214,33 +211,39 @@ mod tests {
         let (max_input, exact_output) = slippage.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(17)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(17)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
 
         // min cap
         let min_cap = Parameters {
             // 0.1 ETH (1 GNO)
-            min: Some(eth::U256::exp10(17)),
+            min: Some(eth::U256::from(10).pow(eth::U256::from(17))),
             ..slippage.clone()
         };
         let (max_input, _) = min_cap.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(18)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(18)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
 
         // max cap
         let max_cap = Parameters {
             // 0.001 ETH (0.01 GNO)
-            max: Some(eth::U256::exp10(15)),
+            max: Some(eth::U256::from(10).pow(eth::U256::from(15))),
             ..slippage
         };
         let (max_input, _) = max_cap.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(16)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(16)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
     }
@@ -249,20 +252,20 @@ mod tests {
     fn test_no_price() {
         let slippage = Parameters {
             relative: Ratio::from_float(1.).unwrap(),
-            max: Some(eth::U256::exp10(16)),
-            min: Some(eth::U256::exp10(18)),
+            max: Some(eth::U256::from(10).pow(eth::U256::from(16))),
+            min: Some(eth::U256::from(10).pow(eth::U256::from(18))),
             prices: Default::default(),
         };
         let interaction = Interaction {
             input: Asset {
                 token: GNO.into(),
                 // 1GNO
-                amount: eth::U256::exp10(18).into(),
+                amount: eth::U256::from(10).pow(eth::U256::from(18)).into(),
             },
             output: Asset {
                 token: USDC.into(),
                 // 200 USDC
-                amount: (U256::from(200) * eth::U256::exp10(6)).into(),
+                amount: (eth::U256::from(200) * eth::U256::from(10).pow(eth::U256::from(6))).into(),
             },
         };
 
@@ -270,7 +273,9 @@ mod tests {
         let (max_input, exact_output) = slippage.apply_to(&interaction).unwrap();
         assert_eq!(
             max_input.0.amount,
-            (eth::U256::exp10(18) + eth::U256::exp10(18)).into()
+            (eth::U256::from(10).pow(eth::U256::from(18))
+                + eth::U256::from(10).pow(eth::U256::from(18)))
+            .into()
         );
         assert_eq!(exact_output.0.amount, interaction.output.amount);
     }

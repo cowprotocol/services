@@ -8,14 +8,13 @@ pub mod zeroex;
 use derivative::Derivative;
 use {
     crate::settlement::SettlementEncoder,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::Result,
     model::{
         TokenPair,
         order::{Order, OrderKind, OrderUid},
     },
     num::rational::Ratio,
-    primitive_types::{H160, U256},
     shared::{
         http_solver::model::TokenAmount,
         sources::{
@@ -136,8 +135,8 @@ impl From<u32> for LimitOrderId {
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
     pub id: LimitOrderId,
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     /// The amount that can be sold to acquire the required `buy_token`.
     pub sell_amount: U256,
     pub buy_amount: U256,
@@ -427,26 +426,22 @@ pub mod tests {
 
     #[test]
     fn limit_order_full_execution_amounts() {
-        fn simple_limit_order(
-            kind: OrderKind,
-            sell_amount: impl Into<U256>,
-            buy_amount: impl Into<U256>,
-        ) -> LimitOrder {
+        fn simple_limit_order(kind: OrderKind, sell_amount: U256, buy_amount: U256) -> LimitOrder {
             LimitOrder {
-                sell_amount: sell_amount.into(),
-                buy_amount: buy_amount.into(),
+                sell_amount,
+                buy_amount,
                 kind,
                 ..Default::default()
             }
         }
 
         assert_eq!(
-            simple_limit_order(OrderKind::Sell, 1, 2).full_execution_amount(),
-            1.into(),
+            simple_limit_order(OrderKind::Sell, U256::ONE, U256::from(2)).full_execution_amount(),
+            U256::from(1),
         );
         assert_eq!(
-            simple_limit_order(OrderKind::Buy, 1, 2).full_execution_amount(),
-            2.into(),
+            simple_limit_order(OrderKind::Buy, U256::ONE, U256::from(2)).full_execution_amount(),
+            U256::from(2),
         );
     }
 }

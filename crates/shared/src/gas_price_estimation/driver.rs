@@ -1,11 +1,11 @@
 use {
-    anyhow::{Context, Result},
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
-    number::serialization::HexOrDecimalU256,
-    primitive_types::U256,
+    crate::gas_price_estimation::GasPriceEstimating,
+    alloy::{
+        eips::{BlockId, eip1559::Eip1559Estimation},
+        providers::{DynProvider, Provider},
+    },
+    anyhow::{Context, Result, anyhow},
     reqwest::Url,
-    serde::Deserialize,
-    serde_with::serde_as,
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -21,40 +21,29 @@ pub struct DriverGasEstimator {
     client: reqwest::Client,
     url: Url,
     cache: Arc<Mutex<Option<CachedGasPrice>>>,
+    provider: DynProvider,
 }
 
 #[derive(Debug, Clone)]
 struct CachedGasPrice {
-    price: GasPrice1559,
+    price: Eip1559Estimation,
     timestamp: Instant,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// Gas price components in EIP-1559 format.
-struct GasPriceResponse {
-    #[serde_as(as = "HexOrDecimalU256")]
-    max_fee_per_gas: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    max_priority_fee_per_gas: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    base_fee_per_gas: U256,
 }
 
 const CACHE_DURATION: Duration = Duration::from_secs(5);
 
 impl DriverGasEstimator {
-    pub fn new(client: reqwest::Client, driver_url: Url) -> Self {
+    pub fn new(client: reqwest::Client, driver_url: Url, provider: DynProvider) -> Self {
         Self {
             client,
             url: driver_url,
             cache: Arc::new(Mutex::new(None)),
+            provider,
         }
     }
 
     #[instrument(skip(self))]
-    async fn fetch_gas_price(&self) -> Result<GasPrice1559> {
+    async fn fetch_gas_price(&self) -> Result<Eip1559Estimation> {
         let response = self
             .client
             .get(self.url.clone())
@@ -63,18 +52,21 @@ impl DriverGasEstimator {
             .context("failed to send request to driver")?
             .error_for_status()
             .context("driver returned error status")?
-            .json::<GasPriceResponse>()
+            .json::<Eip1559Estimation>()
             .await
             .context("failed to parse driver response")?;
 
-        Ok(GasPrice1559 {
-            base_fee_per_gas: response.base_fee_per_gas.to_f64_lossy(),
-            max_fee_per_gas: response.max_fee_per_gas.to_f64_lossy(),
-            max_priority_fee_per_gas: response.max_priority_fee_per_gas.to_f64_lossy(),
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: response.max_fee_per_gas,
+            max_priority_fee_per_gas: response.max_priority_fee_per_gas,
         })
     }
+}
 
-    async fn estimate(&self) -> Result<GasPrice1559> {
+#[async_trait::async_trait]
+impl GasPriceEstimating for DriverGasEstimator {
+    #[instrument(skip(self))]
+    async fn estimate(&self) -> Result<Eip1559Estimation> {
         // Lock cache for entire duration of this method to prevent concurrent network
         // requests
         let mut cache = self.cache.lock().await;
@@ -94,16 +86,14 @@ impl DriverGasEstimator {
 
         Ok(price)
     }
-}
 
-#[async_trait::async_trait]
-impl GasPriceEstimating for DriverGasEstimator {
-    #[instrument(skip(self))]
-    async fn estimate_with_limits(
-        &self,
-        _gas_limit: f64,
-        _time_limit: Duration,
-    ) -> Result<GasPrice1559> {
-        self.estimate().await
+    async fn base_fee(&self) -> Result<Option<u64>> {
+        Ok(self
+            .provider
+            .get_block(BlockId::latest())
+            .await?
+            .ok_or_else(|| anyhow!("fecthed block does not have header"))?
+            .header
+            .base_fee_per_gas)
     }
 }

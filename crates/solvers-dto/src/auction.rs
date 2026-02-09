@@ -1,12 +1,12 @@
 use {
     super::serialize,
+    alloy::primitives::{Address, B256, U256},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
-    web3::types::{H160, H256, U256},
 };
 
 #[serde_as]
@@ -15,13 +15,13 @@ use {
 pub struct Auction {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub id: Option<i64>,
-    pub tokens: HashMap<H160, Token>,
+    pub tokens: HashMap<Address, Token>,
     pub orders: Vec<Order>,
     pub liquidity: Vec<Liquidity>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub effective_gas_price: U256,
     pub deadline: chrono::DateTime<chrono::Utc>,
-    pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
 
 #[serde_as]
@@ -30,8 +30,8 @@ pub struct Auction {
 pub struct Order {
     #[serde_as(as = "serialize::Hex")]
     pub uid: [u8; 56],
-    pub sell_token: H160,
-    pub buy_token: H160,
+    pub sell_token: Address,
+    pub buy_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -45,8 +45,8 @@ pub struct Order {
     pub valid_to: u32,
     pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<H160>,
-    pub owner: H160,
+    pub receiver: Option<Address>,
+    pub owner: Address,
     pub partially_fillable: bool,
     pub pre_interactions: Vec<InteractionData>,
     pub post_interactions: Vec<InteractionData>,
@@ -90,7 +90,7 @@ pub enum SellTokenSource {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionData {
-    pub target: H160,
+    pub target: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(with = "bytes_hex")]
@@ -175,11 +175,11 @@ pub enum Liquidity {
 #[serde(rename_all = "camelCase")]
 pub struct ConstantProductPool {
     pub id: String,
-    pub address: H160,
-    pub router: H160,
+    pub address: Address,
+    pub router: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    pub tokens: HashMap<H160, ConstantProductReserve>,
+    pub tokens: HashMap<Address, ConstantProductReserve>,
     pub fee: BigDecimal,
 }
 
@@ -196,11 +196,11 @@ pub struct ConstantProductReserve {
 #[serde(rename_all = "camelCase")]
 pub struct WeightedProductPool {
     pub id: String,
-    pub address: H160,
-    pub balancer_pool_id: H256,
+    pub address: Address,
+    pub balancer_pool_id: B256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    pub tokens: HashMap<H160, WeightedProductReserve>,
+    pub tokens: HashMap<Address, WeightedProductReserve>,
     pub fee: BigDecimal,
     pub version: WeightedProductVersion,
 }
@@ -227,11 +227,11 @@ pub enum WeightedProductVersion {
 #[serde(rename_all = "camelCase")]
 pub struct StablePool {
     pub id: String,
-    pub address: H160,
-    pub balancer_pool_id: H256,
+    pub address: Address,
+    pub balancer_pool_id: B256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    pub tokens: HashMap<H160, StableReserve>,
+    pub tokens: HashMap<Address, StableReserve>,
     pub amplification_parameter: BigDecimal,
     pub fee: BigDecimal,
 }
@@ -250,11 +250,11 @@ pub struct StableReserve {
 #[serde(rename_all = "camelCase")]
 pub struct ConcentratedLiquidityPool {
     pub id: String,
-    pub address: H160,
-    pub router: H160,
+    pub address: Address,
+    pub router: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    pub tokens: Vec<H160>,
+    pub tokens: Vec<Address>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
@@ -270,13 +270,13 @@ pub struct ConcentratedLiquidityPool {
 #[serde(rename_all = "camelCase")]
 pub struct ForeignLimitOrder {
     pub id: String,
-    pub address: H160,
+    pub address: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
     #[serde_as(as = "serialize::Hex")]
     pub hash: [u8; 32],
-    pub maker_token: H160,
-    pub taker_token: H160,
+    pub maker_token: Address,
+    pub taker_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub maker_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -289,10 +289,10 @@ pub struct ForeignLimitOrder {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanHint {
-    pub liquidity_provider: H160,
-    pub protocol_adapter: H160,
-    pub receiver: H160,
-    pub token: H160,
+    pub liquidity_provider: Address,
+    pub protocol_adapter: Address,
+    pub receiver: Address,
+    pub token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
@@ -300,7 +300,7 @@ pub struct FlashloanHint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WrapperCall {
-    pub address: H160,
+    pub address: Address,
     #[serde(with = "bytes_hex")]
     pub data: Vec<u8>,
     /// Declares whether this wrapper (and its data) needs to be included

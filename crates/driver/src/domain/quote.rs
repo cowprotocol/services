@@ -16,41 +16,37 @@ use {
         util,
     },
     chrono::Utc,
-    ethrpc::alloy::conversions::IntoLegacy,
-    std::{
-        collections::{HashMap, HashSet},
-        iter,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 /// A quote describing the expected outcome of an order.
-#[derive(Debug)]
+#[derive(derive_more::Debug)]
 pub struct Quote {
-    pub clearing_prices: HashMap<eth::H160, eth::U256>,
+    pub clearing_prices: HashMap<eth::Address, eth::U256>,
+    #[debug(ignore)]
     pub pre_interactions: Vec<eth::Interaction>,
+    #[debug(ignore)]
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
+    #[debug(ignore)]
     pub tx_origin: Option<eth::Address>,
+    #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
 }
 
 impl Quote {
     fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
+        let clearing_prices = Self::compute_clearing_prices(&solution)?;
+
         Ok(Self {
-            clearing_prices: solution
-                .clearing_prices()
-                .into_iter()
-                .map(|(token, amount)| (token.into(), amount))
-                .collect(),
+            clearing_prices,
             pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
                 .iter()
-                .map(|i| {
-                    encode::interaction(i, eth.contracts().settlement().address().into_legacy())
-                })
+                .map(|i| encode::interaction(i, eth.contracts().settlement().address()))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .flatten()
@@ -67,6 +63,50 @@ impl Quote {
                 })
                 .collect(),
         })
+    }
+
+    /// Compute clearing prices for the quote.
+    ///
+    /// Uses uniform clearing prices from the solution, adjusted for haircut
+    /// when enabled. Uses `custom_prices()` which includes haircut effects
+    /// to make quotes conservative for users.
+    fn compute_clearing_prices(
+        solution: &competition::Solution,
+    ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
+        // Start with uniform clearing prices
+        let mut prices: HashMap<eth::Address, eth::U256> = solution
+            .clearing_prices()
+            .into_iter()
+            .map(|(token, amount)| (token.into(), amount))
+            .collect();
+
+        // Quote competitions contain only a single order (see `fake_auction()`),
+        // so there's at most one fulfillment in the solution.
+        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
+        // haircut.
+        if let Some(trade) = solution.trades().iter().find(|trade| match trade {
+            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
+            _ => false,
+        }) {
+            let sell_token: eth::Address = trade.sell().token.into();
+            let buy_token: eth::Address = trade.buy().token.into();
+            let uniform_clearing = solution::trade::ClearingPrices {
+                sell: *prices
+                    .get(&sell_token)
+                    .ok_or(QuotingFailed::ClearingSellMissing)?,
+                buy: *prices
+                    .get(&buy_token)
+                    .ok_or(QuotingFailed::ClearingBuyMissing)?,
+            };
+            let custom_prices = trade
+                .custom_prices(&uniform_clearing)
+                .map_err(|_| QuotingFailed::Math)?;
+
+            prices.insert(sell_token, custom_prices.sell);
+            prices.insert(buy_token, custom_prices.buy);
+        }
+
+        Ok(prices)
     }
 }
 
@@ -94,7 +134,7 @@ impl Order {
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
-                    .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
+                    .fetch(&self.token_liquidity(), infra::liquidity::AtBlock::Recent)
                     .await
             }
             solver::Liquidity::Skip => Default::default(),
@@ -191,7 +231,7 @@ impl Order {
     fn buy(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
-                amount: eth::U256::one().into(),
+                amount: eth::U256::ONE.into(),
                 token: self.tokens.buy,
             },
             order::Side::Buy => eth::Asset {
@@ -219,22 +259,23 @@ impl Order {
             // contract level. Requiring to trade more than `type(uint112).max`
             // is unlikely and would not work with Uniswap V2 anyway.
             order::Side::Buy => eth::Asset {
-                amount: (eth::U256::one() << 144).into(),
+                // NOTE: the saturating strategy here is slightly irrelevant since we know that 1 <<
+                // 144 fits within U256
+                amount: (eth::U256::ONE.saturating_shl(144)).into(),
                 token: self.tokens.sell,
             },
         }
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        let pair = liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
-            .expect("sell != buy by construction");
-        iter::once(pair).collect()
+    fn token_liquidity(&self) -> HashSet<liquidity::TokenPair> {
+        liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
+            .ok()
+            .into_iter()
+            .collect()
     }
 }
 
-/// The sell and buy tokens to quote for. This type maintains the invariant that
-/// the sell and buy tokens are distinct.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Tokens {
     sell: eth::TokenAddress,
@@ -242,13 +283,8 @@ pub struct Tokens {
 }
 
 impl Tokens {
-    /// Creates a new instance of [`Tokens`], verifying that the input buy and
-    /// sell tokens are distinct.
-    pub fn try_new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
-        if sell == buy {
-            return Err(SameTokens);
-        }
-        Ok(Self { sell, buy })
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Self {
+        Self { sell, buy }
     }
 
     pub fn sell(&self) -> eth::TokenAddress {
@@ -269,7 +305,7 @@ mod encode {
                 allowance::{Approval, Required},
             },
         },
-        ethcontract::H160,
+        alloy::primitives::Address,
         num::rational::Ratio,
     };
 
@@ -277,7 +313,7 @@ mod encode {
 
     pub(super) fn interaction(
         interaction: &solution::Interaction,
-        settlement: H160,
+        settlement: &Address,
     ) -> Result<Vec<eth::Interaction>, solution::encoding::Error> {
         let slippage = solution::slippage::Parameters {
             relative: Ratio::new_raw(DEFAULT_QUOTE_SLIPPAGE_BPS.into(), 10_000.into()),
@@ -289,7 +325,7 @@ mod encode {
         let encoded = match interaction {
             solution::Interaction::Custom(interaction) => eth::Interaction {
                 value: interaction.value,
-                target: interaction.target.0.into(),
+                target: interaction.target.0,
                 call_data: interaction.call_data.clone(),
             },
             solution::Interaction::Liquidity(liquidity) => {
@@ -348,6 +384,8 @@ pub enum QuotingFailed {
     ClearingBuyMissing,
     #[error("solver returned no solutions")]
     NoSolutions,
+    #[error("math error computing custom prices")]
+    Math,
 }
 
 #[derive(Debug, thiserror::Error)]

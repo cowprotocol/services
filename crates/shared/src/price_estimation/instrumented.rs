@@ -6,8 +6,7 @@ use {
         native::{NativePriceEstimateResult, NativePriceEstimating},
     },
     alloy::primitives::Address,
-    ethcontract::jsonrpc::futures_util::future::BoxFuture,
-    futures::future::FutureExt,
+    futures::future::{BoxFuture, FutureExt},
     prometheus::{HistogramVec, IntCounterVec},
     std::{
         sync::Arc,
@@ -132,7 +131,7 @@ mod tests {
         alloy::primitives::Address,
         anyhow::anyhow,
         model::order::OrderKind,
-        number::nonzero::U256 as NonZeroU256,
+        number::nonzero::NonZeroU256,
     };
 
     #[tokio::test]

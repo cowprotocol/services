@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types"] }
+alloy = { workspace = true, features = ["sol-types", "signer-local", "rand", "provider-trace-api"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
@@ -24,39 +24,33 @@ dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
 derivative = { workspace = true }
-ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-maplit = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
 rust_decimal = { workspace = true, features = ["maths"] }
-secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "time"] }
+tokio = { workspace = true, features = ["macros", "time", "signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
-web3 = { workspace = true }
 
 mockall = { workspace = true, optional = true }
 
@@ -64,8 +58,8 @@ mockall = { workspace = true, optional = true }
 alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
-ethcontract-mock = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
+maplit = { workspace = true }
 mockall = { workspace = true }
 regex = { workspace = true }
 testlib = { workspace = true }

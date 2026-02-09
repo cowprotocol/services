@@ -2,7 +2,6 @@ use {
     super::OrderUid,
     crate::{boundary::Amounts, domain::eth},
     alloy::primitives::Address,
-    ethrpc::alloy::conversions::IntoAlloy,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -17,9 +16,9 @@ pub struct Quote {
 impl From<&Quote> for Amounts {
     fn from(quote: &Quote) -> Self {
         Self {
-            sell: quote.sell_amount.0.into_alloy(),
-            buy: quote.buy_amount.0.into_alloy(),
-            fee: quote.fee.0.into_alloy(),
+            sell: quote.sell_amount.0,
+            buy: quote.buy_amount.0,
+            fee: quote.fee.0,
         }
     }
 }

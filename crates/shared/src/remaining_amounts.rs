@@ -1,10 +1,11 @@
 use {
+    alloy::primitives::U256,
     anyhow::{Context, Result},
-    ethrpc::alloy::conversions::IntoLegacy,
     model::order::{Order as ModelOrder, OrderKind},
-    num::rational::Ratio,
-    primitive_types::U256,
+    number::{conversions::big_uint_to_u256, ratio_ext::RatioExt},
 };
+
+type Ratio = num::rational::Ratio<U256>;
 
 /// Calculates the remaining amounts for an order.
 ///
@@ -19,7 +20,7 @@ pub struct Remaining {
     /// 75, this ratio will be `25/100`.
     ///
     /// This is always `0/1` or `1/1` for fill or kill orders.
-    execution: Ratio<U256>,
+    execution: Ratio,
 
     /// The ratio of a order that is available based on user balance. That is,
     /// if a partially fillable order selling 90 DAI with a fee of 10 DAI where
@@ -34,45 +35,7 @@ pub struct Remaining {
     /// not concern itself with overflows WRT to user balances, so we compute
     /// remaining order amount from user balances separately and without
     /// overflow checks in the intermediate operations.
-    balance: Ratio<U256>,
-}
-
-pub struct Order {
-    pub kind: OrderKind,
-    pub buy_amount: U256,
-    pub sell_amount: U256,
-    pub fee_amount: U256,
-    // For a buy order this is in the buy token and for a sell order in the sell token and
-    // excluding the fee amount.
-    pub executed_amount: U256,
-    pub partially_fillable: bool,
-}
-
-impl From<&ModelOrder> for Order {
-    fn from(o: &ModelOrder) -> Self {
-        Self {
-            kind: o.data.kind,
-            buy_amount: o.data.buy_amount.into_legacy(),
-            sell_amount: o.data.sell_amount.into_legacy(),
-            fee_amount: o.data.fee_amount.into_legacy(),
-            executed_amount: match o.data.kind {
-                // A real buy order cannot execute more than U256::MAX so in order to make this
-                // function infallible we treat a larger amount as a full execution.
-                OrderKind::Buy => {
-                    number::conversions::big_uint_to_u256(&o.metadata.executed_buy_amount)
-                        .unwrap_or(o.data.buy_amount.into_legacy())
-                }
-                OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,
-            },
-            partially_fillable: o.data.partially_fillable,
-        }
-    }
-}
-
-impl From<ModelOrder> for Order {
-    fn from(o: ModelOrder) -> Self {
-        (&o).into()
-    }
+    balance: Ratio,
 }
 
 impl Remaining {
@@ -96,9 +59,11 @@ impl Remaining {
                 total,
             );
 
-            let sell_amount = ratio::scalar_mul(&execution, order.sell_amount)
+            let sell_amount = execution
+                .scalar_mul(order.sell_amount)
                 .context("overflow scaling sell amount for execution")?;
-            let fee_amount = ratio::scalar_mul(&execution, order.fee_amount)
+            let fee_amount = execution
+                .scalar_mul(order.fee_amount)
                 .context("overflow scaling fee amount for execution")?;
 
             let need = sell_amount
@@ -108,7 +73,7 @@ impl Remaining {
             let balance = if sell_balance < need {
                 Ratio::new_raw(sell_balance, need)
             } else {
-                ratio::one()
+                Ratio::ONE
             };
 
             Ok(Self { execution, balance })
@@ -119,15 +84,15 @@ impl Remaining {
                 .context("overflow sell + fee amount")?;
 
             let execution = if order.executed_amount.is_zero() {
-                ratio::one()
+                Ratio::ONE
             } else {
-                ratio::zero()
+                Ratio::ZERO
             };
 
             let balance = if sell_balance >= sell {
-                ratio::one()
+                Ratio::ONE
             } else {
-                ratio::zero()
+                Ratio::ZERO
             };
 
             Ok(Self { execution, balance })
@@ -136,43 +101,50 @@ impl Remaining {
 
     /// Returns Err if the contract would error due to intermediate overflow.
     pub fn remaining(&self, total: U256) -> Result<U256> {
-        ratio::full_scalar_mul(
-            &self.balance,
-            ratio::scalar_mul(&self.execution, total)
-                .context("overflow scaling for order execution")?,
-        )
-        .context("overflow scaling for available balance")
+        let order_execution = self
+            .execution
+            .scalar_mul(total)
+            .context("overflow scaling for order execution")?;
+        self.balance
+            .full_scalar_mul(order_execution)
+            .context("overflow scaling for available balance")
     }
 }
 
-mod ratio {
-    use {ethcontract::U256, num::rational::Ratio};
+pub struct Order {
+    pub kind: OrderKind,
+    pub buy_amount: U256,
+    pub sell_amount: U256,
+    pub fee_amount: U256,
+    // For a buy order this is in the buy token and for a sell order in the sell token and
+    // excluding the fee amount.
+    pub executed_amount: U256,
+    pub partially_fillable: bool,
+}
 
-    pub fn one() -> Ratio<U256> {
-        Ratio::new_raw(1.into(), 1.into())
+impl From<&ModelOrder> for Order {
+    fn from(o: &ModelOrder) -> Self {
+        Self {
+            kind: o.data.kind,
+            buy_amount: o.data.buy_amount,
+            sell_amount: o.data.sell_amount,
+            fee_amount: o.data.fee_amount,
+            executed_amount: match o.data.kind {
+                // A real buy order cannot execute more than U256::MAX so in order to make this
+                // function infallible we treat a larger amount as a full execution.
+                OrderKind::Buy => {
+                    big_uint_to_u256(&o.metadata.executed_buy_amount).unwrap_or(o.data.buy_amount)
+                }
+                OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,
+            },
+            partially_fillable: o.data.partially_fillable,
+        }
     }
+}
 
-    pub fn zero() -> Ratio<U256> {
-        Ratio::new_raw(0.into(), 1.into())
-    }
-
-    /// Multiplies a ratio by a scalar, returning `None` if the result or any
-    /// intermediate operation would overflow a `U256`.
-    pub fn scalar_mul(ratio: &Ratio<U256>, scalar: U256) -> Option<U256> {
-        scalar
-            .checked_mul(*ratio.numer())?
-            .checked_div(*ratio.denom())
-    }
-
-    /// Multiplies a ratio by a scalar, returning `None` only if the result
-    /// would overflow a `U256`, but intermediate operations are allowed to
-    /// overflow.
-    pub fn full_scalar_mul(ratio: &Ratio<U256>, scalar: U256) -> Option<U256> {
-        scalar
-            .full_mul(*ratio.numer())
-            .checked_div(ratio.denom().into())?
-            .try_into()
-            .ok()
+impl From<ModelOrder> for Order {
+    fn from(o: ModelOrder) -> Self {
+        (&o).into()
     }
 }
 
@@ -201,7 +173,10 @@ mod tests {
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(1000.into()).unwrap(), 1000.into());
+        assert_eq!(
+            remaining.remaining(U256::from(1000)).unwrap(),
+            U256::from(1000)
+        );
         assert_eq!(remaining.remaining(U256::MAX).unwrap(), U256::MAX);
 
         // For partially fillable orders that are untouched, returns the full
@@ -216,15 +191,15 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 0.into(),
+                executed_sell_amount_before_fees: U256::ZERO,
                 ..Default::default()
             },
             ..Default::default()
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(10.into()).unwrap(), 10.into());
-        assert_eq!(remaining.remaining(13.into()).unwrap(), 13.into());
+        assert_eq!(remaining.remaining(U256::from(10)).unwrap(), U256::from(10));
+        assert_eq!(remaining.remaining(U256::from(13)).unwrap(), U256::from(13));
 
         // Scales amounts by how much has been executed. Rounds down like the
         // settlement contract.
@@ -238,16 +213,25 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 90.into(),
+                executed_sell_amount_before_fees: U256::from(90),
                 ..Default::default()
             },
             ..Default::default()
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(100.into()).unwrap(), 10.into());
-        assert_eq!(remaining.remaining(101.into()).unwrap(), 10.into());
-        assert_eq!(remaining.remaining(200.into()).unwrap(), 20.into());
+        assert_eq!(
+            remaining.remaining(U256::from(100)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(
+            remaining.remaining(U256::from(101)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(
+            remaining.remaining(U256::from(200)).unwrap(),
+            U256::from(20)
+        );
 
         let order = ModelOrder {
             data: OrderData {
@@ -266,10 +250,19 @@ mod tests {
         }
         .into();
         let remaining = Remaining::from_order(&order).unwrap();
-        assert_eq!(remaining.remaining(100.into()).unwrap(), 10.into());
-        assert_eq!(remaining.remaining(10.into()).unwrap(), 1.into());
-        assert_eq!(remaining.remaining(101.into()).unwrap(), 10.into());
-        assert_eq!(remaining.remaining(200.into()).unwrap(), 20.into());
+        assert_eq!(
+            remaining.remaining(U256::from(100)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(remaining.remaining(U256::from(10)).unwrap(), U256::ONE);
+        assert_eq!(
+            remaining.remaining(U256::from(101)).unwrap(),
+            U256::from(10)
+        );
+        assert_eq!(
+            remaining.remaining(U256::from(200)).unwrap(),
+            U256::from(20)
+        );
     }
 
     #[test]
@@ -315,7 +308,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 2.into(),
+                executed_sell_amount_before_fees: U256::from(2),
                 ..Default::default()
             },
             ..Default::default()
@@ -353,8 +346,9 @@ mod tests {
             ..Default::default()
         }
         .into();
-        let remaining = Remaining::from_order_with_balance(&order, order.sell_amount - 1).unwrap();
-        assert_eq!(remaining.remaining(1000.into()).unwrap(), 0.into());
+        let remaining =
+            Remaining::from_order_with_balance(&order, order.sell_amount - U256::ONE).unwrap();
+        assert!(remaining.remaining(U256::from(1000)).unwrap().is_zero());
 
         // A partially fillable order that has not been executed at all scales
         // to the available balance.
@@ -372,28 +366,34 @@ mod tests {
         .into();
         {
             // More than enough balance for the full order.
-            let remaining = Remaining::from_order_with_balance(&order, 5000.into()).unwrap();
-            assert_eq!(remaining.remaining(800.into()).unwrap(), 800.into());
+            let remaining = Remaining::from_order_with_balance(&order, U256::from(5000)).unwrap();
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(800)
+            );
         }
         {
             // Not enough balance for the full order.
-            let remaining = Remaining::from_order_with_balance(&order, 500.into()).unwrap();
-            assert_eq!(remaining.remaining(800.into()).unwrap(), 400.into());
+            let remaining = Remaining::from_order_with_balance(&order, U256::from(500)).unwrap();
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(400)
+            );
         }
 
         // A partially fillable order that has has been partially executed scales
         // to the remaining execution and available balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: alloy::primitives::U256::from(800),
-                buy_amount: alloy::primitives::U256::from(2000),
-                fee_amount: alloy::primitives::U256::from(200),
+                sell_amount: U256::from(800),
+                buy_amount: U256::from(2000),
+                fee_amount: U256::from(200),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 400.into(),
+                executed_sell_amount_before_fees: U256::from(400),
                 ..Default::default()
             },
             ..Default::default()
@@ -401,13 +401,19 @@ mod tests {
         .into();
         {
             // More than enough balance for the full order.
-            let remaining = Remaining::from_order_with_balance(&order, 5000.into()).unwrap();
-            assert_eq!(remaining.remaining(800.into()).unwrap(), 400.into());
+            let remaining = Remaining::from_order_with_balance(&order, U256::from(5000)).unwrap();
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(400)
+            );
         }
         {
             // Not enough balance for the full order.
-            let remaining = Remaining::from_order_with_balance(&order, 250.into()).unwrap();
-            assert_eq!(remaining.remaining(800.into()).unwrap(), 200.into());
+            let remaining = Remaining::from_order_with_balance(&order, U256::from(250)).unwrap();
+            assert_eq!(
+                remaining.remaining(U256::from(800)).unwrap(),
+                U256::from(200)
+            );
         }
     }
 
@@ -415,9 +421,8 @@ mod tests {
     fn support_scaling_for_large_orders_with_partial_balance() {
         let order: Order = ModelOrder {
             data: OrderData {
-                sell_amount: alloy::primitives::U256::from(10)
-                    .pow(alloy::primitives::U256::from(30)),
-                buy_amount: alloy::primitives::U256::ONE,
+                sell_amount: U256::from(10).pow(U256::from(30)),
+                buy_amount: U256::ONE,
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -425,7 +430,7 @@ mod tests {
             ..Default::default()
         }
         .into();
-        let balance = order.sell_amount - 1;
+        let balance = order.sell_amount - U256::ONE;
 
         // Note that we need to scale because of remaining balance, and that
         // we would overflow with these numbers:

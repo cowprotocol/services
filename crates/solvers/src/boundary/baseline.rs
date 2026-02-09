@@ -5,10 +5,8 @@ use {
         boundary,
         domain::{eth, liquidity, order, solver},
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     contracts::alloy::UniswapV3QuoterV2,
-    ethereum_types::{H160, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::{
@@ -46,8 +44,8 @@ impl<'a> Solver<'a> {
         max_hops: usize,
     ) -> Option<solver::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
-            request.sell.token.0.into_alloy(),
-            request.buy.token.0.into_alloy(),
+            request.sell.token.0,
+            request.buy.token.0,
             max_hops,
         );
 
@@ -60,6 +58,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&sell.path, request.sell.token.0, sell.value)
                         .await?;
@@ -90,6 +89,7 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
                         .await?;
@@ -120,7 +120,7 @@ impl<'a> Solver<'a> {
     async fn traverse_path(
         &self,
         path: &[&OnchainLiquidity],
-        mut sell_token: H160,
+        mut sell_token: Address,
         mut sell_amount: U256,
     ) -> Option<Vec<solver::Segment<'a>>> {
         let mut segments = Vec::new();
@@ -132,10 +132,10 @@ impl<'a> Solver<'a> {
 
             let buy_token = liquidity
                 .token_pair
-                .other(&sell_token.into_alloy())
+                .other(&sell_token)
                 .expect("Inconsistent path");
             let buy_amount = liquidity
-                .get_amount_out(buy_token, (sell_amount, sell_token.into_alloy()))
+                .get_amount_out(buy_token, (sell_amount, sell_token))
                 .await?;
 
             segments.push(solver::Segment {
@@ -145,13 +145,13 @@ impl<'a> Solver<'a> {
                     amount: sell_amount,
                 },
                 output: eth::Asset {
-                    token: eth::TokenAddress(buy_token.into_legacy()),
+                    token: eth::TokenAddress(buy_token),
                     amount: buy_amount,
                 },
-                gas: eth::Gas(liquidity.gas_cost().await.into()),
+                gas: eth::Gas(U256::from(liquidity.gas_cost().await)),
             });
 
-            sell_token = buy_token.into_legacy();
+            sell_token = buy_token;
             sell_amount = buy_amount;
         }
         Some(segments)
@@ -219,10 +219,9 @@ fn to_boundary_liquidity(
                     }
                 }
                 liquidity::State::LimitOrder(limit_order) => {
-                    if let Some(token_pair) = TokenPair::new(
-                        limit_order.maker.token.0.into_alloy(),
-                        limit_order.taker.token.0.into_alloy(),
-                    ) {
+                    if let Some(token_pair) =
+                        TokenPair::new(limit_order.maker.token.0, limit_order.taker.token.0)
+                    {
                         onchain_liquidity
                             .entry(token_pair)
                             .or_default()
@@ -279,7 +278,11 @@ enum LiquiditySource {
 }
 
 impl BaselineSolvable for OnchainLiquidity {
-    async fn get_amount_out(&self, out_token: Address, input: (U256, Address)) -> Option<U256> {
+    async fn get_amount_out(
+        &self,
+        out_token: Address,
+        input: (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         match &self.source {
             LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input).await,
             LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input).await,
@@ -291,7 +294,11 @@ impl BaselineSolvable for OnchainLiquidity {
         }
     }
 
-    async fn get_amount_in(&self, in_token: Address, out: (U256, Address)) -> Option<U256> {
+    async fn get_amount_in(
+        &self,
+        in_token: Address,
+        out: (alloy::primitives::U256, Address),
+    ) -> Option<alloy::primitives::U256> {
         match &self.source {
             LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out).await,
             LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out).await,
@@ -318,14 +325,11 @@ fn to_boundary_base_tokens(
     weth: &eth::WethAddress,
     base_tokens: &HashSet<eth::TokenAddress>,
 ) -> BaseTokens {
-    let base_tokens = base_tokens
-        .iter()
-        .map(|token| token.0.into_alloy())
-        .collect::<Vec<_>>();
-    BaseTokens::new(weth.0.into_alloy(), &base_tokens)
+    let base_tokens = base_tokens.iter().map(|token| token.0).collect::<Vec<_>>();
+    BaseTokens::new(weth.0, &base_tokens)
 }
 
 fn to_boundary_token_pair(pair: &liquidity::TokenPair) -> TokenPair {
     let (a, b) = pair.get();
-    TokenPair::new(a.0.into_alloy(), b.0.into_alloy()).unwrap()
+    TokenPair::new(a.0, b.0).unwrap()
 }

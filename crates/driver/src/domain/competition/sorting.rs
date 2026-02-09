@@ -22,7 +22,7 @@ pub trait SortingStrategy: Send + Sync + Debug {
         &self,
         order: &order::Order,
         tokens: &Tokens,
-        solver: &eth::H160,
+        solver: &eth::Address,
         now: chrono::DateTime<chrono::Utc>,
     ) -> SortingKey;
 }
@@ -37,7 +37,7 @@ impl SortingStrategy for ExternalPrice {
         &self,
         order: &order::Order,
         tokens: &Tokens,
-        _solver: &eth::H160,
+        _solver: &eth::Address,
         _now: chrono::DateTime<chrono::Utc>,
     ) -> SortingKey {
         // The likelihood that this order will be fulfilled, based on token prices.
@@ -48,8 +48,8 @@ impl SortingStrategy for ExternalPrice {
             tokens.get(&order.sell.token).and_then(|token| token.price),
         ) {
             (Some(buy_price), Some(sell_price)) => {
-                let buy = buy_price.in_eth(order.buy.amount).0.to_f64_lossy();
-                let sell = sell_price.in_eth(order.sell.amount).0.to_f64_lossy();
+                let buy = f64::from(buy_price.in_eth(order.buy.amount).0);
+                let sell = f64::from(sell_price.in_eth(order.sell.amount).0);
                 if buy.is_subnormal() { 0. } else { sell / buy }
             }
             _ => 0.,
@@ -91,7 +91,7 @@ impl SortingStrategy for CreationTimestamp {
         &self,
         order: &order::Order,
         _tokens: &Tokens,
-        _solver: &eth::H160,
+        _solver: &eth::Address,
         now: chrono::DateTime<chrono::Utc>,
     ) -> SortingKey {
         SortingKey::Timestamp(match self.max_order_age {
@@ -116,7 +116,7 @@ impl SortingStrategy for OwnQuotes {
         &self,
         order: &order::Order,
         _tokens: &Tokens,
-        solver: &eth::H160,
+        solver: &eth::Address,
         now: chrono::DateTime<chrono::Utc>,
     ) -> SortingKey {
         let is_order_outdated = self.max_order_age.is_some_and(|max_order_age| {
@@ -124,7 +124,7 @@ impl SortingStrategy for OwnQuotes {
                 u32::try_from((now - max_order_age).timestamp()).unwrap_or(u32::MAX);
             order.created.0 < earliest_allowed_creation
         });
-        let is_own_quote = order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver);
+        let is_own_quote = order.quote.as_ref().is_some_and(|q| &q.solver == solver);
 
         SortingKey::Bool(!is_order_outdated && is_own_quote)
     }
@@ -135,7 +135,7 @@ impl SortingStrategy for OwnQuotes {
 pub fn sort_orders(
     orders: &mut [order::Order],
     tokens: &Tokens,
-    solver: &eth::H160,
+    solver: &eth::Address,
     order_comparators: &[Arc<dyn SortingStrategy>],
 ) {
     let now = chrono::Utc::now();

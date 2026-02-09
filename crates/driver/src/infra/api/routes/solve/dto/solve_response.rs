@@ -31,7 +31,7 @@ impl Solution {
         Self {
             solution_id,
             score: solved.score.0,
-            submission_address: solver.address().into(),
+            submission_address: solver.address(),
             orders: solved
                 .trades
                 .into_iter()
@@ -71,13 +71,13 @@ pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify it
     /// in subsequent requests (reveal, settle).
     solution_id: u64,
+    submission_address: eth::Address,
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
-    submission_address: eth::H160,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
     orders: HashMap<OrderId, TradedOrder>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    clearing_prices: HashMap<eth::H160, eth::U256>,
+    clearing_prices: HashMap<eth::Address, eth::U256>,
 }
 
 #[serde_as]
@@ -85,8 +85,8 @@ pub struct Solution {
 #[serde(rename_all = "camelCase")]
 pub struct TradedOrder {
     pub side: Side,
-    pub sell_token: eth::H160,
-    pub buy_token: eth::H160,
+    pub sell_token: eth::Address,
+    pub buy_token: eth::Address,
     #[serde_as(as = "serialize::U256")]
     /// Sell limit order amount.
     pub limit_sell: eth::U256,

@@ -2,13 +2,11 @@ mod settlement_encoder;
 
 use {
     crate::liquidity::Settleable,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::Result,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::order::{Order, OrderKind},
-    primitive_types::U256,
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext as _,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         http_solver::model::InternalizationStrategy,
     },
@@ -37,7 +35,7 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/GPv2Settlement.sol#L383-L385
     fn executed_fee(&self) -> Option<U256> {
-        self.scale_amount(self.order.data.fee_amount.into_legacy())
+        self.scale_amount(self.order.data.fee_amount)
     }
 
     /// Scales the passed `amount` based on the `executed_amount`.
@@ -45,10 +43,10 @@ impl Trade {
         match self.order.data.kind {
             model::order::OrderKind::Buy => amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.data.buy_amount.into_legacy()),
+                .checked_div(self.order.data.buy_amount),
             model::order::OrderKind::Sell => amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.data.sell_amount.into_legacy()),
+                .checked_div(self.order.data.sell_amount),
         }
     }
 
@@ -92,10 +90,10 @@ impl Trade {
         encode_trade(
             &self.order.data,
             &self.order.signature,
-            self.order.metadata.owner.into_legacy(),
+            self.order.metadata.owner,
             sell_token_index,
             buy_token_index,
-            &self.executed_amount,
+            self.executed_amount,
         )
     }
 }
@@ -208,15 +206,15 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: 5.into(),
+            executed_amount: U256::from(5),
             ..Default::default()
         };
-        let sell_price = 3.into();
-        let buy_price = 4.into();
+        let sell_price = U256::from(3);
+        let buy_price = U256::from(4);
         let execution = trade.executed_amounts(sell_price, buy_price).unwrap();
 
-        assert_eq!(execution.sell_amount, 5.into());
-        assert_eq!(execution.buy_amount, 4.into()); // round up!
+        assert_eq!(execution.sell_amount, U256::from(5));
+        assert_eq!(execution.buy_amount, U256::from(4)); // round up!
     }
 
     #[test]
@@ -231,15 +229,15 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: 5.into(),
+            executed_amount: U256::from(5),
             ..Default::default()
         };
-        let sell_price = 3.into();
-        let buy_price = 4.into();
+        let sell_price = U256::from(3);
+        let buy_price = U256::from(4);
         let execution = trade.executed_amounts(sell_price, buy_price).unwrap();
 
-        assert_eq!(execution.sell_amount, 6.into()); // round down!
-        assert_eq!(execution.buy_amount, 5.into());
+        assert_eq!(execution.sell_amount, U256::from(6)); // round down!
+        assert_eq!(execution.buy_amount, U256::from(5));
     }
 
     #[test]
@@ -260,17 +258,17 @@ pub mod tests {
                 ..Default::default()
             };
             let sell_price = U256::from(2);
-            let buy_price = U256::one();
+            let buy_price = U256::ONE;
             assert!(trade.executed_amounts(sell_price, buy_price).is_none());
 
             // div
             let trade = Trade {
                 order,
-                executed_amount: U256::one(),
+                executed_amount: U256::ONE,
                 ..Default::default()
             };
-            let sell_price = U256::one();
-            let buy_price = U256::zero();
+            let sell_price = U256::ONE;
+            let buy_price = U256::ZERO;
             assert!(trade.executed_amounts(sell_price, buy_price).is_none());
         }
     }
@@ -296,24 +294,24 @@ pub mod tests {
         };
 
         let mut settlement = Settlement::new(hashmap! {
-            token0 => 1.into(),
-            token1 => 1.into(),
+            token0 => U256::ONE,
+            token1 => U256::ONE,
         });
         assert!(
             settlement
                 .encoder
-                .add_trade(order.clone(), 10.into(), 0.into())
+                .add_trade(order.clone(), U256::from(10), U256::ZERO)
                 .is_ok()
         );
 
         let mut settlement = Settlement::new(hashmap! {
-            token0 => 1.into(),
-            token1 => 0.into(),
+            token0 => U256::ONE,
+            token1 => U256::ZERO,
         });
         assert!(
             settlement
                 .encoder
-                .add_trade(order, 10.into(), 0.into())
+                .add_trade(order, U256::from(10), U256::ZERO)
                 .is_err()
         );
     }
@@ -330,10 +328,10 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: 100.into(),
+            executed_amount: U256::from(100),
             ..Default::default()
         };
-        assert_eq!(fully_filled_sell.executed_fee().unwrap(), 5.into());
+        assert_eq!(fully_filled_sell.executed_fee().unwrap(), U256::from(5));
 
         let partially_filled_sell = Trade {
             order: Order {
@@ -345,10 +343,10 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: 50.into(),
+            executed_amount: U256::from(50),
             ..Default::default()
         };
-        assert_eq!(partially_filled_sell.executed_fee().unwrap(), 2.into());
+        assert_eq!(partially_filled_sell.executed_fee().unwrap(), U256::from(2));
 
         let fully_filled_buy = Trade {
             order: Order {
@@ -360,10 +358,10 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: 100.into(),
+            executed_amount: U256::from(100),
             ..Default::default()
         };
-        assert_eq!(fully_filled_buy.executed_fee().unwrap(), 5.into());
+        assert_eq!(fully_filled_buy.executed_fee().unwrap(), U256::from(5));
 
         let partially_filled_buy = Trade {
             order: Order {
@@ -375,10 +373,10 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: 50.into(),
+            executed_amount: U256::from(50),
             ..Default::default()
         };
-        assert_eq!(partially_filled_buy.executed_fee().unwrap(), 2.into());
+        assert_eq!(partially_filled_buy.executed_fee().unwrap(), U256::from(2));
     }
 
     #[test]
@@ -393,7 +391,7 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: U256::max_value(),
+            executed_amount: U256::MAX,
             ..Default::default()
         };
         assert_eq!(large_amounts.executed_fee(), None);
@@ -408,7 +406,7 @@ pub mod tests {
                 },
                 ..Default::default()
             },
-            executed_amount: U256::zero(),
+            executed_amount: U256::ZERO,
             ..Default::default()
         };
         assert_eq!(zero_amounts.executed_fee(), None);
@@ -421,8 +419,8 @@ pub mod tests {
 
         let settlement = test_settlement(
             hashmap! {
-                sell_token => 100_000_u128.into(),
-                buy_token => 100_000_u128.into(),
+                sell_token => U256::from(100_000_u128),
+                buy_token => U256::from(100_000_u128),
             },
             vec![Trade {
                 order: Order {
@@ -440,8 +438,8 @@ pub mod tests {
                     },
                     ..Default::default()
                 },
-                executed_amount: 99_000_u128.into(),
-                fee: 1_000_u128.into(),
+                executed_amount: U256::from(99_000_u128),
+                fee: U256::from(1_000_u128),
             }],
         )
         .encode(InternalizationStrategy::SkipInternalizableInteraction);

@@ -33,7 +33,7 @@ impl Metrics {
 pub mod gpv2_order {
     use {
         alloy::{
-            primitives::{B256, FixedBytes, Keccak256},
+            primitives::{B256, Keccak256},
             sol_types::{SolStruct, SolValue},
         },
         contracts::alloy::cow_amm::CowAmm,
@@ -98,7 +98,7 @@ pub mod gpv2_order {
     ) -> InteractionData {
         let order_hash = eip712_hash_struct(order);
         let order_hash = hashed_eip712_message(domain_separator, &order_hash);
-        let calldata = amm.commit(FixedBytes(order_hash)).calldata().clone();
+        let calldata = amm.commit(order_hash).calldata().clone();
 
         InteractionData {
             target: *amm.address(),

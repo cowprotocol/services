@@ -23,6 +23,7 @@ pub enum Chain {
     Lens = 232,
     Linea = 59144,
     Plasma = 9745,
+    Ink = 57073,
 }
 
 impl Chain {
@@ -50,6 +51,7 @@ impl Chain {
             Self::Lens => "Lens",
             Self::Linea => "Linea",
             Self::Plasma => "Plasma",
+            Self::Ink => "Ink",
         }
     }
 
@@ -63,7 +65,8 @@ impl Chain {
             | Self::Base
             | Self::Bnb
             | Self::Linea
-            | Self::Optimism => U256::from(10u128.pow(17)),
+            | Self::Optimism
+            | Self::Ink => U256::from(10u128.pow(17)),
             Self::Gnosis | Self::Avalanche | Self::Lens => U256::from(10u128.pow(18)),
             Self::Polygon | Self::Plasma => U256::from(10u128.pow(20)),
             Self::Hardhat => {
@@ -89,6 +92,7 @@ impl Chain {
             Self::Lens => Duration::from_millis(2_000),
             Self::Linea => Duration::from_millis(2_000),
             Self::Plasma => Duration::from_millis(1_000),
+            Self::Ink => Duration::from_millis(1_000),
         }
     }
 
@@ -120,6 +124,7 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Lens as u64 => Self::Lens,
             x if x == Self::Linea as u64 => Self::Linea,
             x if x == Self::Plasma as u64 => Self::Plasma,
+            x if x == Self::Ink as u64 => Self::Ink,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)

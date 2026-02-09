@@ -2,18 +2,16 @@
 
 use {
     super::{FactoryIndexing, PoolIndexing, common},
-    crate::{
-        conversions::U256Ext as _,
-        sources::balancer_v2::{
-            graph_api::{PoolData, PoolType},
-            swap::fixed_point::Bfp,
-        },
+    crate::sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
     },
-    alloy::primitives::Address,
+    alloy::{
+        eips::BlockId,
+        primitives::{Address, U256},
+    },
     anyhow::{Result, ensure},
     contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
-    ethcontract::{BlockId, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,
@@ -67,7 +65,7 @@ impl AmplificationParameter {
         // don't allow modifications of `self.precision` such that it could
         // become 0.
         debug_assert!(!self.precision.is_zero());
-        BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
+        BigRational::new(self.factor.into(), self.precision.into())
     }
 
     pub fn factor(&self) -> U256 {
@@ -101,7 +99,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
         let fetch_amplification_parameter = async move {
             pool_contract
                 .getAmplificationParameter()
-                .block(block.into_alloy())
+                .block(block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
@@ -112,8 +110,8 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
                 futures::try_join!(fetch_common, fetch_amplification_parameter)?;
             let amplification_parameter = {
                 AmplificationParameter::try_new(
-                    amplification_parameter.value.into_legacy(),
-                    amplification_parameter.precision.into_legacy(),
+                    amplification_parameter.value,
+                    amplification_parameter.precision,
                 )?
             };
 
@@ -129,13 +127,13 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::sources::balancer_v2::graph_api::Token, ethcontract::H256};
+    use {super::*, crate::sources::balancer_v2::graph_api::Token, alloy::primitives::B256};
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
@@ -159,21 +157,21 @@ mod tests {
     #[test]
     fn amplification_parameter_conversions() {
         assert_eq!(
-            AmplificationParameter::try_new(2.into(), 3.into())
+            AmplificationParameter::try_new(U256::from(2), U256::from(3))
                 .unwrap()
-                .with_base(1000.into())
+                .with_base(U256::from(1000))
                 .unwrap(),
-            666.into()
+            U256::from(666)
         );
         assert_eq!(
-            AmplificationParameter::try_new(7.into(), 8.into())
+            AmplificationParameter::try_new(U256::from(7), U256::from(8))
                 .unwrap()
                 .as_big_rational(),
             BigRational::new(7.into(), 8.into())
         );
 
         assert_eq!(
-            AmplificationParameter::try_new(1.into(), 0.into())
+            AmplificationParameter::try_new(U256::ONE, U256::ZERO)
                 .unwrap_err()
                 .to_string(),
             "Zero precision not allowed"
