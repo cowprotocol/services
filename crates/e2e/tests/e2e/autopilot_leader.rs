@@ -12,7 +12,6 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
-    std::time::Duration,
 };
 
 #[tokio::test]
