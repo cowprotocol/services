@@ -20,6 +20,7 @@ use {
             tokens,
         },
     },
+    app_data::AppCodeBypass,
     error::Error,
     futures::Future,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
@@ -53,6 +54,7 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
+        app_code_bypass: AppCodeBypass,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
@@ -129,6 +131,7 @@ impl Api {
                     Arc::new(bad_tokens),
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
+                    app_code_bypass.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

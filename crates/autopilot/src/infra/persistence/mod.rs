@@ -298,8 +298,17 @@ impl Persistence {
         let order_uids = order_uids.into_iter().collect();
         tokio::spawn(
             async move {
-                let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
-                store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+                match db.pool.acquire().await {
+                    Ok(mut tx) => {
+                        store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            "failed to acquire a connection to store order events!"
+                        );
+                    }
+                };
             }
             .instrument(tracing::Span::current()),
         );

@@ -6,7 +6,7 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
-    app_data::AppDataHash,
+    app_data::AppCodeBypass,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, future::join_all},
@@ -17,7 +17,6 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    moka::future::Cache,
     number::conversions::u256_to_big_decimal,
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
@@ -81,9 +80,6 @@ pub struct Metrics {
     /// Time taken to build filter bypass orders set.
     #[metric(buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0))]
     filter_bypass_orders_time: Histogram,
-
-    /// App code parsing failures (invalid JSON).
-    app_code_parse_failures: IntCounter,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -153,7 +149,7 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
-            app_code_bypass: AppCodeBypass::new(filter_bypass_app_data_sources, metrics),
+            app_code_bypass: AppCodeBypass::new(filter_bypass_app_data_sources),
         })
     }
 
@@ -190,10 +186,19 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let balance_filter_exempt_orders = self
-            .app_code_bypass
-            .balance_check_exempt_orders(&orders)
-            .await;
+        let balance_filter_exempt_orders = {
+            let _timer = self.metrics.filter_bypass_orders_time.start_timer();
+            orders
+                .iter()
+                .filter(|order| {
+                    self.app_code_bypass.matches(
+                        &order.data.app_data,
+                        order.metadata.full_app_data.as_deref(),
+                    )
+                })
+                .map(|order| order.metadata.uid)
+                .collect::<HashSet<_>>()
+        };
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
@@ -322,13 +327,12 @@ impl SolvableOrdersCache {
             surplus_capturing_jit_order_owners,
         };
 
-        tracing::debug!(%block, valid_orders = db_solvable_orders.orders.len(), "updating current auction cache");
-
         *self.cache.lock().await = Some(Inner {
             auction,
             solvable_orders: db_solvable_orders,
         });
 
+        tracing::debug!(%block, "updated current auction cache");
         self.metrics
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
@@ -488,8 +492,6 @@ async fn get_native_prices(
         .collect()
 }
 
-/// Finds unsigned PreSign and EIP-1271 orders whose signatures are no longer
-/// validating.
 /// Finds orders with pending presignatures. EIP-1271 signature validation is
 /// skipped entirely - the driver validates signatures before settlement.
 fn find_presignature_pending_orders(orders: &[Order]) -> Vec<OrderUid> {
@@ -865,70 +867,6 @@ impl OrderFilterCounter {
     }
 }
 
-/// Determines which orders should bypass balance checks based on their appCode.
-/// Caches parsed appCode values to avoid re-parsing JSON.
-struct AppCodeBypass {
-    sources: HashSet<String>,
-    cache: Cache<AppDataHash, Option<String>>,
-    metrics: &'static Metrics,
-}
-
-const APP_CODE_BYPASS_CACHE_SIZE: u64 = 10_000;
-
-impl AppCodeBypass {
-    fn new(sources: HashSet<String>, metrics: &'static Metrics) -> Self {
-        Self {
-            sources,
-            cache: Cache::new(APP_CODE_BYPASS_CACHE_SIZE),
-            metrics,
-        }
-    }
-
-    /// Returns the set of order UIDs that should bypass balance filtering based
-    /// on appCode.
-    async fn balance_check_exempt_orders(&self, orders: &[Order]) -> HashSet<OrderUid> {
-        let _timer = self.metrics.filter_bypass_orders_time.start_timer();
-
-        if self.sources.is_empty() {
-            return HashSet::new();
-        }
-
-        let mut result = HashSet::new();
-        for order in orders {
-            let app_data_hash = order.data.app_data;
-            if let Some(cached_app_code) = self.cache.get(&app_data_hash).await {
-                if let Some(app_code) = cached_app_code
-                    && self.sources.contains(&app_code)
-                {
-                    result.insert(order.metadata.uid);
-                }
-                continue;
-            }
-
-            // Parse and cache the app code
-            let app_code = order
-                .metadata
-                .full_app_data
-                .as_deref()
-                .and_then(|data| {
-                    serde_json::from_slice::<app_data::Root>(data.as_bytes())
-                        .map_err(|_| self.metrics.app_code_parse_failures.inc())
-                        .ok()
-                })
-                .and_then(|root| root.app_code().map(str::to_owned));
-
-            if let Some(ref code) = app_code
-                && self.sources.contains(code)
-            {
-                result.insert(order.metadata.uid);
-            }
-            self.cache.insert(app_data_hash, app_code).await;
-        }
-
-        result
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -940,8 +878,10 @@ mod tests {
         shared::{
             bad_token::list_based::ListBasedDetector,
             price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME, PriceEstimationError,
+                HEALTHY_PRICE_ESTIMATION_TIME,
+                PriceEstimationError,
                 native::MockNativePriceEstimating,
+                native_price_cache::ApproximationToken,
             },
         },
     };
@@ -1179,7 +1119,10 @@ mod tests {
             Default::default(),
             3,
             // Set to use native price approximations for the following tokens
-            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            HashMap::from([
+                (token1, ApproximationToken::same_decimals(token_approx1)),
+                (token2, ApproximationToken::same_decimals(token_approx2)),
+            ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
@@ -1537,75 +1480,6 @@ mod tests {
             filtered_no_bypass[0].metadata.uid,
             eip1271_order.metadata.uid
         );
-    }
-
-    #[tokio::test]
-    async fn app_code_bypass_matches_app_code() {
-        let order1_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
-        let order2_uid = OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2);
-        let order3_uid = OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3);
-
-        let orders = vec![
-            Order {
-                metadata: OrderMetadata {
-                    uid: order1_uid,
-                    full_app_data: Some(r#"{"appCode": "Barter"}"#.to_string()),
-                    ..Default::default()
-                },
-                data: OrderData {
-                    app_data: AppDataHash([1; 32]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                metadata: OrderMetadata {
-                    uid: order2_uid,
-                    full_app_data: Some(r#"{"appCode": "CoW Swap"}"#.to_string()),
-                    ..Default::default()
-                },
-                data: OrderData {
-                    app_data: AppDataHash([2; 32]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                metadata: OrderMetadata {
-                    uid: order3_uid,
-                    full_app_data: None, // No app data
-                    ..Default::default()
-                },
-                data: OrderData {
-                    app_data: AppDataHash([3; 32]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        ];
-
-        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
-
-        // Empty sources -> no bypass
-        let bypass = AppCodeBypass::new(HashSet::new(), metrics);
-        let result = bypass.balance_check_exempt_orders(&orders).await;
-        assert!(result.is_empty());
-
-        // Match "Barter" -> only order1
-        let bypass = AppCodeBypass::new(HashSet::from(["Barter".to_string()]), metrics);
-        let result = bypass.balance_check_exempt_orders(&orders).await;
-        assert_eq!(result.len(), 1);
-        assert!(result.contains(&order1_uid));
-
-        // Match multiple sources
-        let bypass = AppCodeBypass::new(
-            HashSet::from(["Barter".to_string(), "CoW Swap".to_string()]),
-            metrics,
-        );
-        let result = bypass.balance_check_exempt_orders(&orders).await;
-        assert_eq!(result.len(), 2);
-        assert!(result.contains(&order1_uid));
-        assert!(result.contains(&order2_uid));
     }
 
     #[test]
