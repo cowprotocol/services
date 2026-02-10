@@ -183,7 +183,15 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await
         .unwrap();
 
-    tokio::time::sleep(Duration::from_secs(15)).await;
+    // Even once the follower becomes leader, the logic requires some action to
+    // continue: self_arc.wake_notify.notified().await;
+    // So, we sleep for some time to ensure the task starts waiting
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    // Then, produce a block so the task executes
+    onchain.mint_block().await;
+    // And finally give some more time to ensure all other async tasks are executed
+    // before fully becoming a leader
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Run 10 txs, autopilot-backup is in charge
     // - only test_solver2 should participate and settle
