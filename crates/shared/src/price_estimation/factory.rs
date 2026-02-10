@@ -390,12 +390,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         results_required: NonZeroUsize,
         weth: &WETH9::Instance,
         cache: native_price_cache::Cache,
-        approximation_tokens: HashMap<Address, ApproximationToken>,
     ) -> native_price_cache::CachingNativePriceEstimator {
         let inner = self
             .native_price_estimator(native, results_required, weth)
             .await
             .expect("failed to build native price estimator");
+        let approximation_tokens = self
+            .build_approximation_tokens()
+            .await
+            .expect("failed to build native price approximation tokens");
         native_price_cache::CachingNativePriceEstimator::new(
             inner,
             cache,
@@ -407,7 +410,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     /// Builds the approximation tokens mapping with normalization factors based
     /// on decimal differences between token pairs.
-    pub async fn build_approximation_tokens(&self) -> Result<HashMap<Address, ApproximationToken>> {
+    async fn build_approximation_tokens(&self) -> Result<HashMap<Address, ApproximationToken>> {
         let pairs = &self.args.native_price_approximation_tokens;
         if pairs.is_empty() {
             return Ok(HashMap::new());

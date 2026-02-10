@@ -6,6 +6,7 @@ use {
         from_normalized_price,
     },
     alloy::primitives::Address,
+    arc_swap::ArcSwap,
     bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
     prometheus::{IntCounter, IntCounterVec, IntGauge},
@@ -496,7 +497,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
 /// and caching prices.
 pub struct NativePriceUpdater {
     estimator: CachingNativePriceEstimator,
-    tokens_to_update: Mutex<HashSet<Address>>,
+    tokens_to_update: ArcSwap<HashSet<Address>>,
 }
 
 impl NativePriceUpdater {
@@ -514,7 +515,7 @@ impl NativePriceUpdater {
 
         let updater = Arc::new(Self {
             estimator,
-            tokens_to_update: Default::default(),
+            tokens_to_update: ArcSwap::new(Arc::new(HashSet::new())),
         });
 
         // Don't keep the updater alive just for the background task
@@ -541,7 +542,7 @@ impl NativePriceUpdater {
     /// background task.
     pub fn set_tokens_to_update(&self, tokens: HashSet<Address>) {
         tracing::trace!(?tokens, "update tokens to maintain");
-        *self.tokens_to_update.lock().unwrap() = tokens;
+        self.tokens_to_update.store(Arc::new(tokens));
     }
 
     pub async fn fetch_prices(
@@ -561,7 +562,7 @@ impl NativePriceUpdater {
             .set(i64::try_from(cache.len()).unwrap_or(i64::MAX));
 
         let max_age = cache.max_age().saturating_sub(prefetch_time);
-        let tokens_to_update = self.tokens_to_update.lock().unwrap().clone();
+        let tokens_to_update = self.tokens_to_update.load_full();
 
         // Ensure all tokens_to_update have entries in the cache so they get
         // maintained.
@@ -569,7 +570,7 @@ impl NativePriceUpdater {
             let now = Instant::now();
             let outdated_timestamp = now - cache.0.max_age;
             let mut data = cache.0.data.lock().unwrap();
-            for token in &tokens_to_update {
+            for token in tokens_to_update.iter() {
                 if let Entry::Vacant(entry) = data.entry(*token) {
                     entry.insert(CachedResult::new(
                         // It is safe to have an invalid price, since the item is created with an

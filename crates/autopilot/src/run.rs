@@ -396,12 +396,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
-    let approximation_tokens = price_estimator_factory
-        .build_approximation_tokens()
-        .instrument(info_span!("build_approximation_tokens"))
-        .await
-        .expect("failed to build native price approximation tokens");
-
     let api_sources = args
         .api_native_price_estimators
         .as_ref()
@@ -413,7 +407,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 args.native_price_estimation_results_required,
                 &weth,
                 shared_cache.clone(),
-                approximation_tokens.clone(),
             )
             .instrument(info_span!("api_native_price_estimator"))
             .await,
@@ -426,7 +419,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 args.native_price_estimation_results_required,
                 &weth,
                 shared_cache.clone(),
-                approximation_tokens,
             )
             .instrument(info_span!("competition_native_price_updater"))
             .await;

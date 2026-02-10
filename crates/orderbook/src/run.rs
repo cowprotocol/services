@@ -320,10 +320,6 @@ pub async fn run(args: Arguments) {
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
-    let approximation_tokens = price_estimator_factory
-        .build_approximation_tokens()
-        .await
-        .expect("failed to build native price approximation tokens");
     let native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
         price_estimator_factory
             .caching_native_price_estimator(
@@ -331,7 +327,6 @@ pub async fn run(args: Arguments) {
                 args.fast_price_estimation_results_required,
                 &native_token,
                 cache,
-                approximation_tokens,
             )
             .await,
     );
