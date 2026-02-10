@@ -161,11 +161,13 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     // Stop autopilot-leader, follower should take over
     manual_shutdown.shutdown();
-    assert!(
-        tokio::time::timeout(Duration::from_secs(15), autopilot_leader)
-            .await
-            .is_ok()
-    );
+    let is_leader_shutdown = || async {
+        onchain.mint_block().await;
+        autopilot_leader.is_finished()
+    };
+    wait_for_condition(TIMEOUT, is_leader_shutdown)
+        .await
+        .unwrap();
 
     // Wait for the follower to step up as leader by checking its metrics endpoint
     let is_follower_leader = || async {
