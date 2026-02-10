@@ -12,7 +12,6 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
-    std::time::Duration,
 };
 
 #[tokio::test]
@@ -185,21 +184,21 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await
         .unwrap();
 
-    // Even once the follower becomes leader, the logic requires some action to
-    // continue: self_arc.wake_notify.notified().await;
-    // So, we sleep for some time to ensure the task starts waiting
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    // Then, produce a block so the task executes
-    onchain.mint_block().await;
-    // And finally give some more time to ensure all other async tasks are executed
-    // before fully becoming a leader
-    tokio::time::sleep(Duration::from_secs(1)).await;
-
     // Run 10 txs, autopilot-backup is in charge
     // - only test_solver2 should participate and settle
     for i in 1..=10 {
         tracing::info!("Tx with autopilot-backup {i}");
-        let uid = services.create_order(&order()).await.unwrap();
+        let uid_cell = std::cell::Cell::new(None);
+        let try_create_order = || async {
+            onchain.mint_block().await;
+            if let Ok(uid) = services.create_order(&order()).await {
+                uid_cell.set(Some(uid));
+                return true;
+            }
+            false
+        };
+        wait_for_condition(TIMEOUT, try_create_order).await.unwrap();
+        let uid = uid_cell.into_inner().unwrap();
 
         tracing::info!("waiting for trade");
         let indexed_trades = || async {
