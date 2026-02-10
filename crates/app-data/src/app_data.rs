@@ -347,7 +347,6 @@ impl Root {
 /// Caches whether a given app data document contains wrappers, keyed by
 /// hash. This avoids re-parsing the same JSON across orders and auction
 /// cycles.
-#[derive(Clone)]
 pub struct WrapperCache(Cache<AppDataHash, bool>);
 
 impl WrapperCache {
