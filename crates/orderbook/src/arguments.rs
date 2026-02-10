@@ -91,12 +91,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "100")]
     pub banned_users_max_cache_size: NonZeroUsize,
 
-    /// Whether to spawn a background `NativePriceUpdater` that proactively
-    /// refreshes cached native prices. When false, prices are only fetched
-    /// on-demand.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub native_price_updater_enabled: bool,
-
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
     #[clap(long, env)]
@@ -202,7 +196,6 @@ impl std::fmt::Display for Arguments {
             allowed_tokens,
             eip1271_skip_creation_validation,
             solvable_orders_max_update_age_blocks,
-            native_price_updater_enabled,
             native_price_estimators,
             fast_price_estimation_results_required,
             max_limit_orders_per_user,
@@ -254,10 +247,6 @@ impl std::fmt::Display for Arguments {
         writeln!(
             f,
             "solvable_orders_max_update_age_blocks: {solvable_orders_max_update_age_blocks}",
-        )?;
-        writeln!(
-            f,
-            "native_price_updater_enabled: {native_price_updater_enabled}"
         )?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         writeln!(

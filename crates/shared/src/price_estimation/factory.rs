@@ -7,7 +7,7 @@ use {
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimating, NativePriceEstimator},
-        native_price_cache::ApproximationToken,
+        native_price_cache::{self, ApproximationToken},
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -380,6 +380,29 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
         Ok(Box::new(competition_estimator))
+    }
+
+    /// Creates a [`CachingNativePriceEstimator`] that wraps a native price
+    /// estimator with an in-memory cache.
+    pub async fn caching_native_price_estimator(
+        &mut self,
+        native: &[Vec<NativePriceEstimatorSource>],
+        results_required: NonZeroUsize,
+        weth: &WETH9::Instance,
+        cache: native_price_cache::Cache,
+        approximation_tokens: HashMap<Address, ApproximationToken>,
+    ) -> native_price_cache::CachingNativePriceEstimator {
+        let inner = self
+            .native_price_estimator(native, results_required, weth)
+            .await
+            .expect("failed to build native price estimator");
+        native_price_cache::CachingNativePriceEstimator::new(
+            inner,
+            cache,
+            self.args.native_price_cache_concurrent_requests,
+            approximation_tokens,
+            self.args.quote_timeout,
+        )
     }
 
     /// Builds the approximation tokens mapping with normalization factors based

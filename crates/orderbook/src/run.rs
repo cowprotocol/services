@@ -75,53 +75,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
     run(args).await;
 }
 
-/// Creates a native price estimator for the orderbook.
-///
-/// When `with_updater` is true the estimator is wrapped in a
-/// `NativePriceUpdater` that spawns a background maintenance task.
-/// Otherwise, prices are only fetched on-demand.
-async fn build_native_price_estimator(
-    factory: &mut PriceEstimatorFactory<'_>,
-    native: &[Vec<shared::price_estimation::NativePriceEstimator>],
-    results_required: std::num::NonZeroUsize,
-    weth: WETH9::Instance,
-    initial_prices: std::collections::HashMap<alloy::primitives::Address, bigdecimal::BigDecimal>,
-    with_updater: bool,
-    args: &shared::price_estimation::Arguments,
-) -> Arc<dyn NativePriceEstimating> {
-    let estimator = factory
-        .native_price_estimator(native, results_required, &weth)
-        .await
-        .expect("failed to build native price estimator");
-    let approximation_tokens = factory
-        .build_approximation_tokens()
-        .await
-        .expect("failed to build native price approximation tokens");
-
-    let cache = shared::price_estimation::native_price_cache::Cache::new(
-        args.native_price_cache_max_age,
-        initial_prices,
-    );
-    let caching_estimator =
-        shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
-            estimator,
-            cache,
-            args.native_price_cache_concurrent_requests,
-            approximation_tokens,
-            args.quote_timeout,
-        );
-
-    if with_updater {
-        shared::price_estimation::native_price_cache::NativePriceUpdater::new(
-            caching_estimator,
-            args.native_price_cache_refresh,
-            args.native_price_prefetch_time,
-        )
-    } else {
-        Arc::new(caching_estimator)
-    }
-}
-
 pub async fn run(args: Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
@@ -363,16 +316,25 @@ pub async fn run(args: Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
-    let native_price_estimator = build_native_price_estimator(
-        &mut price_estimator_factory,
-        args.native_price_estimators.as_slice(),
-        args.fast_price_estimation_results_required,
-        native_token.clone(),
+    let cache = shared::price_estimation::native_price_cache::Cache::new(
+        args.price_estimation.native_price_cache_max_age,
         prices,
-        args.native_price_updater_enabled,
-        &args.price_estimation,
-    )
-    .await;
+    );
+    let approximation_tokens = price_estimator_factory
+        .build_approximation_tokens()
+        .await
+        .expect("failed to build native price approximation tokens");
+    let native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
+        price_estimator_factory
+            .caching_native_price_estimator(
+                args.native_price_estimators.as_slice(),
+                args.fast_price_estimation_results_required,
+                &native_token,
+                cache,
+                approximation_tokens,
+            )
+            .await,
+    );
 
     let price_estimator = price_estimator_factory
         .price_estimator(

@@ -92,31 +92,6 @@ impl Liveness {
     }
 }
 
-async fn caching_native_price_estimator(
-    factory: &mut PriceEstimatorFactory<'_>,
-    sources: &shared::price_estimation::NativePriceEstimators,
-    results_required: std::num::NonZeroUsize,
-    weth: &WETH9::Instance,
-    cache: shared::price_estimation::native_price_cache::Cache,
-    approximation_tokens: std::collections::HashMap<
-        Address,
-        shared::price_estimation::native_price_cache::ApproximationToken,
-    >,
-    args: &shared::price_estimation::Arguments,
-) -> shared::price_estimation::native_price_cache::CachingNativePriceEstimator {
-    let inner = factory
-        .native_price_estimator(sources.as_slice(), results_required, weth)
-        .await
-        .expect("failed to build native price estimator");
-    shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
-        inner,
-        cache,
-        args.native_price_cache_concurrent_requests,
-        approximation_tokens,
-        args.quote_timeout,
-    )
-}
-
 /// Creates Web3 transport based on the given config.
 #[instrument(skip_all)]
 async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
@@ -432,31 +407,29 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .as_ref()
         .unwrap_or(&args.native_price_estimators);
     let api_native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
-        caching_native_price_estimator(
-            &mut price_estimator_factory,
-            api_sources,
-            args.native_price_estimation_results_required,
-            &weth,
-            shared_cache.clone(),
-            approximation_tokens.clone(),
-            &args.price_estimation,
-        )
-        .instrument(info_span!("api_native_price_estimator"))
-        .await,
+        price_estimator_factory
+            .caching_native_price_estimator(
+                api_sources.as_slice(),
+                args.native_price_estimation_results_required,
+                &weth,
+                shared_cache.clone(),
+                approximation_tokens.clone(),
+            )
+            .instrument(info_span!("api_native_price_estimator"))
+            .await,
     );
 
     let competition_native_price_updater = {
-        let caching = caching_native_price_estimator(
-            &mut price_estimator_factory,
-            &args.native_price_estimators,
-            args.native_price_estimation_results_required,
-            &weth,
-            shared_cache.clone(),
-            approximation_tokens,
-            &args.price_estimation,
-        )
-        .instrument(info_span!("competition_native_price_updater"))
-        .await;
+        let caching = price_estimator_factory
+            .caching_native_price_estimator(
+                args.native_price_estimators.as_slice(),
+                args.native_price_estimation_results_required,
+                &weth,
+                shared_cache.clone(),
+                approximation_tokens,
+            )
+            .instrument(info_span!("competition_native_price_updater"))
+            .await;
         shared::price_estimation::native_price_cache::NativePriceUpdater::new(
             caching,
             args.price_estimation.native_price_cache_refresh,
