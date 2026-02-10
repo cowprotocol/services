@@ -1,10 +1,10 @@
 //! Data transfer objects for interacting with the Enso Trade Simulator API.
 
 use {
-    shared::domain::eth,
     alloy::rpc::types::AccessList,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
+    shared::domain::eth,
 };
 
 #[serde_as]

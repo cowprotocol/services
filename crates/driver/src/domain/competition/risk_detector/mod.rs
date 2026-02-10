@@ -17,8 +17,8 @@
 //! filter them out of the auction.
 use {
     crate::domain::competition::{Auction, order::Uid},
-    shared::domain::eth,
     futures::{StreamExt, stream::FuturesUnordered},
+    shared::domain::eth,
     std::{collections::HashMap, fmt, time::Instant},
 };
 

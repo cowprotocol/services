@@ -9,8 +9,8 @@ use {
     shared::{
         domain::eth,
         gas_price_estimation::configurable_alloy::{
-        default_past_blocks,
-        default_reward_percentile,
+            default_past_blocks,
+            default_reward_percentile,
         },
     },
     solver::solver::Arn,
@@ -760,14 +760,17 @@ impl Default for GasEstimatorType {
     }
 }
 
-impl Into<simulator::infra::config::GasEstimatorType> for &GasEstimatorType {
-    fn into(self) -> simulator::infra::config::GasEstimatorType {
-        match self {
-            GasEstimatorType::Alloy { past_blocks, reward_percentile } => simulator::infra::config::GasEstimatorType::Alloy {
+impl From<&GasEstimatorType> for simulator::infra::config::GasEstimatorType {
+    fn from(value: &GasEstimatorType) -> Self {
+        match value {
+            GasEstimatorType::Alloy {
+                past_blocks,
+                reward_percentile,
+            } => simulator::infra::config::GasEstimatorType::Alloy {
                 past_blocks: *past_blocks,
-                reward_percentile: *reward_percentile
+                reward_percentile: *reward_percentile,
             },
-            GasEstimatorType::Web3 => simulator::infra::config::GasEstimatorType::Web3
+            GasEstimatorType::Web3 => simulator::infra::config::GasEstimatorType::Web3,
         }
     }
 }

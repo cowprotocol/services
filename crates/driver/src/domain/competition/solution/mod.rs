@@ -3,9 +3,7 @@ use {
     super::auction,
     crate::{
         boundary,
-        domain::{
-            competition::{self, order},
-        },
+        domain::competition::{self, order},
         infra::{
             blockchain::{self, Ethereum},
             config::file::FeeHandler,

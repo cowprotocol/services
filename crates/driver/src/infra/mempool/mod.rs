@@ -52,19 +52,19 @@ impl Config {
     }
 }
 
-impl Into<simulator::infra::config::MempoolConfig> for &Config {
-    fn into(self) -> simulator::infra::config::MempoolConfig {
+impl From<&Config> for simulator::infra::config::MempoolConfig {
+    fn from(value: &Config) -> Self {
         simulator::infra::config::MempoolConfig {
-            min_priority_fee: self.min_priority_fee,
-            gas_price_cap: self.gas_price_cap,
-            target_confirm_time: self.target_confirm_time,
-            retry_interval: self.retry_interval,
-            nonce_block_number: self.nonce_block_number,
-            url: self.url.clone(),
-            name: self.name.clone(),
-            revert_protection: self.revert_protection.into(),
-            max_additional_tip: self.max_additional_tip,
-            additional_tip_percentage: self.additional_tip_percentage,
+            min_priority_fee: value.min_priority_fee,
+            gas_price_cap: value.gas_price_cap,
+            target_confirm_time: value.target_confirm_time,
+            retry_interval: value.retry_interval,
+            nonce_block_number: value.nonce_block_number,
+            url: value.url.clone(),
+            name: value.name.clone(),
+            revert_protection: value.revert_protection.into(),
+            max_additional_tip: value.max_additional_tip,
+            additional_tip_percentage: value.additional_tip_percentage,
         }
     }
 }
@@ -80,9 +80,9 @@ pub enum RevertProtection {
     Disabled,
 }
 
-impl Into<simulator::infra::config::RevertProtection> for RevertProtection {
-    fn into(self) -> simulator::infra::config::RevertProtection {
-        match self {
+impl From<RevertProtection> for simulator::infra::config::RevertProtection {
+    fn from(value: RevertProtection) -> Self {
+        match value {
             RevertProtection::Disabled => simulator::infra::config::RevertProtection::Disabled,
             RevertProtection::Enabled => simulator::infra::config::RevertProtection::Enabled,
         }

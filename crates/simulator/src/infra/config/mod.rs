@@ -1,9 +1,14 @@
-
 use {
-    alloy::eips::BlockNumberOrTag, serde::Deserialize, shared::{domain::eth, gas_price_estimation::configurable_alloy::{
-        default_past_blocks,
-        default_reward_percentile,
-    }}, url::Url
+    alloy::eips::BlockNumberOrTag,
+    serde::Deserialize,
+    shared::{
+        domain::eth,
+        gas_price_estimation::configurable_alloy::{
+            default_past_blocks,
+            default_reward_percentile,
+        },
+    },
+    url::Url,
 };
 
 #[derive(Clone, Debug, Deserialize)]

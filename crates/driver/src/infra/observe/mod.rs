@@ -15,7 +15,6 @@ use {
                 Solved,
                 solution::{self, Settlement},
             },
-            
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},

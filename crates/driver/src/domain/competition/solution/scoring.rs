@@ -12,15 +12,13 @@ use {
         order::{self, Side},
         trade::CustomClearingPrices,
     },
-    crate::domain::{
-        competition::{
-            PriceLimits,
-            auction,
-            order::FeePolicy,
-            solution::{
-                error,
-                fee::{self, adjust_quote_to_order_limits},
-            },
+    crate::domain::competition::{
+        PriceLimits,
+        auction,
+        order::FeePolicy,
+        solution::{
+            error,
+            fee::{self, adjust_quote_to_order_limits},
         },
     },
     alloy::primitives::ruint::UintTryFrom,

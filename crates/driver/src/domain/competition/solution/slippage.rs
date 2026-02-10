@@ -111,7 +111,7 @@ impl Parameters {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::domain::eth::Asset, alloy::primitives::address, num::rational::Ratio};
+    use {super::*, alloy::primitives::address, num::rational::Ratio, shared::domain::eth::Asset};
 
     const GNO: eth::Address = address!("6810e776880c02933d47db1b9fc05908e5386b96");
     const USDC: eth::Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");

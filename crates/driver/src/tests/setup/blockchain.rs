@@ -27,8 +27,8 @@ use {
         alloy::{CallBuilderExt, EvmProviderExt, ProviderExt},
     },
     futures::Future,
-    solvers_dto::solution::Flashloan,
     shared::domain::eth,
+    solvers_dto::solution::Flashloan,
     std::collections::HashMap,
 };
 // TODO Possibly might be a good idea to use an enum for tokens instead of

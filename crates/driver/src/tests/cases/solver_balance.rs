@@ -1,9 +1,7 @@
 use {
-    crate::{
-        tests::{
-            setup,
-            setup::{ab_order, ab_pool, ab_solution, test_solver},
-        },
+    crate::tests::{
+        setup,
+        setup::{ab_order, ab_pool, ab_solution, test_solver},
     },
     shared::domain::eth,
 };

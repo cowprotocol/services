@@ -21,10 +21,7 @@ use {
     number::units::EthUnit,
     reqwest::StatusCode,
     serde_json::json,
-    shared::{
-        domain::eth::NonZeroU256,
-        web3::Web3,
-    },
+    shared::{domain::eth::NonZeroU256, web3::Web3},
 };
 
 #[tokio::test]

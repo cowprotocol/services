@@ -1,9 +1,6 @@
 use {
     super::{Fee, Id, ScalingFactor},
-    crate::{
-        boundary,
-        domain::liquidity,
-    },
+    crate::{boundary, domain::liquidity},
     itertools::Itertools,
     shared::domain::eth,
 };

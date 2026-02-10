@@ -1,9 +1,7 @@
 use {
-    crate::{
-        infra::blockchain::{self, Ethereum},
-    },
-    shared::domain::eth,
+    crate::infra::blockchain::{self, Ethereum},
     observe::future::Measure,
+    shared::domain::eth,
 };
 
 pub mod infra;

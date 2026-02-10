@@ -1,13 +1,11 @@
 use {
-    crate::{
-        infra::{
-            blockchain,
-            config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
-            liquidity,
-            mempool,
-            notify,
-            solver,
-        },
+    crate::infra::{
+        blockchain,
+        config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
+        liquidity,
+        mempool,
+        notify,
+        solver,
     },
     shared::domain::eth,
     std::time::Duration,

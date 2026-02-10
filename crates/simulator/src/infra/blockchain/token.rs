@@ -1,7 +1,7 @@
 use {
     super::{Error, Ethereum},
-    shared::domain::eth,
     ethrpc::alloy::errors::ContractErrorExt,
+    shared::domain::eth,
 };
 
 /// An ERC-20 token.

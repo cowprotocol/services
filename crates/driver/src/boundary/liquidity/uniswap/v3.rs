@@ -1,11 +1,9 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{
-            liquidity::{
-                self,
-                uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
-            },
+        domain::liquidity::{
+            self,
+            uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
         },
         infra::{self, blockchain::Ethereum},
     },

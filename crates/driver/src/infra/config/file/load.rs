@@ -354,20 +354,22 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {
-            (Some(config), None) => {
-                Some(simulator::Config::Tenderly(simulator::provider::tenderly::Config {
+            (Some(config), None) => Some(simulator::Config::Tenderly(
+                simulator::provider::tenderly::Config {
                     url: config.url,
                     api_key: config.api_key,
                     user: config.user,
                     project: config.project,
                     save: config.save,
                     save_if_fails: config.save_if_fails,
+                },
+            )),
+            (None, Some(config)) => {
+                Some(simulator::Config::Enso(simulator::provider::enso::Config {
+                    url: config.url,
+                    network_block_interval: config.network_block_interval,
                 }))
             }
-            (None, Some(config)) => Some(simulator::Config::Enso(simulator::provider::enso::Config {
-                url: config.url,
-                network_block_interval: config.network_block_interval,
-            })),
             (None, None) => None,
             (Some(_), Some(_)) => panic!("Cannot configure both Tenderly and Enso"),
         },

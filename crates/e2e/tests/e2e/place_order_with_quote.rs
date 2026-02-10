@@ -8,10 +8,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::{
-        domain::eth::NonZeroU256,
-        web3::Web3,
-    },
+    shared::{domain::eth::NonZeroU256, web3::Web3},
     std::ops::DerefMut,
 };
 

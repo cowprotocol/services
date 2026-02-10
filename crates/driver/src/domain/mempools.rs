@@ -1,11 +1,7 @@
 use {
     super::competition::solution::settlement,
     crate::{
-        domain::{
-            BlockNo,
-            competition::solution::Settlement,
-            
-        },
+        domain::{BlockNo, competition::solution::Settlement},
         infra::{self, Ethereum, observe, solver::Solver},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},

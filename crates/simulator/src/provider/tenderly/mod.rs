@@ -1,8 +1,4 @@
-use {
-    crate::infra::Ethereum,
-    shared::domain::eth,
-    thiserror::Error,
-};
+use {crate::infra::Ethereum, shared::domain::eth, thiserror::Error};
 
 mod dto;
 

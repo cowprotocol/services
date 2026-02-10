@@ -1,8 +1,8 @@
 use {
-    shared::domain::eth,
     chain::Chain,
     ethrpc::block_stream::CurrentBlockWatcher,
     reqwest::ClientBuilder,
+    shared::domain::eth,
     std::time::Duration,
     thiserror::Error,
 };

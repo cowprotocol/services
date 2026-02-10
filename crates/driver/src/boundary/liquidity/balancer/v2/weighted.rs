@@ -1,14 +1,9 @@
 use {
     crate::{
         boundary::Result,
-        domain::{
-            liquidity::{self, balancer},
-        },
+        domain::liquidity::{self, balancer},
     },
-    shared::{
-        domain::eth,
-        sources::balancer_v2::pool_fetching::WeightedPoolVersion,
-    },
+    shared::{domain::eth, sources::balancer_v2::pool_fetching::WeightedPoolVersion},
     solver::liquidity::{WeightedProductOrder, balancer_v2},
 };
 

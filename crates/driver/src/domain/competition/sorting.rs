@@ -1,8 +1,6 @@
 use {
     crate::{
-        domain::{
-            competition::{auction::Tokens, order},
-        },
+        domain::competition::{auction::Tokens, order},
         util,
     },
     chrono::Duration,

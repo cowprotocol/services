@@ -4,9 +4,7 @@
 /// private submission networks are used.
 use {
     super::Error,
-    crate::{
-        infra::{config::file::GasEstimatorType, mempool},
-    },
+    crate::infra::{config::file::GasEstimatorType, mempool},
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::anyhow,
     ethrpc::Web3,
@@ -16,7 +14,7 @@ use {
             GasPriceEstimating,
             configurable_alloy::{ConfigurableGasPriceEstimator, EstimatorConfig},
             eth_node::NodeGasPriceEstimator,
-        }
+        },
     },
     std::sync::Arc,
 };

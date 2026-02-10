@@ -1,13 +1,11 @@
 use {
     super::{Error, Solution, encoding, trade::ClearingPrices},
     crate::{
-        domain::{
-            competition::{
-                self,
-                auction,
-                order::{self},
-                solution::{self, Interaction, Trade, error},
-            },
+        domain::competition::{
+            self,
+            auction,
+            order::{self},
+            solution::{self, Interaction, Trade, error},
         },
         infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
     },

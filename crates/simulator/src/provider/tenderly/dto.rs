@@ -1,9 +1,9 @@
 //! Data transfer objects for interacting with the Tenderly API.
 
 use {
-    shared::domain::eth,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
+    shared::domain::eth,
 };
 
 #[serde_as]

@@ -27,12 +27,10 @@ use {
         error::Math,
         trade::{ClearingPrices, Fee, Fulfillment},
     },
-    crate::domain::{
-        competition::{
-            PriceLimits,
-            order::{self, FeePolicy, Side},
-            solution::error::Trade,
-        },
+    crate::domain::competition::{
+        PriceLimits,
+        order::{self, FeePolicy, Side},
+        solution::error::Trade,
     },
     bigdecimal::Zero,
     shared::domain::eth,

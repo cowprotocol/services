@@ -5,10 +5,7 @@ use {
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     model::order::BUY_ETH_ADDRESS,
-    shared::{
-        domain::eth,
-        request_sharing::BoxRequestSharing,
-    },
+    shared::{domain::eth, request_sharing::BoxRequestSharing},
     std::{
         collections::HashMap,
         sync::{Arc, RwLock},

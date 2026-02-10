@@ -45,15 +45,15 @@ pub struct Addresses {
     pub flashloan_router: Option<eth::ContractAddress>,
 }
 
-impl Into<simulator::infra::blockchain::contracts::Addresses> for &Addresses {
-    fn into(self) -> simulator::infra::blockchain::contracts::Addresses {
+impl From<&Addresses> for simulator::infra::blockchain::contracts::Addresses {
+    fn from(value: &Addresses) -> Self {
         simulator::infra::blockchain::contracts::Addresses {
-            settlement: self.settlement,
-            signatures: self.signatures,
-            weth: self.weth,
-            balances: self.balances,
-            cow_amm_helper_by_factory: self.cow_amm_helper_by_factory.clone(),
-            flashloan_router: self.flashloan_router
+            settlement: value.settlement,
+            signatures: value.signatures,
+            weth: value.weth,
+            balances: value.balances,
+            cow_amm_helper_by_factory: value.cow_amm_helper_by_factory.clone(),
+            flashloan_router: value.flashloan_router,
         }
     }
 }
