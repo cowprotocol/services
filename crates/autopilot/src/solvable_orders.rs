@@ -468,7 +468,7 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
 }
 
 async fn get_native_prices(
-    tokens: &[Address],
+    tokens: HashSet<Address>,
     native_price_estimator: &NativePriceUpdater,
     timeout: Duration,
 ) -> BTreeMap<Address, alloy::primitives::U256> {
@@ -625,15 +625,7 @@ async fn get_orders_with_native_prices(
         .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
-    // Tell the updater about all traded tokens so it maintains them.
-    native_price_estimator.set_tokens_to_update(traded_tokens.clone());
-
-    let prices = get_native_prices(
-        &traded_tokens.into_iter().collect::<Vec<_>>(),
-        native_price_estimator,
-        timeout,
-    )
-    .await;
+    let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
     // Filter orders so that we only return orders that have prices
     let mut filtered_market_orders = 0_i64;

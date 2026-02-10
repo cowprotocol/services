@@ -328,62 +328,6 @@ struct CachingInner {
     quote_timeout: Duration,
 }
 
-impl CachingInner {
-    /// Checks cache for the given tokens one by one. If the price is already
-    /// cached, it gets returned. If it's not in the cache, a new price
-    /// estimation request gets issued. We check the cache before each
-    /// request because they can take a long time and some other task might
-    /// have fetched some requested price in the meantime.
-    fn estimate_prices_and_update_cache<'a>(
-        &'a self,
-        tokens: &'a [Address],
-        max_age: Duration,
-        request_timeout: Duration,
-    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
-        let estimates = tokens.iter().map(move |token| async move {
-            let current_accumulative_errors_count = {
-                // check if the price is cached by now
-                let now = Instant::now();
-                let mut cache = self.cache.0.data.lock().unwrap();
-
-                match Cache::get_cached_price(*token, now, &mut cache, &max_age, false) {
-                    Some(cached) if cached.is_ready() => {
-                        return (*token, cached.result);
-                    }
-                    Some(cached) => cached.accumulative_errors_count,
-                    None => Default::default(),
-                }
-            };
-
-            let approximation = self
-                .approximation_tokens
-                .get(token)
-                .copied()
-                .unwrap_or(ApproximationToken::same_decimals(*token));
-
-            let result = self
-                .estimator
-                .estimate_native_price(approximation.address, request_timeout)
-                .await
-                .map(|price| approximation.normalize_price(price));
-
-            // update price in cache
-            if should_cache(&result) {
-                let now = Instant::now();
-                self.cache.insert(
-                    *token,
-                    CachedResult::new(result.clone(), now, now, current_accumulative_errors_count),
-                );
-            };
-
-            (*token, result)
-        });
-        futures::stream::iter(estimates)
-            .buffered(self.concurrent_requests)
-            .boxed()
-    }
-}
-
 impl CachingNativePriceEstimator {
     pub fn new(
         estimator: Box<dyn NativePriceEstimating>,
@@ -402,6 +346,62 @@ impl CachingNativePriceEstimator {
         Self(inner)
     }
 
+    /// Checks cache for the given tokens one by one. If the price is already
+    /// cached, it gets returned. If it's not in the cache, a new price
+    /// estimation request gets issued. We check the cache before each
+    /// request because they can take a long time and some other task might
+    /// have fetched some requested price in the meantime.
+    fn estimate_prices_and_update_cache<'a>(
+        &'a self,
+        tokens: &'a [Address],
+        max_age: Duration,
+        request_timeout: Duration,
+    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
+        let estimates = tokens.iter().map(move |token| async move {
+            let current_accumulative_errors_count = {
+                // check if the price is cached by now
+                let now = Instant::now();
+                let mut cache = self.0.cache.0.data.lock().unwrap();
+
+                match Cache::get_cached_price(*token, now, &mut cache, &max_age, false) {
+                    Some(cached) if cached.is_ready() => {
+                        return (*token, cached.result);
+                    }
+                    Some(cached) => cached.accumulative_errors_count,
+                    None => Default::default(),
+                }
+            };
+
+            let approximation = self
+                .0
+                .approximation_tokens
+                .get(token)
+                .copied()
+                .unwrap_or(ApproximationToken::same_decimals(*token));
+
+            let result = self
+                .0
+                .estimator
+                .estimate_native_price(approximation.address, request_timeout)
+                .await
+                .map(|price| approximation.normalize_price(price));
+
+            // update price in cache
+            if should_cache(&result) {
+                let now = Instant::now();
+                self.0.cache.insert(
+                    *token,
+                    CachedResult::new(result.clone(), now, now, current_accumulative_errors_count),
+                );
+            };
+
+            (*token, result)
+        });
+        futures::stream::iter(estimates)
+            .buffered(self.0.concurrent_requests)
+            .boxed()
+    }
+
     pub fn cache(&self) -> &Cache {
         &self.0.cache
     }
@@ -409,7 +409,7 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing tokens get
     /// outdated placeholder entries so they can be picked up by the next price
     /// update.
-    pub fn get_cached_prices(
+    fn get_cached_prices(
         &self,
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
@@ -431,7 +431,7 @@ impl CachingNativePriceEstimator {
             .filter(|t| !prices.contains_key(*t))
             .copied()
             .collect();
-        let price_stream = self.0.estimate_prices_and_update_cache(
+        let price_stream = self.estimate_prices_and_update_cache(
             &uncached_tokens,
             self.0.cache.max_age(),
             timeout,
@@ -481,8 +481,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 return cached.result;
             }
 
-            self.0
-                .estimate_prices_and_update_cache(&[token], self.0.cache.max_age(), timeout)
+            self.estimate_prices_and_update_cache(&[token], self.0.cache.max_age(), timeout)
                 .next()
                 .await
                 .unwrap()
@@ -534,23 +533,17 @@ impl NativePriceUpdater {
         updater
     }
 
-    pub fn cache(&self) -> &Cache {
-        self.estimator.cache()
-    }
-
     /// Replaces the full set of tokens that should be maintained by the
-    /// background task.
-    pub fn set_tokens_to_update(&self, tokens: HashSet<Address>) {
-        tracing::trace!(?tokens, "update tokens to maintain");
-        self.tokens_to_update.store(Arc::new(tokens));
-    }
-
+    /// background task and fetches their current prices.
     pub async fn fetch_prices(
         &self,
-        tokens: &[Address],
+        tokens: HashSet<Address>,
         timeout: Duration,
     ) -> HashMap<Address, NativePriceEstimateResult> {
-        self.estimator.fetch_prices(tokens, timeout).await
+        tracing::trace!(?tokens, "update tokens to maintain");
+        let token_list: Vec<_> = tokens.iter().copied().collect();
+        self.tokens_to_update.store(Arc::new(tokens));
+        self.estimator.fetch_prices(&token_list, timeout).await
     }
 
     async fn single_update(&self, prefetch_time: Duration) {
@@ -599,7 +592,6 @@ impl NativePriceUpdater {
         let timeout = self.estimator.0.quote_timeout;
         let mut stream =
             self.estimator
-                .0
                 .estimate_prices_and_update_cache(&outdated_entries, max_age, timeout);
         while stream.next().await.is_some() {}
         metrics
@@ -1058,7 +1050,9 @@ mod tests {
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 2);
 
         // Tell the updater about these tokens
-        updater.set_tokens_to_update([token(0), token(1)].into_iter().collect());
+        updater
+            .fetch_prices([token(0), token(1)].into_iter().collect(), Duration::ZERO)
+            .await;
 
         // wait for maintenance cycle
         tokio::time::sleep(Duration::from_millis(60)).await;
@@ -1100,7 +1094,7 @@ mod tests {
             Duration::from_millis(50),
             Duration::default(),
         );
-        updater.set_tokens_to_update(all_tokens);
+        updater.fetch_prices(all_tokens, Duration::ZERO).await;
 
         let tokens: Vec<_> = (0..10).map(Address::with_last_byte).collect();
         for token in &tokens {
@@ -1159,7 +1153,7 @@ mod tests {
             Duration::from_millis(50),
             Duration::default(),
         );
-        updater.set_tokens_to_update(all_tokens);
+        updater.fetch_prices(all_tokens, Duration::ZERO).await;
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(token).collect();
         for token in &tokens {
