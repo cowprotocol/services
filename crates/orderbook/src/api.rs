@@ -63,34 +63,41 @@ async fn summarize_request(
     req: Request<axum::body::Body>,
     next: Next<axum::body::Body>,
 ) -> Response {
-    let method = req.method();
-    let uri = req.uri();
+    let method = req.method().to_string();
+    let uri = req.uri().to_string();
 
-    let span = tracing::info_span!(
-        concat!(module_path!(), "::request_summary"),
-        method=%method,
-        uri=%uri,
-        user_agent=tracing::field::Empty,
-        status=tracing::field::Empty,
-    );
-    if let Some(user_agent) = req.headers().get(USER_AGENT) {
-        span.record(
-            "user_agent",
-            user_agent
-                .to_str()
-                .unwrap_or("invalid user-agent: non-ASCII"),
-        );
-    }
+    let user_agent = req.headers().get(USER_AGENT).map(|user_agent| {
+        user_agent
+            .to_str()
+            .unwrap_or("invalid user-agent: non-ASCII")
+            .to_string()
+    });
 
     let timer = Instant::now();
     let response = next.run(req).await;
     let elapsed = timer.elapsed().as_secs_f64();
 
-    span.record("status", response.status().as_str());
+    let status = response.status().as_u16();
 
-    {
-        let _guard = span.enter();
-        tracing::info!(%elapsed);
+    if let Some(user_agent) = user_agent {
+        tracing::info!(
+            method,
+            uri,
+            user_agent,
+            status,
+            elapsed,
+            "{}",
+            concat!(module_path!(), "::request_summary")
+        );
+    } else {
+        tracing::info!(
+            method,
+            uri,
+            status,
+            elapsed,
+            "{}",
+            concat!(module_path!(), "::request_summary")
+        );
     }
 
     response
