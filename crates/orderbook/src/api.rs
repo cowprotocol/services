@@ -13,7 +13,8 @@ use {
         middleware::{self, Next},
         response::{IntoResponse, Json, Response},
     },
-    observe::distributed_tracing::tracing_axum,
+    hyper::header::USER_AGENT,
+    observe::distributed_tracing::tracing_axum::{self, record_trace_id},
     serde::{Deserialize, Serialize},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
@@ -22,6 +23,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
+    tower::ServiceBuilder,
     tower_http::{cors::CorsLayer, trace::TraceLayer},
 };
 
@@ -57,6 +59,43 @@ pub struct AppState {
     pub quote_timeout: Duration,
 }
 
+async fn summarize_request(
+    req: Request<axum::body::Body>,
+    next: Next<axum::body::Body>,
+) -> Response {
+    let method = req.method();
+    let uri = req.uri();
+
+    let span = tracing::info_span!(
+        concat!(module_path!(), "::request_summary"),
+        method=%method,
+        uri=%uri,
+        user_agent=tracing::field::Empty,
+        status=tracing::field::Empty,
+    );
+    if let Some(user_agent) = req.headers().get(USER_AGENT) {
+        span.record(
+            "user_agent",
+            user_agent
+                .to_str()
+                .unwrap_or("invalid user-agent: non-ASCII"),
+        );
+    }
+
+    let timer = Instant::now();
+    let response = next.run(req).await;
+    let elapsed = timer.elapsed().as_secs_f64();
+
+    span.record("status", response.status().as_str());
+
+    {
+        let _guard = span.enter();
+        tracing::info!(%elapsed);
+    }
+
+    response
+}
+
 /// Middleware that automatically tracks metrics using Axum's MatchedPath
 async fn with_matched_path_metric(
     req: Request<axum::body::Body>,
@@ -71,16 +110,23 @@ async fn with_matched_path_metric(
         .get::<axum::extract::MatchedPath>()
         .map(|path| path.as_str())
         .unwrap_or("unknown");
-
     // Create label in format "METHOD /path"
-    let label = format!("{} {}", method, matched_path);
+    let method = format!("{} {}", method, matched_path);
 
-    let timer = Instant::now();
-    let response = next.run(req).await;
+    let response = {
+        let _timer = metrics
+            .requests_duration_seconds
+            .with_label_values(&[&method])
+            .start_timer();
+        next.run(req).await
+    };
     let status = response.status();
 
     // Track completed requests
-    metrics.on_request_completed(&label, status, timer);
+    metrics
+        .requests_complete
+        .with_label_values(&[&method, status.as_str()])
+        .inc();
 
     // Track rejected requests (4xx and 5xx status codes)
     if status.is_client_error() || status.is_server_error() {
@@ -104,7 +150,10 @@ pub fn handle_all_routes(
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
 ) -> Router {
-    // Capture app_data size limit before moving it into state
+    // Initialize metrics
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    metrics.reset_requests_rejected();
+
     let app_data_size_limit = app_data.size_limit();
 
     let state = Arc::new(AppState {
@@ -116,10 +165,6 @@ pub fn handle_all_routes(
         native_price_estimator,
         quote_timeout,
     });
-
-    // Initialize metrics
-    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-    metrics.reset_requests_rejected();
 
     let api_router = Router::new()
         // V1 routes
@@ -221,10 +266,38 @@ pub fn handle_all_routes(
             "/v2/trades",
             axum::routing::get(get_trades_v2::get_trades_handler)
         )
-        .with_state(state)
-        .layer(middleware::from_fn(with_matched_path_metric));
+        .with_state(state);
 
-    finalize_router(api_router)
+    let cors = CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods(vec![
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::HEAD,
+        ])
+        .allow_headers(vec![
+            axum::http::header::ORIGIN,
+            axum::http::header::CONTENT_TYPE,
+            // Must be lower case due to the HTTP-2 spec
+            axum::http::HeaderName::from_static("x-auth-token"),
+            axum::http::HeaderName::from_static("x-appid"),
+        ]);
+
+    Router::new()
+        .nest("/api", api_router)
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY_PAYLOAD as usize))
+        .layer(cors)
+        .layer(middleware::from_fn(summarize_request))
+        .layer(middleware::from_fn(with_matched_path_metric))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http().make_span_with(tracing_axum::make_span))
+                .map_request(record_trace_id),
+        )
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -263,15 +336,6 @@ impl ApiMetrics {
                 .with_label_values(&[status.as_str()])
                 .reset();
         }
-    }
-
-    fn on_request_completed(&self, method: &str, status: StatusCode, timer: Instant) {
-        self.requests_complete
-            .with_label_values(&[method, status.as_str()])
-            .inc();
-        self.requests_duration_seconds
-            .with_label_values(&[method])
-            .observe(timer.elapsed().as_secs_f64());
     }
 }
 
@@ -319,38 +383,6 @@ pub fn internal_error_reply() -> Response {
         error("InternalServerError", ""),
     )
         .into_response()
-}
-
-/// Sets up basic metrics, cors and proper log tracing for all routes.
-/// Takes a router with versioned routes and nests under /api, then applies
-/// middleware.
-fn finalize_router(api_router: Router) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_methods(vec![
-            axum::http::Method::GET,
-            axum::http::Method::POST,
-            axum::http::Method::DELETE,
-            axum::http::Method::OPTIONS,
-            axum::http::Method::PUT,
-            axum::http::Method::PATCH,
-            axum::http::Method::HEAD,
-        ])
-        .allow_headers(vec![
-            axum::http::header::ORIGIN,
-            axum::http::header::CONTENT_TYPE,
-            // Must be lower case due to the HTTP-2 spec
-            axum::http::HeaderName::from_static("x-auth-token"),
-            axum::http::HeaderName::from_static("x-appid"),
-        ]);
-
-    let trace_layer = TraceLayer::new_for_http().make_span_with(tracing_axum::make_span);
-
-    Router::new()
-        .nest("/api", api_router)
-        .layer(DefaultBodyLimit::max(MAX_JSON_BODY_PAYLOAD as usize))
-        .layer(cors)
-        .layer(trace_layer)
 }
 
 // Newtype wrapper for PriceEstimationError to allow IntoResponse implementation
