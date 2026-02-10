@@ -171,8 +171,6 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // Wait for the follower to step up as leader by checking its metrics endpoint
     let is_follower_leader = || async {
         onchain.mint_block().await;
-        // codeql[rust/non-https-url] metrics endpoint is local and doesn't support
-        // HTTPS
         let Ok(response) = reqwest::get("http://0.0.0.0:9591/metrics").await else {
             return false;
         };
