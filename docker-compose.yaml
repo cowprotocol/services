@@ -32,6 +32,9 @@ services:
       - type: bind
         source: ./database/sql/
         target: /flyway/sql
+      - type: bind
+        source: ./database/conf/
+        target: /flyway/conf
 
 volumes:
   postgres:
