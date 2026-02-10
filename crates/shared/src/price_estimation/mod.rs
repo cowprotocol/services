@@ -164,15 +164,6 @@ pub struct Arguments {
     #[clap(long, env, verbatim_doc_comment)]
     pub price_estimation_rate_limiter: Option<Strategy>,
 
-    /// How often the native price estimator should refresh its cache.
-    #[clap(
-        long,
-        env,
-        default_value = "1s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_cache_refresh: Duration,
-
     /// How long cached native prices stay valid.
     #[clap(
         long,
@@ -181,17 +172,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub native_price_cache_max_age: Duration,
-
-    /// How long before expiry the native price cache should try to update the
-    /// price in the background. This value has to be smaller than
-    /// `--native-price-cache-max-age`.
-    #[clap(
-        long,
-        env,
-        default_value = "80s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_prefetch_time: Duration,
 
     /// How many price estimation requests can be executed concurrently in the
     /// maintenance task.
@@ -348,9 +328,7 @@ impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {
             price_estimation_rate_limiter,
-            native_price_cache_refresh,
             native_price_cache_max_age,
-            native_price_prefetch_time,
             native_price_cache_concurrent_requests,
             amount_to_estimate_prices_with,
             balancer_sor_url,
@@ -372,15 +350,7 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh: {native_price_cache_refresh:?}"
-        )?;
-        writeln!(
-            f,
             "native_price_cache_max_age: {native_price_cache_max_age:?}"
-        )?;
-        writeln!(
-            f,
-            "native_price_prefetch_time: {native_price_prefetch_time:?}"
         )?;
         writeln!(
             f,

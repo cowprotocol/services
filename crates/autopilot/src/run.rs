@@ -424,8 +424,8 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             .await;
         shared::price_estimation::native_price_cache::NativePriceUpdater::new(
             caching,
-            args.price_estimation.native_price_cache_refresh,
-            args.price_estimation.native_price_prefetch_time,
+            args.native_price_cache_refresh,
+            args.native_price_prefetch_time,
         )
     };
 

@@ -281,6 +281,26 @@ pub struct Arguments {
     /// further.
     #[clap(long, env, default_value = "5s", value_parser = humantime::parse_duration)]
     pub max_maintenance_timeout: Duration,
+
+    /// How often the native price estimator should refresh its cache.
+    #[clap(
+        long,
+        env,
+        default_value = "1s",
+        value_parser = humantime::parse_duration,
+    )]
+    pub native_price_cache_refresh: Duration,
+
+    /// How long before expiry the native price cache should try to update the
+    /// price in the background. This value has to be smaller than
+    /// `--native-price-cache-max-age`.
+    #[clap(
+        long,
+        env,
+        default_value = "80s",
+        value_parser = humantime::parse_duration,
+    )]
+    pub native_price_prefetch_time: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -333,6 +353,8 @@ impl std::fmt::Display for Arguments {
             disable_1271_order_sig_filter,
             enable_leader_lock,
             max_maintenance_timeout,
+            native_price_cache_refresh,
+            native_price_prefetch_time,
         } = self;
 
         write!(f, "{shared}")?;
@@ -419,6 +441,14 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
+        writeln!(
+            f,
+            "native_price_cache_refresh: {native_price_cache_refresh:?}"
+        )?;
+        writeln!(
+            f,
+            "native_price_prefetch_time: {native_price_prefetch_time:?}"
+        )?;
         Ok(())
     }
 }
