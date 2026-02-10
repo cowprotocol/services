@@ -1,4 +1,7 @@
 pub mod blockchain;
 pub mod config;
 
-pub use blockchain::Ethereum;
+pub use {
+    blockchain::Ethereum,
+    config::Config,
+};

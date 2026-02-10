@@ -52,6 +52,23 @@ impl Config {
     }
 }
 
+impl Into<simulator::infra::config::MempoolConfig> for &Config {
+    fn into(self) -> simulator::infra::config::MempoolConfig {
+        simulator::infra::config::MempoolConfig {
+            min_priority_fee: self.min_priority_fee,
+            gas_price_cap: self.gas_price_cap,
+            target_confirm_time: self.target_confirm_time,
+            retry_interval: self.retry_interval,
+            nonce_block_number: self.nonce_block_number,
+            url: self.url.clone(),
+            name: self.name.clone(),
+            revert_protection: self.revert_protection.into(),
+            max_additional_tip: self.max_additional_tip,
+            additional_tip_percentage: self.additional_tip_percentage,
+        }
+    }
+}
+
 /// Don't submit transactions with high revert risk (i.e. transactions
 /// that interact with on-chain AMMs) to the public mempool.
 /// This can be enabled to avoid MEV when private transaction
@@ -61,6 +78,15 @@ impl Config {
 pub enum RevertProtection {
     Enabled,
     Disabled,
+}
+
+impl Into<simulator::infra::config::RevertProtection> for RevertProtection {
+    fn into(self) -> simulator::infra::config::RevertProtection {
+        match self {
+            RevertProtection::Disabled => simulator::infra::config::RevertProtection::Disabled,
+            RevertProtection::Enabled => simulator::infra::config::RevertProtection::Enabled,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

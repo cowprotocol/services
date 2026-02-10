@@ -760,8 +760,20 @@ impl Default for GasEstimatorType {
     }
 }
 
+impl Into<simulator::infra::config::GasEstimatorType> for &GasEstimatorType {
+    fn into(self) -> simulator::infra::config::GasEstimatorType {
+        match self {
+            GasEstimatorType::Alloy { past_blocks, reward_percentile } => simulator::infra::config::GasEstimatorType::Alloy {
+                past_blocks: *past_blocks,
+                reward_percentile: *reward_percentile
+            },
+            GasEstimatorType::Web3 => simulator::infra::config::GasEstimatorType::Web3
+        }
+    }
+}
+
 /// Defines various strategies to prioritize orders.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "kebab-case", tag = "strategy")]
 pub enum OrderPriorityStrategy {
     /// Strategy to prioritize orders based on external price.

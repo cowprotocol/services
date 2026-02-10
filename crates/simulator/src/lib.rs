@@ -10,7 +10,7 @@ pub mod infra;
 pub mod provider;
 
 /// Configuration of the transaction simulator.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Config {
     Tenderly(provider::tenderly::Config),
     Enso(provider::enso::Config),

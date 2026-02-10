@@ -51,3 +51,12 @@ pub struct MempoolConfig {
     pub max_additional_tip: eth::U256,
     pub additional_tip_percentage: f64,
 }
+
+#[derive(Debug)]
+pub struct Config {
+    pub gas_estimator: GasEstimatorType,
+    pub mempools: Vec<MempoolConfig>,
+    pub simulator: crate::Config,
+    pub contracts: crate::infra::blockchain::contracts::Addresses,
+    pub tx_gas_limit: eth::U256,
+}

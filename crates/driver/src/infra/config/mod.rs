@@ -16,7 +16,7 @@ use {
 pub mod file;
 
 /// Configuration of infrastructural components.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub disable_access_list_simulation: bool,
     pub disable_gas_simulation: Option<eth::Gas>,

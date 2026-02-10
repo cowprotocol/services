@@ -74,7 +74,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
-        simulator: simulator(&config, todo!()),
+        simulator: simulator(&config, &simulator_ethereum(&config, simulator_ethrpc(&args).await, &args.current_block).await),
         mempools: Mempools::try_new(
             config
                 .mempools
@@ -166,6 +166,17 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
+async fn simulator_ethrpc(args: &cli::Args) -> simulator::infra::blockchain::Rpc {
+    let args = simulator::infra::blockchain::RpcArgs {
+        url: args.ethrpc.clone(),
+        max_batch_size: args.ethrpc_max_batch_size,
+        max_concurrent_requests: args.ethrpc_max_concurrent_requests,
+    };
+    simulator::infra::blockchain::Rpc::try_new(args)
+        .await
+        .expect("connect ethereum RPC for simulator")
+}
+
 async fn ethereum(
     config: &infra::Config,
     ethrpc: blockchain::Rpc,
@@ -184,6 +195,25 @@ async fn ethereum(
         current_block_args,
     )
     .await
+}
+
+async fn simulator_ethereum(
+    config: &infra::Config,
+    ethrpc: simulator::infra::blockchain::Rpc,
+    current_block_args: &shared::current_block::Arguments,
+) -> simulator::infra::Ethereum {
+    let gas = Arc::new(
+        simulator::infra::blockchain::GasPriceEstimator::new(ethrpc.web3(), &(&config.gas_estimator).into(), &config.mempools.iter().map(Into::into).collect::<Vec<_>>())
+        .await
+        .expect("initialize gas price estimator")
+    );
+    simulator::infra::Ethereum::new(
+        ethrpc,
+        (&config.contracts).into(),
+        gas,
+        config.tx_gas_limit,
+        current_block_args
+    ).await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

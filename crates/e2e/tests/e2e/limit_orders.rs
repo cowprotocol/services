@@ -7,7 +7,6 @@ use {
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
-    shared::domain::eth::NonZeroU256,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
@@ -17,7 +16,10 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    shared::web3::Web3,
+    shared::{
+        domain::eth::NonZeroU256,
+        web3::Web3,
+    },
     std::{collections::HashMap, ops::DerefMut},
 };
 
