@@ -87,11 +87,11 @@ impl Detector {
         let now = Instant::now();
 
         // reuse the original allocation
+        let supported_orders = std::mem::take(&mut auction.orders);
         let mut token_quality_checks = FuturesUnordered::new();
+        let mut removed_uids = Vec::new();
 
-        let mut supported_orders: Vec<_> = auction
-            .orders
-            .clone()
+        let mut supported_orders: Vec<_> = supported_orders
             .into_iter()
             .filter(|order| {
                 self.metrics
@@ -106,7 +106,10 @@ impl Detector {
                     // both tokens supported => keep order
                     (Quality::Supported, Quality::Supported) => Some(order),
                     // at least 1 token unsupported => drop order
-                    (Quality::Unsupported, _) | (_, Quality::Unsupported) => None,
+                    (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
+                        removed_uids.push(order.uid);
+                        None
+                    }
                     // sell token quality is unknown => keep order if token is supported
                     (Quality::Unknown, _) => {
                         let Some(detector) = &self.simulation_detector else {
@@ -130,20 +133,10 @@ impl Detector {
         while let Some((order, quality)) = token_quality_checks.next().await {
             if quality == Quality::Supported {
                 supported_orders.push(order);
+            } else {
+                removed_uids.push(order.uid);
             }
         }
-
-        // todo: not super efficient
-        let removed_uids = auction
-            .orders
-            .iter()
-            .filter(|order| {
-                !supported_orders
-                    .iter()
-                    .any(|supported_order| supported_order.uid == order.uid)
-            })
-            .map(|order| order.uid)
-            .collect::<Vec<_>>();
 
         auction.orders = supported_orders;
         if !removed_uids.is_empty() {

@@ -4,10 +4,15 @@ use {
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
-            CalculateQuoteError, OrderQuoting, Quote, QuoteParameters, QuoteSearchParameters,
+            CalculateQuoteError,
+            OrderQuoting,
+            Quote,
+            QuoteParameters,
+            QuoteSearchParameters,
         },
         price_estimation::{
-            PriceEstimationError, Verification,
+            PriceEstimationError,
+            Verification,
             trade_verifier::balance_overrides::BalanceOverrideRequest,
         },
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
@@ -22,9 +27,19 @@ use {
         DomainSeparator,
         interaction::InteractionData,
         order::{
-            AppdataFromMismatch, BUY_ETH_ADDRESS, BuyTokenDestination, Interactions, Order,
-            OrderClass, OrderCreation, OrderCreationAppData, OrderData, OrderKind, OrderMetadata,
-            SellTokenSource, VerificationError,
+            AppdataFromMismatch,
+            BUY_ETH_ADDRESS,
+            BuyTokenDestination,
+            Interactions,
+            Order,
+            OrderClass,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            SellTokenSource,
+            VerificationError,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
@@ -389,7 +404,7 @@ impl OrderValidator {
     }
 
     /// Verifies that tokens can actually be transferred from the user account
-    /// to the settlement contract (takes pre-hooks and wrappers into account).
+    /// to the settlement contract (takes pre-hooks into account).
     async fn ensure_token_is_transferable(
         &self,
         order: &OrderCreation,
@@ -432,19 +447,15 @@ impl OrderValidator {
                     TransferSimulationError::InsufficientAllowance
                     | TransferSimulationError::InsufficientBalance
                     | TransferSimulationError::TransferFailed,
-                ) => {
+                ) if order.signature == Signature::PreSign => {
                     // Pre-sign orders do not require sufficient balance or allowance.
                     // The idea is that this allows smart contracts to place orders bundled with
                     // other transactions that either produce the required balance or set the
                     // allowance. This would, for example, allow a Gnosis Safe to bundle the
                     // pre-signature transaction with a WETH wrap and WETH approval to the vault
                     // relayer contract.
-                    //
-                    // Wrapper orders are a bit of a complicated case because they may cause a user to have a balance after execution. We cant
-                    // simulate the wrapper directly/easily because it effectively wraps the settlement call, so for now we just skip the check.
                     return Ok(());
                 }
-
                 Err(err) => match err {
                     TransferSimulationError::InsufficientAllowance => {
                         // This error will be triggered regardless of the amount
