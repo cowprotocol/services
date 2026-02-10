@@ -567,7 +567,7 @@ impl NativePriceUpdater {
         // maintained.
         {
             let now = Instant::now();
-            let outdated_timestamp = now.checked_sub(cache.0.max_age).unwrap();
+            let outdated_timestamp = now - cache.0.max_age;
             let mut data = cache.0.data.lock().unwrap();
             for token in &tokens_to_update {
                 if let Entry::Vacant(entry) = data.entry(*token) {
