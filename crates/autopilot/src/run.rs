@@ -92,9 +92,7 @@ impl Liveness {
     }
 }
 
-/// Creates an on-demand `CachingNativePriceEstimator` (no background updater)
-/// that shares the given cache. Used for the API-facing native price endpoint.
-async fn api_native_price_estimator(
+async fn caching_native_price_estimator(
     factory: &mut PriceEstimatorFactory<'_>,
     sources: &shared::price_estimation::NativePriceEstimators,
     results_required: std::num::NonZeroUsize,
@@ -109,45 +107,13 @@ async fn api_native_price_estimator(
     let inner = factory
         .native_price_estimator(sources.as_slice(), results_required, weth)
         .await
-        .expect("failed to build API native price estimator");
+        .expect("failed to build native price estimator");
     shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
         inner,
         cache,
         args.native_price_cache_concurrent_requests,
         approximation_tokens,
         args.quote_timeout,
-    )
-}
-
-/// Creates a `CachingNativePriceEstimator` wrapped in a `NativePriceUpdater`
-/// that proactively refreshes prices for tokens in the current auction.
-async fn competition_native_price_updater(
-    factory: &mut PriceEstimatorFactory<'_>,
-    sources: &shared::price_estimation::NativePriceEstimators,
-    results_required: std::num::NonZeroUsize,
-    weth: &WETH9::Instance,
-    cache: shared::price_estimation::native_price_cache::Cache,
-    approximation_tokens: std::collections::HashMap<
-        Address,
-        shared::price_estimation::native_price_cache::ApproximationToken,
-    >,
-    args: &shared::price_estimation::Arguments,
-) -> Arc<shared::price_estimation::native_price_cache::NativePriceUpdater> {
-    let inner = factory
-        .native_price_estimator(sources.as_slice(), results_required, weth)
-        .await
-        .expect("failed to build competition native price estimator");
-    let caching = shared::price_estimation::native_price_cache::CachingNativePriceEstimator::new(
-        inner,
-        cache,
-        args.native_price_cache_concurrent_requests,
-        approximation_tokens,
-        args.quote_timeout,
-    );
-    shared::price_estimation::native_price_cache::NativePriceUpdater::new(
-        caching,
-        args.native_price_cache_refresh,
-        args.native_price_prefetch_time,
     )
 }
 
@@ -466,7 +432,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .as_ref()
         .unwrap_or(&args.native_price_estimators);
     let api_native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
-        api_native_price_estimator(
+        caching_native_price_estimator(
             &mut price_estimator_factory,
             api_sources,
             args.native_price_estimation_results_required,
@@ -479,17 +445,24 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await,
     );
 
-    let competition_native_price_updater = competition_native_price_updater(
-        &mut price_estimator_factory,
-        &args.native_price_estimators,
-        args.native_price_estimation_results_required,
-        &weth,
-        shared_cache.clone(),
-        approximation_tokens,
-        &args.price_estimation,
-    )
-    .instrument(info_span!("competition_native_price_updater"))
-    .await;
+    let competition_native_price_updater = {
+        let caching = caching_native_price_estimator(
+            &mut price_estimator_factory,
+            &args.native_price_estimators,
+            args.native_price_estimation_results_required,
+            &weth,
+            shared_cache.clone(),
+            approximation_tokens,
+            &args.price_estimation,
+        )
+        .instrument(info_span!("competition_native_price_updater"))
+        .await;
+        shared::price_estimation::native_price_cache::NativePriceUpdater::new(
+            caching,
+            args.price_estimation.native_price_cache_refresh,
+            args.price_estimation.native_price_prefetch_time,
+        )
+    };
 
     let price_estimator = price_estimator_factory
         .price_estimator(

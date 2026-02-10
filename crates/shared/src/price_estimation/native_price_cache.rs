@@ -567,14 +567,15 @@ impl NativePriceUpdater {
         // maintained.
         {
             let now = Instant::now();
-            let mut rng = rand::thread_rng();
+            let outdated_timestamp = now.checked_sub(cache.0.max_age).unwrap();
             let mut data = cache.0.data.lock().unwrap();
             for token in &tokens_to_update {
                 if let Entry::Vacant(entry) = data.entry(*token) {
-                    let updated_at = Cache::random_updated_at(cache.0.max_age, now, &mut rng);
                     entry.insert(CachedResult::new(
+                        // It is safe to have an invalid price, since the item is created with an
+                        // outdated timestamp
                         Ok(0.),
-                        updated_at,
+                        outdated_timestamp,
                         now,
                         Default::default(),
                     ));
