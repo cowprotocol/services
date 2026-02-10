@@ -13,7 +13,7 @@ use {
         primitives::{Address, B256, U256, U512, b256, keccak256},
         signers::local::PrivateKeySigner,
     },
-    anyhow::{Result, anyhow},
+    anyhow::{Result, anyhow, ensure},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
     chrono::{DateTime, offset::Utc},
@@ -538,6 +538,11 @@ pub struct SignedOrderCancellations {
 
 impl SignedOrderCancellations {
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {
+        ensure!(
+            self.data.order_uids.len() < ORDER_UID_LIMIT,
+            "order uids are limited to {ORDER_UID_LIMIT}"
+        );
+
         Ok(self
             .signature
             .recover(
@@ -730,6 +735,8 @@ pub struct OrderMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
 }
+
+pub const ORDER_UID_LIMIT: usize = 1024;
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
 #[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
