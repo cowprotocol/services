@@ -355,7 +355,7 @@ impl WrapperCache {
         Self(Cache::new(capacity))
     }
 
-    /// Returns `true` if order appData contains non-empty wrappers 
+    /// Returns `true` if order appData contains non-empty wrappers
     pub fn has_wrappers(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
         if let Some(cached) = self.0.get(hash) {
             return cached;
