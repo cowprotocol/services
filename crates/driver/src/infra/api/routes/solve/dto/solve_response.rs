@@ -1,10 +1,11 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth},
+        domain::{competition, competition::order},
         infra::Solver,
     },
     serde::Serialize,
     serde_with::serde_as,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 

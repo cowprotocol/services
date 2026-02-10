@@ -33,9 +33,9 @@ use {
             order::{self, FeePolicy, Side},
             solution::error::Trade,
         },
-        eth::{self},
     },
     bigdecimal::Zero,
+    shared::domain::eth,
 };
 
 impl Fulfillment {

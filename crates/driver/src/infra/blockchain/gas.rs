@@ -5,16 +5,18 @@
 use {
     super::Error,
     crate::{
-        domain::eth,
         infra::{config::file::GasEstimatorType, mempool},
     },
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::anyhow,
     ethrpc::Web3,
-    shared::gas_price_estimation::{
-        GasPriceEstimating,
-        configurable_alloy::{ConfigurableGasPriceEstimator, EstimatorConfig},
-        eth_node::NodeGasPriceEstimator,
+    shared::{
+        domain::eth,
+        gas_price_estimation::{
+            GasPriceEstimating,
+            configurable_alloy::{ConfigurableGasPriceEstimator, EstimatorConfig},
+            eth_node::NodeGasPriceEstimator,
+        }
     },
     std::sync::Arc,
 };

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::risk_detector, eth},
+        domain::competition::risk_detector,
         infra::{
             self,
             blockchain,
@@ -8,7 +8,6 @@ use {
             liquidity,
             mempool,
             notify,
-            simulator,
             solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
     },
@@ -16,6 +15,7 @@ use {
     chain::Chain,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
+    shared::domain::eth,
     std::path::Path,
     tokio::fs,
 };
@@ -355,7 +355,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             .collect(),
         simulator: match (config.tenderly, config.enso) {
             (Some(config), None) => {
-                Some(simulator::Config::Tenderly(simulator::tenderly::Config {
+                Some(simulator::Config::Tenderly(simulator::provider::tenderly::Config {
                     url: config.url,
                     api_key: config.api_key,
                     user: config.user,
@@ -364,7 +364,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     save_if_fails: config.save_if_fails,
                 }))
             }
-            (None, Some(config)) => Some(simulator::Config::Enso(simulator::enso::Config {
+            (None, Some(config)) => Some(simulator::Config::Enso(simulator::provider::enso::Config {
                 url: config.url,
                 network_block_interval: config.network_block_interval,
             })),

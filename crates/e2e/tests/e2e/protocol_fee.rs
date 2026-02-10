@@ -1,6 +1,6 @@
 use {
     ::alloy::primitives::{Address, U256},
-    driver::domain::eth::NonZeroU256,
+    shared::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
         setup::{fee::*, *},

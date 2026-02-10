@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{Web3, unbuffered_web3},
-        domain::{eth, mempools},
+        domain::mempools,
         infra::{self, solver::Account},
     },
     alloy::{
@@ -13,6 +13,7 @@ use {
     },
     anyhow::Context,
     dashmap::DashMap,
+    shared::domain::eth,
     std::sync::Arc,
     url::Url,
 };

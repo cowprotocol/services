@@ -2,7 +2,6 @@ use {
     crate::{
         boundary::{self, Result},
         domain::{
-            eth,
             liquidity::{
                 self,
                 uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
@@ -13,6 +12,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::BlockRetrieving,
     shared::{
+        domain::eth,
         http_solver::model::TokenAmount,
         interaction::Interaction,
         maintenance::ServiceMaintenance,

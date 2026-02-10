@@ -9,12 +9,12 @@ use {
                     app_data::{AppData, AppDataHash},
                 },
             },
-            eth,
         },
         infra::{Ethereum, tokens},
     },
     serde::Deserialize,
     serde_with::serde_as,
+    shared::domain::eth,
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,

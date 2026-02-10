@@ -1,6 +1,6 @@
-use crate::domain::{
-    eth,
-    liquidity::{self, uniswap},
+use {
+    crate::domain::liquidity::{self, uniswap},
+    shared::domain::eth,
 };
 
 /// The famous Uniswap V2 constant product pool with a twist of lemon,

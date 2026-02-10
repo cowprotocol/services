@@ -1,6 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    driver::domain::eth::NonZeroU256,
+    shared::domain::eth::NonZeroU256,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{

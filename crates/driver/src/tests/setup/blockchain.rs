@@ -1,7 +1,7 @@
 use {
     super::{Asset, Order, Partial},
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{
@@ -28,6 +28,7 @@ use {
     },
     futures::Future,
     solvers_dto::solution::Flashloan,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 // TODO Possibly might be a good idea to use an enum for tokens instead of

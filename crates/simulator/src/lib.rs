@@ -9,6 +9,13 @@ use {
 pub mod infra;
 pub mod provider;
 
+/// Configuration of the transaction simulator.
+#[derive(Debug)]
+pub enum Config {
+    Tenderly(provider::tenderly::Config),
+    Enso(provider::enso::Config),
+}
+
 /// Ethereum transaction simulator.
 #[derive(Debug, Clone)]
 pub struct Simulator {
@@ -18,13 +25,6 @@ pub struct Simulator {
     /// If this is [`Some`], every gas estimate will return this fixed
     /// gas value.
     disable_gas: Option<eth::Gas>,
-}
-
-/// Configuration of the transaction simulator.
-#[derive(Debug)]
-pub enum Config {
-    Tenderly(provider::tenderly::Config),
-    Enso(provider::enso::Config),
 }
 
 impl Simulator {

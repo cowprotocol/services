@@ -5,7 +5,6 @@ use {
                 self,
                 order::{self, Side, fees, signature::Scheme},
             },
-            eth::{self},
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
@@ -13,6 +12,7 @@ use {
     app_data::AppDataHash,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::conversions::rational_to_big_decimal,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 

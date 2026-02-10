@@ -1,8 +1,9 @@
 use {
-    crate::domain::{eth, liquidity},
+    crate::domain::liquidity,
     alloy::primitives::{Address, B256, U256},
     anyhow::anyhow,
     contracts::alloy::IZeroex,
+    shared::domain::eth,
     std::sync::Arc,
 };
 

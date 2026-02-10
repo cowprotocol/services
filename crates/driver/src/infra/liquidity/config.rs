@@ -1,5 +1,4 @@
 use {
-    crate::domain::eth::{self, ContractAddress},
     alloy::primitives::Address,
     chain::Chain,
     contracts::alloy::BalancerV2Vault,
@@ -14,6 +13,7 @@ use {
         TESTNET_UNISWAP_INIT,
         UNISWAP_INIT,
     },
+    shared::domain::eth::{self, ContractAddress},
     std::{collections::HashSet, time::Duration},
 };
 

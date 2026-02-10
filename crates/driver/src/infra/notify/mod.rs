@@ -8,8 +8,8 @@ mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
 use {
-    super::simulator,
-    crate::domain::{eth, mempools::Error},
+    crate::domain::mempools::Error,
+    shared::domain::eth
 };
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {

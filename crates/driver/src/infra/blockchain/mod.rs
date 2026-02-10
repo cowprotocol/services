@@ -1,8 +1,5 @@
 use {
-    crate::{
-        boundary,
-        domain::{eth, eth::U256},
-    },
+    crate::boundary,
     alloy::{
         eips::eip1559::Eip1559Estimation,
         network::TransactionBuilder,
@@ -15,6 +12,7 @@ use {
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
+        domain::eth::{self, U256},
         gas_price_estimation::Eip1559EstimationExt,
         price_estimation::trade_verifier::balance_overrides::{
             BalanceOverrides,

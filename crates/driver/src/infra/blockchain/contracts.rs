@@ -1,5 +1,4 @@
 use {
-    crate::domain::eth,
     chain::Chain,
     contracts::alloy::{
         BalancerV2Vault,
@@ -9,6 +8,7 @@ use {
         support::Balances,
     },
     ethrpc::Web3,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 

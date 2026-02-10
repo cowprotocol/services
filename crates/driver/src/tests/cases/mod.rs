@@ -1,10 +1,10 @@
 //! Test cases.
 
 use {
-    crate::domain::eth,
     bigdecimal::{BigDecimal, FromPrimitive, Signed, num_traits::CheckedMul},
     num::BigRational,
     number::{conversions::big_decimal_to_big_rational, u256_ext::U256Ext},
+    shared::domain::eth,
     std::str::FromStr,
 };
 

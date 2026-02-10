@@ -8,7 +8,6 @@ use {
                 risk_detector,
                 solution::{self, Solution},
             },
-            eth,
             liquidity,
             time::Remaining,
         },
@@ -31,6 +30,7 @@ use {
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
+    shared::domain::eth,
     std::{
         collections::HashMap,
         time::{Duration, Instant},

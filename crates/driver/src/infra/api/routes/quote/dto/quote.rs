@@ -1,11 +1,12 @@
 use {
-    crate::domain::{self, competition::solution::encoding::codec, eth, quote},
+    crate::domain::{self, competition::solution::encoding::codec, quote},
     model::{
         order::{BuyTokenDestination, SellTokenSource},
         signature::SigningScheme,
     },
     serde::Serialize,
     serde_with::serde_as,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 

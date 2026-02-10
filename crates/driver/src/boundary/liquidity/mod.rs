@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, liquidity},
+        domain::liquidity,
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
@@ -9,6 +9,7 @@ use {
     model::TokenPair,
     shared::{
         baseline_solver::BaseTokens,
+        domain::eth,
         http_client::HttpClientFactory,
         recent_block_cache::{self, CacheConfig},
     },

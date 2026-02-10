@@ -213,7 +213,7 @@ impl Ethereum {
             .from(tx.from)
             .to(tx.to)
             .value(tx.value.0)
-            .input(tx.input.0.into())
+            .input(tx.input.into())
             .access_list(tx.access_list.into());
 
         let tx = match self.simulation_gas_price().await {

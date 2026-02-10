@@ -7,7 +7,7 @@ use {
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
-    driver::domain::eth::NonZeroU256,
+    shared::domain::eth::NonZeroU256,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},

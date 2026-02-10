@@ -7,7 +7,6 @@ use {
     crate::{
         domain::{
             competition::order,
-            eth,
             time::{self},
         },
         infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
@@ -22,6 +21,7 @@ use {
     serde_with::{DisplayFromStr, serde_as},
     shared::gas_price_estimation::Eip1559EstimationExt,
     solvers_dto::auction::FlashloanHint,
+    shared::domain::eth,
     std::{
         collections::{HashMap, HashSet},
         net::SocketAddr,

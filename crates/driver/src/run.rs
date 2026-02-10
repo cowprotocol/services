@@ -12,12 +12,12 @@ use {
             config,
             liquidity,
             notify,
-            simulator::{self, Simulator},
             solver::Solver,
         },
     },
     clap::Parser,
     futures::future::join_all,
+    simulator::{self, Simulator},
     shared::arguments::tracing_config,
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
@@ -74,7 +74,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
-        simulator: simulator(&config, &eth),
+        simulator: simulator(&config, todo!()),
         mempools: Mempools::try_new(
             config
                 .mempools
@@ -124,10 +124,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     };
 }
 
-fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
+fn simulator(config: &infra::Config, eth: &simulator::infra::Ethereum) -> Simulator {
     let mut simulator = match &config.simulator {
-        Some(infra::simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
-            simulator::tenderly::Config {
+        Some(simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
+            simulator::provider::tenderly::Config {
                 url: tenderly.url.to_owned(),
                 api_key: tenderly.api_key.to_owned(),
                 user: tenderly.user.to_owned(),
@@ -137,8 +137,8 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
             },
             eth.to_owned(),
         ),
-        Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
-            simulator::enso::Config {
+        Some(simulator::Config::Enso(enso)) => Simulator::enso(
+            simulator::provider::enso::Config {
                 url: enso.url.to_owned(),
                 network_block_interval: enso.network_block_interval.to_owned(),
             },

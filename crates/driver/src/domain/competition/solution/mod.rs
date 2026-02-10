@@ -5,13 +5,10 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth::{self, Flashloan, TokenAddress},
         },
         infra::{
-            Simulator,
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
-            simulator,
             solver::{ManageNativeToken, Solver},
         },
     },
@@ -21,6 +18,8 @@ use {
     itertools::Itertools,
     num::{BigRational, One},
     number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+    shared::domain::eth::{self, Flashloan, TokenAddress},
+    simulator::{self, Simulator},
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},

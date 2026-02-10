@@ -1,6 +1,7 @@
 use {
-    crate::domain::{competition::risk_detector::Quality, eth},
+    crate::domain::competition::risk_detector::Quality,
     dashmap::DashMap,
+    shared::domain::eth,
     std::{
         sync::Arc,
         time::{Duration, Instant},

@@ -2,9 +2,10 @@ use {
     super::{Fee, Id, ScalingFactor},
     crate::{
         boundary,
-        domain::{eth, liquidity},
+        domain::liquidity,
     },
     itertools::Itertools,
+    shared::domain::eth,
 };
 
 /// Liquidity data tied to a Balancer V2 stable pool.

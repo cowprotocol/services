@@ -4,7 +4,6 @@ use {
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
             cow_amm,
-            eth,
             liquidity,
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
@@ -22,6 +21,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
+        domain::eth,
         price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },

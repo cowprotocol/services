@@ -10,7 +10,7 @@ use {
         ERC20,
         support::{Balances, Signatures},
     },
-    driver::domain::eth::NonZeroU256,
+    shared::domain::eth::NonZeroU256,
     e2e::setup::{
         DeployedContracts,
         OnchainComponents,

@@ -1,10 +1,10 @@
 use {
-    super::{competition::solution::settlement, eth},
+    super::competition::solution::settlement,
     crate::{
         domain::{
             BlockNo,
             competition::solution::Settlement,
-            eth::{TxId, TxStatus},
+            
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
@@ -12,6 +12,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    shared::domain::eth::{self, TxId, TxStatus},
     thiserror::Error,
     tracing::Instrument,
 };

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         tests::{
             self,
             cases::EtherExt,
@@ -8,6 +8,7 @@ use {
         },
     },
     number::testing::ApproxEq,
+    shared::domain::eth,
 };
 
 /// Extracts the buy amount from a quote response using clearing prices.

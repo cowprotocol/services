@@ -1,8 +1,9 @@
 use {
     crate::{
         boundary,
-        domain::{eth, liquidity},
+        domain::liquidity,
     },
+    shared::domain::eth,
     std::cmp::Ordering,
 };
 

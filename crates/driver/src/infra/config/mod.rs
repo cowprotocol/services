@@ -1,16 +1,15 @@
 use {
     crate::{
-        domain::eth,
         infra::{
             blockchain,
             config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
             liquidity,
             mempool,
             notify,
-            simulator,
             solver,
         },
     },
+    shared::domain::eth,
     std::time::Duration,
 };
 

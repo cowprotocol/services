@@ -1,10 +1,13 @@
-use crate::{
-    domain::{competition::order, eth},
-    infra::config::file::FeeHandler,
-    tests::{
-        self,
-        setup::{ab_order, ab_pool, ab_solution, test_solver},
+use {
+    crate::{
+        domain::competition::order,
+        infra::config::file::FeeHandler,
+        tests::{
+            self,
+            setup::{ab_order, ab_pool, ab_solution, test_solver},
+        },
     },
+    shared::domain::eth,
 };
 
 #[tokio::test]

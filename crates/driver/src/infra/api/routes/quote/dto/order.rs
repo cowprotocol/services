@@ -1,7 +1,8 @@
 use {
-    crate::domain::{competition, eth, quote},
+    crate::domain::{competition, quote},
     serde::Deserialize,
     serde_with::serde_as,
+    shared::domain::eth,
 };
 
 impl Order {
