@@ -65,39 +65,25 @@ async fn summarize_request(
     let method = req.method().to_string();
     let uri = req.uri().to_string();
 
-    let user_agent = req.headers().get(USER_AGENT).map(|user_agent| {
-        user_agent
-            .to_str()
-            .unwrap_or("invalid user-agent: non-ASCII")
-            .to_string()
-    });
+    let user_agent = req
+        .headers()
+        .get(USER_AGENT)
+        .map(|user_agent| user_agent.to_str().unwrap_or("invalid (non-ASCII)"))
+        .unwrap_or("unset")
+        .to_string();
 
     let timer = Instant::now();
     let response = next.run(req).await;
-    let elapsed = timer.elapsed().as_secs_f64();
-
     let status = response.status().as_u16();
 
-    if let Some(user_agent) = user_agent {
-        tracing::info!(
-            method,
-            uri,
-            user_agent,
-            status,
-            elapsed,
-            "{}",
-            concat!(module_path!(), "::request_summary")
-        );
-    } else {
-        tracing::info!(
-            method,
-            uri,
-            status,
-            elapsed,
-            "{}",
-            concat!(module_path!(), "::request_summary")
-        );
-    }
+    tracing::info!(
+        method,
+        uri,
+        user_agent,
+        status,
+        elapsed = ?timer.elapsed(),
+        "request_summary",
+    );
 
     response
 }
