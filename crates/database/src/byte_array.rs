@@ -82,7 +82,7 @@ mod tests {
         db.execute(format!("CREATE TABLE IF NOT EXISTS {TABLE} (bytes bytea);").as_str())
             .await
             .unwrap();
-        db.execute(format!("TRUNCATE {TABLE};").as_str())
+        db.execute(format!("DELETE FROM {TABLE};").as_str())
             .await
             .unwrap();
 
