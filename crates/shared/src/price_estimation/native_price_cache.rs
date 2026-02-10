@@ -402,7 +402,7 @@ impl CachingNativePriceEstimator {
             .boxed()
     }
 
-    pub fn cache(&self) -> &Cache {
+    fn cache(&self) -> &Cache {
         &self.0.cache
     }
 
