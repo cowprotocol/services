@@ -443,17 +443,15 @@ pub async fn run(args: Arguments) {
     ));
 
     check_database_connection(orderbook.as_ref()).await;
-    let quotes = Arc::new(
-        QuoteHandler::new(
-            order_validator,
-            optimal_quoter,
-            app_data.clone(),
-            args.volume_fee_config,
-            args.shared.volume_fee_bucket_overrides.clone(),
-            args.shared.enable_sell_equals_buy_volume_fee,
-        )
-        .with_fast_quoter(fast_quoter),
-    );
+    let quotes = QuoteHandler::new(
+        order_validator,
+        optimal_quoter,
+        app_data.clone(),
+        args.volume_fee_config,
+        args.shared.volume_fee_bucket_overrides.clone(),
+        args.shared.enable_sell_equals_buy_volume_fee,
+    )
+    .with_fast_quoter(fast_quoter);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
@@ -534,7 +532,7 @@ fn serve_api(
     database: Postgres,
     database_replica: Postgres,
     orderbook: Arc<Orderbook>,
-    quotes: Arc<QuoteHandler>,
+    quotes: QuoteHandler,
     app_data: Arc<crate::app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,

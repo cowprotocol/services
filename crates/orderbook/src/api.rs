@@ -48,12 +48,11 @@ mod put_app_data;
 mod version;
 
 /// Centralized application state shared across all API handlers
-#[derive(Clone)]
 pub struct AppState {
     pub database_write: Postgres,
     pub database_read: Postgres,
     pub orderbook: Arc<Orderbook>,
-    pub quotes: Arc<QuoteHandler>,
+    pub quotes: QuoteHandler,
     pub app_data: Arc<app_data::Registry>,
     pub native_price_estimator: Arc<dyn NativePriceEstimating>,
     pub quote_timeout: Duration,
@@ -152,7 +151,7 @@ pub fn handle_all_routes(
     database_write: Postgres,
     database_read: Postgres,
     orderbook: Arc<Orderbook>,
-    quotes: Arc<QuoteHandler>,
+    quotes: QuoteHandler,
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
