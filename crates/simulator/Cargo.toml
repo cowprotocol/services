@@ -1,0 +1,23 @@
+[package]
+name = "simulator"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "rand", "provider-anvil-api", "json-rpc", "rpc-types"]  }
+anyhow = { workspace = true }
+chain = { workspace = true }
+contracts = { workspace = true }
+const-hex = { workspace = true }
+ethrpc = { workspace = true }
+serde = { workspace = true }
+serde-ext = { workspace = true }
+serde_with = { workspace = true }
+shared = { workspace = true }
+reqwest = { workspace = true }
+observe = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }

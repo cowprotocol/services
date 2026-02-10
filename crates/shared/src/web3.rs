@@ -63,3 +63,12 @@ pub fn web3(args: &Arguments, url: &Url, name: impl ToString) -> Web3 {
     let label = name.to_string();
     ethrpc::web3(args.ethrpc(), url, Some(&label))
 }
+
+/// Builds a web3 client that sends requests one by one.
+pub fn unbuffered_web3(url: &Url, name: impl ToString) -> Web3 {
+    web3(&Arguments {
+        ethrpc_max_batch_size: 0,
+        ethrpc_max_concurrent_requests: 0,
+        ethrpc_batch_delay: Default::default()
+    }, url, name)
+}
