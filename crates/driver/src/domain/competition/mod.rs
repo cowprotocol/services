@@ -11,7 +11,8 @@ use {
             time::DeadlineExceeded,
         },
         infra::{
-            self, Simulator,
+            self,
+            Simulator,
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
@@ -130,7 +131,6 @@ impl Competition {
                 Error::MalformedRequest
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
-        tracing::debug!("retrieved auction orders count: {}", auction.orders.len());
 
         let settlement_contract = *self.eth.contracts().settlement().address();
         let solver_address = self.solver.address();
@@ -171,11 +171,6 @@ impl Competition {
             )
         })
         .await;
-
-        tracing::debug!(
-            "auction orders count (post update): {}",
-            auction.orders.len()
-        );
 
         // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
@@ -479,9 +474,6 @@ impl Competition {
                 // for performance reasons.
                 return true;
             }
-
-            // TODO: figure out some better way to do this. The wrappers kind of break the whole case of checking balances (like we do in like 5 other places)
-            return true;
 
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {

@@ -60,7 +60,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 
-    tracing::info!(%commit_hash, "running driver with {config:#?}");
+    tracing::info!(%commit_hash, "running driver with validated arguments:\n{:?}\nand config {config:#?}", args);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc, &args.current_block).await;
