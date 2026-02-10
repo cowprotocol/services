@@ -16,7 +16,6 @@ use {
             solver::Solver,
         },
     },
-    app_data::AppCodeBypass,
     clap::Parser,
     futures::future::join_all,
     shared::arguments::tracing_config,
@@ -108,7 +107,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         },
         config.order_priority_strategies,
         app_data_retriever,
-        AppCodeBypass::new(args.filter_bypass_app_data_sources),
     );
 
     futures::pin_mut!(serve);

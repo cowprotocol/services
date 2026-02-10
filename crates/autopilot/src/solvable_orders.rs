@@ -6,7 +6,6 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
-    app_data::AppCodeBypass,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, future::join_all},
@@ -76,10 +75,6 @@ pub struct Metrics {
 
     /// Auction filtered market orders due to missing native token price.
     auction_market_order_missing_price: IntGauge,
-
-    /// Time taken to build filter bypass orders set.
-    #[metric(buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0))]
-    filter_bypass_orders_time: Histogram,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -104,7 +99,7 @@ pub struct SolvableOrdersCache {
     native_price_timeout: Duration,
     settlement_contract: Address,
     disable_order_balance_filter: bool,
-    app_code_bypass: AppCodeBypass,
+    wrapper_cache: app_data::WrapperCache,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -130,7 +125,6 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
-        filter_bypass_app_data_sources: HashSet<String>,
     ) -> Arc<Self> {
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         Arc::new(Self {
@@ -149,7 +143,7 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
-            app_code_bypass: AppCodeBypass::new(filter_bypass_app_data_sources),
+            wrapper_cache: app_data::WrapperCache::new(20_000),
         })
     }
 
@@ -186,19 +180,16 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let balance_filter_exempt_orders = {
-            let _timer = self.metrics.filter_bypass_orders_time.start_timer();
-            orders
-                .iter()
-                .filter(|order| {
-                    self.app_code_bypass.matches(
-                        &order.data.app_data,
-                        order.metadata.full_app_data.as_deref(),
-                    )
-                })
-                .map(|order| order.metadata.uid)
-                .collect::<HashSet<_>>()
-        };
+        let balance_filter_exempt_orders: HashSet<_> = orders
+            .iter()
+            .filter(|order| {
+                self.wrapper_cache.has_wrappers(
+                    &order.data.app_data,
+                    order.metadata.full_app_data.as_deref(),
+                )
+            })
+            .map(|order| order.metadata.uid)
+            .collect();
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
@@ -519,7 +510,8 @@ fn orders_with_balance(
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
         // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
-        // to unlock funds) or orders in the appCode bypass set.
+        // to unlock funds) or orders with wrappers (wrappers produce the required
+        // balance at settlement time).
         if matches!(order.signature, Signature::Eip1271(_))
             || filter_bypass_orders.contains(&order.metadata.uid)
         {
@@ -1393,10 +1385,10 @@ mod tests {
     }
 
     #[test]
-    fn eip1271_and_bypass_set_skip_balance_filtering() {
+    fn eip1271_and_wrapper_orders_skip_balance_filtering() {
         let settlement_contract = Address::repeat_byte(1);
 
-        // EIP-1271 order (not in bypass set, but should still skip balance check)
+        // EIP-1271 order (should skip balance check)
         let eip1271_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
@@ -1413,10 +1405,10 @@ mod tests {
             ..Default::default()
         };
 
-        // ECDSA order in bypass set (should skip balance check)
-        let bypass_order_uid =
+        // Order with wrappers in bypass set (should skip balance check)
+        let wrapper_order_uid =
             OrderUid::from_parts(B256::repeat_byte(7), Address::repeat_byte(77), 7);
-        let bypass_order = Order {
+        let wrapper_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(8),
                 sell_amount: alloy::primitives::U256::from(10),
@@ -1425,14 +1417,13 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                uid: bypass_order_uid,
+                uid: wrapper_order_uid,
                 ..Default::default()
             },
-            // Default signature is Eip712 (ECDSA)
             ..Default::default()
         };
 
-        // Regular ECDSA order (not in bypass set, should be filtered)
+        // Regular ECDSA order without wrappers (should be filtered)
         let regular_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(9),
@@ -1451,14 +1442,14 @@ mod tests {
         let orders = vec![
             regular_order.clone(),
             eip1271_order.clone(),
-            bypass_order.clone(),
+            wrapper_order.clone(),
         ];
         let balances: Balances = Default::default(); // No balances
 
-        // EIP-1271 order and bypass order should be retained, regular order filtered
-        let bypass_set = HashSet::from([bypass_order_uid]);
+        // EIP-1271 order and wrapper order should be retained, regular order filtered
+        let wrapper_set = HashSet::from([wrapper_order_uid]);
         let filtered =
-            orders_with_balance(orders.clone(), &balances, settlement_contract, &bypass_set);
+            orders_with_balance(orders.clone(), &balances, settlement_contract, &wrapper_set);
         assert_eq!(filtered.len(), 2);
         assert!(
             filtered
@@ -1468,16 +1459,16 @@ mod tests {
         assert!(
             filtered
                 .iter()
-                .any(|o| o.metadata.uid == bypass_order.metadata.uid)
+                .any(|o| o.metadata.uid == wrapper_order.metadata.uid)
         );
 
-        // Without bypass set, only EIP-1271 order should be retained
-        let empty_bypass: HashSet<OrderUid> = HashSet::new();
-        let filtered_no_bypass =
-            orders_with_balance(orders, &balances, settlement_contract, &empty_bypass);
-        assert_eq!(filtered_no_bypass.len(), 1);
+        // Without wrapper set, only EIP-1271 order should be retained
+        let empty_set: HashSet<OrderUid> = HashSet::new();
+        let filtered_no_wrappers =
+            orders_with_balance(orders, &balances, settlement_contract, &empty_set);
+        assert_eq!(filtered_no_wrappers.len(), 1);
         assert_eq!(
-            filtered_no_bypass[0].metadata.uid,
+            filtered_no_wrappers[0].metadata.uid,
             eip1271_order.metadata.uid
         );
     }

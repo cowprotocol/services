@@ -49,9 +49,4 @@ pub struct Args {
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.
     #[clap(long, env)]
     pub config: PathBuf,
-
-    /// List of appCode values in appData that enable bypassing balance
-    /// filters. Orders with matching appCode will skip balance checks.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub filter_bypass_app_data_sources: Vec<String>,
 }

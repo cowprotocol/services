@@ -8,7 +8,6 @@ use {
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
     std::{
-        collections::HashSet,
         fmt::{self, Display},
         slice::Iter,
     },
@@ -334,10 +333,6 @@ pub struct Root {
     /// However, in order to not break existing integrations, we allow using the
     /// `backend` field for specifying hooks.
     backend: Option<BackendAppData>,
-    /// The application code identifying the source of the order (e.g., "CoW
-    /// Swap", "Barter").
-    #[serde(rename = "appCode")]
-    app_code: Option<String>,
 }
 
 impl Root {
@@ -345,76 +340,33 @@ impl Root {
         Self {
             metadata,
             backend: None,
-            app_code: None,
-        }
-    }
-
-    pub fn app_code(&self) -> Option<&str> {
-        self.app_code.as_deref()
-    }
-}
-
-const APP_CODE_BYPASS_CACHE_SIZE: u64 = 20_000;
-
-/// Determines which orders should bypass balance checks based on their
-/// `appCode`. Caches parsed appCode values to avoid re-parsing JSON.
-pub struct AppCodeBypass {
-    sources: HashSet<String>,
-    cache: Cache<AppDataHash, Option<String>>,
-}
-
-impl Clone for AppCodeBypass {
-    fn clone(&self) -> Self {
-        Self {
-            sources: self.sources.clone(),
-            cache: self.cache.clone(),
         }
     }
 }
 
-impl fmt::Debug for AppCodeBypass {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AppCodeBypass")
-            .field("sources", &self.sources)
-            .finish_non_exhaustive()
-    }
-}
+/// Caches whether a given app data document contains wrappers, keyed by
+/// hash. This avoids re-parsing the same JSON across orders and auction
+/// cycles.
+#[derive(Clone)]
+pub struct WrapperCache(Cache<AppDataHash, bool>);
 
-impl AppCodeBypass {
-    pub fn new(sources: impl IntoIterator<Item = String>) -> Self {
-        Self {
-            sources: sources.into_iter().collect(),
-            cache: Cache::new(APP_CODE_BYPASS_CACHE_SIZE),
-        }
+impl WrapperCache {
+    pub fn new(capacity: u64) -> Self {
+        Self(Cache::new(capacity))
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.sources.is_empty()
-    }
-
-    /// Returns `true` if the document's `appCode` matches one of the
-    /// configured bypass sources. Caches the parsed appCode by hash.
-    pub fn matches(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
-        if self.sources.is_empty() {
-            return false;
+    /// Returns `true` if order appData contains non-empty wrappers 
+    pub fn has_wrappers(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
+        if let Some(cached) = self.0.get(hash) {
+            return cached;
         }
-
-        if let Some(cached) = self.cache.get(hash) {
-            return cached
-                .as_ref()
-                .is_some_and(|code| self.sources.contains(code));
-        }
-
-        let app_code = document.and_then(|doc| {
+        let result = document.is_some_and(|doc| {
             serde_json::from_str::<Root>(doc)
                 .ok()
-                .and_then(|root| root.app_code().map(str::to_owned))
+                .and_then(|root| root.metadata)
+                .is_some_and(|m| !m.wrappers.is_empty())
         });
-
-        let result = app_code
-            .as_ref()
-            .is_some_and(|code| self.sources.contains(code));
-        self.cache.insert(*hash, app_code);
+        self.0.insert(*hash, result);
         result
     }
 }
@@ -847,29 +799,21 @@ mod tests {
     }
 
     #[test]
-    fn app_code_bypass_matches_app_code() {
-        let hash1 = AppDataHash([1; 32]);
-        let hash2 = AppDataHash([2; 32]);
-        let hash3 = AppDataHash([3; 32]);
+    fn wrapper_cache_detects_wrappers() {
+        let cache = WrapperCache::new(100);
+        let h = |b: u8| AppDataHash([b; 32]);
 
-        let doc1 = r#"{"appCode": "Barter"}"#;
-        let doc2 = r#"{"appCode": "CoW Swap"}"#;
+        assert!(!cache.has_wrappers(&h(1), None));
+        assert!(!cache.has_wrappers(&h(2), Some("{}")));
+        assert!(!cache.has_wrappers(&h(3), Some(r#"{"metadata": {}}"#)));
+        assert!(!cache.has_wrappers(&h(4), Some(r#"{"metadata": {"wrappers": []}}"#)));
+        assert!(cache.has_wrappers(
+            &h(5),
+            Some(r#"{"metadata": {"wrappers": [{"address": "0x0000000000000000000000000000000000000001", "data": "0x"}]}}"#),
+        ));
 
-        // Empty sources -> no bypass
-        let bypass = AppCodeBypass::new(Vec::<String>::new());
-        assert!(!bypass.matches(&hash1, Some(doc1)));
-
-        // Match "Barter" -> only hash1
-        let bypass = AppCodeBypass::new(["Barter".to_string()]);
-        assert!(bypass.matches(&hash1, Some(doc1)));
-        assert!(!bypass.matches(&hash2, Some(doc2)));
-        assert!(!bypass.matches(&hash3, None));
-
-        // Match multiple sources
-        let bypass = AppCodeBypass::new(["Barter".to_string(), "CoW Swap".to_string()]);
-        assert!(bypass.matches(&hash1, Some(doc1)));
-        assert!(bypass.matches(&hash2, Some(doc2)));
-        assert!(!bypass.matches(&hash3, None));
+        // Second call hits the cache
+        assert!(cache.has_wrappers(&h(5), None));
     }
 
     #[test]

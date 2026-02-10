@@ -21,7 +21,6 @@ use {
         },
         util::{Bytes, math},
     },
-    app_data::AppCodeBypass,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
@@ -72,7 +71,6 @@ pub struct Competition {
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
-    app_code_bypass: AppCodeBypass,
 }
 
 impl Competition {
@@ -87,7 +85,6 @@ impl Competition {
         risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
-        app_code_bypass: AppCodeBypass,
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
 
@@ -103,7 +100,6 @@ impl Competition {
             risk_detector,
             fetcher,
             order_sorting_strategies,
-            app_code_bypass,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -156,19 +152,11 @@ impl Competition {
         let (auction, balances, app_data) =
             tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
-        let app_code_bypass = self.app_code_bypass.clone();
         let auction = Self::run_blocking_with_timer("update_orders", move || {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(
-                auction,
-                balances,
-                app_data,
-                cow_amm_orders,
-                &settlement,
-                &app_code_bypass,
-            )
+            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
         })
         .await;
 
@@ -439,18 +427,14 @@ impl Competition {
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
         settlement_contract: &eth::Address,
-        app_code_bypass: &AppCodeBypass,
     ) -> Auction {
-        // Pre-compute which app_data hashes should bypass balance checks.
-        let bypass_hashes: HashSet<order::app_data::AppDataHash> = if app_code_bypass.is_empty() {
-            HashSet::new()
-        } else {
-            app_data
-                .iter()
-                .filter(|(_, v)| app_code_bypass.matches(&v.hash, Some(&v.document)))
-                .map(|(k, _)| *k)
-                .collect()
-        };
+        // Pre-compute which app_data hashes have wrappers and should bypass balance
+        // checks, since wrappers produce the required funds at settlement time.
+        let has_wrappers: HashSet<order::app_data::AppDataHash> = app_data
+            .iter()
+            .filter(|(_, v)| !v.protocol.wrappers.is_empty())
+            .map(|(k, _)| *k)
+            .collect();
 
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
@@ -487,7 +471,7 @@ impl Competition {
                 }
             }
 
-            if bypass_hashes.contains(&order.app_data.hash()) {
+            if has_wrappers.contains(&order.app_data.hash()) {
                 return true;
             }
 
