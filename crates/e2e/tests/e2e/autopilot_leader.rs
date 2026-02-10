@@ -103,6 +103,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             const_hex::encode(solver2.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        "--metrics-address=0.0.0.0:9591".to_string(),
         "--api-address=0.0.0.0:12089".to_string(),
         "--enable-leader-lock=true".to_string(),
     ]).await;
