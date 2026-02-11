@@ -1,5 +1,5 @@
 use {
-    crate::{database::Postgres, domain::settlement},
+    crate::database::Postgres,
     alloy::{
         primitives::Address,
         rpc::types::{Filter, Log},
@@ -36,16 +36,11 @@ impl AlloyEventRetrieving for GPv2SettlementContract {
 pub struct Indexer {
     db: Postgres,
     start_index: u64,
-    settlement_observer: settlement::Observer,
 }
 
 impl Indexer {
-    pub fn new(db: Postgres, settlement_observer: settlement::Observer, start_index: u64) -> Self {
-        Self {
-            db,
-            settlement_observer,
-            start_index,
-        }
+    pub fn new(db: Postgres, start_index: u64) -> Self {
+        Self { db, start_index }
     }
 }
 
@@ -74,10 +69,6 @@ impl EventStoring<(GPv2SettlementEvents, Log)> for Indexer {
         crate::database::events::replace_events(&mut transaction, events, from_block).await?;
         database::settlements::delete(&mut transaction, from_block).await?;
         transaction.commit().await?;
-
-        self.settlement_observer
-            .post_process_outstanding_settlement_transactions()
-            .await;
         Ok(())
     }
 
@@ -85,10 +76,6 @@ impl EventStoring<(GPv2SettlementEvents, Log)> for Indexer {
         let mut transaction = self.db.pool.begin().await?;
         crate::database::events::append_events(&mut transaction, events).await?;
         transaction.commit().await?;
-
-        self.settlement_observer
-            .post_process_outstanding_settlement_transactions()
-            .await;
         Ok(())
     }
 }
