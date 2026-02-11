@@ -511,14 +511,12 @@ impl NativePriceUpdater {
 
         let max_age = cache.max_age().saturating_sub(prefetch_time);
         let timeout = self.estimator.0.quote_timeout;
-        let mut stream = self.estimator.estimate_prices_and_update_cache(
-            tokens_to_update.iter().copied(),
-            max_age,
-            timeout,
-        );
-        // Drive the stream to completion. Results are written to the cache as
-        // a side effect, so we don't need to inspect them here.
-        while stream.next().await.is_some() {}
+        self.estimator
+            .estimate_prices_and_update_cache(tokens_to_update.iter().copied(), max_age, timeout)
+            // Drive the stream to completion. Results are written to the cache as
+            // a side effect, so we don't need to inspect them here.
+            .for_each(|_| async {})
+            .await;
         metrics
             .native_price_cache_background_updates
             .inc_by(tokens_to_update.len() as u64);
