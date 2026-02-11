@@ -35,6 +35,7 @@ use {
     },
     strum::VariantNames,
     tokio::sync::Mutex,
+    tracing::instrument,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -167,6 +168,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
+    #[instrument(skip_all)]
     pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
@@ -176,18 +178,22 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
-        let orders = db_solvable_orders
-            .orders
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+        let orders = tracing::debug_span!("cloning_relevant_orders").in_scope(|| {
+            db_solvable_orders
+                .orders
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+        });
 
         let mut counter = OrderFilterCounter::new(self.metrics, &orders);
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
         let (balances, orders, cow_amms) = {
-            let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
+            let queries = tracing::debug_span!("collecting_balance_queries")
+                .in_scope(|| orders.iter().map(Query::from_order).collect::<Vec<_>>());
+
             tokio::join!(
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
@@ -293,23 +299,27 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
-            orders: orders
-                .into_iter()
-                .map(|order| {
-                    let quote = db_solvable_orders
-                        .quotes
-                        .get(&order.metadata.uid.into())
-                        .cloned();
-                    self.protocol_fees
-                        .apply(order, quote, &surplus_capturing_jit_order_owners)
-                })
-                .collect(),
-            prices: prices
-                .into_iter()
-                .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
-                })
-                .collect::<Result<_, _>>()?,
+            orders: tracing::debug_span!("assemble_orders").in_scope(|| {
+                orders
+                    .into_iter()
+                    .map(|order| {
+                        let quote = db_solvable_orders
+                            .quotes
+                            .get(&order.metadata.uid.into())
+                            .cloned();
+                        self.protocol_fees
+                            .apply(order, quote, &surplus_capturing_jit_order_owners)
+                    })
+                    .collect()
+            }),
+            prices: tracing::debug_span!("assemble_prices").in_scope(|| {
+                prices
+                    .into_iter()
+                    .map(|(key, value)| {
+                        Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                    })
+                    .collect::<Result<_, _>>()
+            })?,
             surplus_capturing_jit_order_owners,
         };
 
@@ -325,6 +335,7 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
@@ -357,6 +368,7 @@ impl SolvableOrdersCache {
     }
 
     /// Returns currently solvable orders.
+    #[instrument(skip_all)]
     async fn get_solvable_orders(&self) -> Result<SolvableOrders> {
         let min_valid_to = now_in_epoch_seconds()
             + u32::try_from(self.min_order_validity_period.as_secs())
@@ -392,6 +404,7 @@ impl SolvableOrdersCache {
     }
 
     /// Executed orders filtering in parallel.
+    #[instrument(skip_all)]
     async fn filter_invalid_orders(
         &self,
         mut orders: Vec<Order>,
@@ -448,6 +461,7 @@ impl SolvableOrdersCache {
 
 /// Finds all orders whose owners or receivers are in the set of "banned"
 /// users.
+#[instrument(skip_all)]
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(
@@ -540,6 +554,7 @@ async fn find_invalid_signature_orders(
 
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
+#[instrument(skip_all)]
 fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
@@ -582,6 +597,7 @@ fn orders_with_balance(
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
+#[instrument(skip_all)]
 fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
     orders.retain(|order| {
         if !order.data.partially_fillable {
@@ -612,6 +628,7 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
     orders
 }
 
+#[instrument(skip_all)]
 async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &NativePriceUpdater,
@@ -695,6 +712,7 @@ async fn find_unsupported_tokens(
 
 /// Filter out limit orders which are far enough outside the estimated native
 /// token price.
+#[instrument(skip_all)]
 fn filter_mispriced_limit_orders(
     mut orders: Vec<Order>,
     prices: &BTreeMap<Address, alloy::primitives::U256>,
@@ -746,6 +764,7 @@ struct OrderFilterCounter {
 type Reason = &'static str;
 
 impl OrderFilterCounter {
+    #[instrument(skip_all)]
     fn new(metrics: &'static Metrics, orders: &[Order]) -> Self {
         // Eagerly store the candidate orders. This ensures that that gauge is
         // always up to date even if there are errors in the auction building
@@ -772,6 +791,7 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint from the current remaining orders.
+    #[instrument(skip_all)]
     fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
         let filtered_orders = orders
             .iter()
@@ -795,6 +815,7 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint based on the found invalid orders.
+    #[instrument(skip_all)]
     fn checkpoint_by_invalid_orders(&mut self, reason: Reason, invalid_orders: &[OrderUid]) {
         if invalid_orders.is_empty() {
             return;
@@ -820,6 +841,7 @@ impl OrderFilterCounter {
     /// If there are orders that have been filtered out since the last
     /// checkpoint these orders will get recorded with the readon "other".
     /// Returns these catch-all orders.
+    #[instrument(skip_all)]
     fn record(mut self, orders: &[Order]) -> Vec<OrderUid> {
         let removed = self.checkpoint("other", orders);
 
