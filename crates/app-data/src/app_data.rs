@@ -346,7 +346,9 @@ impl Root {
 
 /// Caches whether a given app data document contains wrappers, keyed by
 /// hash. This avoids re-parsing the same JSON across orders and auction
-/// cycles.
+/// cycles. We're using the default TinyLFU eviction policy, but the capacity is
+/// large enough that we don't expect eviction to be a problem in practice, but
+/// we limit the size to prevent potential memory exhaustion attacks.
 pub struct WrapperCache(Cache<AppDataHash, bool>);
 
 impl WrapperCache {
