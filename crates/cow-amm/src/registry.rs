@@ -68,6 +68,7 @@ impl Registry {
     }
 
     /// Returns all the deployed CoW AMMs
+    #[instrument(skip_all)]
     pub async fn amms(&self) -> Vec<Arc<Amm>> {
         let mut result = vec![];
         let lock = self.storage.read().await;

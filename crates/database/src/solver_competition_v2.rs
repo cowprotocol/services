@@ -460,6 +460,7 @@ fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::
 /// Those are all orders (JIT or regular) that belong to winning
 /// solutions with a deadline greater than the current block
 /// where the execution actually has not been observed onchain yet.
+#[instrument(skip_all)]
 pub async fn fetch_in_flight_orders(
     ex: &mut PgConnection,
     current_block: i64,

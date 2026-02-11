@@ -192,6 +192,7 @@ impl RunLoop {
         });
     }
 
+    #[instrument(skip_all)]
     async fn update_caches(&self, prev_block: &mut Option<B256>, is_leader: bool) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
@@ -264,6 +265,7 @@ impl RunLoop {
         Metrics::ran_maintenance(start.elapsed());
     }
 
+    #[instrument(skip_all)]
     async fn cut_auction(&self) -> Option<domain::Auction> {
         let Some(auction) = self.solvable_orders_cache.current_auction().await else {
             tracing::debug!("no current auction");
@@ -869,6 +871,7 @@ impl RunLoop {
 
     /// Removes orders that are currently being settled to avoid solver
     /// solutions conflicting with each other.
+    #[instrument(skip_all)]
     async fn remove_in_flight_orders(
         &self,
         mut auction: domain::RawAuctionData,
