@@ -473,7 +473,7 @@ async fn get_native_prices(
     timeout: Duration,
 ) -> BTreeMap<Address, alloy::primitives::U256> {
     native_price_estimator
-        .fetch_prices(tokens, timeout)
+        .update_tokens_and_fetch_prices(tokens, timeout)
         .await
         .into_iter()
         .flat_map(|(token, result)| {

@@ -255,8 +255,8 @@ impl Cache {
 
     /// Only returns prices that are currently cached. When
     /// `create_missing_entries` is true, missing tokens get outdated
-    /// placeholder entries so they can be picked up by the next price
-    /// update.
+    /// placeholder entries so they can be picked up by the next
+    /// `estimate_prices_and_update_cache` call.
     pub fn get_cached_prices(
         &self,
         tokens: &[Address],
@@ -397,8 +397,8 @@ impl CachingNativePriceEstimator {
     }
 
     /// Only returns prices that are currently cached. Missing tokens get
-    /// outdated placeholder entries so they can be picked up by the next price
-    /// update.
+    /// outdated placeholder entries so they can be picked up by the next
+    /// `estimate_prices_and_update_cache` call.
     fn get_cached_prices(
         &self,
         tokens: &[Address],
@@ -525,7 +525,7 @@ impl NativePriceUpdater {
 
     /// Replaces the full set of tokens that should be maintained by the
     /// background task and fetches their current prices.
-    pub async fn fetch_prices(
+    pub async fn update_tokens_and_fetch_prices(
         &self,
         tokens: HashSet<Address>,
         timeout: Duration,
@@ -556,6 +556,8 @@ impl NativePriceUpdater {
             max_age,
             timeout,
         );
+        // Drive the stream to completion. Results are written to the cache as
+        // a side effect, so we don't need to inspect them here.
         while stream.next().await.is_some() {}
         metrics
             .native_price_cache_background_updates
@@ -1014,7 +1016,10 @@ mod tests {
 
         // Tell the updater about these tokens
         updater
-            .fetch_prices([token(0), token(1)].into_iter().collect(), Duration::ZERO)
+            .update_tokens_and_fetch_prices(
+                [token(0), token(1)].into_iter().collect(),
+                Duration::ZERO,
+            )
             .await;
 
         // wait for maintenance cycle
@@ -1057,7 +1062,9 @@ mod tests {
             Duration::from_millis(50),
             Duration::default(),
         );
-        updater.fetch_prices(all_tokens, Duration::ZERO).await;
+        updater
+            .update_tokens_and_fetch_prices(all_tokens, Duration::ZERO)
+            .await;
 
         let tokens: Vec<_> = (0..10).map(Address::with_last_byte).collect();
         for token in &tokens {
@@ -1116,7 +1123,9 @@ mod tests {
             Duration::from_millis(50),
             Duration::default(),
         );
-        updater.fetch_prices(all_tokens, Duration::ZERO).await;
+        updater
+            .update_tokens_and_fetch_prices(all_tokens, Duration::ZERO)
+            .await;
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(token).collect();
         for token in &tokens {
