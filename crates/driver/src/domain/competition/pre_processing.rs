@@ -8,7 +8,6 @@ use {
             liquidity,
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
-        util::Bytes,
     },
     anyhow::{Context, Result},
     chrono::Utc,
@@ -22,6 +21,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
+        bytes::Bytes,
         price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },

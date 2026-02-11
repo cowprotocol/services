@@ -93,7 +93,7 @@ pub fn to_interaction(
     eth::Interaction {
         target: encoded.0,
         value: encoded.1.into(),
-        call_data: crate::util::Bytes(encoded.2.0.to_vec()),
+        call_data: shared::bytes::Bytes(encoded.2.0.to_vec()),
     }
 }
 

@@ -1,8 +1,8 @@
 use {
-    crate::util::Bytes,
     alloy::rpc::types::TransactionRequest,
     derive_more::{From, Into},
     number::u256_ext::U256Ext,
+    shared::bytes::Bytes,
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},

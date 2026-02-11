@@ -10,7 +10,6 @@ use {
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
-        util::Bytes,
     },
     allowance::Allowance,
     alloy::{
@@ -20,6 +19,7 @@ use {
     contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
     itertools::Itertools,
     num::Zero,
+    shared::bytes::Bytes,
 };
 
 #[derive(Debug, thiserror::Error)]

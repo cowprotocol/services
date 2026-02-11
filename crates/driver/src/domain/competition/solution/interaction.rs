@@ -1,6 +1,6 @@
-use crate::{
-    domain::{self, eth, liquidity},
-    util::Bytes,
+use {
+    crate::domain::{self, eth, liquidity},
+    shared::bytes::Bytes,
 };
 
 /// Interaction with a smart contract which is needed to execute this solution

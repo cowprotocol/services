@@ -6,7 +6,6 @@ use {
             liquidity,
         },
         infra::Solver,
-        util::Bytes,
     },
     app_data::AppDataHash,
     itertools::Itertools,
@@ -14,6 +13,7 @@ use {
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
+    shared::bytes::Bytes,
     std::{collections::HashMap, str::FromStr},
 };
 

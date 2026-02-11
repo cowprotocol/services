@@ -163,9 +163,9 @@ mod utils {
             crate::{
                 domain::eth,
                 infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
-                util::Bytes,
             },
             alloy::primitives::Address,
+            shared::bytes::Bytes,
         };
 
         #[test]

@@ -19,11 +19,12 @@ use {
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
         },
-        util::{Bytes, math},
+        util::math,
     },
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
+    shared::bytes::Bytes,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},

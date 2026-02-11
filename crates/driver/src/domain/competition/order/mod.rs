@@ -2,10 +2,11 @@ use {
     crate::{
         domain::eth,
         infra::{Ethereum, blockchain},
-        util::{self, Bytes},
+        util,
     },
     derive_more::{From, Into},
     model::order::{BuyTokenDestination, SellTokenSource},
+    shared::bytes::Bytes,
 };
 pub use {fees::FeePolicy, signature::Signature};
 

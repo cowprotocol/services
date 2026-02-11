@@ -1,10 +1,10 @@
 use {
-    crate::util::Bytes,
     anyhow::Context,
     app_data::AppDataDocument,
     derive_more::From,
     moka::future::Cache,
     reqwest::StatusCode,
+    shared::bytes::Bytes,
     std::{collections::HashMap, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
