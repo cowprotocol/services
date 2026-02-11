@@ -35,12 +35,15 @@ impl AlloyEventRetrieving for GPv2SettlementContract {
 
 pub struct Indexer {
     db: Postgres,
-    start_index: u64,
+    start_indexing_block: u64,
 }
 
 impl Indexer {
-    pub fn new(db: Postgres, start_index: u64) -> Self {
-        Self { db, start_index }
+    pub fn new(db: Postgres, start_indexing_block: u64) -> Self {
+        Self {
+            db,
+            start_indexing_block,
+        }
     }
 }
 
@@ -52,7 +55,7 @@ impl EventStoring<(GPv2SettlementEvents, Log)> for Indexer {
     async fn last_event_block(&self) -> Result<u64> {
         super::read_last_block_from_db(&self.db.pool, INDEX_NAME)
             .await
-            .map(|last_block| last_block.max(self.start_index))
+            .map(|last_block| last_block.max(self.start_indexing_block))
     }
 
     async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {
