@@ -105,22 +105,26 @@ impl Mempools {
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
-        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
-            if err.is_revert() {
-                tracing::info!(
-                    ?err,
-                    "settlement tx simulation reverted before submitting to the mempool"
-                );
-                return Err(Error::SimulationRevert {
-                    submitted_at_block: current_block,
-                    reverted_at_block: current_block,
-                });
-            } else {
-                tracing::warn!(
-                    ?err,
-                    "couldn't simulate tx before submitting to the mempool"
-                );
+        if mempool.reverts_can_get_mined() {
+            if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
+                if err.is_revert() {
+                    tracing::info!(
+                        ?err,
+                        "settlement tx simulation reverted before submitting to the mempool"
+                    );
+                    return Err(Error::SimulationRevert {
+                        submitted_at_block: current_block,
+                        reverted_at_block: current_block,
+                    });
+                } else {
+                    tracing::warn!(
+                        ?err,
+                        "couldn't simulate tx before submitting to the mempool"
+                    );
+                }
             }
+        } else {
+            tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
 
         // Fetch the nonce to avoid race conditions between concurrent
