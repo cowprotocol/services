@@ -80,8 +80,6 @@ impl CacheMetrics {
 struct UpdaterMetrics {
     /// number of background updates performed
     native_price_cache_background_updates: IntCounter,
-    /// number of items in cache that are outdated
-    native_price_cache_outdated_entries: IntGauge,
 }
 
 impl UpdaterMetrics {
@@ -290,18 +288,6 @@ impl Cache {
     fn insert(&self, token: Address, result: CachedResult) {
         self.0.data.lock().unwrap().insert(token, result);
     }
-
-    /// Returns tokens whose cached price is outdated.
-    fn outdated_tokens(&self, max_age: Duration, now: Instant) -> Vec<Address> {
-        self.0
-            .data
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
-            .map(|(token, _)| *token)
-            .collect()
-    }
 }
 
 /// Wrapper around `Box<dyn NativePriceEstimating>` which caches successful
@@ -351,13 +337,17 @@ impl CachingNativePriceEstimator {
     /// estimation request gets issued. We check the cache before each
     /// request because they can take a long time and some other task might
     /// have fetched some requested price in the meantime.
-    fn estimate_prices_and_update_cache<'a>(
+    fn estimate_prices_and_update_cache<'a, I>(
         &'a self,
-        tokens: &'a [Address],
+        tokens: I,
         max_age: Duration,
         request_timeout: Duration,
-    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)> {
-        let estimates = tokens.iter().map(move |token| async move {
+    ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)>
+    where
+        I: IntoIterator<Item = &'a Address> + 'a,
+        I::IntoIter: Send,
+    {
+        let estimates = tokens.into_iter().map(move |token| async move {
             let current_accumulative_errors_count = {
                 // check if the price is cached by now
                 let now = Instant::now();
@@ -554,49 +544,22 @@ impl NativePriceUpdater {
             .native_price_cache_size
             .set(i64::try_from(cache.len()).unwrap_or(i64::MAX));
 
-        let max_age = cache.max_age().saturating_sub(prefetch_time);
         let tokens_to_update = self.tokens_to_update.load_full();
-
-        // Ensure all tokens_to_update have entries in the cache so they get
-        // maintained.
-        {
-            let now = Instant::now();
-            let outdated_timestamp = now - cache.0.max_age;
-            let mut data = cache.0.data.lock().unwrap();
-            for token in tokens_to_update.iter() {
-                if let Entry::Vacant(entry) = data.entry(*token) {
-                    entry.insert(CachedResult::new(
-                        // It is safe to have an invalid price, since the item is created with an
-                        // outdated timestamp
-                        Ok(0.),
-                        outdated_timestamp,
-                        now,
-                        Default::default(),
-                    ));
-                }
-            }
-        }
-
-        let outdated_entries = cache.outdated_tokens(max_age, Instant::now());
-
-        tracing::trace!(count = outdated_entries.len(), "outdated prices to fetch");
-
-        metrics
-            .native_price_cache_outdated_entries
-            .set(i64::try_from(outdated_entries.len()).unwrap_or(i64::MAX));
-
-        if outdated_entries.is_empty() {
+        if tokens_to_update.is_empty() {
             return;
         }
 
+        let max_age = cache.max_age().saturating_sub(prefetch_time);
         let timeout = self.estimator.0.quote_timeout;
-        let mut stream =
-            self.estimator
-                .estimate_prices_and_update_cache(&outdated_entries, max_age, timeout);
+        let mut stream = self.estimator.estimate_prices_and_update_cache(
+            tokens_to_update.iter(),
+            max_age,
+            timeout,
+        );
         while stream.next().await.is_some() {}
         metrics
             .native_price_cache_background_updates
-            .inc_by(outdated_entries.len() as u64);
+            .inc_by(tokens_to_update.len() as u64);
     }
 }
 
