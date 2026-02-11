@@ -155,6 +155,52 @@ In this mode, the stack will spin up:
 
 - As per fork, but with a local node (not forked from Erigon)
 
+## Using Otterscan
+
+[Otterscan](https://github.com/otterscan/otterscan) is a local block explorer integrated into the playground. It provides powerful transaction analysis tools that work with your local Anvil chain — no external services required.
+
+**Access Otterscan at:** http://localhost:8003
+
+### Inspecting Transactions
+
+When you make a swap in CoW Swap, all explorer links automatically point to your local Otterscan instance. You can:
+
+1. **View transaction overview**: See gas usage, status, block info, and decoded input data
+2. **Analyze transaction traces**: Expand the full call tree to see every internal call, including:
+   - Contract-to-contract calls
+   - Token transfers (ERC20, ERC721)
+   - Value transfers
+   - Delegate calls and static calls
+3. **View event logs**: See all emitted events with decoded parameters
+4. **Check gas profiling**: Understand gas consumption per operation
+
+### Debugging Failed Transactions
+
+Otterscan is especially useful for debugging failed transactions:
+
+1. Navigate to the failed transaction in Otterscan
+2. Check the **"Trace"** tab to see exactly where the transaction reverted
+3. Look for the revert reason in the trace output (e.g., `Error(string)` or custom errors)
+4. For CoW Protocol transactions, you can trace the entire settlement flow including:
+   - Pre-interactions
+   - Token approvals and transfers
+   - AMM interactions (Uniswap, etc.)
+   - Post-interactions
+
+### Example: Tracing a CoW Swap Settlement
+
+After executing a swap:
+
+1. Copy the transaction hash from CoW Swap or CoW Explorer
+2. Open `http://localhost:8003/tx/<hash>`
+3. Click on **"Trace"** to see the full execution flow
+4. Expand the `settle()` call to see:
+   - How tokens flowed between parties
+   - Which liquidity sources were used
+   - Gas costs per operation
+
+> **Tip:** Use `SOURCIFY_MODE=cloud` (default) to see source code for well-known contracts like CoW Protocol, USDC, WETH, and Uniswap directly in Otterscan.
+
 ## Contract Verification with Sourcify
 
 The playground includes a local [Sourcify](https://sourcify.dev/) instance for contract verification. Sourcify is a decentralized contract verification service that matches deployed bytecode with source code. Verified contracts display their source code in Otterscan.
