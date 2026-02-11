@@ -245,7 +245,7 @@ async fn eth_flow_tx(web3: Web3) {
         .unwrap();
     assert_eq!(allowance, alloy::primitives::U256::ZERO);
 
-    // Check that true_valid_to is not equal to u32::MAX for the ethflow order
+    // Check that true_valid_to is equal to the ethflow_order's valid to
     let uid = ethflow_order
         .uid(onchain.contracts(), ethflow_contract)
         .await;
@@ -255,7 +255,17 @@ async fn eth_flow_tx(web3: Web3) {
         .fetch_one(db.deref_mut())
         .await
         .unwrap();
-    assert_ne!(true_valid_to.0, u32::MAX as i64);
+    assert_eq!(
+        true_valid_to.0,
+        services
+            .get_order(&uid)
+            .await
+            .unwrap()
+            .metadata
+            .ethflow_data
+            .unwrap()
+            .user_valid_to
+    );
 }
 
 async fn eth_flow_without_quote(web3: Web3) {
