@@ -33,8 +33,9 @@ use {
 };
 
 /// Component to sync with the maintenance logic that runs in a background task.
-/// This allows us to run the maintenance logic ASAP but still wait for it to
-/// finish in a convenient manner.
+/// This allows us to run the maintenance logic as soon as we see a new block
+/// while still making the autopilot run loop only wait for updates that are
+/// essential for building new auctions.
 #[derive(Clone)]
 pub struct MaintenanceSync {
     /// How long the autopilot wants to wait at most.
