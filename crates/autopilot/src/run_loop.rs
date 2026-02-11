@@ -208,7 +208,13 @@ impl RunLoop {
             current_block
         };
 
-        self.run_maintenance(&auction_block).await;
+        {
+            let start = Instant::now();
+            self.maintenance
+                .wait_until_block_processed(auction_block.number, false)
+                .await;
+            Metrics::ran_maintenance(start.elapsed());
+        }
 
         match self
             .solvable_orders_cache
@@ -252,16 +258,6 @@ impl RunLoop {
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
-    }
-
-    /// Runs maintenance on all components to ensure the system uses
-    /// the latest available state.
-    async fn run_maintenance(&self, block: &BlockInfo) {
-        let start = Instant::now();
-        self.maintenance
-            .wait_until_block_processed(block.number)
-            .await;
-        Metrics::ran_maintenance(start.elapsed());
     }
 
     async fn cut_auction(&self) -> Option<domain::Auction> {
@@ -842,7 +838,9 @@ impl RunLoop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
             // it's possible to find the tx in the DB in the next line.
-            self.run_maintenance(&block).await;
+            self.maintenance
+                .wait_until_block_processed(block.number, true)
+                .await;
 
             match self
                 .persistence

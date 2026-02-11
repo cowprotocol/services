@@ -40,25 +40,39 @@ use {
 pub struct MaintenanceSync {
     /// How long the autopilot wants to wait at most.
     timeout: Duration,
-    last_processed_block: watch::Receiver<u64>,
+    /// This is the last block where essential processing like indexing events
+    /// was completed.
+    partially_processed_block: watch::Receiver<u64>,
+    /// This is the last block that has been fully processed.
+    fully_processed_block: watch::Receiver<u64>,
 }
 
 impl MaintenanceSync {
-    pub async fn wait_until_block_processed(&self, block: u64) {
+    pub async fn wait_until_block_processed(&self, block: u64, require_full_processing: bool) {
         let _timer = observe::metrics::metrics()
             .on_auction_overhead_start("autopilot", "wait_for_maintenance");
 
-        if let Err(_timeout) = tokio::time::timeout(self.timeout, self.wait_inner(block)).await {
+        if let Err(_timeout) = tokio::time::timeout(
+            self.timeout,
+            self.wait_inner(block, require_full_processing),
+        )
+        .await
+        {
             tracing::debug!("timed out waiting for maintenance");
         }
     }
 
-    async fn wait_inner(&self, target_block: u64) {
-        if *self.last_processed_block.borrow() >= target_block {
+    async fn wait_inner(&self, target_block: u64, require_full_processing: bool) {
+        let relevant_updates = match require_full_processing {
+            true => &self.fully_processed_block,
+            false => &self.partially_processed_block,
+        };
+
+        if *relevant_updates.borrow() >= target_block {
             return;
         }
 
-        let mut stream = WatchStream::new(self.last_processed_block.clone());
+        let mut stream = WatchStream::new(relevant_updates.clone());
         loop {
             let processed_block = stream.next().await.unwrap();
             if processed_block >= target_block {
@@ -110,7 +124,8 @@ impl Maintenance {
         blocks: CurrentBlockWatcher,
         timeout: Duration,
     ) -> MaintenanceSync {
-        let (sender, receiver) = watch::channel(blocks.borrow().number);
+        let full_updates = watch::channel(blocks.borrow().number);
+        let partial_updates = watch::channel(blocks.borrow().number);
 
         tokio::task::spawn(async move {
             let mut stream = into_stream(blocks);
@@ -119,7 +134,7 @@ impl Maintenance {
                     .next()
                     .await
                     .expect("block stream terminated unexpectedly");
-                self.index_until_block(block, &sender)
+                self.index_until_block(block, &partial_updates.0, &full_updates.0)
                     .instrument(tracing::info_span!(
                         "autopilot_maintenance",
                         block = block.number
@@ -129,12 +144,18 @@ impl Maintenance {
         });
 
         MaintenanceSync {
-            last_processed_block: receiver,
+            partially_processed_block: partial_updates.1,
+            fully_processed_block: full_updates.1,
             timeout,
         }
     }
 
-    async fn index_until_block(&self, block: BlockInfo, last_processed_block: &watch::Sender<u64>) {
+    async fn index_until_block(
+        &self,
+        block: BlockInfo,
+        partially_processed_block: &watch::Sender<u64>,
+        fully_processed_block: &watch::Sender<u64>,
+    ) {
         metrics().last_seen_block.set(block.number);
         let start = Instant::now();
 
@@ -150,7 +171,7 @@ impl Maintenance {
         );
         metrics().last_updated_block.set(block.number);
         metrics().updates.with_label_values(&["success"]).inc();
-        if let Err(err) = last_processed_block.send(block.number) {
+        if let Err(err) = partially_processed_block.send(block.number) {
             tracing::warn!(?err, "nobody listening for processed blocks anymore");
         }
 
@@ -160,6 +181,9 @@ impl Maintenance {
         if let Err(err) = self.run_optional_maintenance().await {
             tracing::warn!(?err, "failed to run optional maintenance");
             return;
+        }
+        if let Err(err) = fully_processed_block.send(block.number) {
+            tracing::warn!(?err, "nobody listening for processed blocks anymore");
         }
         tracing::info!(
             time = ?start.elapsed(),
