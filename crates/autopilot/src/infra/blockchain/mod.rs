@@ -29,7 +29,7 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(
         url: &url::Url,
-        ethrpc_args: &shared::ethrpc::Arguments,
+        ethrpc_args: &shared::web3::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
         let chain = Chain::try_from(web3.provider.get_chain_id().await?)

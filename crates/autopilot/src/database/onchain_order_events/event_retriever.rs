@@ -5,7 +5,7 @@ use {
         sol_types::SolEvent,
     },
     contracts::alloy::CoWSwapOnchainOrders,
-    shared::{ethrpc::Web3, event_handling::AlloyEventRetrieving},
+    shared::{web3::Web3, event_handling::AlloyEventRetrieving},
 };
 
 // Note: we use a custom implementation of `EventRetrieving` rather than using

@@ -17,7 +17,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     std::{collections::HashMap, ops::DerefMut},
 };
 

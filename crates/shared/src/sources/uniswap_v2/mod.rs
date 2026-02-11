@@ -10,7 +10,7 @@ use {
         pool_fetching::{DefaultPoolReader, PoolFetching, PoolReading},
     },
     crate::{
-        ethrpc::Web3,
+        web3::Web3,
         sources::{BaselineSource, swapr::SwaprPoolReader},
     },
     alloy::primitives::{Address, B256},

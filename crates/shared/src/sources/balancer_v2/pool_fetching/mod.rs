@@ -26,7 +26,7 @@ use {
         swap::fixed_point::Bfp,
     },
     crate::{
-        ethrpc::Web3,
+        web3::Web3,
         recent_block_cache::{Block, CacheConfig},
         token_info::TokenInfoFetching,
     },

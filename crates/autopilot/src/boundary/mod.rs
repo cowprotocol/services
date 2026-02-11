@@ -28,8 +28,8 @@ pub mod events;
 pub mod order;
 
 /// Builds a web3 client based on the ethrpc args config.
-pub fn web3_client(ethrpc: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> Web3 {
-    shared::ethrpc::web3(ethrpc_args, ethrpc, "base")
+pub fn web3_client(ethrpc: &Url, ethrpc_args: &shared::web3::Arguments) -> Web3 {
+    shared::web3::web3(ethrpc_args, ethrpc, "base")
 }
 
 pub struct SolvableOrders {

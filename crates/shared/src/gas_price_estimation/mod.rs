@@ -6,7 +6,7 @@ pub mod priority;
 
 use {
     crate::{
-        ethrpc::Web3,
+        web3::Web3,
         gas_price_estimation::{
             configurable_alloy::{
                 ConfigurableGasPriceEstimator,

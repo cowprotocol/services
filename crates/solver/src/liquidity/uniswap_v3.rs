@@ -15,7 +15,7 @@ use {
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
     shared::{
-        ethrpc::Web3,
+        web3::Web3,
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,

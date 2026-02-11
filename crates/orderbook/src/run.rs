@@ -78,12 +78,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -256,7 +256,7 @@ pub async fn run(args: Arguments) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         CachingDetector::new(
             Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
+                shared::web3::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
                 *settlement_contract.address(),
                 finder,
             )),

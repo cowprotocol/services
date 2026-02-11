@@ -25,7 +25,7 @@ use {
             token_owner_list::TokenOwnerList,
         },
         baseline_solver::BaseTokens,
-        ethrpc::{MAX_BATCH_SIZE, Web3},
+        web3::{MAX_BATCH_SIZE, Web3},
         http_client::HttpClientFactory,
         sources::uniswap_v2::pair_provider::PairProvider,
     },

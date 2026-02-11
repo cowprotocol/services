@@ -18,7 +18,7 @@ use {
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
     shared::{
-        ethrpc::Web3,
+        web3::Web3,
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},

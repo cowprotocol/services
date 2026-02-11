@@ -16,7 +16,7 @@ use {
         bad_token::BadTokenDetecting,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        ethrpc::Web3,
+        web3::Web3,
         gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
