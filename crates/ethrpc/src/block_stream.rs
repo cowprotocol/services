@@ -369,6 +369,7 @@ impl BlockRetrieving for AlloyProvider {
     /// Gets all blocks requested in the range. For successful results it's
     /// enforced that all the blocks are present, in the correct order and that
     /// there are no reorgs in the block range.
+    #[instrument(skip_all)]
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let (start, end) = range.into_inner();
 
