@@ -6168,6 +6168,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "app-data",
+ "arc-swap",
  "async-stream",
  "async-trait",
  "bigdecimal",
