@@ -1,5 +1,4 @@
 use {
-    super::serialize,
     alloy::{
         primitives::{Address, B256, U256},
         rpc::types::AccessList,
@@ -81,7 +80,7 @@ type BlockNo = u64;
 pub struct Tx {
     pub from: Address,
     pub to: Address,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub input: Vec<u8>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,

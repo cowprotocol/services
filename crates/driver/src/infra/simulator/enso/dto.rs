@@ -1,7 +1,7 @@
 //! Data transfer objects for interacting with the Enso Trade Simulator API.
 
 use {
-    crate::{domain::eth, util::serialize},
+    crate::domain::eth,
     alloy::rpc::types::AccessList,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -14,7 +14,7 @@ pub struct Request {
     pub chain_id: u64,
     pub from: eth::Address,
     pub to: eth::Address,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub data: Vec<u8>,
     pub value: eth::U256,
     pub gas_limit: u64,
@@ -34,6 +34,6 @@ pub struct Response {
     pub block_number: u64,
     pub success: bool,
     pub exit_reason: String,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub return_data: Vec<u8>,
 }
