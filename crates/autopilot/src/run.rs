@@ -46,7 +46,6 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
-        maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
         price_estimation::{
             factory::{self, PriceEstimatorFactory},
@@ -456,8 +455,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
             .await;
-    let settlement_observer =
-        crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_contract_start_index = match GPv2Settlement::deployment_block(&chain_id) {
         Some(block) => {
             tracing::debug!(block, "found settlement contract deployment");
@@ -479,7 +476,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         ),
         boundary::events::settlement::Indexer::new(
             db_write.clone(),
-            settlement_observer,
             settlement_contract_start_index,
         ),
         block_retriever.clone(),
@@ -598,8 +594,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     // updated in background task
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+    let settlement_observer =
+        crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
+    let mut maintenance = Maintenance::new(
+        settlement_event_indexer,
+        db_write.clone(),
+        settlement_observer,
+    );
     maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
@@ -656,13 +658,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
 
-        maintenance.add_ethflow_indexer(onchain_order_indexer);
-        // refunds are not critical for correctness and can therefore be indexed
-        // sporadically in a background task
-        let service_maintainer = ServiceMaintenance::new(vec![Arc::new(refund_event_handler)]);
-        tokio::task::spawn(
-            service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
-        );
+        maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
 
     let run_loop_config = run_loop::Config {
