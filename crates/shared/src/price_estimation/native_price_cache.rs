@@ -344,8 +344,8 @@ impl CachingNativePriceEstimator {
         request_timeout: Duration,
     ) -> futures::stream::BoxStream<'a, (Address, NativePriceEstimateResult)>
     where
-        I: IntoIterator<Item = &'a Address> + 'a,
-        I::IntoIter: Send,
+        I: IntoIterator<Item = Address>,
+        I::IntoIter: Send + 'a,
     {
         let estimates = tokens.into_iter().map(move |token| async move {
             let current_accumulative_errors_count = {
@@ -353,9 +353,9 @@ impl CachingNativePriceEstimator {
                 let now = Instant::now();
                 let mut cache = self.0.cache.0.data.lock().unwrap();
 
-                match Cache::get_cached_price(*token, now, &mut cache, &max_age, false) {
+                match Cache::get_cached_price(token, now, &mut cache, &max_age, false) {
                     Some(cached) if cached.is_ready() => {
-                        return (*token, cached.result);
+                        return (token, cached.result);
                     }
                     Some(cached) => cached.accumulative_errors_count,
                     None => Default::default(),
@@ -365,9 +365,9 @@ impl CachingNativePriceEstimator {
             let approximation = self
                 .0
                 .approximation_tokens
-                .get(token)
+                .get(&token)
                 .copied()
-                .unwrap_or(ApproximationToken::same_decimals(*token));
+                .unwrap_or(ApproximationToken::same_decimals(token));
 
             let result = self
                 .0
@@ -380,12 +380,12 @@ impl CachingNativePriceEstimator {
             if should_cache(&result) {
                 let now = Instant::now();
                 self.0.cache.insert(
-                    *token,
+                    token,
                     CachedResult::new(result.clone(), now, now, current_accumulative_errors_count),
                 );
             };
 
-            (*token, result)
+            (token, result)
         });
         futures::stream::iter(estimates)
             .buffered(self.0.concurrent_requests)
@@ -421,11 +421,8 @@ impl CachingNativePriceEstimator {
             .filter(|t| !prices.contains_key(*t))
             .copied()
             .collect();
-        let price_stream = self.estimate_prices_and_update_cache(
-            &uncached_tokens,
-            self.0.cache.max_age(),
-            timeout,
-        );
+        let price_stream =
+            self.estimate_prices_and_update_cache(uncached_tokens, self.0.cache.max_age(), timeout);
 
         let _ = time::timeout(timeout, async {
             let mut price_stream = price_stream;
@@ -471,7 +468,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 return cached.result;
             }
 
-            self.estimate_prices_and_update_cache(&[token], self.0.cache.max_age(), timeout)
+            self.estimate_prices_and_update_cache([token], self.0.cache.max_age(), timeout)
                 .next()
                 .await
                 .unwrap()
@@ -552,7 +549,7 @@ impl NativePriceUpdater {
         let max_age = cache.max_age().saturating_sub(prefetch_time);
         let timeout = self.estimator.0.quote_timeout;
         let mut stream = self.estimator.estimate_prices_and_update_cache(
-            tokens_to_update.iter(),
+            tokens_to_update.iter().copied(),
             max_age,
             timeout,
         );
