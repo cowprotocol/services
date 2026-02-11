@@ -20,10 +20,10 @@ use {
     anyhow::Result,
     model::TokenPair,
     shared::{
-        web3::Web3,
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
+        web3::Web3,
     },
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,

@@ -1,6 +1,6 @@
 use {
     super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
-    crate::{web3::Web3, trace_many},
+    crate::{trace_many, web3::Web3},
     alloy::{
         primitives::{Address, U256, keccak256},
         rpc::{

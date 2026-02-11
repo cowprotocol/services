@@ -34,3 +34,16 @@ pub use {
     model::order::OrderData,
     shared::web3::Web3,
 };
+
+/// Builds a web3 client that sends requests one by one.
+pub fn unbuffered_web3(ethrpc: &Url) -> Web3 {
+    shared::web3::web3(
+        &shared::web3::Arguments {
+            ethrpc_max_batch_size: 0,
+            ethrpc_max_concurrent_requests: 0,
+            ethrpc_batch_delay: Default::default(),
+        },
+        ethrpc,
+        "base",
+    )
+}

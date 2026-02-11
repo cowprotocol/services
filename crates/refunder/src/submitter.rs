@@ -12,8 +12,8 @@ use {
     contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
     shared::{
-        web3::Web3,
         gas_price_estimation::{Eip1559EstimationExt, GasPriceEstimating},
+        web3::Web3,
     },
     std::time::Duration,
 };
