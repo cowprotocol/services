@@ -12,7 +12,7 @@ use {
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     rand::Rng,
     std::{
-        collections::{HashMap, HashSet, hash_map::Entry},
+        collections::{HashMap, HashSet},
         sync::{Arc, Mutex, MutexGuard},
         time::{Duration, Instant},
     },
@@ -212,34 +212,11 @@ impl Cache {
         now: Instant,
         cache: &mut MutexGuard<HashMap<Address, CachedResult>>,
         max_age: &Duration,
-        create_missing_entry: bool,
     ) -> Option<CachedResult> {
-        match cache.entry(token) {
-            Entry::Occupied(mut entry) => {
-                let entry = entry.get_mut();
-                entry.requested_at = now;
-                let is_recent = now.saturating_duration_since(entry.updated_at) < *max_age;
-                is_recent.then_some(entry.clone())
-            }
-            Entry::Vacant(entry) => {
-                if create_missing_entry {
-                    // Create an outdated placeholder entry so it can be picked
-                    // up by the next price update. This should happen only for
-                    // prices missing while building the auction. Otherwise
-                    // malicious actors could easily cause the cache size to blow
-                    // up.
-                    let outdated_timestamp = now.checked_sub(*max_age).unwrap();
-                    tracing::trace!(?token, "create outdated price entry");
-                    entry.insert(CachedResult::new(
-                        Ok(0.),
-                        outdated_timestamp,
-                        now,
-                        Default::default(),
-                    ));
-                }
-                None
-            }
-        }
+        let entry = cache.get_mut(&token)?;
+        entry.requested_at = now;
+        let is_recent = now.saturating_duration_since(entry.updated_at) < *max_age;
+        is_recent.then_some(entry.clone())
     }
 
     fn get_ready_to_use_cached_price(
@@ -247,32 +224,21 @@ impl Cache {
         now: Instant,
         cache: &mut MutexGuard<HashMap<Address, CachedResult>>,
         max_age: &Duration,
-        create_missing_entry: bool,
     ) -> Option<CachedResult> {
-        Self::get_cached_price(token, now, cache, max_age, create_missing_entry)
-            .filter(|cached| cached.is_ready())
+        Self::get_cached_price(token, now, cache, max_age).filter(|cached| cached.is_ready())
     }
 
-    /// Only returns prices that are currently cached. When
-    /// `create_missing_entries` is true, missing tokens get outdated
-    /// placeholder entries so they can be picked up by the next
-    /// `estimate_prices_and_update_cache` call.
+    /// Only returns prices that are currently cached.
     pub fn get_cached_prices(
         &self,
         tokens: &[Address],
-        create_missing_entries: bool,
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
         let mut cache = self.0.data.lock().unwrap();
         let mut results = HashMap::default();
         for token in tokens {
-            let cached = Self::get_ready_to_use_cached_price(
-                *token,
-                now,
-                &mut cache,
-                &self.0.max_age,
-                create_missing_entries,
-            );
+            let cached =
+                Self::get_ready_to_use_cached_price(*token, now, &mut cache, &self.0.max_age);
             let label = if cached.is_some() { "hits" } else { "misses" };
             CacheMetrics::get()
                 .native_price_cache_access
@@ -353,7 +319,7 @@ impl CachingNativePriceEstimator {
                 let now = Instant::now();
                 let mut cache = self.0.cache.0.data.lock().unwrap();
 
-                match Cache::get_cached_price(token, now, &mut cache, &max_age, false) {
+                match Cache::get_cached_price(token, now, &mut cache, &max_age) {
                     Some(cached) if cached.is_ready() => {
                         return (token, cached.result);
                     }
@@ -396,14 +362,12 @@ impl CachingNativePriceEstimator {
         &self.0.cache
     }
 
-    /// Only returns prices that are currently cached. Missing tokens get
-    /// outdated placeholder entries so they can be picked up by the next
-    /// `estimate_prices_and_update_cache` call.
+    /// Only returns prices that are currently cached.
     fn get_cached_prices(
         &self,
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
-        self.0.cache.get_cached_prices(tokens, true)
+        self.0.cache.get_cached_prices(tokens)
     }
 
     pub async fn fetch_prices(
@@ -454,7 +418,6 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                     now,
                     &mut cache,
                     &self.0.cache.0.max_age,
-                    false,
                 )
             };
 
