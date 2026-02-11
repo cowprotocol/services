@@ -191,15 +191,14 @@ Otterscan is especially useful for debugging failed transactions:
 
 After executing a swap:
 
-1. Copy the transaction hash from CoW Swap or CoW Explorer
-2. Open `http://localhost:8003/tx/<hash>`
-3. Click on **"Trace"** to see the full execution flow
-4. Expand the `settle()` call to see:
+1. Click the transaction link in the CoW Swap UI or CoW Explorer. This will open the transaction directly in your local Otterscan instance.
+2. Click on **"Trace"** to see the full execution flow.
+3. Expand the `settle()` call to see:
    - How tokens flowed between parties
    - Which liquidity sources were used
    - Gas costs per operation
 
-> **Tip:** Use `SOURCIFY_MODE=cloud` (default) to see source code for well-known contracts like CoW Protocol, USDC, WETH, and Uniswap directly in Otterscan.
+> **Tip:** For details on how Otterscan displays verified source code, see the [Contract Verification with Sourcify](#contract-verification-with-sourcify) section below.
 
 ## Contract Verification with Sourcify
 
