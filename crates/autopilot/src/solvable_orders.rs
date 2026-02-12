@@ -683,6 +683,7 @@ async fn get_orders_with_native_prices(
     (usable, prices)
 }
 
+#[instrument(skip_all)]
 async fn find_unsupported_tokens(
     orders: &[Order],
     bad_token: Arc<dyn BadTokenDetecting>,
@@ -811,25 +812,23 @@ impl OrderFilterCounter {
     /// Creates a new checkpoint from the current remaining orders.
     #[instrument(skip_all)]
     fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
-        let filtered_orders = orders
-            .iter()
-            .fold(self.orders.clone(), |mut order_uids, order| {
-                order_uids.remove(&order.metadata.uid);
-                order_uids
-            });
+        let still_alive_orders: HashSet<_> = orders.iter().map(|o| &o.metadata.uid).collect();
+        let filtered_orders: Vec<_> = self
+            .orders
+            .extract_if(|uid, _| !still_alive_orders.contains(&uid))
+            .map(|(uid, _)| uid)
+            .collect();
 
-        *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for order_uid in filtered_orders.keys() {
-            self.orders.remove(order_uid).unwrap();
-        }
         if !filtered_orders.is_empty() {
+            *self.counts.entry(reason).or_default() += filtered_orders.len();
             tracing::debug!(
                 %reason,
                 count = filtered_orders.len(),
                 orders = ?filtered_orders, "filtered orders"
             );
         }
-        filtered_orders.into_keys().collect()
+
+        filtered_orders
     }
 
     /// Creates a new checkpoint based on the found invalid orders.
