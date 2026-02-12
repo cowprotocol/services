@@ -840,6 +840,7 @@ dependencies = [
  "bytes-hex",
  "const-hex",
  "hex-literal",
+ "moka",
  "number",
  "serde",
  "serde_json",
