@@ -138,7 +138,6 @@ impl<'a> Services<'a> {
             format!("--node-ws-url={NODE_WS_HOST}"),
             "--simulation-node-url=http://localhost:8545".to_string(),
             "--native-price-cache-max-age=2s".to_string(),
-            "--native-price-prefetch-time=500ms".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
@@ -150,6 +149,7 @@ impl<'a> Services<'a> {
     fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         self.api_autopilot_arguments().chain([
             "--quote-timeout=10s".to_string(),
+            "--native-price-prefetch-time=500ms".to_string(),
             "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                 .to_string(),
         ])

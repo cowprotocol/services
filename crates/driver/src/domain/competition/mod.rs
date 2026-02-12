@@ -464,6 +464,11 @@ impl Competition {
                 }
             }
 
+            // wrappers can produce the required funds at settlement time
+            if !order.app_data.wrappers().is_empty() {
+                return true;
+            }
+
             let remaining_balance = match balances.get_mut(&(
                 order.trader(),
                 order.sell.token,
