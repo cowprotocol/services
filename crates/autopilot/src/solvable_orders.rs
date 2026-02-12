@@ -34,7 +34,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    strum::VariantNames,
+    strum::VariantArray,
     tokio::sync::Mutex,
     tracing::instrument,
 };
@@ -785,28 +785,21 @@ type Reason = &'static str;
 impl OrderFilterCounter {
     #[instrument(skip_all)]
     fn new(metrics: &'static Metrics, orders: &[Order]) -> Self {
-        // Eagerly store the candidate orders. This ensures that that gauge is
-        // always up to date even if there are errors in the auction building
-        // process.
-        let initial_counts = orders
-            .iter()
-            .counts_by(|order| order.metadata.class.as_ref());
-        for class in OrderClass::VARIANTS {
-            let count = initial_counts.get(class).copied().unwrap_or_default();
-            metrics
-                .auction_candidate_orders
-                .with_label_values(&[class])
-                .set(i64::try_from(count).unwrap_or(i64::MAX));
-        }
-
-        Self {
+        let self_ = Self {
             metrics,
             orders: orders
                 .iter()
                 .map(|order| (order.metadata.uid, order.metadata.class))
                 .collect(),
             counts: HashMap::new(),
-        }
+        };
+
+        // Eagerly store the candidate orders. This ensures that that gauge is
+        // always up to date even if there are errors in the auction building
+        // process.
+        self_.set_count_by_class(orders);
+
+        self_
     }
 
     /// Creates a new checkpoint from the current remaining orders.
@@ -863,15 +856,7 @@ impl OrderFilterCounter {
         let removed = self.checkpoint("other", orders);
 
         self.metrics.auction_creations.inc();
-
-        let remaining_counts = self.orders.iter().counts_by(|(_, class)| class.as_ref());
-        for class in OrderClass::VARIANTS {
-            let count = remaining_counts.get(class).copied().unwrap_or_default();
-            self.metrics
-                .auction_solvable_orders
-                .with_label_values(&[class])
-                .set(i64::try_from(count).unwrap_or(i64::MAX));
-        }
+        self.set_count_by_class(orders);
 
         for (reason, count) in self.counts {
             self.metrics
@@ -881,6 +866,37 @@ impl OrderFilterCounter {
         }
 
         removed
+    }
+
+    fn set_count_by_class(&self, orders: &[Order]) {
+        let counts = Self::count_by_class(orders);
+        for class in OrderClass::VARIANTS {
+            let count = counts
+                .get(Self::class_to_index(*class))
+                .copied()
+                .unwrap_or_default();
+            self.metrics
+                .auction_solvable_orders
+                .with_label_values(&[class.as_ref()])
+                .set(count);
+        }
+    }
+
+    fn count_by_class(orders: &[Order]) -> [i64; OrderClass::VARIANTS.len()] {
+        let mut counts = [0i64; OrderClass::VARIANTS.len()];
+        for order in orders {
+            let index = Self::class_to_index(order.metadata.class);
+            counts[index] += 1;
+        }
+        counts
+    }
+
+    fn class_to_index(class: OrderClass) -> usize {
+        match class {
+            OrderClass::Limit => 0,
+            OrderClass::Market => 1,
+            OrderClass::Liquidity => 2,
+        }
     }
 }
 

@@ -28,7 +28,7 @@ use {
         fmt::{self, Debug, Display},
         str::FromStr,
     },
-    strum::{AsRefStr, EnumString, VariantNames},
+    strum::{AsRefStr, EnumDiscriminants, EnumString, VariantArray},
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -877,8 +877,9 @@ pub enum OrderKind {
     Serialize,
     Hash,
     EnumString,
+    EnumDiscriminants,
     AsRefStr,
-    VariantNames,
+    VariantArray,
 )]
 #[strum(ascii_case_insensitive)]
 #[serde(tag = "class", rename_all = "lowercase")]
