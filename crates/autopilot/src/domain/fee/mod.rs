@@ -13,7 +13,6 @@ use {
         domain::{self, eth},
     },
     alloy::primitives::{Address, U256},
-    app_data::Validator,
     chrono::{DateTime, Utc},
     rust_decimal::Decimal,
     shared::{
@@ -164,14 +163,13 @@ impl ProtocolFees {
         let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
             return vec![];
         };
-        let Ok(validated) = Validator::new(usize::MAX).validate(full_app_data.as_bytes()) else {
+        let Ok(validated) = app_data::parse(full_app_data.as_bytes()) else {
             return vec![];
         };
 
         let mut accumulated = Decimal::ZERO;
 
         validated
-            .protocol
             .partner_fee
             .iter()
             .map(move |partner_fee| {
