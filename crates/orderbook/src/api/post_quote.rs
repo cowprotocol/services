@@ -6,25 +6,30 @@ use {
     },
     axum::{
         Json,
+        body,
         extract::State,
         response::{IntoResponse, Response},
     },
-    model::quote::{OrderQuoteRequest, OrderQuoteResponse},
+    model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
     std::sync::Arc,
 };
 
-pub async fn post_quote_handler(
-    State(state): State<Arc<AppState>>,
-    Json(request): Json<OrderQuoteRequest>,
-) -> Result<Json<OrderQuoteResponse>, OrderQuoteError> {
+pub async fn post_quote_handler(State(state): State<Arc<AppState>>, body: body::Bytes) -> Response {
+    // TODO: remove after all downstream callers have been notified of the status
+    // code changes
+    let Ok(request) = serde_json::from_slice::<OrderQuoteRequest>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
     state
         .quotes
         .calculate_quote(&request)
         .await
         .map(Json)
         .inspect_err(|err| tracing::warn!(%err, ?request, "post_quote error"))
+        .into_response()
 }
 
 impl IntoResponse for OrderQuoteError {

@@ -1,21 +1,30 @@
 use {
     crate::{api::AppState, orderbook::OrderCancellationError},
-    anyhow::Result,
     axum::{
         Json,
+        body,
         extract::{Path, State},
         http::StatusCode,
         response::{IntoResponse, Response},
     },
     model::order::{CancellationPayload, OrderCancellation, OrderUid},
-    std::sync::Arc,
+    std::{str::FromStr, sync::Arc},
 };
 
 pub async fn cancel_order_handler(
     State(state): State<Arc<AppState>>,
-    Path(uid): Path<OrderUid>,
-    Json(payload): Json<CancellationPayload>,
-) -> Result<Json<&'static str>, OrderCancellationError> {
+    Path(uid): Path<String>,
+    body: body::Bytes,
+) -> Response {
+    // TODO: remove after all downstream callers have been notified of the status
+    // code changes
+    let Ok(uid) = OrderUid::from_str(&uid) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Ok(payload) = serde_json::from_slice::<CancellationPayload>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
     let order_cancellation = OrderCancellation {
         order_uid: uid,
         signature: payload.signature,
@@ -26,6 +35,7 @@ pub async fn cancel_order_handler(
         .cancel_order(order_cancellation)
         .await
         .map(|_| Json("Cancelled"))
+        .into_response()
 }
 
 impl IntoResponse for OrderCancellationError {

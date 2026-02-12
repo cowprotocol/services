@@ -7,7 +7,7 @@ use {
         response::{IntoResponse, Json, Response},
     },
     serde::Deserialize,
-    std::sync::Arc,
+    std::{str::FromStr, sync::Arc},
 };
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -18,9 +18,15 @@ pub(crate) struct QueryParams {
 
 pub async fn get_user_orders_handler(
     State(state): State<Arc<AppState>>,
-    Path(owner): Path<Address>,
+    Path(owner): Path<String>,
     Query(query): Query<QueryParams>,
 ) -> Response {
+    // TODO: remove after all downstream callers have been notified of the status
+    // code changes
+    let Ok(owner) = Address::from_str(&owner) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
     const DEFAULT_OFFSET: u64 = 0;
     const DEFAULT_LIMIT: u64 = 10;
     const MIN_LIMIT: u64 = 1;

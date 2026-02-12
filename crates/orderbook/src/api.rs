@@ -47,6 +47,16 @@ mod post_quote;
 mod put_app_data;
 mod version;
 
+const ALLOWED_METHODS: &[axum::http::Method] = &[
+    axum::http::Method::GET,
+    axum::http::Method::POST,
+    axum::http::Method::DELETE,
+    axum::http::Method::OPTIONS,
+    axum::http::Method::PUT,
+    axum::http::Method::PATCH,
+    axum::http::Method::HEAD,
+];
+
 /// Centralized application state shared across all API handlers
 pub struct AppState {
     pub database_write: Postgres,
@@ -142,10 +152,6 @@ pub fn handle_all_routes(
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
 ) -> Router {
-    // Initialize metrics
-    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-    metrics.reset_requests_rejected();
-
     let app_data_size_limit = app_data.size_limit();
 
     let state = Arc::new(AppState {
@@ -158,119 +164,117 @@ pub fn handle_all_routes(
         quote_timeout,
     });
 
-    let api_router = Router::new()
+    let routes = [
         // V1 routes
-        .route(
-            "/v1/account/:owner/orders",
-            axum::routing::get(get_user_orders::get_user_orders_handler)
-        )
-        .route(
-            "/v1/app_data",
+        (
+            "/api/v1/account/:owner/orders",
+            axum::routing::get(get_user_orders::get_user_orders_handler),
+        ),
+        (
+            "/api/v1/app_data",
             axum::routing::put(put_app_data::put_app_data_without_hash)
-                .layer(DefaultBodyLimit::max(app_data_size_limit))
-        )
-        .route(
-            "/v1/app_data/:hash",
-            axum::routing::get(get_app_data::get_app_data_handler)
-                .merge(
-                    axum::routing::put(put_app_data::put_app_data_with_hash)
-                        .layer(DefaultBodyLimit::max(app_data_size_limit))
-                ),
-        )
-        .route(
-            "/v1/auction",
-            axum::routing::get(get_auction::get_auction_handler)
-        )
-        .route(
-            "/v1/orders",
+                .layer(DefaultBodyLimit::max(app_data_size_limit)),
+        ),
+        (
+            "/api/v1/app_data/:hash",
+            axum::routing::get(get_app_data::get_app_data_handler).merge(
+                axum::routing::put(put_app_data::put_app_data_with_hash)
+                    .layer(DefaultBodyLimit::max(app_data_size_limit)),
+            ),
+        ),
+        (
+            "/api/v1/auction",
+            axum::routing::get(get_auction::get_auction_handler),
+        ),
+        (
+            "/api/v1/orders",
             axum::routing::post(post_order::post_order_handler)
-                .merge(
-                    axum::routing::delete(cancel_orders::cancel_orders_handler)
-                ),
-        )
-        .route(
-            "/v1/orders/:uid",
+                .merge(axum::routing::delete(cancel_orders::cancel_orders_handler)),
+        ),
+        (
+            "/api/v1/orders/:uid",
             axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
-                .merge(
-                    axum::routing::delete(cancel_order::cancel_order_handler)
-                ),
-        )
-        .route(
-            "/v1/orders/:uid/status",
-            axum::routing::get(get_order_status::get_status_handler)
-        )
-        .route(
-            "/v1/quote",
-            axum::routing::post(post_quote::post_quote_handler)
-        )
+                .merge(axum::routing::delete(cancel_order::cancel_order_handler)),
+        ),
+        (
+            "/api/v1/orders/:uid/status",
+            axum::routing::get(get_order_status::get_status_handler),
+        ),
+        (
+            "/api/v1/quote",
+            axum::routing::post(post_quote::post_quote_handler),
+        ),
         // /solver_competition routes (specific before parameterized)
-        .route(
-            "/v1/solver_competition/latest",
-            axum::routing::get(get_solver_competition::get_solver_competition_latest_handler)
-        )
-        .route(
-            "/v1/solver_competition/by_tx_hash/:tx_hash",
-            axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler)
-        )
-        .route(
-            "/v1/solver_competition/:auction_id",
-            axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler)
-        )
-        .route(
-            "/v1/token/:token/metadata",
-            axum::routing::get(get_token_metadata::get_token_metadata_handler)
-        )
-        .route(
-            "/v1/token/:token/native_price",
-            axum::routing::get(get_native_price::get_native_price_handler)
-        )
-        .route(
-            "/v1/trades",
-            axum::routing::get(get_trades::get_trades_handler)
-        )
-        .route(
-            "/v1/transactions/:hash/orders",
-            axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler)
-        )
-        .route(
-            "/v1/users/:user/total_surplus",
-            axum::routing::get(get_total_surplus::get_total_surplus_handler)
-        )
-        .route(
-            "/v1/version",
-            axum::routing::get(version::version_handler)
-        )
+        (
+            "/api/v1/solver_competition/latest",
+            axum::routing::get(get_solver_competition::get_solver_competition_latest_handler),
+        ),
+        (
+            "/api/v1/solver_competition/by_tx_hash/:tx_hash",
+            axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler),
+        ),
+        (
+            "/api/v1/solver_competition/:auction_id",
+            axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler),
+        ),
+        (
+            "/api/v1/token/:token/metadata",
+            axum::routing::get(get_token_metadata::get_token_metadata_handler),
+        ),
+        (
+            "/api/v1/token/:token/native_price",
+            axum::routing::get(get_native_price::get_native_price_handler),
+        ),
+        (
+            "/api/v1/trades",
+            axum::routing::get(get_trades::get_trades_handler),
+        ),
+        (
+            "/api/v1/transactions/:hash/orders",
+            axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler),
+        ),
+        (
+            "/api/v1/users/:user/total_surplus",
+            axum::routing::get(get_total_surplus::get_total_surplus_handler),
+        ),
+        (
+            "/api/v1/version",
+            axum::routing::get(version::version_handler),
+        ),
         // V2 routes
         // /solver_competition routes (specific before parameterized)
-        .route(
-            "/v2/solver_competition/latest",
-            axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler)
-        )
-        .route(
-            "/v2/solver_competition/by_tx_hash/:tx_hash",
-            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler)
-        )
-        .route(
-            "/v2/solver_competition/:auction_id",
-            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler)
-        )
-        .route(
-            "/v2/trades",
-            axum::routing::get(get_trades_v2::get_trades_handler)
-        )
-        .with_state(state);
+        (
+            "/api/v2/solver_competition/latest",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler),
+        ),
+        (
+            "/api/v2/solver_competition/by_tx_hash/:tx_hash",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler),
+        ),
+        (
+            "/api/v2/solver_competition/:auction_id",
+            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler),
+        ),
+        (
+            "/api/v2/trades",
+            axum::routing::get(get_trades_v2::get_trades_handler),
+        ),
+    ];
+
+    // Initialize metrics
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    metrics.reset_requests_rejected();
+
+    let mut api_router = Router::new();
+    for (path, method_router) in routes {
+        metrics.reset_requests_complete(&format!("/{path}"));
+        api_router = api_router.route(path, method_router);
+    }
+    let api_router = api_router.with_state(state);
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
-        .allow_methods(vec![
-            axum::http::Method::GET,
-            axum::http::Method::POST,
-            axum::http::Method::DELETE,
-            axum::http::Method::OPTIONS,
-            axum::http::Method::PUT,
-            axum::http::Method::PATCH,
-            axum::http::Method::HEAD,
-        ])
+        .allow_methods(ALLOWED_METHODS.to_vec())
         .allow_headers(vec![
             axum::http::header::ORIGIN,
             axum::http::header::CONTENT_TYPE,
@@ -279,8 +283,7 @@ pub fn handle_all_routes(
             axum::http::HeaderName::from_static("x-appid"),
         ]);
 
-    Router::new()
-        .nest("/api", api_router)
+    api_router
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_PAYLOAD as usize))
         .layer(cors)
         .layer(middleware::from_fn(summarize_request))
@@ -327,6 +330,17 @@ impl ApiMetrics {
             self.requests_rejected
                 .with_label_values(&[status.as_str()])
                 .reset();
+        }
+    }
+
+    fn reset_requests_complete(&self, path: &str) {
+        for status in Self::INITIAL_STATUSES {
+            for method in ALLOWED_METHODS {
+                self.requests_complete
+                    // format to `METHOD <path>` — e.g. GET /api/v1/auction
+                    .with_label_values(&[&format!("{} {}", method.as_str(), path), status.as_str()])
+                    .reset();
+            }
         }
     }
 }

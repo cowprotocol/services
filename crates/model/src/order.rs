@@ -13,7 +13,7 @@ use {
         primitives::{Address, B256, U256, U512, b256, keccak256},
         signers::local::PrivateKeySigner,
     },
-    anyhow::{Result, anyhow, ensure},
+    anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
     chrono::{DateTime, offset::Utc},
@@ -538,11 +538,6 @@ pub struct SignedOrderCancellations {
 
 impl SignedOrderCancellations {
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {
-        ensure!(
-            self.data.order_uids.len() < ORDER_UID_LIMIT,
-            "order uids are limited to {ORDER_UID_LIMIT}"
-        );
-
         Ok(self
             .signature
             .recover(
