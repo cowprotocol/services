@@ -300,10 +300,28 @@ impl Persistence {
         order_uids: impl IntoIterator<Item = domain::OrderUid>,
         label: boundary::OrderEventLabel,
     ) {
+        let order_uids: Vec<_> = order_uids.into_iter().collect();
+        self.store_order_events_owned(order_uids, std::convert::identity, label);
+    }
+
+    /// A variants of [`store_order_events`] where [`items`] is already an owned
+    /// collection which allows us to move the logic to convert an item to a
+    /// [`domain::OrderUid`] into the background task as well.
+    #[instrument(skip_all)]
+    pub fn store_order_events_owned<I, F>(
+        &self,
+        items: I,
+        convert: F,
+        label: boundary::OrderEventLabel,
+    ) where
+        I: IntoIterator + Send + 'static,
+        I::Item: Send,
+        F: (Fn(I::Item) -> domain::OrderUid) + Send + 'static,
+    {
         let db = self.postgres.clone();
-        let order_uids = order_uids.into_iter().collect();
         tokio::spawn(
             async move {
+                let order_uids = items.into_iter().map(convert).collect();
                 match db.pool.acquire().await {
                     Ok(mut tx) => {
                         store_order_events(&mut tx, order_uids, label, Utc::now()).await;
