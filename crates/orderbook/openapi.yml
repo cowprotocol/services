@@ -43,8 +43,8 @@ servers:
     url: "https://api.cow.fi/plasma"
   - description: Plasma (Staging)
     url: "https://barn.api.cow.fi/plasma"
-  # - description: Ink (Prod)
-  #   url: "https://api.cow.fi/ink"
+  - description: Ink (Prod)
+    url: "https://api.cow.fi/ink"
   - description: Ink (Staging)
     url: "https://barn.api.cow.fi/ink"
   - description: Sepolia (Prod)
