@@ -4,6 +4,10 @@ use {
         primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
+    autopilot::config::{
+        Configuration,
+        solver::{Account, Solver},
+    },
     bigdecimal::BigDecimal,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
@@ -18,7 +22,8 @@ use {
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
     shared::ethrpc::Web3,
-    std::{collections::HashMap, ops::DerefMut},
+    std::{collections::HashMap, ops::DerefMut, str::FromStr},
+    url::Url,
 };
 
 #[tokio::test]
@@ -482,15 +487,41 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let uid_b = services.create_order(&order_b).await.unwrap();
 
     // Start autopilot only once all the orders are created.
-    services.start_autopilot(
-        None,
-        vec![
-            format!("--drivers=solver1|http://localhost:11088/test_solver|{}|10000000000000000,solver2|http://localhost:11088/solver2|{}",
-            const_hex::encode(solver_a.address()), const_hex::encode(solver_b.address())),
-            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            "--max-winners-per-auction=2".to_string(),
+
+    // Create TOML config file for the driver
+    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
+    Configuration {
+        drivers: vec![
+            Solver {
+                name: "solver1".to_string(),
+                url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                submission_account: Account::Address(solver_a.address()),
+                fairness_threshold: Some(U256::from(10000000000000000_u64)),
+            },
+            Solver {
+                name: "solver2".to_string(),
+                url: Url::from_str("http://localhost:11088/solver2").unwrap(),
+                submission_account: Account::Address(solver_b.address()),
+                fairness_threshold: None,
+            },
         ],
-    ).await;
+    }
+    .to_path(&config_path)
+    .await
+    .unwrap();
+
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!("--config={}", config_path.display()),
+                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+                "--max-winners-per-auction=2".to_string(),
+            ],
+        )
+        .await;
 
     // Wait for trade
     let indexed_trades = || async {
@@ -651,14 +682,28 @@ async fn too_many_limit_orders_test(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
+
+    // Create TOML config file for the driver
+    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
+    Configuration {
+        drivers: vec![Solver {
+            name: "test_solver".to_string(),
+            url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            submission_account: Account::Address(solver_address),
+            fairness_threshold: None,
+        }],
+    }
+    .to_path(&config_path)
+    .await
+    .unwrap();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    const_hex::encode(solver_address)
-                ),
+                format!("--config={}", config_path.display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -747,14 +792,28 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
+
+    // Create TOML config file for the driver
+    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
+    Configuration {
+        drivers: vec![Solver {
+            name: "test_solver".to_string(),
+            url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            submission_account: Account::Address(solver_address),
+            fairness_threshold: None,
+        }],
+    }
+    .to_path(&config_path)
+    .await
+    .unwrap();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    const_hex::encode(solver_address)
-                ),
+                format!("--config={}", config_path.display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],

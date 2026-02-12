@@ -15,7 +15,13 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::infra::persistence::dto,
+    autopilot::{
+        config::{
+            Configuration,
+            solver::{Account, Solver},
+        },
+        infra::persistence::dto,
+    },
     clap::Parser,
     model::{
         AuctionId,
@@ -218,8 +224,16 @@ impl<'a> Services<'a> {
         .collect();
         let args = ignore_overwritten_cli_params(args);
 
-        let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
-        let join_handle = tokio::task::spawn(autopilot::run(args, control));
+        let args = autopilot::arguments::CliArguments::try_parse_from(args)
+            .map_err(|err| err.to_string())
+            .unwrap();
+        let config = match &args.config {
+            Some(path) => autopilot::config::Configuration::from_path(path)
+                .await
+                .unwrap(),
+            None => Default::default(),
+        };
+        let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
         self.wait_until_autopilot_ready().await;
 
         join_handle
@@ -300,14 +314,32 @@ impl<'a> Services<'a> {
             colocation::LiquidityProvider::UniswapV2,
             false,
         );
+
+        // Create TOML config file for the driver
+        let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
+        // Setup the configuration as a struct
+        Configuration {
+            // replace the --drivers argument with a vec of Solver structs
+            drivers: vec![Solver {
+                name: "test_solver".to_string(),
+                url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                submission_account: Account::Address(solver.address()),
+                fairness_threshold: None,
+            }],
+        }
+        // Dump it to the temp config file
+        .to_path(&config_path)
+        .await
+        .unwrap();
+
         self.start_autopilot(
             None,
             [
                 vec![
-                    format!(
-                        "--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-                        const_hex::encode(solver.address())
-                    ),
+                    // The config gets parsed as an extra argument, it will read the correct path
+                    format!("--config={}", config_path.display()),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -351,6 +383,23 @@ impl<'a> Services<'a> {
             haircut_bps: 0,
         }];
 
+        // Create TOML config file for the driver
+        let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join(format!(
+            "external-solver-config-{}.toml",
+            std::process::id()
+        ));
+        let config_content = format!(
+            r#"[[drivers]]
+name = "test_solver"
+url = "http://localhost:11088/test_solver"
+submission-account.address = "{}"
+"#,
+            const_hex::encode(solver.address())
+        );
+        std::fs::write(&config_path, config_content).unwrap();
+
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
                 colocation::start_baseline_solver(
@@ -367,7 +416,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", const_hex::encode(solver.address())),
+                format!("--config={}", config_path.display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -377,10 +426,7 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                format!(
-                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                format!("--config={}", config_path.display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"

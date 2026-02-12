@@ -1,5 +1,9 @@
 use {
     ::alloy::primitives::U256,
+    autopilot::config::{
+        Configuration,
+        solver::{Account, Solver},
+    },
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -8,6 +12,8 @@ use {
     },
     number::units::EthUnit,
     shared::ethrpc::Web3,
+    std::str::FromStr,
+    url::Url,
 };
 
 #[tokio::test]
@@ -60,6 +66,22 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         false,
     );
     let services = Services::new(&onchain).await;
+    // Create TOML config file for the driver
+    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
+    Configuration {
+        drivers: vec![Solver {
+            name: "test_solver".to_string(),
+            url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            submission_account: Account::Address(solver.address()),
+            fairness_threshold: None,
+        }],
+    }
+    .to_path(&config_path)
+    .await
+    .unwrap();
+
     services
         .start_autopilot(
             None,
@@ -70,10 +92,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                     token_a = token_a.address(),
                     token_b = token_b.address()
                 ),
-                format!(
-                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                format!("--config={}", config_path.display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],

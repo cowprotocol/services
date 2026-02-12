@@ -1,5 +1,9 @@
 use {
     ::alloy::primitives::U256,
+    autopilot::config::{
+        Configuration,
+        solver::{Account, Solver},
+    },
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -9,7 +13,8 @@ use {
     number::units::EthUnit,
     shared::ethrpc::Web3,
     solvers_dto::solution::{Asset, Solution},
-    std::collections::HashMap,
+    std::{collections::HashMap, str::FromStr},
+    url::Url,
 };
 
 #[tokio::test]
@@ -87,14 +92,28 @@ async fn single_limit_order_test(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
+
+    // Create TOML config file for the driver
+    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
+    Configuration {
+        drivers: vec![Solver {
+            name: "mock_solver".to_string(),
+            url: Url::from_str("http://localhost:11088/mock_solver").unwrap(),
+            submission_account: Account::Address(solver.address()),
+            fairness_threshold: None,
+        }],
+    }
+    .to_path(&config_path)
+    .await
+    .unwrap();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                format!("--config={}", config_path.display()),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],

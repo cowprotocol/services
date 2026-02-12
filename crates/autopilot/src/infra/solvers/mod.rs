@@ -1,6 +1,6 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{arguments::Account, domain::eth, util},
+    crate::{config::solver::Account, domain::eth, util},
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
     observe::tracing::tracing_headers,

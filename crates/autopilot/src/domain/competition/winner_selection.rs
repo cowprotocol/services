@@ -281,6 +281,7 @@ impl Ranking {
 mod tests {
     use {
         crate::{
+            config::solver::Account,
             domain::{
                 Auction,
                 Order,
@@ -1218,7 +1219,7 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             None,
-            crate::arguments::Account::Address(solver_address),
+            Account::Address(solver_address),
         )
         .await
         .unwrap();

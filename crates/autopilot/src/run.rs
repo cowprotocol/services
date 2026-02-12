@@ -1,7 +1,8 @@
 use {
     crate::{
-        arguments::{Account, Arguments},
+        arguments::CliArguments,
         boundary,
+        config::{Configuration, solver::Account},
         database::{
             Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
@@ -132,7 +133,15 @@ async fn ethereum(
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
-    let args = Arguments::parse_from(args);
+    let args = CliArguments::parse_from(args);
+
+    let config = match &args.config {
+        Some(path) => Configuration::from_path(path)
+            .await
+            .expect("failed to load configuration file"),
+        None => Default::default(),
+    };
+
     let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
@@ -150,19 +159,19 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    if args.drivers.is_empty() {
-        panic!("colocation is enabled but no drivers are configured");
-    }
-
     if args.shadow.is_some() {
-        shadow_mode(args).await;
+        shadow_mode(args, config).await;
     } else {
-        run(args, ShutdownController::default()).await;
+        run(args, config, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
+pub async fn run(
+    args: CliArguments,
+    config: Configuration,
+    shutdown_controller: ShutdownController,
+) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         args.db_write_url.as_str(),
@@ -658,7 +667,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         enable_leader_lock: args.enable_leader_lock,
     };
 
-    let drivers_futures = args
+    let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
@@ -702,7 +711,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     api_task.await.ok();
 }
 
-async fn shadow_mode(args: Arguments) -> ! {
+async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let orderbook = infra::shadow::Orderbook::new(
@@ -710,7 +719,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers_futures = args
+    let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
