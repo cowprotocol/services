@@ -15,6 +15,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
+    num::Zero,
     number::conversions::u256_to_big_decimal,
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
@@ -258,9 +259,20 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("missing_price", &orders);
         filtered_order_events.extend(removed);
 
-        let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
-        let removed = counter.checkpoint("out_of_market", &orders);
-        filtered_order_events.extend(removed);
+        let orders = if !self
+            .limit_order_price_factor
+            .as_bigint_and_exponent()
+            .0
+            .is_zero()
+        {
+            let orders =
+                filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
+            let removed = counter.checkpoint("out_of_market", &orders);
+            filtered_order_events.extend(removed);
+            orders
+        } else {
+            orders
+        };
 
         let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
