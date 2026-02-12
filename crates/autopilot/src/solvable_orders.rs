@@ -656,25 +656,31 @@ async fn get_orders_with_native_prices(
 
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
-    // Filter orders so that we only return orders that have prices
     let mut filtered_market_orders = 0_i64;
-    let mut orders = orders;
-    orders.retain(|order| {
-        let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
-        match (prices.get(t0), prices.get(t1)) {
-            (Some(_), Some(_)) => true,
-            _ => {
+    let mut filtered = Vec::new();
+
+    // use .into_iter().filter_map().collect() to help compiler reuse allocation
+    let usable: Vec<_> = orders
+        .into_iter()
+        .filter_map(|order: Order| {
+            let both_prices_available = prices.contains_key(&order.data.sell_token)
+                && prices.contains_key(&order.data.buy_token);
+
+            if both_prices_available {
+                Some(order)
+            } else {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
-                false
+                filtered.push(order);
+                None
             }
-        }
-    });
+        })
+        .collect();
 
     metrics
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (orders, prices)
+    (usable, prices)
 }
 
 async fn find_unsupported_tokens(
