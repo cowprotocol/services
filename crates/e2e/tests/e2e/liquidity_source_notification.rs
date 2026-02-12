@@ -189,6 +189,7 @@ async fn liquidity_source_notification(web3: Web3) {
                 base_tokens: vec![],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

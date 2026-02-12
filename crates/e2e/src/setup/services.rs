@@ -367,6 +367,7 @@ impl<'a> Services<'a> {
             base_tokens: vec![],
             merge_solutions: true,
             haircut_bps: 0,
+            submission_keys: vec![],
         }];
 
         // Create TOML config file for the driver

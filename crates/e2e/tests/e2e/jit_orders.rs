@@ -84,6 +84,7 @@ async fn single_limit_order_test(web3: Web3) {
                 base_tokens: vec![*token.address()],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

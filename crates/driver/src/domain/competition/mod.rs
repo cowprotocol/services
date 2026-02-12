@@ -2,6 +2,7 @@ use {
     self::solution::settlement,
     super::{
         Mempools,
+        mempools::DelegatedSubmission,
         time::{self, Remaining},
     },
     crate::{
@@ -17,11 +18,11 @@ use {
             notify,
             observe::{self, metrics},
             simulator::{RevertError, SimulatorError},
-            solver::{self, SolutionMerging, Solver},
+            solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
     },
-    alloy::primitives::Bytes,
+    alloy::{network::TxSigner as _, primitives::Bytes},
     axum::body::Body,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     hyper::Request,
@@ -58,6 +59,30 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// driver, and allows them to be executed onchain when requested later. The
 /// solutions expire after a certain amount of time, at which point trying to
 /// use them will return an `[Error::InvalidSolutionId]`.
+/// Pool of submission accounts for EIP-7702 parallel settlement. Accounts
+/// are borrowed for the duration of a settlement and returned afterward.
+#[derive(Debug)]
+struct SubmissionAccountPool {
+    /// Sender to return accounts after use.
+    release: mpsc::Sender<Account>,
+    /// Receiver to acquire an idle account.
+    acquire: tokio::sync::Mutex<mpsc::Receiver<Account>>,
+}
+
+impl SubmissionAccountPool {
+    fn new(accounts: Vec<Account>) -> Self {
+        let (tx, rx) = mpsc::channel(accounts.len());
+        for account in accounts {
+            tx.try_send(account)
+                .expect("channel has sufficient capacity");
+        }
+        Self {
+            release: tx,
+            acquire: tokio::sync::Mutex::new(rx),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Competition {
     pub solver: Solver,
@@ -73,6 +98,8 @@ pub struct Competition {
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
+    /// When configured, enables concurrent settlement submission via EIP-7702.
+    submission_account_pool: Option<SubmissionAccountPool>,
 }
 
 impl Competition {
@@ -88,7 +115,24 @@ impl Competition {
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
-        let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
+        let submission_accounts = solver.submission_accounts().to_vec();
+        let submission_account_pool = if submission_accounts.is_empty() {
+            None
+        } else {
+            tracing::info!(
+                count = submission_accounts.len(),
+                "EIP-7702 parallel submission enabled"
+            );
+            Some(SubmissionAccountPool::new(submission_accounts))
+        };
+
+        // When using parallel submission, the queue size should accommodate all
+        // submission accounts so they can all be in-flight simultaneously.
+        let queue_size = match &submission_account_pool {
+            Some(pool) => pool.release.max_capacity(),
+            None => solver.settle_queue_size(),
+        };
+        let (settle_sender, settle_receiver) = mpsc::channel(queue_size);
 
         let competition = Arc::new(Self {
             solver,
@@ -102,6 +146,7 @@ impl Competition {
             risk_detector,
             fetcher,
             order_sorting_strategies,
+            submission_account_pool,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -619,54 +664,64 @@ impl Competition {
         mut settle_receiver: mpsc::Receiver<SettleRequest>,
     ) {
         while let Some(request) = settle_receiver.recv().await {
-            let SettleRequest {
-                auction_id,
-                solution_id,
-                submission_deadline,
-                mut response_sender,
-                tracing_span,
-            } = request;
-            async {
-                if self.eth.current_block().borrow().number >= submission_deadline {
-                    if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
-                        tracing::error!(
-                            ?err,
-                            "settle deadline exceeded. unable to return a response"
-                        );
-                    }
-                    return;
-                }
-
-                observe::settling();
-                let settle_fut = Box::pin(self.process_settle_request(
-                    auction_id,
-                    solution_id,
-                    submission_deadline,
-                ));
-                let closed_fut = Box::pin(response_sender.closed());
-                let result = match futures::future::select(closed_fut, settle_fut).await {
-                    // Cancel the settlement task if the sender is closed (client likely
-                    // disconnected). This is a fallback to recover from issues
-                    // like a stuck driver (e.g., stalled block stream).
-                    Either::Left((_closed, settle_fut)) => {
-                        tracing::debug!("autopilot terminated settle call");
-                        // Add a grace period to give driver the last chance to cancel the
-                        // tx if needed.
-                        tokio::time::timeout(Duration::from_secs(1), settle_fut)
-                            .await
-                            .unwrap_or_else(|_| {
-                                tracing::error!("didn't finish tx submission within grace period");
-                                Err(DeadlineExceeded.into())
-                            })
-                    }
-                    Either::Right((res, _)) => res,
-                };
-                observe::settled(self.solver.name(), &result);
-                let _ = response_sender.send(result);
+            if self.submission_account_pool.is_some() {
+                // EIP-7702 mode: spawn each settlement as a concurrent task.
+                let this = Arc::clone(&self);
+                tokio::spawn(async move {
+                    this.handle_settle_request(request).await;
+                });
+            } else {
+                // Legacy mode: process settlements sequentially.
+                self.handle_settle_request(request).await;
             }
-            .instrument(tracing_span)
-            .await
         }
+    }
+
+    async fn handle_settle_request(self: &Arc<Self>, request: SettleRequest) {
+        let SettleRequest {
+            auction_id,
+            solution_id,
+            submission_deadline,
+            mut response_sender,
+            tracing_span,
+        } = request;
+        async {
+            if self.eth.current_block().borrow().number >= submission_deadline {
+                if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
+                    tracing::error!(
+                        ?err,
+                        "settle deadline exceeded. unable to return a response"
+                    );
+                }
+                return;
+            }
+
+            observe::settling();
+            let settle_fut =
+                Box::pin(self.process_settle_request(auction_id, solution_id, submission_deadline));
+            let closed_fut = Box::pin(response_sender.closed());
+            let result = match futures::future::select(closed_fut, settle_fut).await {
+                // Cancel the settlement task if the sender is closed (client likely
+                // disconnected). This is a fallback to recover from issues
+                // like a stuck driver (e.g., stalled block stream).
+                Either::Left((_closed, settle_fut)) => {
+                    tracing::debug!("autopilot terminated settle call");
+                    // Add a grace period to give driver the last chance to cancel the
+                    // tx if needed.
+                    tokio::time::timeout(Duration::from_secs(1), settle_fut)
+                        .await
+                        .unwrap_or_else(|_| {
+                            tracing::error!("didn't finish tx submission within grace period");
+                            Err(DeadlineExceeded.into())
+                        })
+                }
+                Either::Right((res, _)) => res,
+            };
+            observe::settled(self.solver.name(), &result);
+            let _ = response_sender.send(result);
+        }
+        .instrument(tracing_span)
+        .await
     }
 
     async fn process_settle_request(
@@ -703,10 +758,41 @@ impl Competition {
             });
         }
 
+        // When EIP-7702 submission accounts are configured, acquire one from
+        // the pool for the duration of this settlement.
+        let delegated = if let Some(pool) = &self.submission_account_pool {
+            let account = pool
+                .acquire
+                .lock()
+                .await
+                .recv()
+                .await
+                .ok_or(Error::SubmissionError)?;
+            Some(account)
+        } else {
+            None
+        };
+
+        let delegated_ctx = delegated.as_ref().map(|account| DelegatedSubmission {
+            signer: account.address(),
+            solver_eoa: self.solver.address(),
+        });
+
         let executed = self
             .mempools
-            .execute(&self.solver, &settlement, submission_deadline)
+            .execute(
+                &self.solver,
+                &settlement,
+                submission_deadline,
+                delegated_ctx.as_ref(),
+            )
             .await;
+
+        // Return the submission account to the pool.
+        if let (Some(pool), Some(account)) = (&self.submission_account_pool, delegated) {
+            let _ = pool.release.send(account).await;
+        }
+
         notify::executed(
             &self.solver,
             settlement.auction_id,

@@ -17,7 +17,7 @@ CONTRACTS := \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 
-TEST_CONTRACTS := Counter.sol GasHog.sol NonStandardERC20Balances.sol RemoteERC20Balances.sol
+TEST_CONTRACTS := Counter.sol Forwarder.sol GasHog.sol NonStandardERC20Balances.sol RemoteERC20Balances.sol
 TEST_ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(TEST_CONTRACTS))
 
 .PHONY: artifacts

@@ -154,6 +154,16 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
                 haircut_bps: solver_config.haircut_bps,
+                submission_accounts: solver_config
+                    .submission_accounts
+                    .iter()
+                    .map(|pk| {
+                        Account::PrivateKey(
+                            PrivateKeySigner::from_bytes(pk)
+                                .expect("invalid submission account private key"),
+                        )
+                    })
+                    .collect(),
             }
         }))
         .await,

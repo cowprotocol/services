@@ -774,6 +774,8 @@ fn main() {
                 .add_contract(Contract::new("GasHog"))
                 // Test Contract for incrementing arbitrary counters.
                 .add_contract(Contract::new("Counter"))
+                // Minimal forwarder for EIP-7702 delegation tests.
+                .add_contract(Contract::new("Forwarder"))
                 // Token with support for `permit` (for pre-interaction tests)
                 .add_contract(Contract::new("CowProtocolToken").with_networks(networks![
                     MAINNET => "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
