@@ -574,7 +574,7 @@ fn orders_with_balance(
     disable_1271_order_balance_filter: bool,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
+    orders.sort_unstable_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
         if disable_1271_order_balance_filter && matches!(order.signature, Signature::Eip1271(_)) {
             return true;
