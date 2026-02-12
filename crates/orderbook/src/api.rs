@@ -106,19 +106,17 @@ async fn with_matched_path_metric(
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
     // Extract matched path and HTTP method
-    let method = req.method().as_str();
     let matched_path = req
         .extensions()
         .get::<axum::extract::MatchedPath>()
         .map(|path| path.as_str())
-        .unwrap_or("unknown");
-    // Create label in format "METHOD /path"
-    let method = format!("{} {}", method, matched_path);
+        .unwrap_or("unknown")
+        .to_string();
 
     let response = {
         let _timer = metrics
             .requests_duration_seconds
-            .with_label_values(&[&method])
+            .with_label_values(&[&matched_path])
             .start_timer();
         next.run(req).await
     };
@@ -127,7 +125,7 @@ async fn with_matched_path_metric(
     // Track completed requests
     metrics
         .requests_complete
-        .with_label_values(&[&method, status.as_str()])
+        .with_label_values(&[&matched_path, status.as_str()])
         .inc();
 
     // Track rejected requests (4xx and 5xx status codes)
@@ -336,9 +334,8 @@ impl ApiMetrics {
     fn reset_requests_complete(&self, path: &str) {
         for status in Self::INITIAL_STATUSES {
             self.requests_complete
-                    // format to `METHOD <path>` — e.g. GET /api/v1/auction
-                    .with_label_values(&[ path, status.as_str()])
-                    .reset();
+                .with_label_values(&[path, status.as_str()])
+                .reset();
         }
     }
 }
