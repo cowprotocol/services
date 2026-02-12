@@ -27,7 +27,7 @@ use {
     },
     std::{collections::HashMap, future::Future, sync::Arc, time::Duration},
     tokio::sync::Mutex,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
@@ -212,6 +212,7 @@ impl Utilities {
     /// Parses the JSON body of the `/solve` request during the unified
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
+    #[instrument(skip_all)]
     async fn parse_request(&self, solve_request: RequestBytes) -> Result<Arc<Auction>> {
         let auction_dto: SolveRequest = {
             let _timer = metrics::get().processing_stage_timer("parse_dto");
@@ -248,6 +249,7 @@ impl Utilities {
     }
 
     /// Fetches the tradable balance for every order owner.
+    #[instrument(skip_all)]
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
         let _timer2 =
@@ -336,6 +338,7 @@ impl Utilities {
 
     /// Fetches the app data for all orders in the auction.
     /// Returns a map from app data hash to the fetched app data.
+    #[instrument(skip_all)]
     async fn collect_orders_app_data(
         self: Arc<Self>,
         auction: Arc<Auction>,
@@ -389,6 +392,7 @@ impl Utilities {
         Arc::new(app_data)
     }
 
+    #[instrument(skip_all)]
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
         let Some(ref cow_amm_cache) = self.cow_amm_cache else {
             // CoW AMMs are not configured, return empty vec
@@ -514,6 +518,7 @@ impl Utilities {
         Arc::new(orders)
     }
 
+    #[instrument(skip_all)]
     async fn fetch_liquidity(
         self: Arc<Self>,
         auction: Arc<Auction>,

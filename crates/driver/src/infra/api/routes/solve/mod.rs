@@ -12,7 +12,7 @@ use {
     axum::{body::Body, http::Request},
     hyper::body::Bytes,
     std::time::{Duration, Instant},
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<State> {
@@ -51,6 +51,7 @@ async fn route(
         .await
 }
 
+#[instrument(skip_all)]
 async fn collect_request_body(
     request: Request<Body>,
     solver: &str,

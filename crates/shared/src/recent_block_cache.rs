@@ -41,7 +41,7 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 /// How many liqudity sources should at most be fetched in a single chunk.
@@ -283,6 +283,7 @@ where
         fut.await.context("could not fetch liquidity")
     }
 
+    #[instrument(skip_all)]
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
         let block = match block {
             Block::Recent | Block::Finalized => None,

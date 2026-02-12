@@ -7,6 +7,7 @@ use {
     reqwest::StatusCode,
     std::{collections::HashMap, sync::Arc, time::Duration},
     thiserror::Error,
+    tracing::{Instrument, instrument},
     url::Url,
 };
 
@@ -56,6 +57,7 @@ impl AppDataRetriever {
     /// HTTP requests needed to fetch the data are spawned in background tasks
     /// such that they eventually populate the cache even in case the caller
     /// stops awaiting the returned future.
+    #[instrument(skip_all)]
     pub async fn get_cached_or_fetch(
         &self,
         app_data: &AppDataHash,
@@ -95,7 +97,7 @@ impl AppDataRetriever {
             Ok(validated_app_data)
         };
 
-        tokio::task::spawn(fut).await?
+        tokio::task::spawn(fut.instrument(tracing::info_span!("fetch_appdata"))).await?
     }
 }
 

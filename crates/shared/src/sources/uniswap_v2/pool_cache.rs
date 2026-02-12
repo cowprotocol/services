@@ -7,6 +7,7 @@ use {
     ethrpc::block_stream::CurrentBlockWatcher,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
+    tracing::instrument,
 };
 
 pub struct PoolCache(RecentBlockCache<TokenPair, Pool, Arc<dyn PoolFetching>>);
@@ -46,6 +47,7 @@ impl PoolCache {
 
 #[async_trait::async_trait]
 impl PoolFetching for PoolCache {
+    #[instrument(skip_all)]
     async fn fetch(&self, pairs: HashSet<TokenPair>, block: Block) -> Result<Vec<Pool>> {
         self.0.fetch(pairs, block).await
     }
