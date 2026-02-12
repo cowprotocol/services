@@ -622,14 +622,39 @@ impl Persistence {
             .to_u64()
             .context("latest_settlement_block is not u64")?;
 
-        // Blindly insert all new orders into the cache.
+        // Insert new / updated orders or remove invalidated orders
+        // and the associated quote.
         for (uid, order) in next_orders {
-            current_orders.insert(uid, order);
+            let invalidated = order.metadata.invalidated;
+            let onchain_error = order
+                .metadata
+                .onchain_order_data
+                .as_ref()
+                .is_some_and(|data| data.placement_error.is_some());
+            let fulfilled = {
+                match order.data.kind {
+                    model::order::OrderKind::Sell => {
+                        order.metadata.executed_sell_amount
+                            >= u256_to_big_uint(&order.data.sell_amount)
+                    }
+                    model::order::OrderKind::Buy => {
+                        order.metadata.executed_buy_amount
+                            >= u256_to_big_uint(&order.data.buy_amount)
+                    }
+                }
+            };
+
+            if invalidated || onchain_error || fulfilled {
+                current_orders.remove(&uid);
+                current_quotes.remove(&uid);
+            } else {
+                current_orders.insert(uid, order);
+            }
         }
 
-        // Filter out all the invalid orders.
+        // Filter out all the expired orders.
         tracing::info_span!("retain_orders").in_scope(|| {
-            current_orders.retain(|_uid, order| {
+            current_orders.retain(|uid, order| {
                 let expired = order.data.valid_to < min_valid_to
                     || order
                         .metadata
@@ -637,31 +662,14 @@ impl Persistence {
                         .as_ref()
                         .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
 
-                let invalidated = order.metadata.invalidated;
-                let onchain_error = order
-                    .metadata
-                    .onchain_order_data
-                    .as_ref()
-                    .is_some_and(|data| data.placement_error.is_some());
-                let fulfilled = {
-                    match order.data.kind {
-                        model::order::OrderKind::Sell => {
-                            order.metadata.executed_sell_amount
-                                >= u256_to_big_uint(&order.data.sell_amount)
-                        }
-                        model::order::OrderKind::Buy => {
-                            order.metadata.executed_buy_amount
-                                >= u256_to_big_uint(&order.data.buy_amount)
-                        }
-                    }
-                };
-
-                !expired && !invalidated && !onchain_error && !fulfilled
+                if expired {
+                    current_quotes.remove(uid);
+                    false
+                } else {
+                    true
+                }
             })
         });
-
-        tracing::info_span!("retain_quotes")
-            .in_scope(|| current_quotes.retain(|uid, _| current_orders.contains_key(uid)));
 
         {
             let _timer = Metrics::get()
