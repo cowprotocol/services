@@ -208,7 +208,6 @@ async fn http_validation(web3: Web3) {
     );
 
     // Missing required fields (empty object)
-    // Axum returns 422 (Unprocessable Entity) for JSON deserialization errors
     let response = client
         .post(format!("{API_HOST}/api/v1/orders"))
         .header("Content-Type", "application/json")
