@@ -67,7 +67,7 @@ impl Detector {
                     .map(|i| InteractionData {
                         target: i.target,
                         value: i.value.0,
-                        call_data: i.call_data.0.clone(),
+                        call_data: i.call_data.to_vec(),
                     })
                     .collect();
                 let trader = order.trader().0;

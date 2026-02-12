@@ -7,13 +7,13 @@ use {
         },
         infra::Solver,
     },
+    alloy::primitives::Bytes,
     app_data::AppDataHash,
     itertools::Itertools,
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
-    shared::bytes::Bytes,
     std::{collections::HashMap, str::FromStr},
 };
 
@@ -150,7 +150,7 @@ impl Solutions {
                         .map(|interaction| eth::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
-                            call_data: Bytes(interaction.calldata),
+                            call_data: Bytes::from(interaction.calldata),
                         })
                         .collect(),
                     solution
@@ -227,7 +227,7 @@ impl Solutions {
                         .map(|interaction| eth::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
-                            call_data: Bytes(interaction.calldata),
+                            call_data: interaction.calldata.into(),
                         })
                         .collect(),
                     solver.clone(),
@@ -345,7 +345,7 @@ impl JitOrder {
             // signature bytes. This leads to the owner being encoded twice in
             // the final settlement calldata unless we remove that from the raw
             // data.
-            signature.data = Bytes(self.0.signature[20..].to_vec());
+            signature.data = Bytes::copy_from_slice(&self.0.signature[20..]);
         }
 
         signature.signer = signer;

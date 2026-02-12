@@ -21,10 +21,10 @@ use {
         },
         util::math,
     },
+    alloy::primitives::Bytes,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
-    shared::bytes::Bytes,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -852,22 +852,22 @@ pub struct PriceLimits {
 #[derive(Debug)]
 pub struct Revealed {
     /// The internalized calldata is the final calldata that appears onchain.
-    pub internalized_calldata: Bytes<Vec<u8>>,
+    pub internalized_calldata: Bytes,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized_calldata: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes,
 }
 
 #[derive(Debug)]
 pub struct Settled {
     /// The transaction hash in which the solution was submitted.
     pub tx_hash: eth::TxId,
-    pub internalized_calldata: Bytes<Vec<u8>>,
+    pub internalized_calldata: Bytes,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized_calldata: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes,
 }
 
 #[derive(Debug, thiserror::Error)]

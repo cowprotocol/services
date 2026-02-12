@@ -1,10 +1,10 @@
-use {crate::domain::eth, model::signature::EcdsaSignature, shared::bytes::Bytes};
+use {crate::domain::eth, alloy::primitives::Bytes, model::signature::EcdsaSignature};
 
 /// Signature over the order data.
 #[derive(Debug, Clone)]
 pub struct Signature {
     pub scheme: Scheme,
-    pub data: Bytes<Vec<u8>>,
+    pub data: Bytes,
     /// The address used to sign and place this order.
     pub signer: eth::Address,
 }
@@ -18,17 +18,14 @@ impl Signature {
         Ok(match self.scheme {
             Scheme::Eip712 => model::signature::Signature::Eip712(EcdsaSignature::from_bytes(
                 self.data
-                    .0
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("ECDSA signature must be 65 bytes"))?,
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("ECDSA signature must be 65 bytes"))?,
             )?),
             Scheme::EthSign => model::signature::Signature::EthSign(EcdsaSignature::from_bytes(
                 self.data
                     .0
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("ECDSA signature must be 65 bytes"))?,
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("ECDSA signature must be 65 bytes"))?,
             )?),
             Scheme::Eip1271 => model::signature::Signature::Eip1271(self.data.clone().into()),
             Scheme::PreSign => model::signature::Signature::PreSign,

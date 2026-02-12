@@ -136,7 +136,7 @@ impl Mempool {
             .max_fee_per_gas(max_fee_per_gas)
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
             .gas_limit(gas_limit)
-            .input(tx.input.0.into())
+            .input(tx.input.into())
             .value(tx.value.0)
             .access_list(tx.access_list.into());
 

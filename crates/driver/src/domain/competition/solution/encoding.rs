@@ -13,13 +13,12 @@ use {
     },
     allowance::Allowance,
     alloy::{
-        primitives::{Address, U256},
+        primitives::{Address, Bytes, FixedBytes, U256},
         sol_types::SolCall,
     },
     contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
     itertools::Itertools,
     num::Zero,
-    shared::bytes::Bytes,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -399,11 +398,11 @@ struct Trade {
     sell_amount: eth::U256,
     buy_amount: eth::U256,
     valid_to: u32,
-    app_data: Bytes<[u8; 32]>,
+    app_data: FixedBytes<32>,
     fee_amount: eth::U256,
     flags: Flags,
     executed_amount: eth::U256,
-    signature: Bytes<Vec<u8>>,
+    signature: Bytes,
 }
 
 struct Price {
@@ -424,7 +423,7 @@ struct Flags {
 pub mod codec {
     use {
         crate::domain::{competition::order, eth},
-        alloy::primitives::U256,
+        alloy::primitives::{Bytes, U256},
         contracts::alloy::GPv2Settlement,
     };
 
@@ -485,16 +484,14 @@ pub mod codec {
         }
     }
 
-    pub fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
+    pub fn signature(signature: &order::Signature) -> Bytes {
         match signature.scheme {
             order::signature::Scheme::Eip712 | order::signature::Scheme::EthSign => {
                 signature.data.clone()
             }
-            order::signature::Scheme::Eip1271 => {
-                [signature.signer.as_slice(), signature.data.0.as_slice()]
-                    .concat()
-                    .into()
-            }
+            order::signature::Scheme::Eip1271 => [signature.signer.as_slice(), &signature.data]
+                .concat()
+                .into(),
             order::signature::Scheme::PreSign => signature.signer.to_vec().into(),
         }
     }
@@ -517,7 +514,7 @@ mod test {
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
         );
         assert_eq!(
-            interaction.call_data.0.as_slice(),
+            interaction.call_data.as_ref(),
             hex!(
                 "095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
             )

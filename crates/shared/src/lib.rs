@@ -7,7 +7,6 @@ pub mod account_balances;
 pub mod arguments;
 pub mod bad_token;
 pub mod baseline_solver;
-pub mod bytes;
 pub mod code_fetching;
 pub mod current_block;
 pub mod db_order_conversions;
