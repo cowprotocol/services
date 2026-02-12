@@ -1,8 +1,5 @@
 use {
-    alloy::{
-        primitives::Bytes,
-        rpc::types::TransactionRequest,
-    },
+    alloy::{primitives::Bytes, rpc::types::TransactionRequest},
     derive_more::{From, Into},
     number::u256_ext::U256Ext,
     solvers_dto::auction::FlashloanHint,
