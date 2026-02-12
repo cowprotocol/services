@@ -267,7 +267,7 @@ pub fn handle_all_routes(
 
     let mut api_router = Router::new();
     for (path, method_router) in routes {
-        metrics.reset_requests_complete(&format!("/{path}"));
+        metrics.reset_requests_complete(path);
         api_router = api_router.route(path, method_router);
     }
     let api_router = api_router.with_state(state);
@@ -335,12 +335,10 @@ impl ApiMetrics {
 
     fn reset_requests_complete(&self, path: &str) {
         for status in Self::INITIAL_STATUSES {
-            for method in ALLOWED_METHODS {
-                self.requests_complete
+            self.requests_complete
                     // format to `METHOD <path>` — e.g. GET /api/v1/auction
-                    .with_label_values(&[&format!("{} {}", method.as_str(), path), status.as_str()])
+                    .with_label_values(&[ path, status.as_str()])
                     .reset();
-            }
         }
     }
 }
