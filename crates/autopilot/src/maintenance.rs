@@ -124,8 +124,8 @@ impl Maintenance {
         blocks: CurrentBlockWatcher,
         timeout: Duration,
     ) -> MaintenanceSync {
-        let full_updates = watch::channel(blocks.borrow().number);
-        let partial_updates = watch::channel(blocks.borrow().number);
+        let (full_tx, full_rx) = watch::channel(blocks.borrow().number);
+        let (partial_tx, partial_rx) = watch::channel(blocks.borrow().number);
 
         tokio::task::spawn(async move {
             let mut stream = into_stream(blocks);
@@ -134,7 +134,7 @@ impl Maintenance {
                     .next()
                     .await
                     .expect("block stream terminated unexpectedly");
-                self.index_until_block(block, &partial_updates.0, &full_updates.0)
+                self.index_until_block(block, &partial_tx, &full_tx)
                     .instrument(tracing::info_span!(
                         "autopilot_maintenance",
                         block = block.number
@@ -144,8 +144,8 @@ impl Maintenance {
         });
 
         MaintenanceSync {
-            partially_processed_block: partial_updates.1,
-            fully_processed_block: full_updates.1,
+            partially_processed_block: partial_rx,
+            fully_processed_block: full_rx,
             timeout,
         }
     }
@@ -172,7 +172,10 @@ impl Maintenance {
         metrics().last_updated_block.set(block.number);
         metrics().updates.with_label_values(&["success"]).inc();
         if let Err(err) = partially_processed_block.send(block.number) {
-            tracing::warn!(?err, "nobody listening for processed blocks anymore");
+            tracing::warn!(
+                ?err,
+                "nobody listening for partially processed blocks anymore"
+            );
         }
 
         // only after we informed the run_loop that the essential updates are done we
@@ -183,7 +186,7 @@ impl Maintenance {
             return;
         }
         if let Err(err) = fully_processed_block.send(block.number) {
-            tracing::warn!(?err, "nobody listening for processed blocks anymore");
+            tracing::warn!(?err, "nobody listening for fully processed blocks anymore");
         }
         tracing::info!(
             time = ?start.elapsed(),
