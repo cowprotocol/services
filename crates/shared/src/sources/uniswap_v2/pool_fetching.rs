@@ -232,8 +232,7 @@ where
         let mut new_missing_pairs = vec![];
         let mut pools = Vec::with_capacity(futures.len());
 
-        #[expect(for_loops_over_fallibles)] // we want to handle None explicitly
-        for (pair, result) in futures.try_next().await? {
+        while let Some((pair, result)) = futures.try_next().await? {
             match result {
                 Some(pool) => pools.push(pool),
                 None => new_missing_pairs.push(pair),
