@@ -428,14 +428,6 @@ impl Competition {
         cow_amm_orders: Arc<Vec<Order>>,
         settlement_contract: &eth::Address,
     ) -> Auction {
-        // Pre-compute which app_data hashes have wrappers and should bypass balance
-        // checks, since wrappers produce the required funds at settlement time.
-        let has_wrappers: HashSet<order::app_data::AppDataHash> = app_data
-            .iter()
-            .filter(|(_, v)| !v.protocol.wrappers.is_empty())
-            .map(|(k, _)| *k)
-            .collect();
-
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
@@ -471,7 +463,8 @@ impl Competition {
                 }
             }
 
-            if has_wrappers.contains(&order.app_data.hash()) {
+            // wrappers can produce the required funds at settlement time
+            if !order.app_data.wrappers().is_empty() {
                 return true;
             }
 
