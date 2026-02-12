@@ -12,10 +12,7 @@ use {
         IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
     },
     ethrpc::alloy::errors::ignore_non_node_error,
-    futures::{
-        FutureExt as _,
-        future::{self, BoxFuture},
-    },
+    futures::{FutureExt as _, TryStreamExt, future::BoxFuture, stream::FuturesUnordered},
     model::TokenPair,
     num::rational::Ratio,
     std::{
@@ -220,7 +217,7 @@ where
 {
     #[instrument(skip_all)]
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
-        let futures: Vec<_> = {
+        let mut futures: FuturesUnordered<_> = {
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             token_pairs
                 .into_iter()
@@ -232,16 +229,17 @@ where
                 .collect()
         };
 
-        let results = future::try_join_all(futures).await?;
-
         let mut new_missing_pairs = vec![];
-        let mut pools = vec![];
-        for (pair, result) in results {
+        let mut pools = Vec::with_capacity(futures.len());
+
+        #[expect(for_loops_over_fallibles)] // we want to handle None explicitly
+        for (pair, result) in futures.try_next().await? {
             match result {
                 Some(pool) => pools.push(pool),
                 None => new_missing_pairs.push(pair),
             }
         }
+
         if !new_missing_pairs.is_empty() {
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
