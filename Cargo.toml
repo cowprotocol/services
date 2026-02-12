@@ -53,7 +53,6 @@ tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = "2.5.0"
-warp = { git = 'https://github.com/cowprotocol/warp.git', rev = "586244e", default-features = false }
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
 async-stream = "0.3.5"
