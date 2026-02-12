@@ -12,6 +12,7 @@ use {
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::alloy::ERC20,
     ethrpc::Web3,
+    futures::{StreamExt, stream::FuturesUnordered},
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -191,7 +192,7 @@ async fn fetch_allowances(
     owner: Address,
     spender_tokens: HashMap<Address, HashSet<Address>>,
 ) -> Result<HashMap<Address, Allowances>> {
-    let futures = spender_tokens
+    let mut futures: FuturesUnordered<_> = spender_tokens
         .into_iter()
         .flat_map(|(spender, tokens)| tokens.into_iter().map(move |token| (spender, token)))
         .map(|(spender, token)| {
@@ -201,14 +202,13 @@ async fn fetch_allowances(
                     .allowance(owner, spender)
                     .call()
                     .await;
-
                 (spender, token, allowance)
             }
-        });
-    let results: Vec<_> = futures::future::join_all(futures).await;
+        })
+        .collect();
 
     let mut allowances = HashMap::new();
-    for (spender, token, allowance) in results {
+    while let Some((spender, token, allowance)) = futures.next().await {
         let allowance = match allowance {
             Ok(allowance) => allowance,
             Err(err) => {
