@@ -220,24 +220,26 @@ where
 {
     #[instrument(skip_all)]
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
-        let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
-        {
+        let futures: Vec<_> = {
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
-            token_pairs.retain(|pair| non_existent_pools.cache_get(pair).is_none());
-        }
-        let futures = token_pairs
-            .iter()
-            .map(|pair| self.pool_reader.read_state(*pair, at_block.into()))
-            .collect::<Vec<_>>();
+            token_pairs
+                .into_iter()
+                .filter(|pair| non_existent_pools.cache_get(pair).is_none())
+                .map(|pair| async move {
+                    let state = self.pool_reader.read_state(pair, at_block.into()).await?;
+                    Ok::<_, anyhow::Error>((pair, state))
+                })
+                .collect()
+        };
 
         let results = future::try_join_all(futures).await?;
 
         let mut new_missing_pairs = vec![];
         let mut pools = vec![];
-        for (result, key) in results.into_iter().zip(token_pairs) {
+        for (pair, result) in results {
             match result {
                 Some(pool) => pools.push(pool),
-                None => new_missing_pairs.push(key),
+                None => new_missing_pairs.push(pair),
             }
         }
         if !new_missing_pairs.is_empty() {
