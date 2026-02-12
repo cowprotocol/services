@@ -37,6 +37,9 @@ pub async fn insert_or_overwrite_ethflow_order(
     )
     .await?;
 
+    // Update true_valid_to field if order already in the database
+    // as the Ethflow orders get inserted with validity of u32::MAX
+    // and the true validity is contained in the EthOrderPlacement
     const UPDATE_TRUE_VALID_TO_QUERY: &str = r#"
         UPDATE orders
         SET true_valid_to = $1
@@ -48,26 +51,6 @@ pub async fn insert_or_overwrite_ethflow_order(
             .bind(event.uid),
     )
     .await?;
-    Ok(())
-}
-
-// Ethflow orders are created with valid_to equal to u32::MAX, their
-// true validity is parsed from Settlement contract events.
-#[instrument(skip_all)]
-pub async fn update_true_valid_to_for_ethflow_order(
-    ex: &mut PgConnection,
-    event: &EthOrderPlacement,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-        UPDATE orders
-        SET true_valid_to = $1
-        WHERE uid = $2
-    "#;
-    sqlx::query(QUERY)
-        .bind(event.valid_to)
-        .bind(event.uid)
-        .execute(ex)
-        .await?;
     Ok(())
 }
 

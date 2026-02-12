@@ -1,0 +1,4 @@
+name: "CoW Protocol CodeQL Config"
+
+paths-ignore:
+  - crates/e2e
