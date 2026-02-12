@@ -4,7 +4,8 @@
 use {
     alloy::primitives::{Address, U256},
     model::TokenPair,
-    std::collections::{HashMap, HashSet}, tracing::instrument,
+    std::collections::{HashMap, HashSet},
+    tracing::instrument,
 };
 
 /// The maximum number of hops to use when trading with AMMs along a path.

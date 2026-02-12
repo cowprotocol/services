@@ -62,7 +62,7 @@ impl ServiceMaintenance {
 
             if let Err(err) = self
                 .run_maintenance()
-                .instrument(tracing::debug_span!("maintenance", block = block.number))
+                .instrument(tracing::info_span!("maintenance", block = block.number))
                 .await
             {
                 tracing::debug!(

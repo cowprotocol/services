@@ -178,7 +178,7 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
-        let orders = tracing::debug_span!("cloning_relevant_orders").in_scope(|| {
+        let orders = tracing::info_span!("cloning_relevant_orders").in_scope(|| {
             db_solvable_orders
                 .orders
                 .values()
@@ -191,7 +191,7 @@ impl SolvableOrdersCache {
         let mut filtered_order_events = Vec::new();
 
         let (balances, orders, cow_amms) = {
-            let queries = tracing::debug_span!("collecting_balance_queries")
+            let queries = tracing::info_span!("collecting_balance_queries")
                 .in_scope(|| orders.iter().map(Query::from_order).collect::<Vec<_>>());
 
             tokio::join!(
@@ -299,7 +299,7 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
-            orders: tracing::debug_span!("assemble_orders").in_scope(|| {
+            orders: tracing::info_span!("assemble_orders").in_scope(|| {
                 orders
                     .into_iter()
                     .map(|order| {
@@ -312,7 +312,7 @@ impl SolvableOrdersCache {
                     })
                     .collect()
             }),
-            prices: tracing::debug_span!("assemble_prices").in_scope(|| {
+            prices: tracing::info_span!("assemble_prices").in_scope(|| {
                 prices
                     .into_iter()
                     .map(|(key, value)| {
