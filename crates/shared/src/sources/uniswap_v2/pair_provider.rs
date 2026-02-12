@@ -1,6 +1,7 @@
 use {
     alloy::primitives::{Address, keccak256},
-    model::TokenPair, tracing::instrument,
+    model::TokenPair,
+    tracing::instrument,
 };
 
 #[derive(Clone, Copy, Debug)]

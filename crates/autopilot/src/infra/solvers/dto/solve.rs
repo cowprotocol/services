@@ -66,7 +66,7 @@ impl Request {
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
-        tracing::debug_span!("serialize_solve_request").in_scope(|| {
+        tracing::info_span!("serialize_solve_request").in_scope(|| {
             Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
                 "only fails with non-string keys which we do not have",
             )))

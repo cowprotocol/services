@@ -610,7 +610,7 @@ impl Persistence {
         }
 
         // Filter out all the invalid orders.
-        tracing::debug_span!("retain_orders").in_scope(|| {
+        tracing::info_span!("retain_orders").in_scope(|| {
             current_orders.retain(|_uid, order| {
                 let expired = order.data.valid_to < min_valid_to
                     || order
@@ -642,7 +642,7 @@ impl Persistence {
             })
         });
 
-        tracing::debug_span!("retain_quotes")
+        tracing::info_span!("retain_quotes")
             .in_scope(|| current_quotes.retain(|uid, _| current_orders.contains_key(uid)));
 
         {
@@ -656,7 +656,7 @@ impl Persistence {
             // (e.g., ethflow) gets reorganized, the same order with the same
             // UID might be created in the new block, and the temporary quote
             // associated with it may have changed in the meantime.
-            let order_uids = tracing::debug_span!("collect_order_for_quotes").in_scope(|| {
+            let order_uids = tracing::info_span!("collect_order_for_quotes").in_scope(|| {
                 current_orders
                     .values()
                     .filter_map(|order| {
