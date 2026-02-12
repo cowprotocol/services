@@ -20,6 +20,7 @@ use {
         collections::{HashMap, HashSet},
         slice,
     },
+    tracing::instrument,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -184,6 +185,7 @@ impl AllowanceManaging for AllowanceManager {
     }
 }
 
+#[instrument(skip_all)]
 async fn fetch_allowances(
     alloy: DynProvider<Ethereum>,
     owner: Address,

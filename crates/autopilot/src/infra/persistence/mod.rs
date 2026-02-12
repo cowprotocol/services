@@ -194,6 +194,7 @@ impl Persistence {
     }
 
     /// Saves the competition data to the DB
+    #[instrument(skip_all)]
     pub async fn save_competition(
         &self,
         competition: boundary::Competition,
@@ -206,6 +207,7 @@ impl Persistence {
 
     /// Save all valid solutions that participated in the competition for an
     /// auction.
+    #[instrument(skip_all)]
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
@@ -269,6 +271,7 @@ impl Persistence {
     }
 
     /// Saves the surplus capturing jit order owners to the DB
+    #[instrument(skip_all)]
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
@@ -318,6 +321,7 @@ impl Persistence {
     }
 
     /// Saves the given fee policies to the DB as a single batch.
+    #[instrument(skip_all)]
     pub async fn store_fee_policies(
         &self,
         auction_id: domain::auction::Id,
@@ -365,6 +369,7 @@ impl Persistence {
     }
 
     /// Save auction related data to the database.
+    #[instrument(skip_all)]
     pub async fn save_auction(
         &self,
         auction: &domain::Auction,
