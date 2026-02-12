@@ -10,6 +10,10 @@ RUN corepack enable \
 ARG REACT_APP_NETWORK_URL_1=https://rpc.mevblocker.io
 ARG REACT_APP_NETWORK_URL_5=https://ethereum-goerli.publicnode.com
 ARG REACT_APP_NETWORK_URL_100=https://gnosis.publicnode.com
+ARG REACT_APP_EXPLORER_URL_DEV=http://localhost:8001
+
+# Block explorer URL (Otterscan for local development)
+ARG REACT_APP_BLOCK_EXPLORER_URL=http://localhost:8003
 
 # Orderbook URL args
 ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://api.cow.fi/goerli","5":"https://api.cow.fi/xdai"}'
@@ -37,6 +41,8 @@ ENV REACT_APP_NETWORK_URL_1="$REACT_APP_NETWORK_URL_1"
 ENV REACT_APP_NETWORK_URL_5="$REACT_APP_NETWORK_URL_5"
 ENV REACT_APP_NETWORK_URL_100="$REACT_APP_NETWORK_URL_100"
 ENV REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"
+ENV REACT_APP_EXPLORER_URL_DEV="$REACT_APP_EXPLORER_URL_DEV"
+ENV REACT_APP_BLOCK_EXPLORER_URL="$REACT_APP_BLOCK_EXPLORER_URL"
 
 # Update environment variables based on "chain" and "ETH_RPC_URL", then build safely
 RUN set -e; \
@@ -56,12 +62,14 @@ RUN set -e; \
                 ;; \
         esac; \
     fi; \
-    export REACT_APP_NETWORK_URL_1 REACT_APP_NETWORK_URL_5 REACT_APP_NETWORK_URL_100 REACT_APP_ORDER_BOOK_URLS; \
+    export REACT_APP_NETWORK_URL_1 REACT_APP_NETWORK_URL_5 REACT_APP_NETWORK_URL_100 REACT_APP_ORDER_BOOK_URLS REACT_APP_EXPLORER_URL_DEV REACT_APP_BLOCK_EXPLORER_URL; \
     NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true pnpm run build \
         --env REACT_APP_NETWORK_URL_1="$REACT_APP_NETWORK_URL_1" \
         --env REACT_APP_NETWORK_URL_5="$REACT_APP_NETWORK_URL_5" \
         --env REACT_APP_NETWORK_URL_100="$REACT_APP_NETWORK_URL_100" \
-        --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"
+        --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS" \
+        --env REACT_APP_EXPLORER_URL_DEV="$REACT_APP_EXPLORER_URL_DEV" \
+        --env REACT_APP_BLOCK_EXPLORER_URL="$REACT_APP_BLOCK_EXPLORER_URL"
 
 # Stage 2: Copy the frontend build to the nginx container
 FROM docker.io/nginx:1.21-alpine AS frontend

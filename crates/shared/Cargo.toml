@@ -12,6 +12,7 @@ doctest = false
 alloy = { workspace = true, features = ["sol-types", "signer-local", "rand", "provider-trace-api"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
+arc-swap = { workspace = true }
 bytes-hex = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
