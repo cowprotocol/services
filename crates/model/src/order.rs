@@ -731,6 +731,8 @@ pub struct OrderMetadata {
     pub quote: Option<OrderQuote>,
 }
 
+pub const ORDER_UID_LIMIT: usize = 1024;
+
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
 #[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct OrderUid(pub [u8; 56]);

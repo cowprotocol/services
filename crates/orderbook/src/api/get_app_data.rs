@@ -1,42 +1,38 @@
 use {
-    crate::database::Postgres,
-    anyhow::Result,
+    crate::api::AppState,
     app_data::{AppDataDocument, AppDataHash},
-    reqwest::StatusCode,
-    std::convert::Infallible,
-    warp::{Filter, Rejection, Reply, reply},
+    axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        response::{IntoResponse, Json, Response},
+    },
+    std::{str::FromStr, sync::Arc},
 };
 
-pub fn request() -> impl Filter<Extract = (AppDataHash,), Error = Rejection> + Clone {
-    warp::path!("v1" / "app_data" / AppDataHash).and(warp::get())
-}
+pub async fn get_app_data_handler(
+    State(state): State<Arc<AppState>>,
+    Path(contract_app_data): Path<String>,
+) -> Response {
+    let Ok(contract_app_data) = AppDataHash::from_str(&contract_app_data) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
 
-pub fn get(
-    database: Postgres,
-) -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection> + Clone {
-    request().and_then(move |contract_app_data: AppDataHash| {
-        let database = database.clone();
-        async move {
-            let result = database.get_full_app_data(&contract_app_data).await;
-            Result::<_, Infallible>::Ok(match result {
-                Ok(Some(response)) => {
-                    let response = reply::with_status(
-                        reply::json(&AppDataDocument {
-                            full_app_data: response,
-                        }),
-                        StatusCode::OK,
-                    );
-                    Box::new(response) as Box<dyn Reply>
-                }
-                Ok(None) => Box::new(reply::with_status(
-                    "full app data not found",
-                    StatusCode::NOT_FOUND,
-                )),
-                Err(err) => {
-                    tracing::error!(?err, "get_app_data_by_hash");
-                    Box::new(crate::api::internal_error_reply())
-                }
-            })
+    let result = state
+        .database_read
+        .get_full_app_data(&contract_app_data)
+        .await;
+    match result {
+        Ok(Some(response)) => (
+            StatusCode::OK,
+            Json(AppDataDocument {
+                full_app_data: response,
+            }),
+        )
+            .into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "full app data not found").into_response(),
+        Err(err) => {
+            tracing::error!(?err, "get_app_data_by_hash");
+            crate::api::internal_error_reply()
         }
-    })
+    }
 }
