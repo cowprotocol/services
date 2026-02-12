@@ -1,6 +1,6 @@
 use {
     alloy::primitives::{Address, keccak256},
-    model::TokenPair,
+    model::TokenPair, tracing::instrument,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -10,6 +10,7 @@ pub struct PairProvider {
 }
 
 impl PairProvider {
+    #[instrument(skip_all)]
     pub fn pair_address(&self, pair: &TokenPair) -> Address {
         let (token0, token1) = pair.get();
 

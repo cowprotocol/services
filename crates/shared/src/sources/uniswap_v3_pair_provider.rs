@@ -2,10 +2,12 @@ use {
     alloy::primitives::{Address, keccak256},
     hex_literal::hex,
     model::TokenPair,
+    tracing::instrument,
 };
 
 /// Calculates deterministic Uniswapv3 pool address.
 /// https://github.com/Uniswap/v3-periphery/blob/main/contracts/libraries/PoolAddress.sol
+#[instrument(skip_all)]
 pub fn pair_address(factory: &Address, pair: &TokenPair, fee: u32) -> Address {
     const INIT: [u8; 32] = hex!("e34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54");
 

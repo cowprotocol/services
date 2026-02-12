@@ -4,7 +4,7 @@
 use {
     alloy::primitives::{Address, U256},
     model::TokenPair,
-    std::collections::{HashMap, HashSet},
+    std::collections::{HashMap, HashSet}, tracing::instrument,
 };
 
 /// The maximum number of hops to use when trading with AMMs along a path.
@@ -165,6 +165,7 @@ impl BaseTokens {
 
     /// All pool token pairs that could be used along a path candidate for these
     /// token pairs.
+    #[instrument(skip_all)]
     pub fn relevant_pairs(&self, pairs: impl Iterator<Item = TokenPair>) -> HashSet<TokenPair> {
         let mut result = HashSet::new();
         for pair in pairs {
