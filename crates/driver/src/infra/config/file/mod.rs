@@ -313,6 +313,12 @@ struct SolverConfig {
     /// Default: 0 (no haircut).
     #[serde(default)]
     haircut_bps: u32,
+
+    /// Additional EOAs that submit settlement txs on behalf of the solver
+    /// via EIP-7702 delegation. When non-empty, enables parallel submission
+    /// with one lane per account. Each entry is a 32-byte hex private key.
+    #[serde(default)]
+    submission_accounts: Vec<eth::B256>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

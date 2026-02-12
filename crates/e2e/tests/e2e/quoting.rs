@@ -295,6 +295,7 @@ async fn quote_timeout(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -303,6 +304,7 @@ async fn quote_timeout(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

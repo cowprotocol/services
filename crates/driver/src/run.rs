@@ -85,7 +85,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                         config
                             .solvers
                             .iter()
-                            .map(|config| config.account.clone())
+                            .flat_map(|config| {
+                                std::iter::once(config.account.clone())
+                                    .chain(config.submission_accounts.iter().cloned())
+                            })
                             .collect(),
                     )
                 })

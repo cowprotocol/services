@@ -191,6 +191,10 @@ pub struct Config {
     /// economics to make competition bids more conservative. Does not modify
     /// interaction calldata. Default: 0 (no haircut).
     pub haircut_bps: u32,
+    /// Additional EOAs for parallel settlement submission via EIP-7702.
+    /// When non-empty, these accounts submit txs to the solver EOA (which
+    /// delegates to a forwarder contract), enabling concurrent submissions.
+    pub submission_accounts: Vec<Account>,
 }
 
 impl Solver {
@@ -285,6 +289,11 @@ impl Solver {
     /// Quote haircut in basis points (0-10000) for conservative bidding.
     pub fn haircut_bps(&self) -> u32 {
         self.config.haircut_bps
+    }
+
+    /// Additional submission accounts for EIP-7702 parallel settlement.
+    pub fn submission_accounts(&self) -> &[Account] {
+        &self.config.submission_accounts
     }
 
     /// Make a POST request instructing the solver to solve an auction.

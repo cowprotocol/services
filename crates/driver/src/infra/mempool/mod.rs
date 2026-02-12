@@ -116,13 +116,14 @@ impl Mempool {
     }
 
     /// Submits a transaction to the mempool. Returns optimistically as soon as
-    /// the transaction is pending.
+    /// the transaction is pending. `signer` is the address that signs and pays
+    /// for gas (may differ from the solver address in EIP-7702 mode).
     pub async fn submit(
         &self,
         tx: eth::Tx,
         gas_price: Eip1559Estimation,
         gas_limit: eth::Gas,
-        solver: &infra::Solver,
+        signer: eth::Address,
         nonce: u64,
     ) -> Result<eth::TxId, mempools::Error> {
         let max_fee_per_gas = gas_price.max_fee_per_gas;
@@ -130,7 +131,7 @@ impl Mempool {
         let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
 
         let tx_request = TransactionRequest::default()
-            .from(solver.address())
+            .from(signer)
             .to(tx.to)
             .nonce(nonce)
             .max_fee_per_gas(max_fee_per_gas)
@@ -153,16 +154,16 @@ impl Mempool {
                     ?nonce,
                     ?gas_price,
                     ?gas_limit,
-                    solver = ?solver.address(),
+                    ?signer,
                     "successfully submitted tx to mempool"
                 );
                 self.last_submissions
-                    .insert(solver.address(), Submission { nonce, gas_price });
+                    .insert(signer, Submission { nonce, gas_price });
                 Ok(eth::TxId(*tx.tx_hash()))
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
-                let last_submission = self.last_submission(solver.address());
+                let last_submission = self.last_submission(signer);
 
                 tracing::debug!(
                     ?err,
@@ -170,7 +171,7 @@ impl Mempool {
                     ?nonce,
                     ?last_submission,
                     ?gas_limit,
-                    solver = ?solver.address(),
+                    ?signer,
                     "failed to submit tx to mempool"
                 );
                 Err(mempools::Error::Other(err))
