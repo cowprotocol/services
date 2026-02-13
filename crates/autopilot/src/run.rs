@@ -524,9 +524,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         bad_token_detector.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
-        args.limit_order_price_factor
-            .try_into()
-            .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFees::new(
             &args.fee_policies_config,
             args.shared.volume_fee_bucket_overrides.clone(),
