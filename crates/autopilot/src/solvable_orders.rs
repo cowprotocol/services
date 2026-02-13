@@ -74,6 +74,45 @@ pub struct Metrics {
     auction_market_order_missing_price: IntGauge,
 }
 
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+
+    fn track_filtered_orders(reason: &'static str, invalid_orders: &[OrderUid]) {
+        if invalid_orders.is_empty() {
+            return;
+        }
+
+        Metrics::get()
+            .auction_filtered_orders
+            .with_label_values(&[reason])
+            .set(i64::try_from(invalid_orders.len()).unwrap_or(i64::MAX));
+
+        tracing::debug!(
+            %reason,
+            count = invalid_orders.len(),
+            orders = ?invalid_orders, "filtered orders"
+        );
+    }
+
+    fn track_orders_in_final_auction(orders: &[Arc<Order>]) {
+        let metrics = Metrics::get();
+        metrics.auction_creations.inc();
+
+        let remaining_counts = orders
+            .iter()
+            .counts_by(|order| order.metadata.class.as_ref());
+        for class in OrderClass::VARIANTS {
+            let count = remaining_counts.get(class).copied().unwrap_or_default();
+            metrics
+                .auction_solvable_orders
+                .with_label_values(&[class])
+                .set(i64::try_from(count).unwrap_or(i64::MAX));
+        }
+    }
+}
+
 /// Keeps track and updates the set of currently solvable orders.
 /// For this we also need to keep track of user sell token balances for open
 /// orders so this is retrievable as well.
@@ -88,7 +127,6 @@ pub struct SolvableOrdersCache {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<NativePriceUpdater>,
-    metrics: &'static Metrics,
     weth: Address,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
@@ -121,7 +159,6 @@ impl SolvableOrdersCache {
         settlement_contract: Address,
         disable_order_balance_filter: bool,
     ) -> Arc<Self> {
-        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         Arc::new(Self {
             min_order_validity_period,
             persistence,
@@ -130,7 +167,6 @@ impl SolvableOrdersCache {
             bad_token_detector,
             cache: Mutex::new(None),
             native_price_estimator,
-            metrics,
             weth,
             protocol_fees,
             cow_amm_registry,
@@ -170,7 +206,6 @@ impl SolvableOrdersCache {
             .cloned()
             .collect::<Vec<_>>();
 
-        let mut counter = OrderFilterCounter::new(self.metrics, &orders);
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
@@ -192,7 +227,7 @@ impl SolvableOrdersCache {
                 .collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries),
-                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
+                self.filter_invalid_orders(orders, &mut invalid_order_uids),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
@@ -200,17 +235,17 @@ impl SolvableOrdersCache {
         let orders = if self.disable_order_balance_filter {
             orders
         } else {
-            let orders = orders_with_balance(
+            let (orders, removed) = orders_with_balance(
                 orders,
                 &balances,
                 self.settlement_contract,
                 &balance_filter_exempt_orders,
             );
-            let removed = counter.checkpoint("insufficient_balance", &orders);
+            Metrics::track_filtered_orders("insufficient_balance", &removed);
             invalid_order_uids.extend(removed);
 
-            let orders = filter_dust_orders(orders, &balances);
-            let removed = counter.checkpoint("dust_order", &orders);
+            let (orders, removed) = filter_dust_orders(orders, &balances);
+            Metrics::track_filtered_orders("dust_order", &removed);
             filtered_order_events.extend(removed);
 
             orders
@@ -222,13 +257,12 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
 
         // create auction
-        let (orders, mut prices) = self
+        let (orders, removed, mut prices) = self
             .timed_future(
                 "get_orders_with_native_prices",
                 get_orders_with_native_prices(
                     orders,
                     &self.native_price_estimator,
-                    self.metrics,
                     cow_amm_tokens,
                     self.native_price_timeout,
                 ),
@@ -250,12 +284,10 @@ impl SolvableOrdersCache {
 
             entry.insert(weth_price);
         }
-
-        let removed = counter.checkpoint("missing_price", &orders);
+        Metrics::track_filtered_orders("missing_price", &removed);
         filtered_order_events.extend(removed);
 
-        let removed = counter.record(&orders);
-        filtered_order_events.extend(removed);
+        Metrics::track_orders_in_final_auction(&orders);
 
         if store_events {
             // spawning a background task since `order_events` table insert operation takes
@@ -320,7 +352,7 @@ impl SolvableOrdersCache {
         });
 
         tracing::debug!(%block, "updated current auction cache");
-        self.metrics
+        Metrics::get()
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
@@ -396,7 +428,6 @@ impl SolvableOrdersCache {
     async fn filter_invalid_orders(
         &self,
         mut orders: Vec<Arc<Order>>,
-        counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Arc<Order>> {
         let presignature_pending_orders = find_presignature_pending_orders(&orders);
@@ -413,9 +444,9 @@ impl SolvableOrdersCache {
         );
         tracing::trace!("filtered invalid orders");
 
-        counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
-        counter.checkpoint_by_invalid_orders("invalid_signature", &presignature_pending_orders);
-        counter.checkpoint_by_invalid_orders("unsupported_token", &unsupported_token_orders);
+        Metrics::track_filtered_orders("banned_user", &banned_user_orders);
+        Metrics::track_filtered_orders("invalid_signature", &presignature_pending_orders);
+        Metrics::track_filtered_orders("unsupported_token", &unsupported_token_orders);
         invalid_order_uids.extend(banned_user_orders);
         invalid_order_uids.extend(presignature_pending_orders);
         invalid_order_uids.extend(unsupported_token_orders);
@@ -425,7 +456,7 @@ impl SolvableOrdersCache {
     }
 
     pub fn track_auction_update(&self, result: &str) {
-        self.metrics
+        Metrics::get()
             .auction_update
             .with_label_values(&[result])
             .inc();
@@ -433,8 +464,7 @@ impl SolvableOrdersCache {
 
     /// Runs the future and collects runtime metrics.
     async fn timed_future<T>(&self, label: &str, fut: impl Future<Output = T>) -> T {
-        let _timer = self
-            .metrics
+        let _timer = Metrics::get()
             .auction_update_stage_time
             .with_label_values(&[label])
             .start_timer();
@@ -504,10 +534,11 @@ fn orders_with_balance(
     balances: &Balances,
     settlement_contract: Address,
     filter_bypass_orders: &HashSet<OrderUid>,
-) -> Vec<Arc<Order>> {
+) -> (Vec<Arc<Order>>, Vec<OrderUid>) {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
-    orders.retain(|order| {
+    let mut filtered_orders = vec![];
+    let keep = |order: &Order| {
         // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
         // to unlock funds) or orders with wrappers (wrappers produce the required
         // balance at settlement time).
@@ -540,14 +571,27 @@ fn orders_with_balance(
             Some(balance) => balance,
         };
         balance >= needed_balance
+    };
+
+    orders.retain(|order| {
+        if keep(order) {
+            true
+        } else {
+            filtered_orders.push(order.metadata.uid);
+            false
+        }
     });
-    orders
+    (orders, filtered_orders)
 }
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
-fn filter_dust_orders(mut orders: Vec<Arc<Order>>, balances: &Balances) -> Vec<Arc<Order>> {
-    orders.retain(|order| {
+fn filter_dust_orders(
+    mut orders: Vec<Arc<Order>>,
+    balances: &Balances,
+) -> (Vec<Arc<Order>>, Vec<OrderUid>) {
+    let mut removed = vec![];
+    let keep = |order: &Order| {
         if !order.data.partially_fillable {
             return true;
         }
@@ -559,7 +603,7 @@ fn filter_dust_orders(mut orders: Vec<Arc<Order>>, balances: &Balances) -> Vec<A
         };
 
         let Ok(remaining) =
-            remaining_amounts::Remaining::from_order_with_balance(&order.as_ref().into(), balance)
+            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
         else {
             return false;
         };
@@ -572,17 +616,29 @@ fn filter_dust_orders(mut orders: Vec<Arc<Order>>, balances: &Balances) -> Vec<A
         };
 
         !sell_amount.is_zero() && !buy_amount.is_zero()
+    };
+
+    orders.retain(|order| {
+        if keep(order) {
+            true
+        } else {
+            removed.push(order.metadata.uid);
+            false
+        }
     });
-    orders
+    (orders, removed)
 }
 
 async fn get_orders_with_native_prices(
     orders: Vec<Arc<Order>>,
     native_price_estimator: &NativePriceUpdater,
-    metrics: &Metrics,
     additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
-) -> (Vec<Arc<Order>>, BTreeMap<Address, alloy::primitives::U256>) {
+) -> (
+    Vec<Arc<Order>>,
+    Vec<OrderUid>,
+    BTreeMap<Address, alloy::primitives::U256>,
+) {
     let traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
@@ -592,24 +648,26 @@ async fn get_orders_with_native_prices(
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
     // Filter orders so that we only return orders that have prices
-    let mut filtered_market_orders = 0_i64;
+    let mut removed_market_orders = 0_i64;
+    let mut removed_orders = vec![];
     let mut orders = orders;
     orders.retain(|order| {
-        let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
-        match (prices.get(t0), prices.get(t1)) {
-            (Some(_), Some(_)) => true,
-            _ => {
-                filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
-                false
-            }
+        let both_prices_present = prices.contains_key(&order.data.sell_token)
+            && prices.contains_key(&order.data.buy_token);
+        if both_prices_present {
+            true
+        } else {
+            removed_orders.push(order.metadata.uid);
+            removed_market_orders += i64::from(order.metadata.class == OrderClass::Market);
+            false
         }
     });
 
-    metrics
+    Metrics::get()
         .auction_market_order_missing_price
-        .set(filtered_market_orders);
+        .set(removed_market_orders);
 
-    (orders, prices)
+    (orders, removed_orders, prices)
 }
 
 async fn find_unsupported_tokens(
@@ -655,119 +713,6 @@ async fn find_unsupported_tokens(
                 .then_some(order.metadata.uid)
         })
         .collect()
-}
-
-/// Order filtering state for recording filtered orders over the course of
-/// building an auction.
-struct OrderFilterCounter {
-    metrics: &'static Metrics,
-
-    /// Mapping of remaining order UIDs to their classes.
-    orders: HashMap<OrderUid, OrderClass>,
-    /// Running tally for counts of filtered orders.
-    counts: HashMap<Reason, usize>,
-}
-
-type Reason = &'static str;
-
-impl OrderFilterCounter {
-    fn new(metrics: &'static Metrics, orders: &[Arc<Order>]) -> Self {
-        // Eagerly store the candidate orders. This ensures that that gauge is
-        // always up to date even if there are errors in the auction building
-        // process.
-        let initial_counts = orders
-            .iter()
-            .counts_by(|order| order.metadata.class.as_ref());
-        for class in OrderClass::VARIANTS {
-            let count = initial_counts.get(class).copied().unwrap_or_default();
-            metrics
-                .auction_candidate_orders
-                .with_label_values(&[class])
-                .set(i64::try_from(count).unwrap_or(i64::MAX));
-        }
-
-        Self {
-            metrics,
-            orders: orders
-                .iter()
-                .map(|order| (order.metadata.uid, order.metadata.class))
-                .collect(),
-            counts: HashMap::new(),
-        }
-    }
-
-    /// Creates a new checkpoint from the current remaining orders.
-    fn checkpoint(&mut self, reason: Reason, orders: &[Arc<Order>]) -> Vec<OrderUid> {
-        let filtered_orders = orders
-            .iter()
-            .fold(self.orders.clone(), |mut order_uids, order| {
-                order_uids.remove(&order.metadata.uid);
-                order_uids
-            });
-
-        *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for order_uid in filtered_orders.keys() {
-            self.orders.remove(order_uid).unwrap();
-        }
-        if !filtered_orders.is_empty() {
-            tracing::debug!(
-                %reason,
-                count = filtered_orders.len(),
-                orders = ?filtered_orders, "filtered orders"
-            );
-        }
-        filtered_orders.into_keys().collect()
-    }
-
-    /// Creates a new checkpoint based on the found invalid orders.
-    fn checkpoint_by_invalid_orders(&mut self, reason: Reason, invalid_orders: &[OrderUid]) {
-        if invalid_orders.is_empty() {
-            return;
-        }
-
-        let mut counter = 0;
-        for order_uid in invalid_orders {
-            if self.orders.remove(order_uid).is_some() {
-                counter += 1;
-            }
-        }
-        *self.counts.entry(reason).or_default() += counter;
-        if counter > 0 {
-            tracing::debug!(
-                %reason,
-                count = invalid_orders.len(),
-                orders = ?invalid_orders, "filtered orders"
-            );
-        }
-    }
-
-    /// Records the filter counter to metrics.
-    /// If there are orders that have been filtered out since the last
-    /// checkpoint these orders will get recorded with the readon "other".
-    /// Returns these catch-all orders.
-    fn record(mut self, orders: &[Arc<Order>]) -> Vec<OrderUid> {
-        let removed = self.checkpoint("other", orders);
-
-        self.metrics.auction_creations.inc();
-
-        let remaining_counts = self.orders.iter().counts_by(|(_, class)| class.as_ref());
-        for class in OrderClass::VARIANTS {
-            let count = remaining_counts.get(class).copied().unwrap_or_default();
-            self.metrics
-                .auction_solvable_orders
-                .with_label_values(&[class])
-                .set(i64::try_from(count).unwrap_or(i64::MAX));
-        }
-
-        for (reason, count) in self.counts {
-            self.metrics
-                .auction_filtered_orders
-                .with_label_values(&[reason])
-                .set(i64::try_from(count).unwrap_or(i64::MAX));
-        }
-
-        removed
-    }
 }
 
 #[cfg(test)]
@@ -845,12 +790,10 @@ mod tests {
         );
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
-        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-        let (filtered_orders, prices) = get_orders_with_native_prices(
+        let (filtered_orders, _removed, prices) = get_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
-            metrics,
             vec![],
             Duration::from_millis(100),
         )
@@ -947,35 +890,32 @@ mod tests {
             Duration::from_millis(5),
             Default::default(),
         );
-        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
         // We'll have no native prices in this call. But set_tokens_to_update
         // will cause the background task to fetch them in the next cycle.
-        let (filtered_orders, prices) = get_orders_with_native_prices(
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
-            metrics,
             vec![token5],
             Duration::ZERO,
         )
         .await;
-        assert!(filtered_orders.is_empty());
+        assert!(alive_orders.is_empty());
         assert!(prices.is_empty());
 
         // Wait for native prices to get fetched by the background task.
         tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
 
         // Now we have all the native prices we want.
-        let (filtered_orders, prices) = get_orders_with_native_prices(
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
-            metrics,
             vec![token5],
             Duration::ZERO,
         )
         .await;
 
-        assert_eq!(filtered_orders, [orders[2].clone()]);
+        assert_eq!(alive_orders, [orders[2].clone()]);
         assert_eq!(
             prices,
             btreemap! {
@@ -1053,17 +993,15 @@ mod tests {
         );
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
-        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-        let (filtered_orders, prices) = get_orders_with_native_prices(
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
-            metrics,
             vec![],
             Duration::from_secs(10),
         )
         .await;
-        assert_eq!(filtered_orders, orders);
+        assert_eq!(alive_orders, orders);
         assert_eq!(
             prices,
             btreemap! {
@@ -1260,11 +1198,11 @@ mod tests {
         let expected = &[0, 2, 4];
 
         let no_bypass: HashSet<OrderUid> = HashSet::new();
-        let filtered =
+        let (alive_orders, _removed_orders) =
             orders_with_balance(orders.clone(), &balances, settlement_contract, &no_bypass);
-        assert_eq!(filtered.len(), expected.len());
+        assert_eq!(alive_orders.len(), expected.len());
         for index in expected {
-            let found = filtered.iter().any(|o| o.data == orders[*index].data);
+            let found = alive_orders.iter().any(|o| o.data == orders[*index].data);
             assert!(found, "{}", index);
         }
     }
@@ -1333,28 +1271,25 @@ mod tests {
 
         // EIP-1271 order and wrapper order should be retained, regular order filtered
         let wrapper_set = HashSet::from([wrapper_order_uid]);
-        let filtered =
+        let (alive_orders, _removed_orders) =
             orders_with_balance(orders.clone(), &balances, settlement_contract, &wrapper_set);
-        assert_eq!(filtered.len(), 2);
+        assert_eq!(alive_orders.len(), 2);
         assert!(
-            filtered
+            alive_orders
                 .iter()
                 .any(|o| o.metadata.uid == eip1271_order.metadata.uid)
         );
         assert!(
-            filtered
+            alive_orders
                 .iter()
                 .any(|o| o.metadata.uid == wrapper_order.metadata.uid)
         );
 
         // Without wrapper set, only EIP-1271 order should be retained
         let empty_set: HashSet<OrderUid> = HashSet::new();
-        let filtered_no_wrappers =
+        let (alive_orders, _removed_orders) =
             orders_with_balance(orders, &balances, settlement_contract, &empty_set);
-        assert_eq!(filtered_no_wrappers.len(), 1);
-        assert_eq!(
-            filtered_no_wrappers[0].metadata.uid,
-            eip1271_order.metadata.uid
-        );
+        assert_eq!(alive_orders.len(), 1);
+        assert_eq!(alive_orders[0].metadata.uid, eip1271_order.metadata.uid);
     }
 }
