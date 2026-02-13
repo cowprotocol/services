@@ -7,12 +7,7 @@ use {
         shutdown_controller::ShutdownController,
     },
     e2e::setup::{
-        OnchainComponents,
-        Services,
-        TIMEOUT,
-        colocation,
-        proxy::ReverseProxy,
-        run_test,
+        OnchainComponents, Services, TIMEOUT, colocation, proxy::ReverseProxy, run_test,
         wait_for_condition,
     },
     ethrpc::{Web3, alloy::CallBuilderExt},
@@ -94,7 +89,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     );
 
     // Configure autopilot-leader only with test_solver
-    let config_file = Configuration {
+    let config_file_leader = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -108,7 +103,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .start_autopilot_with_shutdown_controller(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                format!("--config={}", config_file_leader.path().display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -121,7 +116,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await;
 
     // Configure autopilot-backup only with test_solver2
-    let config_file = Configuration {
+    let config_file_follower = Configuration {
         drivers: vec![Solver::new(
             "test_solver2".to_string(),
             Url::from_str("http://localhost:11088/test_solver2").unwrap(),
@@ -135,7 +130,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                format!("--config={}", config_file_follower.path().display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
