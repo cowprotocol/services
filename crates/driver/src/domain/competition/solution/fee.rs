@@ -27,15 +27,13 @@ use {
         error::Math,
         trade::{ClearingPrices, Fee, Fulfillment},
     },
-    crate::domain::{
-        competition::{
-            PriceLimits,
-            order::{self, FeePolicy, Side},
-            solution::error::Trade,
-        },
-        eth::{self},
+    crate::domain::competition::{
+        PriceLimits,
+        order::{self, FeePolicy, Side},
+        solution::error::Trade,
     },
     bigdecimal::Zero,
+    shared::domain::eth,
 };
 
 impl Fulfillment {

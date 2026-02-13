@@ -1,11 +1,9 @@
 use {
     crate::{
         boundary::Result,
-        domain::{
-            eth,
-            liquidity::{self, balancer},
-        },
+        domain::liquidity::{self, balancer},
     },
+    shared::domain::eth,
     solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 

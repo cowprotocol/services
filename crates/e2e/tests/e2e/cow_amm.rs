@@ -10,7 +10,6 @@ use {
         ERC20,
         support::{Balances, Signatures},
     },
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{
         DeployedContracts,
         OnchainComponents,
@@ -29,7 +28,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    shared::{domain::eth::NonZeroU256, web3::Web3},
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,

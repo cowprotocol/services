@@ -1,18 +1,20 @@
 use {
-    crate::domain::eth::{self, ContractAddress},
     alloy::primitives::Address,
     chain::Chain,
     contracts::alloy::BalancerV2Vault,
     derive_more::Debug,
     hex_literal::hex,
     reqwest::Url,
-    shared::sources::uniswap_v2::{
-        BAOSWAP_INIT,
-        HONEYSWAP_INIT,
-        SUSHISWAP_INIT,
-        SWAPR_INIT,
-        TESTNET_UNISWAP_INIT,
-        UNISWAP_INIT,
+    shared::{
+        domain::eth::{self, ContractAddress},
+        sources::uniswap_v2::{
+            BAOSWAP_INIT,
+            HONEYSWAP_INIT,
+            SUSHISWAP_INIT,
+            SWAPR_INIT,
+            TESTNET_UNISWAP_INIT,
+            UNISWAP_INIT,
+        },
     },
     std::{collections::HashSet, time::Duration},
 };

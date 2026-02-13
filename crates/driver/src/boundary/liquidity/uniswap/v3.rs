@@ -1,18 +1,16 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{
-            eth,
-            liquidity::{
-                self,
-                uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
-            },
+        domain::liquidity::{
+            self,
+            uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
         },
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
     ethrpc::block_stream::BlockRetrieving,
     shared::{
+        domain::eth,
         http_solver::model::TokenAmount,
         interaction::Interaction,
         maintenance::ServiceMaintenance,
@@ -93,7 +91,7 @@ pub fn to_interaction(
     eth::Interaction {
         target: encoded.0,
         value: encoded.1.into(),
-        call_data: crate::util::Bytes(encoded.2.0.to_vec()),
+        call_data: encoded.2,
     }
 }
 

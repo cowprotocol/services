@@ -1,13 +1,18 @@
 use {
-    crate::{
-        domain::eth,
-        infra::blockchain::{self, Ethereum},
-    },
+    crate::infra::blockchain::{self, Ethereum},
     observe::future::Measure,
+    shared::domain::eth,
 };
 
-pub mod enso;
-pub mod tenderly;
+pub mod infra;
+pub mod provider;
+
+/// Configuration of the transaction simulator.
+#[derive(Debug, Clone)]
+pub enum Config {
+    Tenderly(provider::tenderly::Config),
+    Enso(provider::enso::Config),
+}
 
 /// Ethereum transaction simulator.
 #[derive(Debug, Clone)]
@@ -20,19 +25,12 @@ pub struct Simulator {
     disable_gas: Option<eth::Gas>,
 }
 
-/// Configuration of the transaction simulator.
-#[derive(Debug)]
-pub enum Config {
-    Tenderly(tenderly::Config),
-    Enso(enso::Config),
-}
-
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config, eth: Ethereum) -> Self {
+    pub fn tenderly(config: provider::tenderly::Config, eth: Ethereum) -> Self {
         let eth = eth.with_metric_label("tenderlySimulator".into());
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(config, eth.clone())),
+            inner: Inner::Tenderly(provider::tenderly::Tenderly::new(config, eth.clone())),
             eth,
             disable_access_lists: false,
             disable_gas: None,
@@ -52,10 +50,10 @@ impl Simulator {
 
     /// Simulate transactions using the [Enso Simulator](https://github.com/EnsoFinance/transaction-simulator).
     /// Uses Ethereum RPC API to generate access lists.
-    pub fn enso(config: enso::Config, eth: Ethereum) -> Self {
+    pub fn enso(config: provider::enso::Config, eth: Ethereum) -> Self {
         let eth = eth.with_metric_label("ensoSimulator".into());
         Self {
-            inner: Inner::Enso(enso::Enso::new(
+            inner: Inner::Enso(provider::enso::Enso::new(
                 config,
                 eth.chain(),
                 eth.current_block().clone(),
@@ -89,7 +87,7 @@ impl Simulator {
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx, tenderly::GenerateAccessList::Yes)
+                    .simulate(tx, provider::tenderly::GenerateAccessList::Yes)
                     .await
                     .map_err(with(tx.clone(), block))?
                     .access_list
@@ -117,7 +115,7 @@ impl Simulator {
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx, tenderly::GenerateAccessList::No)
+                    .simulate(tx, provider::tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
                     .await
                     .map_err(with(tx.clone(), block))?
@@ -139,19 +137,19 @@ impl Simulator {
 
 #[derive(Debug, Clone)]
 enum Inner {
-    Tenderly(tenderly::Tenderly),
+    Tenderly(provider::tenderly::Tenderly),
     Ethereum,
-    Enso(enso::Enso),
+    Enso(provider::enso::Enso),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SimulatorError {
     #[error("tenderly error: {0:?}")]
-    Tenderly(#[from] tenderly::Error),
+    Tenderly(#[from] provider::tenderly::Error),
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("enso error: {0:?}")]
-    Enso(#[from] enso::Error),
+    Enso(#[from] provider::enso::Error),
     #[error("the simulated gas {0} exceeded the gas limit {1} provided in the solution")]
     GasExceeded(eth::Gas, eth::Gas),
 }
@@ -183,11 +181,11 @@ where
     move |err| {
         let err: SimulatorError = err.into();
         let tx = match &err {
-            SimulatorError::Tenderly(tenderly::Error::Http(_)) => None,
-            SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx),
+            SimulatorError::Tenderly(provider::tenderly::Error::Http(_)) => None,
+            SimulatorError::Tenderly(provider::tenderly::Error::Revert(_)) => Some(tx),
             SimulatorError::Blockchain(_) => Some(tx),
-            SimulatorError::Enso(enso::Error::Http(_)) => None,
-            SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
+            SimulatorError::Enso(provider::enso::Error::Http(_)) => None,
+            SimulatorError::Enso(provider::enso::Error::Revert(_)) => Some(tx),
             SimulatorError::GasExceeded(..) => Some(tx),
         };
         match tx {

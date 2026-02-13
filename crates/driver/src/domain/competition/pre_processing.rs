@@ -4,12 +4,11 @@ use {
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
             cow_amm,
-            eth,
             liquidity,
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
-        util::Bytes,
     },
+    alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
     chrono::Utc,
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
@@ -22,6 +21,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
+        domain::eth,
         price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
@@ -287,7 +287,7 @@ impl Utilities {
                             .map(|i| InteractionData {
                                 target: i.target,
                                 value: i.value.0,
-                                call_data: i.call_data.0.clone(),
+                                call_data: i.call_data.0.to_vec(),
                             })
                             .collect()
                     } else {
@@ -460,7 +460,8 @@ impl Utilities {
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
-                    app_data: order::app_data::AppDataHash(Bytes(template.order.app_data.0)).into(),
+                    app_data: order::app_data::AppDataHash(FixedBytes(template.order.app_data.0))
+                        .into(),
                     buy_token_balance: template.order.buy_token_balance.into(),
                     sell_token_balance: template.order.sell_token_balance.into(),
                     partial: match template.order.partially_fillable {
@@ -485,7 +486,7 @@ impl Utilities {
                     signature: match template.signature {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
-                            data: Bytes(bytes),
+                            data: Bytes::from(bytes),
                             signer: amm,
                         },
                         _ => {

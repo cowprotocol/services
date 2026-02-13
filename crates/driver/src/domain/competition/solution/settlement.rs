@@ -1,19 +1,17 @@
 use {
     super::{Error, Solution, encoding, trade::ClearingPrices},
     crate::{
-        domain::{
-            competition::{
-                self,
-                auction,
-                order::{self},
-                solution::{self, Interaction, Trade, error},
-            },
-            eth,
+        domain::competition::{
+            self,
+            auction,
+            order::{self},
+            solution::{self, Interaction, Trade, error},
         },
         infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
     alloy::primitives::U256,
     futures::future::try_join_all,
+    shared::domain::eth,
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
 };

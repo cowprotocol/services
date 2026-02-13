@@ -3,7 +3,7 @@
 
 use {
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         tests::{
             self,
             cases::EtherExt,
@@ -11,6 +11,7 @@ use {
         },
     },
     number::{testing::ApproxEq, units::EthUnit},
+    shared::domain::eth,
 };
 
 /// Haircut in basis points used across tests (500 bps = 5%)

@@ -1,6 +1,5 @@
 use {
     ::alloy::primitives::U256,
-    driver::domain::eth::NonZeroU256,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
@@ -9,7 +8,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    shared::{domain::eth::NonZeroU256, web3::Web3},
     std::ops::DerefMut,
 };
 

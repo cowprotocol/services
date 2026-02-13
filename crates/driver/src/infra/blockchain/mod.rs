@@ -1,8 +1,5 @@
 use {
-    crate::{
-        boundary,
-        domain::{eth, eth::U256},
-    },
+    crate::boundary,
     alloy::{
         eips::eip1559::Eip1559Estimation,
         network::TransactionBuilder,
@@ -15,11 +12,13 @@ use {
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
+        domain::eth::{self, U256},
         gas_price_estimation::Eip1559EstimationExt,
         price_estimation::trade_verifier::balance_overrides::{
             BalanceOverrides,
             BalanceOverriding,
         },
+        web3,
     },
     std::{fmt, sync::Arc},
     thiserror::Error,
@@ -49,10 +48,14 @@ impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
     pub async fn try_new(args: RpcArgs) -> Result<Self, RpcError> {
-        let web3 = boundary::buffered_web3_client(
+        let web3 = web3::web3(
+            &web3::Arguments {
+                ethrpc_max_batch_size: args.max_batch_size,
+                ethrpc_max_concurrent_requests: args.max_concurrent_requests,
+                ethrpc_batch_delay: Default::default(),
+            },
             &args.url,
-            args.max_batch_size,
-            args.max_concurrent_requests,
+            "base",
         );
         let chain = Chain::try_from(web3.provider.get_chain_id().await?)?;
 
@@ -212,7 +215,7 @@ impl Ethereum {
             .from(tx.from)
             .to(tx.to)
             .value(tx.value.0)
-            .input(tx.input.0.into())
+            .input(tx.input.into())
             .access_list(tx.access_list.into());
 
         let tx = match self.simulation_gas_price().await {

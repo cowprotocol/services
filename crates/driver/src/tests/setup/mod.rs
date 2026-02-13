@@ -5,7 +5,6 @@ use {
     crate::{
         domain::{
             competition::order::{self, app_data::AppData},
-            eth,
             time,
         },
         infra::{
@@ -49,6 +48,7 @@ use {
     number::{serialization::HexOrDecimalU256, testing::ApproxEq},
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
+    shared::domain::eth,
     solvers_dto::solution::Flashloan,
     std::{
         collections::{HashMap, HashSet},

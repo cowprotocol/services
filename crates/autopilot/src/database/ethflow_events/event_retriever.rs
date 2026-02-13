@@ -8,7 +8,7 @@ use {
         sol_types::SolEvent,
     },
     contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow,
-    shared::{ethrpc::Web3, event_handling::AlloyEventRetrieving},
+    shared::{event_handling::AlloyEventRetrieving, web3::Web3},
 };
 
 pub struct EthFlowRefundRetriever {

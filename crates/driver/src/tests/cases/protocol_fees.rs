@@ -1,20 +1,23 @@
-use crate::{
-    domain::{competition::order, eth},
-    infra::config::file::FeeHandler,
-    tests::{
-        self,
-        cases::EtherExt,
-        setup::{
-            ExpectedOrderAmounts,
-            Test,
-            ab_adjusted_pool,
-            ab_liquidity_quote,
-            ab_order,
-            ab_solution,
-            fee::{Policy, Quote},
-            test_solver,
+use {
+    crate::{
+        domain::competition::order,
+        infra::config::file::FeeHandler,
+        tests::{
+            self,
+            cases::EtherExt,
+            setup::{
+                ExpectedOrderAmounts,
+                Test,
+                ab_adjusted_pool,
+                ab_liquidity_quote,
+                ab_order,
+                ab_solution,
+                fee::{Policy, Quote},
+                test_solver,
+            },
         },
     },
+    shared::domain::eth,
 };
 
 struct Amounts {

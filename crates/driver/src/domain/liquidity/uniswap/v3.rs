@@ -1,12 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::{
-            eth,
-            liquidity::{self, InvalidSwap},
-        },
+        domain::liquidity::{self, InvalidSwap},
     },
     derive_more::Debug,
+    shared::domain::eth,
     std::collections::BTreeMap,
 };
 

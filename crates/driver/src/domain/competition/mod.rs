@@ -7,7 +7,6 @@ use {
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
-            eth,
             time::DeadlineExceeded,
         },
         infra::{
@@ -16,14 +15,16 @@ use {
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
-            simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
         },
-        util::{Bytes, math},
+        util::math,
     },
+    alloy::primitives::Bytes,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
     hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
+    shared::domain::eth,
+    simulator::{RevertError, SimulatorError},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -371,7 +372,7 @@ impl Competition {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    if let Err(infra::simulator::Error::Revert(err)) =
+                    if let Err(simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await
                     {
                         observe::winner_voided(self.solver.name(), block, &err, has_haircut);
@@ -386,7 +387,7 @@ impl Competition {
                                 &self.solver,
                                 auction.id(),
                                 settlement.solution(),
-                                &infra::simulator::Error::Revert(err),
+                                &simulator::Error::Revert(err),
                                 true,
                             );
                         }
@@ -739,14 +740,11 @@ impl Competition {
     }
 
     /// Returns whether the settlement can be executed or would revert.
-    async fn simulate_settlement(
-        &self,
-        settlement: &Settlement,
-    ) -> Result<(), infra::simulator::Error> {
+    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
         let tx = settlement.transaction(settlement::Internalization::Enable);
         let gas_needed_for_tx = self.simulator.gas(tx).await?;
         if gas_needed_for_tx > settlement.gas.limit {
-            return Err(infra::simulator::Error::Revert(RevertError {
+            return Err(simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
                 tx: tx.clone(),
                 block: self.eth.current_block().borrow().number.into(),
@@ -851,22 +849,22 @@ pub struct PriceLimits {
 #[derive(Debug)]
 pub struct Revealed {
     /// The internalized calldata is the final calldata that appears onchain.
-    pub internalized_calldata: Bytes<Vec<u8>>,
+    pub internalized_calldata: Bytes,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized_calldata: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes,
 }
 
 #[derive(Debug)]
 pub struct Settled {
     /// The transaction hash in which the solution was submitted.
     pub tx_hash: eth::TxId,
-    pub internalized_calldata: Bytes<Vec<u8>>,
+    pub internalized_calldata: Bytes,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized_calldata: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes,
 }
 
 #[derive(Debug, thiserror::Error)]

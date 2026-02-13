@@ -1,5 +1,4 @@
 use {
-    crate::domain::eth,
     chain::Chain,
     contracts::alloy::{
         BalancerV2Vault,
@@ -9,6 +8,7 @@ use {
         support::Balances,
     },
     ethrpc::Web3,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 
@@ -43,6 +43,19 @@ pub struct Addresses {
     pub balances: Option<eth::ContractAddress>,
     pub cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
     pub flashloan_router: Option<eth::ContractAddress>,
+}
+
+impl From<&Addresses> for simulator::infra::blockchain::contracts::Addresses {
+    fn from(value: &Addresses) -> Self {
+        simulator::infra::blockchain::contracts::Addresses {
+            settlement: value.settlement,
+            signatures: value.signatures,
+            weth: value.weth,
+            balances: value.balances,
+            cow_amm_helper_by_factory: value.cow_amm_helper_by_factory.clone(),
+            flashloan_router: value.flashloan_router,
+        }
+    }
 }
 
 impl Contracts {

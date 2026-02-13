@@ -1,6 +1,6 @@
 use {
-    crate::domain::eth,
     derive_more::{From, Into},
+    shared::domain::eth,
 };
 
 pub mod stable;

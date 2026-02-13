@@ -84,12 +84,10 @@ impl LiquiditySourceNotifying for Notifier {
 
 mod utils {
     use {
-        crate::domain::{
-            competition::solution::{self, Settlement},
-            eth,
-        },
+        crate::domain::competition::solution::{self, Settlement},
         alloy::{primitives::Address, sol_types::SolCall},
         contracts::alloy::LiquoriceSettlement,
+        shared::domain::eth,
         std::collections::HashSet,
     };
 
@@ -160,12 +158,9 @@ mod utils {
     #[cfg(test)]
     mod tests {
         use {
-            crate::{
-                domain::eth,
-                infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
-                util::Bytes,
-            },
-            alloy::primitives::Address,
+            crate::infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
+            alloy::primitives::{Address, Bytes},
+            shared::domain::eth,
         };
 
         #[test]
@@ -176,7 +171,7 @@ mod utils {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: liquorice_settlement_address,
-                    call_data: Bytes(calldata),
+                    call_data: calldata.into(),
                     value: 0.into(),
                 },
                 liquorice_settlement_address,
@@ -191,7 +186,7 @@ mod utils {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: liquorice_settlement_address,
-                    call_data: Bytes(vec![]),
+                    call_data: Bytes::new(),
                     value: 0.into(),
                 },
                 liquorice_settlement_address,
@@ -205,7 +200,7 @@ mod utils {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: Address::random(),
-                    call_data: Bytes(vec![]),
+                    call_data: Bytes::new(),
                     value: 0.into(),
                 },
                 Address::random(),

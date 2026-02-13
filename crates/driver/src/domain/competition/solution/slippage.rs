@@ -1,11 +1,11 @@
 use {
     crate::domain::{
         competition::auction::Prices,
-        eth,
         liquidity::{ExactOutput, MaxInput},
     },
     num::{BigRational, CheckedDiv, CheckedMul},
     number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
+    shared::domain::eth,
 };
 
 #[derive(Clone)]
@@ -111,7 +111,7 @@ impl Parameters {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::eth::Asset, alloy::primitives::address, num::rational::Ratio};
+    use {super::*, alloy::primitives::address, num::rational::Ratio, shared::domain::eth::Asset};
 
     const GNO: eth::Address = address!("6810e776880c02933d47db1b9fc05908e5386b96");
     const USDC: eth::Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");

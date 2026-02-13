@@ -147,7 +147,7 @@ impl Display for DatabasePoolConfig {
 #[group(skip)]
 pub struct Arguments {
     #[clap(flatten)]
-    pub ethrpc: crate::ethrpc::Arguments,
+    pub ethrpc: crate::web3::Arguments,
 
     #[clap(flatten)]
     pub current_block: crate::current_block::Arguments,

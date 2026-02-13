@@ -1,5 +1,4 @@
 use {
-    crate::domain::eth,
     alloy::{primitives::Address, providers::DynProvider},
     contracts::alloy::cow_amm::CowAmmLegacyHelper,
     cow_amm::Amm,
@@ -7,6 +6,7 @@ use {
         Either::{Left, Right},
         Itertools,
     },
+    shared::domain::eth,
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,

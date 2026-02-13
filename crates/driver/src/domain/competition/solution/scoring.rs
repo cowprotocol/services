@@ -12,20 +12,18 @@ use {
         order::{self, Side},
         trade::CustomClearingPrices,
     },
-    crate::domain::{
-        competition::{
-            PriceLimits,
-            auction,
-            order::FeePolicy,
-            solution::{
-                error,
-                fee::{self, adjust_quote_to_order_limits},
-            },
+    crate::domain::competition::{
+        PriceLimits,
+        auction,
+        order::FeePolicy,
+        solution::{
+            error,
+            fee::{self, adjust_quote_to_order_limits},
         },
-        eth,
     },
     alloy::primitives::ruint::UintTryFrom,
     number::u256_ext::U256Ext,
+    shared::domain::eth,
 };
 
 pub fn compute_score(

@@ -1,6 +1,6 @@
 use {
     super::pair_provider::PairProvider,
-    crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
+    crate::{baseline_solver::BaselineSolvable, recent_block_cache::Block, web3::Web3},
     alloy::{
         eips::BlockId,
         primitives::{Address, U256},

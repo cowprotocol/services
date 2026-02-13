@@ -1,7 +1,7 @@
 use {
     super::{Asset, Order, Partial},
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{
@@ -27,6 +27,7 @@ use {
         alloy::{CallBuilderExt, EvmProviderExt, ProviderExt},
     },
     futures::Future,
+    shared::domain::eth,
     solvers_dto::solution::Flashloan,
     std::collections::HashMap,
 };

@@ -1,12 +1,10 @@
 use {
     crate::{
-        domain::{
-            competition::{auction::Tokens, order},
-            eth,
-        },
+        domain::competition::{auction::Tokens, order},
         util,
     },
     chrono::Duration,
+    shared::domain::eth,
     std::{fmt::Debug, sync::Arc},
 };
 

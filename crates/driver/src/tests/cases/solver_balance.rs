@@ -1,9 +1,9 @@
-use crate::{
-    domain::eth,
-    tests::{
+use {
+    crate::tests::{
         setup,
         setup::{ab_order, ab_pool, ab_solution, test_solver},
     },
+    shared::domain::eth,
 };
 
 /// Test that the `/solve` request errors when solver balance is too low.

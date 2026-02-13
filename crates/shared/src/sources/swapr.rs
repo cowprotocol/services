@@ -55,9 +55,9 @@ mod tests {
     use {
         super::*,
         crate::{
-            ethrpc::Web3,
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
+            web3::Web3,
         },
         alloy::{
             primitives::{Address, address},

@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Ethereum, Mempool, simulator, solver::Timeouts},
+    super::{Ethereum, Mempool, solver::Timeouts},
     crate::{
         boundary,
         domain::{
@@ -15,7 +15,6 @@ use {
                 Solved,
                 solution::{self, Settlement},
             },
-            eth::{self, Gas},
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},
@@ -24,6 +23,7 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
+    shared::domain::eth::{self, Gas},
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,

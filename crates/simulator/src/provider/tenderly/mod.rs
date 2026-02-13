@@ -1,14 +1,11 @@
-use {
-    crate::{domain::eth, infra::Ethereum},
-    thiserror::Error,
-};
+use {crate::infra::Ethereum, shared::domain::eth, thiserror::Error};
 
 mod dto;
 
 const DEFAULT_URL: &str = "https://api.tenderly.co/api";
 
 #[derive(Debug, Clone)]
-pub(super) struct Tenderly {
+pub(crate) struct Tenderly {
     endpoint: reqwest::Url,
     client: reqwest::Client,
     config: Config,
@@ -33,7 +30,7 @@ pub struct Config {
 }
 
 impl Tenderly {
-    pub(super) fn new(config: Config, eth: Ethereum) -> Self {
+    pub(crate) fn new(config: Config, eth: Ethereum) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -64,7 +61,7 @@ impl Tenderly {
         }
     }
 
-    pub(super) async fn simulate(
+    pub(crate) async fn simulate(
         &self,
         tx: &eth::Tx,
         generate_access_list: GenerateAccessList,
@@ -116,7 +113,7 @@ pub struct Simulation {
 pub struct SimulationId(#[allow(dead_code, reason = "intended for Debug implementation")] String);
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum GenerateAccessList {
+pub(crate) enum GenerateAccessList {
     Yes,
     No,
 }

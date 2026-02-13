@@ -1,14 +1,11 @@
 use {
-    crate::{
-        domain::eth,
-        infra::{Ethereum, blockchain},
-    },
+    crate::infra::{Ethereum, blockchain},
     anyhow::Result,
     ethrpc::block_stream::{self, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     model::order::BUY_ETH_ADDRESS,
-    shared::request_sharing::BoxRequestSharing,
+    shared::{domain::eth, request_sharing::BoxRequestSharing},
     std::{
         collections::HashMap,
         sync::{Arc, RwLock},

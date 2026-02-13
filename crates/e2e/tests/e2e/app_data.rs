@@ -9,7 +9,7 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     std::str::FromStr,
 };
 

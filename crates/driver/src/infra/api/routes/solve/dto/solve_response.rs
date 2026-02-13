@@ -1,11 +1,11 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth},
+        domain::{competition, competition::order},
         infra::Solver,
-        util::serialize,
     },
     serde::Serialize,
     serde_with::serde_as,
+    shared::domain::eth,
     std::collections::HashMap,
 };
 
@@ -72,11 +72,11 @@ pub struct Solution {
     /// in subsequent requests (reveal, settle).
     solution_id: u64,
     submission_address: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     score: eth::U256,
-    #[serde_as(as = "HashMap<serialize::Hex, _>")]
+    #[serde_as(as = "HashMap<serde_ext::Hex, _>")]
     orders: HashMap<OrderId, TradedOrder>,
-    #[serde_as(as = "HashMap<_, serialize::U256>")]
+    #[serde_as(as = "HashMap<_, serde_ext::U256>")]
     clearing_prices: HashMap<eth::Address, eth::U256>,
 }
 
@@ -87,17 +87,17 @@ pub struct TradedOrder {
     pub side: Side,
     pub sell_token: eth::Address,
     pub buy_token: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     /// Sell limit order amount.
     pub limit_sell: eth::U256,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     /// Buy limit order amount.
     pub limit_buy: eth::U256,
     /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     pub executed_sell: eth::U256,
     /// The effective amount the user received after all fees.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     pub executed_buy: eth::U256,
 }
 

@@ -10,8 +10,8 @@ pub mod baseline_solver;
 pub mod code_fetching;
 pub mod current_block;
 pub mod db_order_conversions;
+pub mod domain;
 pub mod encoded_settlement;
-pub mod ethrpc;
 pub mod event_handling;
 pub mod event_storing_helpers;
 pub mod external_prices;
@@ -37,6 +37,7 @@ pub mod token_list;
 pub mod trace_many;
 pub mod trade_finding;
 pub mod url;
+pub mod web3;
 pub mod zeroex_api;
 
 /// anyhow errors are not clonable natively. This is a workaround that creates a

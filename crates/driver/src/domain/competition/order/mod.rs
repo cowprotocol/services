@@ -1,11 +1,12 @@
 use {
     crate::{
-        domain::eth,
         infra::{Ethereum, blockchain},
-        util::{self, Bytes},
+        util,
     },
+    alloy::primitives::FixedBytes,
     derive_more::{From, Into},
     model::order::{BuyTokenDestination, SellTokenSource},
+    shared::domain::eth,
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -199,7 +200,7 @@ pub const UID_LEN: usize = 56;
 
 /// UID of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Uid(pub Bytes<[u8; UID_LEN]>);
+pub struct Uid(pub FixedBytes<UID_LEN>);
 
 impl From<&solvers_dto::solution::OrderUid> for Uid {
     fn from(value: &solvers_dto::solution::OrderUid) -> Self {
@@ -213,7 +214,7 @@ impl Uid {
         bytes[0..32].copy_from_slice(order_hash.as_slice());
         bytes[32..52].copy_from_slice(owner.as_slice());
         bytes[52..56].copy_from_slice(&valid_to.to_be_bytes());
-        Self(Bytes(bytes))
+        Self(FixedBytes(bytes))
     }
 
     /// Address that authorized the order. Sell tokens will be taken

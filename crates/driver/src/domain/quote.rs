@@ -4,7 +4,6 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth,
             liquidity,
             time,
         },
@@ -16,6 +15,7 @@ use {
         util,
     },
     chrono::Utc,
+    shared::domain::eth,
     std::collections::{HashMap, HashSet},
 };
 
@@ -298,15 +298,13 @@ impl Tokens {
 
 mod encode {
     use {
-        crate::domain::{
-            competition::solution,
-            eth::{
-                self,
-                allowance::{Approval, Required},
-            },
-        },
+        crate::domain::competition::solution,
         alloy::primitives::Address,
         num::rational::Ratio,
+        shared::domain::eth::{
+            self,
+            allowance::{Approval, Required},
+        },
     };
 
     const DEFAULT_QUOTE_SLIPPAGE_BPS: u32 = 100;

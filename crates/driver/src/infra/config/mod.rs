@@ -1,23 +1,20 @@
 use {
-    crate::{
-        domain::eth,
-        infra::{
-            blockchain,
-            config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
-            liquidity,
-            mempool,
-            notify,
-            simulator,
-            solver,
-        },
+    crate::infra::{
+        blockchain,
+        config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
+        liquidity,
+        mempool,
+        notify,
+        solver,
     },
+    shared::domain::eth,
     std::time::Duration,
 };
 
 pub mod file;
 
 /// Configuration of infrastructural components.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub disable_access_list_simulation: bool,
     pub disable_gas_simulation: Option<eth::Gas>,

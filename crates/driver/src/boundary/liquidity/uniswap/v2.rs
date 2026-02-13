@@ -1,10 +1,7 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{
-            eth,
-            liquidity::{self, uniswap},
-        },
+        domain::liquidity::{self, uniswap},
         infra::{self, blockchain::Ethereum},
     },
     alloy::primitives::Address,
@@ -12,6 +9,7 @@ use {
     contracts::alloy::IUniswapLikeRouter,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
+        domain::eth,
         http_solver::model::TokenAmount,
         sources::uniswap_v2::{
             pair_provider::PairProvider,

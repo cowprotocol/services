@@ -4,7 +4,7 @@
 use {
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     reqwest::{Method, StatusCode},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]

@@ -12,13 +12,13 @@ use {
             config,
             liquidity,
             notify,
-            simulator::{self, Simulator},
             solver::Solver,
         },
     },
     clap::Parser,
     futures::future::join_all,
     shared::arguments::tracing_config,
+    simulator::{self, Simulator},
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
@@ -74,7 +74,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
-        simulator: simulator(&config, &eth),
+        simulator: simulator(
+            &config,
+            &simulator_ethereum(&config, simulator_ethrpc(&args).await, &args.current_block).await,
+        ),
         mempools: Mempools::try_new(
             config
                 .mempools
@@ -124,10 +127,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     };
 }
 
-fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
+fn simulator(config: &infra::Config, eth: &simulator::infra::Ethereum) -> Simulator {
     let mut simulator = match &config.simulator {
-        Some(infra::simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
-            simulator::tenderly::Config {
+        Some(simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
+            simulator::provider::tenderly::Config {
                 url: tenderly.url.to_owned(),
                 api_key: tenderly.api_key.to_owned(),
                 user: tenderly.user.to_owned(),
@@ -137,8 +140,8 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
             },
             eth.to_owned(),
         ),
-        Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
-            simulator::enso::Config {
+        Some(simulator::Config::Enso(enso)) => Simulator::enso(
+            simulator::provider::enso::Config {
                 url: enso.url.to_owned(),
                 network_block_interval: enso.network_block_interval.to_owned(),
             },
@@ -166,6 +169,17 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
+async fn simulator_ethrpc(args: &cli::Args) -> simulator::infra::blockchain::Rpc {
+    let args = simulator::infra::blockchain::RpcArgs {
+        url: args.ethrpc.clone(),
+        max_batch_size: args.ethrpc_max_batch_size,
+        max_concurrent_requests: args.ethrpc_max_concurrent_requests,
+    };
+    simulator::infra::blockchain::Rpc::try_new(args)
+        .await
+        .expect("connect ethereum RPC for simulator")
+}
+
 async fn ethereum(
     config: &infra::Config,
     ethrpc: blockchain::Rpc,
@@ -179,6 +193,30 @@ async fn ethereum(
     Ethereum::new(
         ethrpc,
         config.contracts.clone(),
+        gas,
+        config.tx_gas_limit,
+        current_block_args,
+    )
+    .await
+}
+
+async fn simulator_ethereum(
+    config: &infra::Config,
+    ethrpc: simulator::infra::blockchain::Rpc,
+    current_block_args: &shared::current_block::Arguments,
+) -> simulator::infra::Ethereum {
+    let gas = Arc::new(
+        simulator::infra::blockchain::GasPriceEstimator::new(
+            ethrpc.web3(),
+            &(&config.gas_estimator).into(),
+            &config.mempools.iter().map(Into::into).collect::<Vec<_>>(),
+        )
+        .await
+        .expect("initialize gas price estimator"),
+    );
+    simulator::infra::Ethereum::new(
+        ethrpc,
+        (&config.contracts).into(),
         gas,
         config.tx_gas_limit,
         current_block_args,

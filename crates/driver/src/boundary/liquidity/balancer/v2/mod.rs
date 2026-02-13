@@ -1,10 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{
-            eth,
-            liquidity::{self, balancer},
-        },
+        domain::liquidity::{self, balancer},
         infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},
@@ -18,6 +15,7 @@ use {
     },
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     shared::{
+        domain::eth,
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
             BalancerPoolFetcher,

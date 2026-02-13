@@ -1,22 +1,22 @@
-use crate::{
-    domain::{
-        competition::{order, order::Side},
-        eth,
-    },
-    tests::{
-        self,
-        cases::EtherExt,
-        setup::{
+use {
+    crate::{
+        domain::competition::{order, order::Side},
+        tests::{
             self,
-            ExpectedOrderAmounts,
-            Test,
-            ab_adjusted_pool,
-            ab_liquidity_quote,
-            ab_order,
-            ab_solution,
-            test_solver,
+            cases::EtherExt,
+            setup::{
+                self,
+                ExpectedOrderAmounts,
+                Test,
+                ab_adjusted_pool,
+                ab_liquidity_quote,
+                ab_order,
+                ab_solution,
+                test_solver,
+            },
         },
     },
+    shared::domain::eth,
 };
 
 struct Amounts {

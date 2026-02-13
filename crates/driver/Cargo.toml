@@ -44,8 +44,10 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+simulator = { workspace = true }
 s3 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }

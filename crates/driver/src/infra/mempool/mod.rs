@@ -1,7 +1,7 @@
 use {
     crate::{
-        boundary::unbuffered_web3_client,
-        domain::{eth, mempools},
+        boundary::{Web3, unbuffered_web3},
+        domain::mempools,
         infra::{self, solver::Account},
     },
     alloy::{
@@ -13,7 +13,7 @@ use {
     },
     anyhow::Context,
     dashmap::DashMap,
-    ethrpc::Web3,
+    shared::domain::eth,
     std::sync::Arc,
     url::Url,
 };
@@ -52,6 +52,23 @@ impl Config {
     }
 }
 
+impl From<&Config> for simulator::infra::config::MempoolConfig {
+    fn from(value: &Config) -> Self {
+        simulator::infra::config::MempoolConfig {
+            min_priority_fee: value.min_priority_fee,
+            gas_price_cap: value.gas_price_cap,
+            target_confirm_time: value.target_confirm_time,
+            retry_interval: value.retry_interval,
+            nonce_block_number: value.nonce_block_number,
+            url: value.url.clone(),
+            name: value.name.clone(),
+            revert_protection: value.revert_protection.into(),
+            max_additional_tip: value.max_additional_tip,
+            additional_tip_percentage: value.additional_tip_percentage,
+        }
+    }
+}
+
 /// Don't submit transactions with high revert risk (i.e. transactions
 /// that interact with on-chain AMMs) to the public mempool.
 /// This can be enabled to avoid MEV when private transaction
@@ -61,6 +78,15 @@ impl Config {
 pub enum RevertProtection {
     Enabled,
     Disabled,
+}
+
+impl From<RevertProtection> for simulator::infra::config::RevertProtection {
+    fn from(value: RevertProtection) -> Self {
+        match value {
+            RevertProtection::Disabled => simulator::infra::config::RevertProtection::Disabled,
+            RevertProtection::Enabled => simulator::infra::config::RevertProtection::Enabled,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +110,7 @@ impl std::fmt::Display for Mempool {
 
 impl Mempool {
     pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
-        let transport = unbuffered_web3_client(&config.url);
+        let transport = unbuffered_web3(&config.url);
         // Register the solver accounts into the wallet to submit txs on their behalf
         for account in solver_accounts {
             transport.wallet.register_signer(account);
@@ -137,7 +163,7 @@ impl Mempool {
             .max_fee_per_gas(max_fee_per_gas)
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
             .gas_limit(gas_limit)
-            .input(tx.input.0.into())
+            .input(tx.input.into())
             .value(tx.value.0)
             .access_list(tx.access_list.into());
 

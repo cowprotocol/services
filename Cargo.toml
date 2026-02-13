@@ -105,6 +105,8 @@ proc-macro2 = "1.0.103"
 alloy-sol-macro-input = "1.4.1"
 alloy-sol-macro-expander = "1.4.1"
 jsonrpc-core = "18.0.0"
+serde-ext = { path = "crates/serde-ext" }
+simulator = { path = "crates/simulator" }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

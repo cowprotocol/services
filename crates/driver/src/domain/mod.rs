@@ -1,6 +1,5 @@
 pub mod competition;
 pub mod cow_amm;
-pub mod eth;
 pub mod liquidity;
 pub mod mempools;
 pub mod quote;
