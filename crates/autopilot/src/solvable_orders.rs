@@ -8,7 +8,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
+    futures::{FutureExt, future::join_all},
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -25,7 +25,6 @@ use {
             native_price_cache::NativePriceUpdater,
         },
         remaining_amounts,
-        signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
         collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
@@ -91,7 +90,6 @@ pub struct SolvableOrdersCache {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<NativePriceUpdater>,
-    signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     weth: Address,
     limit_order_price_factor: BigDecimal,
@@ -100,8 +98,7 @@ pub struct SolvableOrdersCache {
     native_price_timeout: Duration,
     settlement_contract: Address,
     disable_order_balance_filter: bool,
-    disable_1271_order_sig_filter: bool,
-    disable_1271_order_balance_filter: bool,
+    wrapper_cache: app_data::WrapperCache,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -120,7 +117,6 @@ impl SolvableOrdersCache {
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_price_estimator: Arc<NativePriceUpdater>,
-        signature_validator: Arc<dyn SignatureValidating>,
         weth: Address,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
@@ -128,9 +124,8 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
-        disable_1271_order_sig_filter: bool,
-        disable_1271_order_balance_filter: bool,
     ) -> Arc<Self> {
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         Arc::new(Self {
             min_order_validity_period,
             persistence,
@@ -139,8 +134,7 @@ impl SolvableOrdersCache {
             bad_token_detector,
             cache: Mutex::new(None),
             native_price_estimator,
-            signature_validator,
-            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
+            metrics,
             weth,
             limit_order_price_factor,
             protocol_fees,
@@ -148,8 +142,7 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
-            disable_1271_order_sig_filter,
-            disable_1271_order_balance_filter,
+            wrapper_cache: app_data::WrapperCache::new(20_000),
         })
     }
 
@@ -186,6 +179,17 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
+        let balance_filter_exempt_orders: HashSet<_> = orders
+            .iter()
+            .filter(|order| {
+                self.wrapper_cache.has_wrappers(
+                    &order.data.app_data,
+                    order.metadata.full_app_data.as_deref(),
+                )
+            })
+            .map(|order| order.metadata.uid)
+            .collect();
+
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
             tokio::join!(
@@ -202,7 +206,7 @@ impl SolvableOrdersCache {
                 orders,
                 &balances,
                 self.settlement_contract,
-                self.disable_1271_order_balance_filter,
+                &balance_filter_exempt_orders,
             );
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
@@ -398,18 +402,13 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let filter_invalid_signatures = find_invalid_signature_orders(
-            &orders,
-            self.signature_validator.as_ref(),
-            self.disable_1271_order_sig_filter,
-        );
+        let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
-        let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
+        let (banned_user_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
                 "banned_user_filtering",
                 find_banned_user_orders(&orders, &self.banned_users)
             ),
-            self.timed_future("invalid_signature_filtering", filter_invalid_signatures),
             self.timed_future(
                 "unsupported_token_filtering",
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())
@@ -418,10 +417,10 @@ impl SolvableOrdersCache {
         tracing::trace!("filtered invalid orders");
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
-        counter.checkpoint_by_invalid_orders("invalid_signature", &invalid_signature_orders);
+        counter.checkpoint_by_invalid_orders("invalid_signature", &presignature_pending_orders);
         counter.checkpoint_by_invalid_orders("unsupported_token", &unsupported_token_orders);
         invalid_order_uids.extend(banned_user_orders);
-        invalid_order_uids.extend(invalid_signature_orders);
+        invalid_order_uids.extend(presignature_pending_orders);
         invalid_order_uids.extend(unsupported_token_orders);
 
         orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
@@ -483,59 +482,19 @@ async fn get_native_prices(
         .collect()
 }
 
-/// Finds unsigned PreSign and EIP-1271 orders whose signatures are no longer
-/// validating.
-async fn find_invalid_signature_orders(
-    orders: &[Order],
-    signature_validator: &dyn SignatureValidating,
-    disable_1271_order_sig_filter: bool,
-) -> Vec<OrderUid> {
-    let mut invalid_orders = vec![];
-    let mut signature_check_futures = FuturesUnordered::new();
-
-    for order in orders {
-        if let Signature::Eip1271(_) = &order.signature
-            && disable_1271_order_sig_filter
-        {
-            continue;
-        }
-        if matches!(
-            order.metadata.status,
-            model::order::OrderStatus::PresignaturePending
-        ) {
-            invalid_orders.push(order.metadata.uid);
-            continue;
-        }
-
-        if let Signature::Eip1271(signature) = &order.signature {
-            signature_check_futures.push(async {
-                let (hash, signer, _) = order.metadata.uid.parts();
-                match signature_validator
-                    .validate_signature(SignatureCheck {
-                        signer,
-                        hash: hash.0,
-                        signature: signature.clone(),
-                        interactions: order.interactions.pre.clone(),
-                        // TODO delete balance and signature logic in the autopilot
-                        // altogether
-                        balance_override: None,
-                    })
-                    .await
-                {
-                    Ok(_) => None,
-                    Err(_) => Some(order.metadata.uid),
-                }
-            });
-        }
-    }
-
-    while let Some(res) = signature_check_futures.next().await {
-        if let Some(invalid_order_uid) = res {
-            invalid_orders.push(invalid_order_uid);
-        }
-    }
-
-    invalid_orders
+/// Finds orders with pending presignatures. EIP-1271 signature validation is
+/// skipped entirely - the driver validates signatures before settlement.
+fn find_presignature_pending_orders(orders: &[Order]) -> Vec<OrderUid> {
+    orders
+        .iter()
+        .filter(|order| {
+            matches!(
+                order.metadata.status,
+                model::order::OrderStatus::PresignaturePending
+            )
+        })
+        .map(|order| order.metadata.uid)
+        .collect()
 }
 
 /// Removes orders that can't possibly be settled because there isn't enough
@@ -544,12 +503,17 @@ fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
     settlement_contract: Address,
-    disable_1271_order_balance_filter: bool,
+    filter_bypass_orders: &HashSet<OrderUid>,
 ) -> Vec<Order> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        if disable_1271_order_balance_filter && matches!(order.signature, Signature::Eip1271(_)) {
+        // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
+        // to unlock funds) or orders with wrappers (wrappers produce the required
+        // balance at settlement time).
+        if matches!(order.signature, Signature::Eip1271(_))
+            || filter_bypass_orders.contains(&order.metadata.uid)
+        {
             return true;
         }
 
@@ -852,11 +816,7 @@ mod tests {
         alloy::primitives::{Address, B256},
         futures::FutureExt,
         maplit::{btreemap, hashset},
-        mockall::predicate::eq,
-        model::{
-            interaction::InteractionData,
-            order::{Interactions, OrderBuilder, OrderData, OrderMetadata, OrderUid},
-        },
+        model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
         shared::{
             bad_token::list_based::ListBasedDetector,
             price_estimation::{
@@ -870,7 +830,6 @@ mod tests {
                     NativePriceUpdater,
                 },
             },
-            signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
     };
 
@@ -1176,48 +1135,29 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn filters_invalidated_eip1271_signatures() {
+    #[test]
+    fn finds_presignature_pending_orders() {
+        let presign_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
         let orders = vec![
+            // PresignaturePending order - should be found
             Order {
                 metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1),
+                    uid: presign_uid,
+                    status: model::order::OrderStatus::PresignaturePending,
                     ..Default::default()
-                },
-                interactions: Interactions {
-                    pre: vec![InteractionData {
-                        target: Address::from_slice(&[0xe1; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![1, 2],
-                    }],
-                    post: vec![InteractionData {
-                        target: Address::from_slice(&[0xe2; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![3, 4],
-                    }],
                 },
                 ..Default::default()
             },
+            // EIP-1271 order - not PresignaturePending
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2),
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![2, 2]),
-                interactions: Interactions {
-                    pre: vec![InteractionData {
-                        target: Address::from_slice(&[0xe3; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![5, 6],
-                    }],
-                    post: vec![InteractionData {
-                        target: Address::from_slice(&[0xe4; 20]),
-                        value: alloy::primitives::U256::ZERO,
-                        call_data: vec![7, 9],
-                    }],
-                },
                 ..Default::default()
             },
+            // Regular order - not PresignaturePending
             Order {
                 metadata: OrderMetadata {
                     uid: OrderUid::from_parts(B256::repeat_byte(3), Address::repeat_byte(33), 3),
@@ -1225,75 +1165,10 @@ mod tests {
                 },
                 ..Default::default()
             },
-            Order {
-                metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(B256::repeat_byte(4), Address::repeat_byte(44), 4),
-                    ..Default::default()
-                },
-                signature: Signature::Eip1271(vec![4, 4, 4, 4]),
-                ..Default::default()
-            },
-            Order {
-                metadata: OrderMetadata {
-                    uid: OrderUid::from_parts(B256::repeat_byte(5), Address::repeat_byte(55), 5),
-                    ..Default::default()
-                },
-                signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
-                ..Default::default()
-            },
         ];
 
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(22),
-                hash: [2; 32],
-                signature: vec![2, 2],
-                interactions: vec![InteractionData {
-                    target: Address::from_slice(&[0xe3; 20]),
-                    value: alloy::primitives::U256::ZERO,
-                    call_data: vec![5, 6],
-                }],
-                balance_override: None,
-            }))
-            .returning(|_| Ok(()));
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(44),
-                hash: [4; 32],
-                signature: vec![4, 4, 4, 4],
-                interactions: vec![],
-                balance_override: None,
-            }))
-            .returning(|_| Err(SignatureValidationError::Invalid));
-        signature_validator
-            .expect_validate_signature()
-            .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(55),
-                hash: [5; 32],
-                signature: vec![5, 5, 5, 5, 5],
-                interactions: vec![],
-                balance_override: None,
-            }))
-            .returning(|_| Ok(()));
-
-        let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator, false).await;
-        assert_eq!(
-            invalid_signature_orders,
-            vec![OrderUid::from_parts(
-                B256::repeat_byte(4),
-                Address::repeat_byte(44),
-                4
-            )]
-        );
-        let invalid_signature_orders_with_1271_filter_disabled =
-            find_invalid_signature_orders(&orders, &signature_validator, true).await;
-        // if we switch off the 1271 filter no orders should be returned as containing
-        // invalid signatures
-        assert_eq!(invalid_signature_orders_with_1271_filter_disabled, vec![]);
+        let pending_orders = find_presignature_pending_orders(&orders);
+        assert_eq!(pending_orders, vec![presign_uid]);
     }
 
     #[test]
@@ -1456,7 +1331,9 @@ mod tests {
         .collect();
         let expected = &[0, 2, 4];
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, false);
+        let no_bypass: HashSet<OrderUid> = HashSet::new();
+        let filtered =
+            orders_with_balance(orders.clone(), &balances, settlement_contract, &no_bypass);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);
@@ -1465,8 +1342,10 @@ mod tests {
     }
 
     #[test]
-    fn eip1271_orders_can_skip_balance_filtering() {
+    fn eip1271_and_wrapper_orders_skip_balance_filtering() {
         let settlement_contract = Address::repeat_byte(1);
+
+        // EIP-1271 order (should skip balance check)
         let eip1271_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
@@ -1476,9 +1355,17 @@ mod tests {
                 ..Default::default()
             },
             signature: Signature::Eip1271(vec![1, 2, 3]),
+            metadata: OrderMetadata {
+                uid: OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6),
+                ..Default::default()
+            },
             ..Default::default()
         };
-        let regular_order = Order {
+
+        // Order with wrappers in bypass set (should skip balance check)
+        let wrapper_order_uid =
+            OrderUid::from_parts(B256::repeat_byte(7), Address::repeat_byte(77), 7);
+        let wrapper_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(8),
                 sell_amount: alloy::primitives::U256::from(10),
@@ -1486,19 +1373,60 @@ mod tests {
                 partially_fillable: false,
                 ..Default::default()
             },
+            metadata: OrderMetadata {
+                uid: wrapper_order_uid,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
-        let orders = vec![regular_order.clone(), eip1271_order.clone()];
-        let balances: Balances = Default::default();
+        // Regular ECDSA order without wrappers (should be filtered)
+        let regular_order = Order {
+            data: OrderData {
+                sell_token: Address::with_last_byte(9),
+                sell_amount: alloy::primitives::U256::from(10),
+                fee_amount: alloy::primitives::U256::from(5),
+                partially_fillable: false,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid::from_parts(B256::repeat_byte(8), Address::repeat_byte(88), 8),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract, true);
-        // 1271 filter is disabled, only the regular order is filtered out
-        assert_eq!(filtered.len(), 1);
-        assert!(matches!(filtered[0].signature, Signature::Eip1271(_)));
+        let orders = vec![
+            regular_order.clone(),
+            eip1271_order.clone(),
+            wrapper_order.clone(),
+        ];
+        let balances: Balances = Default::default(); // No balances
 
-        let filtered_without_override =
-            orders_with_balance(orders, &balances, settlement_contract, false);
-        assert!(filtered_without_override.is_empty());
+        // EIP-1271 order and wrapper order should be retained, regular order filtered
+        let wrapper_set = HashSet::from([wrapper_order_uid]);
+        let filtered =
+            orders_with_balance(orders.clone(), &balances, settlement_contract, &wrapper_set);
+        assert_eq!(filtered.len(), 2);
+        assert!(
+            filtered
+                .iter()
+                .any(|o| o.metadata.uid == eip1271_order.metadata.uid)
+        );
+        assert!(
+            filtered
+                .iter()
+                .any(|o| o.metadata.uid == wrapper_order.metadata.uid)
+        );
+
+        // Without wrapper set, only EIP-1271 order should be retained
+        let empty_set: HashSet<OrderUid> = HashSet::new();
+        let filtered_no_wrappers =
+            orders_with_balance(orders, &balances, settlement_contract, &empty_set);
+        assert_eq!(filtered_no_wrappers.len(), 1);
+        assert_eq!(
+            filtered_no_wrappers[0].metadata.uid,
+            eip1271_order.metadata.uid
+        );
     }
 }

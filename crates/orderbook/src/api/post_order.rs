@@ -1,12 +1,17 @@
 use {
     crate::{
-        api::{ApiReply, IntoWarpReply, error, extract_payload},
-        orderbook::{AddOrderError, OrderReplacementError, Orderbook},
+        api::{AppState, error},
+        orderbook::{AddOrderError, OrderReplacementError},
     },
-    anyhow::Result,
+    axum::{
+        Json,
+        body,
+        extract::State,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+    },
     model::{
-        order::{AppdataFromMismatch, OrderCreation, OrderUid},
-        quote::QuoteId,
+        order::{AppdataFromMismatch, OrderCreation},
         signature,
     },
     shared::order_validation::{
@@ -15,77 +20,97 @@ use {
         PartialValidationError,
         ValidationError,
     },
-    std::{convert::Infallible, sync::Arc},
-    warp::{
-        Filter,
-        Rejection,
-        hyper::StatusCode,
-        reply::{self, with_status},
-    },
+    std::sync::Arc,
 };
 
-pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
-{
-    warp::path!("v1" / "orders")
-        .and(warp::post())
-        .and(extract_payload())
+pub async fn post_order_handler(State(state): State<Arc<AppState>>, body: body::Bytes) -> Response {
+    // TODO: remove after all downstream callers have been notified of the status
+    // code changes
+    let order = match serde_json::from_slice::<OrderCreation>(&body) {
+        Ok(order) => order,
+        Err(err) => return (StatusCode::BAD_REQUEST, err.to_string()).into_response(),
+    };
+
+    state
+        .orderbook
+        .add_order(order.clone())
+        .await
+        .map(|(order_uid, quote_metadata)| {
+            let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
+            let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
+            tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
+            (StatusCode::CREATED, Json(order_uid))
+        })
+        .inspect_err(|err| {
+            tracing::debug!(?order, ?err, "error creating order");
+        })
+        .into_response()
 }
 
 pub struct PartialValidationErrorWrapper(pub PartialValidationError);
-impl IntoWarpReply for PartialValidationErrorWrapper {
-    fn into_warp_reply(self) -> ApiReply {
+impl IntoResponse for PartialValidationErrorWrapper {
+    fn into_response(self) -> Response {
         match self.0 {
-            PartialValidationError::UnsupportedBuyTokenDestination(dest) => with_status(
+            PartialValidationError::UnsupportedBuyTokenDestination(dest) => (
+                StatusCode::BAD_REQUEST,
                 error("UnsupportedBuyTokenDestination", format!("Type {dest:?}")),
+            )
+                .into_response(),
+            PartialValidationError::UnsupportedSellTokenSource(src) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::UnsupportedSellTokenSource(src) => with_status(
                 error("UnsupportedSellTokenSource", format!("Type {src:?}")),
+            )
+                .into_response(),
+            PartialValidationError::UnsupportedOrderType => (
                 StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::UnsupportedOrderType => with_status(
                 error(
                     "UnsupportedOrderType",
                     "This order type is currently not supported",
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::Forbidden => with_status(
-                error("Forbidden", "Forbidden, your account is deny-listed"),
+            )
+                .into_response(),
+            PartialValidationError::Forbidden => (
                 StatusCode::FORBIDDEN,
-            ),
-            PartialValidationError::ValidTo(OrderValidToError::Insufficient) => with_status(
+                error("Forbidden", "Forbidden, your account is deny-listed"),
+            )
+                .into_response(),
+            PartialValidationError::ValidTo(OrderValidToError::Insufficient) => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "InsufficientValidTo",
                     "validTo is not far enough in the future",
                 ),
+            )
+                .into_response(),
+            PartialValidationError::ValidTo(OrderValidToError::Excessive) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::ValidTo(OrderValidToError::Excessive) => with_status(
                 error("ExcessiveValidTo", "validTo is too far into the future"),
+            )
+                .into_response(),
+            PartialValidationError::InvalidNativeSellToken => (
                 StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::InvalidNativeSellToken => with_status(
                 error(
                     "InvalidNativeSellToken",
                     "The chain's native token (Ether/xDai) cannot be used as the sell token",
                 ),
+            )
+                .into_response(),
+            PartialValidationError::SameBuyAndSellToken => (
                 StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::SameBuyAndSellToken => with_status(
                 error(
                     "SameBuyAndSellToken",
                     "Buy token is the same as the sell token.",
                 ),
+            )
+                .into_response(),
+            PartialValidationError::UnsupportedToken { token, reason } => (
                 StatusCode::BAD_REQUEST,
-            ),
-            PartialValidationError::UnsupportedToken { token, reason } => with_status(
                 error(
                     "UnsupportedToken",
                     format!("Token {token:?} is unsupported: {reason}"),
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
             PartialValidationError::Other(err) => {
                 tracing::error!(?err, "PartialValidatonError");
                 crate::api::internal_error_reply()
@@ -95,14 +120,16 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
 }
 
 pub struct AppDataValidationErrorWrapper(pub AppDataValidationError);
-impl IntoWarpReply for AppDataValidationErrorWrapper {
-    fn into_warp_reply(self) -> ApiReply {
+impl IntoResponse for AppDataValidationErrorWrapper {
+    fn into_response(self) -> Response {
         match self.0 {
-            AppDataValidationError::Invalid(err) => with_status(
-                error("InvalidAppData", format!("{err:?}")),
+            AppDataValidationError::Invalid(err) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            AppDataValidationError::Mismatch { provided, actual } => with_status(
+                error("InvalidAppData", format!("{err:?}")),
+            )
+                .into_response(),
+            AppDataValidationError::Mismatch { provided, actual } => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "AppDataHashMismatch",
                     format!(
@@ -110,30 +137,34 @@ impl IntoWarpReply for AppDataValidationErrorWrapper {
                          {provided:?}",
                     ),
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
         }
     }
 }
 
 pub struct ValidationErrorWrapper(ValidationError);
-impl IntoWarpReply for ValidationErrorWrapper {
-    fn into_warp_reply(self) -> ApiReply {
+impl IntoResponse for ValidationErrorWrapper {
+    fn into_response(self) -> Response {
         match self.0 {
-            ValidationError::Partial(pre) => PartialValidationErrorWrapper(pre).into_warp_reply(),
-            ValidationError::AppData(err) => AppDataValidationErrorWrapper(err).into_warp_reply(),
-            ValidationError::PriceForQuote(err) => err.into_warp_reply(),
-            ValidationError::MissingFrom => with_status(
+            ValidationError::Partial(pre) => PartialValidationErrorWrapper(pre).into_response(),
+            ValidationError::AppData(err) => AppDataValidationErrorWrapper(err).into_response(),
+            ValidationError::PriceForQuote(err) => {
+                super::PriceEstimationErrorWrapper(err).into_response()
+            }
+            ValidationError::MissingFrom => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "MissingFrom",
                     "From address must be specified for on-chain signature",
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
             ValidationError::AppdataFromMismatch(AppdataFromMismatch {
                 from,
                 app_data_signer,
-            }) => with_status(
+            }) => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "AppdataFromMismatch",
                     format!(
@@ -141,9 +172,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
                          {app_data_signer:?} specified in the app data"
                     ),
                 ),
+            )
+                .into_response(),
+            ValidationError::WrongOwner(signature::Recovered { message, signer }) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::WrongOwner(signature::Recovered { message, signer }) => with_status(
                 error(
                     "WrongOwner",
                     format!(
@@ -151,78 +183,90 @@ impl IntoWarpReply for ValidationErrorWrapper {
                          from address"
                     ),
                 ),
+            )
+                .into_response(),
+            ValidationError::InvalidEip1271Signature(hash) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InvalidEip1271Signature(hash) => with_status(
                 error(
                     "InvalidEip1271Signature",
                     format!("signature for computed order hash {hash:?} is not valid"),
                 ),
+            )
+                .into_response(),
+            ValidationError::InsufficientBalance => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InsufficientBalance => with_status(
                 error(
                     "InsufficientBalance",
                     "order owner must have funds worth at least x in his account",
                 ),
+            )
+                .into_response(),
+            ValidationError::InsufficientAllowance => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InsufficientAllowance => with_status(
                 error(
                     "InsufficientAllowance",
                     "order owner must give allowance to VaultRelayer",
                 ),
+            )
+                .into_response(),
+            ValidationError::InvalidSignature => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InvalidSignature => with_status(
                 error("InvalidSignature", "invalid signature"),
+            )
+                .into_response(),
+            ValidationError::NonZeroFee => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::NonZeroFee => with_status(
                 error("NonZeroFee", "Fee must be zero"),
-                StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::SellAmountOverflow => with_status(
+            )
+                .into_response(),
+            ValidationError::SellAmountOverflow => (
+                StatusCode::INTERNAL_SERVER_ERROR,
                 error(
                     "SellAmountOverflow",
                     "Sell amount + fee amount must fit in U256",
                 ),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-            ValidationError::TransferSimulationFailed => with_status(
+            )
+                .into_response(),
+            ValidationError::TransferSimulationFailed => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "TransferSimulationFailed",
                     "sell token cannot be transferred",
                 ),
+            )
+                .into_response(),
+            ValidationError::QuoteNotVerified => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::QuoteNotVerified => with_status(
                 error(
                     "QuoteNotVerified",
                     "No quote for this trade could be verified to be accurate. Aborting the order \
                      creation since it will likely not be executed.",
                 ),
+            )
+                .into_response(),
+            ValidationError::ZeroAmount => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::ZeroAmount => with_status(
                 error("ZeroAmount", "Buy or sell amount is zero."),
+            )
+                .into_response(),
+            ValidationError::IncompatibleSigningScheme => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::IncompatibleSigningScheme => with_status(
                 error(
                     "IncompatibleSigningScheme",
                     "Signing scheme is not compatible with order placement method.",
                 ),
+            )
+                .into_response(),
+            ValidationError::TooManyLimitOrders => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::TooManyLimitOrders => with_status(
                 error("TooManyLimitOrders", "Too many limit orders"),
+            )
+                .into_response(),
+            ValidationError::TooMuchGas => (
                 StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::TooMuchGas => with_status(
                 error("TooMuchGas", "Executing order requires too many gas units"),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
 
             ValidationError::Other(err) => {
                 tracing::error!(?err, "ValidationErrorWrapper");
@@ -232,14 +276,15 @@ impl IntoWarpReply for ValidationErrorWrapper {
     }
 }
 
-impl IntoWarpReply for AddOrderError {
-    fn into_warp_reply(self) -> ApiReply {
+impl IntoResponse for AddOrderError {
+    fn into_response(self) -> Response {
         match self {
-            Self::OrderValidation(err) => ValidationErrorWrapper(err).into_warp_reply(),
-            Self::DuplicatedOrder => with_status(
-                error("DuplicatedOrder", "order already exists"),
+            Self::OrderValidation(err) => ValidationErrorWrapper(err).into_response(),
+            Self::DuplicatedOrder => (
                 StatusCode::BAD_REQUEST,
-            ),
+                error("DuplicatedOrder", "order already exists"),
+            )
+                .into_response(),
             Self::Database(err) => {
                 tracing::error!(?err, "AddOrderError");
                 crate::api::internal_error_reply()
@@ -253,38 +298,43 @@ impl IntoWarpReply for AddOrderError {
                 );
                 crate::api::internal_error_reply()
             }
-            AddOrderError::OrderNotFound(err) => err.into_warp_reply(),
-            AddOrderError::InvalidAppData(err) => reply::with_status(
-                super::error("InvalidAppData", err.to_string()),
+            AddOrderError::OrderNotFound(err) => err.into_response(),
+            AddOrderError::InvalidAppData(err) => (
                 StatusCode::BAD_REQUEST,
-            ),
-            AddOrderError::InvalidReplacement(err) => err.into_warp_reply(),
-            AddOrderError::MetadataSerializationFailed(err) => reply::with_status(
-                super::error("MetadataSerializationFailed", err.to_string()),
+                super::error("InvalidAppData", err.to_string()),
+            )
+                .into_response(),
+            AddOrderError::InvalidReplacement(err) => err.into_response(),
+            AddOrderError::MetadataSerializationFailed(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+                super::error("MetadataSerializationFailed", err.to_string()),
+            )
+                .into_response(),
         }
     }
 }
 
-impl IntoWarpReply for OrderReplacementError {
-    fn into_warp_reply(self) -> super::ApiReply {
+impl IntoResponse for OrderReplacementError {
+    fn into_response(self) -> Response {
         match self {
-            OrderReplacementError::InvalidSignature => with_status(
-                super::error("InvalidSignature", "Malformed signature"),
+            OrderReplacementError::InvalidSignature => (
                 StatusCode::BAD_REQUEST,
-            ),
-            OrderReplacementError::WrongOwner => with_status(
-                super::error("WrongOwner", "Old and new orders have different signers"),
+                super::error("InvalidSignature", "Malformed signature"),
+            )
+                .into_response(),
+            OrderReplacementError::WrongOwner => (
                 StatusCode::UNAUTHORIZED,
-            ),
-            OrderReplacementError::OldOrderActivelyBidOn => with_status(
+                super::error("WrongOwner", "Old and new orders have different signers"),
+            )
+                .into_response(),
+            OrderReplacementError::OldOrderActivelyBidOn => (
+                StatusCode::BAD_REQUEST,
                 super::error(
                     "OldOrderActivelyBidOn",
                     "The old order is actively beign bid on in recent auctions",
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
             OrderReplacementError::Other(err) => {
                 tracing::error!(?err, "replace_order");
                 crate::api::internal_error_reply()
@@ -293,70 +343,20 @@ impl IntoWarpReply for OrderReplacementError {
     }
 }
 
-pub fn create_order_response(
-    result: Result<(OrderUid, Option<QuoteId>), AddOrderError>,
-) -> ApiReply {
-    match result {
-        Ok((uid, _)) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
-        Err(err) => err.into_warp_reply(),
-    }
-}
-
-pub fn post_order(
-    orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    create_order_request().and_then(move |order: OrderCreation| {
-        let orderbook = orderbook.clone();
-        async move {
-            let result = orderbook
-                .add_order(order.clone())
-                .await
-                .map(|(order_uid, quote_metadata)| {
-                    let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
-                    let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
-                    tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
-                    (order_uid, quote_metadata.and_then(|quote| quote.id))
-                })
-                .inspect_err(|err| {
-                    tracing::debug!(?order, ?err, "error creating order");
-                });
-
-            Result::<_, Infallible>::Ok(create_order_response(result))
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::api::response_body,
-        model::order::{OrderCreation, OrderUid},
-        serde_json::json,
-        warp::{Reply, test::request},
-    };
+    use {super::*, crate::api::response_body, model::order::OrderUid, serde_json::json};
 
-    #[tokio::test]
-    async fn create_order_request_ok() {
-        let filter = create_order_request();
-        let order_payload = OrderCreation::default();
-        let request = request()
-            .path("/v1/orders")
-            .method("POST")
-            .header("content-type", "application/json")
-            .json(&order_payload);
-        let result = request.filter(&filter).await.unwrap();
-        assert_eq!(result, order_payload);
-    }
+    type Result = std::result::Result<(StatusCode, Json<OrderUid>), AddOrderError>;
 
     #[tokio::test]
     async fn create_order_response_created() {
         let uid = OrderUid([1u8; 56]);
-        let response = create_order_response(Ok((uid, Some(42)))).into_response();
+        let response = Result::Ok((StatusCode::CREATED, Json(uid))).into_response();
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
-        let expected= json!(
+        let expected = json!(
             "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
         );
         assert_eq!(body, expected);
@@ -364,7 +364,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_order_response_duplicate() {
-        let response = create_order_response(Err(AddOrderError::DuplicatedOrder)).into_response();
+        let response = Result::Err(AddOrderError::DuplicatedOrder).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();

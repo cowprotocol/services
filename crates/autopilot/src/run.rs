@@ -51,7 +51,6 @@ use {
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },
-        signature_validator,
         sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
@@ -253,15 +252,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
-    let signature_validator = signature_validator::validator(
-        &web3,
-        signature_validator::Contracts {
-            settlement: eth.contracts().settlement().clone(),
-            signatures: eth.contracts().signatures().clone(),
-            vault_relayer,
-        },
-        balance_overrider.clone(),
-    );
 
     let balance_fetcher = account_balances::cached(
         &web3,
@@ -533,7 +523,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         competition_native_price_updater.clone(),
-        signature_validator.clone(),
         *eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
@@ -547,8 +536,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.run_loop_native_price_timeout,
         *eth.contracts().settlement().address(),
         args.disable_order_balance_filter,
-        args.disable_1271_order_sig_filter,
-        args.disable_1271_order_balance_filter,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
