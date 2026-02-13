@@ -103,12 +103,11 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         std::process::id()
     ));
     Configuration {
-        drivers: vec![Solver {
-            name: "test_solver".to_string(),
-            url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            submission_account: Account::Address(solver1.address()),
-            fairness_threshold: None,
-        }],
+        drivers: vec![Solver::new(
+            "test_solver".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            Account::Address(solver1.address()),
+        )],
     }
     .to_path(&config_path_leader)
     .await
@@ -138,12 +137,11 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         std::process::id()
     ));
     Configuration {
-        drivers: vec![Solver {
-            name: "test_solver2".to_string(),
-            url: Url::from_str("http://localhost:11088/test_solver2").unwrap(),
-            submission_account: Account::Address(solver2.address()),
-            fairness_threshold: None,
-        }],
+        drivers: vec![Solver::new(
+            "test_solver2".to_string(),
+            Url::from_str("http://localhost:11088/test_solver2").unwrap(),
+            Account::Address(solver2.address()),
+        )],
     }
     .to_path(&config_path_follower)
     .await

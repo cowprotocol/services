@@ -209,12 +209,11 @@ http-timeout = "10s"
     std::fs::create_dir_all(&config_dir).unwrap();
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
-        drivers: vec![Solver {
-            name: "liquorice_solver".to_string(),
-            url: Url::from_str("http://localhost:11088/liquorice_solver").unwrap(),
-            submission_account: Account::Address(solver.address()),
-            fairness_threshold: None,
-        }],
+        drivers: vec![Solver::new(
+            "liquorice_solver".to_string(),
+            Url::from_str("http://localhost:11088/liquorice_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
     }
     .to_path(&config_path)
     .await

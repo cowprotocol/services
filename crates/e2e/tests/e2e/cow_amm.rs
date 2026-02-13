@@ -193,12 +193,11 @@ async fn cow_amm_jit(web3: Web3) {
     std::fs::create_dir_all(&config_dir).unwrap();
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
-        drivers: vec![Solver {
-            name: "mock_solver".to_string(),
-            url: Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-            submission_account: Account::Address(solver.address()),
-            fairness_threshold: None,
-        }],
+        drivers: vec![Solver::new(
+            "mock_solver".to_string(),
+            Url::from_str("http://localhost:11088/mock_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
     }
     .to_path(&config_path)
     .await
@@ -579,18 +578,16 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
         drivers: vec![
-            Solver {
-                name: "test_solver".to_string(),
-                url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                submission_account: Account::Address(solver.address()),
-                fairness_threshold: None,
-            },
-            Solver {
-                name: "mock_solver".to_string(),
-                url: Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-                submission_account: Account::Address(solver.address()),
-                fairness_threshold: None,
-            },
+            Solver::new(
+                "test_solver".to_string(),
+                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                Account::Address(solver.address()),
+            ),
+            Solver::new(
+                "mock_solver".to_string(),
+                Url::from_str("http://localhost:11088/mock_solver").unwrap(),
+                Account::Address(solver.address()),
+            ),
         ],
     }
     .to_path(&config_path)
@@ -864,12 +861,11 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     std::fs::create_dir_all(&config_dir).unwrap();
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
-        drivers: vec![Solver {
-            name: "mock_solver".to_string(),
-            url: Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-            submission_account: Account::Address(solver.address()),
-            fairness_threshold: None,
-        }],
+        drivers: vec![Solver::new(
+            "mock_solver".to_string(),
+            Url::from_str("http://localhost:11088/mock_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
     }
     .to_path(&config_path)
     .await

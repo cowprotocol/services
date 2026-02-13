@@ -322,12 +322,11 @@ impl<'a> Services<'a> {
         // Setup the configuration as a struct
         Configuration {
             // replace the --drivers argument with a vec of Solver structs
-            drivers: vec![Solver {
-                name: "test_solver".to_string(),
-                url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                submission_account: Account::Address(solver.address()),
-                fairness_threshold: None,
-            }],
+            drivers: vec![Solver::new(
+                "test_solver".to_string(),
+                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                Account::Address(solver.address()),
+            )],
         }
         // Dump it to the temp config file
         .to_path(&config_path)

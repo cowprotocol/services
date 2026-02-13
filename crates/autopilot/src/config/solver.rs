@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, U256},
+    alloy::primitives::Address,
     core::fmt,
     serde::{Deserialize, Deserializer, Serialize},
     std::fmt::{Display, Formatter},
@@ -13,8 +13,16 @@ pub struct Solver {
     pub name: String,
     pub url: Url,
     pub submission_account: Account,
-    // TODO: remove this once https://github.com/cowprotocol/infrastructure/pull/4571 is merged
-    pub fairness_threshold: Option<U256>,
+}
+
+impl Solver {
+    pub fn new(name: String, url: Url, account: Account) -> Self {
+        Self {
+            name,
+            url,
+            submission_account: account,
+        }
+    }
 }
 
 impl Display for Solver {
@@ -65,14 +73,11 @@ mod test {
         "#;
         let driver = toml::from_str::<Solver>(toml).unwrap();
 
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(address!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            )),
-            fairness_threshold: None,
-        };
+        let expected = Solver::new(
+            "name1".into(),
+            Url::parse("http://localhost:8080").unwrap(),
+            Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+        );
         assert_eq!(driver, expected);
     }
 
@@ -85,12 +90,11 @@ mod test {
         "#;
         let driver = toml::from_str::<Solver>(toml).unwrap();
 
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            fairness_threshold: None,
-            submission_account: Account::Kms(Arn("arn:aws:kms:supersecretstuff".into())),
-        };
+        let expected = Solver::new(
+            "name1".into(),
+            Url::parse("http://localhost:8080").unwrap(),
+            Account::Kms(Arn("arn:aws:kms:supersecretstuff".into())),
+        );
         assert_eq!(driver, expected);
     }
 
@@ -104,14 +108,11 @@ mod test {
         "#;
         let driver = toml::from_str::<Solver>(toml).unwrap();
 
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(address!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            )),
-            fairness_threshold: Some(U256::from(10).pow(U256::from(18))),
-        };
+        let expected = Solver::new(
+            "name1".into(),
+            Url::parse("http://localhost:8080").unwrap(),
+            Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+        );
         assert_eq!(driver, expected);
     }
 
@@ -182,23 +183,19 @@ mod test {
 
         assert_eq!(config.drivers.len(), 2);
 
-        let expected_solver1 = Solver {
-            name: "solver1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(address!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            )),
-            fairness_threshold: None,
-        };
+        let expected_solver1 = Solver::new(
+            "solver1".into(),
+            Url::parse("http://localhost:8080").unwrap(),
+            Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+        );
 
-        let expected_solver2 = Solver {
-            name: "solver2".into(),
-            url: Url::parse("http://localhost:8081").unwrap(),
-            submission_account: Account::Kms(Arn("arn:aws:kms:us-east-1:123456789012:key/\
-                                                  12345678-1234-1234-1234-123456789012"
+        let expected_solver2 = Solver::new(
+            "solver2".into(),
+            Url::parse("http://localhost:8081").unwrap(),
+            Account::Kms(Arn("arn:aws:kms:us-east-1:123456789012:key/\
+                              12345678-1234-1234-1234-123456789012"
                 .into())),
-            fairness_threshold: Some(U256::from(2) * U256::from(10).pow(U256::from(18))),
-        };
+        );
 
         assert_eq!(config.drivers[0], expected_solver1);
         assert_eq!(config.drivers[1], expected_solver2);

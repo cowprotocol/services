@@ -92,18 +92,16 @@ async fn solver_competition(web3: Web3) {
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
         drivers: vec![
-            Solver {
-                name: "test_solver".to_string(),
-                url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                submission_account: Account::Address(solver.address()),
-                fairness_threshold: None,
-            },
-            Solver {
-                name: "solver2".to_string(),
-                url: Url::from_str("http://localhost:11088/solver2").unwrap(),
-                submission_account: Account::Address(solver.address()),
-                fairness_threshold: None,
-            },
+            Solver::new(
+                "test_solver".to_string(),
+                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                Account::Address(solver.address()),
+            ),
+            Solver::new(
+                "solver2".to_string(),
+                Url::from_str("http://localhost:11088/solver2").unwrap(),
+                Account::Address(solver.address()),
+            ),
         ],
     }
     .to_path(&config_path)
@@ -258,20 +256,16 @@ async fn wrong_solution_submission_address(web3: Web3) {
     // discarded from solver1
     Configuration {
         drivers: vec![
-            Solver {
-                name: "solver1".to_string(),
-                url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                submission_account: Account::Address(address!(
-                    "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                )),
-                fairness_threshold: None,
-            },
-            Solver {
-                name: "solver2".to_string(),
-                url: Url::from_str("http://localhost:11088/solver2").unwrap(),
-                submission_account: Account::Address(solver.address()),
-                fairness_threshold: None,
-            },
+            Solver::new(
+                "solver1".to_string(),
+                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+            ),
+            Solver::new(
+                "solver2".to_string(),
+                Url::from_str("http://localhost:11088/solver2").unwrap(),
+                Account::Address(solver.address()),
+            ),
         ],
     }
     .to_path(&config_path)
@@ -432,18 +426,16 @@ async fn store_filtered_solutions(web3: Web3) {
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
         drivers: vec![
-            Solver {
-                name: "good_solver".to_string(),
-                url: Url::from_str("http://localhost:11088/good_solver").unwrap(),
-                submission_account: Account::Address(good_solver_account.address()),
-                fairness_threshold: None,
-            },
-            Solver {
-                name: "bad_solver".to_string(),
-                url: Url::from_str("http://localhost:11088/bad_solver").unwrap(),
-                submission_account: Account::Address(bad_solver_account.address()),
-                fairness_threshold: None,
-            },
+            Solver::new(
+                "good_solver".to_string(),
+                Url::from_str("http://localhost:11088/good_solver").unwrap(),
+                Account::Address(good_solver_account.address()),
+            ),
+            Solver::new(
+                "bad_solver".to_string(),
+                Url::from_str("http://localhost:11088/bad_solver").unwrap(),
+                Account::Address(bad_solver_account.address()),
+            ),
         ],
     }
     .to_path(&config_path)

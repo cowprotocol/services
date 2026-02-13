@@ -200,12 +200,11 @@ async fn zero_ex_liquidity(web3: Web3) {
     std::fs::create_dir_all(&config_dir).unwrap();
     let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     Configuration {
-        drivers: vec![Solver {
-            name: "test_solver".to_string(),
-            url: Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            submission_account: Account::Address(solver.address()),
-            fairness_threshold: None,
-        }],
+        drivers: vec![Solver::new(
+            "test_solver".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
     }
     .to_path(&config_path)
     .await

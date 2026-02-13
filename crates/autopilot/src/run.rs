@@ -671,15 +671,10 @@ pub async fn run(
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::try_new(
-                driver.url,
-                driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
-                driver.submission_account,
-            )
-            .await
-            .map(Arc::new)
-            .expect("failed to load solver configuration")
+            infra::Driver::try_new(driver.url, driver.name.clone(), driver.submission_account)
+                .await
+                .map(Arc::new)
+                .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
@@ -726,7 +721,6 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
                 // HACK: the auction logic expects all drivers
                 // to use a different submission address. But
                 // in the shadow environment all drivers use

@@ -7,7 +7,7 @@ use {
 
 pub mod solver;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Configuration {
     pub drivers: Vec<Solver>,
 }
@@ -30,13 +30,5 @@ impl Configuration {
             "colocation is enabled but no drivers are configured"
         );
         Ok(self)
-    }
-}
-
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            drivers: Default::default(),
-        }
     }
 }
