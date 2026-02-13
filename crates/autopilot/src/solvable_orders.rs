@@ -6,7 +6,6 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
-    bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, future::join_all},
     itertools::Itertools,
@@ -15,7 +14,6 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::u256_to_big_decimal,
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
@@ -92,7 +90,6 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<NativePriceUpdater>,
     metrics: &'static Metrics,
     weth: Address,
-    limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
@@ -118,7 +115,6 @@ impl SolvableOrdersCache {
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
-        limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
@@ -136,7 +132,6 @@ impl SolvableOrdersCache {
             native_price_estimator,
             metrics,
             weth,
-            limit_order_price_factor,
             protocol_fees,
             cow_amm_registry,
             native_price_timeout,
@@ -254,10 +249,6 @@ impl SolvableOrdersCache {
         }
 
         let removed = counter.checkpoint("missing_price", &orders);
-        filtered_order_events.extend(removed);
-
-        let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
-        let removed = counter.checkpoint("out_of_market", &orders);
         filtered_order_events.extend(removed);
 
         let removed = counter.record(&orders);
@@ -655,45 +646,6 @@ async fn find_unsupported_tokens(
                 .then_some(order.metadata.uid)
         })
         .collect()
-}
-
-/// Filter out limit orders which are far enough outside the estimated native
-/// token price.
-fn filter_mispriced_limit_orders(
-    mut orders: Vec<Order>,
-    prices: &BTreeMap<Address, alloy::primitives::U256>,
-    price_factor: &BigDecimal,
-) -> Vec<Order> {
-    orders.retain(|order| {
-        if !order.is_limit_order() {
-            return true;
-        }
-
-        let sell_price = *prices.get(&order.data.sell_token).unwrap();
-        let buy_price = *prices.get(&order.data.buy_token).unwrap();
-
-        // Convert the sell and buy price to the native token (ETH) and make sure that
-        // sell is higher than buy with the configurable price factor.
-        let (sell_native, buy_native) = match (
-            order.data.sell_amount.checked_mul(sell_price),
-            order.data.buy_amount.checked_mul(buy_price),
-        ) {
-            (Some(sell), Some(buy)) => (sell, buy),
-            _ => {
-                tracing::warn!(
-                    order_uid = %order.metadata.uid,
-                    "limit order overflow computing native amounts",
-                );
-                return false;
-            }
-        };
-
-        let sell_native = u256_to_big_decimal(&sell_native);
-        let buy_native = u256_to_big_decimal(&buy_native);
-
-        sell_native >= buy_native * price_factor
-    });
-    orders
 }
 
 /// Order filtering state for recording filtered orders over the course of
@@ -1197,65 +1149,6 @@ mod tests {
         assert_eq!(
             unsupported_tokens_orders,
             [orders[0].metadata.uid, orders[2].metadata.uid]
-        );
-    }
-
-    #[test]
-    fn filters_mispriced_orders() {
-        let sell_token = Address::repeat_byte(1);
-        let buy_token = Address::repeat_byte(2);
-
-        // Prices are set such that 1 sell token is equivalent to 2 buy tokens.
-        // Additionally, they are scaled to large values to allow for overflows.
-        let prices = btreemap! {
-            sell_token => alloy::primitives::U256::MAX / alloy::primitives::U256::from(100),
-            buy_token => alloy::primitives::U256::MAX / alloy::primitives::U256::from(200),
-        };
-        let price_factor = "0.95".parse().unwrap();
-
-        let order = |sell_amount: u8, buy_amount: u8| Order {
-            data: OrderData {
-                sell_token,
-                sell_amount: alloy::primitives::U256::from(sell_amount),
-                buy_token,
-                buy_amount: alloy::primitives::U256::from(buy_amount),
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                class: OrderClass::Limit,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let valid_orders = vec![
-            // Reasonably priced order, doesn't get filtered.
-            order(100, 200),
-            // Slightly out of price order, doesn't get filtered.
-            order(10, 21),
-        ];
-
-        let invalid_orders = vec![
-            // Out of price order gets filtered out.
-            order(10, 100),
-            // Overflow sell value gets filtered.
-            order(255, 1),
-            // Overflow buy value gets filtered.
-            order(100, 255),
-        ];
-
-        let orders = [valid_orders.clone(), invalid_orders].concat();
-        assert_eq!(
-            filter_mispriced_limit_orders(orders, &prices, &price_factor),
-            valid_orders,
-        );
-
-        let mut order = order(10, 21);
-        order.data.partially_fillable = true;
-        let orders = vec![order];
-        assert_eq!(
-            filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
-            1
         );
     }
 
