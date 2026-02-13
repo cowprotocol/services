@@ -294,10 +294,27 @@ impl Persistence {
         order_uids: impl IntoIterator<Item = domain::OrderUid>,
         label: boundary::OrderEventLabel,
     ) {
+        let order_uids: Vec<_> = order_uids.into_iter().collect();
+        self.store_order_events_owned(order_uids, std::convert::identity, label);
+    }
+
+    /// A variants of [`store_order_events`] where [`items`] is already an owned
+    /// collection which allows us to move the logic to convert an item to a
+    /// [`domain::OrderUid`] into the background task as well.
+    pub fn store_order_events_owned<I, F>(
+        &self,
+        items: I,
+        convert: F,
+        label: boundary::OrderEventLabel,
+    ) where
+        I: IntoIterator + Send + 'static,
+        I::Item: Send,
+        F: (Fn(I::Item) -> domain::OrderUid) + Send + 'static,
+    {
         let db = self.postgres.clone();
-        let order_uids = order_uids.into_iter().collect();
         tokio::spawn(
             async move {
+                let order_uids = items.into_iter().map(convert).collect();
                 match db.pool.acquire().await {
                     Ok(mut tx) => {
                         store_order_events(&mut tx, order_uids, label, Utc::now()).await;
@@ -541,8 +558,8 @@ impl Persistence {
     /// order creation timestamp, and minimum validity period.
     pub async fn solvable_orders_after(
         &self,
-        mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
-        mut current_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        mut current_orders: HashMap<domain::OrderUid, Arc<model::order::Order>>,
+        mut current_quotes: HashMap<domain::OrderUid, Arc<domain::Quote>>,
         after_timestamp: DateTime<Utc>,
         after_block: u64,
         min_valid_to: u32,
@@ -570,7 +587,7 @@ impl Persistence {
 
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
-        let next_orders: HashMap<domain::OrderUid, model::order::Order> = {
+        let next_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["open_orders_after"])
@@ -583,7 +600,7 @@ impl Persistence {
             )
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order)
-                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), Arc::new(order))),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
@@ -657,7 +674,7 @@ impl Persistence {
                 let order_uid = domain::OrderUid(quote.order_uid.0);
                 match dto::quote::into_domain(quote) {
                     Ok(quote) => {
-                        current_quotes.insert(order_uid, quote);
+                        current_quotes.insert(order_uid, Arc::new(quote));
                     }
                     Err(err) => tracing::warn!(?order_uid, ?err, "failed to convert quote from db"),
                 }
