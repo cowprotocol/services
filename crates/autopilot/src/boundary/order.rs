@@ -4,7 +4,7 @@ use {
 };
 
 pub fn to_domain(
-    order: model::order::Order,
+    order: &model::order::Order,
     protocol_fees: Vec<domain::fee::Policy>,
     quote: Option<domain::Quote>,
 ) -> domain::Order {
@@ -30,20 +30,27 @@ pub fn to_domain(
         partially_fillable: order.data.partially_fillable,
         executed: remaining_order.executed_amount.into(),
         pre_interactions: if order_is_untouched {
-            order.interactions.pre.into_iter().map(Into::into).collect()
+            order
+                .interactions
+                .pre
+                .iter()
+                .cloned()
+                .map(Into::into)
+                .collect()
         } else {
             Default::default()
         },
         post_interactions: order
             .interactions
             .post
-            .into_iter()
+            .iter()
+            .cloned()
             .map(Into::into)
             .collect(),
         sell_token_balance: order.data.sell_token_balance.into(),
         buy_token_balance: order.data.buy_token_balance.into(),
         app_data: order.data.app_data.into(),
-        signature: order.signature.into(),
+        signature: order.signature.clone().into(),
         quote,
     }
 }
