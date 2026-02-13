@@ -168,7 +168,7 @@ impl Cache {
         let mut rng = rand::thread_rng();
         let now = std::time::Instant::now();
 
-        let data: moka::sync::Cache<Address, CachedResult> = moka::sync::Cache::builder()
+        let data = moka::sync::Cache::builder()
             .max_capacity(MAX_CACHE_SIZE)
             .build();
 
@@ -243,16 +243,13 @@ impl Cache {
         self.0
             .data
             .entry_by_ref(&token)
-            .and_compute_with(|maybe_entry| {
-                let new_value = match maybe_entry {
-                    Some(entry) => {
-                        let mut cached = entry.into_value();
-                        cached.update(result);
-                        cached
-                    }
-                    None => CachedResult::new(result),
-                };
-                moka::ops::compute::Op::Put(new_value)
+            .and_upsert_with(|maybe_entry| match maybe_entry {
+                Some(entry) => {
+                    let mut cached = entry.into_value();
+                    cached.update(result);
+                    cached
+                }
+                None => CachedResult::new(result),
             });
     }
 }
