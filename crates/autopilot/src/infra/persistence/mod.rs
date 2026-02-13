@@ -301,7 +301,6 @@ impl Persistence {
     /// A variants of [`store_order_events`] where [`items`] is already an owned
     /// collection which allows us to move the logic to convert an item to a
     /// [`domain::OrderUid`] into the background task as well.
-    #[instrument(skip_all)]
     pub fn store_order_events_owned<I, F>(
         &self,
         items: I,
