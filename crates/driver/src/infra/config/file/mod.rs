@@ -316,9 +316,9 @@ struct SolverConfig {
 
     /// Additional EOAs that submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission
-    /// with one lane per account. Each entry is a 32-byte hex private key.
+    /// with one lane per account.
     #[serde(default)]
-    submission_accounts: Vec<eth::B256>,
+    submission_accounts: Vec<Account>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
