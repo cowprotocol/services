@@ -630,7 +630,7 @@ fn filter_dust_orders(
 }
 
 async fn get_orders_with_native_prices(
-    mut orders: Vec<Arc<Order>>,
+    orders: Vec<Arc<Order>>,
     native_price_estimator: &NativePriceUpdater,
     additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
@@ -650,6 +650,7 @@ async fn get_orders_with_native_prices(
     // Filter orders so that we only return orders that have prices
     let mut removed_market_orders = 0_i64;
     let mut removed_orders = vec![];
+    let mut orders = orders;
     orders.retain(|order| {
         let both_prices_present = prices.contains_key(&order.data.sell_token)
             && prices.contains_key(&order.data.buy_token);
