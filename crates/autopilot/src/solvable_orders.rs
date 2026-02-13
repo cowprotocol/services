@@ -7,7 +7,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    futures::{FutureExt, future::join_all},
+    futures::FutureExt,
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -17,7 +17,7 @@ use {
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
-        bad_token::BadTokenDetecting,
+        bad_token::list_based::DenyListedTokens,
         price_estimation::{
             native::{NativePriceEstimating, to_normalized_price},
             native_price_cache::NativePriceUpdater,
@@ -124,7 +124,7 @@ pub struct SolvableOrdersCache {
     persistence: infra::Persistence,
     banned_users: banned::Users,
     balance_fetcher: Arc<dyn BalanceFetching>,
-    bad_token_detector: Arc<dyn BadTokenDetecting>,
+    deny_listed_tokens: DenyListedTokens,
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
@@ -150,7 +150,7 @@ impl SolvableOrdersCache {
         persistence: infra::Persistence,
         banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
-        bad_token_detector: Arc<dyn BadTokenDetecting>,
+        deny_listed_tokens: DenyListedTokens,
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
         protocol_fees: domain::ProtocolFees,
@@ -164,7 +164,7 @@ impl SolvableOrdersCache {
             persistence,
             banned_users,
             balance_fetcher,
-            bad_token_detector,
+            deny_listed_tokens,
             cache: Mutex::new(None),
             native_price_estimator,
             weth,
@@ -432,16 +432,11 @@ impl SolvableOrdersCache {
     ) -> Vec<Arc<Order>> {
         let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
-        let (banned_user_orders, unsupported_token_orders) = tokio::join!(
-            self.timed_future(
-                "banned_user_filtering",
-                find_banned_user_orders(&orders, &self.banned_users)
-            ),
-            self.timed_future(
-                "unsupported_token_filtering",
-                find_unsupported_tokens(&orders, self.bad_token_detector.clone())
-            ),
-        );
+        let unsupported_token_orders = find_unsupported_tokens(&orders, &self.deny_listed_tokens);
+        let banned_user_orders = self.timed_future(
+            "banned_user_filtering",
+            find_banned_user_orders(&orders, &self.banned_users)
+        ).await;
         tracing::trace!("filtered invalid orders");
 
         Metrics::track_filtered_orders("banned_user", &banned_user_orders);
@@ -670,37 +665,10 @@ async fn get_orders_with_native_prices(
     (orders, removed_orders, prices)
 }
 
-async fn find_unsupported_tokens(
+fn find_unsupported_tokens(
     orders: &[Arc<Order>],
-    bad_token: Arc<dyn BadTokenDetecting>,
+    deny_listed_tokens: &DenyListedTokens,
 ) -> Vec<OrderUid> {
-    let bad_tokens = join_all(
-        orders
-            .iter()
-            .flat_map(|o| o.data.token_pair().into_iter().flatten())
-            .unique()
-            .map(|token| {
-                let bad_token = bad_token.clone();
-                async move {
-                    match bad_token.detect(token).await {
-                        Ok(quality) => (!quality.is_good()).then_some(token),
-                        Err(err) => {
-                            tracing::warn!(
-                                ?token,
-                                ?err,
-                                "unable to determine token quality, assume good"
-                            );
-                            Some(token)
-                        }
-                    }
-                }
-            }),
-    )
-    .await
-    .into_iter()
-    .flatten()
-    .collect::<HashSet<_>>();
-
     orders
         .iter()
         .filter_map(|order| {
@@ -709,7 +677,7 @@ async fn find_unsupported_tokens(
                 .token_pair()
                 .into_iter()
                 .flatten()
-                .any(|token| bad_tokens.contains(&token))
+                .any(|token| deny_listed_tokens.contains(&token))
                 .then_some(order.metadata.uid)
         })
         .collect()
@@ -724,7 +692,7 @@ mod tests {
         maplit::{btreemap, hashset},
         model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
         shared::{
-            bad_token::list_based::ListBasedDetector,
+            bad_token::list_based::DenyListedTokens,
             price_estimation::{
                 HEALTHY_PRICE_ESTIMATION_TIME,
                 PriceEstimationError,
@@ -1095,7 +1063,7 @@ mod tests {
         let token0 = Address::with_last_byte(0);
         let token1 = Address::with_last_byte(1);
         let token2 = Address::with_last_byte(2);
-        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0]));
+        let deny_listed_tokens = DenyListedTokens::new(vec![token0]);
         let orders = vec![
             Arc::new(
                 OrderBuilder::default()
@@ -1116,9 +1084,7 @@ mod tests {
                     .build(),
             ),
         ];
-        let unsupported_tokens_orders = find_unsupported_tokens(&orders, bad_token)
-            .now_or_never()
-            .unwrap();
+        let unsupported_tokens_orders = find_unsupported_tokens(&orders, &deny_listed_tokens);
         assert_eq!(
             unsupported_tokens_orders,
             [orders[0].metadata.uid, orders[2].metadata.uid]

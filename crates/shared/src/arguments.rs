@@ -187,11 +187,6 @@ pub struct Arguments {
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
 
-    /// Base tokens used for finding multi-hop paths between multiple AMMs
-    /// Should be the most liquid tokens of the given network.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub base_tokens: Vec<Address>,
-
     /// The time between new blocks on the network.
     #[clap(long, env, value_parser = humantime::parse_duration)]
     pub network_block_interval: Option<Duration>,
@@ -314,7 +309,6 @@ impl Display for Arguments {
             chain_id,
             simulation_node_url,
             gas_estimators,
-            base_tokens,
             network_block_interval,
             settlement_contract_address,
             balances_contract_address,
@@ -335,7 +329,6 @@ impl Display for Arguments {
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {gas_estimators:?}")?;
-        writeln!(f, "base_tokens: {base_tokens:?}")?;
         display_option(
             f,
             "network_block_interval",

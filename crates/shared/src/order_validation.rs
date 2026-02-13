@@ -1,7 +1,7 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        bad_token::{BadTokenDetecting, TokenQuality},
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
@@ -250,7 +250,7 @@ pub struct OrderValidator {
     banned_users: Arc<order_validation::banned::Users>,
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
-    bad_token_detector: Arc<dyn BadTokenDetecting>,
+    deny_listed_tokens: DenyListedTokens,
     hooks: HooksTrampoline::Instance,
     /// For Full-Validation: performed time of order placement
     quoter: Arc<dyn OrderQuoting>,
@@ -321,7 +321,7 @@ impl OrderValidator {
         banned_users: Arc<order_validation::banned::Users>,
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
-        bad_token_detector: Arc<dyn BadTokenDetecting>,
+        deny_listed_tokens: DenyListedTokens,
         hooks: HooksTrampoline::Instance,
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
@@ -338,7 +338,7 @@ impl OrderValidator {
             banned_users,
             validity_configuration,
             eip1271_skip_creation_validation,
-            bad_token_detector,
+            deny_listed_tokens,
             hooks,
             quoter,
             balance_fetcher,
@@ -524,14 +524,12 @@ impl OrderValidating for OrderValidator {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
 
-        for &token in &[order.sell_token, order.buy_token] {
-            if let TokenQuality::Bad { reason } = self
-                .bad_token_detector
-                .detect(token)
-                .await
-                .map_err(PartialValidationError::Other)?
-            {
-                return Err(PartialValidationError::UnsupportedToken { token, reason });
+        for token in &[order.sell_token, order.buy_token] {
+            if self.deny_listed_tokens.contains(token) {
+                return Err(PartialValidationError::UnsupportedToken {
+                    token: *token,
+                    reason: "token is deny listed".to_string(),
+                });
             }
         }
 
@@ -1037,7 +1035,6 @@ mod tests {
         super::*,
         crate::{
             account_balances::MockBalanceFetching,
-            bad_token::{MockBadTokenDetecting, TokenQuality},
             code_fetching::MockCodeFetching,
             order_quoting::{FindQuoteError, MockOrderQuoting},
             signature_validator::MockSignatureValidating,
@@ -1076,7 +1073,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::from_set(banned_users)),
             validity_configuration,
             false,
-            Arc::new(MockBadTokenDetecting::new()),
+            DenyListedTokens::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1214,16 +1211,6 @@ mod tests {
             max_limit: Duration::from_secs(200),
         };
 
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        bad_token_detector
-            .expect_detect()
-            .with(eq(Address::with_last_byte(1)))
-            .returning(|_| Ok(TokenQuality::Good));
-        bad_token_detector
-            .expect_detect()
-            .with(eq(Address::with_last_byte(2)))
-            .returning(|_| Ok(TokenQuality::Good));
-
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1231,7 +1218,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             validity_configuration,
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1305,16 +1292,6 @@ mod tests {
             max_limit: Duration::from_secs(200),
         };
 
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        bad_token_detector
-            .expect_detect()
-            .with(eq(Address::with_last_byte(1)))
-            .returning(|_| Ok(TokenQuality::Good));
-        bad_token_detector
-            .expect_detect()
-            .with(eq(Address::with_last_byte(2)))
-            .returning(|_| Ok(TokenQuality::Good));
-
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1322,7 +1299,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             validity_configuration,
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1377,14 +1354,10 @@ mod tests {
     #[tokio::test]
     async fn post_validate_ok() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1416,7 +1389,7 @@ mod tests {
                 max_limit: Duration::from_secs(200),
             },
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             hooks.clone(),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
@@ -1587,7 +1560,6 @@ mod tests {
     #[tokio::test]
     async fn post_validate_too_many_limit_orders() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter.expect_find_quote().returning(|_, _| {
             Ok(Quote {
@@ -1598,9 +1570,6 @@ mod tests {
                 fee_amount: Default::default(),
             })
         });
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1628,7 +1597,7 @@ mod tests {
                 max_limit: Duration::from_secs(200),
             },
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1675,14 +1644,10 @@ mod tests {
     #[tokio::test]
     async fn post_limit_does_not_apply_to_in_market_orders() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1705,7 +1670,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1751,14 +1716,10 @@ mod tests {
     #[tokio::test]
     async fn post_validate_err_zero_amount() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1770,7 +1731,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1809,14 +1770,10 @@ mod tests {
     #[tokio::test]
     async fn post_validate_err_wrong_owner() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1828,7 +1785,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1869,16 +1826,11 @@ mod tests {
     #[tokio::test]
     async fn post_validate_err_unsupported_token() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let deny_listed_tokens = DenyListedTokens::new(vec![Address::with_last_byte(1)]);
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector.expect_detect().returning(|_| {
-            Ok(TokenQuality::Bad {
-                reason: Default::default(),
-            })
-        });
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1891,7 +1843,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            deny_listed_tokens,
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1937,14 +1889,10 @@ mod tests {
     #[tokio::test]
     async fn post_validate_err_insufficient_balance() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
@@ -1956,7 +1904,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -1997,15 +1945,11 @@ mod tests {
     #[tokio::test]
     async fn post_validate_err_invalid_eip1271_signature() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         let mut signature_validator = MockSignatureValidating::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -2020,7 +1964,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -2071,14 +2015,10 @@ mod tests {
             is_expected_error: impl Fn(ValidationError) -> bool,
         ) {
             let mut order_quoter = MockOrderQuoting::new();
-            let mut bad_token_detector = MockBadTokenDetecting::new();
             let mut balance_fetcher = MockBalanceFetching::new();
             order_quoter
                 .expect_find_quote()
                 .returning(|_, _| Ok(Default::default()));
-            bad_token_detector
-                .expect_detect()
-                .returning(|_| Ok(TokenQuality::Good));
             balance_fetcher
                 .expect_can_transfer()
                 .returning(move |_, _| Err(create_error()));
@@ -2091,7 +2031,7 @@ mod tests {
                 Arc::new(order_validation::banned::Users::none()),
                 OrderValidPeriodConfiguration::any(),
                 false,
-                Arc::new(bad_token_detector),
+                Default::default(),
                 HooksTrampoline::Instance::new(
                     Address::from([0xcf; 20]),
                     ProviderBuilder::new()
@@ -2167,14 +2107,10 @@ mod tests {
     #[test]
     fn allows_insufficient_balance_for_orders_with_sufficient_flashloan_hint() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
@@ -2186,7 +2122,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
@@ -2577,11 +2513,7 @@ mod tests {
             .with(eq(quote_id), eq(quote_search_parameters.clone()))
             .returning(move |_, _| Ok(quote_data.clone()));
 
-        let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -2602,7 +2534,7 @@ mod tests {
                 max_limit: Duration::from_secs(200),
             },
             false,
-            Arc::new(bad_token_detector),
+            Default::default(),
             HooksTrampoline::Instance::new(
                 Address::from([0xcf; 20]),
                 ProviderBuilder::new()
