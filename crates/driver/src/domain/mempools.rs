@@ -138,29 +138,22 @@ impl Mempools {
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
-        // NOTE: in 7702 mode we simulate the original tx (via solver address) since
-        // estimate_gas uses eth_call which doesn't need 7702 delegation to work.
-        let sim_tx = settlement.transaction(settlement::Internalization::Enable);
-        if mempool.reverts_can_get_mined() {
-            if let Err(err) = self.ethereum.estimate_gas(sim_tx.clone()).await {
-                if err.is_revert() {
-                    tracing::info!(
-                        ?err,
-                        "settlement tx simulation reverted before submitting to the mempool"
-                    );
-                    return Err(Error::SimulationRevert {
-                        submitted_at_block: current_block,
-                        reverted_at_block: current_block,
-                    });
-                } else {
-                    tracing::warn!(
-                        ?err,
-                        "couldn't simulate tx before submitting to the mempool"
-                    );
-                }
+        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
+            if err.is_revert() {
+                tracing::info!(
+                    ?err,
+                    "settlement tx simulation reverted before submitting to the mempool"
+                );
+                return Err(Error::SimulationRevert {
+                    submitted_at_block: current_block,
+                    reverted_at_block: current_block,
+                });
+            } else {
+                tracing::warn!(
+                    ?err,
+                    "couldn't simulate tx before submitting to the mempool"
+                );
             }
-        } else {
-            tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
 
         // Fetch the nonce for the signing account (not the solver in 7702 mode).
@@ -254,7 +247,7 @@ impl Mempools {
                             });
                         }
                         // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(sim_tx.clone()).await {
+                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                             if err.is_revert() {
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
