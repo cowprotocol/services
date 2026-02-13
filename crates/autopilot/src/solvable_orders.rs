@@ -97,14 +97,15 @@ impl Metrics {
     }
 
     fn track_orders_in_final_auction(orders: &[Arc<Order>]) {
-        Metrics::get().auction_creations.inc();
+        let metrics = Metrics::get();
+        metrics.auction_creations.inc();
 
         let remaining_counts = orders
             .iter()
             .counts_by(|order| order.metadata.class.as_ref());
         for class in OrderClass::VARIANTS {
             let count = remaining_counts.get(class).copied().unwrap_or_default();
-            Metrics::get()
+            metrics
                 .auction_solvable_orders
                 .with_label_values(&[class])
                 .set(i64::try_from(count).unwrap_or(i64::MAX));
