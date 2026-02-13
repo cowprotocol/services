@@ -19,7 +19,7 @@ use {
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
-        maintenance::MaintenanceSync,
+        maintenance::{MaintenanceSync, SyncTarget},
         run::Liveness,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
@@ -209,11 +209,13 @@ impl RunLoop {
         };
 
         {
-            let start = Instant::now();
+            Metrics::get().service_maintenance_time.start_timer();
             self.maintenance
-                .wait_until_block_processed(auction_block.number, false)
+                .wait_until_block_processed(SyncTarget {
+                    block: auction_block.number,
+                    essential_processing_sufficient: true,
+                })
                 .await;
-            Metrics::ran_maintenance(start.elapsed());
         }
 
         match self
@@ -839,7 +841,10 @@ impl RunLoop {
             // Run maintenance to ensure the system processed the last available block so
             // it's possible to find the tx in the DB in the next line.
             self.maintenance
-                .wait_until_block_processed(block.number, true)
+                .wait_until_block_processed(SyncTarget {
+                    block: block.number,
+                    essential_processing_sufficien: false,
+                })
                 .await;
 
             match self
@@ -1061,12 +1066,6 @@ impl Metrics {
     fn post_processed(elapsed: Duration) {
         Self::get()
             .auction_postprocessing_time
-            .observe(elapsed.as_secs_f64());
-    }
-
-    fn ran_maintenance(elapsed: Duration) {
-        Self::get()
-            .service_maintenance_time
             .observe(elapsed.as_secs_f64());
     }
 

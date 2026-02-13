@@ -47,35 +47,39 @@ pub struct MaintenanceSync {
     fully_processed_block: watch::Receiver<u64>,
 }
 
+pub struct SyncTarget {
+    /// which block needs to be processed
+    pub block: u64,
+    /// how thoroughly the block has to be processed. essentials include
+    /// only event indexing while full processing includes figuring out
+    /// which proposed solution is associated with an observed settlement.
+    pub essential_processing_sufficient: bool,
+}
+
 impl MaintenanceSync {
-    pub async fn wait_until_block_processed(&self, block: u64, require_full_processing: bool) {
+    pub async fn wait_until_block_processed(&self, target: SyncTarget) {
         let _timer = observe::metrics::metrics()
             .on_auction_overhead_start("autopilot", "wait_for_maintenance");
 
-        if let Err(_timeout) = tokio::time::timeout(
-            self.timeout,
-            self.wait_inner(block, require_full_processing),
-        )
-        .await
-        {
+        if let Err(_timeout) = tokio::time::timeout(self.timeout, self.wait_inner(target)).await {
             tracing::debug!("timed out waiting for maintenance");
         }
     }
 
-    async fn wait_inner(&self, target_block: u64, require_full_processing: bool) {
-        let relevant_updates = match require_full_processing {
-            true => &self.fully_processed_block,
-            false => &self.partially_processed_block,
+    async fn wait_inner(&self, target: SyncTarget) {
+        let relevant_updates = match target.essential_processing_sufficient {
+            true => &self.partially_processed_block,
+            false => &self.fully_processed_block,
         };
 
-        if *relevant_updates.borrow() >= target_block {
+        if *relevant_updates.borrow() >= target.block {
             return;
         }
 
         let mut stream = WatchStream::new(relevant_updates.clone());
         loop {
             let processed_block = stream.next().await.unwrap();
-            if processed_block >= target_block {
+            if processed_block >= target.block {
                 return;
             }
         }
