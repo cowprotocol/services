@@ -163,13 +163,13 @@ impl ProtocolFees {
         let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
             return vec![];
         };
-        let Ok(validated) = app_data::parse(full_app_data.as_bytes()) else {
+        let Ok(parsed_app_data) = app_data::parse(full_app_data.as_bytes()) else {
             return vec![];
         };
 
         let mut accumulated = Decimal::ZERO;
 
-        validated
+        parsed_app_data
             .partner_fee
             .iter()
             .map(move |partner_fee| {
