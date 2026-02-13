@@ -47,13 +47,12 @@ pub struct MaintenanceSync {
     fully_processed_block: watch::Receiver<u64>,
 }
 
-pub struct SyncTarget {
-    /// which block needs to be processed
-    pub block: u64,
-    /// how thoroughly the block has to be processed. essentials include
-    /// only event indexing while full processing includes figuring out
-    /// which proposed solution is associated with an observed settlement.
-    pub essential_processing_sufficient: bool,
+pub enum SyncTarget {
+    /// Essential processing (e.g. event indexing) of the given block is
+    /// sufficient,
+    PartiallyProcessed(u64),
+    /// The given block as to be fully processed.
+    FullyProcessed(u64),
 }
 
 impl MaintenanceSync {
@@ -67,19 +66,19 @@ impl MaintenanceSync {
     }
 
     async fn wait_inner(&self, target: SyncTarget) {
-        let relevant_updates = match target.essential_processing_sufficient {
-            true => &self.partially_processed_block,
-            false => &self.fully_processed_block,
+        let (relevant_updates, target_block) = match target {
+            SyncTarget::FullyProcessed(block) => (&self.partially_processed_block, block),
+            SyncTarget::PartiallyProcessed(block) => (&self.fully_processed_block, block),
         };
 
-        if *relevant_updates.borrow() >= target.block {
+        if *relevant_updates.borrow() >= target_block {
             return;
         }
 
         let mut stream = WatchStream::new(relevant_updates.clone());
         loop {
             let processed_block = stream.next().await.unwrap();
-            if processed_block >= target.block {
+            if processed_block >= target_block {
                 return;
             }
         }

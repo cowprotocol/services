@@ -209,12 +209,9 @@ impl RunLoop {
         };
 
         {
-            Metrics::get().service_maintenance_time.start_timer();
+            let _timer = Metrics::get().service_maintenance_time.start_timer();
             self.maintenance
-                .wait_until_block_processed(SyncTarget {
-                    block: auction_block.number,
-                    essential_processing_sufficient: true,
-                })
+                .wait_until_block_processed(SyncTarget::PartiallyProcessed(auction_block.number))
                 .await;
         }
 
@@ -841,10 +838,7 @@ impl RunLoop {
             // Run maintenance to ensure the system processed the last available block so
             // it's possible to find the tx in the DB in the next line.
             self.maintenance
-                .wait_until_block_processed(SyncTarget {
-                    block: block.number,
-                    essential_processing_sufficien: false,
-                })
+                .wait_until_block_processed(SyncTarget::FullyProcessed(block.number))
                 .await;
 
             match self
