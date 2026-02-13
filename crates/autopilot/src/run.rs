@@ -35,11 +35,7 @@ use {
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
-        bad_token::{
-            instrumented::InstrumentedBadTokenDetectorExt,
-            list_based::{ListBasedDetector, UnknownTokenStrategy},
-        },
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
@@ -262,23 +258,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .expect("failed to create gas price estimator"),
     );
 
-    let base_tokens = Arc::new(BaseTokens::new(
-        *eth.contracts().weth().address(),
-        &args.shared.base_tokens,
-    ));
-    let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.unsupported_tokens.clone();
-
-    let bad_token_detector = Arc::new(
-        ListBasedDetector::new(
-            allowed_tokens,
-            unsupported_tokens,
-            UnknownTokenStrategy::Allow,
-        )
-        .instrumented(),
-    );
+    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
@@ -303,12 +283,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
-            bad_token_detector: bad_token_detector.clone(),
+            deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
         },
@@ -459,7 +438,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             args.banned_users_max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
-        bad_token_detector.clone(),
+        deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
         domain::ProtocolFees::new(

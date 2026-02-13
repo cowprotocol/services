@@ -70,12 +70,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub skip_event_sync: bool,
 
-    /// List of token addresses that should be allowed regardless of whether the
-    /// bad token detector thinks they are bad. Base tokens are
-    /// automatically allowed.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<Address>,
-
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<Address>,
@@ -291,7 +285,6 @@ impl std::fmt::Display for Arguments {
             metrics_address,
             api_address,
             skip_event_sync,
-            allowed_tokens,
             unsupported_tokens,
             native_price_estimators,
             api_native_price_estimators,
@@ -338,7 +331,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "api_address: {api_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
-        writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         display_option(
