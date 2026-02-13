@@ -674,11 +674,8 @@ fn find_unsupported_tokens(
     orders
         .iter()
         .filter_map(|order| {
-            order
-                .data
-                .token_pair()
-                .into_iter()
-                .flatten()
+            [&order.data.buy_token, &order.data.sell_token]
+                .iter()
                 .any(|token| deny_listed_tokens.contains(&token))
                 .then_some(order.metadata.uid)
         })
