@@ -27,9 +27,8 @@ use {
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
+    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
-    futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
@@ -37,11 +36,8 @@ use {
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::{
-            cache::CachingDetector,
             instrumented::InstrumentedBadTokenDetectorExt,
             list_based::{ListBasedDetector, UnknownTokenStrategy},
-            token_owner_finder,
-            trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
@@ -51,7 +47,6 @@ use {
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },
-        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -240,14 +235,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         }
         addr
     });
-    let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
-
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
-        .instrument(info_span!("uniswapv3_deployed"))
-        .await
-        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
-        .ok();
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
@@ -275,27 +262,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args
-        .shared
-        .baseline_sources
-        .clone()
-        .unwrap_or_else(|| shared::sources::defaults_for_network(&chain));
-    tracing::info!(?baseline_sources, "using baseline sources");
-    let univ2_sources = baseline_sources
-        .iter()
-        .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
-        })
-        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
-    let pair_providers: Vec<_> = futures::stream::iter(univ2_sources)
-        .then(|source: UniV2BaselineSourceParameters| {
-            let web3 = &web3;
-            async move { source.into_source(web3).await.unwrap().pair_provider }
-        })
-        .collect()
-        .instrument(info_span!("pair_providers"))
-        .await;
-
     let base_tokens = Arc::new(BaseTokens::new(
         *eth.contracts().weth().address(),
         &args.shared.base_tokens,
@@ -305,39 +271,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let finder = token_owner_finder::init(
-        &args.token_owner_finder,
-        web3.clone(),
-        &chain,
-        &http_factory,
-        &pair_providers,
-        vault.as_ref(),
-        uniswapv3_factory.as_ref(),
-        &base_tokens,
-        *eth.contracts().settlement().address(),
-    )
-    .instrument(info_span!("token_owner_finder_init"))
-    .await
-    .expect("failed to initialize token owner finders");
-
-    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        CachingDetector::new(
-            Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
-                *eth.contracts().settlement().address(),
-                finder,
-            )),
-            args.shared.token_quality_cache_expiry,
-            args.shared.token_quality_cache_prefetch_time,
-        )
-    });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
             allowed_tokens,
             unsupported_tokens,
-            trace_call_detector
-                .map(|detector| UnknownTokenStrategy::Forward(detector))
-                .unwrap_or(UnknownTokenStrategy::Allow),
+            UnknownTokenStrategy::Allow,
         )
         .instrumented(),
     );
