@@ -6,7 +6,6 @@ use {
     clap::ValueEnum,
     shared::{
         arguments::{FeeFactor, display_list, display_option, display_secret_option},
-        bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
@@ -32,9 +31,6 @@ pub struct Arguments {
     pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
-    pub token_owner_finder: token_owner_finder::Arguments,
-
-    #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
     #[clap(flatten)]
@@ -53,11 +49,6 @@ pub struct Arguments {
     /// then this date is ignored and can be omitted.
     #[clap(long, env)]
     pub ethflow_indexing_start: Option<u64>,
-
-    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
-    /// to be used exclusively for tracing calls.
-    #[clap(long, env)]
-    pub tracing_node_url: Option<Url>,
 
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
@@ -293,10 +284,8 @@ impl std::fmt::Display for Arguments {
             shared,
             order_quoting,
             http_client,
-            token_owner_finder,
             price_estimation,
             database_pool,
-            tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
@@ -341,10 +330,8 @@ impl std::fmt::Display for Arguments {
         write!(f, "{shared}")?;
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;
-        write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
         write!(f, "{database_pool}")?;
-        display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
