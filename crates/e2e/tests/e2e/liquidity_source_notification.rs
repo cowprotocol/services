@@ -204,19 +204,14 @@ http-timeout = "10s"
             liquorice_api.port
         )),
     );
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "liquorice_solver".to_string(),
             Url::from_str("http://localhost:11088/liquorice_solver").unwrap(),
             Account::Address(solver.address()),
         )],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
@@ -225,7 +220,7 @@ http-timeout = "10s"
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
             ],
         )
         .await;

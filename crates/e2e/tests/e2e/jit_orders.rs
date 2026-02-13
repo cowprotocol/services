@@ -93,26 +93,21 @@ async fn single_limit_order_test(web3: Web3) {
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "mock_solver".to_string(),
             Url::from_str("http://localhost:11088/mock_solver").unwrap(),
             Account::Address(solver.address()),
         )],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],

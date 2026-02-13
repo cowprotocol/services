@@ -66,19 +66,14 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         false,
     );
     let services = Services::new(&onchain).await;
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
             Account::Address(solver.address()),
         )],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
@@ -91,7 +86,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                     token_a = token_a.address(),
                     token_b = token_b.address()
                 ),
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],

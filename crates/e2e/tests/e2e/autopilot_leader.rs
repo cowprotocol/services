@@ -94,30 +94,21 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     );
 
     // Configure autopilot-leader only with test_solver
-
-    // Create TOML config file for the leader
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path_leader = config_dir.join(format!(
-        "protocol-config-leader-{}.toml",
-        std::process::id()
-    ));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
             Account::Address(solver1.address()),
         )],
     }
-    .to_path(&config_path_leader)
-    .await
+    .to_temp_path()
     .unwrap();
 
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
             vec![
-                format!("--config={}", config_path_leader.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -130,28 +121,21 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await;
 
     // Configure autopilot-backup only with test_solver2
-
-    // Create TOML config file for the follower
-    let config_path_follower = config_dir.join(format!(
-        "protocol-config-follower-{}.toml",
-        std::process::id()
-    ));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "test_solver2".to_string(),
             Url::from_str("http://localhost:11088/test_solver2").unwrap(),
             Account::Address(solver2.address()),
         )],
     }
-    .to_path(&config_path_follower)
-    .await
+    .to_temp_path()
     .unwrap();
 
     let _autopilot_follower = services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path_follower.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),

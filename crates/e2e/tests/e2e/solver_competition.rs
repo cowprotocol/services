@@ -86,11 +86,7 @@ async fn solver_competition(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![
             Solver::new(
                 "test_solver".to_string(),
@@ -104,14 +100,13 @@ async fn solver_competition(web3: Web3) {
             ),
         ],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services.start_autopilot(
         None,
         vec![
-            format!("--config={}", config_path.display()),
+            format!("--config={}", config_file.path().display()),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
@@ -248,13 +243,9 @@ async fn wrong_solution_submission_address(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
     // Solver 1 has a wrong submission address, meaning that the solutions should be
     // discarded from solver1
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![
             Solver::new(
                 "solver1".to_string(),
@@ -268,15 +259,14 @@ async fn wrong_solution_submission_address(web3: Web3) {
             ),
         ],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             ],
         )
@@ -420,11 +410,7 @@ async fn store_filtered_solutions(web3: Web3) {
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![
             Solver::new(
                 "good_solver".to_string(),
@@ -438,15 +424,14 @@ async fn store_filtered_solutions(web3: Web3) {
             ),
         ],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--max-winners-per-auction=10".to_string(),

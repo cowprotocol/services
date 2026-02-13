@@ -188,26 +188,21 @@ async fn cow_amm_jit(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "mock_solver".to_string(),
             Url::from_str("http://localhost:11088/mock_solver").unwrap(),
             Account::Address(solver.address()),
         )],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -572,11 +567,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     );
     let services = Services::new(&onchain).await;
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![
             Solver::new(
                 "test_solver".to_string(),
@@ -590,15 +581,14 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             ),
         ],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 // it uses an older helper contract that was deployed before the desired cow amm
@@ -856,26 +846,21 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    // Create TOML config file for the driver
-    let config_dir = std::env::temp_dir().join("cow-e2e-autopilot");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join(format!("protocol-config-{}.toml", std::process::id()));
-    Configuration {
+    let config_file = Configuration {
         drivers: vec![Solver::new(
             "mock_solver".to_string(),
             Url::from_str("http://localhost:11088/mock_solver").unwrap(),
             Account::Address(solver.address()),
         )],
     }
-    .to_path(&config_path)
-    .await
+    .to_temp_path()
     .unwrap();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_path.display()),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],

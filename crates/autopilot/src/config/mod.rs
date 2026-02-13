@@ -23,8 +23,11 @@ impl Configuration {
     }
 
     #[cfg(any(test, feature = "test-util"))]
-    pub fn to_temp_path(&self) -> std::io::Result<tempfile::NamedTempFile> {
-        tempfile::NamedTempFile::new()
+    pub fn to_temp_path(&self) -> anyhow::Result<tempfile::NamedTempFile> {
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new()?;
+        file.write_all(toml::to_string_pretty(self)?.as_bytes())?;
+        Ok(file)
     }
 
     // Note for reviewers: if this and other validations are always applied,

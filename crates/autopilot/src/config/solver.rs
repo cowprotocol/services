@@ -104,7 +104,6 @@ mod test {
         name = "name1"
         url = "http://localhost:8080"
         submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-        fairness-threshold = "1000000000000000000"
         "#;
         let driver = toml::from_str::<Solver>(toml).unwrap();
 
@@ -168,7 +167,6 @@ mod test {
         [[drivers]]
         name = "solver2"
         url = "http://localhost:8081"
-        fairness-threshold = "2000000000000000000"
         # test the format used in the infra repo
         [drivers.submission-account]
         kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
