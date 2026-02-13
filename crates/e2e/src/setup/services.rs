@@ -158,7 +158,6 @@ impl<'a> Services<'a> {
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
             "--network-block-interval=1s".to_string(),
-            "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--settlement-contract-address={:?}",
                 self.contracts.gp_settlement.address()
