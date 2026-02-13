@@ -44,7 +44,7 @@ impl SanitizedPriceEstimator {
     }
 
     /// Checks if the traded tokens are supported by the protocol.
-    async fn handle_deny_listed_tokens(&self, query: &Query) -> Result<(), PriceEstimationError> {
+    fn handle_deny_listed_tokens(&self, query: &Query) -> Result<(), PriceEstimationError> {
         for token in [query.sell_token, query.buy_token] {
             if self.deny_listed_tokens.contains(&token) {
                 return Err(PriceEstimationError::UnsupportedToken {
@@ -64,7 +64,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
         query: Arc<Query>,
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async move {
-            self.handle_deny_listed_tokens(&query).await?;
+            self.handle_deny_listed_tokens(&query)?;
             // When estimating native price the sell token is substituted by
             // native one. In that case, the output amount of the price
             // estimation can be trivially computed as the same amount as input
