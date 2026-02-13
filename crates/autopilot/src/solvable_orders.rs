@@ -433,10 +433,12 @@ impl SolvableOrdersCache {
         let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
         let unsupported_token_orders = find_unsupported_tokens(&orders, &self.deny_listed_tokens);
-        let banned_user_orders = self.timed_future(
-            "banned_user_filtering",
-            find_banned_user_orders(&orders, &self.banned_users)
-        ).await;
+        let banned_user_orders = self
+            .timed_future(
+                "banned_user_filtering",
+                find_banned_user_orders(&orders, &self.banned_users),
+            )
+            .await;
         tracing::trace!("filtered invalid orders");
 
         Metrics::track_filtered_orders("banned_user", &banned_user_orders);
