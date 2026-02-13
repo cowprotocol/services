@@ -203,7 +203,7 @@ impl Cache {
     }
 
     fn len(&self) -> usize {
-        self.0.data.entry_count() as usize
+        usize::try_from(self.0.data.entry_count()).unwrap()
     }
 
     fn get_cached_price(
