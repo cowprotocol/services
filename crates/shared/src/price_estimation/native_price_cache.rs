@@ -203,7 +203,8 @@ impl Cache {
     }
 
     fn len(&self) -> usize {
-        usize::try_from(self.0.data.entry_count()).unwrap()
+        // Should never fire since we are bounded with MAX_CACHE_SIZE
+        usize::try_from(self.0.data.entry_count()).expect("cache size should fit in a usize")
     }
 
     fn get_cached_price(
