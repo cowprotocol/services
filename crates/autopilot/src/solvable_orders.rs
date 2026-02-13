@@ -592,21 +592,19 @@ async fn get_orders_with_native_prices(
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
     let mut filtered_market_orders = 0_i64;
-    let mut filtered = Vec::new();
 
     // use .into_iter().filter_map().collect() to help compiler reuse allocation
     let usable: Vec<_> = orders
         .into_iter()
-        .filter_map(|order: Order| {
+        .filter(|order| {
             let both_prices_available = prices.contains_key(&order.data.sell_token)
                 && prices.contains_key(&order.data.buy_token);
 
             if both_prices_available {
-                Some(order)
+                true
             } else {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
-                filtered.push(order);
-                None
+                false
             }
         })
         .collect();
