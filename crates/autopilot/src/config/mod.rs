@@ -9,6 +9,7 @@ pub mod solver;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Configuration {
+    #[serde(default)]
     pub drivers: Vec<Solver>,
 }
 
@@ -19,6 +20,11 @@ impl Configuration {
 
     pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
         Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
+    }
+
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn to_temp_path(&self) -> std::io::Result<tempfile::NamedTempFile> {
+        tempfile::NamedTempFile::new()
     }
 
     // Note for reviewers: if this and other validations are always applied,

@@ -9,8 +9,7 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser,
-                    determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -135,12 +134,11 @@ async fn ethereum(
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = CliArguments::parse_from(args);
 
-    let config = match &args.config {
-        Some(path) => Configuration::from_path(path)
-            .await
-            .expect("failed to load configuration file"),
-        None => Default::default(),
-    };
+    let config = Configuration::from_path(&args.config)
+        .await
+        .expect("failed to load configuration file")
+        .validate()
+        .expect("failed to validate configuration file");
 
     let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),

@@ -17,7 +17,7 @@ use {
 #[derive(clap::Parser)]
 pub struct CliArguments {
     #[clap(long, env)]
-    pub config: Option<PathBuf>,
+    pub config: PathBuf,
 
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
@@ -335,7 +335,7 @@ impl std::fmt::Display for CliArguments {
             native_price_cache_refresh,
             native_price_prefetch_time,
         } = self;
-        write!(f, "{}", config.clone().unwrap_or_default().display())?;
+        write!(f, "{}", config.display())?;
         write!(f, "{shared}")?;
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;

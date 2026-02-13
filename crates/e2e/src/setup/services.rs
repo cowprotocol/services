@@ -3,9 +3,7 @@ use {
     crate::{
         nodes::NODE_WS_HOST,
         setup::{
-            Contracts,
-            OnchainComponents,
-            TIMEOUT,
+            Contracts, OnchainComponents, TIMEOUT,
             colocation::{self, SolverEngine},
             wait_for_condition,
         },
@@ -27,8 +25,7 @@ use {
         AuctionId,
         order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
-        solver_competition,
-        solver_competition_v2,
+        solver_competition, solver_competition_v2,
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
@@ -227,12 +224,9 @@ impl<'a> Services<'a> {
         let args = autopilot::arguments::CliArguments::try_parse_from(args)
             .map_err(|err| err.to_string())
             .unwrap();
-        let config = match &args.config {
-            Some(path) => autopilot::config::Configuration::from_path(path)
-                .await
-                .unwrap(),
-            None => Default::default(),
-        };
+        let config = autopilot::config::Configuration::from_path(&args.config)
+            .await
+            .unwrap();
         let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
         self.wait_until_autopilot_ready().await;
 

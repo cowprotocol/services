@@ -1201,6 +1201,7 @@ dependencies = [
  "shared",
  "sqlx",
  "strum",
+ "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
