@@ -1059,6 +1059,7 @@ impl Test {
         let res = self
             .client
             .post(format!("http://{}/{}/solve", self.driver.addr, solver))
+            .header("X-Auction-Id", self.auction_id)
             .json(&driver::solve_req(self))
             .send()
             .await
