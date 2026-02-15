@@ -561,7 +561,8 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
-        );
+        )
+        .await;
 
         let mut bids = futures::future::join_all(
             self.drivers

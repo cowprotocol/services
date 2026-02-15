@@ -2,17 +2,22 @@ use {
     crate::{
         boundary,
         domain::{self, eth},
-        infra::persistence::dto::{self, order::Order},
+        infra::{
+            persistence::dto::{self, order::Order},
+            solvers::InjectIntoHttpRequest,
+        },
     },
     alloy::primitives::{Address, U256},
+    bytes::Bytes,
     chrono::{DateTime, Utc},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
+    reqwest::RequestBuilder,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::{
+        borrow::Cow,
         collections::{HashMap, HashSet},
-        sync::Arc,
         time::Duration,
     },
 };
@@ -21,17 +26,14 @@ use {
 /// request. The purpose of this is to make it ergonomic
 /// to serialize a request once and reuse the resulting
 /// string in multiple HTTP requests.
-#[derive(Clone, Debug, Serialize, derive_more::Display)]
-pub struct Request(Arc<serde_json::value::RawValue>);
-
-impl Request {
-    pub fn as_str(&self) -> &str {
-        self.0.get()
-    }
+#[derive(Clone, Debug)]
+pub struct Request {
+    auction_id: i64,
+    body: bytes::Bytes,
 }
 
 impl Request {
-    pub fn new(
+    pub async fn new(
         auction: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
         time_limit: Duration,
@@ -64,9 +66,38 @@ impl Request {
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
-        Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
-            "only fails with non-string keys which we do not have",
-        )))
+        let auction_id = auction.id;
+
+        let body = tokio::task::spawn_blocking(move || {
+            let serialized = serde_json::to_vec(&helper).unwrap();
+            Bytes::from(serialized)
+        })
+        .await
+        .unwrap();
+
+        Self { body, auction_id }
+    }
+}
+
+impl InjectIntoHttpRequest for Request {
+    fn inject(&self, request: RequestBuilder) -> RequestBuilder {
+        request
+            .body(self.body.clone())
+            // announce which auction this request is for in the
+            // headers to help the driver detect duplicated
+            // `/solve` requests before streaming the body
+            .header("X-Auction-Id", self.auction_id)
+            // manually set the content type header for JSON since
+            // we can't use `request.json(self)`
+            .header(
+                hyper::header::CONTENT_TYPE,
+                hyper::header::HeaderValue::from_static("application/json")
+            )
+    }
+
+    fn body_to_string(&self) -> Cow<'_, str> {
+        let string = str::from_utf8(self.body.as_ref()).unwrap();
+        Cow::Borrowed(string)
     }
 }
 
