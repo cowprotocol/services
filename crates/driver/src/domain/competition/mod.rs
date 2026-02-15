@@ -22,8 +22,9 @@ use {
         util::math,
     },
     alloy::primitives::Bytes,
+    axum::body::Body,
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
-    hyper::body::Bytes as RequestBytes,
+    hyper::Request,
     itertools::Itertools,
     std::{
         cmp::Reverse,
@@ -114,14 +115,14 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: RequestBytes) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, request: Request<Body>) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
 
         let tasks = self
             .fetcher
-            .start_or_get_tasks_for_auction(auction)
+            .start_or_get_tasks_for_auction(request)
             .await
             .map_err(|err| {
                 tracing::error!(?err, "pre-processing auction failed");
