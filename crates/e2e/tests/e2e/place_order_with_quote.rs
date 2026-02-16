@@ -243,12 +243,6 @@ async fn fallback_native_price_estimator(web3: Web3) {
         ])
         .await;
 
-    // Disable auto-mine so we don't accidentally mine a settlement
-    web3.provider
-        .evm_set_automine(false)
-        .await
-        .expect("Must be able to disable automine");
-
     tracing::info!("Quoting with autopilot running");
     let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
@@ -284,12 +278,14 @@ async fn fallback_native_price_estimator(web3: Web3) {
     );
     services.create_order(&order).await.unwrap();
 
-    // Phase 2: shutdown autopilot and verify fallback
     tracing::info!("Shutting down autopilot");
     manual_shutdown.shutdown();
-    wait_for_condition(TIMEOUT, || async { autopilot_handle.is_finished() })
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        autopilot_handle.is_finished()
+    })
+    .await
+    .unwrap();
 
     // Wait for native price cache to expire (max age = 2s)
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
