@@ -8,7 +8,7 @@ use {
 
 /// External solver driver configuration
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Solver {
     pub name: String,
     pub url: Url,

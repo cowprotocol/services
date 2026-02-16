@@ -8,6 +8,7 @@ use {
 pub mod solver;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Configuration {
     #[serde(default)]
     pub drivers: Vec<Solver>,
