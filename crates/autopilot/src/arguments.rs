@@ -5,8 +5,7 @@ use {
     chrono::{DateTime, Utc},
     clap::ValueEnum,
     shared::{
-        arguments::{FeeFactor, display_list, display_option, display_secret_option},
-        bad_token::token_owner_finder,
+        arguments::{FeeFactor, display_option, display_secret_option},
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
