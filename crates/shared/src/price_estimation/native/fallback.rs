@@ -144,10 +144,13 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let action = {
-                let state = self.state.lock().unwrap();
-                match &*state {
+                let mut state = self.state.lock().unwrap();
+                match &mut *state {
                     State::Primary { .. } => Action::Primary,
                     State::Fallback { last_probe } if last_probe.elapsed() >= PROBE_INTERVAL => {
+                        // Update immediately to prevent concurrent requests from also
+                        // probing (thundering herd).
+                        *last_probe = Instant::now();
                         Action::Probe
                     }
                     State::Fallback { .. } => Action::Fallback,
