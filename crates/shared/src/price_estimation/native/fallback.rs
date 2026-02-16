@@ -22,6 +22,12 @@ enum State {
     },
 }
 
+enum Action {
+    Primary,
+    Fallback,
+    Probe,
+}
+
 pub struct FallbackNativePriceEstimator {
     primary: Box<dyn NativePriceEstimating>,
     fallback: Box<dyn NativePriceEstimating>,
@@ -43,6 +49,48 @@ impl FallbackNativePriceEstimator {
     }
 }
 
+impl FallbackNativePriceEstimator {
+    /// Returns `true` if the fallback should be used.
+    fn on_primary_result(&self, result: &NativePriceEstimateResult) -> bool {
+        let mut state = self.state.lock().unwrap();
+        if let Err(PriceEstimationError::ProtocolInternal(err)) = result {
+            let State::Primary {
+                consecutive_errors, ..
+            } = &mut *state
+            else {
+                return false;
+            };
+            *consecutive_errors += 1;
+            if *consecutive_errors >= CONSECUTIVE_ERRORS_THRESHOLD {
+                tracing::info!(
+                    ?err,
+                    "primary native price estimator down after {} consecutive errors, switching \
+                     to fallback",
+                    *consecutive_errors
+                );
+                *state = State::Fallback {
+                    last_probe: Instant::now(),
+                };
+                return true;
+            }
+            tracing::debug!(
+                ?err,
+                consecutive_errors = *consecutive_errors,
+                "primary native price estimator error, not yet switching to fallback"
+            );
+            false
+        } else {
+            if let State::Primary {
+                consecutive_errors, ..
+            } = &mut *state
+            {
+                *consecutive_errors = 0;
+            }
+            false
+        }
+    }
+}
+
 impl NativePriceEstimating for FallbackNativePriceEstimator {
     fn estimate_native_price(
         &self,
@@ -50,100 +98,53 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
         timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let (in_fallback, should_probe) = {
+            let action = {
                 let state = self.state.lock().unwrap();
                 match &*state {
-                    State::Primary { .. } => (false, false),
-                    State::Fallback { last_probe } => {
-                        (true, last_probe.elapsed() >= PROBE_INTERVAL)
+                    State::Primary { .. } => Action::Primary,
+                    State::Fallback { last_probe } if last_probe.elapsed() >= PROBE_INTERVAL => {
+                        Action::Probe
                     }
+                    State::Fallback { .. } => Action::Fallback,
                 }
             };
 
-            if in_fallback && should_probe {
-                // Probe primary alongside fallback
-                let (primary_result, fallback_result) = futures::join!(
-                    self.primary.estimate_native_price(token, timeout),
-                    self.fallback.estimate_native_price(token, timeout),
-                );
-
-                if matches!(
-                    &primary_result,
-                    Err(PriceEstimationError::ProtocolInternal(_))
-                ) {
-                    // Primary still down, update probe timestamp
-                    let mut state = self.state.lock().unwrap();
-                    *state = State::Fallback {
-                        last_probe: Instant::now(),
-                    };
-                    tracing::debug!("primary still down after probe, continuing with fallback");
-                    return fallback_result;
-                }
-
-                // Primary recovered
-                tracing::info!("primary native price estimator recovered");
-                let mut state = self.state.lock().unwrap();
-                *state = State::Primary {
-                    consecutive_errors: 0,
-                };
-                return primary_result;
-            }
-
-            if in_fallback {
-                return self.fallback.estimate_native_price(token, timeout).await;
-            }
-
-            // Primary mode
-            let result = self.primary.estimate_native_price(token, timeout).await;
-            if let Err(PriceEstimationError::ProtocolInternal(ref err)) = result {
-                let threshold_reached = {
-                    let mut state = self.state.lock().unwrap();
-                    if let State::Primary {
-                        consecutive_errors, ..
-                    } = &mut *state
-                    {
-                        *consecutive_errors += 1;
-                        if *consecutive_errors >= CONSECUTIVE_ERRORS_THRESHOLD {
-                            tracing::info!(
-                                ?err,
-                                "primary native price estimator down after {} consecutive errors, \
-                                 switching to fallback",
-                                *consecutive_errors
-                            );
-                            *state = State::Fallback {
-                                last_probe: Instant::now(),
-                            };
-                            true
-                        } else {
-                            tracing::debug!(
-                                ?err,
-                                consecutive_errors = *consecutive_errors,
-                                "primary native price estimator error, not yet switching to \
-                                 fallback"
-                            );
-                            false
-                        }
+            match action {
+                Action::Primary => {
+                    let result = self.primary.estimate_native_price(token, timeout).await;
+                    if self.on_primary_result(&result) {
+                        self.fallback.estimate_native_price(token, timeout).await
                     } else {
-                        false
+                        result
                     }
-                };
-                if threshold_reached {
-                    return self.fallback.estimate_native_price(token, timeout).await;
                 }
-                return result;
-            }
+                Action::Probe => {
+                    let (primary_result, fallback_result) = futures::join!(
+                        self.primary.estimate_native_price(token, timeout),
+                        self.fallback.estimate_native_price(token, timeout),
+                    );
 
-            // Success or non-protocol error: reset counter
-            {
-                let mut state = self.state.lock().unwrap();
-                if let State::Primary {
-                    consecutive_errors, ..
-                } = &mut *state
-                {
-                    *consecutive_errors = 0;
+                    if matches!(
+                        &primary_result,
+                        Err(PriceEstimationError::ProtocolInternal(_))
+                    ) {
+                        let mut state = self.state.lock().unwrap();
+                        *state = State::Fallback {
+                            last_probe: Instant::now(),
+                        };
+                        tracing::debug!("primary still down after probe, continuing with fallback");
+                        fallback_result
+                    } else {
+                        tracing::info!("primary native price estimator recovered");
+                        let mut state = self.state.lock().unwrap();
+                        *state = State::Primary {
+                            consecutive_errors: 0,
+                        };
+                        primary_result
+                    }
                 }
+                Action::Fallback => self.fallback.estimate_native_price(token, timeout).await,
             }
-            result
         }
         .boxed()
     }
