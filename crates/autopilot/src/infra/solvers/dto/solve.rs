@@ -69,11 +69,11 @@ impl Request {
         let auction_id = auction.id;
 
         let body = tokio::task::spawn_blocking(move || {
-            let serialized = serde_json::to_vec(&helper).unwrap();
+            let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
             Bytes::from(serialized)
         })
         .await
-        .unwrap();
+        .expect("inner task should not panic as serialization should work for the given type");
 
         Self { body, auction_id }
     }

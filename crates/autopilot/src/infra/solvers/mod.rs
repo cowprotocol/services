@@ -190,7 +190,7 @@ where
     }
 
     fn body_to_string(&self) -> Cow<'_, str> {
-        let serialized = serde_json::to_string(&self).unwrap();
+        let serialized = serde_json::to_string(&self).expect("type should be JSON serializable");
         Cow::Owned(serialized)
     }
 }
