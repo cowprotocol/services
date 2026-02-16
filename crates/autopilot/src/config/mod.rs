@@ -1,6 +1,6 @@
 use {
     crate::config::solver::Solver,
-    anyhow::ensure,
+    anyhow::{anyhow, ensure},
     serde::{Deserialize, Serialize},
     std::path::Path,
 };
@@ -16,7 +16,18 @@ pub struct Configuration {
 
 impl Configuration {
     pub async fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        Ok(toml::from_str(&tokio::fs::read_to_string(path).await?)?)
+        match toml::from_str(&tokio::fs::read_to_string(&path).await?) {
+            Ok(self_) => Ok(self_),
+            Err(err) if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") => Err(anyhow!(
+                "failed to parse TOML config at {}: {err:#?}",
+                path.as_ref().display()
+            )),
+            Err(_) => Err(anyhow!(
+                "failed to parse TOML config at: {}. Set TOML_TRACE_ERROR=1 to print \
+                         parsing error but this may leak secrets.",
+                path.as_ref().display()
+            )),
+        }
     }
 
     pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
