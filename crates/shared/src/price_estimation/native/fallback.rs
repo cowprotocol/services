@@ -1,3 +1,34 @@
+//! A native price estimator wrapper that automatically switches to a fallback
+//! estimator when the primary becomes unavailable.
+//!
+//! # State Machine
+//!
+//! The estimator operates as a two-state machine:
+//!
+//! ```text
+//!                  3 consecutive
+//!                ProtocolInternal errors
+//!   ┌─────────┐ ───────────────────────> ┌──────────┐
+//!   │ Primary │                          │ Fallback │
+//!   └─────────┘ <─────────────────────── └──────────┘
+//!                  probe succeeds
+//!               (every PROBE_INTERVAL)
+//! ```
+//!
+//! **Primary state**: All requests go to the primary estimator. A counter
+//! tracks consecutive [`PriceEstimationError::ProtocolInternal`] errors. Any
+//! success resets the counter. Once the counter reaches
+//! [`CONSECUTIVE_ERRORS_THRESHOLD`], the estimator switches to fallback and
+//! the current request is retried against the fallback.
+//!
+//! **Fallback state**: All requests go to the fallback estimator. Every
+//! [`PROBE_INTERVAL`], one request probes both the primary and fallback
+//! concurrently. If the primary probe succeeds, the estimator switches back to
+//! primary; otherwise it stays in fallback and resets the probe timer.
+//!
+//! Only `ProtocolInternal` errors (e.g. connection refused, timeouts) trigger
+//! the switch. Domain errors like `NoLiquidity` do not affect the state.
+
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
@@ -9,7 +40,11 @@ use {
     },
 };
 
+/// How often the estimator probes the primary while in fallback state.
 const PROBE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Number of consecutive `ProtocolInternal` errors from the primary before
+/// switching to fallback.
 const CONSECUTIVE_ERRORS_THRESHOLD: u32 = 3;
 
 enum State {
@@ -24,12 +59,20 @@ enum State {
     },
 }
 
+/// What the estimator should do for the current request based on the current
+/// state and probe timing.
 enum Action {
+    /// Use the primary estimator.
     Primary,
+    /// Use the fallback estimator directly (within probe interval).
     Fallback,
+    /// Probe both primary and fallback concurrently (probe interval elapsed).
     Probe,
 }
 
+/// Wraps a primary and fallback [`NativePriceEstimating`] implementation,
+/// automatically switching to the fallback when the primary experiences
+/// repeated `ProtocolInternal` failures and periodically probing to recover.
 pub struct FallbackNativePriceEstimator {
     primary: Box<dyn NativePriceEstimating>,
     fallback: Box<dyn NativePriceEstimating>,
