@@ -8,7 +8,7 @@ use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
     alloy::primitives::Address,
-    anyhow::Context as _,
+    anyhow::Context,
     futures::{FutureExt, future::BoxFuture},
     model::quote::NativeTokenPrice,
     reqwest::StatusCode,

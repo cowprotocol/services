@@ -206,13 +206,8 @@ mod tests {
         futures::FutureExt,
     };
 
-    fn token() -> Address {
-        Address::with_last_byte(1)
-    }
-
-    fn timeout() -> Duration {
-        Duration::from_secs(5)
-    }
+    const TOKEN: Address = Address::with_last_byte(1);
+    const TIMEOUT: Duration = Duration::from_secs(5);
 
     #[tokio::test]
     async fn uses_primary_when_healthy() {
@@ -226,7 +221,7 @@ mod tests {
 
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 1.0);
     }
 
@@ -255,7 +250,7 @@ mod tests {
 
         // First two errors: stay in primary, return the error
         for _ in 0..2 {
-            let result = estimator.estimate_native_price(token(), timeout()).await;
+            let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
             assert!(matches!(
                 result,
                 Err(PriceEstimationError::ProtocolInternal(_))
@@ -263,7 +258,7 @@ mod tests {
         }
 
         // Third error: threshold reached, switch to fallback
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 2.0);
     }
 
@@ -295,14 +290,14 @@ mod tests {
 
         // First two calls: primary errors returned (below threshold)
         for _ in 0..2 {
-            let _ = estimator.estimate_native_price(token(), timeout()).await;
+            let _ = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         }
 
         // Third call: threshold reached, triggers fallback
-        let _ = estimator.estimate_native_price(token(), timeout()).await;
+        let _ = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
 
         // Fourth call should use fallback directly (within probe interval)
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 2.0);
     }
 
@@ -340,11 +335,11 @@ mod tests {
 
         // First two calls: primary errors returned (below threshold)
         for _ in 0..2 {
-            let _ = estimator.estimate_native_price(token(), timeout()).await;
+            let _ = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         }
 
         // Third call: threshold reached, triggers fallback
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 2.0);
 
         // Force probe interval to expire
@@ -356,7 +351,7 @@ mod tests {
         }
 
         // This call should probe primary (which recovers) and return primary result
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 1.0);
     }
 
@@ -381,11 +376,11 @@ mod tests {
 
         // First two calls: primary errors (below threshold)
         for _ in 0..2 {
-            let _ = estimator.estimate_native_price(token(), timeout()).await;
+            let _ = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         }
 
         // Third call: threshold reached, triggers fallback
-        let _ = estimator.estimate_native_price(token(), timeout()).await;
+        let _ = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
 
         // Force probe interval to expire
         {
@@ -396,7 +391,7 @@ mod tests {
         }
 
         // Probe fires, primary still down → use fallback result
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 2.0);
     }
 
@@ -429,7 +424,7 @@ mod tests {
 
         // Two errors: below threshold, stay in primary
         for _ in 0..2 {
-            let result = estimator.estimate_native_price(token(), timeout()).await;
+            let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
             assert!(matches!(
                 result,
                 Err(PriceEstimationError::ProtocolInternal(_))
@@ -437,7 +432,7 @@ mod tests {
         }
 
         // Third call: primary succeeds, fallback never used
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 1.0);
     }
 
@@ -469,25 +464,25 @@ mod tests {
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
         // Call 1: error (consecutive_errors = 1)
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert!(matches!(
             result,
             Err(PriceEstimationError::ProtocolInternal(_))
         ));
 
         // Call 2: success (consecutive_errors reset to 0)
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 1.0);
 
         // Call 3: error (consecutive_errors = 1)
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert!(matches!(
             result,
             Err(PriceEstimationError::ProtocolInternal(_))
         ));
 
         // Call 4: error (consecutive_errors = 2, still below threshold)
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert!(matches!(
             result,
             Err(PriceEstimationError::ProtocolInternal(_))
@@ -507,7 +502,7 @@ mod tests {
 
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
-        let result = estimator.estimate_native_price(token(), timeout()).await;
+        let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
     }
 }
