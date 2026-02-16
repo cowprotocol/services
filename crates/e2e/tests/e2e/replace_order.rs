@@ -12,7 +12,7 @@ use {
         orderbook::{OrderCancellationError, OrderReplacementError},
     },
     reqwest::StatusCode,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 // Parse OrderReplacementError from HTTP response

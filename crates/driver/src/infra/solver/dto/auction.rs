@@ -361,7 +361,7 @@ fn interaction_from_domain(value: eth::Interaction) -> solvers_dto::auction::Int
     solvers_dto::auction::InteractionData {
         target: value.target,
         value: value.value.0,
-        call_data: value.call_data.0,
+        call_data: value.call_data.to_vec(),
     }
 }
 

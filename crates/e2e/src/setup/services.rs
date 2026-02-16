@@ -26,7 +26,7 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     sqlx::Connection,
     std::{
         collections::{HashMap, hash_map::Entry},

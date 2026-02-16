@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain::{self, competition::solution::encoding::codec, eth, quote},
-        util::serialize,
-    },
+    crate::domain::{self, competition::solution::encoding::codec, eth, quote},
     model::{
         order::{BuyTokenDestination, SellTokenSource},
         signature::SigningScheme,
@@ -34,7 +31,7 @@ impl Quote {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
-    #[serde_as(as = "HashMap<_, serialize::U256>")]
+    #[serde_as(as = "HashMap<_, serde_ext::U256>")]
     clearing_prices: HashMap<eth::Address, eth::U256>,
     pre_interactions: Vec<Interaction>,
     interactions: Vec<Interaction>,
@@ -51,9 +48,9 @@ pub struct Quote {
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     value: eth::U256,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     call_data: Vec<u8>,
 }
 
@@ -73,21 +70,21 @@ impl From<eth::Interaction> for Interaction {
 struct JitOrder {
     buy_token: eth::Address,
     sell_token: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     executed_amount: eth::U256,
     receiver: eth::Address,
     partially_fillable: bool,
     valid_to: u32,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     app_data: [u8; 32],
     side: Side,
     sell_token_source: SellTokenSource,
     buy_token_destination: BuyTokenDestination,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     signature: Vec<u8>,
     signing_scheme: SigningScheme,
 }

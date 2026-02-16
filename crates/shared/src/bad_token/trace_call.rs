@@ -1,6 +1,6 @@
 use {
     super::TokenQuality,
-    crate::{ethrpc::Web3, trace_many},
+    crate::{trace_many, web3::Web3},
     alloy::{
         primitives::{Address, U256, keccak256},
         rpc::{

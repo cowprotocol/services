@@ -2720,6 +2720,7 @@ dependencies = [
  "reqwest 0.11.27",
  "s3",
  "serde",
+ "serde-ext",
  "serde_json",
  "serde_with",
  "shared",
@@ -5967,6 +5968,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-ext"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "const-hex",
+ "serde",
+ "serde_with",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6331,6 +6342,7 @@ dependencies = [
  "const-hex",
  "number",
  "serde",
+ "serde-ext",
  "serde_with",
 ]
 
