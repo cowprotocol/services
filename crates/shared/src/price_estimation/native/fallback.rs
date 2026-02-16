@@ -10,9 +10,12 @@ use {
 };
 
 const PROBE_INTERVAL: Duration = Duration::from_secs(60);
+const CONSECUTIVE_ERRORS_THRESHOLD: u32 = 3;
 
 enum State {
-    Primary,
+    Primary {
+        consecutive_errors: u32,
+    },
     /// Using fallback; `last_probe` tracks when we last tried the primary.
     Fallback {
         last_probe: Instant,
@@ -33,7 +36,9 @@ impl FallbackNativePriceEstimator {
         Self {
             primary,
             fallback,
-            state: Mutex::new(State::Primary),
+            state: Mutex::new(State::Primary {
+                consecutive_errors: 0,
+            }),
         }
     }
 }
@@ -48,7 +53,7 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
             let (in_fallback, should_probe) = {
                 let state = self.state.lock().unwrap();
                 match &*state {
-                    State::Primary => (false, false),
+                    State::Primary { .. } => (false, false),
                     State::Fallback { last_probe } => {
                         (true, last_probe.elapsed() >= PROBE_INTERVAL)
                     }
@@ -78,7 +83,9 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
                 // Primary recovered
                 tracing::info!("primary native price estimator recovered");
                 let mut state = self.state.lock().unwrap();
-                *state = State::Primary;
+                *state = State::Primary {
+                    consecutive_errors: 0,
+                };
                 return primary_result;
             }
 
@@ -89,19 +96,53 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
             // Primary mode
             let result = self.primary.estimate_native_price(token, timeout).await;
             if let Err(PriceEstimationError::ProtocolInternal(ref err)) = result {
-                tracing::warn!(
-                    ?err,
-                    "primary native price estimator down, switching to fallback"
-                );
-                {
+                let threshold_reached = {
                     let mut state = self.state.lock().unwrap();
-                    *state = State::Fallback {
-                        last_probe: Instant::now(),
-                    };
+                    if let State::Primary {
+                        consecutive_errors, ..
+                    } = &mut *state
+                    {
+                        *consecutive_errors += 1;
+                        if *consecutive_errors >= CONSECUTIVE_ERRORS_THRESHOLD {
+                            tracing::info!(
+                                ?err,
+                                "primary native price estimator down after {} consecutive errors, \
+                                 switching to fallback",
+                                *consecutive_errors
+                            );
+                            *state = State::Fallback {
+                                last_probe: Instant::now(),
+                            };
+                            true
+                        } else {
+                            tracing::debug!(
+                                ?err,
+                                consecutive_errors = *consecutive_errors,
+                                "primary native price estimator error, not yet switching to \
+                                 fallback"
+                            );
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                };
+                if threshold_reached {
+                    return self.fallback.estimate_native_price(token, timeout).await;
                 }
-                return self.fallback.estimate_native_price(token, timeout).await;
+                return result;
             }
 
+            // Success or non-protocol error: reset counter
+            {
+                let mut state = self.state.lock().unwrap();
+                if let State::Primary {
+                    consecutive_errors, ..
+                } = &mut *state
+                {
+                    *consecutive_errors = 0;
+                }
+            }
             result
         }
         .boxed()
@@ -145,7 +186,7 @@ mod tests {
         let mut primary = MockNativePriceEstimating::new();
         primary
             .expect_estimate_native_price()
-            .times(1)
+            .times(3)
             .returning(|_, _| {
                 async {
                     Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
@@ -163,6 +204,16 @@ mod tests {
 
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
+        // First two errors: stay in primary, return the error
+        for _ in 0..2 {
+            let result = estimator.estimate_native_price(token(), timeout()).await;
+            assert!(matches!(
+                result,
+                Err(PriceEstimationError::ProtocolInternal(_))
+            ));
+        }
+
+        // Third error: threshold reached, switch to fallback
         let result = estimator.estimate_native_price(token(), timeout()).await;
         assert_eq!(result.unwrap(), 2.0);
     }
@@ -170,10 +221,11 @@ mod tests {
     #[tokio::test]
     async fn stays_in_fallback_without_probing_before_interval() {
         let mut primary = MockNativePriceEstimating::new();
-        // Called once for the initial failure, NOT called again before probe interval
+        // Called 3 times (threshold) for the initial failures, NOT called again before
+        // probe interval
         primary
             .expect_estimate_native_price()
-            .times(1)
+            .times(3)
             .returning(|_, _| {
                 async {
                     Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
@@ -184,7 +236,7 @@ mod tests {
             });
 
         let mut fallback = MockNativePriceEstimating::new();
-        // Called once for the initial fallback, once for the subsequent request
+        // Called once when threshold is reached, once for the subsequent request
         fallback
             .expect_estimate_native_price()
             .times(2)
@@ -192,10 +244,15 @@ mod tests {
 
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
-        // First call triggers fallback
+        // First two calls: primary errors returned (below threshold)
+        for _ in 0..2 {
+            let _ = estimator.estimate_native_price(token(), timeout()).await;
+        }
+
+        // Third call: threshold reached, triggers fallback
         let _ = estimator.estimate_native_price(token(), timeout()).await;
 
-        // Second call should use fallback directly (within probe interval)
+        // Fourth call should use fallback directly (within probe interval)
         let result = estimator.estimate_native_price(token(), timeout()).await;
         assert_eq!(result.unwrap(), 2.0);
     }
@@ -206,11 +263,11 @@ mod tests {
         let mut call_count = 0u32;
         primary
             .expect_estimate_native_price()
-            .times(2)
+            .times(4) // 3 for threshold + 1 probe
             .returning(move |_, _| {
                 call_count += 1;
-                if call_count == 1 {
-                    // First call: primary is down
+                if call_count <= 3 {
+                    // First 3 calls: primary is down (reaching threshold)
                     async {
                         Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
                             "connection refused"
@@ -218,13 +275,13 @@ mod tests {
                     }
                     .boxed()
                 } else {
-                    // Second call (probe): primary recovered
+                    // Fourth call (probe): primary recovered
                     async { Ok(1.0) }.boxed()
                 }
             });
 
         let mut fallback = MockNativePriceEstimating::new();
-        // Called for initial fallback + during probe (concurrent with primary)
+        // Called once when threshold is reached + once during probe (concurrent)
         fallback
             .expect_estimate_native_price()
             .times(2)
@@ -232,7 +289,12 @@ mod tests {
 
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
-        // First call triggers fallback
+        // First two calls: primary errors returned (below threshold)
+        for _ in 0..2 {
+            let _ = estimator.estimate_native_price(token(), timeout()).await;
+        }
+
+        // Third call: threshold reached, triggers fallback
         let result = estimator.estimate_native_price(token(), timeout()).await;
         assert_eq!(result.unwrap(), 2.0);
 
@@ -268,7 +330,12 @@ mod tests {
 
         let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
 
-        // First call triggers fallback
+        // First two calls: primary errors (below threshold)
+        for _ in 0..2 {
+            let _ = estimator.estimate_native_price(token(), timeout()).await;
+        }
+
+        // Third call: threshold reached, triggers fallback
         let _ = estimator.estimate_native_price(token(), timeout()).await;
 
         // Force probe interval to expire
@@ -282,6 +349,100 @@ mod tests {
         // Probe fires, primary still down → use fallback result
         let result = estimator.estimate_native_price(token(), timeout()).await;
         assert_eq!(result.unwrap(), 2.0);
+    }
+
+    #[tokio::test]
+    async fn does_not_switch_on_fewer_than_threshold_errors() {
+        let mut primary = MockNativePriceEstimating::new();
+        let mut call_count = 0u32;
+        primary
+            .expect_estimate_native_price()
+            .times(3)
+            .returning(move |_, _| {
+                call_count += 1;
+                if call_count <= 2 {
+                    async {
+                        Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
+                            "transient error"
+                        )))
+                    }
+                    .boxed()
+                } else {
+                    // Third call: primary recovers before threshold
+                    async { Ok(1.0) }.boxed()
+                }
+            });
+
+        let mut fallback = MockNativePriceEstimating::new();
+        fallback.expect_estimate_native_price().never();
+
+        let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
+
+        // Two errors: below threshold, stay in primary
+        for _ in 0..2 {
+            let result = estimator.estimate_native_price(token(), timeout()).await;
+            assert!(matches!(
+                result,
+                Err(PriceEstimationError::ProtocolInternal(_))
+            ));
+        }
+
+        // Third call: primary succeeds, fallback never used
+        let result = estimator.estimate_native_price(token(), timeout()).await;
+        assert_eq!(result.unwrap(), 1.0);
+    }
+
+    #[tokio::test]
+    async fn resets_counter_on_success() {
+        let mut primary = MockNativePriceEstimating::new();
+        let mut call_count = 0u32;
+        primary
+            .expect_estimate_native_price()
+            .times(4)
+            .returning(move |_, _| {
+                call_count += 1;
+                match call_count {
+                    // error, success, error, error — never reaches 3 consecutive
+                    1 | 3 | 4 => async {
+                        Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
+                            "transient error"
+                        )))
+                    }
+                    .boxed(),
+                    2 => async { Ok(1.0) }.boxed(),
+                    _ => unreachable!(),
+                }
+            });
+
+        let mut fallback = MockNativePriceEstimating::new();
+        fallback.expect_estimate_native_price().never();
+
+        let estimator = FallbackNativePriceEstimator::new(Box::new(primary), Box::new(fallback));
+
+        // Call 1: error (consecutive_errors = 1)
+        let result = estimator.estimate_native_price(token(), timeout()).await;
+        assert!(matches!(
+            result,
+            Err(PriceEstimationError::ProtocolInternal(_))
+        ));
+
+        // Call 2: success (consecutive_errors reset to 0)
+        let result = estimator.estimate_native_price(token(), timeout()).await;
+        assert_eq!(result.unwrap(), 1.0);
+
+        // Call 3: error (consecutive_errors = 1)
+        let result = estimator.estimate_native_price(token(), timeout()).await;
+        assert!(matches!(
+            result,
+            Err(PriceEstimationError::ProtocolInternal(_))
+        ));
+
+        // Call 4: error (consecutive_errors = 2, still below threshold)
+        let result = estimator.estimate_native_price(token(), timeout()).await;
+        assert!(matches!(
+            result,
+            Err(PriceEstimationError::ProtocolInternal(_))
+        ));
     }
 
     #[tokio::test]
