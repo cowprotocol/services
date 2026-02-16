@@ -14,10 +14,12 @@ const CONSECUTIVE_ERRORS_THRESHOLD: u32 = 3;
 
 enum State {
     Primary {
+        /// Counts consecutive protocol internal errors from the primary
+        /// estimator.
         consecutive_errors: u32,
     },
-    /// Using fallback; `last_probe` tracks when we last tried the primary.
     Fallback {
+        /// Tracks when we last tried the primary.
         last_probe: Instant,
     },
 }
@@ -51,7 +53,7 @@ impl FallbackNativePriceEstimator {
 
 impl FallbackNativePriceEstimator {
     /// Returns `true` if the fallback should be used.
-    fn on_primary_result(&self, result: &NativePriceEstimateResult) -> bool {
+    fn should_use_fallback(&self, result: &NativePriceEstimateResult) -> bool {
         let mut state = self.state.lock().unwrap();
         if let Err(PriceEstimationError::ProtocolInternal(err)) = result {
             let State::Primary {
@@ -112,7 +114,7 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
             match action {
                 Action::Primary => {
                     let result = self.primary.estimate_native_price(token, timeout).await;
-                    if self.on_primary_result(&result) {
+                    if self.should_use_fallback(&result) {
                         self.fallback.estimate_native_price(token, timeout).await
                     } else {
                         result
