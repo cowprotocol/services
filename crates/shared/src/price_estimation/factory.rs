@@ -13,8 +13,7 @@ use {
     },
     crate::{
         arguments,
-        bad_token::BadTokenDetecting,
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
@@ -61,14 +60,13 @@ pub struct Network {
     pub native_token: Address,
     pub settlement: Address,
     pub authenticator: Address,
-    pub base_tokens: Arc<BaseTokens>,
     pub block_stream: CurrentBlockWatcher,
 }
 
 /// The shared components needed for creating price estimators.
 pub struct Components {
     pub http_factory: HttpClientFactory,
-    pub bad_token_detector: Arc<dyn BadTokenDetecting>,
+    pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub code_fetcher: Arc<CachedCodeFetcher>,
 }
@@ -306,7 +304,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         SanitizedPriceEstimator::new(
             estimator,
             self.network.native_token,
-            self.components.bad_token_detector.clone(),
+            self.components.deny_listed_tokens.clone(),
             false, // not estimating native price
         )
     }
@@ -320,7 +318,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         SanitizedPriceEstimator::new(
             estimator,
             self.network.native_token,
-            self.components.bad_token_detector.clone(),
+            self.components.deny_listed_tokens.clone(),
             true, // estimating native price
         )
     }

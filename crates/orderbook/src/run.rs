@@ -18,26 +18,17 @@ use {
         ChainalysisOracle,
         GPv2Settlement,
         HooksTrampoline,
-        IUniswapV3Factory,
         WETH9,
         support::Balances,
     },
-    futures::StreamExt,
-    model::{DomainSeparator, order::BUY_ETH_ADDRESS},
+    model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
-        bad_token::{
-            cache::CachingDetector,
-            instrumented::InstrumentedBadTokenDetectorExt,
-            list_based::{ListBasedDetector, UnknownTokenStrategy},
-            token_owner_finder,
-            trace_call::TraceCallDetector,
-        },
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
@@ -50,7 +41,6 @@ use {
             native::NativePriceEstimating,
         },
         signature_validator,
-        sources::{self, BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
@@ -154,8 +144,6 @@ pub async fn run(args: Arguments) {
             }
         }
     });
-    let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::Instance::new(address, web3.provider.clone()),
@@ -204,75 +192,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     ));
 
-    let baseline_sources = args
-        .shared
-        .baseline_sources
-        .clone()
-        .unwrap_or_else(|| sources::defaults_for_network(&chain));
-    tracing::info!(?baseline_sources, "using baseline sources");
-    let univ2_sources = baseline_sources
-        .iter()
-        .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
-        })
-        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
-    let pair_providers: Vec<_> = futures::stream::iter(univ2_sources)
-        .then(|source: UniV2BaselineSourceParameters| {
-            let web3 = &web3;
-            async move { source.into_source(web3).await.unwrap().pair_provider }
-        })
-        .collect()
-        .await;
-
-    let base_tokens = Arc::new(BaseTokens::new(
-        *native_token.address(),
-        &args.shared.base_tokens,
-    ));
-    let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.unsupported_tokens.clone();
-
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
-        .await
-        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
-        .ok();
-
-    let finder = token_owner_finder::init(
-        &args.token_owner_finder,
-        web3.clone(),
-        &chain,
-        &http_factory,
-        &pair_providers,
-        vault.as_ref(),
-        uniswapv3_factory.as_ref(),
-        &base_tokens,
-        *settlement_contract.address(),
-    )
-    .await
-    .expect("failed to initialize token owner finders");
-
-    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        CachingDetector::new(
-            Box::new(TraceCallDetector::new(
-                shared::web3::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
-                *settlement_contract.address(),
-                finder,
-            )),
-            args.shared.token_quality_cache_expiry,
-            args.shared.token_quality_cache_prefetch_time,
-        )
-    });
-    let bad_token_detector = Arc::new(
-        ListBasedDetector::new(
-            allowed_tokens,
-            unsupported_tokens,
-            trace_call_detector
-                .map(|detector| UnknownTokenStrategy::Forward(detector))
-                .unwrap_or(UnknownTokenStrategy::Allow),
-        )
-        .instrumented(),
-    );
+    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
 
     let current_block_stream = args
         .shared
@@ -301,12 +221,11 @@ pub async fn run(args: Arguments) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
             block_stream: current_block_stream.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
-            bad_token_detector: bad_token_detector.clone(),
+            deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
         },
@@ -408,7 +327,7 @@ pub async fn run(args: Arguments) {
         )),
         validity_configuration,
         args.eip1271_skip_creation_validation,
-        bad_token_detector.clone(),
+        deny_listed_tokens.clone(),
         hooks_contract,
         optimal_quoter.clone(),
         balance_fetcher,

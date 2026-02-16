@@ -13,7 +13,7 @@ use {
     rand::Rng,
     std::{
         collections::{HashMap, HashSet},
-        sync::{Arc, Mutex, MutexGuard},
+        sync::Arc,
         time::{Duration, Instant},
     },
     tokio::time,
@@ -94,7 +94,6 @@ type CacheEntry = Result<f64, PriceEstimationError>;
 struct CachedResult {
     result: CacheEntry,
     updated_at: Instant,
-    requested_at: Instant,
     accumulative_errors_count: u32,
 }
 
@@ -112,14 +111,12 @@ impl CachedResult {
         Self {
             result,
             updated_at: now,
-            requested_at: now,
             accumulative_errors_count: u32::from(is_accumulating_error),
         }
     }
 
     fn update(&mut self, result: CacheEntry) {
         let now = Instant::now();
-        self.requested_at = now;
         self.updated_at = now;
         self.accumulative_errors_count = match result {
             Err(PriceEstimationError::EstimatorInternal(_)) => self.accumulative_errors_count + 1,
@@ -159,8 +156,10 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
 #[derive(Clone)]
 pub struct Cache(Arc<CacheInner>);
 
+const MAX_CACHE_SIZE: u64 = 20_000;
+
 struct CacheInner {
-    data: Mutex<HashMap<Address, CachedResult>>,
+    data: moka::sync::Cache<Address, CachedResult>,
     max_age: Duration,
 }
 
@@ -169,26 +168,25 @@ impl Cache {
         let mut rng = rand::thread_rng();
         let now = std::time::Instant::now();
 
-        let data = initial_prices
-            .into_iter()
-            .filter_map(|(token, price)| {
+        let data = moka::sync::Cache::builder()
+            .max_capacity(MAX_CACHE_SIZE)
+            .build();
+
+        for (token, price) in initial_prices {
+            if let Some(price) = from_normalized_price(price) {
                 let updated_at = Self::random_updated_at(max_age, now, &mut rng);
-                Some((
+                data.insert(
                     token,
                     CachedResult {
-                        result: Ok(from_normalized_price(price)?),
+                        result: Ok(price),
                         updated_at,
-                        requested_at: now,
                         accumulative_errors_count: 0,
                     },
-                ))
-            })
-            .collect::<HashMap<_, _>>();
+                );
+            }
+        }
 
-        Self(Arc::new(CacheInner {
-            data: Mutex::new(data),
-            max_age,
-        }))
+        Self(Arc::new(CacheInner { data, max_age }))
     }
 
     fn max_age(&self) -> Duration {
@@ -205,19 +203,19 @@ impl Cache {
     }
 
     fn len(&self) -> usize {
-        self.0.data.lock().unwrap().len()
+        // Should never fire since we are bounded with MAX_CACHE_SIZE
+        usize::try_from(self.0.data.entry_count()).expect("cache size should fit in a usize")
     }
 
     fn get_cached_price(
         token: Address,
         now: Instant,
-        cache: &mut MutexGuard<HashMap<Address, CachedResult>>,
+        cache: &moka::sync::Cache<Address, CachedResult>,
         max_age: &Duration,
     ) -> Option<CachedResult> {
-        let entry = cache.get_mut(&token)?;
-        entry.requested_at = now;
+        let entry = cache.get(&token)?;
         let is_recent = now.saturating_duration_since(entry.updated_at) < *max_age;
-        (is_recent && entry.is_ready()).then_some(entry.clone())
+        (is_recent && entry.is_ready()).then_some(entry)
     }
 
     /// Only returns prices that are currently cached.
@@ -226,10 +224,9 @@ impl Cache {
         tokens: &[Address],
     ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        let mut cache = self.0.data.lock().unwrap();
         let mut results = HashMap::default();
         for token in tokens {
-            let cached = Self::get_cached_price(*token, now, &mut cache, &self.0.max_age);
+            let cached = Self::get_cached_price(*token, now, &self.0.data, &self.0.max_age);
             let label = if cached.is_some() { "hits" } else { "misses" };
             CacheMetrics::get()
                 .native_price_cache_access
@@ -243,11 +240,17 @@ impl Cache {
     }
 
     fn insert(&self, token: Address, result: CacheEntry) {
-        let mut cache = self.0.data.lock().unwrap();
-        cache
-            .entry(token)
-            .and_modify(|value| value.update(result.clone()))
-            .or_insert_with(|| CachedResult::new(result));
+        self.0
+            .data
+            .entry_by_ref(&token)
+            .and_upsert_with(|maybe_entry| match maybe_entry {
+                Some(entry) => {
+                    let mut cached = entry.into_value();
+                    cached.update(result);
+                    cached
+                }
+                None => CachedResult::new(result),
+            });
     }
 }
 
@@ -311,11 +314,10 @@ impl CachingNativePriceEstimator {
         let estimates = tokens.into_iter().map(move |token| async move {
             // check if the price is cached by now
             let now = Instant::now();
+            if let Some(cached) =
+                Cache::get_cached_price(token, now, &self.0.cache.0.data, &max_age)
             {
-                let mut cache = self.0.cache.0.data.lock().unwrap();
-                if let Some(cached) = Cache::get_cached_price(token, now, &mut cache, &max_age) {
-                    return (token, cached.result);
-                }
+                return (token, cached.result);
             }
 
             let approximation = self
@@ -390,8 +392,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         async move {
             let cached = {
                 let now = Instant::now();
-                let mut cache = self.0.cache.0.data.lock().unwrap();
-                Cache::get_cached_price(token, now, &mut cache, &self.0.cache.0.max_age)
+                Cache::get_cached_price(token, now, &self.0.cache.0.data, &self.0.cache.0.max_age)
             };
 
             let label = if cached.is_some() { "hits" } else { "misses" };
@@ -565,8 +566,7 @@ mod tests {
         {
             // Check that `updated_at` timestamps are initialized with
             // reasonable values.
-            let data = estimator.cache().0.data.lock().unwrap();
-            for value in data.values() {
+            for (_, value) in &estimator.cache().0.data {
                 let elapsed = value.updated_at.elapsed();
                 assert!(elapsed >= min_age && elapsed <= max_age);
             }

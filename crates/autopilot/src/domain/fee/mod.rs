@@ -13,7 +13,6 @@ use {
         domain::{self, eth},
     },
     alloy::primitives::{Address, U256},
-    app_data::Validator,
     chrono::{DateTime, Utc},
     rust_decimal::Decimal,
     shared::{
@@ -164,14 +163,13 @@ impl ProtocolFees {
         let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
             return vec![];
         };
-        let Ok(validated) = Validator::new(usize::MAX).validate(full_app_data.as_bytes()) else {
+        let Ok(parsed_app_data) = app_data::parse(full_app_data.as_bytes()) else {
             return vec![];
         };
 
         let mut accumulated = Decimal::ZERO;
 
-        validated
-            .protocol
+        parsed_app_data
             .partner_fee
             .iter()
             .map(move |partner_fee| {
@@ -235,7 +233,7 @@ impl ProtocolFees {
     /// protocol fees if necessary.
     pub fn apply(
         &self,
-        order: boundary::Order,
+        order: &boundary::Order,
         quote: Option<domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> domain::Order {
@@ -250,7 +248,7 @@ impl ProtocolFees {
         });
 
         let partner_fee =
-            Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.get());
+            Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
             return boundary::order::to_domain(order, partner_fee, quote);
@@ -261,7 +259,7 @@ impl ProtocolFees {
 
     fn apply_policies(
         &self,
-        order: boundary::Order,
+        order: &boundary::Order,
         quote: domain::Quote,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
@@ -275,8 +273,8 @@ impl ProtocolFees {
 
         let protocol_fees = fee_policies
             .iter()
-            .filter_map(|fee_policy| Self::protocol_fee_into_policy(&order, &quote, fee_policy))
-            .flat_map(|policy| self.variant_fee_apply(&order, &quote, policy))
+            .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, &quote, fee_policy))
+            .flat_map(|policy| self.variant_fee_apply(order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
 

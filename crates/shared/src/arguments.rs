@@ -2,18 +2,14 @@
 //! the binaries.
 
 use {
-    crate::{
-        gas_price_estimation::GasEstimatorType,
-        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
-        tenderly_api,
-    },
+    crate::{gas_price_estimation::GasEstimatorType, tenderly_api},
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     observe::TracingConfig,
     std::{
         collections::HashSet,
         fmt::{self, Display, Formatter},
-        num::{NonZeroU32, NonZeroU64},
+        num::NonZeroU32,
         str::FromStr,
         time::Duration,
     },
@@ -191,64 +187,6 @@ pub struct Arguments {
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
 
-    /// Base tokens used for finding multi-hop paths between multiple AMMs
-    /// Should be the most liquid tokens of the given network.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub base_tokens: Vec<Address>,
-
-    /// Which Liquidity sources to be used by Price Estimator.
-    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
-    pub baseline_sources: Option<Vec<BaselineSource>>,
-
-    /// List of non hardcoded univ2-like contracts.
-    ///
-    /// For example to add a univ2-like liquidity source the argument could be
-    /// set to
-    ///
-    /// 0x0000000000000000000000000000000000000001|0x0000000000000000000000000000000000000000000000000000000000000002
-    ///
-    /// which sets the router address to 0x01 and the init code digest to 0x02.
-    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
-    pub custom_univ2_baseline_sources: Vec<UniV2BaselineSourceParameters>,
-
-    /// The number of blocks kept in the pool cache.
-    #[clap(long, env, default_value = "10")]
-    pub pool_cache_blocks: NonZeroU64,
-
-    /// The number of pairs that are automatically updated in the pool cache.
-    #[clap(long, env, default_value = "4")]
-    pub pool_cache_maximum_recent_block_age: u64,
-
-    /// How often to retry requests in the pool cache.
-    #[clap(long, env, default_value = "5")]
-    pub pool_cache_maximum_retries: u32,
-
-    /// How long to sleep in seconds between retries in the pool cache.
-    #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
-    pub pool_cache_delay_between_retries: Duration,
-
-    /// If solvers should use internal buffers to improve solution quality.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub use_internal_buffers: bool,
-
-    /// Value of the authorization header for the solver competition post api.
-    #[clap(long, env)]
-    pub solver_competition_auth: Option<String>,
-
-    /// If liquidity pool fetcher has caching mechanism, this argument defines
-    /// how old pool data is allowed to be before updating
-    #[clap(
-        long,
-        env,
-        default_value = "30s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub liquidity_fetcher_max_age_update: Duration,
-
-    /// The number of pools to initially populate the UniswapV3 cache
-    #[clap(long, env, default_value = "100")]
-    pub max_pools_to_initialize_cache: usize,
-
     /// The time between new blocks on the network.
     #[clap(long, env, value_parser = humantime::parse_duration)]
     pub network_block_interval: Option<Duration>,
@@ -278,31 +216,6 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<Address>,
-
-    /// The amount of time a classification of a token into good or
-    /// bad is valid for.
-    #[clap(
-        long,
-        env,
-        default_value = "10m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub token_quality_cache_expiry: Duration,
-
-    /// How long before expiry the token quality cache should try to update the
-    /// token quality in the background. This is useful to make sure that token
-    /// quality for every cached token is usable at all times. This value
-    /// has to be smaller than `token_quality_cache_expiry`
-    /// This configuration also affects the period of the token quality
-    /// maintenance job. Maintenance period =
-    /// `token_quality_cache_prefetch_time` / 2
-    #[clap(
-        long,
-        env,
-        default_value = "2m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub token_quality_cache_prefetch_time: Duration,
 
     /// Custom volume fees for token buckets.
     /// Format: "factor:token1;token2;..." (e.g.,
@@ -396,14 +309,6 @@ impl Display for Arguments {
             chain_id,
             simulation_node_url,
             gas_estimators,
-            base_tokens,
-            baseline_sources,
-            pool_cache_blocks,
-            pool_cache_maximum_recent_block_age,
-            pool_cache_maximum_retries,
-            pool_cache_delay_between_retries,
-            use_internal_buffers,
-            solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
             balances_contract_address,
@@ -411,11 +316,6 @@ impl Display for Arguments {
             native_token_address,
             hooks_contract_address,
             balancer_v2_vault_address,
-            custom_univ2_baseline_sources,
-            liquidity_fetcher_max_age_update,
-            max_pools_to_initialize_cache,
-            token_quality_cache_expiry,
-            token_quality_cache_prefetch_time,
             tracing,
             volume_fee_bucket_overrides,
             enable_sell_equals_buy_volume_fee,
@@ -429,27 +329,6 @@ impl Display for Arguments {
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {gas_estimators:?}")?;
-        writeln!(f, "base_tokens: {base_tokens:?}")?;
-        writeln!(f, "baseline_sources: {baseline_sources:?}")?;
-        writeln!(f, "pool_cache_blocks: {pool_cache_blocks}")?;
-        writeln!(
-            f,
-            "pool_cache_maximum_recent_block_age: {pool_cache_maximum_recent_block_age}"
-        )?;
-        writeln!(
-            f,
-            "pool_cache_maximum_retries: {pool_cache_maximum_retries}"
-        )?;
-        writeln!(
-            f,
-            "pool_cache_delay_between_retries: {pool_cache_delay_between_retries:?}"
-        )?;
-        writeln!(f, "use_internal_buffers: {use_internal_buffers}")?;
-        display_secret_option(
-            f,
-            "solver_competition_auth",
-            solver_competition_auth.as_ref(),
-        )?;
         display_option(
             f,
             "network_block_interval",
@@ -484,27 +363,6 @@ impl Display for Arguments {
             f,
             "balancer_v2_vault_address",
             &balancer_v2_vault_address.map(|a| format!("{a:?}")),
-        )?;
-        display_list(
-            f,
-            "custom_univ2_baseline_sources",
-            custom_univ2_baseline_sources,
-        )?;
-        writeln!(
-            f,
-            "liquidity_fetcher_max_age_update: {liquidity_fetcher_max_age_update:?}"
-        )?;
-        writeln!(
-            f,
-            "max_pools_to_initialize_cache: {max_pools_to_initialize_cache}"
-        )?;
-        writeln!(
-            f,
-            "token_quality_cache_expiry: {token_quality_cache_expiry:?}"
-        )?;
-        writeln!(
-            f,
-            "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
         write!(f, "{tracing:?}")?;
         writeln!(
