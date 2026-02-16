@@ -8,7 +8,7 @@ use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
     alloy::primitives::Address,
-    anyhow::Context,
+    anyhow::Context as _,
     futures::{FutureExt, future::BoxFuture},
     model::quote::NativeTokenPrice,
     reqwest::StatusCode,
@@ -43,7 +43,11 @@ impl Forwarder {
         if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", id);
         }
-        let response = request.send().await.context("failed to send request")?;
+        let response = request.send().await.map_err(|err| {
+            PriceEstimationError::ProtocolInternal(
+                anyhow::Error::new(err).context("failed to send request"),
+            )
+        })?;
 
         match response.status() {
             StatusCode::OK => {

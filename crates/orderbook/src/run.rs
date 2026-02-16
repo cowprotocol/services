@@ -42,7 +42,7 @@ use {
             PriceEstimating,
             QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
-            native::NativePriceEstimating,
+            native::{FallbackNativePriceEstimator, NativePriceEstimating},
         },
         signature_validator,
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -259,14 +259,33 @@ pub async fn run(args: Arguments) {
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
+    let primary = price_estimator_factory
+        .native_price_estimator(
+            args.native_price_estimators.as_slice(),
+            args.fast_price_estimation_results_required,
+            &native_token,
+        )
+        .await
+        .expect("failed to build primary native price estimator");
+
+    let inner: Box<dyn NativePriceEstimating> =
+        if let Some(ref fallback_config) = args.fallback_native_price_estimators {
+            let fallback = price_estimator_factory
+                .native_price_estimator(
+                    fallback_config.as_slice(),
+                    args.fast_price_estimation_results_required,
+                    &native_token,
+                )
+                .await
+                .expect("failed to build fallback native price estimator");
+            Box::new(FallbackNativePriceEstimator::new(primary, fallback))
+        } else {
+            primary
+        };
+
     let native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
         price_estimator_factory
-            .caching_native_price_estimator(
-                args.native_price_estimators.as_slice(),
-                args.fast_price_estimation_results_required,
-                &native_token,
-                cache,
-            )
+            .caching_native_price_estimator_from_inner(inner, cache)
             .await,
     );
 
