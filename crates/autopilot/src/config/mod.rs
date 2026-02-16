@@ -23,8 +23,8 @@ impl Configuration {
                 path.as_ref().display()
             )),
             Err(_) => Err(anyhow!(
-                "failed to parse TOML config at: {}. Set TOML_TRACE_ERROR=1 to print \
-                         parsing error but this may leak secrets.",
+                "failed to parse TOML config at: {}. Set TOML_TRACE_ERROR=1 to print parsing \
+                 error but this may leak secrets.",
                 path.as_ref().display()
             )),
         }
