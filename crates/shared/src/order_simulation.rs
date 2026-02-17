@@ -8,6 +8,7 @@ use alloy::rpc::types::state::StateOverride;
 use anyhow::{Context, Result};
 use contracts::alloy::GPv2Settlement;
 
+use crate::trade_finding::Interaction;
 use model::order::OrderData;
 use model::{DomainSeparator, order::Order};
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub trait OrderExecutionSimulating: Send + Sync {
         &self,
         order: &Order,
         domain_separator: &DomainSeparator,
+        pre_interactions: Vec<Interaction>,
     ) -> Result<()>;
 }
 
@@ -65,6 +67,7 @@ impl OrderExecutionSimulator {
         &self,
         order: &Order,
         _domain_separator: &DomainSeparator,
+        pre_interactions: Vec<Interaction>,
     ) -> Result<EncodedSettlement> {
         let tokens = {
             let mut tokens = vec![order.data.sell_token, order.data.buy_token];
@@ -103,11 +106,13 @@ impl OrderExecutionSimulator {
             order.data.sell_amount,
         );
 
+        let encoded_pre_interactions = pre_interactions.into_iter().map(|i| i.encode()).collect();
+
         Ok(EncodedSettlement {
             tokens,
             clearing_prices,
             trades: vec![trade],
-            interactions: Default::default(),
+            interactions: [encoded_pre_interactions, Vec::new(), Vec::new()],
         })
     }
 }
@@ -118,8 +123,9 @@ impl OrderExecutionSimulating for OrderExecutionSimulator {
         &self,
         order: &Order,
         domain_separator: &DomainSeparator,
+        pre_interactions: Vec<Interaction>,
     ) -> Result<()> {
-        let settlement = self.encode_settlement(order, domain_separator)?;
+        let settlement = self.encode_settlement(order, domain_separator, pre_interactions)?;
         let overrides = self.prepare_state_overrides(&order.data).await;
 
         let call = GPv2Settlement::GPv2Settlement::settleCall {
