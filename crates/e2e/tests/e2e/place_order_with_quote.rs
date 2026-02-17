@@ -240,6 +240,7 @@ async fn fallback_native_price_estimator(web3: Web3) {
             "--gas-estimators=http://localhost:11088/gasprice".to_string(),
             "--fallback-native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                 .to_string(),
+            "--native-price-cache-max-age=2s".to_string(),
         ])
         .await;
 
