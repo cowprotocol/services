@@ -20,7 +20,7 @@ async fn route(
     // This delays interpreting the data as much as possible and allows
     // logging how long the raw data transfer takes.
     request: Request<Body>,
-) -> Result<axum::Json<dto::SolveResponse>, (hyper::StatusCode, axum::Json<Error>)> {
+) -> Result<axum::Json<dto::SolveResponse>, (axum::http::StatusCode, axum::Json<Error>)> {
     let solver = state.solver().name().as_str();
 
     let handle_request = async {

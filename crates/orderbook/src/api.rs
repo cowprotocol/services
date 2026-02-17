@@ -9,11 +9,10 @@ use {
     axum::{
         Router,
         extract::DefaultBodyLimit,
-        http::{Request, StatusCode},
+        http::{Request, StatusCode, header::USER_AGENT},
         middleware::{self, Next},
         response::{IntoResponse, Json, Response},
     },
-    hyper::header::USER_AGENT,
     observe::distributed_tracing::tracing_axum::{self, record_trace_id},
     serde::{Deserialize, Serialize},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
@@ -68,10 +67,7 @@ pub struct AppState {
     pub quote_timeout: Duration,
 }
 
-async fn summarize_request(
-    req: Request<axum::body::Body>,
-    next: Next<axum::body::Body>,
-) -> Response {
+async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Response {
     let method = req.method().to_string();
     let uri = req.uri().to_string();
 
@@ -99,10 +95,7 @@ async fn summarize_request(
 }
 
 /// Middleware that automatically tracks metrics using Axum's MatchedPath
-async fn with_matched_path_metric(
-    req: Request<axum::body::Body>,
-    next: Next<axum::body::Body>,
-) -> Response {
+async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) -> Response {
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
     // Extract matched path and HTTP method
@@ -165,7 +158,7 @@ pub fn handle_all_routes(
     let routes = [
         // V1 routes
         (
-            "/api/v1/account/:owner/orders",
+            "/api/v1/account/{owner}/orders",
             axum::routing::get(get_user_orders::get_user_orders_handler),
         ),
         (
@@ -174,7 +167,7 @@ pub fn handle_all_routes(
                 .layer(DefaultBodyLimit::max(app_data_size_limit)),
         ),
         (
-            "/api/v1/app_data/:hash",
+            "/api/v1/app_data/{hash}",
             axum::routing::get(get_app_data::get_app_data_handler).merge(
                 axum::routing::put(put_app_data::put_app_data_with_hash)
                     .layer(DefaultBodyLimit::max(app_data_size_limit)),
@@ -190,12 +183,12 @@ pub fn handle_all_routes(
                 .merge(axum::routing::delete(cancel_orders::cancel_orders_handler)),
         ),
         (
-            "/api/v1/orders/:uid",
+            "/api/v1/orders/{uid}",
             axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
                 .merge(axum::routing::delete(cancel_order::cancel_order_handler)),
         ),
         (
-            "/api/v1/orders/:uid/status",
+            "/api/v1/orders/{uid}/status",
             axum::routing::get(get_order_status::get_status_handler),
         ),
         (
@@ -208,19 +201,19 @@ pub fn handle_all_routes(
             axum::routing::get(get_solver_competition::get_solver_competition_latest_handler),
         ),
         (
-            "/api/v1/solver_competition/by_tx_hash/:tx_hash",
+            "/api/v1/solver_competition/by_tx_hash/{tx_hash}",
             axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler),
         ),
         (
-            "/api/v1/solver_competition/:auction_id",
+            "/api/v1/solver_competition/{auction_id}",
             axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler),
         ),
         (
-            "/api/v1/token/:token/metadata",
+            "/api/v1/token/{token}/metadata",
             axum::routing::get(get_token_metadata::get_token_metadata_handler),
         ),
         (
-            "/api/v1/token/:token/native_price",
+            "/api/v1/token/{token}/native_price",
             axum::routing::get(get_native_price::get_native_price_handler),
         ),
         (
@@ -228,11 +221,11 @@ pub fn handle_all_routes(
             axum::routing::get(get_trades::get_trades_handler),
         ),
         (
-            "/api/v1/transactions/:hash/orders",
+            "/api/v1/transactions/{hash}/orders",
             axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler),
         ),
         (
-            "/api/v1/users/:user/total_surplus",
+            "/api/v1/users/{user}/total_surplus",
             axum::routing::get(get_total_surplus::get_total_surplus_handler),
         ),
         (
@@ -246,11 +239,11 @@ pub fn handle_all_routes(
             axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler),
         ),
         (
-            "/api/v2/solver_competition/by_tx_hash/:tx_hash",
+            "/api/v2/solver_competition/by_tx_hash/{tx_hash}",
             axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler),
         ),
         (
-            "/api/v2/solver_competition/:auction_id",
+            "/api/v2/solver_competition/{auction_id}",
             axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler),
         ),
         (
@@ -439,19 +432,11 @@ impl IntoResponse for LoadSolverCompetitionError {
 }
 
 #[cfg(test)]
-pub async fn response_body<B>(response: axum::http::Response<B>) -> Vec<u8>
-where
-    B: axum::body::HttpBody + Unpin,
-    B::Data: AsRef<[u8]>,
-    B::Error: Debug,
-{
-    let mut body = response.into_body();
-    let mut result = Vec::new();
-    while let Some(frame) = body.data().await {
-        let bytes = frame.unwrap();
-        result.extend_from_slice(bytes.as_ref());
-    }
-    result
+pub async fn response_body(response: axum::http::Response<axum::body::Body>) -> Vec<u8> {
+    axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec()
 }
 
 #[cfg(test)]
@@ -489,8 +474,6 @@ mod tests {
 
     #[tokio::test]
     async fn rich_errors_handle_serialization_errors() {
-        use axum::body::HttpBody;
-
         struct AlwaysErrors;
         impl Serialize for AlwaysErrors {
             fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
@@ -502,12 +485,9 @@ mod tests {
         }
 
         let response = rich_error("foo", "bar", AlwaysErrors).into_response();
-        let mut body = response.into_body();
-        let mut bytes = Vec::new();
-        while let Some(frame) = body.data().await {
-            let chunk = frame.unwrap();
-            bytes.extend_from_slice(&chunk);
-        }
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
 
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),

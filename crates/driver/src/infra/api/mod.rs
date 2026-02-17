@@ -53,7 +53,7 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
-    ) -> Result<(), hyper::Error> {
+    ) -> Result<(), std::io::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
@@ -148,12 +148,15 @@ impl Api {
             );
 
         // Start the server.
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
-        tracing::info!(port = server.local_addr().port(), "serving driver");
+        let listener = tokio::net::TcpListener::bind(self.addr).await?;
+        let local_addr = listener.local_addr()?;
+        tracing::info!(port = local_addr.port(), "serving driver");
         if let Some(addr_sender) = self.addr_sender {
-            addr_sender.send(server.local_addr()).unwrap();
+            addr_sender.send(local_addr).unwrap();
         }
-        server.with_graceful_shutdown(shutdown).await
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
     }
 
     fn build_order_sorting_strategies(
