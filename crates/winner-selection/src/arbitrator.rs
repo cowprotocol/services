@@ -19,6 +19,7 @@ use {
         cmp::Reverse,
         collections::{HashMap, HashSet},
     },
+    tracing::instrument,
 };
 
 /// Auction arbitrator responsible for selecting winning solutions.
@@ -33,6 +34,7 @@ impl Arbitrator {
     /// Runs the auction mechanism on solutions.
     ///
     /// Takes solutions and auction context, returns a ranking with winners.
+    #[instrument(skip_all)]
     pub fn arbitrate(
         &self,
         solutions: Vec<Solution<Unscored>>,
@@ -55,6 +57,7 @@ impl Arbitrator {
     }
 
     /// Removes unfair solutions from the set of all solutions.
+    #[instrument(skip_all)]
     fn partition_unfair_solutions(
         &self,
         solutions: Vec<Solution<Unscored>>,
@@ -611,6 +614,7 @@ impl Arbitrator {
     }
 
     /// Compute reference scores for winning solvers.
+    #[instrument(skip_all)]
     pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<Address, U256> {
         let mut reference_scores = HashMap::default();
 

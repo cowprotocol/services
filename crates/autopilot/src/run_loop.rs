@@ -192,6 +192,7 @@ impl RunLoop {
         });
     }
 
+    #[instrument(skip_all)]
     async fn update_caches(&self, prev_block: &mut Option<B256>, is_leader: bool) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
@@ -365,8 +366,7 @@ impl RunLoop {
                 solution,
                 solution_uid,
                 block_deadline,
-            )
-            .await;
+            );
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
@@ -374,7 +374,7 @@ impl RunLoop {
 
     /// Starts settlement execution in a background task. The function is async
     /// only to get access to the locks.
-    async fn start_settlement_execution(
+    fn start_settlement_execution(
         self: &Arc<Self>,
         auction_id: Id,
         single_run_start: Instant,
@@ -692,6 +692,7 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
+    #[instrument(skip_all, fields(driver = driver.name, solution_uid))]
     async fn settle(
         &self,
         driver: &infra::Driver,
@@ -867,6 +868,7 @@ impl RunLoop {
 
     /// Removes orders that are currently being settled to avoid solver
     /// solutions conflicting with each other.
+    #[instrument(skip_all)]
     async fn remove_in_flight_orders(
         &self,
         mut auction: domain::RawAuctionData,
