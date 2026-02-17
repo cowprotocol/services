@@ -7,7 +7,7 @@ use {
         signature::{Signature, hashed_eip712_message},
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]

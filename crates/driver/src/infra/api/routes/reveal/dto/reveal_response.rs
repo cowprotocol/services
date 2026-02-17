@@ -1,8 +1,4 @@
-use {
-    crate::{domain::competition, util::serialize},
-    serde::Serialize,
-    serde_with::serde_as,
-};
+use {crate::domain::competition, serde::Serialize, serde_with::serde_as};
 
 impl RevealResponse {
     pub fn new(reveal: competition::Revealed) -> Self {
@@ -26,8 +22,8 @@ pub struct RevealResponse {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Calldata {
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     internalized: Vec<u8>,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     uninternalized: Vec<u8>,
 }

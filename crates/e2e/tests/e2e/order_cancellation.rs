@@ -20,7 +20,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]

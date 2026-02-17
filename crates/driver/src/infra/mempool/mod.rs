@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary::unbuffered_web3_client,
+        boundary::{Web3, unbuffered_web3},
         domain::{eth, mempools},
         infra::{self, solver::Account},
     },
@@ -13,7 +13,6 @@ use {
     },
     anyhow::Context,
     dashmap::DashMap,
-    ethrpc::Web3,
     std::sync::Arc,
     url::Url,
 };
@@ -84,7 +83,7 @@ impl std::fmt::Display for Mempool {
 
 impl Mempool {
     pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
-        let transport = unbuffered_web3_client(&config.url);
+        let transport = unbuffered_web3(&config.url);
         // Register the solver accounts into the wallet to submit txs on their behalf
         for account in solver_accounts {
             transport.wallet.register_signer(account);
@@ -137,7 +136,7 @@ impl Mempool {
             .max_fee_per_gas(max_fee_per_gas)
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
             .gas_limit(gas_limit)
-            .input(tx.input.0.into())
+            .input(tx.input.into())
             .value(tx.value.0)
             .access_list(tx.access_list.into());
 

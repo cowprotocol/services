@@ -84,7 +84,7 @@ impl Liveness {
 
 /// Creates Web3 transport based on the given config.
 #[instrument(skip_all)]
-async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
+async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
@@ -94,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     ethrpc(
         url,
-        &shared::ethrpc::Arguments {
+        &shared::web3::Arguments {
             ethrpc_max_batch_size: 0,
             ethrpc_max_concurrent_requests: 0,
             ethrpc_batch_delay: Default::default(),
@@ -178,12 +178,12 @@ pub async fn run(
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -655,7 +655,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");

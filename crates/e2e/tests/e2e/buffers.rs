@@ -11,7 +11,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    shared::{ethrpc::Web3, web3::Web3},
     std::str::FromStr,
     url::Url,
 };

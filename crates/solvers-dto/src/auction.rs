@@ -1,5 +1,4 @@
 use {
-    super::serialize,
     alloy::primitives::{Address, B256, U256},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
@@ -28,7 +27,7 @@ pub struct Auction {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub uid: [u8; 56],
     pub sell_token: Address,
     pub buy_token: Address,
@@ -273,7 +272,7 @@ pub struct ForeignLimitOrder {
     pub address: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub hash: [u8; 32],
     pub maker_token: Address,
     pub taker_token: Address,

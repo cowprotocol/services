@@ -163,9 +163,8 @@ mod utils {
             crate::{
                 domain::eth,
                 infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
-                util::Bytes,
             },
-            alloy::primitives::Address,
+            alloy::primitives::{Address, Bytes},
         };
 
         #[test]
@@ -176,7 +175,7 @@ mod utils {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: liquorice_settlement_address,
-                    call_data: Bytes(calldata),
+                    call_data: calldata.into(),
                     value: 0.into(),
                 },
                 liquorice_settlement_address,
@@ -191,7 +190,7 @@ mod utils {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: liquorice_settlement_address,
-                    call_data: Bytes(vec![]),
+                    call_data: Bytes::new(),
                     value: 0.into(),
                 },
                 liquorice_settlement_address,
@@ -205,7 +204,7 @@ mod utils {
             let rfq_id = extract_rfq_id_from_interaction(
                 &eth::Interaction {
                     target: Address::random(),
-                    call_data: Bytes(vec![]),
+                    call_data: Bytes::new(),
                     value: 0.into(),
                 },
                 Address::random(),
