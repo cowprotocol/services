@@ -1,5 +1,9 @@
 use {
-    ::alloy::primitives::U256,
+    ::alloy::primitives::{U256, address},
+    autopilot::config::{
+        Configuration,
+        solver::{Account, Solver},
+    },
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -9,7 +13,8 @@ use {
     number::units::EthUnit,
     shared::web3::Web3,
     solvers_dto::solution::Solution,
-    std::collections::HashMap,
+    std::{collections::HashMap, str::FromStr},
+    url::Url,
 };
 
 #[tokio::test]
@@ -80,11 +85,27 @@ async fn solver_competition(web3: Web3) {
     );
 
     let services = Services::new(&onchain).await;
+
+    let config_file = Configuration {
+        drivers: vec![
+            Solver::new(
+                "test_solver".to_string(),
+                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                Account::Address(solver.address()),
+            ),
+            Solver::new(
+                "solver2".to_string(),
+                Url::from_str("http://localhost:11088/solver2").unwrap(),
+                Account::Address(solver.address()),
+            ),
+        ],
+    }
+    .to_temp_path();
+
     services.start_autopilot(
         None,
         vec![
-            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())
-            ),
+            format!("--config={}", config_file.path().display()),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
@@ -220,14 +241,34 @@ async fn wrong_solution_submission_address(web3: Web3) {
     );
 
     let services = Services::new(&onchain).await;
-    services.start_autopilot(
-        None,
-        // Solver 1 has a wrong submission address, meaning that the solutions should be discarded from solver1
-        vec![
-            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", const_hex::encode(solver.address())),
-            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+
+    // Solver 1 has a wrong submission address, meaning that the solutions should be
+    // discarded from solver1
+    let config_file = Configuration {
+        drivers: vec![
+            Solver::new(
+                "solver1".to_string(),
+                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+            ),
+            Solver::new(
+                "solver2".to_string(),
+                Url::from_str("http://localhost:11088/solver2").unwrap(),
+                Account::Address(solver.address()),
+            ),
         ],
-    ).await;
+    }
+    .to_temp_path();
+
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!("--config={}", config_file.path().display()),
+                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
@@ -366,15 +407,28 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
+
+    let config_file = Configuration {
+        drivers: vec![
+            Solver::new(
+                "good_solver".to_string(),
+                Url::from_str("http://localhost:11088/good_solver").unwrap(),
+                Account::Address(good_solver_account.address()),
+            ),
+            Solver::new(
+                "bad_solver".to_string(),
+                Url::from_str("http://localhost:11088/bad_solver").unwrap(),
+                Account::Address(bad_solver_account.address()),
+            ),
+        ],
+    }
+    .to_temp_path();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=good_solver|http://localhost:11088/good_solver|{},bad_solver|http://localhost:11088/bad_solver|{}",
-                    const_hex::encode(good_solver_account.address()),
-                    const_hex::encode(bad_solver_account.address()),
-                ),
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--max-winners-per-auction=10".to_string(),

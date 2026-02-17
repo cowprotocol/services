@@ -1,6 +1,6 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{arguments::Account, domain::eth, util},
+    crate::{config::solver::Account, domain::eth, util},
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
     observe::tracing::tracing_headers,
@@ -19,10 +19,6 @@ const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 pub struct Driver {
     pub name: String,
     pub url: Url,
-    // An optional threshold used to check "fairness" of provided solutions. If specified, a
-    // winning solution should be discarded if it contains at least one order, which
-    // another driver solved with surplus exceeding this driver's surplus by `threshold`
-    pub fairness_threshold: Option<eth::Ether>,
     pub submission_address: eth::Address,
     client: Client,
 }
@@ -40,7 +36,6 @@ impl Driver {
     pub async fn try_new(
         url: Url,
         name: String,
-        fairness_threshold: Option<eth::Ether>,
         submission_account: Account,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
@@ -57,18 +52,11 @@ impl Driver {
             }
             Account::Address(address) => address,
         };
-        tracing::info!(
-            ?name,
-            ?url,
-            ?fairness_threshold,
-            ?submission_address,
-            "Creating solver"
-        );
+        tracing::info!(?name, ?url, ?submission_address, "Creating solver");
 
         Ok(Self {
             name,
             url,
-            fairness_threshold,
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
                 .tcp_keepalive(Duration::from_secs(60))

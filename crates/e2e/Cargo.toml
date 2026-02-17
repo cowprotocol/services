@@ -13,7 +13,7 @@ alloy = { workspace = true, default-features = false, features = ["json-rpc", "p
 alloy-signer = {workspace = true, default-features = false, features = ["eip712"]}
 anyhow = { workspace = true }
 app-data = { workspace = true }
-autopilot = { workspace = true }
+autopilot = { workspace = true, features = ["test-util"] }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }

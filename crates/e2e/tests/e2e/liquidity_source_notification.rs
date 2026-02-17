@@ -4,6 +4,10 @@ use {
         providers::ext::{AnvilApi, ImpersonateConfig},
         signers::SignerSync,
     },
+    autopilot::config::{
+        Configuration,
+        solver::{Account, Solver},
+    },
     chrono::Utc,
     contracts::alloy::{ERC20, LiquoriceSettlement},
     driver::infra,
@@ -26,7 +30,8 @@ use {
     },
     number::units::EthUnit,
     solvers_dto::solution::Solution,
-    std::collections::HashMap,
+    std::{collections::HashMap, str::FromStr},
+    url::Url,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -199,16 +204,22 @@ http-timeout = "10s"
             liquorice_api.port
         )),
     );
+    let config_file = Configuration {
+        drivers: vec![Solver::new(
+            "liquorice_solver".to_string(),
+            Url::from_str("http://localhost:11088/liquorice_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
+    }
+    .to_temp_path();
+
     services
         .start_autopilot(
             None,
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!(
-                    "--drivers=liquorice_solver|http://localhost:11088/liquorice_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                format!("--config={}", config_file.path().display()),
             ],
         )
         .await;
