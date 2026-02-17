@@ -1,17 +1,16 @@
-use std::sync::Arc;
+use crate::encoded_settlement::{EncodedSettlement, encode_trade};
+use crate::price_estimation::trade_verifier::balance_overrides::{
+    BalanceOverrideRequest, BalanceOverriding,
+};
+use crate::tenderly_api::TenderlyCodeSimulator;
 use alloy::primitives::U256;
 use alloy::rpc::types::state::StateOverride;
-use contracts::alloy::GPv2Settlement;
-use ethrpc::Web3;
-use model::{
-    DomainSeparator,
-    order::Order
-};
 use anyhow::{Context, Result};
+use contracts::alloy::GPv2Settlement;
+
 use model::order::OrderData;
-use crate::encoded_settlement::{encode_trade, EncodedSettlement};
-use crate::tenderly_api::TenderlyCodeSimulator;
-use crate::price_estimation::trade_verifier::balance_overrides::{BalanceOverrideRequest, BalanceOverriding};
+use model::{DomainSeparator, order::Order};
+use std::sync::Arc;
 
 /// A component that can simulate the execution of an order.
 #[async_trait::async_trait]
@@ -25,8 +24,6 @@ pub trait OrderExecutionSimulating: Send + Sync {
 }
 
 pub struct OrderExecutionSimulator {
-    #[expect(dead_code)]
-    web3: Web3,
     settlement: GPv2Settlement::Instance,
     balance_overrider: Arc<dyn BalanceOverriding>,
     simulator: Option<Arc<TenderlyCodeSimulator>>,
@@ -34,13 +31,11 @@ pub struct OrderExecutionSimulator {
 
 impl OrderExecutionSimulator {
     pub fn new(
-        web3: Web3,
         settlement: GPv2Settlement::Instance,
         balance_overrider: Arc<dyn BalanceOverriding>,
         simulator: Option<Arc<TenderlyCodeSimulator>>,
     ) -> Self {
         Self {
-            web3,
             settlement,
             balance_overrider,
             simulator,
@@ -156,10 +151,10 @@ impl OrderExecutionSimulating for OrderExecutionSimulator {
             tracing::debug!(?err, "could not log tenderly simulation command");
         }
 
-        settle_simulation
-            .call()
-            .await
-            .context(format!("failed to execute settlement for order: {:?}", order))?;
+        settle_simulation.call().await.context(format!(
+            "failed to execute settlement for order: {:?}",
+            order
+        ))?;
 
         Ok(())
     }

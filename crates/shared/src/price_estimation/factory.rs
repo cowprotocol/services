@@ -1,8 +1,6 @@
 use {
     super::{
-        Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
+        Arguments, NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -38,8 +36,8 @@ use {
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
 
-use crate::price_estimation::trade_verifier::order_simulation::OrderExecutionSimulator;
 use crate::order_quoting::OrderQuoter;
+use crate::order_simulation::OrderExecutionSimulator;
 
 /// A factory for initializing shared price estimators.
 pub struct PriceEstimatorFactory<'a> {
@@ -106,7 +104,6 @@ impl<'a> PriceEstimatorFactory<'a> {
                 web3.provider.clone(),
             );
             Arc::new(OrderExecutionSimulator::new(
-                web3,
                 settlement,
                 balance_overrides,
                 tenderly,
