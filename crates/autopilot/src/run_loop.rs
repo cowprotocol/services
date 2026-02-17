@@ -641,6 +641,7 @@ impl RunLoop {
     }
 
     /// Sends `/solve` request to the driver and forwards errors to the caller.
+    #[instrument(skip_all, fields(driver = driver.name))]
     async fn try_solve(
         &self,
         driver: Arc<infra::Driver>,

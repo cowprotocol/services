@@ -66,6 +66,7 @@ impl Driver {
         })
     }
 
+    #[instrument(skip_all)]
     pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
         self.request_response("solve", request).await
     }
@@ -127,7 +128,9 @@ impl Driver {
         let request = self.client.post(url.clone()).headers(tracing_headers());
         let mut request = payload.inject(request);
 
-        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
+        if let Some(request_id) = tracing::info_span!("fetch_request_id")
+            .in_scope(observe::distributed_tracing::request_id::from_current_span)
+        {
             request = request.header("X-REQUEST-ID", request_id);
         }
 

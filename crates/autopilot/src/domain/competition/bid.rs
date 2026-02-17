@@ -4,6 +4,7 @@ use {
     crate::{domain::competition::Solution, infra},
     ::winner_selection::state,
     std::sync::Arc,
+    tracing::instrument,
 };
 
 pub type Scored = state::Scored<Score>;
@@ -54,6 +55,7 @@ impl<State> state::HasState for Bid<State> {
 }
 
 impl Bid<Unscored> {
+    #[instrument(skip_all, fields(driver = driver.name))]
     pub fn new(solution: Solution, driver: Arc<infra::Driver>) -> Self {
         Self {
             solution,

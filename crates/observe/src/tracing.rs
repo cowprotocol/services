@@ -23,7 +23,7 @@ use {
     },
     std::{panic::PanicHookInfo, sync::Once},
     time::macros::format_description,
-    tracing::{Span, level_filters::LevelFilter},
+    tracing::{Span, instrument, level_filters::LevelFilter},
     tracing_opentelemetry::OpenTelemetrySpanExt,
     tracing_subscriber::{
         EnvFilter,
@@ -225,6 +225,7 @@ impl Injector for HeaderInjector<'_> {
     }
 }
 
+#[instrument(skip_all)]
 pub fn tracing_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
 
