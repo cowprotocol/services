@@ -137,6 +137,15 @@ async fn test_cancel_on_expiry(web3: Web3) {
 }
 
 async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
+    use {
+        autopilot::config::{
+            Configuration,
+            solver::{Account, Solver},
+        },
+        std::str::FromStr,
+        url::Url,
+    };
+
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -156,11 +165,20 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
+    let config_file = Configuration {
+        drivers: vec![Solver::new(
+            "test_solver".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
+        ..Default::default()
+    }
+    .to_temp_path();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--same-tokens-policy=allow-sell".to_string()],
-                ..Default::default()
+                autopilot: vec![format!("--config={}", config_file.path().display())],
             },
             solver.clone(),
         )
@@ -248,6 +266,15 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 }
 
 async fn test_execute_same_sell_and_buy_token(web3: Web3) {
+    use {
+        autopilot::config::{
+            Configuration,
+            solver::{Account, Solver},
+        },
+        std::str::FromStr,
+        url::Url,
+    };
+
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -267,11 +294,20 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
+    let config_file = Configuration {
+        drivers: vec![Solver::new(
+            "test_solver".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            Account::Address(solver.address()),
+        )],
+        ..Default::default()
+    }
+    .to_temp_path();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--same-tokens-policy=allow-sell".to_string()],
-                ..Default::default()
+                autopilot: vec![format!("--config={}", config_file.path().display())],
             },
             solver.clone(),
         )

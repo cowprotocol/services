@@ -15,6 +15,7 @@ pub mod event_handling;
 pub mod event_storing_helpers;
 pub mod external_prices;
 pub mod fee;
+pub mod fee_factor;
 pub mod gas_price;
 pub mod gas_price_estimation;
 pub mod http_client;

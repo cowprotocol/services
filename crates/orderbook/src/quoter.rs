@@ -8,8 +8,9 @@ use {
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
     shared::{
-        arguments::{FeeFactor, TokenBucketFeeOverride},
+        arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
+        fee_factor::FeeFactor,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
         order_validation::{
             AppDataValidationError,
@@ -308,8 +309,8 @@ mod tests {
         model::quote::OrderQuoteSide,
         number::units::EthUnit,
         shared::{
-            arguments::FeeFactor,
             fee::VolumeFeePolicy,
+            fee_factor::FeeFactor,
             order_quoting::{Quote, QuoteData},
         },
     };

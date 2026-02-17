@@ -210,6 +210,7 @@ http-timeout = "10s"
             Url::from_str("http://localhost:11088/liquorice_solver").unwrap(),
             Account::Address(solver.address()),
         )],
+        ..Default::default()
     }
     .to_temp_path();
 

@@ -450,7 +450,7 @@ pub async fn run(
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
         domain::ProtocolFees::new(
-            &args.fee_policies_config,
+            &config.fee_policies_config,
             args.shared.volume_fee_bucket_overrides.clone(),
             args.shared.enable_sell_equals_buy_volume_fee,
         ),

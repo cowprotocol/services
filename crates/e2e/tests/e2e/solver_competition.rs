@@ -99,6 +99,7 @@ async fn solver_competition(web3: Web3) {
                 Account::Address(solver.address()),
             ),
         ],
+        ..Default::default()
     }
     .to_temp_path();
 
@@ -257,6 +258,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
                 Account::Address(solver.address()),
             ),
         ],
+        ..Default::default()
     }
     .to_temp_path();
 
@@ -421,6 +423,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 Account::Address(bad_solver_account.address()),
             ),
         ],
+        ..Default::default()
     }
     .to_temp_path();
 

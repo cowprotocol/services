@@ -201,6 +201,7 @@ async fn zero_ex_liquidity(web3: Web3) {
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
             Account::Address(solver.address()),
         )],
+        ..Default::default()
     }
     .to_temp_path();
 

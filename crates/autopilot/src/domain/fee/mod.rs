@@ -8,17 +8,19 @@ mod policy;
 
 use {
     crate::{
-        arguments::{self},
         boundary::{self},
+        config::fee_policy::{
+            FeePoliciesConfig,
+            FeePolicy,
+            FeePolicyOrderClass,
+            UpcomingFeePolicies,
+        },
         domain::{self, eth},
     },
     alloy::primitives::{Address, U256},
     chrono::{DateTime, Utc},
     rust_decimal::Decimal,
-    shared::{
-        arguments::{FeeFactor, TokenBucketFeeOverride},
-        fee::VolumeFeePolicy,
-    },
+    shared::{arguments::TokenBucketFeeOverride, fee::VolumeFeePolicy, fee_factor::FeeFactor},
     std::collections::HashSet,
 };
 
@@ -29,12 +31,12 @@ enum OrderClass {
     Any,
 }
 
-impl From<arguments::FeePolicyOrderClass> for OrderClass {
-    fn from(value: arguments::FeePolicyOrderClass) -> Self {
+impl From<FeePolicyOrderClass> for OrderClass {
+    fn from(value: FeePolicyOrderClass) -> Self {
         match value {
-            arguments::FeePolicyOrderClass::Market => Self::Market,
-            arguments::FeePolicyOrderClass::Limit => Self::Limit,
-            arguments::FeePolicyOrderClass::Any => Self::Any,
+            FeePolicyOrderClass::Market => Self::Market,
+            FeePolicyOrderClass::Limit => Self::Limit,
+            FeePolicyOrderClass::Any => Self::Any,
         }
     }
 }
@@ -45,11 +47,11 @@ pub struct ProtocolFee {
     order_class: OrderClass,
 }
 
-impl From<arguments::FeePolicy> for ProtocolFee {
-    fn from(value: arguments::FeePolicy) -> Self {
+impl From<FeePolicy> for ProtocolFee {
+    fn from(value: FeePolicy) -> Self {
         Self {
-            policy: value.fee_policy_kind.into(),
-            order_class: value.fee_policy_order_class.into(),
+            policy: value.kind.into(),
+            order_class: value.order_class.into(),
         }
     }
 }
@@ -59,8 +61,8 @@ pub struct UpcomingProtocolFees {
     effective_from_timestamp: DateTime<Utc>,
 }
 
-impl From<arguments::UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
-    fn from(value: arguments::UpcomingFeePolicies) -> Self {
+impl From<UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
+    fn from(value: UpcomingFeePolicies) -> Self {
         value
             // both config fields must be non-empty
             .effective_from_timestamp
@@ -87,7 +89,7 @@ pub struct ProtocolFees {
 
 impl ProtocolFees {
     pub fn new(
-        config: &arguments::FeePoliciesConfig,
+        config: &FeePoliciesConfig,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
     ) -> Self {

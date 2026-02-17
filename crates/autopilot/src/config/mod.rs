@@ -1,10 +1,11 @@
 use {
-    crate::config::solver::Solver,
+    crate::config::{fee_policy::FeePoliciesConfig, solver::Solver},
     anyhow::{anyhow, ensure},
     serde::{Deserialize, Serialize},
     std::path::Path,
 };
 
+pub mod fee_policy;
 pub mod solver;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -12,6 +13,10 @@ pub mod solver;
 pub struct Configuration {
     // #[serde(default)]
     pub drivers: Vec<Solver>,
+
+    /// Describes how the protocol fees should be calculated.
+    #[serde(flatten)]
+    pub fee_policies_config: FeePoliciesConfig,
 }
 
 impl Configuration {

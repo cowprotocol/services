@@ -100,6 +100,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
             Account::Address(solver1.address()),
         )],
+        ..Default::default()
     }
     .to_temp_path();
 
@@ -126,6 +127,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             Url::from_str("http://localhost:11088/test_solver2").unwrap(),
             Account::Address(solver2.address()),
         )],
+        ..Default::default()
     }
     .to_temp_path();
 
