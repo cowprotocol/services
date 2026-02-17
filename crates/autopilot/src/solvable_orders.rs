@@ -327,20 +327,22 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
-            orders: tracing::info_span!("assemble_orders").in_scope(||orders
-                .into_iter()
-                .map(|order| {
-                    let quote = db_solvable_orders
-                        .quotes
-                        .get(&order.metadata.uid.into())
-                        .map(|quote| quote.as_ref().clone());
-                    self.protocol_fees.apply(
-                        order.as_ref(),
-                        quote,
-                        &surplus_capturing_jit_order_owners,
-                    )
-                })
-                .collect()),
+            orders: tracing::info_span!("assemble_orders") .in_scope(|| {
+                orders
+                    .into_iter()
+                    .map(|order| {
+                        let quote = db_solvable_orders
+                            .quotes
+                            .get(&order.metadata.uid.into())
+                            .map(|quote| quote.as_ref().clone());
+                        self.protocol_fees.apply(
+                            order.as_ref(),
+                            quote,
+                            &surplus_capturing_jit_order_owners,
+                        )
+                    })
+                    .collect()
+            }),
             prices: prices
                 .into_iter()
                 .map(|(key, value)| {
