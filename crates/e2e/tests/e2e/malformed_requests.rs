@@ -3,7 +3,7 @@
 
 use {
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
-    model::order::ORDER_UID_LIMIT,
+    model::order::{ORDER_UID_LIMIT, OrderUid},
     orderbook::api::Error,
     reqwest::StatusCode,
     serde_json::json,
@@ -311,9 +311,9 @@ async fn http_validation(web3: Web3) {
         .post(format!("{API_HOST}/api/v1/orders/lookup"))
         .header("Content-Type", "application/json")
         .json(&json!(
-            0..(ORDER_UID_LIMIT + 1)
-                .iter()
-                .map(|_| OrderUid::default().collect::<Vec<_>>())
+            (0..ORDER_UID_LIMIT + 1)
+                .map(|_| OrderUid::default())
+                .collect::<Vec<_>>()
         ))
         .send()
         .await

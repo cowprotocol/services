@@ -192,7 +192,7 @@ pub fn handle_all_routes(
         ),
         (
             "/api/v1/orders/lookup",
-            axum::routing::get(get_orders_by_uid::get_orders_by_uid_handler),
+            axum::routing::post(get_orders_by_uid::get_orders_by_uid_handler),
         ),
         (
             "/api/v1/orders/:uid",
