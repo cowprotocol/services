@@ -179,7 +179,8 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Bid<Unscored>> {
-        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
+        let request =
+            solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline).await;
 
         futures::future::join_all(
             self.drivers
