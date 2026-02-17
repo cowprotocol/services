@@ -101,8 +101,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             Account::Address(solver1.address()),
         )],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
@@ -128,8 +127,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             Account::Address(solver2.address()),
         )],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     let _autopilot_follower = services
         .start_autopilot(

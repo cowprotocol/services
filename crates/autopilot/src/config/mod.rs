@@ -10,7 +10,7 @@ pub mod solver;
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Configuration {
-    #[serde(default)]
+    // #[serde(default)]
     pub drivers: Vec<Solver>,
 }
 
@@ -35,11 +35,16 @@ impl Configuration {
     }
 
     #[cfg(any(test, feature = "test-util"))]
-    pub fn to_temp_path(&self) -> anyhow::Result<tempfile::NamedTempFile> {
+    pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
         use std::io::Write;
-        let mut file = tempfile::NamedTempFile::new()?;
-        file.write_all(toml::to_string_pretty(self)?.as_bytes())?;
-        Ok(file)
+        let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");
+        file.write_all(
+            toml::to_string_pretty(self)
+                .expect("serialization should not fail")
+                .as_bytes(),
+        )
+        .expect("writing to temp file should not fail");
+        file
     }
 
     // Note for reviewers: if this and other validations are always applied,

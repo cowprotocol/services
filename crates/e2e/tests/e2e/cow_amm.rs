@@ -195,8 +195,7 @@ async fn cow_amm_jit(web3: Web3) {
             Account::Address(solver.address()),
         )],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(
@@ -581,8 +580,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             ),
         ],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(
@@ -853,8 +851,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             Account::Address(solver.address()),
         )],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(

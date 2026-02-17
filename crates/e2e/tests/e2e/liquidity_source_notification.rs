@@ -211,8 +211,7 @@ http-timeout = "10s"
             Account::Address(solver.address()),
         )],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(

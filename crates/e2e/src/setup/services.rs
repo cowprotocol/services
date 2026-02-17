@@ -318,8 +318,7 @@ impl<'a> Services<'a> {
                 Account::Address(solver.address()),
             )],
         }
-        .to_temp_path()
-        .unwrap();
+        .to_temp_path();
 
         self.start_autopilot(
             None,
@@ -378,8 +377,7 @@ impl<'a> Services<'a> {
                 Account::Address(solver.address()),
             )],
         }
-        .to_temp_path()
-        .unwrap();
+        .to_temp_path();
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(

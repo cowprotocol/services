@@ -100,8 +100,7 @@ async fn solver_competition(web3: Web3) {
             ),
         ],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services.start_autopilot(
         None,
@@ -259,8 +258,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             ),
         ],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(
@@ -424,8 +422,7 @@ async fn store_filtered_solutions(web3: Web3) {
             ),
         ],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(

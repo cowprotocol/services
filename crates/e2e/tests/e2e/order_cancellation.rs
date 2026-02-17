@@ -66,7 +66,7 @@ async fn order_cancellation(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
-    let config_file = Configuration::default().to_temp_path().unwrap();
+    let config_file = Configuration::default().to_temp_path();
     services
         .start_autopilot(
             None,

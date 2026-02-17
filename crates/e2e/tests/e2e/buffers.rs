@@ -73,8 +73,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             Account::Address(solver.address()),
         )],
     }
-    .to_temp_path()
-    .unwrap();
+    .to_temp_path();
 
     services
         .start_autopilot(
