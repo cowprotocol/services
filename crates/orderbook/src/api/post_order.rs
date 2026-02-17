@@ -5,7 +5,6 @@ use {
     },
     axum::{
         Json,
-        body,
         extract::State,
         http::StatusCode,
         response::{IntoResponse, Response},
@@ -23,14 +22,10 @@ use {
     std::sync::Arc,
 };
 
-pub async fn post_order_handler(State(state): State<Arc<AppState>>, body: body::Bytes) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
-    let order = match serde_json::from_slice::<OrderCreation>(&body) {
-        Ok(order) => order,
-        Err(err) => return (StatusCode::BAD_REQUEST, err.to_string()).into_response(),
-    };
-
+pub async fn post_order_handler(
+    State(state): State<Arc<AppState>>,
+    Json(order): Json<OrderCreation>,
+) -> Response {
     state
         .orderbook
         .add_order(order.clone())

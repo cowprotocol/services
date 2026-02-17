@@ -2,24 +2,17 @@ use {
     crate::api::{AppState, internal_error_reply},
     app_data::{AppDataDocument, AppDataHash},
     axum::{
-        body::{self},
         extract::{Path, State},
         http::StatusCode,
         response::{IntoResponse, Json, Response},
     },
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 pub async fn put_app_data_without_hash(
     State(state): State<Arc<AppState>>,
-    body: body::Bytes,
+    Json(document): Json<AppDataDocument>,
 ) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
-    let Ok(document) = serde_json::from_slice::<AppDataDocument>(&body) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
-
     state
         .app_data
         .register(None, document.full_app_data.as_bytes())
@@ -29,18 +22,9 @@ pub async fn put_app_data_without_hash(
 
 pub async fn put_app_data_with_hash(
     State(state): State<Arc<AppState>>,
-    Path(hash): Path<String>,
-    body: body::Bytes,
+    Path(hash): Path<AppDataHash>,
+    Json(document): Json<AppDataDocument>,
 ) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
-    let Ok(hash) = AppDataHash::from_str(&hash) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    let Ok(document) = serde_json::from_slice::<AppDataDocument>(&body) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
-
     state
         .app_data
         .register(Some(hash), document.full_app_data.as_bytes())
