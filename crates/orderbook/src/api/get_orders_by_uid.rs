@@ -95,6 +95,6 @@ mod tests {
     #[tokio::test]
     async fn get_orders_by_uid_err() {
         let response = get_orders_by_uid_response(Err(anyhow::anyhow!("error")));
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }
