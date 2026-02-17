@@ -97,8 +97,18 @@ impl FallbackNativePriceEstimator {
 impl FallbackNativePriceEstimator {
     /// Returns `true` if the fallback should be used.
     fn should_use_fallback(&self, result: &NativePriceEstimateResult) -> bool {
-        let mut state = self.state.lock().unwrap();
-        if let Err(PriceEstimationError::ProtocolInternal(err)) = result {
+        let Err(PriceEstimationError::ProtocolInternal(err)) = result else {
+            if let State::Primary {
+                consecutive_errors, ..
+            } = &mut *self.state.lock().unwrap()
+            {
+                *consecutive_errors = 0;
+            }
+            return false;
+        };
+
+        let (use_fallback, consecutive_errors) = {
+            let mut state = self.state.lock().unwrap();
             let State::Primary {
                 consecutive_errors, ..
             } = &mut *state
@@ -106,33 +116,31 @@ impl FallbackNativePriceEstimator {
                 return false;
             };
             *consecutive_errors += 1;
-            if *consecutive_errors >= CONSECUTIVE_ERRORS_THRESHOLD {
-                tracing::info!(
-                    ?err,
-                    "primary native price estimator down after {} consecutive errors, switching \
-                     to fallback",
-                    *consecutive_errors
-                );
+            let count = *consecutive_errors;
+            if count >= CONSECUTIVE_ERRORS_THRESHOLD {
                 *state = State::Fallback {
                     last_probe: Instant::now(),
                 };
-                return true;
+                (true, count)
+            } else {
+                (false, count)
             }
+        };
+
+        if use_fallback {
+            tracing::info!(
+                ?err,
+                consecutive_errors,
+                "primary native price estimator down, switching to fallback"
+            );
+        } else {
             tracing::debug!(
                 ?err,
-                consecutive_errors = *consecutive_errors,
+                consecutive_errors,
                 "primary native price estimator error, not yet switching to fallback"
             );
-            false
-        } else {
-            if let State::Primary {
-                consecutive_errors, ..
-            } = &mut *state
-            {
-                *consecutive_errors = 0;
-            }
-            false
         }
+        use_fallback
     }
 }
 
@@ -176,18 +184,22 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
                         &primary_result,
                         Err(PriceEstimationError::ProtocolInternal(_))
                     ) {
-                        let mut state = self.state.lock().unwrap();
-                        *state = State::Fallback {
-                            last_probe: Instant::now(),
-                        };
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            *state = State::Fallback {
+                                last_probe: Instant::now(),
+                            };
+                        }
                         tracing::debug!("primary still down after probe, continuing with fallback");
                         fallback_result
                     } else {
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            *state = State::Primary {
+                                consecutive_errors: 0,
+                            };
+                        }
                         tracing::info!("primary native price estimator recovered");
-                        let mut state = self.state.lock().unwrap();
-                        *state = State::Primary {
-                            consecutive_errors: 0,
-                        };
                         primary_result
                     }
                 }
