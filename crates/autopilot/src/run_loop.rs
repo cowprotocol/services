@@ -51,6 +51,7 @@ use {
         },
         time::{Duration, Instant},
     },
+    tokio::task::JoinSet,
     tracing::{Instrument, instrument},
 };
 
@@ -564,15 +565,19 @@ impl RunLoop {
         )
         .await;
 
-        let mut bids = futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.solve(driver.clone(), request.clone())),
-        )
-        .await
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+        let mut bids = self
+            .drivers
+            .iter()
+            .map(|driver| self.solve(driver.clone(), request.clone()))
+            // use `JoinSet` instead of `FuturesUnordered` to decouple handling the individual
+            // HTTP requests as much as possible to avoid a single bad connection degrading
+            // the latency for other solvers.
+            .collect::<JoinSet<_>>()
+            .join_all()
+            .await
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
         let mut counter = HashMap::new();
         bids.retain(|bid| {
@@ -604,91 +609,101 @@ impl RunLoop {
 
     /// Sends a `/solve` request to the driver and manages all error cases and
     /// records metrics and logs appropriately.
-    #[instrument(skip_all, fields(driver = driver.name))]
-    async fn solve(
+    #[instrument(skip_all)]
+    fn solve(
         &self,
         driver: Arc<infra::Driver>,
         request: solve::Request,
-    ) -> Vec<competition::Bid<Unscored>> {
-        let start = Instant::now();
-        let result = self.try_solve(Arc::clone(&driver), request).await;
-        let solutions = match result {
-            Ok(solutions) => {
-                Metrics::solve_ok(&driver, start.elapsed());
-                solutions
-            }
-            Err(err) => {
-                Metrics::solve_err(&driver, start.elapsed(), &err);
-                tracing::debug!(?err, driver = %driver.name, "solver didn't provide solutions");
-                vec![]
-            }
-        };
-
-        solutions
-            .into_iter()
-            .filter_map(|solution| match solution {
-                Ok(solution) => {
-                    Metrics::solution_ok(&driver);
-                    Some(competition::Bid::new(solution, driver.clone()))
+    ) -> impl std::future::Future<Output = Vec<competition::Bid<Unscored>>> + 'static {
+        let fut = self.try_solve(Arc::clone(&driver), request);
+        async move {
+            let start = Instant::now();
+            let result = fut.await;
+            let solutions = match result {
+                Ok(solutions) => {
+                    Metrics::solve_ok(&driver, start.elapsed());
+                    solutions
                 }
                 Err(err) => {
-                    Metrics::solution_err(&driver, &err);
-                    tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
-                    None
+                    Metrics::solve_err(&driver, start.elapsed(), &err);
+                    tracing::debug!(?err, driver = %driver.name, "solver didn't provide solutions");
+                    vec![]
                 }
-            })
-            .collect()
+            };
+
+            solutions
+                .into_iter()
+                .filter_map(|solution| match solution {
+                    Ok(solution) => {
+                        Metrics::solution_ok(&driver);
+                        Some(competition::Bid::new(solution, driver.clone()))
+                    }
+                    Err(err) => {
+                        Metrics::solution_err(&driver, &err);
+                        tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
+                        None
+                    }
+                })
+                .collect()
+        }
     }
 
     /// Sends `/solve` request to the driver and forwards errors to the caller.
-    #[instrument(skip_all, fields(driver = driver.name))]
-    async fn try_solve(
+    #[instrument(skip_all)]
+    fn try_solve(
         &self,
         driver: Arc<infra::Driver>,
         request: solve::Request,
-    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
-    {
-        let (can_participate, response) = {
-            let driver = driver.clone();
-            let eth = self.eth.clone();
-            let mut handle = tokio::task::spawn(async move {
-                let fetch_response = driver.solve(request);
-                let check_allowed = eth
-                    .contracts()
-                    .authenticator()
-                    .isSolver(driver.submission_address);
-                tokio::join!(check_allowed.call(), fetch_response)
-            });
-            tokio::time::timeout(self.config.solve_deadline, &mut handle)
-                .await
-                .map_err(|_| {
-                    // Abort the background task to prevent memory leaks
-                    handle.abort();
-                    SolveError::Timeout
-                })?
-                .context("could not finish the task")
-                .map_err(SolveError::Failure)?
-        };
+    ) -> impl Future<
+        Output = Result<
+            Vec<Result<competition::Solution, domain::competition::SolutionError>>,
+            SolveError,
+        >,
+    > + 'static {
+        let eth = self.eth.clone();
+        let deadline = self.config.solve_deadline;
+        async move {
+            let (can_participate, response) = {
+                let driver = driver.clone();
+                let mut handle = tokio::task::spawn(async move {
+                    let fetch_response = driver.solve(request);
+                    let check_allowed = eth
+                        .contracts()
+                        .authenticator()
+                        .isSolver(driver.submission_address);
+                    tokio::join!(check_allowed.call(), fetch_response)
+                });
+                tokio::time::timeout(deadline, &mut handle)
+                    .await
+                    .map_err(|_| {
+                        // Abort the background task to prevent memory leaks
+                        handle.abort();
+                        SolveError::Timeout
+                    })?
+                    .context("could not finish the task")
+                    .map_err(SolveError::Failure)?
+            };
 
-        let response = match (can_participate, response) {
-            (Ok(true), Ok(response)) => response,
-            (Ok(false), _) => return Err(SolveError::SolverDenyListed),
-            (Err(err), _) => {
-                tracing::error!(
-                    ?err,
-                    driver = %driver.name,
-                    ?driver.submission_address,
-                    "solver participation check failed"
-                );
-                return Err(SolveError::SolverDenyListed);
+            let response = match (can_participate, response) {
+                (Ok(true), Ok(response)) => response,
+                (Ok(false), _) => return Err(SolveError::SolverDenyListed),
+                (Err(err), _) => {
+                    tracing::error!(
+                        ?err,
+                        driver = %driver.name,
+                        ?driver.submission_address,
+                        "solver participation check failed"
+                    );
+                    return Err(SolveError::SolverDenyListed);
+                }
+                (_, Err(err)) => return Err(SolveError::Failure(err)),
+            };
+
+            if response.solutions.is_empty() {
+                return Err(SolveError::NoSolutions);
             }
-            (_, Err(err)) => return Err(SolveError::Failure(err)),
-        };
-
-        if response.solutions.is_empty() {
-            return Err(SolveError::NoSolutions);
+            Ok(response.into_domain())
         }
-        Ok(response.into_domain())
     }
 
     /// Execute the solver's solution. Returns Ok when the corresponding
