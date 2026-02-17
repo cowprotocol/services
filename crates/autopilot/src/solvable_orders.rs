@@ -32,6 +32,7 @@ use {
     },
     strum::VariantNames,
     tokio::sync::Mutex,
+    tracing::instrument,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -79,6 +80,7 @@ impl Metrics {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 
+    #[instrument(skip_all)]
     fn track_filtered_orders(reason: &'static str, invalid_orders: &[OrderUid]) {
         if invalid_orders.is_empty() {
             return;
@@ -96,6 +98,7 @@ impl Metrics {
         );
     }
 
+    #[instrument(skip_all)]
     fn track_orders_in_final_auction(orders: &[Arc<Order>]) {
         let metrics = Metrics::get();
         metrics.auction_creations.inc();
@@ -191,6 +194,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
+    #[instrument(skip_all)]
     pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
@@ -323,7 +327,7 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
-            orders: orders
+            orders: tracing::info_span!("assemble_orders").in_scope(||orders
                 .into_iter()
                 .map(|order| {
                     let quote = db_solvable_orders
@@ -336,7 +340,7 @@ impl SolvableOrdersCache {
                         &surplus_capturing_jit_order_owners,
                     )
                 })
-                .collect(),
+                .collect()),
             prices: prices
                 .into_iter()
                 .map(|(key, value)| {
@@ -358,6 +362,7 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
@@ -425,6 +430,7 @@ impl SolvableOrdersCache {
     }
 
     /// Executed orders filtering in parallel.
+    #[instrument(skip_all)]
     async fn filter_invalid_orders(
         &self,
         mut orders: Vec<Arc<Order>>,
@@ -526,6 +532,7 @@ fn find_presignature_pending_orders(orders: &[Arc<Order>]) -> Vec<OrderUid> {
 
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
+#[instrument(skip_all)]
 fn orders_with_balance(
     mut orders: Vec<Arc<Order>>,
     balances: &Balances,
@@ -626,6 +633,7 @@ fn filter_dust_orders(
     (orders, removed)
 }
 
+#[instrument(skip_all)]
 async fn get_orders_with_native_prices(
     orders: Vec<Arc<Order>>,
     native_price_estimator: &NativePriceUpdater,
