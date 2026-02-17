@@ -1120,7 +1120,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
                     order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Limit,
                 },
                 FeePolicy {
-                    kind: FeePolicyKind::Surplus {
+                    kind: FeePolicyKind::PriceImprovement {
                         factor: 0.5.try_into().unwrap(),
                         max_volume_factor: 0.01.try_into().unwrap(),
                     },
