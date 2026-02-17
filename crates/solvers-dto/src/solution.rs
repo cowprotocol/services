@@ -1,5 +1,4 @@
 use {
-    super::serialize,
     alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
@@ -36,7 +35,7 @@ pub struct Solution {
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct OrderUid(#[serde_as(as = "serialize::Hex")] pub [u8; 56]);
+pub struct OrderUid(#[serde_as(as = "serde_ext::Hex")] pub [u8; 56]);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -83,13 +82,13 @@ pub struct JitOrder {
     #[serde(default)]
     pub partially_fillable: bool,
     pub valid_to: u32,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub app_data: [u8; 32],
     pub kind: Kind,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signing_scheme: SigningScheme,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub signature: Vec<u8>,
 }
 
@@ -114,7 +113,7 @@ pub struct Call {
     pub target: Address,
     pub value: U256,
     #[serde(rename = "callData")]
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub calldata: Vec<u8>,
 }
 
@@ -141,7 +140,7 @@ pub struct CustomInteraction {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(rename = "callData")]
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub calldata: Vec<u8>,
     pub allowances: Vec<Allowance>,
     pub inputs: Vec<Asset>,
@@ -158,7 +157,7 @@ pub struct OrderInteraction {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(rename = "callData")]
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     pub calldata: Vec<u8>,
 }
 
@@ -224,7 +223,7 @@ pub struct Flashloan {
 #[serde(rename_all = "camelCase")]
 pub struct WrapperCall {
     pub address: Address,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     #[serde(default)]
     pub data: Vec<u8>,
 }

@@ -15,7 +15,6 @@ use {
         arguments,
         bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
-        ethrpc::Web3,
         gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
@@ -25,6 +24,7 @@ use {
         },
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
+        web3::Web3,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},

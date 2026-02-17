@@ -1,4 +1,4 @@
-use {e2e::setup::*, number::units::EthUnit, shared::ethrpc::Web3};
+use {e2e::setup::*, number::units::EthUnit, shared::web3::Web3};
 
 #[tokio::test]
 #[ignore]

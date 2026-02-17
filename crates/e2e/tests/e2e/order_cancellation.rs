@@ -1,5 +1,6 @@
 use {
     ::alloy::primitives::U256,
+    autopilot::config::Configuration,
     database::order_events::OrderEventLabel,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
@@ -19,7 +20,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]
@@ -65,10 +66,12 @@ async fn order_cancellation(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
+    let config_file = Configuration::default().to_temp_path();
     services
         .start_autopilot(
             None,
             vec![
+                format!("--config={}", config_file.path().display()),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],

@@ -19,6 +19,7 @@ alloy = { workspace = true, features = ["rand", "provider-debug-api", "provider-
 app-data = { workspace = true }
 axum = { workspace = true }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
+bytes = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
@@ -47,7 +48,7 @@ order-validation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["gzip", "json"] }
+reqwest = { workspace = true, features = ["gzip", "json", "stream"] }
 rust_decimal = { workspace = true }
 s3 = { workspace = true }
 serde = { workspace = true }
@@ -63,14 +64,17 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["trace"] }
 tracing = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 winner-selection = { workspace = true }
+toml = { workspace = true }
+tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 shared = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }
@@ -82,3 +86,4 @@ workspace = true
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
+test-util = ["dep:tempfile"]

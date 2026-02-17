@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain::{competition, eth, quote},
-        util::serialize,
-    },
+    crate::domain::{competition, eth, quote},
     serde::Deserialize,
     serde_with::serde_as,
 };
@@ -27,7 +24,7 @@ impl Order {
 pub struct Order {
     sell_token: eth::Address,
     buy_token: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     amount: eth::U256,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,

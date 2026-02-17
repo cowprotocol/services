@@ -1,7 +1,8 @@
 use {
     crate::{
-        arguments::{Account, Arguments},
+        arguments::CliArguments,
         boundary,
+        config::{Configuration, solver::Account},
         database::{
             Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
@@ -83,7 +84,7 @@ impl Liveness {
 
 /// Creates Web3 transport based on the given config.
 #[instrument(skip_all)]
-async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
+async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
@@ -93,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     ethrpc(
         url,
-        &shared::ethrpc::Arguments {
+        &shared::web3::Arguments {
             ethrpc_max_batch_size: 0,
             ethrpc_max_concurrent_requests: 0,
             ethrpc_batch_delay: Default::default(),
@@ -123,7 +124,14 @@ async fn ethereum(
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
-    let args = Arguments::parse_from(args);
+    let args = CliArguments::parse_from(args);
+
+    let config = Configuration::from_path(&args.config)
+        .await
+        .expect("failed to load configuration file")
+        .validate()
+        .expect("failed to validate configuration file");
+
     let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
@@ -141,19 +149,19 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    if args.drivers.is_empty() {
-        panic!("colocation is enabled but no drivers are configured");
-    }
-
     if args.shadow.is_some() {
-        shadow_mode(args).await;
+        shadow_mode(args, config).await;
     } else {
-        run(args, ShutdownController::default()).await;
+        run(args, config, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
+pub async fn run(
+    args: CliArguments,
+    config: Configuration,
+    shutdown_controller: ShutdownController,
+) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         args.db_write_url.as_str(),
@@ -170,12 +178,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -572,19 +580,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         enable_leader_lock: args.enable_leader_lock,
     };
 
-    let drivers_futures = args
+    let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::try_new(
-                driver.url,
-                driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
-                driver.submission_account,
-            )
-            .await
-            .map(Arc::new)
-            .expect("failed to load solver configuration")
+            infra::Driver::try_new(driver.url, driver.name.clone(), driver.submission_account)
+                .await
+                .map(Arc::new)
+                .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
@@ -616,7 +619,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     api_task.await.ok();
 }
 
-async fn shadow_mode(args: Arguments) -> ! {
+async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let orderbook = infra::shadow::Orderbook::new(
@@ -624,14 +627,13 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers_futures = args
+    let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
                 // HACK: the auction logic expects all drivers
                 // to use a different submission address. But
                 // in the shadow environment all drivers use
@@ -653,7 +655,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");

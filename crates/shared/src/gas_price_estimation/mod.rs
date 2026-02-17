@@ -6,7 +6,6 @@ pub mod priority;
 
 use {
     crate::{
-        ethrpc::Web3,
         gas_price_estimation::{
             configurable_alloy::{
                 ConfigurableGasPriceEstimator,
@@ -18,6 +17,7 @@ use {
             priority::PriorityGasPriceEstimating,
         },
         http_client::HttpClientFactory,
+        web3::Web3,
     },
     ::alloy::{
         eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},

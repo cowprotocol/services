@@ -34,6 +34,7 @@ use {
     },
     ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
     std::collections::HashMap,
+    tracing::instrument,
     winner_selection::{self as winsel},
 };
 
@@ -56,6 +57,7 @@ impl Arbitrator {
     }
 
     /// Runs the entire auction mechanism on the passed in solutions.
+    #[instrument(skip_all)]
     pub fn arbitrate(&self, bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
         let context = auction.into();
         let mut bid_by_key = HashMap::with_capacity(bids.len());
@@ -281,6 +283,7 @@ impl Ranking {
 mod tests {
     use {
         crate::{
+            config::solver::Account,
             domain::{
                 Auction,
                 Order,
@@ -1217,8 +1220,7 @@ mod tests {
         let driver = Driver::try_new(
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
-            None,
-            crate::arguments::Account::Address(solver_address),
+            Account::Address(solver_address),
         )
         .await
         .unwrap();
