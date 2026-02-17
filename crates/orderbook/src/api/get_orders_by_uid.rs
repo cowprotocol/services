@@ -1,108 +1,100 @@
 use {
-    crate::{
-        api::{error, extract_payload},
-        orderbook::Orderbook,
-    },
+    crate::api::AppState,
     anyhow::Result,
-    model::order::{Order, OrderUid},
-    std::{convert::Infallible, sync::Arc},
-    warp::{Filter, Rejection, hyper::StatusCode, reply},
+    axum::{
+        body,
+        extract::State,
+        response::{IntoResponse, Response},
+    },
+    futures::{
+        Stream,
+        StreamExt,
+        stream::{self, BoxStream},
+    },
+    hyper::StatusCode,
+    model::order::{ORDER_UID_LIMIT, Order, OrderUid},
+    std::sync::Arc,
 };
 
-const MAX_ORDERS_LIMIT: usize = 5000;
-
-#[derive(Debug, Eq, PartialEq)]
-enum ValidationError {
-    TooManyOrders(usize),
-}
-
-fn validate(uids: Vec<OrderUid>) -> Result<Vec<OrderUid>, ValidationError> {
-    if uids.len() > MAX_ORDERS_LIMIT {
-        return Err(ValidationError::TooManyOrders(uids.len()));
-    }
-    Ok(uids)
-}
-
-fn get_orders_by_uid_request()
--> impl Filter<Extract = (Result<Vec<OrderUid>, ValidationError>,), Error = Rejection> + Clone {
-    warp::path!("v1" / "orders" / "lookup")
-        .and(warp::post())
-        .and(extract_payload())
-        .map(|uids: Vec<OrderUid>| validate(uids))
-}
-
-pub fn get_orders_by_uid_response(result: Result<Vec<Order>>) -> super::ApiReply {
-    let orders = match result {
-        Ok(orders) => orders,
-        Err(err) => {
-            tracing::error!(?err, "get_orders_by_uids_response");
-            return crate::api::internal_error_reply();
-        }
+pub async fn get_orders_by_uid_handler(
+    State(state): State<Arc<AppState>>,
+    body: body::Bytes,
+) -> Response {
+    let Ok(orders) = serde_json::from_slice::<Vec<OrderUid>>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
     };
-    reply::with_status(reply::json(&orders), StatusCode::OK)
+
+    if orders.len() > ORDER_UID_LIMIT {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    get_orders_by_uid_response(state.orderbook.get_orders(&orders).await)
 }
 
-pub fn get_orders_by_uid(
-    orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    get_orders_by_uid_request().and_then(
-        move |request_result: Result<Vec<OrderUid>, ValidationError>| {
-            let orderbook = orderbook.clone();
-            async move {
-                Result::<_, Infallible>::Ok(match request_result {
-                    Ok(uids) => {
-                        let result = orderbook.get_orders(&uids).await;
-                        get_orders_by_uid_response(result)
-                    }
-                    Err(ValidationError::TooManyOrders(requested)) => {
-                        let err = error(
-                            "TooManyOrders",
-                            format!(
-                                "Too many order UIDs requested: {requested}. Maximum allowed: \
-                                 {MAX_ORDERS_LIMIT}"
-                            ),
-                        );
-                        reply::with_status(err, StatusCode::BAD_REQUEST)
-                    }
-                })
-            }
-        },
+fn get_orders_by_uid_response(result: Result<BoxStream<'static, Result<Order>>>) -> Response {
+    match result {
+        Ok(stream) => {
+            let orders = stream.filter_map(async |item| match item {
+                Ok(order) => Some(order),
+                Err(err) => {
+                    tracing::warn!(?err, "failed to fetch order");
+                    None
+                }
+            });
+            streaming_response(orders)
+        }
+        Err(err) => {
+            tracing::error!(?err, "get_orders_by_uid_response");
+            crate::api::internal_error_reply()
+        }
+    }
+}
+
+fn streaming_json_array(
+    elements: impl Stream<Item = String> + Send + 'static,
+) -> impl Stream<Item = String> + Send + 'static {
+    let mut first = true;
+    stream::once(async { "[".to_string() })
+        .chain(elements.map(move |element| {
+            let prefix = if first { "" } else { "," };
+            first = false;
+            format!("{prefix}{element}")
+        }))
+        .chain(stream::once(async { "]".to_string() }))
+}
+
+fn streaming_response(orders: impl Stream<Item = Order> + Send + 'static) -> Response {
+    let json_stream = streaming_json_array(
+        orders.filter_map(async move |order| serde_json::to_string(&order).ok()),
     )
+    .map(|s| Ok::<_, std::convert::Infallible>(s.into_bytes()));
+    let body = hyper::Body::wrap_stream(json_stream);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(body)
+        .unwrap()
+        .into_response()
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, warp::test::request};
+    use {super::*, crate::api::response_body, futures::stream};
 
     #[tokio::test]
-    async fn get_orders_by_uid_request_ok() {
-        let uid = OrderUid::default();
-        let request = request()
-            .path("/v1/orders/lookup")
-            .method("POST")
-            .header("content-type", "application-json")
-            .json(&[uid]);
-
-        let filter = get_orders_by_uid_request();
-        let result = request.filter(&filter).await.unwrap().unwrap();
-        assert_eq!(result, [uid]);
+    async fn get_orders_by_uid_ok() {
+        let order = [Order::default()];
+        let stream: BoxStream<'static, Result<Order>> = stream::iter(order.clone().map(Ok)).boxed();
+        let response = get_orders_by_uid_response(Ok(stream));
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_body(response).await;
+        let response_order: Vec<Order> = serde_json::from_slice(body.as_slice()).unwrap();
+        assert!(response_order.eq(&order));
     }
 
     #[tokio::test]
-    async fn get_orders_by_uid_request_too_many_orders() {
-        let mut uids = Vec::new();
-        for _ in 0..(MAX_ORDERS_LIMIT + 1) {
-            uids.push(OrderUid::default());
-        }
-        let request = request()
-            .path("/v1/orders/lookup")
-            .method("POST")
-            .header("content-type", "application-json")
-            .json(&uids);
-
-        let filter = get_orders_by_uid_request();
-        let result = request.filter(&filter).await;
-        // Assert that the error is a rejection.
-        assert!(result.is_err());
+    async fn get_orders_by_uid_err() {
+        let response = get_orders_by_uid_response(Err(anyhow::anyhow!("error")));
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

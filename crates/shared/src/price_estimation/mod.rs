@@ -164,15 +164,6 @@ pub struct Arguments {
     #[clap(long, env, verbatim_doc_comment)]
     pub price_estimation_rate_limiter: Option<Strategy>,
 
-    /// How often the native price estimator should refresh its cache.
-    #[clap(
-        long,
-        env,
-        default_value = "1s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_cache_refresh: Duration,
-
     /// How long cached native prices stay valid.
     #[clap(
         long,
@@ -181,23 +172,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub native_price_cache_max_age: Duration,
-
-    /// How long before expiry the native price cache should try to update the
-    /// price in the background. This is useful to make sure that prices are
-    /// usable at all times. This value has to be smaller than
-    /// `--native-price-cache-max-age`.
-    #[clap(
-        long,
-        env,
-        default_value = "80s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_prefetch_time: Duration,
-
-    /// How many cached native token prices can be updated at most in one
-    /// maintenance cycle.
-    #[clap(long, env, default_value = "3")]
-    pub native_price_cache_max_update_size: usize,
 
     /// How many price estimation requests can be executed concurrently in the
     /// maintenance task.
@@ -260,9 +234,6 @@ pub struct Arguments {
     /// "<token1>|<approx_token1>,<token2>|<approx_token2>"
     /// - token1 is a token address for which we get the native token price
     /// - approx_token1 is a token address used for the price approximation
-    ///
-    /// It is very important that both tokens in the pair have the same number
-    /// of decimals.
     #[clap(
         long,
         env,
@@ -357,10 +328,7 @@ impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {
             price_estimation_rate_limiter,
-            native_price_cache_refresh,
             native_price_cache_max_age,
-            native_price_prefetch_time,
-            native_price_cache_max_update_size,
             native_price_cache_concurrent_requests,
             amount_to_estimate_prices_with,
             balancer_sor_url,
@@ -382,19 +350,7 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh: {native_price_cache_refresh:?}"
-        )?;
-        writeln!(
-            f,
             "native_price_cache_max_age: {native_price_cache_max_age:?}"
-        )?;
-        writeln!(
-            f,
-            "native_price_prefetch_time: {native_price_prefetch_time:?}"
-        )?;
-        writeln!(
-            f,
-            "native_price_cache_max_update_size: {native_price_cache_max_update_size}"
         )?;
         writeln!(
             f,

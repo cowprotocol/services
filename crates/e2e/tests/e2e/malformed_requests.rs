@@ -3,6 +3,7 @@
 
 use {
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
+    model::order::ORDER_UID_LIMIT,
     orderbook::api::Error,
     reqwest::StatusCode,
     serde_json::json,
@@ -119,13 +120,18 @@ async fn http_validation(web3: Web3) {
     }
 
     // Test malformed auction IDs
-    let invalid_auction_ids: Vec<(&str, &str)> = vec![
-        ("not-a-number", "non-numeric"),
-        ("-1", "negative number"),
-        ("99999999999999999999999", "u64 overflow"),
-    ];
-
-    for (id, description) in invalid_auction_ids {
+    // Note: "-1" returns 404 because it doesn't match the u64 route pattern at all,
+    // while non-numeric strings return 400 as they match the path but fail
+    // deserialization
+    for (id, description, expected_status) in [
+        ("not-a-number", "non-numeric", StatusCode::NOT_FOUND),
+        ("-1", "negative number", StatusCode::NOT_FOUND),
+        (
+            "99999999999999999999999",
+            "u64 overflow",
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
         let response = client
             .get(format!("{API_HOST}/api/v1/solver_competition/{id}"))
             .send()
@@ -134,8 +140,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid AuctionId ({description}): {id}"
+            expected_status,
+            "Expected {expected_status} for invalid AuctionId ({description}): {id}"
         );
     }
 
@@ -299,4 +305,19 @@ async fn http_validation(web3: Web3) {
         !error.description.is_empty(),
         "Error response should have non-empty 'description' field"
     );
+
+    // Querying for more than ORDER_UID_LIMIT orders should fail
+    let response = client
+        .post(format!("{API_HOST}/api/v1/orders/lookup"))
+        .header("Content-Type", "application/json")
+        .json(&json!(
+            0..(ORDER_UID_LIMIT + 1)
+                .iter()
+                .map(|_| OrderUid::default().collect::<Vec<_>>())
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

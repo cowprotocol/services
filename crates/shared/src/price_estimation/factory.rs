@@ -6,15 +6,14 @@ use {
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
-        native::{self, NativePriceEstimator},
-        native_price_cache::CachingNativePriceEstimator,
+        native::{self, NativePriceEstimating, NativePriceEstimator},
+        native_price_cache::{self, ApproximationToken},
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
     crate::{
         arguments,
-        bad_token::BadTokenDetecting,
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc::Web3,
         gas_price_estimation::GasPriceEstimating,
@@ -23,7 +22,6 @@ use {
             ExternalSolver,
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
-            native::NativePriceEstimating,
         },
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
@@ -62,14 +60,13 @@ pub struct Network {
     pub native_token: Address,
     pub settlement: Address,
     pub authenticator: Address,
-    pub base_tokens: Arc<BaseTokens>,
     pub block_stream: CurrentBlockWatcher,
 }
 
 /// The shared components needed for creating price estimators.
 pub struct Components {
     pub http_factory: HttpClientFactory,
-    pub bad_token_detector: Arc<dyn BadTokenDetecting>,
+    pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub code_fetcher: Arc<CachedCodeFetcher>,
 }
@@ -307,7 +304,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         SanitizedPriceEstimator::new(
             estimator,
             self.network.native_token,
-            self.components.bad_token_detector.clone(),
+            self.components.deny_listed_tokens.clone(),
             false, // not estimating native price
         )
     }
@@ -321,7 +318,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         SanitizedPriceEstimator::new(
             estimator,
             self.network.native_token,
-            self.components.bad_token_detector.clone(),
+            self.components.deny_listed_tokens.clone(),
             true, // estimating native price
         )
     }
@@ -360,22 +357,18 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
+    /// Creates a native price estimator from the given sources.
     pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
-        weth: WETH9::Instance,
-    ) -> Result<Arc<CachingNativePriceEstimator>> {
-        anyhow::ensure!(
-            self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
-            "price cache prefetch time needs to be less than price cache max age"
-        );
-
+        weth: &WETH9::Instance,
+    ) -> Result<Box<dyn NativePriceEstimating>> {
         let mut estimators = Vec::with_capacity(native.len());
         for stage in native.iter() {
             let mut stages = Vec::with_capacity(stage.len());
             for source in stage {
-                stages.push(self.create_native_estimator(source, &weth).await?);
+                stages.push(self.create_native_estimator(source, weth).await?);
             }
             estimators.push(stages);
         }
@@ -384,21 +377,78 @@ impl<'a> PriceEstimatorFactory<'a> {
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
-        let native_estimator = Arc::new(CachingNativePriceEstimator::new(
-            Box::new(competition_estimator),
-            self.args.native_price_cache_max_age,
-            self.args.native_price_cache_refresh,
-            Some(self.args.native_price_cache_max_update_size),
-            self.args.native_price_prefetch_time,
+        Ok(Box::new(competition_estimator))
+    }
+
+    /// Creates a [`CachingNativePriceEstimator`] that wraps a native price
+    /// estimator with an in-memory cache.
+    pub async fn caching_native_price_estimator(
+        &mut self,
+        native: &[Vec<NativePriceEstimatorSource>],
+        results_required: NonZeroUsize,
+        weth: &WETH9::Instance,
+        cache: native_price_cache::Cache,
+    ) -> native_price_cache::CachingNativePriceEstimator {
+        let inner = self
+            .native_price_estimator(native, results_required, weth)
+            .await
+            .expect("failed to build native price estimator");
+        let approximation_tokens = self
+            .build_approximation_tokens()
+            .await
+            .expect("failed to build native price approximation tokens");
+        native_price_cache::CachingNativePriceEstimator::new(
+            inner,
+            cache,
             self.args.native_price_cache_concurrent_requests,
-            self.args
-                .native_price_approximation_tokens
-                .iter()
-                .copied()
-                .collect(),
+            approximation_tokens,
             self.args.quote_timeout,
-        ));
-        Ok(native_estimator)
+        )
+    }
+
+    /// Builds the approximation tokens mapping with normalization factors based
+    /// on decimal differences between token pairs.
+    async fn build_approximation_tokens(&self) -> Result<HashMap<Address, ApproximationToken>> {
+        let pairs = &self.args.native_price_approximation_tokens;
+        if pairs.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Collect all unique addresses to fetch their decimals
+        let all_addresses: Vec<Address> = pairs
+            .iter()
+            .flat_map(|(from, to)| [*from, *to])
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let token_infos = self.components.tokens.get_token_infos(&all_addresses).await;
+
+        let mut approximation_tokens = HashMap::new();
+        for (from_token, to_token) in pairs {
+            let from_decimals = token_infos
+                .get(from_token)
+                .and_then(|info| info.decimals)
+                .with_context(|| {
+                    format!(
+                        "could not fetch decimals for approximation source token {from_token:?}"
+                    )
+                })?;
+
+            let to_decimals = token_infos
+                .get(to_token)
+                .and_then(|info| info.decimals)
+                .with_context(|| {
+                    format!("could not fetch decimals for approximation target token {to_token:?}")
+                })?;
+
+            approximation_tokens.insert(
+                *from_token,
+                ApproximationToken::with_normalization((*to_token, to_decimals), from_decimals),
+            );
+        }
+
+        Ok(approximation_tokens)
     }
 }
 

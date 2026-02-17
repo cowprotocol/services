@@ -19,7 +19,9 @@ path = "src/main.rs"
 alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
+axum = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
@@ -52,9 +54,10 @@ strum = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true }
-warp = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

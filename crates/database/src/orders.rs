@@ -148,7 +148,18 @@ INSERT INTO orders (
     class,
     true_valid_to
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    -- Ethflow orders are inserted with valid_to set to u32::MAX. Their true validity is stored in
+    -- the ethflow_orders table.
+    -- If there already exists an Ethflow order with the same uid, take smaller of the two valid_to values
+    CASE 
+        WHEN $21 = 4294967295 THEN  -- u32::MAX
+            COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $21)
+        ELSE 
+            $21
+    END
+)
     "#;
 
 #[instrument(skip_all)]
@@ -743,6 +754,7 @@ pub fn solvable_orders(
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM ethflow_refunds r WHERE r.order_uid = o.uid)
     ),
     trades_agg AS (
         SELECT t.order_uid,
@@ -972,14 +984,16 @@ pub async fn user_orders_with_quote(
 ) -> Result<Vec<OrderWithQuote>, sqlx::Error> {
     // Optimized version following the same pattern as OPEN_ORDERS
     const QUERY: &str = r#"
-    WITH live_orders AS MATERIALIZED (
+    WITH live_orders AS (
         SELECT o.*
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
+            AND NOT EXISTS (SELECT 1 FROM ethflow_refunds r WHERE r.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM ethflow_refunds r WHERE r.order_uid = o.uid)
             AND  o.owner = $2
             AND  o.class = 'limit'
     )

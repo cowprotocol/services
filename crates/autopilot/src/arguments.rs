@@ -6,7 +6,6 @@ use {
     clap::ValueEnum,
     shared::{
         arguments::{FeeFactor, display_list, display_option, display_secret_option},
-        bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
@@ -32,9 +31,6 @@ pub struct Arguments {
     pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
-    pub token_owner_finder: token_owner_finder::Arguments,
-
-    #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
     #[clap(flatten)]
@@ -53,11 +49,6 @@ pub struct Arguments {
     /// then this date is ignored and can be omitted.
     #[clap(long, env)]
     pub ethflow_indexing_start: Option<u64>,
-
-    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
-    /// to be used exclusively for tracing calls.
-    #[clap(long, env)]
-    pub tracing_node_url: Option<Url>,
 
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
@@ -79,12 +70,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub skip_event_sync: bool,
 
-    /// List of token addresses that should be allowed regardless of whether the
-    /// bad token detector thinks they are bad. Base tokens are
-    /// automatically allowed.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<Address>,
-
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<Address>,
@@ -95,6 +80,11 @@ pub struct Arguments {
     /// order in case of name collisions)
     #[clap(long, env)]
     pub native_price_estimators: NativePriceEstimators,
+
+    /// Estimators for the API endpoint. Falls back to
+    /// `--native-price-estimators` if unset.
+    #[clap(long, env)]
+    pub api_native_price_estimators: Option<NativePriceEstimators>,
 
     /// How many successful price estimates for each order will cause a native
     /// price estimation to return its result early. It's possible to pass
@@ -129,11 +119,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub max_auction_age: Duration,
-
-    /// Used to filter out limit orders with prices that are too far from the
-    /// market price. 0 means no filtering.
-    #[clap(long, env, default_value = "0")]
-    pub limit_order_price_factor: f64,
 
     /// The URL of a list of tokens our settlement contract is willing to
     /// internalize.
@@ -253,17 +238,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_balance_filter: bool,
 
-    // Configures whether the autopilot filters out EIP-1271 orders even if their signatures are
-    // invalid. This is useful as a workaround to let flashloan orders go through as they rely
-    // on preHooks behing executed to make the signatures valid.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_sig_filter: bool,
-
-    /// Configures whether the autopilot skips balance checks for EIP-1271
-    /// orders.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_balance_filter: bool,
-
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
     /// and not cut any auctions.
@@ -276,6 +250,26 @@ pub struct Arguments {
     /// further.
     #[clap(long, env, default_value = "5s", value_parser = humantime::parse_duration)]
     pub max_maintenance_timeout: Duration,
+
+    /// How often the native price estimator should refresh its cache.
+    #[clap(
+        long,
+        env,
+        default_value = "1s",
+        value_parser = humantime::parse_duration,
+    )]
+    pub native_price_cache_refresh: Duration,
+
+    /// How long before expiry the native price cache should try to update the
+    /// price in the background. This value has to be smaller than
+    /// `--native-price-cache-max-age`.
+    #[clap(
+        long,
+        env,
+        default_value = "80s",
+        value_parser = humantime::parse_duration,
+    )]
+    pub native_price_prefetch_time: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -284,23 +278,20 @@ impl std::fmt::Display for Arguments {
             shared,
             order_quoting,
             http_client,
-            token_owner_finder,
             price_estimation,
             database_pool,
-            tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
             api_address,
             skip_event_sync,
-            allowed_tokens,
             unsupported_tokens,
             native_price_estimators,
+            api_native_price_estimators,
             min_order_validity_period,
             banned_users,
             banned_users_max_cache_size,
             max_auction_age,
-            limit_order_price_factor,
             trusted_tokens_url,
             trusted_tokens,
             trusted_tokens_update_interval,
@@ -323,28 +314,30 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             disable_order_balance_filter,
-            disable_1271_order_balance_filter,
-            disable_1271_order_sig_filter,
             enable_leader_lock,
             max_maintenance_timeout,
+            native_price_cache_refresh,
+            native_price_prefetch_time,
         } = self;
 
         write!(f, "{shared}")?;
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;
-        write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
         write!(f, "{database_pool}")?;
-        display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
         writeln!(f, "api_address: {api_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
-        writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
+        display_option(
+            f,
+            "api_native_price_estimators",
+            api_native_price_estimators,
+        )?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"
@@ -355,7 +348,6 @@ impl std::fmt::Display for Arguments {
             "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
         )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
-        writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
         writeln!(f, "trusted_tokens: {trusted_tokens:?}")?;
         writeln!(
@@ -398,16 +390,16 @@ impl std::fmt::Display for Arguments {
             f,
             "disable_order_balance_filter: {disable_order_balance_filter}"
         )?;
-        writeln!(
-            f,
-            "disable_1271_order_balance_filter: {disable_1271_order_balance_filter}"
-        )?;
-        writeln!(
-            f,
-            "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
-        )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
+        writeln!(
+            f,
+            "native_price_cache_refresh: {native_price_cache_refresh:?}"
+        )?;
+        writeln!(
+            f,
+            "native_price_prefetch_time: {native_price_prefetch_time:?}"
+        )?;
         Ok(())
     }
 }

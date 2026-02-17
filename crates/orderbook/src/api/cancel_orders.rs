@@ -1,32 +1,41 @@
 use {
-    crate::{
-        api::{convert_json_response, extract_payload},
-        orderbook::{OrderCancellationError, Orderbook},
+    crate::{api::AppState, orderbook::OrderCancellationError},
+    anyhow::anyhow,
+    axum::{
+        Json,
+        body,
+        extract::State,
+        response::{IntoResponse, Response},
     },
-    anyhow::Result,
-    model::order::SignedOrderCancellations,
-    std::{convert::Infallible, sync::Arc},
-    warp::{Filter, Rejection},
+    hyper::StatusCode,
+    model::order::{ORDER_UID_LIMIT, SignedOrderCancellations},
+    std::sync::Arc,
 };
 
-pub fn request() -> impl Filter<Extract = (SignedOrderCancellations,), Error = Rejection> + Clone {
-    warp::path!("v1" / "orders")
-        .and(warp::delete())
-        .and(extract_payload())
-}
+pub async fn cancel_orders_handler(
+    State(state): State<Arc<AppState>>,
+    body: body::Bytes,
+) -> Response {
+    // TODO: remove after all downstream callers have been notified of the status
+    // code changes
+    let Ok(cancellations) = serde_json::from_slice::<SignedOrderCancellations>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
 
-pub fn response(result: Result<(), OrderCancellationError>) -> super::ApiReply {
-    convert_json_response(result.map(|_| "Cancelled"))
-}
+    // Explicitly limit the number of orders cancelled in a batch as the request
+    // size limit *does not* provide a proper bound for this
+    if cancellations.data.order_uids.len() > ORDER_UID_LIMIT {
+        return Err::<&'static str, _>(OrderCancellationError::Other(anyhow!(
+            "too many orders ({} > 1024)",
+            cancellations.data.order_uids.len()
+        )))
+        .into_response();
+    }
 
-pub fn filter(
-    orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request().and_then(move |cancellations| {
-        let orderbook = orderbook.clone();
-        async move {
-            let result = orderbook.cancel_orders(cancellations).await;
-            Result::<_, Infallible>::Ok(response(result))
-        }
-    })
+    state
+        .orderbook
+        .cancel_orders(cancellations)
+        .await
+        .map(|_| Json("Cancelled"))
+        .into_response()
 }

@@ -12,7 +12,6 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
-    std::time::Duration,
 };
 
 #[tokio::test]
@@ -103,6 +102,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             const_hex::encode(solver2.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        "--metrics-address=0.0.0.0:9591".to_string(),
         "--api-address=0.0.0.0:12089".to_string(),
         "--enable-leader-lock=true".to_string(),
     ]).await;
@@ -160,18 +160,45 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     // Stop autopilot-leader, follower should take over
     manual_shutdown.shutdown();
-    onchain.mint_block().await;
-    assert!(
-        tokio::time::timeout(Duration::from_secs(15), autopilot_leader)
-            .await
-            .is_ok()
-    );
+    let is_leader_shutdown = || async {
+        onchain.mint_block().await;
+        autopilot_leader.is_finished()
+    };
+    wait_for_condition(TIMEOUT, is_leader_shutdown)
+        .await
+        .unwrap();
+
+    // Wait for the follower to step up as leader by checking its metrics endpoint
+    let is_follower_leader = || async {
+        onchain.mint_block().await;
+        let Ok(response) = reqwest::get("http://0.0.0.0:9591/metrics").await else {
+            return false;
+        };
+        let Ok(body) = response.text().await else {
+            return false;
+        };
+        body.lines()
+            .any(|line| line.trim().contains("leader_lock_tracker_is_leader 1"))
+    };
+    wait_for_condition(TIMEOUT, is_follower_leader)
+        .await
+        .unwrap();
 
     // Run 10 txs, autopilot-backup is in charge
     // - only test_solver2 should participate and settle
     for i in 1..=10 {
         tracing::info!("Tx with autopilot-backup {i}");
-        let uid = services.create_order(&order()).await.unwrap();
+        let uid_cell = std::cell::Cell::new(None);
+        let try_create_order = || async {
+            onchain.mint_block().await;
+            if let Ok(uid) = services.create_order(&order()).await {
+                uid_cell.set(Some(uid));
+                return true;
+            }
+            false
+        };
+        wait_for_condition(TIMEOUT, try_create_order).await.unwrap();
+        let uid = uid_cell.into_inner().unwrap();
 
         tracing::info!("waiting for trade");
         let indexed_trades = || async {

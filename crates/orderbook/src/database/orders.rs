@@ -12,7 +12,11 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
-    futures::{FutureExt, StreamExt, stream::TryStreamExt},
+    futures::{
+        FutureExt,
+        StreamExt,
+        stream::{BoxStream, TryStreamExt},
+    },
     model::{
         order::{
             EthflowData,
@@ -75,7 +79,7 @@ pub trait OrderStoring: Send + Sync {
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
-    async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<Order>>;
+    async fn many_orders(&self, uids: &[OrderUid]) -> Result<BoxStream<'static, Result<Order>>>;
 }
 
 #[derive(Debug)]
@@ -314,33 +318,31 @@ impl OrderStoring for Postgres {
         .transpose()
     }
 
-    async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<Order>> {
+    async fn many_orders(&self, uids: &[OrderUid]) -> Result<BoxStream<'static, Result<Order>>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["many_orders"])
             .start_timer();
-        let mut ex = self.pool.acquire().await?;
         let uids = uids.iter().map(|uid| ByteArray(uid.0)).collect::<Vec<_>>();
+        let mut ex = self.pool.acquire().await?;
 
-        let orders: Vec<Result<Order>> =
-            orders::many_full_orders_with_quotes(&mut ex, uids.as_slice())
-                .await
-                .filter_map(async |order| order.ok())
-                .map(|order| {
+        Ok(async_stream::try_stream! {
+            {
+                let mut stream = orders::many_full_orders_with_quotes(&mut ex, uids.as_slice()).await;
+                while let Some(order) = stream.next().await {
+                    let Ok(order) = order else { continue };
                     let (order, quote) = order.into_order_and_quote();
-                    full_order_with_quote_into_model_order(order, quote.as_ref())
-                })
-                .collect()
-                .await;
-        let jit_orders: Vec<Result<Order>> =
-            database::jit_orders::get_many_by_id(&mut ex, uids.as_slice())
-                .await
-                .filter_map(async |order| order.ok())
-                .map(full_order_into_model_order)
-                .collect()
-                .await;
-
-        orders.into_iter().chain(jit_orders).collect()
+                    yield full_order_with_quote_into_model_order(order, quote.as_ref())?;
+                }
+            }
+            {
+                let mut stream = database::jit_orders::get_many_by_id(&mut ex, uids.as_slice()).await;
+                while let Some(order) = stream.next().await {
+                    let Ok(order) = order else { continue };
+                    yield full_order_into_model_order(order)?;
+                }
+            }
+        }.boxed())
     }
 
     async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
