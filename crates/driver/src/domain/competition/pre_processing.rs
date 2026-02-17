@@ -565,7 +565,7 @@ async fn collect_request_body(request: Request<Body>) -> Result<RequestBytes> {
 
     let body_bytes = hyper::body::to_bytes(request.into_body())
         .await
-        .context("failed to stream requet body")?;
+        .context("failed to stream request body")?;
 
     let duration = start.elapsed();
     tracing::debug!(?duration, "finished streaming request body");
