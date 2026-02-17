@@ -784,6 +784,7 @@ pub struct QuoteMetadataV1 {
 
 #[cfg(test)]
 mod tests {
+    use crate::trade_finding::Interaction;
     use {
         super::*,
         crate::{
@@ -802,7 +803,6 @@ mod tests {
         model::time,
         number::nonzero::NonZeroU256,
     };
-    use crate::trade_finding::Interaction;
 
     struct FakeOrderExecutionSimulator;
     #[async_trait::async_trait]
@@ -811,6 +811,7 @@ mod tests {
             &self,
             _: &model::order::Order,
             _: &model::DomainSeparator,
+            _: Vec<Interaction>,
             _: Vec<Interaction>,
         ) -> Result<()> {
             Ok(())

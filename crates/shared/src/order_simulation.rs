@@ -22,6 +22,7 @@ pub trait OrderExecutionSimulating: Send + Sync {
         order: &Order,
         domain_separator: &DomainSeparator,
         pre_interactions: Vec<Interaction>,
+        post_interactions: Vec<Interaction>,
     ) -> Result<()>;
 }
 
@@ -68,6 +69,7 @@ impl OrderExecutionSimulator {
         order: &Order,
         _domain_separator: &DomainSeparator,
         pre_interactions: Vec<Interaction>,
+        post_interactions: Vec<Interaction>,
     ) -> Result<EncodedSettlement> {
         let tokens = {
             let mut tokens = vec![order.data.sell_token, order.data.buy_token];
@@ -108,11 +110,17 @@ impl OrderExecutionSimulator {
 
         let encoded_pre_interactions = pre_interactions.into_iter().map(|i| i.encode()).collect();
 
+        let encoded_post_interactions = post_interactions.into_iter().map(|i| i.encode()).collect();
+
         Ok(EncodedSettlement {
             tokens,
             clearing_prices,
             trades: vec![trade],
-            interactions: [encoded_pre_interactions, Vec::new(), Vec::new()],
+            interactions: [
+                encoded_pre_interactions,
+                Vec::new(),
+                encoded_post_interactions,
+            ],
         })
     }
 }
@@ -124,8 +132,10 @@ impl OrderExecutionSimulating for OrderExecutionSimulator {
         order: &Order,
         domain_separator: &DomainSeparator,
         pre_interactions: Vec<Interaction>,
+        post_interactions: Vec<Interaction>,
     ) -> Result<()> {
-        let settlement = self.encode_settlement(order, domain_separator, pre_interactions)?;
+        let settlement =
+            self.encode_settlement(order, domain_separator, pre_interactions, post_interactions)?;
         let overrides = self.prepare_state_overrides(&order.data).await;
 
         let call = GPv2Settlement::GPv2Settlement::settleCall {
