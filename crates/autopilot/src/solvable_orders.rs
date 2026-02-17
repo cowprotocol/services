@@ -327,7 +327,7 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
-            orders: tracing::info_span!("assemble_orders") .in_scope(|| {
+            orders: tracing::info_span!("assemble_orders").in_scope(|| {
                 orders
                     .into_iter()
                     .map(|order| {
