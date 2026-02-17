@@ -15,7 +15,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    ethrpc::Web3,
     std::time::Duration,
 };
 
