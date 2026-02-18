@@ -68,8 +68,8 @@ impl MaintenanceSync {
 
     async fn wait_inner(&self, target: SyncTarget) {
         let (relevant_updates, target_block) = match target {
-            SyncTarget::FullyProcessed(block) => (&self.partially_processed_block, block),
-            SyncTarget::PartiallyProcessed(block) => (&self.fully_processed_block, block),
+            SyncTarget::FullyProcessed(block) => (&self.fully_processed_block, block),
+            SyncTarget::PartiallyProcessed(block) => (&self.partially_processed_block, block),
         };
 
         if *relevant_updates.borrow() >= target_block {
