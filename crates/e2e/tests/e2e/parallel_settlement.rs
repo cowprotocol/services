@@ -7,15 +7,19 @@ use {
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
         signers::Signer,
+        sol_types::SolCall,
     },
+    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
     e2e::setup::{colocation, *},
-    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
+    ethrpc::{
+        Web3,
+        alloy::{CallBuilderExt, EvmProviderExt},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    ethrpc::Web3,
     std::time::Duration,
 };
 
@@ -68,12 +72,16 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         .await
         .unwrap();
 
-    // Deploy a minimal forwarder contract and set up EIP-7702 delegation on
-    // the solver EOA so that calls from submission accounts get forwarded to
-    // the settlement contract with msg.sender = solver.
-    let settlement_addr = *onchain.contracts().gp_settlement.address();
-    let forwarder_addr = deploy_forwarder(onchain.web3(), &submitter_a, settlement_addr).await;
+    // Deploy the settlement forwarder and set up EIP-7702 delegation on the
+    // solver EOA. Then approve both submission accounts as callers.
+    let forwarder_addr = deploy_forwarder(onchain.web3(), &submitter_a).await;
     setup_eip7702_delegation(onchain.web3(), &solver, &submitter_a, forwarder_addr).await;
+    approve_submission_callers(
+        onchain.web3(),
+        &solver,
+        &[submitter_a.address(), submitter_b.address()],
+    )
+    .await;
 
     // Start driver + baseline solver. Each /solve call is a separate auction
     // so solutions are independent regardless of merge_solutions.
@@ -235,6 +243,7 @@ async fn solve_order(
 
     let response = http
         .post(format!("{driver_url}/solve"))
+        .header("X-Auction-Id", auction_id.to_string())
         .json(&serde_json::json!({
             "id": auction_id.to_string(),
             "tokens": [
@@ -302,14 +311,14 @@ async fn assert_settle_success(
     );
 }
 
-/// Deploy the Forwarder contract that forwards any call to `target`
-/// via CALL (preserving msg.sender = executing address in EIP-7702 context).
-async fn deploy_forwarder(web3: &Web3, deployer: &TestAccount, target: Address) -> Address {
-    contracts::alloy::test::Forwarder::Forwarder::deploy_builder(web3.provider.clone(), target)
+/// Deploy the CowSettlementForwarder contract (target-agnostic, with caller
+/// whitelist). No constructor arguments — storage lives in the delegating EOA.
+async fn deploy_forwarder(web3: &Web3, deployer: &TestAccount) -> Address {
+    CowSettlementForwarder::deploy_builder(web3.provider.clone())
         .from(deployer.address())
         .deploy()
         .await
-        .expect("failed to deploy Forwarder contract")
+        .expect("failed to deploy CowSettlementForwarder")
 }
 
 /// Set up EIP-7702 delegation on the `solver` EOA, pointing to `forwarder`.
@@ -355,4 +364,28 @@ async fn setup_eip7702_delegation(
         .get_receipt()
         .await
         .expect("EIP-7702 delegation tx failed");
+}
+
+/// Approve submission EOAs as callers on the forwarder. The solver signs
+/// a self-call — after 7702 delegation, `msg.sender == address(this)` passes
+/// the auth check in `setApprovedCallers`.
+async fn approve_submission_callers(web3: &Web3, solver: &TestAccount, callers: &[Address]) {
+    let data = CowSettlementForwarder::setApprovedCallersCall {
+        callers: callers.to_vec(),
+        approved: true,
+    }
+    .abi_encode();
+
+    let tx = TransactionRequest::default()
+        .from(solver.address())
+        .to(solver.address())
+        .input(data.into());
+
+    web3.provider
+        .send_transaction(tx)
+        .await
+        .expect("failed to send setApprovedCallers tx")
+        .get_receipt()
+        .await
+        .expect("setApprovedCallers tx failed");
 }

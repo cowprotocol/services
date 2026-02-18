@@ -8,8 +8,9 @@ use {
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
+    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
     thiserror::Error,
@@ -112,12 +113,23 @@ impl Mempools {
 
         let tx = settlement.transaction(settlement::Internalization::Enable);
 
-        // In EIP-7702 mode, reroute the tx to the solver EOA (which delegates
-        // to a forwarder contract). The calldata stays identical.
+        // In EIP-7702 mode, reroute the tx through the solver EOA's delegated
+        // forwarder contract. The original target (settlement contract, wrapper,
+        // or flashloan router) and calldata are wrapped in a `forward()` call.
+        // `from` is set to the submission EOA so that simulations see the
+        // correct `msg.sender` for the forwarder's caller whitelist.
         let tx = match delegated {
             Some(ctx) => {
                 let mut tx = tx.clone();
+                let original_target = tx.to;
+                tx.from = ctx.signer;
                 tx.to = ctx.solver_eoa;
+                tx.input = CowSettlementForwarder::forwardCall {
+                    target: original_target,
+                    data: tx.input.clone(),
+                }
+                .abi_encode()
+                .into();
                 tx
             }
             None => tx.clone(),

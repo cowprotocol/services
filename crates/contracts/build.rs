@@ -638,6 +638,7 @@ fn main() {
             AVALANCHE => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
         ]))
         .add_contract(Contract::new("ICowWrapper"))
+        .add_contract(Contract::new("CowSettlementForwarder"))
         .add_contract(Contract::new("ChainalysisOracle").with_networks(networks![
             MAINNET => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
             ARBITRUM_ONE => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
@@ -774,8 +775,6 @@ fn main() {
                 .add_contract(Contract::new("GasHog"))
                 // Test Contract for incrementing arbitrary counters.
                 .add_contract(Contract::new("Counter"))
-                // Minimal forwarder for EIP-7702 delegation tests.
-                .add_contract(Contract::new("Forwarder"))
                 // Token with support for `permit` (for pre-interaction tests)
                 .add_contract(Contract::new("CowProtocolToken").with_networks(networks![
                     MAINNET => "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
