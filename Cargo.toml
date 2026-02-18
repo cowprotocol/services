@@ -75,9 +75,9 @@ multibase = "0.9"
 number = { path = "crates/number" }
 observe = { path = "crates/observe" }
 order-validation = { path = "crates/order-validation" }
-opentelemetry = { version = "0.30", features = ["tracing"] }
-opentelemetry-otlp = "0.30"
-opentelemetry_sdk = "0.30"
+opentelemetry = { version = "0.31", features = ["tracing"] }
+opentelemetry-otlp = "0.31"
+opentelemetry_sdk = "0.31"
 orderbook = { path = "crates/orderbook" }
 paste = "1.0"
 pin-project-lite = "0.2.14"
@@ -96,7 +96,7 @@ time = "0.3.47"
 tiny-keccak = "2.0.2"
 tower = "0.5"
 tower-http = "0.6"
-tracing-opentelemetry = "0.31"
+tracing-opentelemetry = "0.32.1"
 tracing-serde = "0.2"
 vergen = "8"
 quote = "1.0.41"
