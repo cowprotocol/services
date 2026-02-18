@@ -54,8 +54,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid OrderUid ({description}): {uid}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid OrderUid ({description}): {uid}"
         );
     }
 
@@ -77,8 +77,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid Address ({description}): {addr}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid Address ({description}): {addr}"
         );
     }
 
@@ -91,8 +91,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid token Address ({description}): {addr}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid token Address ({description}): {addr}"
         );
     }
 
@@ -114,22 +114,19 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid tx hash ({description}): {hash}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid tx hash ({description}): {hash}"
         );
     }
 
     // Test malformed auction IDs
-    // Note: "-1" returns 404 because it doesn't match the u64 route pattern at all,
-    // while non-numeric strings return 400 as they match the path but fail
-    // deserialization
     for (id, description, expected_status) in [
-        ("not-a-number", "non-numeric", StatusCode::NOT_FOUND),
-        ("-1", "negative number", StatusCode::NOT_FOUND),
+        ("not-a-number", "non-numeric", StatusCode::BAD_REQUEST),
+        ("-1", "negative number", StatusCode::BAD_REQUEST),
         (
             "99999999999999999999999",
             "u64 overflow",
-            StatusCode::NOT_FOUND,
+            StatusCode::BAD_REQUEST,
         ),
     ] {
         let response = client
@@ -219,8 +216,8 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(
         response.status(),
-        StatusCode::BAD_REQUEST,
-        "Missing required fields should return 400"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Missing required fields should return 422"
     );
 
     // Wrong field types
@@ -242,8 +239,8 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(
         response.status(),
-        StatusCode::BAD_REQUEST,
-        "Wrong field types should return 400"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Wrong field types should return 422"
     );
 
     // Invalid enum value
@@ -262,8 +259,8 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(
         response.status(),
-        StatusCode::BAD_REQUEST,
-        "Invalid enum value should return 400"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Invalid enum value should return 422"
     );
 
     // Test error response formats
@@ -276,11 +273,13 @@ async fn http_validation(web3: Web3) {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body_text = response.text().await.unwrap();
     assert!(
-        body_text.contains("deserialize error") || body_text.contains("missing field"),
+        body_text.contains("deserialize")
+            || body_text.contains("missing field")
+            || body_text.contains("Failed to deserialize"),
         "Deserialization error should contain helpful description. Got: {body_text}"
     );
 
