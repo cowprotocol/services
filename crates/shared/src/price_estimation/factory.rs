@@ -393,6 +393,17 @@ impl<'a> PriceEstimatorFactory<'a> {
             .native_price_estimator(native, results_required, weth)
             .await
             .expect("failed to build native price estimator");
+        self.caching_native_price_estimator_from_inner(inner, cache)
+            .await
+    }
+
+    /// Creates a [`CachingNativePriceEstimator`] from a pre-built inner
+    /// estimator.
+    pub async fn caching_native_price_estimator_from_inner(
+        &mut self,
+        inner: Box<dyn NativePriceEstimating>,
+        cache: native_price_cache::Cache,
+    ) -> native_price_cache::CachingNativePriceEstimator {
         let approximation_tokens = self
             .build_approximation_tokens()
             .await

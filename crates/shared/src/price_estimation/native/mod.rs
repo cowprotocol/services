@@ -13,10 +13,16 @@ use {
 };
 
 mod coingecko;
+pub mod fallback;
 mod forwarder;
 mod oneinch;
 
-pub use self::{coingecko::CoinGecko, forwarder::Forwarder, oneinch::OneInch};
+pub use self::{
+    coingecko::CoinGecko,
+    fallback::FallbackNativePriceEstimator,
+    forwarder::Forwarder,
+    oneinch::OneInch,
+};
 
 pub type NativePrice = f64;
 pub type NativePriceEstimateResult = Result<NativePrice, PriceEstimationError>;
