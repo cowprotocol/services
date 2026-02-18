@@ -30,9 +30,10 @@ use {
 /// Bypasses the autopilot (which settles one solution per auction) and sends
 /// two /solve + /settle requests directly to the driver.
 ///
-/// Uses EIP-7702 delegation: a minimal forwarder contract is deployed and the
-/// solver EOA delegates its code to it. Two submission accounts send settlement
-/// txs through the solver EOA in parallel, each using their own nonce.
+/// Uses EIP-7702 delegation: a forwarder contract is deployed and the
+/// solver EOA delegates its code to it. Two whitelisted submission accounts
+/// send settlement txs through the solver EOA in parallel, each using their own
+/// nonce.
 #[tokio::test]
 #[ignore]
 async fn local_node_parallel_settlement_submission() {
