@@ -96,19 +96,18 @@ async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Respon
 async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) -> Response {
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
+    let http_method = req.method().as_str();
     let matched_path = req
         .extensions()
         .get::<axum::extract::MatchedPath>()
         .map(|path| path.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let http_method = req.method().as_str().to_owned();
+        .unwrap_or("unknown");
+    let method_with_path = format!("{http_method} {matched_path}");
 
     let response = {
         let _timer = metrics
             .requests_duration_seconds
-            .with_label_values(&[&http_method, &matched_path])
+            .with_label_values(&[&method_with_path])
             .start_timer();
         next.run(req).await
     };
@@ -117,7 +116,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
     // Track completed requests
     metrics
         .requests_complete
-        .with_label_values(&[&http_method, &matched_path, status.as_str()])
+        .with_label_values(&[&method_with_path, status.as_str()])
         .inc();
 
     // Track rejected requests (4xx and 5xx status codes)
@@ -314,7 +313,7 @@ pub fn handle_all_routes(
 #[metric(subsystem = "api")]
 struct ApiMetrics {
     /// Number of completed API requests.
-    #[metric(labels("http_method", "method", "status_code"))]
+    #[metric(labels("method", "status_code"))]
     requests_complete: prometheus::IntCounterVec,
 
     /// Number of rejected API requests.
@@ -322,7 +321,7 @@ struct ApiMetrics {
     requests_rejected: prometheus::IntCounterVec,
 
     /// Execution time for each API request.
-    #[metric(labels("http_method", "method"), buckets(0.1, 0.5, 1, 2, 4, 6, 8, 10))]
+    #[metric(labels("method"), buckets(0.1, 0.5, 1, 2, 4, 6, 8, 10))]
     requests_duration_seconds: prometheus::HistogramVec,
 }
 
@@ -349,9 +348,10 @@ impl ApiMetrics {
     }
 
     fn reset_requests_complete(&self, method: &str, path: &str) {
+        let method_with_path = format!("{method} {path}");
         for status in Self::INITIAL_STATUSES {
             self.requests_complete
-                .with_label_values(&[method, path, status.as_str()])
+                .with_label_values(&[&method_with_path, status.as_str()])
                 .reset();
         }
     }
