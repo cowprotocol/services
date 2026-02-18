@@ -4,8 +4,6 @@ pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod zeroex;
 
-#[cfg(test)]
-use derivative::Derivative;
 use {
     crate::settlement::SettlementEncoder,
     alloy::primitives::{Address, U256},
@@ -85,8 +83,7 @@ pub enum Exchange {
 /// solvers. User orders (market + limit) containing OrderUid are the orders
 /// from the orderbook.
 #[derive(Debug, Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum LimitOrderId {
     Market(OrderUid),
     Limit(OrderUid),
@@ -102,8 +99,7 @@ pub enum LimitOrderId {
 /// (1) and (2) are gathered when the auction is cut and they are sent to
 /// searchers (3) are received from searchers as part of the solution.
 #[derive(Debug, Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum LiquidityOrderId {
     /// TODO: Split into different variants once we have a DTO of order model
     /// for `driver` in driver solver colocation TODO: The only reason why
@@ -130,8 +126,6 @@ impl From<u32> for LimitOrderId {
 
 /// Basic limit sell and buy orders
 #[derive(Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
     pub id: LimitOrderId,
@@ -144,9 +138,23 @@ pub struct LimitOrder {
     pub partially_fillable: bool,
     /// Takes partiall fill into account.
     pub user_fee: U256,
-    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
+}
+
+#[cfg(test)]
+impl PartialEq for LimitOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.sell_token == other.sell_token
+            && self.buy_token == other.buy_token
+            && self.sell_amount == other.sell_amount
+            && self.buy_amount == other.buy_amount
+            && self.kind == other.kind
+            && self.partially_fillable == other.partially_fillable
+            && self.user_fee == other.user_fee
+            && self.exchange == other.exchange
+    }
 }
 
 impl LimitOrder {
@@ -239,15 +247,22 @@ impl Default for LimitOrder {
 /// 2 sided constant product automated market maker with equal reserve value and
 /// a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
 pub struct ConstantProductOrder {
     pub address: Address,
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
-    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+#[cfg(test)]
+impl PartialEq for ConstantProductOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+            && self.tokens == other.tokens
+            && self.reserves == other.reserves
+            && self.fee == other.fee
+    }
 }
 
 impl ConstantProductOrder {
@@ -280,15 +295,22 @@ impl From<Pool> for ConstantProductOrder {
 /// 2 sided weighted product automated market maker with weighted reserves and a
 /// trading fee (e.g. BalancerV2)
 #[derive(Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
 pub struct WeightedProductOrder {
     pub address: Address,
     pub reserves: BTreeMap<Address, WeightedTokenState>,
     pub fee: Bfp,
     pub version: WeightedPoolVersion,
-    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+#[cfg(test)]
+impl PartialEq for WeightedProductOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+            && self.reserves == other.reserves
+            && self.fee == other.fee
+            && self.version == other.version
+    }
 }
 
 impl std::fmt::Debug for WeightedProductOrder {
@@ -298,15 +320,22 @@ impl std::fmt::Debug for WeightedProductOrder {
 }
 
 #[derive(Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
 pub struct StablePoolOrder {
     pub address: Address,
     pub reserves: BTreeMap<Address, TokenState>,
     pub fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
-    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+#[cfg(test)]
+impl PartialEq for StablePoolOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+            && self.reserves == other.reserves
+            && self.fee == other.fee
+            && self.amplification_parameter == other.amplification_parameter
+    }
 }
 
 impl std::fmt::Debug for StablePoolOrder {
@@ -348,13 +377,17 @@ impl Settleable for StablePoolOrder {
 
 /// Concentrated type of liquidity with ticks (e.g. UniswapV3)
 #[derive(Clone)]
-#[cfg_attr(test, derive(Derivative))]
-#[cfg_attr(test, derivative(PartialEq))]
 pub struct ConcentratedLiquidity {
     pub tokens: TokenPair,
     pub pool: PoolInfo,
-    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+#[cfg(test)]
+impl PartialEq for ConcentratedLiquidity {
+    fn eq(&self, other: &Self) -> bool {
+        self.tokens == other.tokens && self.pool == other.pool
+    }
 }
 
 impl std::fmt::Debug for ConcentratedLiquidity {
