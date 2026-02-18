@@ -6,7 +6,6 @@ use {
     },
     axum::{
         Json,
-        body,
         extract::State,
         response::{IntoResponse, Response},
     },
@@ -16,13 +15,10 @@ use {
     std::sync::Arc,
 };
 
-pub async fn post_quote_handler(State(state): State<Arc<AppState>>, body: body::Bytes) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
-    let Ok(request) = serde_json::from_slice::<OrderQuoteRequest>(&body) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
-
+pub async fn post_quote_handler(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<OrderQuoteRequest>,
+) -> Response {
     state
         .quotes
         .calculate_quote(&request)

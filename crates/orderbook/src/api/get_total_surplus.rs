@@ -7,19 +7,13 @@ use {
         response::{IntoResponse, Json, Response},
     },
     serde_json::json,
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 pub async fn get_total_surplus_handler(
     State(state): State<Arc<AppState>>,
-    Path(user): Path<String>,
+    Path(user): Path<Address>,
 ) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
-    let Ok(user) = Address::from_str(&user) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-
     let surplus = state.database_read.total_surplus(&user).await;
     match surplus {
         Ok(surplus) => (

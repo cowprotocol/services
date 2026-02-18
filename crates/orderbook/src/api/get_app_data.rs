@@ -6,17 +6,13 @@ use {
         http::StatusCode,
         response::{IntoResponse, Json, Response},
     },
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 pub async fn get_app_data_handler(
     State(state): State<Arc<AppState>>,
-    Path(contract_app_data): Path<String>,
+    Path(contract_app_data): Path<AppDataHash>,
 ) -> Response {
-    let Ok(contract_app_data) = AppDataHash::from_str(&contract_app_data) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-
     let result = state
         .database_read
         .get_full_app_data(&contract_app_data)

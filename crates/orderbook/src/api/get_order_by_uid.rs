@@ -7,19 +7,13 @@ use {
         response::{IntoResponse, Json, Response},
     },
     model::order::{Order, OrderUid},
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 pub async fn get_order_by_uid_handler(
     State(state): State<Arc<AppState>>,
-    Path(uid): Path<String>,
+    Path(uid): Path<OrderUid>,
 ) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
-    let Ok(uid) = OrderUid::from_str(&uid) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-
     let result = state.orderbook.get_order(&uid).await;
     get_order_by_uid_response(result)
 }
