@@ -382,6 +382,7 @@ impl<'a> Services<'a> {
             merge_solutions: true,
             haircut_bps: 0,
             submission_keys: vec![],
+            forwarder_contract: None,
         }];
 
         // Create TOML config files
