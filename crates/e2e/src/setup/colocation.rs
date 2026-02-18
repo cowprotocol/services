@@ -19,6 +19,8 @@ pub struct SolverEngine {
     /// Additional EOAs that can submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission.
     pub submission_keys: Vec<TestAccount>,
+    /// Address of the deployed CowSettlementForwarder contract for EIP-7702.
+    pub forwarder_contract: Option<Address>,
 }
 
 pub async fn start_baseline_solver(
@@ -71,6 +73,7 @@ uni-v3-node-url = "http://localhost:8545"
         merge_solutions,
         haircut_bps,
         submission_keys: vec![],
+        forwarder_contract: None,
     }
 }
 
@@ -179,7 +182,11 @@ pub fn start_driver_with_config_override(
                     .iter()
                     .map(|k| format!("\"{}\"", k.signer.to_bytes()))
                     .collect();
-                format!("submission-accounts = [{}]\n", keys.join(", "))
+                let mut line = format!("submission-accounts = [{}]\n", keys.join(", "));
+                if let Some(addr) = solver.forwarder_contract {
+                    line.push_str(&format!("forwarder-contract = \"{addr:?}\"\n"));
+                }
+                line
             };
             format!(
                 r#"

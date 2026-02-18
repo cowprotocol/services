@@ -96,6 +96,7 @@ async fn test_parallel_settlement_submission(web3: Web3) {
     )
     .await;
     solver_engine.submission_keys = vec![submitter_a.clone(), submitter_b.clone()];
+    solver_engine.forwarder_contract = Some(forwarder_addr);
 
     colocation::start_driver(
         onchain.contracts(),

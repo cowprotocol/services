@@ -392,6 +392,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
+                forwarder_contract: None,
             },
             SolverEngine {
                 name: "bad_solver".into(),
@@ -401,6 +402,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
+                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
