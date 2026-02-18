@@ -115,6 +115,7 @@ async fn handle_request(
     let (parts, body) = req.into_parts();
 
     // Convert body to bytes once for reuse across retries
+    // SAFETY: usize::MAX is ok here because it's a test
     let body_bytes = match axum::body::to_bytes(body, usize::MAX).await {
         Ok(bytes) => bytes,
         Err(err) => {

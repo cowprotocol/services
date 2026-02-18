@@ -1,9 +1,6 @@
 use {
     crate::{
-        app_data,
-        database::Postgres,
-        orderbook::Orderbook,
-        quoter::QuoteHandler,
+        app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler,
         solver_competition::LoadSolverCompetitionError,
     },
     axum::{
@@ -433,6 +430,7 @@ impl IntoResponse for LoadSolverCompetitionError {
 
 #[cfg(test)]
 pub async fn response_body(response: axum::http::Response<axum::body::Body>) -> Vec<u8> {
+    // SAFETY: usize::MAX is ok here because it's a test
     axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap()
@@ -485,6 +483,7 @@ mod tests {
         }
 
         let response = rich_error("foo", "bar", AlwaysErrors).into_response();
+        // SAFETY: usize::MAX is ok here because it's a test
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();

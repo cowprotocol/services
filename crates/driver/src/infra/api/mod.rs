@@ -1,8 +1,7 @@
 use {
     crate::{
         domain::{
-            self,
-            Mempools,
+            self, Mempools,
             competition::{
                 order::app_data::AppDataRetriever,
                 risk_detector::{self, bad_orders},
@@ -10,14 +9,8 @@ use {
             },
         },
         infra::{
-            self,
-            Ethereum,
-            Simulator,
-            config::file::OrderPriorityStrategy,
-            liquidity,
-            notify,
-            solver::Solver,
-            tokens,
+            self, Ethereum, Simulator, config::file::OrderPriorityStrategy, liquidity, notify,
+            solver::Solver, tokens,
         },
     },
     error::Error,
@@ -31,7 +24,7 @@ use {
 mod error;
 pub mod routes;
 
-const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
+pub const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub solvers: Vec<Solver>,
