@@ -21,10 +21,6 @@ ignore = [
     # No patch available yet (cryptography vulnerability)
     "RUSTSEC-2023-0071",
 
-    # sqlx - Binary protocol overflow (RUSTSEC-2024-0363)
-    # Needs upgrade to 0.8.1+ (breaking changes, tracked in #3338)
-    "RUSTSEC-2024-0363",
-
     # tracing-subscriber - ANSI escape injection (RUSTSEC-2025-0055)
     # Needs upgrade to 0.3.20+ (minimal risk in current usage)
     "RUSTSEC-2025-0055",
