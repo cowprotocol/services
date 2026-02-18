@@ -3,10 +3,10 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
-alloy = { version = "1.1.0", default-features = false }
+alloy = { version = "1.7.3", default-features = false }
 # alloy-signer was added because eip712 on the regular alloy crate brings way too much stuff with it
 # as such, this is a workaround to force feature unification over alloy to the feature set we want
-alloy-signer = { version = "1.1.0", default-features = false}
+alloy-signer = { version = "1.7.3", default-features = false}
 anyhow = "1.0.100"
 async-trait = "0.1.80"
 axum = "0.8"
