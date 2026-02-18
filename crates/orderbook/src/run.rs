@@ -21,18 +21,14 @@ use {
         WETH9,
         support::Balances,
     },
-    model::{DomainSeparator, order::BUY_ETH_ADDRESS},
+    model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
-        bad_token::{
-            instrumented::InstrumentedBadTokenDetectorExt,
-            list_based::{ListBasedDetector, UnknownTokenStrategy},
-        },
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
@@ -71,12 +67,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -196,23 +192,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     ));
 
-    let base_tokens = Arc::new(BaseTokens::new(
-        *native_token.address(),
-        &args.shared.base_tokens,
-    ));
-    let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.unsupported_tokens.clone();
-
-    let bad_token_detector = Arc::new(
-        ListBasedDetector::new(
-            allowed_tokens,
-            unsupported_tokens,
-            UnknownTokenStrategy::Allow,
-        )
-        .instrumented(),
-    );
+    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
 
     let current_block_stream = args
         .shared
@@ -241,12 +221,11 @@ pub async fn run(args: Arguments) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
             block_stream: current_block_stream.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
-            bad_token_detector: bad_token_detector.clone(),
+            deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
         },
@@ -367,7 +346,7 @@ pub async fn run(args: Arguments) {
         )),
         validity_configuration,
         args.eip1271_skip_creation_validation,
-        bad_token_detector.clone(),
+        deny_listed_tokens.clone(),
         hooks_contract,
         optimal_quoter.clone(),
         balance_fetcher,
@@ -513,12 +492,18 @@ fn serve_api(
     );
     tracing::info!(%address, "serving order book");
 
-    let server = axum::Server::bind(&address)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(shutdown_receiver);
-
     task::spawn(async move {
-        if let Err(err) = server.await {
+        let listener = match tokio::net::TcpListener::bind(address).await {
+            Ok(listener) => listener,
+            Err(err) => {
+                tracing::error!(?err, "failed to bind server");
+                return;
+            }
+        };
+        if let Err(err) = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_receiver)
+            .await
+        {
             tracing::error!(?err, "server error");
         }
     })

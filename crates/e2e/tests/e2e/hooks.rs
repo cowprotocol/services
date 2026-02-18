@@ -22,7 +22,7 @@ use {
     number::{nonzero::NonZeroU256, units::EthUnit},
     reqwest::StatusCode,
     serde_json::json,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]

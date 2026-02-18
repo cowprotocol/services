@@ -9,7 +9,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -276,7 +276,7 @@ async fn quote_timeout(web3: Web3) {
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
 
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
 
     // Start system
     colocation::start_driver(

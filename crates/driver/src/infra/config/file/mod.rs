@@ -1,6 +1,6 @@
 pub use load::load;
 use {
-    crate::{domain::eth, infra, util::serialize},
+    crate::{domain::eth, infra},
     alloy::{eips::BlockNumberOrTag, primitives::Address},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
@@ -34,7 +34,7 @@ struct Config {
     /// Disable gas simulation and always use this fixed gas value instead. This
     /// can be useful for testing, but shouldn't be used in production since it
     /// will cause the driver to return invalid scores.
-    #[serde_as(as = "Option<serialize::U256>")]
+    #[serde_as(as = "Option<serde_ext::U256>")]
     disable_gas_simulation: Option<eth::U256>,
 
     /// Defines the gas estimator to use.
@@ -99,13 +99,13 @@ struct SubmissionConfig {
     /// The minimum priority fee in Gwei the solver is ensuring to pay in a
     /// settlement.
     #[serde(default)]
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     min_priority_fee: eth::U256,
 
     /// The maximum gas price in Gwei the solver is willing to pay in a
     /// settlement.
     #[serde(default = "default_gas_price_cap")]
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     gas_price_cap: eth::U256,
 
     /// The target confirmation time for settlement transactions used
@@ -159,7 +159,7 @@ struct Mempool {
     /// Maximum additional tip in Gwei that we are willing to give to
     /// the validator above regular gas price estimation.
     #[serde(default = "default_max_additional_tip")]
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     max_additional_tip: eth::U256,
     /// Additional tip in percentage of max_fee_per_gas we are giving to
     /// validator above regular gas price estimation. Expects a
@@ -377,7 +377,7 @@ struct Slippage {
 
     /// The absolute slippage allowed by the solver.
     #[serde(rename = "absolute-slippage")]
-    #[serde_as(as = "Option<serialize::U256>")]
+    #[serde_as(as = "Option<serde_ext::U256>")]
     absolute: Option<eth::U256>,
 }
 

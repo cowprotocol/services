@@ -16,7 +16,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     std::time::Duration,
 };
 

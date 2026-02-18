@@ -1,5 +1,5 @@
 use {
-    crate::ethrpc::Web3,
+    crate::web3::Web3,
     alloy::{
         providers::ext::TraceApi,
         rpc::types::{

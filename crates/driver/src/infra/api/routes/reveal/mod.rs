@@ -18,7 +18,7 @@ pub(in crate::infra::api) fn reveal(router: axum::Router<State>) -> axum::Router
 async fn route(
     state: axum::extract::State<State>,
     req: axum::Json<dto::RevealRequest>,
-) -> Result<axum::Json<dto::RevealResponse>, (hyper::StatusCode, axum::Json<Error>)> {
+) -> Result<axum::Json<dto::RevealResponse>, (axum::http::StatusCode, axum::Json<Error>)> {
     let auction_id =
         auction::Id::try_from(req.auction_id).map_err(api::routes::AuctionError::from)?;
     let handle_request = async {

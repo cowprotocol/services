@@ -116,8 +116,10 @@ pub fn serve_metrics(
 
     tracing::info!(%address, "serving metrics");
     tokio::spawn(async move {
-        axum::Server::bind(&address)
-            .serve(app.into_make_service())
+        let listener = tokio::net::TcpListener::bind(address)
+            .await
+            .expect("failed to bind metrics server");
+        axum::serve(listener, app)
             .await
             .expect("failed to serve metrics")
     })

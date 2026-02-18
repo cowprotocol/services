@@ -38,7 +38,7 @@ use {
         time::Duration,
     },
     tokio::sync::mpsc,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub mod cli;
@@ -301,6 +301,7 @@ impl Persistence {
     /// A variants of [`store_order_events`] where [`items`] is already an owned
     /// collection which allows us to move the logic to convert an item to a
     /// [`domain::OrderUid`] into the background task as well.
+    #[instrument(skip_all)]
     pub fn store_order_events_owned<I, F>(
         &self,
         items: I,
@@ -1005,6 +1006,7 @@ impl Persistence {
 
     /// Fetches orders which are currently inflight. Those orders should
     /// be omitted from the current auction to avoid onchain reverts.
+    #[instrument(skip_all)]
     pub async fn fetch_in_flight_orders(
         &self,
         current_block: u64,

@@ -68,8 +68,7 @@ pub async fn get_solver_competition_latest_handler(
 mod tests {
     use {
         crate::solver_competition::LoadSolverCompetitionError,
-        axum::response::IntoResponse,
-        hyper::StatusCode,
+        axum::{http::StatusCode, response::IntoResponse},
     };
 
     #[tokio::test]

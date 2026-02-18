@@ -2,7 +2,7 @@
 //! more easily be tested with mocked versions of these behaviours.
 
 use {
-    crate::ethrpc::Web3,
+    crate::web3::Web3,
     alloy::{
         primitives::{Address, Bytes},
         providers::Provider,

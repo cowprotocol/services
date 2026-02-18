@@ -1,7 +1,7 @@
 use {
     alloy::primitives::Address,
     clap::Parser,
-    shared::{arguments::display_option, ethrpc, http_client, logging_args_with_default_filter},
+    shared::{arguments::display_option, http_client, logging_args_with_default_filter, web3},
     std::time::Duration,
     url::Url,
 };
@@ -14,7 +14,7 @@ pub struct Arguments {
     pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
-    pub ethrpc: ethrpc::Arguments,
+    pub ethrpc: web3::Arguments,
 
     #[clap(flatten)]
     pub logging: LoggingArguments,

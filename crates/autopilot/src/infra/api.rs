@@ -45,14 +45,14 @@ pub async fn serve(
     estimator: Arc<dyn NativePriceEstimating>,
     max_timeout: Duration,
     shutdown: oneshot::Receiver<()>,
-) -> Result<(), hyper::Error> {
+) -> Result<(), std::io::Error> {
     let state = State {
         estimator,
         allowed_timeout: MIN_TIMEOUT..=max_timeout,
     };
 
     let app = Router::new()
-        .route("/native_price/:token", get(get_native_price))
+        .route("/native_price/{token}", get(get_native_price))
         .with_state(state)
         .layer(
             tower::ServiceBuilder::new()
@@ -60,10 +60,10 @@ pub async fn serve(
                 .map_request(record_trace_id),
         );
 
-    let server = axum::Server::bind(&addr).serve(app.into_make_service());
+    let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(?addr, "serving HTTP API");
 
-    server
+    axum::serve(listener, app)
         .with_graceful_shutdown(async {
             shutdown.await.ok();
         })

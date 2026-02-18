@@ -1,8 +1,5 @@
-pub mod instrumented;
 pub mod list_based;
 pub mod trace_call;
-
-use {alloy::primitives::Address, anyhow::Result};
 
 /// How well behaved a token is.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -21,11 +18,4 @@ impl TokenQuality {
             reason: reason.to_string(),
         }
     }
-}
-
-/// Detect how well behaved a token is.
-#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
-#[async_trait::async_trait]
-pub trait BadTokenDetecting: Send + Sync {
-    async fn detect(&self, token: Address) -> Result<TokenQuality>;
 }

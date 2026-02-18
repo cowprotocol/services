@@ -12,7 +12,6 @@ use {
             eth,
         },
         infra::{Ethereum, tokens},
-        util::serialize,
     },
     serde::Deserialize,
     serde_with::serde_as,
@@ -230,7 +229,7 @@ impl SolveRequest {
 #[serde(rename_all = "camelCase")]
 struct Token {
     pub address: eth::Address,
-    #[serde_as(as = "Option<serialize::U256>")]
+    #[serde_as(as = "Option<serde_ext::U256>")]
     pub price: Option<eth::U256>,
     pub trusted: bool,
 }
@@ -239,13 +238,13 @@ struct Token {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Order {
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     uid: [u8; order::UID_LEN],
     sell_token: eth::Address,
     buy_token: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     buy_amount: eth::U256,
     protocol_fees: Vec<FeePolicy>,
     created: u32,
@@ -255,7 +254,7 @@ struct Order {
     owner: eth::Address,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     executed: eth::U256,
     pre_interactions: Vec<Interaction>,
     post_interactions: Vec<Interaction>,
@@ -264,10 +263,10 @@ struct Order {
     #[serde(default)]
     buy_token_balance: BuyTokenBalance,
     class: Class,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     app_data: [u8; order::app_data::APP_DATA_LEN],
     signing_scheme: SigningScheme,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     signature: Vec<u8>,
     quote: Option<Quote>,
 }
@@ -284,9 +283,9 @@ enum Kind {
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::Address,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     value: eth::U256,
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "serde_ext::Hex")]
     call_data: Vec<u8>,
 }
 
@@ -342,11 +341,11 @@ enum FeePolicy {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     pub sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     pub buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "serde_ext::U256")]
     pub fee: eth::U256,
     pub solver: eth::Address,
 }

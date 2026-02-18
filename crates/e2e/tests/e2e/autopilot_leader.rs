@@ -1,5 +1,11 @@
 use {
-    autopilot::shutdown_controller::ShutdownController,
+    autopilot::{
+        config::{
+            Configuration,
+            solver::{Account, Solver},
+        },
+        shutdown_controller::ShutdownController,
+    },
     e2e::setup::{
         OnchainComponents,
         Services,
@@ -12,6 +18,8 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
+    std::str::FromStr,
+    url::Url,
 };
 
 #[tokio::test]
@@ -86,26 +94,55 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     );
 
     // Configure autopilot-leader only with test_solver
-    let autopilot_leader = services.start_autopilot_with_shutdown_controller(None, vec![
-        format!("--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-            const_hex::encode(solver1.address())),
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-        "--metrics-address=0.0.0.0:9590".to_string(),
-        "--api-address=0.0.0.0:12088".to_string(),
-        "--enable-leader-lock=true".to_string(),
-    ], control).await;
+    let config_file_leader = Configuration {
+        drivers: vec![Solver::new(
+            "test_solver".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+            Account::Address(solver1.address()),
+        )],
+    }
+    .to_temp_path();
+
+    let autopilot_leader = services
+        .start_autopilot_with_shutdown_controller(
+            None,
+            vec![
+                format!("--config={}", config_file_leader.path().display()),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+                "--metrics-address=0.0.0.0:9590".to_string(),
+                "--api-address=0.0.0.0:12088".to_string(),
+                "--enable-leader-lock=true".to_string(),
+            ],
+            control,
+        )
+        .await;
 
     // Configure autopilot-backup only with test_solver2
-    let _autopilot_follower = services.start_autopilot(None, vec![
-        format!("--drivers=test_solver2|http://localhost:11088/test_solver2|{}|requested-timeout-on-problems",
-            const_hex::encode(solver2.address())),
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
-        "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-        "--metrics-address=0.0.0.0:9591".to_string(),
-        "--api-address=0.0.0.0:12089".to_string(),
-        "--enable-leader-lock=true".to_string(),
-    ]).await;
+    let config_file_follower = Configuration {
+        drivers: vec![Solver::new(
+            "test_solver2".to_string(),
+            Url::from_str("http://localhost:11088/test_solver2").unwrap(),
+            Account::Address(solver2.address()),
+        )],
+    }
+    .to_temp_path();
+
+    let _autopilot_follower = services
+        .start_autopilot(
+            None,
+            vec![
+                format!("--config={}", config_file_follower.path().display()),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
+                    .to_string(),
+                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+                "--metrics-address=0.0.0.0:9591".to_string(),
+                "--api-address=0.0.0.0:12089".to_string(),
+                "--enable-leader-lock=true".to_string(),
+            ],
+        )
+        .await;
 
     services
         .start_api(vec![
