@@ -108,7 +108,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
     let response = {
         let _timer = metrics
             .requests_duration_seconds
-            .with_label_values(&[&matched_path])
+            .with_label_values(&[&http_method, &matched_path])
             .start_timer();
         next.run(req).await
     };
