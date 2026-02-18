@@ -1,6 +1,9 @@
 use {
     crate::{
-        app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler,
+        app_data,
+        database::Postgres,
+        orderbook::Orderbook,
+        quoter::QuoteHandler,
         solver_competition::LoadSolverCompetitionError,
     },
     axum::{
@@ -308,7 +311,8 @@ pub fn handle_all_routes(
         )
 }
 
-// NOTE(jmg-duarte): method is actually the request path, to avoid breaking dashboards, the http_method was added
+// NOTE(jmg-duarte): method is actually the request path, to avoid breaking
+// dashboards, the http_method was added
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "api")]
 struct ApiMetrics {
