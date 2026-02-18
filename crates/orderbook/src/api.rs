@@ -1,6 +1,9 @@
 use {
     crate::{
-        app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler,
+        app_data,
+        database::Postgres,
+        orderbook::Orderbook,
+        quoter::QuoteHandler,
         solver_competition::LoadSolverCompetitionError,
     },
     axum::{

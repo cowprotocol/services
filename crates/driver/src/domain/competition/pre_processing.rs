@@ -3,7 +3,9 @@ use {
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
-            cow_amm, eth, liquidity,
+            cow_amm,
+            eth,
+            liquidity,
         },
         infra::{
             self,

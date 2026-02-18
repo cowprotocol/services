@@ -1,7 +1,8 @@
 use {
     crate::{
         domain::{
-            self, Mempools,
+            self,
+            Mempools,
             competition::{
                 order::app_data::AppDataRetriever,
                 risk_detector::{self, bad_orders},
@@ -9,8 +10,14 @@ use {
             },
         },
         infra::{
-            self, Ethereum, Simulator, config::file::OrderPriorityStrategy, liquidity, notify,
-            solver::Solver, tokens,
+            self,
+            Ethereum,
+            Simulator,
+            config::file::OrderPriorityStrategy,
+            liquidity,
+            notify,
+            solver::Solver,
+            tokens,
         },
     },
     error::Error,
