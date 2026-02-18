@@ -12,6 +12,7 @@ use {
         http::{Request, StatusCode, header::USER_AGENT},
         middleware::{self, Next},
         response::{IntoResponse, Json, Response},
+        routing::{delete, get, post, put},
     },
     observe::distributed_tracing::tracing_axum::{self, record_trace_id},
     serde::{Deserialize, Serialize},
@@ -98,18 +99,18 @@ async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Respon
 async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) -> Response {
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-    // Extract matched path and HTTP method
+    let http_method = req.method().as_str();
     let matched_path = req
         .extensions()
         .get::<axum::extract::MatchedPath>()
         .map(|path| path.as_str())
-        .unwrap_or("unknown")
-        .to_string();
+        .unwrap_or("unknown");
+    let method_with_path = format!("{http_method} {matched_path}");
 
     let response = {
         let _timer = metrics
             .requests_duration_seconds
-            .with_label_values(&[&matched_path])
+            .with_label_values(&[&method_with_path])
             .start_timer();
         next.run(req).await
     };
@@ -118,7 +119,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
     // Track completed requests
     metrics
         .requests_complete
-        .with_label_values(&[&matched_path, status.as_str()])
+        .with_label_values(&[&method_with_path, status.as_str()])
         .inc();
 
     // Track rejected requests (4xx and 5xx status codes)
@@ -158,97 +159,121 @@ pub fn handle_all_routes(
     let routes = [
         // V1 routes
         (
+            "GET",
             "/api/v1/account/{owner}/orders",
-            axum::routing::get(get_user_orders::get_user_orders_handler),
+            get(get_user_orders::get_user_orders_handler),
         ),
         (
+            "PUT",
             "/api/v1/app_data",
-            axum::routing::put(put_app_data::put_app_data_without_hash)
+            put(put_app_data::put_app_data_without_hash)
                 .layer(DefaultBodyLimit::max(app_data_size_limit)),
         ),
         (
+            "GET",
             "/api/v1/app_data/{hash}",
-            axum::routing::get(get_app_data::get_app_data_handler).merge(
-                axum::routing::put(put_app_data::put_app_data_with_hash)
-                    .layer(DefaultBodyLimit::max(app_data_size_limit)),
-            ),
+            get(get_app_data::get_app_data_handler),
         ),
         (
+            "PUT",
+            "/api/v1/app_data/{hash}",
+            put(put_app_data::put_app_data_with_hash)
+                .layer(DefaultBodyLimit::max(app_data_size_limit)),
+        ),
+        (
+            "GET",
             "/api/v1/auction",
-            axum::routing::get(get_auction::get_auction_handler),
+            get(get_auction::get_auction_handler),
         ),
         (
+            "POST",
             "/api/v1/orders",
-            axum::routing::post(post_order::post_order_handler)
-                .merge(axum::routing::delete(cancel_orders::cancel_orders_handler)),
+            post(post_order::post_order_handler),
         ),
         (
+            "DELETE",
+            "/api/v1/orders",
+            delete(cancel_orders::cancel_orders_handler),
+        ),
+        (
+            "GET",
             "/api/v1/orders/{uid}",
-            axum::routing::get(get_order_by_uid::get_order_by_uid_handler)
-                .merge(axum::routing::delete(cancel_order::cancel_order_handler)),
+            get(get_order_by_uid::get_order_by_uid_handler),
         ),
         (
+            "DELETE",
+            "/api/v1/orders/{uid}",
+            delete(cancel_order::cancel_order_handler),
+        ),
+        (
+            "GET",
             "/api/v1/orders/{uid}/status",
-            axum::routing::get(get_order_status::get_status_handler),
+            get(get_order_status::get_status_handler),
         ),
         (
+            "POST",
             "/api/v1/quote",
-            axum::routing::post(post_quote::post_quote_handler),
+            post(post_quote::post_quote_handler),
         ),
         // /solver_competition routes (specific before parameterized)
         (
+            "GET",
             "/api/v1/solver_competition/latest",
-            axum::routing::get(get_solver_competition::get_solver_competition_latest_handler),
+            get(get_solver_competition::get_solver_competition_latest_handler),
         ),
         (
+            "GET",
             "/api/v1/solver_competition/by_tx_hash/{tx_hash}",
-            axum::routing::get(get_solver_competition::get_solver_competition_by_hash_handler),
+            get(get_solver_competition::get_solver_competition_by_hash_handler),
         ),
         (
+            "GET",
             "/api/v1/solver_competition/{auction_id}",
-            axum::routing::get(get_solver_competition::get_solver_competition_by_id_handler),
+            get(get_solver_competition::get_solver_competition_by_id_handler),
         ),
         (
+            "GET",
             "/api/v1/token/{token}/metadata",
-            axum::routing::get(get_token_metadata::get_token_metadata_handler),
+            get(get_token_metadata::get_token_metadata_handler),
         ),
         (
+            "GET",
             "/api/v1/token/{token}/native_price",
-            axum::routing::get(get_native_price::get_native_price_handler),
+            get(get_native_price::get_native_price_handler),
         ),
+        ("GET", "/api/v1/trades", get(get_trades::get_trades_handler)),
         (
-            "/api/v1/trades",
-            axum::routing::get(get_trades::get_trades_handler),
-        ),
-        (
+            "GET",
             "/api/v1/transactions/{hash}/orders",
-            axum::routing::get(get_orders_by_tx::get_orders_by_tx_handler),
+            get(get_orders_by_tx::get_orders_by_tx_handler),
         ),
         (
+            "GET",
             "/api/v1/users/{user}/total_surplus",
-            axum::routing::get(get_total_surplus::get_total_surplus_handler),
+            get(get_total_surplus::get_total_surplus_handler),
         ),
-        (
-            "/api/v1/version",
-            axum::routing::get(version::version_handler),
-        ),
+        ("GET", "/api/v1/version", get(version::version_handler)),
         // V2 routes
         // /solver_competition routes (specific before parameterized)
         (
+            "GET",
             "/api/v2/solver_competition/latest",
-            axum::routing::get(get_solver_competition_v2::get_solver_competition_latest_handler),
+            get(get_solver_competition_v2::get_solver_competition_latest_handler),
         ),
         (
+            "GET",
             "/api/v2/solver_competition/by_tx_hash/{tx_hash}",
-            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_hash_handler),
+            get(get_solver_competition_v2::get_solver_competition_by_hash_handler),
         ),
         (
+            "GET",
             "/api/v2/solver_competition/{auction_id}",
-            axum::routing::get(get_solver_competition_v2::get_solver_competition_by_id_handler),
+            get(get_solver_competition_v2::get_solver_competition_by_id_handler),
         ),
         (
+            "GET",
             "/api/v2/trades",
-            axum::routing::get(get_trades_v2::get_trades_handler),
+            get(get_trades_v2::get_trades_handler),
         ),
     ];
 
@@ -257,8 +282,8 @@ pub fn handle_all_routes(
     metrics.reset_requests_rejected();
 
     let mut api_router = Router::new();
-    for (path, method_router) in routes {
-        metrics.reset_requests_complete(path);
+    for (method, path, method_router) in routes {
+        metrics.reset_requests_complete(method, path);
         api_router = api_router.route(path, method_router);
     }
     let api_router = api_router.with_state(state);
@@ -286,6 +311,8 @@ pub fn handle_all_routes(
         )
 }
 
+// NOTE(jmg-duarte): method is actually the request path, to avoid breaking
+// dashboards, the http_method was added
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "api")]
 struct ApiMetrics {
@@ -324,10 +351,11 @@ impl ApiMetrics {
         }
     }
 
-    fn reset_requests_complete(&self, path: &str) {
+    fn reset_requests_complete(&self, method: &str, path: &str) {
+        let method_with_path = format!("{method} {path}");
         for status in Self::INITIAL_STATUSES {
             self.requests_complete
-                .with_label_values(&[path, status.as_str()])
+                .with_label_values(&[&method_with_path, status.as_str()])
                 .reset();
         }
     }
