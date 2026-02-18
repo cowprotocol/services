@@ -1,8 +1,6 @@
 use {
     super::{
-        Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
+        Arguments, NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -36,9 +34,13 @@ use {
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
 
+use crate::order_quoting::OrderQuoter;
+use crate::order_simulation::OrderExecutionSimulator;
+
 /// A factory for initializing shared price estimators.
 pub struct PriceEstimatorFactory<'a> {
     args: &'a Arguments,
+    shared_args: &'a arguments::Arguments,
     network: Network,
     components: Components,
     trade_verifier: Option<Arc<dyn TradeVerifying>>,
@@ -72,6 +74,52 @@ pub struct Components {
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
+    pub fn order_quoter(
+        &mut self,
+        storage: Arc<dyn crate::order_quoting::QuoteStoring>,
+        balance_fetcher: Arc<dyn crate::account_balances::BalanceFetching>,
+        solvers: &[ExternalSolver],
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
+    ) -> Result<OrderQuoter> {
+        let price_estimator = self.price_estimator(solvers, native.clone(), gas.clone())?;
+        let simulator = {
+            let web3 = self
+                .network
+                .simulation_web3
+                .clone()
+                .context("simulation web3 not configured")?
+                .labeled("simulator");
+            let tenderly = self
+                .shared_args
+                .tenderly
+                .get_api_instance(&self.components.http_factory, "order_simulation".to_owned())?
+                .map(|t| Arc::new(TenderlyCodeSimulator::new(t, self.network.chain.id())));
+            let balance_overrides = self.args.balance_overrides.init(web3.clone());
+            let settlement = contracts::alloy::GPv2Settlement::Instance::new(
+                self.network.settlement,
+                web3.provider.clone(),
+            );
+            Arc::new(OrderExecutionSimulator::new(
+                settlement,
+                balance_overrides,
+                tenderly,
+            ))
+        };
+
+        Ok(OrderQuoter::new(
+            price_estimator,
+            native,
+            gas,
+            storage,
+            Default::default(),
+            balance_fetcher,
+            self.args.quote_verification,
+            simulator,
+            self.args.quote_timeout,
+        ))
+    }
+
     pub async fn new(
         args: &'a Arguments,
         shared_args: &'a arguments::Arguments,
@@ -81,6 +129,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         Ok(Self {
             trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await?,
             args,
+            shared_args,
             network,
             components,
             estimators: HashMap::new(),

@@ -54,6 +54,7 @@ use {
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
+use ethrpc::alloy::ProviderLabelingExt;
 
 pub struct Liveness {
     max_auction_age: Duration,
@@ -413,6 +414,29 @@ pub async fn run(
             .await;
     }
 
+    let order_execution_simulator = {
+        let web3 = web3.labeled("order_simulation");
+        let tenderly = args
+            .shared.tenderly.
+            get_api_instance(&http_factory, "order_simulation".to_owned())
+            .unwrap_or_else(|err| {
+                tracing::warn!(?err, "failed to initialize tenderly api");
+                None
+            })
+            .map(|t| Arc::new(shared::tenderly_api::TenderlyCodeSimulator::new(t, chain.id())));
+        let balance_overrides = args.price_estimation.balance_overrides.init(web3.clone());
+        let settlement = GPv2Settlement::Instance::new(
+            *eth.contracts().settlement().address(),
+            web3.provider.clone(),
+        );
+        Arc::new(shared::price_estimation::trade_verifier::order_simulation::OrderExecutionSimulator::new(
+            web3,
+            settlement,
+            balance_overrides,
+            tenderly,
+        ))
+    };
+
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         api_native_price_estimator.clone(),
@@ -434,6 +458,7 @@ pub async fn run(
         },
         balance_fetcher.clone(),
         args.price_estimation.quote_verification,
+        order_execution_simulator,
         args.price_estimation.quote_timeout,
     ));
 
