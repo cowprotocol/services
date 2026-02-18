@@ -3,16 +3,9 @@ use {
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
-            cow_amm,
-            eth,
-            liquidity,
+            cow_amm, eth, liquidity,
         },
-        infra::{
-            self,
-            api::{REQUEST_BODY_LIMIT, routes::solve::dto::SolveRequest},
-            observe::metrics,
-            tokens,
-        },
+        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
     },
     alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
@@ -570,7 +563,7 @@ async fn collect_request_body(request: Request<Body>) -> Result<body::Bytes> {
         observe::metrics::metrics().on_auction_overhead_start("driver", "stream_http_body");
     let start = Instant::now();
 
-    let body_bytes = axum::body::to_bytes(request.into_body(), REQUEST_BODY_LIMIT)
+    let body_bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
         .await
         .context("failed to stream request body")?;
 
