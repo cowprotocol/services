@@ -21,7 +21,7 @@ impl Api {
         self,
         bind: Option<oneshot::Sender<SocketAddr>>,
         shutdown: impl Future<Output = ()> + Send + 'static,
-    ) -> Result<(), hyper::Error> {
+    ) -> Result<(), std::io::Error> {
         let app = axum::Router::new()
             .layer(tower::ServiceBuilder::new().layer(
                 tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
@@ -38,11 +38,13 @@ impl Api {
             // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
             .layer(axum::extract::DefaultBodyLimit::disable());
 
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        let listener = tokio::net::TcpListener::bind(self.addr).await?;
         if let Some(bind) = bind {
-            let _ = bind.send(server.local_addr());
+            let _ = bind.send(listener.local_addr()?);
         }
 
-        server.with_graceful_shutdown(shutdown).await
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
     }
 }
