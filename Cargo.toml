@@ -37,7 +37,7 @@ prometheus = "0.13.4"
 prometheus-metric-storage = "0.5.0"
 rand = "0.8.5"
 regex = "1.10.4"
-reqwest = "0.12"
+reqwest = "0.13"
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 serde = { version = "1.0.203", features = ["derive"] }
