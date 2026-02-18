@@ -6,6 +6,7 @@ use {
         infra::{cli, config},
     },
     clap::Parser,
+    shared::arguments::tracing_config,
     std::net::SocketAddr,
     tokio::sync::oneshot,
 };
@@ -29,7 +30,7 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
         &args.log,
         tracing::Level::ERROR.into(),
         args.use_json_logs,
-        None,
+        tracing_config(&args.tracing, "solvers".into()),
     );
     observe::tracing::initialize_reentrant(&obs_config);
     #[cfg(unix)]
