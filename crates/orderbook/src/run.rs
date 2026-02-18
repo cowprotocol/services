@@ -248,7 +248,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to build primary native price estimator");
 
     let inner: Box<dyn NativePriceEstimating> =
-        if let Some(ref fallback_config) = args.fallback_native_price_estimators {
+        if let Some(ref fallback_config) = args.native_price_estimators_fallback {
             let fallback = price_estimator_factory
                 .native_price_estimator(
                     fallback_config.as_slice(),
