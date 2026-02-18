@@ -99,7 +99,7 @@ impl Metrics {
     }
 
     #[instrument(skip_all)]
-    fn track_orders_in_final_auction(orders: &[Arc<Order>]) {
+    fn track_orders_in_final_auction(orders: &[&Order]) {
         let metrics = Metrics::get();
         metrics.auction_creations.inc();
 
@@ -207,7 +207,7 @@ impl SolvableOrdersCache {
         let orders = db_solvable_orders
             .orders
             .values()
-            .cloned()
+            .map(|order| order.as_ref())
             .collect::<Vec<_>>();
 
         let mut invalid_order_uids = HashSet::new();
@@ -227,7 +227,7 @@ impl SolvableOrdersCache {
         let (balances, orders, cow_amms) = {
             let queries = orders
                 .iter()
-                .map(|o| Query::from_order(o.as_ref()))
+                .map(|o| Query::from_order(o))
                 .collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries),
@@ -335,11 +335,8 @@ impl SolvableOrdersCache {
                             .quotes
                             .get(&order.metadata.uid.into())
                             .map(|quote| quote.as_ref().clone());
-                        self.protocol_fees.apply(
-                            order.as_ref(),
-                            quote,
-                            &surplus_capturing_jit_order_owners,
-                        )
+                        self.protocol_fees
+                            .apply(order, quote, &surplus_capturing_jit_order_owners)
                     })
                     .collect()
             }),
@@ -433,11 +430,11 @@ impl SolvableOrdersCache {
 
     /// Executed orders filtering in parallel.
     #[instrument(skip_all)]
-    async fn filter_invalid_orders(
+    async fn filter_invalid_orders<'a>(
         &self,
-        mut orders: Vec<Arc<Order>>,
+        mut orders: Vec<&'a Order>,
         invalid_order_uids: &mut HashSet<OrderUid>,
-    ) -> Vec<Arc<Order>> {
+    ) -> Vec<&'a Order> {
         let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
         let unsupported_token_orders = find_unsupported_tokens(&orders, &self.deny_listed_tokens);
@@ -479,10 +476,7 @@ impl SolvableOrdersCache {
 
 /// Finds all orders whose owners or receivers are in the set of "banned"
 /// users.
-async fn find_banned_user_orders(
-    orders: &[Arc<Order>],
-    banned_users: &banned::Users,
-) -> Vec<OrderUid> {
+async fn find_banned_user_orders(orders: &[&Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(
             orders
@@ -519,7 +513,7 @@ async fn get_native_prices(
 
 /// Finds orders with pending presignatures. EIP-1271 signature validation is
 /// skipped entirely - the driver validates signatures before settlement.
-fn find_presignature_pending_orders(orders: &[Arc<Order>]) -> Vec<OrderUid> {
+fn find_presignature_pending_orders(orders: &[&Order]) -> Vec<OrderUid> {
     orders
         .iter()
         .filter(|order| {
@@ -535,12 +529,12 @@ fn find_presignature_pending_orders(orders: &[Arc<Order>]) -> Vec<OrderUid> {
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
 #[instrument(skip_all)]
-fn orders_with_balance(
-    mut orders: Vec<Arc<Order>>,
+fn orders_with_balance<'a>(
+    mut orders: Vec<&'a Order>,
     balances: &Balances,
     settlement_contract: Address,
     filter_bypass_orders: &HashSet<OrderUid>,
-) -> (Vec<Arc<Order>>, Vec<OrderUid>) {
+) -> (Vec<&'a Order>, Vec<OrderUid>) {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     let mut filtered_orders = vec![];
@@ -592,10 +586,10 @@ fn orders_with_balance(
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
-fn filter_dust_orders(
-    mut orders: Vec<Arc<Order>>,
+fn filter_dust_orders<'a>(
+    mut orders: Vec<&'a Order>,
     balances: &Balances,
-) -> (Vec<Arc<Order>>, Vec<OrderUid>) {
+) -> (Vec<&'a Order>, Vec<OrderUid>) {
     let mut removed = vec![];
     let keep = |order: &Order| {
         if !order.data.partially_fillable {
@@ -636,13 +630,13 @@ fn filter_dust_orders(
 }
 
 #[instrument(skip_all)]
-async fn get_orders_with_native_prices(
-    orders: Vec<Arc<Order>>,
+async fn get_orders_with_native_prices<'a>(
+    orders: Vec<&'a Order>,
     native_price_estimator: &NativePriceUpdater,
     additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
 ) -> (
-    Vec<Arc<Order>>,
+    Vec<&'a Order>,
     Vec<OrderUid>,
     BTreeMap<Address, alloy::primitives::U256>,
 ) {
@@ -678,7 +672,7 @@ async fn get_orders_with_native_prices(
 }
 
 fn find_unsupported_tokens(
-    orders: &[Arc<Order>],
+    orders: &[&Order],
     deny_listed_tokens: &DenyListedTokens,
 ) -> Vec<OrderUid> {
     orders
@@ -722,7 +716,7 @@ mod tests {
         let token2 = Address::repeat_byte(2);
         let token3 = Address::repeat_byte(3);
 
-        let orders = vec![
+        let orders = [
             Arc::new(
                 OrderBuilder::default()
                     .with_sell_token(token1)
@@ -768,14 +762,15 @@ mod tests {
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
 
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (filtered_orders, _removed, prices) = get_orders_with_native_prices(
-            orders.clone(),
+            orders_ref,
             &native_price_estimator,
             vec![],
             Duration::from_millis(100),
         )
         .await;
-        assert_eq!(filtered_orders, [orders[1].clone()]);
+        assert_eq!(filtered_orders, [orders[1].as_ref()]);
         assert_eq!(
             prices,
             btreemap! {
@@ -793,7 +788,7 @@ mod tests {
         let token4 = Address::repeat_byte(4);
         let token5 = Address::repeat_byte(5);
 
-        let orders = vec![
+        let orders = [
             Arc::new(
                 OrderBuilder::default()
                     .with_sell_token(token1)
@@ -870,8 +865,9 @@ mod tests {
 
         // We'll have no native prices in this call. But set_tokens_to_update
         // will cause the background task to fetch them in the next cycle.
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
+            orders_ref,
             &native_price_estimator,
             vec![token5],
             Duration::ZERO,
@@ -884,15 +880,16 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
 
         // Now we have all the native prices we want.
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
+            orders_ref,
             &native_price_estimator,
             vec![token5],
             Duration::ZERO,
         )
         .await;
 
-        assert_eq!(alive_orders, [orders[2].clone()]);
+        assert_eq!(alive_orders, [orders[2].as_ref()]);
         assert_eq!(
             prices,
             btreemap! {
@@ -912,7 +909,7 @@ mod tests {
         let token_approx1 = Address::repeat_byte(4);
         let token_approx2 = Address::repeat_byte(5);
 
-        let orders = vec![
+        let orders = [
             Arc::new(
                 OrderBuilder::default()
                     .with_sell_token(token1)
@@ -971,14 +968,20 @@ mod tests {
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
 
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
+            orders_ref,
             &native_price_estimator,
             vec![],
             Duration::from_secs(10),
         )
         .await;
-        assert_eq!(alive_orders, orders);
+        assert!(
+            alive_orders
+                .iter()
+                .copied()
+                .eq(orders.iter().map(Arc::as_ref))
+        );
         assert_eq!(
             prices,
             btreemap! {
@@ -1020,8 +1023,9 @@ mod tests {
         })
         .collect::<Vec<_>>();
 
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let banned_user_orders = find_banned_user_orders(
-            &orders,
+            &orders_ref,
             &order_validation::banned::Users::from_set(banned_users),
         )
         .await;
@@ -1034,7 +1038,7 @@ mod tests {
     #[test]
     fn finds_presignature_pending_orders() {
         let presign_uid = OrderUid::from_parts(B256::repeat_byte(1), Address::repeat_byte(11), 1);
-        let orders = vec![
+        let orders = [
             // PresignaturePending order - should be found
             Arc::new(Order {
                 metadata: OrderMetadata {
@@ -1063,7 +1067,8 @@ mod tests {
             }),
         ];
 
-        let pending_orders = find_presignature_pending_orders(&orders);
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
+        let pending_orders = find_presignature_pending_orders(&orders_ref);
         assert_eq!(pending_orders, vec![presign_uid]);
     }
 
@@ -1073,7 +1078,7 @@ mod tests {
         let token1 = Address::with_last_byte(1);
         let token2 = Address::with_last_byte(2);
         let deny_listed_tokens = DenyListedTokens::new(vec![token0]);
-        let orders = vec![
+        let orders = [
             Arc::new(
                 OrderBuilder::default()
                     .with_sell_token(token0)
@@ -1093,7 +1098,8 @@ mod tests {
                     .build(),
             ),
         ];
-        let unsupported_tokens_orders = find_unsupported_tokens(&orders, &deny_listed_tokens);
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
+        let unsupported_tokens_orders = find_unsupported_tokens(&orders_ref, &deny_listed_tokens);
         assert_eq!(
             unsupported_tokens_orders,
             [orders[0].metadata.uid, orders[2].metadata.uid]
@@ -1103,7 +1109,7 @@ mod tests {
     #[test]
     fn orders_with_balance_() {
         let settlement_contract = Address::repeat_byte(1);
-        let orders = vec![
+        let orders = [
             // enough balance for sell and fee
             Arc::new(Order {
                 data: OrderData {
@@ -1173,8 +1179,9 @@ mod tests {
         let expected = &[0, 2, 4];
 
         let no_bypass: HashSet<OrderUid> = HashSet::new();
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders) =
-            orders_with_balance(orders.clone(), &balances, settlement_contract, &no_bypass);
+            orders_with_balance(orders_ref, &balances, settlement_contract, &no_bypass);
         assert_eq!(alive_orders.len(), expected.len());
         for index in expected {
             let found = alive_orders.iter().any(|o| o.data == orders[*index].data);
@@ -1237,7 +1244,7 @@ mod tests {
             ..Default::default()
         });
 
-        let orders = vec![
+        let orders = [
             regular_order.clone(),
             eip1271_order.clone(),
             wrapper_order.clone(),
@@ -1246,8 +1253,9 @@ mod tests {
 
         // EIP-1271 order and wrapper order should be retained, regular order filtered
         let wrapper_set = HashSet::from([wrapper_order_uid]);
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders) =
-            orders_with_balance(orders.clone(), &balances, settlement_contract, &wrapper_set);
+            orders_with_balance(orders_ref, &balances, settlement_contract, &wrapper_set);
         assert_eq!(alive_orders.len(), 2);
         assert!(
             alive_orders
@@ -1262,8 +1270,9 @@ mod tests {
 
         // Without wrapper set, only EIP-1271 order should be retained
         let empty_set: HashSet<OrderUid> = HashSet::new();
+        let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders) =
-            orders_with_balance(orders, &balances, settlement_contract, &empty_set);
+            orders_with_balance(orders_ref, &balances, settlement_contract, &empty_set);
         assert_eq!(alive_orders.len(), 1);
         assert_eq!(alive_orders[0].metadata.uid, eip1271_order.metadata.uid);
     }
