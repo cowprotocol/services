@@ -31,8 +31,6 @@ use {
 mod error;
 pub mod routes;
 
-pub const REQUEST_BODY_LIMIT: usize = 20 * 1024 * 1024;
-
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub liquidity: liquidity::Fetcher,
@@ -137,11 +135,9 @@ impl Api {
         }
 
         app = app
-            // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
+            // axum's default body limit is 2MB too low for solvers, 20MB is still too low
+            // so instead of constantly guessing and updating, we disable the limit altogether
             .layer(axum::extract::DefaultBodyLimit::disable())
-            .layer(tower::ServiceBuilder::new().layer(
-                tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
-            ))
             .layer(
                 tower::ServiceBuilder::new()
                     .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
