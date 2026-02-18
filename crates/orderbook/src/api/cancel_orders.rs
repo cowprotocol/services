@@ -5,9 +5,9 @@ use {
         Json,
         body,
         extract::State,
+        http::StatusCode,
         response::{IntoResponse, Response},
     },
-    hyper::StatusCode,
     model::order::{ORDER_UID_LIMIT, SignedOrderCancellations},
     std::sync::Arc,
 };

@@ -7,14 +7,21 @@ use {
             eth,
             liquidity,
         },
-        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
+        infra::{
+            self,
+            api::{REQUEST_BODY_LIMIT, routes::solve::dto::SolveRequest},
+            observe::metrics,
+            tokens,
+        },
     },
     alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
-    axum::body::Body,
+    axum::{
+        body::{self, Body},
+        http::Request,
+    },
     chrono::Utc,
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
-    hyper::{Request, body::Bytes as RequestBytes},
     itertools::Itertools,
     model::{
         interaction::InteractionData,
@@ -557,13 +564,13 @@ fn init_auction_id_in_span(id: Option<i64>) {
 }
 
 #[instrument(skip_all)]
-async fn collect_request_body(request: Request<Body>) -> Result<RequestBytes> {
+async fn collect_request_body(request: Request<Body>) -> Result<body::Bytes> {
     tracing::trace!("start streaming request body");
     let _timer =
         observe::metrics::metrics().on_auction_overhead_start("driver", "stream_http_body");
     let start = Instant::now();
 
-    let body_bytes = hyper::body::to_bytes(request.into_body())
+    let body_bytes = axum::body::to_bytes(request.into_body(), REQUEST_BODY_LIMIT)
         .await
         .context("failed to stream request body")?;
 

@@ -22,9 +22,8 @@ use {
         util::math,
     },
     alloy::primitives::Bytes,
-    axum::body::Body,
+    axum::{body::Body, http::Request},
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
-    hyper::Request,
     itertools::Itertools,
     std::{
         cmp::Reverse,

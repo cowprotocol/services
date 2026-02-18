@@ -514,10 +514,9 @@ impl Solver {
             ),
         )
         .with_state(State(state));
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
-        let addr = server.local_addr();
-        tokio::spawn(async move { server.await.unwrap() });
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         Self { addr }
     }
 }
