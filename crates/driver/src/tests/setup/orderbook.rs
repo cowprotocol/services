@@ -27,7 +27,7 @@ impl Orderbook {
     ///
     /// # Returns
     /// The `Orderbook` instance with the server listening address.
-    pub fn start(orders: &[Order]) -> Self {
+    pub async fn start(orders: &[Order]) -> Self {
         let app_data_storage = orders
             .iter()
             .filter_map(|order| {
@@ -43,15 +43,16 @@ impl Orderbook {
             .collect::<HashMap<_, _>>();
 
         let app = Router::new()
-            .route("/api/v1/app_data/:app_data", get(Self::app_data_handler))
+            .route("/api/v1/app_data/{app_data}", get(Self::app_data_handler))
             .layer(Extension(app_data_storage));
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
-        let addr = server.local_addr();
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
 
         tracing::info!("Orderbook mock server listening on {}", addr);
 
-        tokio::spawn(server);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
 
         Orderbook { addr }
     }

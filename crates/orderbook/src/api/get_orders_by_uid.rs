@@ -4,6 +4,7 @@ use {
     axum::{
         body,
         extract::State,
+        http::StatusCode,
         response::{IntoResponse, Response},
     },
     futures::{
@@ -11,7 +12,6 @@ use {
         StreamExt,
         stream::{self, BoxStream},
     },
-    hyper::StatusCode,
     model::order::{ORDER_UID_LIMIT, Order, OrderUid},
     std::sync::Arc,
 };
@@ -68,12 +68,10 @@ fn streaming_response(orders: impl Stream<Item = Order> + Send + 'static) -> Res
         orders.filter_map(async move |order| serde_json::to_string(&order).ok()),
     )
     .map(|s| Ok::<_, std::convert::Infallible>(s.into_bytes()));
-    let body = hyper::Body::wrap_stream(json_stream);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(body)
-        .unwrap()
+    (
+        [("content-type", "application/json")],
+        body::Body::from_stream(json_stream),
+    )
         .into_response()
 }
 
