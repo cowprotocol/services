@@ -142,10 +142,14 @@ async fn setup_delegation_and_approve(
     let solver_nonce = provider.get_transaction_count(solver_address).await?;
 
     // Sign the EIP-7702 authorization (solver delegates to forwarder).
+    // The authorization nonce must be solver_nonce + 1 because in EIP-7702
+    // the sender's nonce is incremented BEFORE the authorization list is
+    // processed. Since the solver is both the tx sender and the authority,
+    // its nonce will already be incremented by the time the auth is checked.
     let auth = Authorization {
         chain_id: U256::from(chain_id),
         address: forwarder,
-        nonce: solver_nonce,
+        nonce: solver_nonce + 1,
     };
     let sig = config
         .account
@@ -180,6 +184,17 @@ async fn setup_delegation_and_approve(
         block = ?receipt.block_number,
         "EIP-7702 delegation tx confirmed"
     );
+
+    // Verify the delegation was actually applied (EIP-7702 silently skips
+    // authorizations with mismatched nonces).
+    let code = provider.get_code_at(solver_address).await?;
+    if !is_delegated_to(&code, forwarder) {
+        anyhow::bail!(
+            "EIP-7702 delegation not applied after tx {:?}. Solver EOA code is empty — the \
+             authorization nonce likely didn't match the account nonce at execution time.",
+            receipt.transaction_hash,
+        );
+    }
 
     Ok(())
 }
