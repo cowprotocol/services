@@ -161,9 +161,15 @@ async fn setup_delegation_and_approve(
     // Solver self-calls with auth list. After the authorization is applied the
     // forwarder code runs, and `msg.sender == address(this)` passes the auth
     // check in `setApprovedCallers`.
+    //
+    // Explicitly set the tx nonce to match what we used for the auth nonce
+    // calculation. Without this, the provider's nonce filler may assign a
+    // different nonce (e.g. if it accounts for pending txs), causing the auth
+    // nonce to mismatch.
     let mut tx = TransactionRequest::default()
         .from(solver_address)
         .to(solver_address)
+        .nonce(solver_nonce)
         .with_authorization_list(vec![signed_auth]);
 
     if !unapproved.is_empty() {
