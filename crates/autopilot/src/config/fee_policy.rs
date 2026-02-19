@@ -4,7 +4,7 @@ use {
     shared::fee_factor::FeeFactor,
 };
 
-pub fn default_max_partner_fee() -> FeeFactor {
+pub const fn default_max_partner_fee() -> FeeFactor {
     FeeFactor::new(0.01)
 }
 
@@ -13,24 +13,24 @@ pub fn default_max_partner_fee() -> FeeFactor {
 pub struct FeePoliciesConfig {
     /// Describes how the protocol fees should be calculated.
     #[serde(default)]
-    pub fee_policies: Vec<FeePolicy>,
+    pub policies: Vec<FeePolicy>,
 
     /// Maximum partner fee allowed. If the partner fee specified is greater
     /// than this maximum, the partner fee will be capped.
     #[serde(default = "default_max_partner_fee")]
-    pub fee_policy_max_partner_fee: FeeFactor,
+    pub max_partner_fee: FeeFactor,
 
     /// Fee policies that will become effective at a future timestamp.
     #[serde(default)]
-    pub upcoming_fee_policies: UpcomingFeePolicies,
+    pub upcoming_policies: UpcomingFeePolicies,
 }
 
 impl Default for FeePoliciesConfig {
     fn default() -> Self {
         Self {
-            fee_policies: Default::default(),
-            fee_policy_max_partner_fee: default_max_partner_fee(),
-            upcoming_fee_policies: Default::default(),
+            policies: Default::default(),
+            max_partner_fee: default_max_partner_fee(),
+            upcoming_policies: Default::default(),
         }
     }
 }
@@ -48,8 +48,9 @@ pub struct FeePolicy {
 #[serde(rename_all = "kebab-case")]
 pub struct UpcomingFeePolicies {
     #[serde(default)]
-    pub fee_policies: Vec<FeePolicy>,
+    pub policies: Vec<FeePolicy>,
 
+    /// Timestamp from which the `policies` will become active.
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
@@ -137,47 +138,37 @@ mod tests {
     fn deserialize_fee_policies_config_defaults() {
         let toml = "";
         let config: FeePoliciesConfig = toml::from_str(toml).unwrap();
-        assert!(config.fee_policies.is_empty());
-        assert_eq!(config.fee_policy_max_partner_fee.get(), 0.01);
-        assert!(config.upcoming_fee_policies.fee_policies.is_empty());
-        assert!(
-            config
-                .upcoming_fee_policies
-                .effective_from_timestamp
-                .is_none()
-        );
+        assert!(config.policies.is_empty());
+        assert_eq!(config.max_partner_fee.get(), 0.01);
+        assert!(config.upcoming_policies.policies.is_empty());
+        assert!(config.upcoming_policies.effective_from_timestamp.is_none());
     }
 
     #[test]
     fn deserialize_fee_policies_config_full() {
         let toml = r#"
-        fee-policy-max-partner-fee = 0.005
+        max-partner-fee = 0.005
 
-        [[fee-policies]]
+        [[policies]]
         kind.surplus = { factor = 0.5, max-volume-factor = 0.9 }
         order-class = "limit"
 
-        [[fee-policies]]
+        [[policies]]
         kind.volume = { factor = 0.1 }
         order-class = "any"
 
-        [upcoming-fee-policies]
+        [upcoming-policies]
         effective-from-timestamp = "2025-06-01T00:00:00Z"
 
-        [[upcoming-fee-policies.fee-policies]]
+        [[upcoming-policies.policies]]
         kind.volume = { factor = 0.2 }
         order-class = "any"
         "#;
         let config: FeePoliciesConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.fee_policies.len(), 2);
-        assert_eq!(config.fee_policy_max_partner_fee.get(), 0.005);
-        assert_eq!(config.upcoming_fee_policies.fee_policies.len(), 1);
-        assert!(
-            config
-                .upcoming_fee_policies
-                .effective_from_timestamp
-                .is_some()
-        );
+        assert_eq!(config.policies.len(), 2);
+        assert_eq!(config.max_partner_fee.get(), 0.005);
+        assert_eq!(config.upcoming_policies.policies.len(), 1);
+        assert!(config.upcoming_policies.effective_from_timestamp.is_some());
     }
 
     #[test]

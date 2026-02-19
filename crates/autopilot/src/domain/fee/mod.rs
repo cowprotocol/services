@@ -66,10 +66,10 @@ impl From<UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
         value
             // both config fields must be non-empty
             .effective_from_timestamp
-            .filter(|_| !value.fee_policies.is_empty())
+            .filter(|_| !value.policies.is_empty())
             .map(|effective_from_timestamp| UpcomingProtocolFees {
                 fee_policies: value
-                    .fee_policies
+                    .policies
                     .into_iter()
                     .map(ProtocolFee::from)
                     .collect::<Vec<_>>(),
@@ -100,13 +100,13 @@ impl ProtocolFees {
         );
         Self {
             fee_policies: config
-                .fee_policies
+                .policies
                 .iter()
                 .cloned()
                 .map(ProtocolFee::from)
                 .collect(),
-            max_partner_fee: config.fee_policy_max_partner_fee,
-            upcoming_fee_policies: config.upcoming_fee_policies.clone().into(),
+            max_partner_fee: config.max_partner_fee,
+            upcoming_fee_policies: config.upcoming_policies.clone().into(),
             volume_fee_policy,
         }
     }

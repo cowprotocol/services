@@ -14,8 +14,7 @@ pub struct Configuration {
     pub drivers: Vec<Solver>,
 
     /// Describes how the protocol fees should be calculated.
-    #[serde(flatten)]
-    pub fee_policies_config: FeePoliciesConfig,
+    pub fee_policies: FeePoliciesConfig,
 }
 
 impl Configuration {

@@ -162,9 +162,9 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies_config: FeePoliciesConfig {
-            fee_policies: vec![limit_surplus_policy, market_price_improvement_policy],
-            fee_policy_max_partner_fee: 0.02.try_into().unwrap(),
+        fee_policies: FeePoliciesConfig {
+            policies: vec![limit_surplus_policy, market_price_improvement_policy],
+            max_partner_fee: 0.02.try_into().unwrap(),
             ..Default::default()
         },
     }
@@ -365,7 +365,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_executed_fee_in_buy_token =
         fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
-        // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
+        // see `max-partner-fee` in the `[fee-policies]` autopilot config, which is 0.02
         partner_fee_executed_fee_in_buy_token
             >= (partner_fee_quote.quote.buy_amount * U256::from(2) / U256::from(100))
     );
@@ -421,7 +421,7 @@ async fn combined_protocol_fees(web3: Web3) {
 /// Tests that a partner can provide multiple partner fees and also use
 /// the `Surplus` and `PriceImprovement` fee policies. Also checks that
 /// the partner fees can not exceed the globally defined
-/// `--fee-policy-max-partner-fee` which defines how much of an order's volume
+/// `max-partner-fee` config which defines how much of an order's volume
 /// may be captured in total by partner fees.
 async fn surplus_partner_fee(web3: Web3) {
     // All these values are unreasonably high but result in easier math
@@ -517,8 +517,8 @@ async fn surplus_partner_fee(web3: Web3) {
 
     let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies_config: FeePoliciesConfig {
-            fee_policy_max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
+        fee_policies: FeePoliciesConfig {
+            max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
             ..Default::default()
         },
     }
@@ -759,10 +759,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // autopilot is not configured to support multiple fees
     let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies_config: FeePoliciesConfig {
-            fee_policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
-            upcoming_fee_policies: UpcomingFeePolicies {
-                fee_policies: vec![fee_policy.clone(), fee_policy],
+        fee_policies: FeePoliciesConfig {
+            policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
+            upcoming_policies: UpcomingFeePolicies {
+                policies: vec![fee_policy.clone(), fee_policy],
                 // Set the effective time to 10 minutes ago to make sure the new policy
                 // is applied
                 effective_from_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(10)),
@@ -923,10 +923,10 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // autopilot is not configured to support multiple fees
     let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies_config: FeePoliciesConfig {
-            fee_policies: vec![fee_policy.clone(), fee_policy],
-            upcoming_fee_policies: UpcomingFeePolicies {
-                fee_policies: vec![future_fee_policy.clone(), future_fee_policy],
+        fee_policies: FeePoliciesConfig {
+            policies: vec![fee_policy.clone(), fee_policy],
+            upcoming_policies: UpcomingFeePolicies {
+                policies: vec![future_fee_policy.clone(), future_fee_policy],
                 // Set the effective time to far in the future to make sure the new policy
                 // is NOT applied
                 effective_from_timestamp: Some(chrono::Utc::now() + chrono::Duration::days(1)),
@@ -1093,8 +1093,8 @@ async fn volume_fee_overrides(web3: Web3) {
 
     let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies_config: FeePoliciesConfig {
-            fee_policies: vec![default_volume_fee],
+        fee_policies: FeePoliciesConfig {
+            policies: vec![default_volume_fee],
             ..Default::default()
         },
     }

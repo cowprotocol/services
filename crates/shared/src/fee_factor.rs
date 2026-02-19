@@ -15,7 +15,7 @@ impl FeeFactor {
     /// (1_000_000 / 100 = 10_000 BPS scale).
     pub const HIGH_PRECISION_SCALE: u64 = 1_000_000;
 
-    pub fn new(factor: f64) -> Self {
+    pub const fn new(factor: f64) -> Self {
         Self(factor)
     }
 

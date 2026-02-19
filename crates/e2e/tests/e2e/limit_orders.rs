@@ -1088,8 +1088,8 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies_config: FeePoliciesConfig {
-            fee_policies: vec![
+        fee_policies: FeePoliciesConfig {
+            policies: vec![
                 FeePolicy {
                     kind: FeePolicyKind::Surplus {
                         factor: 0.5.try_into().unwrap(),
