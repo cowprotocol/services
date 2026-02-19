@@ -1,12 +1,8 @@
+use ethrpc::alloy::ProviderLabelingExt;
 use {
     crate::{
-        api,
-        arguments::Arguments,
-        database::Postgres,
-        ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook,
-        quoter::QuoteHandler,
+        api, arguments::Arguments, database::Postgres, ipfs::Ipfs, ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook, quoter::QuoteHandler,
     },
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
@@ -14,13 +10,8 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::alloy::{
-        BalancerV2Vault,
-        ChainalysisOracle,
-        GPv2Settlement,
-        HooksTrampoline,
-        IUniswapV3Factory,
-        WETH9,
-        support::Balances,
+        BalancerV2Vault, ChainalysisOracle, GPv2Settlement, HooksTrampoline, IUniswapV3Factory,
+        WETH9, support::Balances,
     },
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
@@ -44,8 +35,7 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
-            PriceEstimating,
-            QuoteVerificationMode,
+            PriceEstimating, QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },
@@ -57,7 +47,6 @@ use {
     tokio::task::{self, JoinHandle},
     warp::Filter,
 };
-use ethrpc::alloy::ProviderLabelingExt;
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
@@ -362,20 +351,22 @@ pub async fn run(args: Arguments) {
     let order_execution_simulator = {
         let web3 = web3.labeled("order_simulation");
         let tenderly = args
-            .shared.tenderly
+            .shared
+            .tenderly
             .get_api_instance(&http_factory, "order_simulation".to_owned())
             .unwrap_or_else(|err| {
                 tracing::warn!(?err, "failed to initialize tenderly api");
                 None
             })
-            .map(|t| Arc::new(shared::tenderly_api::TenderlyCodeSimulator::new(t, chain_id)));
+            .map(|t| {
+                Arc::new(shared::tenderly_api::TenderlyCodeSimulator::new(
+                    t, chain_id,
+                ))
+            });
         let balance_overrides = args.price_estimation.balance_overrides.init(web3.clone());
-        let settlement = GPv2Settlement::Instance::new(
-            *settlement_contract.address(),
-            web3.provider.clone(),
-        );
-        Arc::new(shared::price_estimation::trade_verifier::order_simulation::OrderExecutionSimulator::new(
-            web3,
+        let settlement =
+            GPv2Settlement::Instance::new(*settlement_contract.address(), web3.provider.clone());
+        Arc::new(shared::order_simulation::OrderExecutionSimulator::new(
             settlement,
             balance_overrides,
             tenderly,

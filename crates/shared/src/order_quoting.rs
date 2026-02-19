@@ -784,7 +784,8 @@ pub struct QuoteMetadataV1 {
 
 #[cfg(test)]
 mod tests {
-    use crate::trade_finding::Interaction;
+    use crate::order_simulation::SimulationOptions;
+
     use {
         super::*,
         crate::{
@@ -811,8 +812,7 @@ mod tests {
             &self,
             _: &model::order::Order,
             _: &model::DomainSeparator,
-            _: Vec<Interaction>,
-            _: Vec<Interaction>,
+            _: SimulationOptions,
         ) -> Result<()> {
             Ok(())
         }

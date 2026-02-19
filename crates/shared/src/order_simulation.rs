@@ -3,8 +3,13 @@ use crate::price_estimation::trade_verifier::balance_overrides::{
     BalanceOverrideRequest, BalanceOverriding,
 };
 use crate::tenderly_api::TenderlyCodeSimulator;
-use alloy::primitives::U256;
-use alloy::rpc::types::state::StateOverride;
+
+use alloy::primitives::{Address, Bytes, TxKind, U256};
+use alloy::providers::Provider;
+use alloy::rpc::types::{
+    BlockId, BlockNumberOrTag, TransactionInput, TransactionRequest, state::StateOverride,
+};
+use alloy::sol_types::SolCall;
 use anyhow::{Context, Result};
 use contracts::alloy::GPv2Settlement;
 
@@ -12,6 +17,26 @@ use crate::trade_finding::Interaction;
 use model::order::OrderData;
 use model::{DomainSeparator, order::Order};
 use std::sync::Arc;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FlashLoanParams {
+    pub address: Address,
+    pub amount: U256,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WrapperParams {
+    pub address: Address,
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SimulationOptions {
+    pub pre_interactions: Vec<Interaction>,
+    pub post_interactions: Vec<Interaction>,
+    pub flash_loan: Option<FlashLoanParams>,
+    pub wrapper: Option<WrapperParams>,
+}
 
 /// A component that can simulate the execution of an order.
 #[async_trait::async_trait]
@@ -21,8 +46,7 @@ pub trait OrderExecutionSimulating: Send + Sync {
         &self,
         order: &Order,
         domain_separator: &DomainSeparator,
-        pre_interactions: Vec<Interaction>,
-        post_interactions: Vec<Interaction>,
+        options: SimulationOptions,
     ) -> Result<()>;
 }
 
@@ -68,8 +92,7 @@ impl OrderExecutionSimulator {
         &self,
         order: &Order,
         _domain_separator: &DomainSeparator,
-        pre_interactions: Vec<Interaction>,
-        post_interactions: Vec<Interaction>,
+        options: SimulationOptions,
     ) -> Result<EncodedSettlement> {
         let tokens = {
             let mut tokens = vec![order.data.sell_token, order.data.buy_token];
@@ -108,9 +131,17 @@ impl OrderExecutionSimulator {
             order.data.sell_amount,
         );
 
-        let encoded_pre_interactions = pre_interactions.into_iter().map(|i| i.encode()).collect();
+        let encoded_pre_interactions = options
+            .pre_interactions
+            .into_iter()
+            .map(|i| i.encode())
+            .collect();
 
-        let encoded_post_interactions = post_interactions.into_iter().map(|i| i.encode()).collect();
+        let encoded_post_interactions = options
+            .post_interactions
+            .into_iter()
+            .map(|i| i.encode())
+            .collect();
 
         Ok(EncodedSettlement {
             tokens,
@@ -131,14 +162,12 @@ impl OrderExecutionSimulating for OrderExecutionSimulator {
         &self,
         order: &Order,
         domain_separator: &DomainSeparator,
-        pre_interactions: Vec<Interaction>,
-        post_interactions: Vec<Interaction>,
+        options: SimulationOptions,
     ) -> Result<()> {
-        let settlement =
-            self.encode_settlement(order, domain_separator, pre_interactions, post_interactions)?;
+        let settlement = self.encode_settlement(order, domain_separator, options.clone())?;
         let overrides = self.prepare_state_overrides(&order.data).await;
 
-        let call = GPv2Settlement::GPv2Settlement::settleCall {
+        let settle_call = GPv2Settlement::GPv2Settlement::settleCall {
             tokens: settlement.tokens,
             clearingPrices: settlement.clearing_prices,
             trades: settlement.trades.into_iter().map(Into::into).collect(),
@@ -147,30 +176,50 @@ impl OrderExecutionSimulating for OrderExecutionSimulator {
                 .map(|i| i.into_iter().map(Into::into).collect()),
         };
 
-        let settle_simulation = self
-            .settlement
-            .settle(
-                call.tokens,
-                call.clearingPrices,
-                call.trades,
-                call.interactions,
-            )
-            .state(overrides.clone());
+        let settle_calldata = settle_call.abi_encode();
 
-        if let Some(tenderly) = &self.simulator
-            && let Err(err) = tenderly.log_simulation_command(
-                settle_simulation.clone().into_transaction_request(),
-                overrides,
-                None, // Use latest block
-            )
-        {
-            tracing::debug!(?err, "could not log tenderly simulation command");
+        // Handle Wrapping if present
+        let (to, calldata) = if let Some(wrapper) = options.wrapper {
+            let wrapped_call = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+                settleData: settle_calldata.into(),
+                wrapperData: wrapper.data.into(),
+            };
+            (wrapper.address, wrapped_call.abi_encode())
+        } else if let Some(_) = options.flash_loan {
+            tracing::warn!(
+                "Flashloan simulation requested but using direct settlement independent of flashloan."
+            );
+            (*self.settlement.address(), settle_calldata)
+        } else {
+            (*self.settlement.address(), settle_calldata)
+        };
+
+        let tx = TransactionRequest {
+            from: Some(order.metadata.owner),
+            to: Some(TxKind::Call(to)),
+            input: TransactionInput::new(calldata.into()),
+            value: Some(U256::ZERO),
+            ..Default::default()
+        };
+
+        if let Some(tenderly) = &self.simulator {
+            if let Err(err) = tenderly.log_simulation_command(tx.clone(), overrides.clone(), None) {
+                tracing::debug!(?err, "could not log tenderly simulation command");
+            }
         }
 
-        settle_simulation.call().await.context(format!(
-            "failed to execute settlement for order: {:?}",
-            order
-        ))?;
+        let _: Bytes = self
+            .settlement
+            .provider()
+            .raw_request(
+                "eth_call".into(),
+                (tx, BlockId::Number(BlockNumberOrTag::Latest), overrides),
+            )
+            .await
+            .context(format!(
+                "failed to execute settlement for order: {:?}",
+                order
+            ))?;
 
         Ok(())
     }
