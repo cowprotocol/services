@@ -9,7 +9,9 @@ pub mod fee_policy;
 pub mod solver;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+// NOTE: cannot add deny_unknown_fields during the config migration
+// as new ones get added in the config will fail parsing if extra fields are present
+#[serde(rename_all = "kebab-case", /* deny_unknown_fields */)]
 pub struct Configuration {
     pub drivers: Vec<Solver>,
 
