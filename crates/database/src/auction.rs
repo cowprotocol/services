@@ -36,7 +36,7 @@ WITH deleted AS (
     DELETE FROM auctions
 )
 INSERT INTO auctions (id, json)
-VALUES ($1, $2);
+VALUES ($1, $2::jsonb);
     "#;
 
     sqlx::query(QUERY).bind(id).bind(json).execute(ex).await?;
