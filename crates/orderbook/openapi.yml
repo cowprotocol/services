@@ -133,8 +133,12 @@ paths:
     post:
       operationId: getOrders
       summary: Get existing orders from the list of UIDs.
+      description: |
+        Returns a streaming NDJSON response where each line is a JSON object
+        with either an "order" key containing the full order, or an "error" key
+        containing the UID and a description of what went wrong.
       requestBody:
-        description: The list of up to 1024 order uids to fetch
+        description: The list of up to 128 order uids to fetch
         required: true
         content:
           application/json:
@@ -144,15 +148,36 @@ paths:
                 $ref: "#/components/schemas/UID"
       responses:
         "200":
-          description: Orders
+          description: |
+            Streamed NDJSON (newline-delimited JSON). Each line is one of:
+            - `{"order": <Order>}` for successfully fetched orders
+            - `{"error": {"orderUid": "<UID>", "description": "<message>"}}` for orders that failed conversion
           content:
-            application/json:
+            application/x-ndjson:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Order"
-        "422":
-          description: Request array size larger than 1024 or unable to parse request body as valid JSON.
+                oneOf:
+                  - type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+                    required:
+                      - order
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          orderUid:
+                            $ref: "#/components/schemas/UID"
+                          description:
+                            type: string
+                        required:
+                          - orderUid
+                          - description
+                    required:
+                      - error
+        "400":
+          description: Request array size larger than 128 or unable to parse request body as valid JSON.
   "/api/v1/orders/{UID}":
     get:
       operationId: getOrder

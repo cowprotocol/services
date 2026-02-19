@@ -497,7 +497,7 @@ impl Orderbook {
     pub async fn get_orders(
         &self,
         uids: &[OrderUid],
-    ) -> Result<futures::stream::BoxStream<'static, Result<Order>>> {
+    ) -> Result<futures::stream::BoxStream<'static, (OrderUid, Result<Order>)>> {
         self.database_replica.many_orders(uids).await
     }
 
