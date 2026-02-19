@@ -131,21 +131,23 @@ async fn setup_delegation_and_approve(
     unapproved: &[Address],
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
-    tracing::info!(
-        ?forwarder,
-        unapproved_callers = unapproved.len(),
-        "setting up EIP-7702 delegation"
-    );
     let provider = &eth.web3().provider;
     let chain_id = provider.get_chain_id().await?;
     let solver_address: Address = config.account.address();
     let solver_nonce = provider.get_transaction_count(solver_address).await?;
 
-    // Sign the EIP-7702 authorization (solver delegates to forwarder).
-    // The authorization nonce must be solver_nonce + 1 because in EIP-7702
-    // the sender's nonce is incremented BEFORE the authorization list is
-    // processed. Since the solver is both the tx sender and the authority,
-    // its nonce will already be incremented by the time the auth is checked.
+    tracing::info!(
+        ?forwarder,
+        solver_nonce,
+        auth_nonce = solver_nonce + 1,
+        unapproved_callers = unapproved.len(),
+        "setting up EIP-7702 delegation"
+    );
+
+    // The auth nonce must be solver_nonce + 1: in EIP-7702 the sender's nonce
+    // is incremented before the authorization list is processed. Since the
+    // solver is both sender and authority, the nonce will already be
+    // solver_nonce + 1 by the time the auth is checked.
     let auth = Authorization {
         chain_id: U256::from(chain_id),
         address: forwarder,
@@ -158,14 +160,8 @@ async fn setup_delegation_and_approve(
         .map_err(|e| anyhow::anyhow!("failed to sign EIP-7702 authorization: {e}"))?;
     let signed_auth = auth.into_signed(sig);
 
-    // Solver self-calls with auth list. After the authorization is applied the
-    // forwarder code runs, and `msg.sender == address(this)` passes the auth
-    // check in `setApprovedCallers`.
-    //
-    // Explicitly set the tx nonce to match what we used for the auth nonce
-    // calculation. Without this, the provider's nonce filler may assign a
-    // different nonce (e.g. if it accounts for pending txs), causing the auth
-    // nonce to mismatch.
+    // Explicitly set the tx nonce to `solver_nonce` so the provider's nonce
+    // filler cannot assign a different value.
     let mut tx = TransactionRequest::default()
         .from(solver_address)
         .to(solver_address)
@@ -196,9 +192,12 @@ async fn setup_delegation_and_approve(
     let code = provider.get_code_at(solver_address).await?;
     if !is_delegated_to(&code, forwarder) {
         anyhow::bail!(
-            "EIP-7702 delegation not applied after tx {:?}. Solver EOA code is empty — the \
-             authorization nonce likely didn't match the account nonce at execution time.",
+            "EIP-7702 delegation not applied after tx {:?}. Expected auth_nonce={} \
+             (solver_nonce={} + 1). Check that no pending txs changed the nonce between query and \
+             submission.",
             receipt.transaction_hash,
+            solver_nonce + 1,
+            solver_nonce,
         );
     }
 
